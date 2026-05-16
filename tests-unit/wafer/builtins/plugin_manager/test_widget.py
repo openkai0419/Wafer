@@ -166,9 +166,55 @@ class TestExtensionsTab:
 
         signals = []
         tab.enabled_changed.connect(lambda: signals.append(True))
-        row, _ = tab._cards["ext1"]._rows[0]
+        row, _, _ = tab._cards["ext1"]._rows[0]
         row.checkbox.setChecked(False)
         assert len(signals) >= 1
+
+    def test_collect_enabled_overrides_returns_default_diff_only(self, qtbot, tmp_path, monkeypatch):
+        ext_dir = tmp_path / "extensions"
+        (ext_dir / "ext1").mkdir(parents=True)
+        (ext_dir / "ext1" / "__init__.py").write_text("")
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir",
+            lambda: str(ext_dir),
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.resolve_install_state",
+            lambda folder: InstallState.INSTALLED,
+        )
+
+        class EnabledPlugin(BasePlugin):
+            NAME = "enabled_p"
+            EXTENSIONS = (".e",)
+            PRIORITY = 1
+            DEFAULT_ENABLED = True
+
+        class DisabledPlugin(BasePlugin):
+            NAME = "disabled_p"
+            EXTENSIONS = (".d",)
+            PRIORITY = 1
+            DEFAULT_ENABLED = False
+
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.PluginLoader.discover_extension",
+            staticmethod(lambda folder: [("grid", EnabledPlugin), ("grid", DisabledPlugin)]),
+        )
+        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
+
+        tab = ExtensionsTab({}, Dispatcher())
+        qtbot.waitUntil(lambda: "ext1" in tab._cards and len(tab._cards["ext1"]._rows) == 2, timeout=3000)
+
+        assert tab.collect_enabled_overrides() == {}
+
+        rows = {qualified: row for row, qualified, _ in tab._cards["ext1"]._rows}
+        rows["grid:EnabledPlugin"].checkbox.setChecked(False)
+        rows["grid:DisabledPlugin"].checkbox.setChecked(True)
+
+        assert tab.collect_enabled_overrides() == {
+            "grid:DisabledPlugin": True,
+            "grid:EnabledPlugin": False,
+        }
 
     def test_collect_enabled_plugins_by_type(self, qtbot, tmp_path, monkeypatch):
         ext_dir = tmp_path / "extensions"
@@ -740,11 +786,32 @@ class TestPluginManagerWidget:
 
         dlg = PluginManagerWidget()
         qtbot.addWidget(dlg)
-        dlg._initial_enabled = {"a", "b"}
+        dlg._initial_enabled_overrides = {"a": False, "b": True}
         dlg._initial_orders = {"grid": ["a"]}
-        assert not dlg._has_plugin_changes({"a", "b"}, {"grid": ["a"]})
-        assert dlg._has_plugin_changes({"a", "b", "c"}, {"grid": ["a"]})
-        assert dlg._has_plugin_changes({"a", "b"}, {"grid": ["b", "a"]})
+        assert not dlg._has_plugin_changes({"a": False, "b": True}, {"grid": ["a"]})
+        assert dlg._has_plugin_changes({"a": False, "b": True, "c": False}, {"grid": ["a"]})
+        assert dlg._has_plugin_changes({"a": False, "b": True}, {"grid": ["b", "a"]})
+
+    def test_has_plugin_changes_detects_legacy_state_diff(self):
+        from wafer.builtins.plugin_manager.widget import PluginManagerWidget
+
+        class LegacyPlugin(BasePlugin):
+            NAME = "legacy"
+            EXTENSIONS = (".legacy",)
+            PRIORITY = 1
+            DEFAULT_ENABLED = False
+
+        class StubTab:
+            def iter_plugin_states(self):
+                yield "grid:LegacyPlugin", LegacyPlugin, False
+
+        dlg = PluginManagerWidget.__new__(PluginManagerWidget)
+        dlg._ext_tab = StubTab()
+        dlg._initial_enabled_overrides = {}
+        dlg._initial_legacy_enabled = {"grid:LegacyPlugin"}
+        dlg._initial_orders = {"grid": ["a"]}
+
+        assert dlg._has_plugin_changes({}, {"grid": ["a"]})
 
     def test_send_delete_dispatches_to_node(self, qtbot, monkeypatch):
         monkeypatch.setattr(

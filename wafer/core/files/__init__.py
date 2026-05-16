@@ -1,3 +1,3 @@
-from .render_target import RenderRequest, RenderTarget, ResolveContext, TARGET_IMAGE, TARGET_WIDGET
+from .render_target import SURFACE_GRID, SURFACE_IMAGE, SURFACE_VIEWER, RenderPlan, ResolveContext
 
-__all__ = ["TARGET_IMAGE", "TARGET_WIDGET", "RenderRequest", "RenderTarget", "ResolveContext"]
+__all__ = ["SURFACE_GRID", "SURFACE_IMAGE", "SURFACE_VIEWER", "RenderPlan", "ResolveContext"]

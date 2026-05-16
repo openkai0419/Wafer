@@ -427,7 +427,61 @@ def test_imageloader_chain_for_unknown():
     from wafer.builtins.imageloader import SystemImageLoader
 
     chain = image_loader_resolver.registry.resolve_chain("file.xyz")
-    assert chain == [SystemImageLoader]
+    assert chain[-1] is SystemImageLoader
+    assert image_loader_resolver.registry.resolve("file.xyz") is SystemImageLoader
+
+
+def test_imageloader_delegated_resolution_fallback_uses_materialized_path():
+    from wafer.plugin.imageloader.handler import ImageLoaderResolver
+
+    class Delegating(BaseImageLoader):
+        NAME = "_delegating_loader"
+        EXTENSIONS = ()
+        PRIORITY = 300
+
+        @classmethod
+        def can_handle(cls, path):
+            return path == "virtual.png"
+
+        def resolve(self, path, context):
+            if not self.can_handle(path):
+                return None
+            return context.resolve_new("materialized.png")
+
+    class First(BaseImageLoader):
+        NAME = "_first_loader"
+        EXTENSIONS = (".png",)
+        PRIORITY = 100
+
+        def __init__(self):
+            self.calls = []
+
+        def load_qimage(self, path, size=None):
+            self.calls.append(path)
+            return None
+
+    class Fallback(BaseImageLoader):
+        NAME = "_fallback_loader"
+        EXTENSIONS = ()
+        PRIORITY = -100
+
+        def __init__(self):
+            self.calls = []
+
+        def load_qimage(self, path, size=None):
+            self.calls.append(path)
+            return None
+
+    resolver = ImageLoaderResolver()
+    for plugin_cls in (Delegating, First, Fallback):
+        resolver.registry.register(plugin_cls)
+
+    resolver.load_qimage("virtual.png")
+
+    first = resolver.registry.instance(First.NAME)
+    fallback = resolver.registry.instance(Fallback.NAME)
+    assert first.calls == ["materialized.png"]
+    assert fallback.calls == ["materialized.png"]
 
 
 def test_resolve_chain_uses_cache():

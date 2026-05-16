@@ -17,7 +17,7 @@ from wafer.builtins.sorts import (
     RandomSort,
 )
 from wafer.utils.paths import normalize_path
-from wafer.utils.virtual_paths import build_virtual_path, register_owner_extension
+from wafer.utils.virtual_paths import build_virtual_path
 
 
 def np(p):
@@ -83,7 +83,6 @@ def special_db(tmp_path):
 
 @pytest.fixture
 def contained_db(tmp_path):
-    register_owner_extension(".zip")
     db_path = str(tmp_path / "contained.db")
     db = FileDB(db_path)
     db.start()
@@ -268,6 +267,41 @@ class TestSourceChildrenFilterBuildPathQuery:
         sql, bind = SourceChildrenFilter.build_path_query({"source": ""}, np)
         assert sql is None
         assert bind == []
+
+
+class TestFileSearchEngineSourceChildren:
+    def test_has_source_children_detects_virtual_members(self, contained_db):
+        db_path, archive, _child_a, _child_b, plain = contained_db
+        engine = FileSearchEngine(db_path)
+        try:
+            assert engine.has_source_children(archive) is True
+            assert engine.has_source_children(plain) is False
+        finally:
+            engine.close()
+
+    def test_has_source_children_uses_virtual_path_prefix(self, tmp_path):
+        db_path = str(tmp_path / "prefix_children.db")
+        db = FileDB(db_path)
+        db.start()
+        db.initialize_database()
+        archive = "C:/archives/legacy.zip"
+        child = build_virtual_path(archive, "legacy.png")
+        db.upsert_batches(
+            [(archive, "hash_zip", 1000, 1.0)],
+            [
+                (archive, archive, "legacy.zip", 1.0, None),
+                (child, archive, "legacy.png", 1.0, None),
+            ],
+            [],
+            [],
+        )
+        db.close()
+
+        engine = FileSearchEngine(db_path)
+        try:
+            assert engine.has_source_children(archive) is True
+        finally:
+            engine.close()
 
 
 class TestDirectoryFilterExecution:

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 from wafer.core.qt.dispatcher import Dispatcher, CancelToken
 from wafer.app.viewer.grid.pipeline import GridPipeline
+from wafer.core.files.render_target import RenderPlan
 from wafer.plugin.grid.base import WidgetGridPlugin
 from wafer.plugin.grid.handler import WIDGET, IMAGE
 
@@ -101,7 +102,6 @@ class _SlowImagePlugin:
 
 
 def _fake_resolver(plugin=None, load_fn=None):
-    from wafer.core.files.render_target import RenderTarget, TARGET_WIDGET
     _cls = type(plugin) if plugin else None
     _inst = plugin
     _load = load_fn if load_fn is not None else (lambda p, s=None: _make_image())
@@ -117,12 +117,10 @@ def _fake_resolver(plugin=None, load_fn=None):
         def resolve_merged_chain(self, path):
             return [(_cls, _kind)] if _cls else []
 
-        def resolve_target(self, path, context=None):
+        def resolve_plan(self, path, context=None):
             if _cls is None:
-                return RenderTarget(logical_path=path, render_path=path, source_path=path)
-            if _kind == WIDGET:
-                return RenderTarget(logical_path=path, render_path=path, kind=TARGET_WIDGET, plugin_name=_cls.NAME, source_path=path)
-            return RenderTarget(logical_path=path, render_path=path, plugin_name=_cls.NAME, source_path=path)
+                return RenderPlan(source=path, path=path, resolved_path=path, handler=None)
+            return RenderPlan(source=path, path=path, resolved_path=path, handler=_inst)
 
         def load(self, path, size=None):
             return _load(path, size)

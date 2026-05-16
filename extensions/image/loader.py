@@ -57,6 +57,10 @@ class ImageFileLoader(BaseImageLoader):
             AppLogger.warning(f"[image/loader] Failed to load image: {path} ({e})")
             return None
 
+    @profiler.profile
+    def load_qimage(self, path: str, size: int | None = None) -> QtGui.QImage | None:
+        return load_image(path, size)
+
 
 def _pil_read_numpy(path: str, size: int | None = None) -> np.ndarray | None:
     try:
@@ -97,7 +101,8 @@ def _bgr_to_standard(arr) -> np.ndarray:
 
 
 @profiler.profile
-def load_image(path: str, size: QtCore.QSize | None = None) -> QtGui.QImage | None:
+def load_image(path: str, size: int | QtCore.QSize | None = None) -> QtGui.QImage | None:
+    size = _coerce_qimage_size(size)
     ext = os.path.splitext(path)[-1].lower()
     try:
         if ext == ".gif":
@@ -140,6 +145,15 @@ def load_image(path: str, size: QtCore.QSize | None = None) -> QtGui.QImage | No
             AppLogger.warning(f"[image/loader] Qt fallback failed: {path} ({qe})")
         AppLogger.warning(f"[image/loader] Failed to load image: {path} ({e})")
         return None
+
+
+def _coerce_qimage_size(size: int | QtCore.QSize | None) -> QtCore.QSize | None:
+    if size is None or isinstance(size, QtCore.QSize):
+        return size
+    size = int(size)
+    if size <= 0:
+        return None
+    return QtCore.QSize(size, size)
 
 
 @profiler.profile

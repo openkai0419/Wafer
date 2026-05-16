@@ -8,6 +8,7 @@ from PIL import Image
 from PySide6 import QtCore, QtGui
 
 from extensions.image.loader import (
+    ImageFileLoader,
     load_image,
     _imread_flags_for_size,
     _jpeg_dimensions,
@@ -170,6 +171,15 @@ class TestLoadImageEdgeCases:
         p.write_bytes(b"\xff\xd8\xff\x00garbage")
         result = load_image(str(p))
         assert result is None or isinstance(result, QtGui.QImage)
+
+
+class TestImageFileLoaderQImage:
+    def test_load_qimage_returns_fullsize_qimage(self, rgb_png):
+        image = ImageFileLoader().load_qimage(rgb_png)
+
+        assert isinstance(image, QtGui.QImage)
+        assert image.width() == 80
+        assert image.height() == 60
 
 
 class TestJpegDimensions:

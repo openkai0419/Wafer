@@ -57,28 +57,24 @@ class TestImageLoaderRegistryState:
 
 
 class TestViewerRegistryState:
-    def test_image_viewer_registered(self):
-        assert "image" in viewer_resolver.registry.names()
-
     def test_animated_viewer_registered(self):
         assert "animated" in viewer_resolver.registry.names()
 
     def test_video_viewer_registered(self):
         assert "video" in viewer_resolver.registry.names()
 
-    def test_default_viewer_fallback_registered(self):
-        assert "default_viewer" in viewer_resolver.registry.names()
+    def test_image_registered_as_builtin_fallback_viewer(self):
+        assert "image" in viewer_resolver.registry.names()
 
-    def test_animated_before_image_in_viewer(self):
-        all_plugins = viewer_resolver.registry.list_all()
-        names_in_order = [p.NAME for p in all_plugins]
-        animated_idx = names_in_order.index("animated")
-        image_idx = names_in_order.index("image")
-        assert animated_idx < image_idx
+    def test_default_viewer_removed(self):
+        assert "default_viewer" not in viewer_resolver.registry.names()
 
-    def test_default_viewer_last_in_priority(self):
-        all_plugins = viewer_resolver.registry.list_all()
-        assert all_plugins[-1].NAME == "default_viewer"
+
+class TestPathResolutionRegistryState:
+    def test_zip_resolution_plugins_registered(self):
+        assert "zip" in viewer_resolver.registry.names()
+        assert "zip" in grid_resolver.registry.names()
+        assert "zip" in image_loader_resolver.registry.names()
 
 
 class TestCollectorRegistryState:
@@ -195,8 +191,9 @@ class TestResolutionChainOrder:
     def test_unknown_merged_chain_fallback_only(self):
         chain = grid_resolver.resolve_merged_chain("test.xyz_unknown")
         names = [cls.NAME for cls, kind in chain]
-        assert "system_thumbnail" in names
-        assert len(names) == 1
+        assert names[-1] == "system_thumbnail"
+        assert "image" not in names
+        assert "animated" not in names
 
     def test_viewer_gif_chain_animated_first(self):
         chain = viewer_resolver.registry.resolve_chain("test.gif")
@@ -219,6 +216,7 @@ class TestPluginLoaderFreshLoad:
             "panel": PluginRegistry(),
             "rename_source": PluginRegistry(),
             "imageloader": FilePluginRegistry(),
+            "resolver": FilePluginRegistry(),
             "command": CommandGroupRegistry(),
         }
 
@@ -237,19 +235,18 @@ class TestPluginLoaderFreshLoad:
         assert "wd14" not in registries["collector"].names()
         assert "novelai" not in registries["parser"].names()
 
-    def test_enabled_set_restricts_loading(self):
+    def test_enabled_override_false_disables_default_enabled_plugin(self):
         registries = self._make_fresh_registries()
         folder = os.path.join(EXTENSIONS_DIR, "image")
         found = _import_extension("image", folder)
-        real_enabled = set()
+        overrides = {}
         for rk, cls in found:
             if cls.__name__ == "ImageFileLoader":
-                real_enabled.add(qualify_plugin_name(rk, cls))
-        loader = PluginLoader(EXTENSIONS_DIR, registries, enabled=real_enabled)
+                overrides[qualify_plugin_name(rk, cls)] = False
+        loader = PluginLoader(EXTENSIONS_DIR, registries, enabled=overrides)
         loader.load_all()
-        assert "image" in registries["imageloader"].names()
-        assert "image" not in registries["viewer"].names()
-        assert "exiftool" not in registries["collector"].names()
+        assert "image" not in registries["imageloader"].names()
+        assert "zip" in registries["viewer"].names()
 
     def test_alphabetical_load_order(self):
         registries = self._make_fresh_registries()
@@ -314,12 +311,8 @@ class TestPluginPriorityOverride:
 class TestBuiltinsBeforeExtensions:
     def test_fallback_plugins_present_with_lowest_priority(self):
         loader_all = image_loader_resolver.registry.list_all()
-        viewer_all = viewer_resolver.registry.list_all()
         assert loader_all[-1].PRIORITY == -100
-        assert viewer_all[-1].PRIORITY == -100
 
     def test_builtins_not_overridden_by_extensions(self):
         assert image_loader_resolver.registry.get("system_thumbnail") is not None
-        assert viewer_resolver.registry.get("default_viewer") is not None
         assert image_loader_resolver.registry.get("system_thumbnail").PRIORITY == -100
-        assert viewer_resolver.registry.get("default_viewer").PRIORITY == -100

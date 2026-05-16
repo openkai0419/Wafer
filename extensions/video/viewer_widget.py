@@ -13,6 +13,7 @@ from wafer.utils.logs import AppLogger
 from wafer.core.commands.bridge import ActionKit, UI
 from wafer.core.color.theme import ThemeManager
 from wafer.core.qt.icon_engine import icon_draw
+from wafer.plugin import viewer_context_values
 
 DEFAULT_VOLUME = 50
 _CONTROL_BAR_HEIGHT = 32
@@ -254,6 +255,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         super().__init__(parent)
         self.setMouseTracking(True)
         self._path = None
+        self._viewer_context = None
         self._player = None
         self._volume = DEFAULT_VOLUME
         self.muted = False
@@ -320,11 +322,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self._control_bar.apply_theme(palette)
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
-        from wafer.utils.virtual_paths import physical_path
-
-        p = self._path
-        s = physical_path(p) if p else None
-        return {"path": p, "paths": [p] if p else [], "source": s, "sources": [s] if s else []}
+        return viewer_context_values((self._viewer_context,) if self._viewer_context is not None else ())
 
     def _ensure_player(self):
         if self._player is not None:
@@ -353,7 +351,9 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
             AppLogger.error(f"Failed to create mpv player: {e}", exc=e)
             self._player = None
 
-    def load(self, path):
+    def load(self, context):
+        self._viewer_context = context
+        path = context.render_path
         self._path = path
         self._prev_time_pos = None
         self._ensure_player()
@@ -365,6 +365,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
 
     def clear(self):
         self._path = None
+        self._viewer_context = None
         self._autoplay_advance = None
         self._prev_time_pos = None
         self._stop_playback()

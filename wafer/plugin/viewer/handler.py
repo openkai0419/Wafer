@@ -1,63 +1,33 @@
-from PySide6 import QtGui
-
-from ...core.files.render_target import RenderTarget, ResolveContext, TARGET_IMAGE, TARGET_WIDGET
-from ...utils.virtual_paths import is_virtual_path, source_path
-from ..registry import DISPATCH_OWNER, FilePluginRegistry
-from .base import BaseViewerPlugin, ImageViewerPlugin, WidgetViewerPlugin
+from ...core.files.render_target import RenderPlan, ResolveContext, SURFACE_VIEWER
+from ...utils.logs import AppLogger
+from ..registry import FilePluginRegistry
+from .base import MultiWidgetViewerPlugin, WidgetViewerPlugin
 
 
 class ViewerResolver:
     def __init__(self):
         self.registry = FilePluginRegistry()
 
-    def create_default_widget(self, parent=None):
-        from ...app.viewer.preview.image_viewer import ImageDisplayWidget
-
-        return ImageDisplayWidget(parent)
-
-    def resolve(self, path: str) -> type[BaseViewerPlugin] | None:
+    def resolve(self, path: str) -> type[WidgetViewerPlugin] | None:
         return self.registry.resolve(path)
 
-    def resolve_target(self, path: str, context: ResolveContext | None = None) -> RenderTarget:
-        context = context or ResolveContext(path)
-        if is_virtual_path(path):
-            owner_cls = self.registry.resolve(path, DISPATCH_OWNER)
-            owner = self.registry.instance(owner_cls.NAME) if owner_cls is not None else None
-            resolver = getattr(owner, "resolve_target", None)
-            if resolver is not None:
-                target = resolver(path, self, context)
-                if isinstance(target, RenderTarget):
-                    return target
-
+    def resolve_plan(self, path: str, context: ResolveContext | None = None) -> RenderPlan[WidgetViewerPlugin]:
+        context = context or ResolveContext.create(path, surface=SURFACE_VIEWER, resolver=self.resolve_plan)
         for plugin_cls in self.registry.resolve_chain(path):
-            if not plugin_cls.can_handle(path):
+            instance = self.registry.instance(plugin_cls.NAME)
+            if not isinstance(instance, WidgetViewerPlugin):
                 continue
-            if issubclass(plugin_cls, WidgetViewerPlugin):
-                return RenderTarget(
-                    logical_path=context.logical_path,
-                    render_path=path,
-                    kind=TARGET_WIDGET,
-                    plugin_name=plugin_cls.NAME,
-                    source_path=source_path(context.logical_path),
-                )
-            if issubclass(plugin_cls, ImageViewerPlugin):
-                return RenderTarget(
-                    logical_path=context.logical_path,
-                    render_path=path,
-                    kind=TARGET_IMAGE,
-                    plugin_name=plugin_cls.NAME,
-                    source_path=source_path(context.logical_path),
-                )
-        return RenderTarget(
-            logical_path=context.logical_path,
-            render_path=path,
-            kind=TARGET_IMAGE,
-            source_path=source_path(context.logical_path),
-        )
+            try:
+                plan = instance.resolve(path, context)
+            except Exception as exc:
+                AppLogger.warning(f"[ViewerResolver] resolve failed: plugin={plugin_cls.NAME} path={path} error={type(exc).__name__}: {exc}", exc=exc)
+                continue
+            if isinstance(plan, RenderPlan) and isinstance(plan.handler, WidgetViewerPlugin):
+                return plan
+        raise LookupError(f"no viewer plugin resolved: {path}")
 
     def is_widget_plugin(self, path: str) -> bool:
-        target = self.resolve_target(path)
-        return target.kind == TARGET_WIDGET and isinstance(self.registry.instance(target.plugin_name), WidgetViewerPlugin)
+        return isinstance(self.resolve_plan(path).handler, WidgetViewerPlugin)
 
     def viewer_plugins(self) -> dict[str, WidgetViewerPlugin]:
         result = {}
@@ -68,19 +38,15 @@ class ViewerResolver:
                     result[p.NAME] = inst
         return result
 
-    def load_content(self, path: str) -> QtGui.QImage | None:
-        for plugin_cls in self.registry.resolve_chain(path):
-            instance = self.registry.instance(plugin_cls.NAME)
-            if isinstance(instance, ImageViewerPlugin):
-                result = instance.load_content(path)
-                if result is not None:
-                    return result
-        return None
-
-    def render(self, path: str):
-        instance = self.registry.resolve_instance(path)
-        if isinstance(instance, WidgetViewerPlugin):
-            instance.render(path)
+    def render(self, contexts, plugin_name: str | None = None):
+        contexts = tuple(contexts or ())
+        if not contexts:
+            return
+        instance = self.registry.instance(plugin_name) if plugin_name else self.resolve_plan(contexts[0].path).handler
+        if isinstance(instance, MultiWidgetViewerPlugin):
+            instance.render_contexts(contexts)
+        elif isinstance(instance, WidgetViewerPlugin):
+            instance.render(contexts[0])
 
     def activate(self, name: str):
         instance = self.registry.instance(name)

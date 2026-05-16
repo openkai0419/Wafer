@@ -1,4 +1,4 @@
-from .viewer.base import BaseViewerPlugin, ImageViewerPlugin, WidgetViewerPlugin
+from .viewer.base import MultiWidgetViewerPlugin, ViewerContext, WidgetViewerPlugin, viewer_context_values
 from .grid.base import BaseGridPlugin, WidgetGridPlugin
 from .grid_overlay.base import (
     BaseBadgeOverlayPlugin,

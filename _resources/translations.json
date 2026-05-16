@@ -1,4 +1,60 @@
 {
+  "Delete all '{key}' entries from databases": {
+    "en": "Delete all '{key}' entries from databases",
+    "ja": ""
+  },
+  "Image Spread": {
+    "en": "Image Spread",
+    "ja": ""
+  },
+  "direction": {
+    "en": "direction",
+    "ja": ""
+  },
+  "pages": {
+    "en": "pages",
+    "ja": ""
+  },
+  "single_landscape": {
+    "en": "single_landscape",
+    "ja": ""
+  },
+  "Add Column": {
+    "en": "Add Column",
+    "ja": ""
+  },
+  "Meta (Raw)": {
+    "en": "Meta (Raw)",
+    "ja": ""
+  },
+  "Restore selected override(s)": {
+    "en": "Restore selected override(s)",
+    "ja": ""
+  },
+  "Sequential": {
+    "en": "Sequential",
+    "ja": ""
+  },
+  "alpha": {
+    "en": "alpha",
+    "ja": ""
+  },
+  "alphanum": {
+    "en": "alphanum",
+    "ja": ""
+  },
+  "digits": {
+    "en": "digits",
+    "ja": ""
+  },
+  "hex": {
+    "en": "hex",
+    "ja": ""
+  },
+  "text": {
+    "en": "text",
+    "ja": ""
+  },
   "Drop Files (Ask)": {
     "en": "Drop Files (Ask)",
     "ja": ""

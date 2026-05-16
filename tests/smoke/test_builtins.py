@@ -69,7 +69,7 @@ class TestBuiltinExpectedPlugins:
     EXPECTED_GRID: set[str] = set()
     EXPECTED_GRID_OVERLAY = {"mark_overlay"}
     EXPECTED_IMAGELOADER = {"system_thumbnail"}
-    EXPECTED_VIEWER = {"default_viewer"}
+    EXPECTED_VIEWER = {"image"}
     EXPECTED_FILTER = {"text", "directory"}
     EXPECTED_SORT = {"path", "name", "modified", "created", "size", "collected", "random"}
     EXPECTED_LAYOUT = {"justified", "masonry"}

@@ -29,7 +29,6 @@ class PluginBase:
 
 class BasePlugin(PluginBase, ABC):
     EXTENSIONS: tuple[str, ...] = ()
-    IS_OWNER: bool = False
 
     @classmethod
     def match(cls, path: str) -> bool:
@@ -127,17 +126,20 @@ class FilePluginRegistry(PluginRegistry):
             return owner_extension(path)
         if mode == DISPATCH_LEAF:
             return leaf_extension(path)
-        return os.path.splitext(path)[1].lower()
+        return owner_extension(path)
+
+    def _candidates(self, path: str, mode: str = DISPATCH_NORMAL) -> list[type[BasePlugin]]:
+        ext = self._extension(path, mode)
+        candidates = list(self._ext_cache.get(ext, [])) if ext else []
+        for p in self.list_all():
+            if not p.EXTENSIONS and p.match(path) and p not in candidates:
+                candidates.append(p)
+        return sorted(candidates, key=self._sort_key, reverse=True)
 
     @profiler.profile
     def resolve(self, path: str, mode: str = DISPATCH_NORMAL) -> type[BasePlugin] | None:
-        ext = self._extension(path, mode)
-        if ext:
-            for p in self._ext_cache.get(ext, []):
-                if p.can_handle(path):
-                    return p
-        for p in self.list_all():
-            if not p.EXTENSIONS and p.match(path) and p.can_handle(path):
+        for p in self._candidates(path, mode):
+            if p.can_handle(path):
                 return p
         return None
 
@@ -148,10 +150,7 @@ class FilePluginRegistry(PluginRegistry):
         cached = self._chain_cache.get(cache_key)
         if cached is not None:
             return cached
-        candidates = list(self._ext_cache.get(ext, [])) if ext else []
-        for p in self.list_all():
-            if not p.EXTENSIONS and p.match(path) and p not in candidates:
-                candidates.append(p)
+        candidates = self._candidates(path, mode)
         self._chain_cache[cache_key] = candidates
         return candidates
 

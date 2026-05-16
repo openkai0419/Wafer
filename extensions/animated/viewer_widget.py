@@ -3,6 +3,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from wafer.core.commands.bridge import ActionKit, UI
 from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
 from wafer.core.qt.thread import utility_pool
+from wafer.plugin import viewer_context_values
 from ._common import decode_frames, get_viewer_driver, _viewer_cache
 
 
@@ -11,6 +12,7 @@ class AnimatedViewerWidget(QtWidgets.QWidget, ActionKit.UIMixin):
         super().__init__(parent)
         self.setStyleSheet("background: black;")
         self._path: str = ""
+        self._viewer_context = None
         self._frames: list[QtGui.QPixmap] = []
         self._delays: list[int] = []
         self._frame_index = 0
@@ -25,15 +27,13 @@ class AnimatedViewerWidget(QtWidgets.QWidget, ActionKit.UIMixin):
         UI.register_instance("AnimatedViewerWidget", self)
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
-        from wafer.utils.virtual_paths import physical_path
+        return viewer_context_values((self._viewer_context,) if self._viewer_context is not None else ())
 
-        p = self._path
-        s = physical_path(p) if p else None
-        return {"path": p, "paths": [p] if p else [], "source": s, "sources": [s] if s else []}
-
-    def load(self, path: str):
+    def load(self, context):
         self._cancel.cancel()
         self.stop()
+        self._viewer_context = context
+        path = context.render_path
         self._path = path
         self._frames = []
         self._delays = []
@@ -94,6 +94,7 @@ class AnimatedViewerWidget(QtWidgets.QWidget, ActionKit.UIMixin):
         self._cancel.cancel()
         self.stop()
         self._path = ""
+        self._viewer_context = None
         self._frames = []
         self._delays = []
         self._frame_index = 0

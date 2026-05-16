@@ -1,12 +1,14 @@
 import time
 import threading
+from unittest.mock import MagicMock
 
 import pytest
 from PySide6 import QtCore, QtWidgets
 from wafer.core.qt.dispatcher import Dispatcher, CancelToken
 from wafer.app.viewer.grid.pipeline import GridPipeline
-from wafer.core.files.render_target import RenderTarget
+from wafer.core.files.render_target import RenderPlan
 from wafer.plugin.layout.calc import LayoutData
+from wafer.plugin.imageloader.base import BaseImageLoader
 
 _noop_appear = lambda i: None
 
@@ -194,6 +196,40 @@ class TestScheduleRender:
 
         assert pipeline.active_count() == 1
 
+    def test_load_image_uses_resolver_fallback_after_selected_loader_fails(self, dispatcher):
+        from PySide6.QtGui import QImage
+
+        class FailingLoader(BaseImageLoader):
+            NAME = "failing_loader"
+
+            def __init__(self):
+                self.calls = []
+
+            def load_qimage(self, path, size=None):
+                self.calls.append(path)
+                return None
+
+        cache = FakeCache()
+        widget = MagicMock()
+        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widget, lambda i, n: None, _noop_appear)
+        cancel = CancelToken()
+        pipeline._active[0] = cancel
+        loader = FailingLoader()
+        loaded = {}
+
+        def fallback_load(path, size=None):
+            loaded["path"] = path
+            return QImage(200, 200, QImage.Format_ARGB32)
+
+        plan = RenderPlan(source="virtual.png", path="virtual.png", resolved_path="materialized.png", handler=loader)
+
+        pipeline._load_image(0, plan, QtCore.QSize(200, 200), fallback_load, cancel)
+
+        _process_events_until(lambda: widget.set_image.called)
+        assert loader.calls == []
+        assert loaded["path"] == "materialized.png"
+        assert "virtual.png" in cache
+
 
 class TestGridPipelineIntegration:
     def test_layout_then_cancel_all(self, dispatcher):
@@ -259,7 +295,8 @@ class TestDispatchThumbnail:
             plugin = FakePlugin()
             cancel = CancelToken()
             pipeline._active[0] = cancel
-            pipeline._dispatch_thumbnail(0, RenderTarget(logical_path="video.mp4", render_path="video.mp4", source_path="video.mp4"), QtCore.QSize(200, 200), plugin, cancel)
+            plan = RenderPlan(source="video.mp4", path="video.mp4", resolved_path="video.mp4", handler=plugin)
+            pipeline._dispatch_thumbnail(0, plan, QtCore.QSize(200, 200), plugin, cancel)
             _process_events_until(lambda: "image" in delivered, timeout_ms=5000)
             assert "called" in loaded
             assert delivered["image"].width() == 200
@@ -312,7 +349,8 @@ class TestDispatchThumbnail:
             plugin = FakePlugin()
             cancel = CancelToken()
             pipeline._active[0] = cancel
-            pipeline._dispatch_thumbnail(0, RenderTarget(logical_path="video.mp4", render_path="video.mp4", source_path="video.mp4"), QtCore.QSize(200, 200), plugin, cancel)
+            plan = RenderPlan(source="video.mp4", path="video.mp4", resolved_path="video.mp4", handler=plugin)
+            pipeline._dispatch_thumbnail(0, plan, QtCore.QSize(200, 200), plugin, cancel)
             _process_events_until(lambda: "image" in delivered, timeout_ms=5000)
             assert "called" not in loaded
             assert delivered["image"] is big_image

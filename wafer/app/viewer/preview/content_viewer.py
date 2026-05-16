@@ -4,10 +4,7 @@ from ....utils.formatting import dpix
 from ....core.color.theme import ThemeManager
 from ....core.lang.manager import t
 from ....plugin.viewer.handler import viewer_resolver
-from .image_viewer import ImageDisplayWidget
 
-
-_DEFAULT_WIDGET_NAME = "_default"
 _PLACEHOLDER_PAGE = "_placeholder"
 
 
@@ -23,9 +20,7 @@ class ContentViewerWidget(QtWidgets.QWidget):
         self._update_placeholder_style()
         self._stack.addWidget(self._placeholder)
 
-        self.image_viewer = ImageDisplayWidget()
-        self._stack.addWidget(self.image_viewer)
-        self._widget_map: dict[str, QtWidgets.QWidget] = {_DEFAULT_WIDGET_NAME: self.image_viewer}
+        self._widget_map: dict[str, QtWidgets.QWidget] = {}
 
         for name, plugin in viewer_resolver.viewer_plugins().items():
             self._stack.addWidget(plugin.widget)
@@ -48,9 +43,7 @@ class ContentViewerWidget(QtWidgets.QWidget):
         self._placeholder.setStyleSheet(f"QLabel {{ color: {p.text_muted}; font-size: {fs}px; }}")
 
     def clear(self):
-        if self._current_plugin_name == _DEFAULT_WIDGET_NAME:
-            self.image_viewer.clear()
-        elif self._current_plugin_name != _PLACEHOLDER_PAGE:
+        if self._current_plugin_name != _PLACEHOLDER_PAGE:
             viewer_resolver.deactivate(self._current_plugin_name)
         self._stack.setCurrentWidget(self._placeholder)
         self._current_plugin_name = _PLACEHOLDER_PAGE
@@ -59,15 +52,13 @@ class ContentViewerWidget(QtWidgets.QWidget):
         if plugin_name == self._current_plugin_name:
             return
         prev_name = self._current_plugin_name
-        if prev_name == _DEFAULT_WIDGET_NAME:
-            self.image_viewer.clear()
-        elif prev_name != _PLACEHOLDER_PAGE:
+        if prev_name != _PLACEHOLDER_PAGE:
             viewer_resolver.deactivate(prev_name)
         widget = self._widget_map.get(plugin_name)
         if widget is None:
-            plugin_name = _DEFAULT_WIDGET_NAME
-            widget = self.image_viewer
+            self._stack.setCurrentWidget(self._placeholder)
+            self._current_plugin_name = _PLACEHOLDER_PAGE
+            return
         self._stack.setCurrentWidget(widget)
         self._current_plugin_name = plugin_name
-        if plugin_name != _DEFAULT_WIDGET_NAME:
-            viewer_resolver.activate(plugin_name)
+        viewer_resolver.activate(plugin_name)

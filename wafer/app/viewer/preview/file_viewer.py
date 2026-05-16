@@ -1,27 +1,56 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from PySide6 import QtCore
 from natsort import natsorted
 
 from ....utils.formatting import format_aspect, format_size_detail, format_timestamp
 from ....utils.paths import db_name_from_path
 from ....core.db.query import FileSearchEngine
-from ....core.files.render_target import RenderTarget, TARGET_WIDGET
+from ....core.files.render_target import RenderPlan
 from ....plugin.viewer.handler import viewer_resolver
-from ....plugin.viewer.base import WidgetViewerPlugin as _WidgetViewerPlugin
+from ....plugin.viewer.base import MultiWidgetViewerPlugin as _MultiWidgetViewerPlugin, ViewerContext, WidgetViewerPlugin as _WidgetViewerPlugin
 from ....core.qt.dispatcher import Dispatcher, CancelSlot
-from ....core.qt.pixmap import PixmapFactory
 from ....core.qt.thread import utility_pool
 from ....core.state import StateStore
 from .file_model import FileViewModel
-from .content_viewer import ContentViewerWidget, _DEFAULT_WIDGET_NAME
+from .file_list_provider import FileListProvider
+from .content_viewer import ContentViewerWidget
 from .meta_panel import MetaViewerWidget
-from ..grid.cachemanager import MemoryLimitedImageCache, fullsize_key
-from ....core.app_settings import app_settings
 from ....core.color.theme import ThemeManager
+from ....utils.logs import AppLogger
 
 _STANDARD_SOURCE_KEYS = ("source", "size", "created", "modified", "collected", "file_hash")
 _STANDARD_FILE_KEYS = ("name", "path", "aspect_ratio", "source_extension")
+
+
+@dataclass(frozen=True)
+class ViewerBatch:
+    start_index: int
+    plugin_name: str
+    logical_path: str
+    contexts: tuple[ViewerContext, ...]
+
+    @property
+    def count(self) -> int:
+        return len(self.contexts)
+
+    @property
+    def end_index_exclusive(self) -> int:
+        return self.start_index + self.count
+
+    @property
+    def paths(self) -> tuple[str, ...]:
+        return tuple(context.path for context in self.contexts)
+
+    @property
+    def render_paths(self) -> tuple[str, ...]:
+        return tuple(context.render_path for context in self.contexts)
+
+    @property
+    def first_render_path(self) -> str:
+        return self.contexts[0].render_path if self.contexts else self.logical_path
 
 
 def _format_meta(engine, path, dbpath):
@@ -115,12 +144,12 @@ def _format_meta(engine, path, dbpath):
 class FileViewerController(QtCore.QObject):
     _DEFAULT_AUTOPLAY_INTERVAL = 3000
 
-    def __init__(self, model: FileViewModel, content_viewer: ContentViewerWidget, meta_viewer: MetaViewerWidget, parent=None):
+    def __init__(self, model: FileViewModel, content_viewer: ContentViewerWidget, meta_viewer: MetaViewerWidget, file_list_provider: FileListProvider | None = None, parent=None):
         super().__init__(parent)
         self.model = model
         self.content_viewer = content_viewer
         self.meta_viewer = meta_viewer
-        self.image_cache = MemoryLimitedImageCache(app_settings.get("window/cache_size", 500))
+        self.file_list_provider = file_list_provider
         self._dispatcher = Dispatcher(utility_pool)
         self._content_cancel = CancelSlot()
         self._meta_cancel = CancelSlot()
@@ -128,21 +157,28 @@ class FileViewerController(QtCore.QObject):
         self._pending_content = None
         self._loading_path = None
         self._target_plugin: str | None = None
+        self._target_contexts: tuple[ViewerContext, ...] = ()
+        self._target_paths: tuple[str, ...] = ()
         self._target_render_path: str | None = None
+        self._target_render_paths: tuple[str, ...] = ()
         self._autoplay_active = False
         self._autoplay_interval = self._DEFAULT_AUTOPLAY_INTERVAL
         self._autoplay_loop = True
         self._autoplay_held = False
         self._autoplay_generation = 0
+        self._navigation_cache_key = None
+        self._navigation_cache_starts: list[int] = []
+        self._navigation_cache_batches: dict[int, ViewerBatch] = {}
         self._autoplay_timer = QtCore.QTimer(self)
         self._autoplay_timer.setSingleShot(True)
         self._autoplay_timer.timeout.connect(self._on_autoplay_tick)
         self._register_states()
+        self._connect_viewer_settings()
+        self.model.itemsChanged.connect(self.invalidate_navigation_cache)
         self.model.pathChanged.connect(self._on_path_changed)
 
-    @property
-    def image_viewer(self):
-        return self.content_viewer.image_viewer
+    def viewer_plugin(self, name: str):
+        return viewer_resolver.registry.instance(name)
 
     @property
     def path(self) -> str | None:
@@ -152,9 +188,32 @@ class FileViewerController(QtCore.QObject):
     def source(self) -> str | None:
         return self.model.source()
 
+    def current_viewer_contexts(self) -> tuple[ViewerContext, ...]:
+        if self._target_contexts:
+            return self._target_contexts
+        path = self.model.path()
+        if not path:
+            return ()
+        return (ViewerContext(path=path, source=self.model.source() or path, render_path=self._target_render_path or path),)
+
+    def current_paths(self) -> tuple[str, ...]:
+        return tuple(context.path for context in self.current_viewer_contexts())
+
+    def current_sources(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(context.source for context in self.current_viewer_contexts() if context.source))
+
+    def current_render_paths(self) -> tuple[str, ...]:
+        return tuple(context.render_path for context in self.current_viewer_contexts())
+
+    def _set_target_contexts(self, contexts):
+        self._target_contexts = tuple(contexts or ())
+        self._target_paths = tuple(context.path for context in self._target_contexts)
+        self._target_render_paths = tuple(context.render_path for context in self._target_contexts)
+        self._target_render_path = self._target_render_paths[0] if self._target_render_paths else None
+
     def _switch_to(self, plugin_name: str):
         old_name = self.content_viewer._current_plugin_name
-        if old_name != _DEFAULT_WIDGET_NAME and old_name != plugin_name:
+        if old_name != plugin_name:
             self._unbind_autoplay(old_name)
         self.content_viewer.switch_to(plugin_name)
 
@@ -167,20 +226,28 @@ class FileViewerController(QtCore.QObject):
             p = plugin
             store.register(f"viewer_plugin.{name}", lambda p=p: p.save_ui_state(), lambda s, p=p: p.restore_ui_state(s))
 
+    def _connect_viewer_settings(self):
+        for name, plugin in viewer_resolver.viewer_plugins().items():
+            signal = getattr(plugin, "settingsChanged", None)
+            if signal is not None and hasattr(signal, "connect"):
+                signal.connect(lambda name=name: self._on_viewer_settings_changed(name))
+
     def _save_state(self):
-        return {
-            "fit_mode": "contain" if self.image_viewer.is_contain_mode() else "cover",
+        state = {
             "autoplay_interval": self._autoplay_interval,
             "autoplay_loop": self._autoplay_loop,
         }
+        if self.file_list_provider is not None:
+            state.update(self.file_list_provider.save_ui_state())
+        return state
 
     def _restore_state(self, state):
-        if "fit_mode" in state:
-            self.image_viewer.set_contain_mode(state["fit_mode"] == "contain")
         if "autoplay_interval" in state:
             self._autoplay_interval = int(state["autoplay_interval"])
         if "autoplay_loop" in state:
             self._autoplay_loop = bool(state["autoplay_loop"])
+        if self.file_list_provider is not None:
+            self.file_list_provider.restore_ui_state(state)
 
     def _on_path_changed(self, path):
         if not path:
@@ -189,7 +256,7 @@ class FileViewerController(QtCore.QObject):
             self._loading_path = None
             self._pending_meta = None
             self._pending_content = None
-            self._target_render_path = None
+            self._set_target_contexts(())
             self.content_viewer.clear()
             self.meta_viewer.clear()
             return
@@ -201,78 +268,44 @@ class FileViewerController(QtCore.QObject):
 
     def _load_content(self, path):
         cancel = self._content_cancel.renew()
-        self._target_plugin = _DEFAULT_WIDGET_NAME
-        self._target_render_path = path
+        current_index = self.model.current_index()
+        self._target_plugin = None
+        self._set_target_contexts((ViewerContext(path=path, source=self.model.source() or path, render_path=path),))
 
         def resolve_task():
             if cancel.is_cancelled():
                 return
-            target = viewer_resolver.resolve_target(path)
+            batch = self._resolve_viewer_batch(current_index, cancel=cancel)
             if cancel.is_cancelled():
                 return
-            if target.kind == TARGET_WIDGET and target.plugin_name:
-                self._dispatcher.invoke(lambda: self._on_resolve_widget(cancel, target))
-                return
-            key = fullsize_key(path)
-            image = self.image_cache.get(key)
-            if image is not None and not image.isNull():
-                self._dispatcher.invoke(lambda: self._on_resolve_cached(cancel, target, image))
-                return
-            image = viewer_resolver.load_content(target.render_path)
-            if cancel.is_cancelled():
-                return
-            if image is not None and not image.isNull():
-                self.image_cache[fullsize_key(path)] = image
-            else:
-                image = None
-            self._dispatcher.invoke(lambda: self._on_content_ready(cancel, target, image))
+            self._dispatcher.invoke(lambda: self._on_content_ready(cancel, batch))
 
         self._dispatcher.post(resolve_task, cancel=cancel)
 
-    def _on_resolve_widget(self, cancel, target: RenderTarget):
-        path = target.logical_path
-        if cancel.is_cancelled() or path != self._loading_path:
-            return
-        self._target_plugin = target.plugin_name
-        self._target_render_path = target.render_path
-        self._pending_content = (path, None)
-        self._flush()
-
-    def _on_resolve_cached(self, cancel, target: RenderTarget, image):
-        path = target.logical_path
-        if cancel.is_cancelled() or path != self._loading_path:
-            return
-        self._target_plugin = _DEFAULT_WIDGET_NAME
-        self._target_render_path = target.render_path
-        self._pending_content = (path, image)
-        self._flush()
-
-    def _on_content_ready(self, cancel, target: RenderTarget, image):
+    def _on_content_ready(self, cancel, batch: ViewerBatch, content=None):
         if cancel.is_cancelled():
             return
-        path = target.logical_path
+        path = batch.logical_path
         if path != self._loading_path:
             return
-        self._target_render_path = target.render_path
-        self._pending_content = (path, image)
+        self._remember_navigation_batch(batch)
+        self._target_plugin = batch.plugin_name
+        self._set_target_contexts(batch.contexts)
+        self._pending_content = (batch, content)
         self._flush()
 
     def _flush(self):
         if self._pending_content is None or self._pending_meta is None:
             return
-        path, image = self._pending_content
+        batch, _ = self._pending_content
         self._pending_content = None
         meta = self._pending_meta
         self._pending_meta = None
 
-        target = self._target_plugin or _DEFAULT_WIDGET_NAME
+        target = self._target_plugin or batch.plugin_name
         self._switch_to(target)
-        if image is not None:
-            self.image_viewer.set_image(image, path)
-        elif target != _DEFAULT_WIDGET_NAME:
-            viewer_resolver.render(self._target_render_path or path)
-        else:
-            self.image_viewer.set_image(PixmapFactory.create_viewer_error_placeholder(), path)
+        if target:
+            viewer_resolver.render(batch.contexts, plugin_name=target)
         self.meta_viewer.set_data(meta)
         self._arm_autoplay()
 
@@ -280,6 +313,225 @@ class FileViewerController(QtCore.QObject):
         if not path:
             return
         self.model.set_path(path)
+
+    def invalidate_navigation_cache(self):
+        self._navigation_cache_key = None
+        self._navigation_cache_starts = []
+        self._navigation_cache_batches = {}
+
+    def _on_viewer_settings_changed(self, _plugin_name: str | None = None):
+        self.invalidate_navigation_cache()
+        paths = self.current_paths()
+        path = paths[0] if paths else self.model.path()
+        if not path:
+            return
+        if path != self.model.path():
+            self.model.set_path(path)
+            return
+        self._on_path_changed(path)
+
+    def _resolve_viewer_batch(self, index: int | None, cancel=None) -> ViewerBatch:
+        path = self.model.path_at(index) or self.model.path()
+        start = int(index) if index is not None else self.model.index_of_path(path)
+        start = start if start is not None else 0
+        if path is None:
+            return ViewerBatch(start, "", "", ())
+        first_plan = viewer_resolver.resolve_plan(path)
+        plugin_name = self._plugin_name(first_plan)
+        contexts: list[ViewerContext] = []
+        display_count = self._display_count(plugin_name, start, cancel=cancel)
+        for offset in range(display_count):
+            if cancel is not None and cancel.is_cancelled():
+                break
+            item_path = self.model.path_at(start + offset)
+            if item_path is None:
+                break
+            plan = viewer_resolver.resolve_plan(item_path)
+            if not self._same_viewer(plugin_name, plan):
+                break
+            contexts.append(self._viewer_context(plan))
+        if not contexts:
+            contexts.append(self._viewer_context(first_plan))
+        return ViewerBatch(start, plugin_name, first_plan.path, tuple(contexts))
+
+    def _viewer_context(self, plan: RenderPlan) -> ViewerContext:
+        return ViewerContext(
+            path=plan.path,
+            source=plan.source,
+            render_path=plan.resolved_path,
+        )
+
+    def _display_count(self, plugin_name: str, index: int | None, cancel=None) -> int:
+        if index is None:
+            return 1
+        try:
+            plugin = viewer_resolver.registry.instance(plugin_name) if plugin_name else None
+            count = plugin.display_count(int(index), self.model.paths) if isinstance(plugin, _MultiWidgetViewerPlugin) else 1
+        except Exception as exc:
+            AppLogger.warning("Viewer display count failed; falling back to single item", exc=exc)
+            count = 1
+        remaining = max(1, self.model.count() - int(index))
+        return max(1, min(int(count), remaining))
+
+    def _remember_navigation_batch(self, batch: ViewerBatch):
+        count = self.model.count()
+        start = batch.start_index
+        if count <= 0 or start < 0 or start >= count:
+            return
+        self._ensure_navigation_cache()
+        self._navigation_cache_batches[start] = batch
+        if start not in self._navigation_cache_starts:
+            self._navigation_cache_starts.append(start)
+            self._navigation_cache_starts.sort()
+
+    def _same_viewer(self, plugin_name: str, plan: RenderPlan) -> bool:
+        return bool(plugin_name) and isinstance(plan.handler, _WidgetViewerPlugin) and plugin_name == plan.handler.NAME
+
+    def _plugin_name(self, plan: RenderPlan) -> str:
+        return plan.handler.NAME if isinstance(plan.handler, _WidgetViewerPlugin) else ""
+
+    def _current_navigation_cache_key(self):
+        plugin_name = self._target_plugin or self.content_viewer._current_plugin_name
+        plugin = viewer_resolver.registry.instance(plugin_name) if plugin_name else None
+        plugin_key = plugin.navigation_cache_key() if isinstance(plugin, _WidgetViewerPlugin) else None
+        return (plugin_name, id(self.model.paths), self.model.count(), plugin_key)
+
+    def _ensure_navigation_cache(self):
+        key = self._current_navigation_cache_key()
+        if key != self._navigation_cache_key:
+            self._navigation_cache_key = key
+            self._navigation_cache_starts = []
+            self._navigation_cache_batches = {}
+
+    def _navigation_batch_at(self, index: int) -> ViewerBatch:
+        count = self.model.count()
+        if count <= 0:
+            return ViewerBatch(0, "", "", ())
+        index = max(0, min(int(index), count - 1))
+        self._ensure_navigation_cache()
+        cached = self._navigation_cache_batches.get(index)
+        if cached is not None:
+            return cached
+        batch = self._resolve_viewer_batch(index)
+        self._remember_navigation_batch(batch)
+        return batch
+
+    def _ensure_navigation_cache_until(self, index: int):
+        self._ensure_navigation_cache()
+        count = self.model.count()
+        if count <= 0:
+            return
+        index = max(0, min(int(index), count - 1))
+        start = 0
+        while start < count:
+            batch = self._navigation_batch_at(start)
+            if batch.start_index >= index or batch.end_index_exclusive > index:
+                return
+            next_start = batch.end_index_exclusive
+            if next_start <= start or next_start >= count:
+                return
+            start = next_start
+
+    def _ensure_navigation_cache_complete(self):
+        count = self.model.count()
+        if count <= 0:
+            return
+        self._ensure_navigation_cache_until(count - 1)
+
+    def _active_batch_count(self, index: int) -> int:
+        count = self.model.count()
+        if index < 0 or index >= count:
+            return 1
+        return max(1, self._navigation_batch_at(index).count)
+
+    def _ensure_current_initialized(self) -> bool:
+        if self.model.count() <= 0:
+            return False
+        if self.model.current_index() is None:
+            self.model.set_current_index(0)
+        return self.model.current_index() is not None
+
+    def _next_navigation_index(self, index: int, loop: bool) -> int:
+        count = self.model.count()
+        next_index = self._navigation_batch_at(index).end_index_exclusive
+        if next_index < count:
+            return next_index
+        return 0 if loop else index
+
+    def _last_navigation_start(self) -> int:
+        count = self.model.count()
+        if count <= 0:
+            return 0
+        return self._previous_navigation_start(count)
+
+    def _previous_navigation_start(self, index: int) -> int:
+        count = self.model.count()
+        if count <= 0:
+            return 0
+        index = max(0, min(int(index), count))
+        if index <= 0:
+            return 0
+        previous_index = index - 1
+        previous_path = self.model.path_at(previous_index)
+        if previous_path is None:
+            return 0
+        previous_plan = viewer_resolver.resolve_plan(previous_path)
+        plugin_name = self._plugin_name(previous_plan)
+        span = self._display_count(plugin_name, previous_index)
+        start = max(0, index - span)
+        while start < previous_index:
+            path = self.model.path_at(start)
+            if path is None:
+                break
+            if self._same_viewer(plugin_name, viewer_resolver.resolve_plan(path)):
+                break
+            start += 1
+        batch = self._navigation_batch_at(start)
+        if batch.end_index_exclusive <= previous_index:
+            batch = self._navigation_batch_at(previous_index)
+        return batch.start_index
+
+    def _prev_navigation_index(self, index: int, loop: bool) -> int:
+        count = self.model.count()
+        if count <= 0:
+            return 0
+        if index <= 0:
+            return self._last_navigation_start() if loop else 0
+        self._ensure_navigation_cache()
+        previous_index = index - 1
+        for start in reversed(self._navigation_cache_starts):
+            cached = self._navigation_cache_batches.get(start)
+            if start < index and cached is not None and cached.end_index_exclusive > previous_index:
+                return start
+        return self._previous_navigation_start(index)
+
+    def navigate_next(self, step: int = 1, loop: bool = False, origin: str = "command") -> str | None:
+        if not self._ensure_current_initialized():
+            return None
+        index = self.model.current_index()
+        if index is None:
+            return None
+        for _ in range(max(1, int(step))):
+            next_index = self._next_navigation_index(index, bool(loop))
+            if next_index == index:
+                break
+            index = next_index
+        self.model.set_current_index(index)
+        return self.model.path_at(index)
+
+    def navigate_prev(self, step: int = 1, loop: bool = False, origin: str = "command") -> str | None:
+        if not self._ensure_current_initialized():
+            return None
+        index = self.model.current_index()
+        if index is None:
+            return None
+        for _ in range(max(1, int(step))):
+            prev_index = self._prev_navigation_index(index, bool(loop))
+            if prev_index == index:
+                break
+            index = prev_index
+        self.model.set_current_index(index)
+        return self.model.path_at(index)
 
     def reload_meta(self):
         path = self.model.path()
@@ -355,12 +607,10 @@ class FileViewerController(QtCore.QObject):
     def _do_advance(self):
         self._autoplay_timer.stop()
         self._autoplay_generation += 1
-        self.model.move_current_next(step=1, loop=self._autoplay_loop)
+        self.navigate_next(step=1, loop=self._autoplay_loop, origin="slideshow")
 
     def _active_viewer_plugin(self) -> _WidgetViewerPlugin | None:
         name = self.content_viewer._current_plugin_name
-        if name == _DEFAULT_WIDGET_NAME:
-            return None
         plugin = viewer_resolver.registry.instance(name)
         if isinstance(plugin, _WidgetViewerPlugin):
             return plugin

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from wafer.utils.virtual_paths import build_virtual_path, register_owner_extension
+from wafer.utils.virtual_paths import build_virtual_path
 
 
 def test_file_executor_overwrite_same_path_is_noop(tmp_path):
@@ -28,7 +28,6 @@ def test_file_executor_overwrite_same_path_is_noop(tmp_path):
         from wafer.core.platform.dragparser import ParsedItem
         from wafer.core.platform.file_operations import build_drop_plans
 
-        register_owner_extension(".zip")
         src = tmp_path / "source.txt"
         src.write_text("x", encoding="utf-8")
         virtual_dst = build_virtual_path(str(tmp_path / "archive.zip"), "folder/image.png")

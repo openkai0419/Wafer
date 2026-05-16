@@ -4,7 +4,7 @@ from wafer.app.viewer.preview.file_list_provider import FileListProvider, ListMo
 from wafer.app.viewer.preview.file_model import FileViewModel
 from wafer.app.viewer.grid.items import GridItemModel
 from wafer.builtins.filters import SourceChildrenFilter
-from wafer.utils.virtual_paths import build_virtual_path, register_owner_extension
+from wafer.utils.virtual_paths import build_virtual_path
 
 
 @pytest.fixture
@@ -45,9 +45,20 @@ class TestContainedFilesListOption:
         provider.set_open_contained_files_as_list(False)
         assert provider.open_contained_files_as_list is False
 
+    def test_save_restore_ui_state(self, provider):
+        provider.set_mode(ListMode.DIR)
+        provider.set_open_contained_files_as_list(True)
+
+        state = provider.save_ui_state()
+        provider.restore_ui_state({"list_mode": "fv.list_fix", "open_contained_files_as_list": False})
+
+        assert state == {"list_mode": "dir", "open_contained_files_as_list": True}
+        assert provider.mode == ListMode.FIX
+        assert provider.open_contained_files_as_list is False
+
+    @patch.object(FileListProvider, "_has_contained_children", return_value=True)
     @patch.object(FileListProvider, "_query_contained_files")
-    def test_container_path_triggers_contained_query_when_enabled(self, mock_query, provider, file_model):
-        register_owner_extension(".zip")
+    def test_container_path_triggers_contained_query_when_enabled(self, mock_query, _mock_has_children, provider, file_model):
         file_model._dbpath_getter = lambda: ":memory:"
         provider.set_open_contained_files_as_list(True)
 
@@ -57,7 +68,6 @@ class TestContainedFilesListOption:
 
     @patch.object(FileListProvider, "_query_contained_files")
     def test_virtual_child_triggers_sibling_query_when_enabled(self, mock_query, provider, file_model):
-        register_owner_extension(".zip")
         file_model._dbpath_getter = lambda: ":memory:"
         child = build_virtual_path("C:/data/temp.zip", "a.png")
         provider.set_open_contained_files_as_list(True)
@@ -68,7 +78,6 @@ class TestContainedFilesListOption:
 
     @patch.object(FileListProvider, "_query_contained_files")
     def test_option_off_uses_current_list_mode(self, mock_query, provider, file_model):
-        register_owner_extension(".zip")
         file_model._dbpath_getter = lambda: ":memory:"
 
         provider.on_file_set("C:/data/temp.zip")
@@ -76,16 +85,17 @@ class TestContainedFilesListOption:
         mock_query.assert_not_called()
         assert file_model.path() == "C:/data/temp.zip"
 
-    def test_non_owner_extension_skips_contained_query(self, provider, file_model):
+    @patch.object(FileListProvider, "_query_contained_files")
+    def test_physical_non_container_sets_path_immediately(self, mock_query, provider, file_model):
         file_model._dbpath_getter = lambda: ":memory:"
         provider.set_open_contained_files_as_list(True)
 
         provider.on_file_set("C:/data/plain.png")
 
         assert file_model.path() == "C:/data/plain.png"
+        mock_query.assert_not_called()
 
     def test_on_contained_ready_sets_first_child_for_container(self, provider, file_model):
-        register_owner_extension(".zip")
         archive = "C:/data/temp.zip"
         child_a = build_virtual_path(archive, "a.png")
         child_b = build_virtual_path(archive, "b.png")
@@ -100,7 +110,6 @@ class TestContainedFilesListOption:
         assert file_model.current_index() == 0
 
     def test_on_contained_ready_keeps_requested_child(self, provider, file_model):
-        register_owner_extension(".zip")
         archive = "C:/data/temp.zip"
         child_a = build_virtual_path(archive, "a.png")
         child_b = build_virtual_path(archive, "b.png")

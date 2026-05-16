@@ -13,10 +13,19 @@ from wafer.plugin.settings import PluginSettings
 set_suppress_dialog(True)
 
 _orig_enabled_names = PluginSettings.enabled_names
+_orig_enabled_overrides = PluginSettings.enabled_overrides
+_orig_has_enabled_overrides = PluginSettings.has_enabled_overrides
 PluginSettings.enabled_names = lambda self: None
+PluginSettings.enabled_overrides = lambda self: {}
+PluginSettings.has_enabled_overrides = lambda self: False
 
-load_plugins()
-get_command_registry().activate("viewer")
+try:
+    load_plugins()
+    get_command_registry().activate("viewer")
+finally:
+    PluginSettings.enabled_names = _orig_enabled_names
+    PluginSettings.enabled_overrides = _orig_enabled_overrides
+    PluginSettings.has_enabled_overrides = _orig_has_enabled_overrides
 
 _vendored_packages = os.path.join("extensions", ".packages")
 _vendored_abs = os.path.normpath(os.path.abspath(_vendored_packages))
@@ -41,9 +50,6 @@ if _vendored_in_path:
                     sys.modules[_k] = _m
     for _p in _vendored_in_path:
         sys.path.insert(0, _p)
-
-PluginSettings.enabled_names = _orig_enabled_names
-
 
 def _drain_pool(pool, timeout_ms=1000):
     pool.clear()

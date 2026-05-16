@@ -224,7 +224,7 @@ class TestNeedsSetupSkip:
 
 
 class TestEnabledFilter:
-    def test_enabled_none_loads_all(self, plugin_env):
+    def test_enabled_none_loads_default_enabled(self, plugin_env):
         plugin_dir, _ = plugin_env
         registries = _make_registries()
         loader = PluginLoader(plugin_dir, registries, enabled=None)
@@ -236,10 +236,10 @@ class TestEnabledFilter:
             if key.startswith("_plugins_stub_plugin"):
                 del sys.modules[key]
 
-    def test_enabled_includes_matching_name(self, plugin_env):
+    def test_enabled_override_keeps_matching_name(self, plugin_env):
         plugin_dir, _ = plugin_env
         registries = _make_registries()
-        loader = PluginLoader(plugin_dir, registries, enabled={"grid:StubGridPlugin"})
+        loader = PluginLoader(plugin_dir, registries, enabled={"grid:StubGridPlugin": True})
         loaded = loader.load_all()
         assert "stub_plugin" in loaded
         assert registries["grid"].get("stub_test") is not None
@@ -248,10 +248,22 @@ class TestEnabledFilter:
             if key.startswith("_plugins_stub_plugin"):
                 del sys.modules[key]
 
-    def test_enabled_excludes_non_matching_name(self, plugin_env):
+    def test_enabled_override_false_disables_default_enabled(self, plugin_env):
         plugin_dir, _ = plugin_env
         registries = _make_registries()
-        loader = PluginLoader(plugin_dir, registries, enabled={"grid:other_plugin"})
+        loader = PluginLoader(plugin_dir, registries, enabled={"grid:StubGridPlugin": False})
+        loaded = loader.load_all()
+        assert "stub_plugin" not in loaded
+        assert registries["grid"].get("stub_test") is None
+
+        for key in list(sys.modules):
+            if key.startswith("_plugins_stub_plugin"):
+                del sys.modules[key]
+
+    def test_legacy_enabled_set_behaves_as_allowlist(self, plugin_env):
+        plugin_dir, _ = plugin_env
+        registries = _make_registries()
+        loader = PluginLoader(plugin_dir, registries, enabled=set())
         loaded = loader.load_all()
         assert "stub_plugin" not in loaded
         assert registries["grid"].get("stub_test") is None
@@ -496,7 +508,7 @@ class TestDefaultEnabled:
             if key.startswith("_plugins_stub_plugin"):
                 del sys.modules[key]
 
-    def test_default_enabled_false_loaded_when_explicit_set(self, tmp_path):
+    def test_default_enabled_false_loaded_when_overridden_true(self, tmp_path):
         plugin_dir = tmp_path / "plugins"
         stub_dir = plugin_dir / "disabled_ext2"
         stub_dir.mkdir(parents=True)
@@ -511,7 +523,7 @@ class TestDefaultEnabled:
             "    def load(self, path, size=None): return None\n"
         )
         registries = _make_registries()
-        loader = PluginLoader(str(plugin_dir), registries, enabled={"grid:DisabledGridPlugin2"})
+        loader = PluginLoader(str(plugin_dir), registries, enabled={"grid:DisabledGridPlugin2": True})
         loader.load_all()
         assert registries["grid"].get("disabled_test2") is not None
 

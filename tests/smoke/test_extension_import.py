@@ -60,7 +60,6 @@ class TestExtensionDiscovery:
 EXPECTED_PLUGINS = {
     "image": {
         ("imageloader", "ImageFileLoader"),
-        ("viewer", "ImageViewerPlugin"),
     },
     "video": {
         ("grid", "VideoGridPlugin"),
@@ -109,8 +108,9 @@ EXPECTED_PLUGINS = {
     },
     "zip": {
         ("collector", "ZipCollectorPlugin"),
-        ("grid", "ZipGridPlugin"),
         ("viewer", "ZipViewerPlugin"),
+        ("grid", "ZipGridPlugin"),
+        ("imageloader", "ZipImageLoader"),
     },
 }
 
@@ -142,7 +142,6 @@ class TestExtensionAttributes:
         image_found = {cls.__name__: cls for _, cls in _import_extension("image", image_folder)}
         animated_found = {cls.__name__: cls for _, cls in _import_extension("animated", animated_folder)}
         assert animated_found["AnimatedGridPlugin"].PRIORITY > image_found["ImageFileLoader"].PRIORITY
-        assert animated_found["AnimatedViewerPlugin"].PRIORITY > image_found["ImageViewerPlugin"].PRIORITY
 
     def test_image_extensions_tuple(self):
         folder = os.path.join(EXTENSIONS_DIR, "image")

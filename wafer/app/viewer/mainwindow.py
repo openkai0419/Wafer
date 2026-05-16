@@ -331,9 +331,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.file_model = FileViewModel(dbpath_getter=lambda: self.database_path, parent=self)
         self.content_viewer = ContentViewerWidget()
         self.meta_viewer_widget = MetaViewerWidget()
-        self.file_viewer = FileViewerController(self.file_model, self.content_viewer, self.meta_viewer_widget, self)
-        self.meta_viewer_widget.reload_requested.connect(self.file_viewer.reload_meta)
         self.file_list_provider = FileListProvider(self.file_model, self.grid_items, self)
+        self.file_viewer = FileViewerController(self.file_model, self.content_viewer, self.meta_viewer_widget, self.file_list_provider, self)
+        self.meta_viewer_widget.reload_requested.connect(self.file_viewer.reload_meta)
         UI.register_instance("FileViewerController", self.file_viewer)
         UI.register_instance("FileListProvider", self.file_list_provider)
         UI.register_instance("ContentViewerWidget", self.content_viewer)
@@ -406,7 +406,6 @@ class MainWindow(QtWidgets.QMainWindow):
         store = StateStore.instance()
         store.register("layout", self._save_layout, self._restore_layout)
         store.register("grid", self._save_grid, self._restore_grid)
-        store.register("file_viewer", self._save_file_viewer, self._restore_file_viewer)
         self._register_grid_plugin_states(store)
         self._register_panel_plugin_states(store)
 
@@ -462,32 +461,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _clear_zoom_restore_guard(self):
         self.grid_view._zoom_restore_guard = False
-
-    def _save_file_viewer(self):
-        mode = getattr(self.file_list_provider, "mode", None)
-        state = {
-            "open_contained_files_as_list": bool(getattr(self.file_list_provider, "open_contained_files_as_list", False)),
-        }
-        if mode is None:
-            return state
-        for cmd_id, m in (
-            ("fv.list_sync", "sync"),
-            ("fv.list_fix", "fix"),
-            ("fv.list_dir", "dir"),
-        ):
-            if getattr(mode, "value", "") == m:
-                state["list_mode"] = cmd_id
-                return state
-        return state
-
-    def _restore_file_viewer(self, state):
-        from ...builtins.commands.content_viewer import apply_list_mode
-
-        cmd_id = state.get("list_mode")
-        if cmd_id:
-            apply_list_mode(self.file_list_provider, cmd_id)
-        if "open_contained_files_as_list" in state:
-            self.file_list_provider.set_open_contained_files_as_list(bool(state["open_contained_files_as_list"]))
 
     def sync_service_from_ui(self):
         dirs = self.folder_view.get_selected_paths()

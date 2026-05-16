@@ -247,6 +247,54 @@ def _draw_window(p: QPainter, r: QRectF, color: QColor):
     p.drawRect(QRectF(ir.right() - btn_w, ir.top(), btn_w, title_h))
 
 
+def _draw_arrow_line(p: QPainter, start: QPointF, end: QPointF, head: float):
+    p.drawLine(start, end)
+    dx = end.x() - start.x()
+    dy = end.y() - start.y()
+    length = math.hypot(dx, dy)
+    if length <= 0:
+        return
+    ux, uy = dx / length, dy / length
+    px, py = -uy, ux
+    spread = head * 1.0
+    p.drawLine(end, QPointF(end.x() - ux * head + px * spread, end.y() - uy * head + py * spread))
+    p.drawLine(end, QPointF(end.x() - ux * head - px * spread, end.y() - uy * head - py * spread))
+
+
+def _draw_fit_arrows(p: QPainter, r: QRectF, color: QColor, outward: bool):
+    s = min(r.width(), r.height())
+    lw = max(1.5, s * 0.11)
+    pen = QPen(color, lw)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    cx, cy = r.center().x(), r.center().y()
+    inner = s * 0.10
+    outer = s * 0.39
+    head = s * 0.24
+    a1 = QPointF(cx - inner, cy - inner)
+    b1 = QPointF(cx - outer, cy - outer)
+    a2 = QPointF(cx + inner, cy + inner)
+    b2 = QPointF(cx + outer, cy + outer)
+    if outward:
+        _draw_arrow_line(p, a1, b1, head)
+        _draw_arrow_line(p, a2, b2, head)
+    else:
+        _draw_arrow_line(p, b1, a1, head)
+        _draw_arrow_line(p, b2, a2, head)
+
+
+@_register("fit_cover", padding=0.05)
+def _draw_fit_cover(p: QPainter, r: QRectF, color: QColor):
+    _draw_fit_arrows(p, r, color, True)
+
+
+@_register("fit_contain", padding=0.05)
+def _draw_fit_contain(p: QPainter, r: QRectF, color: QColor):
+    _draw_fit_arrows(p, r, color, False)
+
+
 @_register("plus", padding=0.14)
 def _draw_plus(p: QPainter, r: QRectF, color: QColor):
     p.setPen(Qt.PenStyle.NoPen)

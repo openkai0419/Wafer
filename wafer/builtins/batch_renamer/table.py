@@ -384,6 +384,16 @@ class SyncedView(QtWidgets.QTableView):
         super().closeEditor(editor, hint)
         self.editing_finished.emit()
 
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_F2):
+            index = self.currentIndex()
+            model = self.model()
+            if index.isValid() and model is not None and model.flags(index) & Qt.ItemIsEditable:
+                self.edit(index)
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.RightButton:
             idx = self.indexAt(event.position().toPoint())

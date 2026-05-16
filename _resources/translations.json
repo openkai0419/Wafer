@@ -1,4 +1,20 @@
 {
+  "Contain": {
+    "en": "Contain",
+    "ja": ""
+  },
+  "Cover": {
+    "en": "Cover",
+    "ja": ""
+  },
+  "Left thumbnail fit": {
+    "en": "Left thumbnail fit",
+    "ja": ""
+  },
+  "Right thumbnail fit": {
+    "en": "Right thumbnail fit",
+    "ja": ""
+  },
   "Delete all '{key}' entries from databases": {
     "en": "Delete all '{key}' entries from databases",
     "ja": ""

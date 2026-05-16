@@ -26,6 +26,7 @@ from wafer.builtins.rename_sources import (
 from wafer.builtins.batch_renamer.widget import BatchRenamerPlugin
 from wafer.core.qt.dispatcher import CancelToken
 from wafer.core.db.file_db import FileDB
+from wafer.utils.formatting import dpix
 
 
 @pytest.fixture(autouse=True)
@@ -420,6 +421,28 @@ class TestPluginStateIntegration:
         plugin.restore_ui_state({"row_opacity": 50})
         assert plugin.save_ui_state() == {"row_opacity": 50}
 
+    def test_plugin_restore_legacy_thumb_fit_mode(self, qtbot):
+        plugin = BatchRenamerPlugin()
+        plugin.restore_ui_state({"thumb_fit_mode": "contain"})
+        widget = plugin.create_widget()
+        qtbot.addWidget(widget)
+        assert widget._row_thumb_fit_mode == "contain"
+        assert widget._sel_thumb_fit_mode == "contain"
+        assert widget._overlay.row_fit_mode == "contain"
+        assert widget._overlay.sel_fit_mode == "contain"
+        widget.close()
+
+    def test_plugin_restore_separate_thumb_fit_modes(self, qtbot):
+        plugin = BatchRenamerPlugin()
+        plugin.restore_ui_state({"row_thumb_fit_mode": "contain", "sel_thumb_fit_mode": "cover"})
+        widget = plugin.create_widget()
+        qtbot.addWidget(widget)
+        assert widget._row_thumb_fit_mode == "contain"
+        assert widget._sel_thumb_fit_mode == "cover"
+        assert widget._overlay.row_fit_mode == "contain"
+        assert widget._overlay.sel_fit_mode == "cover"
+        widget.close()
+
 
 from wafer.core.platform.file_operations import OperationResult
 
@@ -708,7 +731,28 @@ class TestRenameStaysOpen:
         assert len(dlg._columns) == 1
         assert isinstance(dlg._columns[0].source, NameSource)
         assert isinstance(dlg._ext_column.source, ExtSource)
-        assert dlg._sort_indicator is None
+        assert dlg._sort_indicator == BatchRenameWidget.DEFAULT_SORT_INDICATOR
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    @patch("wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui")
+    def test_default_name_sort_reapplies_after_rename(self, mock_execute, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+
+        new_a = tmp_files[0].parent / "z.jpg"
+        mock_execute.return_value = [_ok_result(tmp_files[0], new_a)]
+
+        rename_map = {str(tmp_files[0]): str(new_a)}
+        dlg._do_rename(rename_map)
+
+        qtbot.waitUntil(lambda: [p.name for p in dlg._paths] == ["b.jpg", "c.jpg", "z.jpg"], timeout=5000)
+        assert [r.segments[0] for r in dlg._results] == ["b", "c", "z"]
+        assert dlg._sort_indicator == BatchRenameWidget.DEFAULT_SORT_INDICATOR
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
@@ -965,8 +1009,27 @@ class TestOpacitySlider:
         qtbot.addWidget(dlg)
         assert hasattr(dlg, "_row_opacity_slider")
         assert hasattr(dlg, "_sel_opacity_slider")
+        assert hasattr(dlg, "_row_thumb_fit_btn")
+        assert hasattr(dlg, "_sel_thumb_fit_btn")
         assert dlg._row_opacity_slider.value() == 20
         assert dlg._sel_opacity_slider.value() == 20
+        assert dlg._row_thumb_fit_btn.text() == ""
+        assert dlg._sel_thumb_fit_btn.text() == ""
+        assert dlg._row_thumb_fit_btn.iconSize() == QtCore.QSize(dpix(14), dpix(14))
+        assert dlg._sel_thumb_fit_btn.iconSize() == QtCore.QSize(dpix(14), dpix(14))
+        assert not dlg._row_thumb_fit_btn.icon().isNull()
+        assert not dlg._sel_thumb_fit_btn.icon().isNull()
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_thumb_fit_buttons_precede_opacity_sliders(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        widgets = [dlg._bottom_bar.itemAt(i).widget() for i in range(dlg._bottom_bar.count()) if dlg._bottom_bar.itemAt(i).widget() is not None]
+        assert widgets.index(dlg._row_thumb_fit_btn) < widgets.index(dlg._row_opacity_slider)
+        assert widgets.index(dlg._sel_thumb_fit_btn) < widgets.index(dlg._sel_opacity_slider)
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
@@ -1002,6 +1065,50 @@ class TestOpacitySlider:
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_row_thumb_fit_button_toggles_left_overlay_mode(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        assert dlg._overlay.row_fit_mode == "cover"
+        assert dlg._overlay.sel_fit_mode == "cover"
+        dlg._row_thumb_fit_btn.setChecked(True)
+        assert dlg._row_thumb_fit_mode == "contain"
+        assert dlg._sel_thumb_fit_mode == "cover"
+        assert dlg._overlay.row_fit_mode == "contain"
+        assert dlg._overlay.sel_fit_mode == "cover"
+        dlg._row_thumb_fit_btn.setChecked(False)
+        assert dlg._row_thumb_fit_mode == "cover"
+        assert dlg._overlay.row_fit_mode == "cover"
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_sel_thumb_fit_button_toggles_right_overlay_mode(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._sel_thumb_fit_btn.setChecked(True)
+        assert dlg._row_thumb_fit_mode == "cover"
+        assert dlg._sel_thumb_fit_mode == "contain"
+        assert dlg._overlay.row_fit_mode == "cover"
+        assert dlg._overlay.sel_fit_mode == "contain"
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_thumb_fit_mode_serialised(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._set_thumb_fit_mode("row", "contain")
+        dlg._set_thumb_fit_mode("sel", "cover")
+        state = dlg._serialise_columns()
+        assert state["row_thumb_fit_mode"] == "contain"
+        assert state["sel_thumb_fit_mode"] == "cover"
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
     def test_exclude_rows_batch(self, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
@@ -1032,6 +1139,24 @@ class TestOpacitySlider:
         dlg.remove_files(tmp_files)
         assert len(dlg._paths) == 0
         dlg.close()
+
+
+class TestThumbnailFitMode:
+    def test_cover_scales_outside_rect(self):
+        from wafer.builtins.batch_renamer.overlay import ThumbnailOverlay
+
+        pix = QtGui.QPixmap(100, 50)
+        rect = QtCore.QRect(0, 0, 100, 100)
+        target = ThumbnailOverlay._scaled_rect(pix, rect, "cover")
+        assert target == QtCore.QRect(-50, 0, 200, 100)
+
+    def test_contain_scales_inside_rect(self):
+        from wafer.builtins.batch_renamer.overlay import ThumbnailOverlay
+
+        pix = QtGui.QPixmap(100, 50)
+        rect = QtCore.QRect(0, 0, 100, 100)
+        target = ThumbnailOverlay._scaled_rect(pix, rect, "contain")
+        assert target == QtCore.QRect(0, 25, 100, 50)
 
 
 class TestAllColumnsEditable:
@@ -1217,6 +1342,43 @@ class TestSegmentEditingNavigation:
         editor = dlg._seg_table.findChild(QtWidgets.QLineEdit)
         assert editor is not None
         return editor
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_enter_opens_current_editor(self, mock_init, qtbot, tmp_files):
+        dlg = self._prepare_dialog(qtbot, tmp_files)
+        try:
+            index = dlg._seg_model.index(0, 0)
+            dlg._seg_table.setCurrentIndex(index)
+            dlg._seg_table.setFocus()
+            qtbot.keyClick(dlg._seg_table, Qt.Key_Return)
+            qtbot.waitUntil(dlg._seg_table.is_editing, timeout=3000)
+        finally:
+            dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_f2_opens_current_editor(self, mock_init, qtbot, tmp_files):
+        dlg = self._prepare_dialog(qtbot, tmp_files)
+        try:
+            index = dlg._seg_model.index(0, 0)
+            dlg._seg_table.setCurrentIndex(index)
+            dlg._seg_table.setFocus()
+            qtbot.keyClick(dlg._seg_table, Qt.Key_F2)
+            qtbot.waitUntil(dlg._seg_table.is_editing, timeout=3000)
+        finally:
+            dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_enter_ignores_add_column(self, mock_init, qtbot, tmp_files):
+        dlg = self._prepare_dialog(qtbot, tmp_files)
+        try:
+            index = dlg._seg_model.index(0, dlg._add_section)
+            dlg._seg_table.setCurrentIndex(index)
+            dlg._seg_table.setFocus()
+            qtbot.keyClick(dlg._seg_table, Qt.Key_Return)
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents)
+            assert not dlg._seg_table.is_editing()
+        finally:
+            dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
     def test_tab_moves_to_next_row_same_column(self, mock_init, qtbot, tmp_files):
@@ -1561,6 +1723,55 @@ class TestSortIndicator:
         assert "\u25b2" not in ext_header
 
     @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_set_files_applies_default_name_segment_sort(self, mock_init, qtbot, tmp_path):
+        files = []
+        for name in ["b2.jpg", "a10.jpg", "a2.jpg"]:
+            path = tmp_path / name
+            path.write_bytes(b"x")
+            files.append(path)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(files)
+        assert [p.name for p in dlg._paths] == ["a2.jpg", "a10.jpg", "b2.jpg"]
+        assert dlg._initial_paths == dlg._paths
+        assert dlg._sort_indicator == BatchRenameWidget.DEFAULT_SORT_INDICATOR
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_add_files_keeps_default_name_segment_order(self, mock_init, qtbot, tmp_path):
+        initial = []
+        for name in ["c.jpg", "a.jpg"]:
+            path = tmp_path / name
+            path.write_bytes(b"x")
+            initial.append(path)
+        added = tmp_path / "b.jpg"
+        added.write_bytes(b"x")
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(initial)
+        dlg.add_files([added])
+        assert [p.name for p in dlg._paths] == ["a.jpg", "b.jpg", "c.jpg"]
+        assert dlg._initial_paths == dlg._paths
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_default_name_sort_drives_sequential_indices(self, mock_init, qtbot, tmp_path):
+        files = []
+        for name in ["b2.jpg", "a10.jpg", "a2.jpg"]:
+            path = tmp_path / name
+            path.write_bytes(b"x")
+            files.append(path)
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(files)
+        dlg._columns = [RenameColumn(SequentialSource(start=1, step=1, padding=1))]
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: [r.new_name for r in dlg._results] == ["1.jpg", "2.jpg", "3.jpg"], timeout=5000)
+        assert [p.name for p in dlg._paths] == ["a2.jpg", "a10.jpg", "b2.jpg"]
+        assert dlg._initial_paths == dlg._paths
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
     def test_dialog_sort_indicator_on_preview_sort(self, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
@@ -1608,7 +1819,7 @@ class TestSortIndicator:
         for path, value in zip(tmp_files, ["m_new", "z_new", "x_new"]):
             dlg._columns[0].overrides[str(path)] = value
         dlg._refresh(auto_size=False)
-        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["m_new", "z_new", "x_new"], timeout=5000)
+        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["m_new", "x_new", "z_new"], timeout=5000)
         dlg._sort_by_segment(0, True)
         qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["m_new", "x_new", "z_new"], timeout=5000)
         dlg._seg_model.setData(dlg._seg_model.index(2, 0), "a_new", Qt.EditRole)
@@ -1627,7 +1838,7 @@ class TestSortIndicator:
         for path, value in zip(tmp_files, ["m_new", "a_new", "x_new"]):
             dlg._columns[0].overrides[str(path)] = value
         dlg._refresh(auto_size=False)
-        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["m_new", "a_new", "x_new"], timeout=5000)
+        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["a_new", "m_new", "x_new"], timeout=5000)
         dlg._sort_by_segment(0, False)
         qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["x_new", "m_new", "a_new"], timeout=5000)
         dlg._seg_model.setData(dlg._seg_model.index(2, 0), "z_new", Qt.EditRole)

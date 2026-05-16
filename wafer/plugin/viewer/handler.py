@@ -1,4 +1,5 @@
 from ...core.files.render_target import RenderPlan, ResolveContext, SURFACE_VIEWER
+from ...utils.logs import AppLogger
 from ..registry import FilePluginRegistry
 from .base import MultiWidgetViewerPlugin, WidgetViewerPlugin
 
@@ -16,7 +17,11 @@ class ViewerResolver:
             instance = self.registry.instance(plugin_cls.NAME)
             if not isinstance(instance, WidgetViewerPlugin):
                 continue
-            plan = instance.resolve(path, context)
+            try:
+                plan = instance.resolve(path, context)
+            except Exception as exc:
+                AppLogger.warning(f"[ViewerResolver] resolve failed: plugin={plugin_cls.NAME} path={path} error={type(exc).__name__}: {exc}", exc=exc)
+                continue
             if isinstance(plan, RenderPlan) and isinstance(plan.handler, WidgetViewerPlugin):
                 return plan
         raise LookupError(f"no viewer plugin resolved: {path}")

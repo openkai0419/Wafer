@@ -5,7 +5,7 @@ from ...utils.notifier import Notifier
 from ...plugin.settings import PluginSettings
 from ...plugin.installer import RestartScope, restart_scope_from_plugins
 from ...plugin import installer_queue
-from ...plugin.loader import get_plugin_dir, qualify_plugin_name
+from ...plugin.loader import get_plugin_dir
 from ...plugin.kinds import PLUGIN_KIND_COLLECTOR, PLUGIN_KIND_COMMAND, PLUGIN_KIND_PARSER
 from ...plugin.panel.base import BasePanelPlugin
 from ...core.color.theme import ThemeManager

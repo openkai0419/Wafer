@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.18]
+### Added
+- **Built-in multi-page image viewer** (`wafer/builtins/image_viewer/viewer.py`, `wafer/builtins/image_viewer/widget.py`, `wafer/builtins/image_viewer/commands.py`, `wafer/plugin/viewer/base.py`, `extensions/image/loader.py`): added a built-in `ImageViewer` with `MultiWidgetViewerPlugin` / `ViewerContext` support, configurable `imgv.image_spread` page layout and direction, and shared `QImage` loading for static images
+
+### Changed
+- **Render-plan based file rendering** (`wafer/core/files/render_target.py`, `wafer/plugin/viewer/handler.py`, `wafer/plugin/grid/handler.py`, `wafer/plugin/imageloader/handler.py`, `extensions/zip/resolver.py`): unified viewer, grid, and image-loader dispatch around surface-aware `RenderPlan` resolution so virtual paths such as ZIP members materialize once and continue through the normal plugin chain
+- **File viewer batch navigation** (`wafer/app/viewer/preview/file_viewer.py`, `wafer/builtins/commands/content_viewer.py`): next/previous navigation and slideshow advance now follow the active viewer's batch size, so multi-page image spreads move through files in grouped steps
+- **Batch Renamer table editing** (`wafer/builtins/batch_renamer/widget.py`, `wafer/builtins/batch_renamer/table.py`): batch rename previews now use cell selection, keep sort order across refreshes, defer rebuilds while inline editors are open, support vertical Tab editing, and expose restore actions for selected per-cell overrides
+- **Plugin enable-state persistence** (`wafer/plugin/settings.py`, `wafer/plugin/loader.py`, `wafer/builtins/plugin_manager/widget.py`, `wafer/builtins/plugin_manager/extensions_tab.py`): plugin toggles now persist as explicit enabled or disabled overrides relative to `DEFAULT_ENABLED`, while legacy enabled-name settings are still honored during migration and restart prompts are derived from the plugins that actually changed
+
+### Fixed
+- **Resolver failure fallback** (`wafer/plugin/viewer/handler.py`, `wafer/plugin/grid/handler.py`, `wafer/plugin/imageloader/handler.py`, `tests-unit/wafer/plugin/test_resolver.py`): viewer, grid, and image-loader resolution now skip plugins whose `resolve()` raises and continue to lower-priority matches instead of aborting the whole dispatch
+
 ## [v0.6.17]
 ### Added
 - **Drop target chooser for GridView fallback drops** (`wafer/builtins/commands/grid.py`, `wafer/ui/dialogs.py`, `_resources/translations.json`): added a destination chooser and confirmation flow when a GridView drop falls back to FolderTree-selected folders instead of a hovered grid item

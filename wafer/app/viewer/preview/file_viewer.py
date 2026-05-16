@@ -297,7 +297,7 @@ class FileViewerController(QtCore.QObject):
     def _flush(self):
         if self._pending_content is None or self._pending_meta is None:
             return
-        batch, content = self._pending_content
+        batch, _ = self._pending_content
         self._pending_content = None
         meta = self._pending_meta
         self._pending_meta = None
@@ -385,7 +385,7 @@ class FileViewerController(QtCore.QObject):
             self._navigation_cache_starts.sort()
 
     def _same_viewer(self, plugin_name: str, plan: RenderPlan) -> bool:
-        return bool(plugin_name) and isinstance(plan.handler, _WidgetViewerPlugin) and plan.handler.NAME == plugin_name
+        return bool(plugin_name) and isinstance(plan.handler, _WidgetViewerPlugin) and plugin_name == plan.handler.NAME
 
     def _plugin_name(self, plan: RenderPlan) -> str:
         return plan.handler.NAME if isinstance(plan.handler, _WidgetViewerPlugin) else ""

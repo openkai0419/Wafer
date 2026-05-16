@@ -4,6 +4,7 @@ from PySide6 import QtGui
 
 from ...core.files.render_target import RenderPlan, ResolveContext, SURFACE_IMAGE
 from ...core.qt.image import numpy_to_qimage, pil_to_qimage
+from ...utils.logs import AppLogger
 from ...utils.profiling import profiler
 from ..registry import FilePluginRegistry
 from .base import BaseImageLoader
@@ -86,7 +87,11 @@ class ImageLoaderResolver:
             instance = self.registry.instance(plugin_cls.NAME)
             if not isinstance(instance, BaseImageLoader):
                 continue
-            plan = instance.resolve(path, context)
+            try:
+                plan = instance.resolve(path, context)
+            except Exception as exc:
+                AppLogger.warning(f"[ImageLoaderResolver] resolve failed: plugin={plugin_cls.NAME} path={path} error={type(exc).__name__}: {exc}", exc=exc)
+                continue
             if delegated_plans:
                 yield from delegated_plans
                 return

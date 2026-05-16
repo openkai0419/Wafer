@@ -43,7 +43,7 @@ class ResolveContext:
         resolver: ResolveCallback,
         source: str | None = None,
         max_depth: int = 4,
-    ) -> "ResolveContext":
+    ) -> ResolveContext:
         return cls(
             source=source or source_path(path),
             path=path,
@@ -52,7 +52,7 @@ class ResolveContext:
             max_depth=max_depth,
         )
 
-    def child(self) -> "ResolveContext":
+    def child(self) -> ResolveContext:
         if self.depth >= self.max_depth:
             raise RecursionError(f"render plan resolution exceeded depth={self.max_depth}: {self.path}")
         return replace(self, depth=self.depth + 1)

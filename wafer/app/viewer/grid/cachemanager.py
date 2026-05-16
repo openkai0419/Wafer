@@ -2,6 +2,14 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ....core.qt.image_cache import MemoryLimitedImageCache, fullsize_key
 from ....utils.profiling import profiler
 
+__all__ = (
+    "AdditionalWidgetPool",
+    "FadePixmapItem",
+    "GraphicsItemPool",
+    "MemoryLimitedImageCache",
+    "fullsize_key",
+)
+
 
 class FadePixmapItem(QtWidgets.QGraphicsObject):
     _FADE_DURATION = 120

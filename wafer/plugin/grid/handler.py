@@ -1,6 +1,7 @@
 from PySide6 import QtCore, QtGui
 
 from ...core.files.render_target import RenderPlan, ResolveContext, SURFACE_GRID
+from ...utils.logs import AppLogger
 from ...utils.profiling import profiler
 from ..registry import FilePluginRegistry
 from ..imageloader.base import BaseImageLoader
@@ -41,7 +42,11 @@ class GridResolver:
                 instance = image_loader_resolver.registry.instance(plugin_cls.NAME)
             if not isinstance(instance, (WidgetGridPlugin, BaseImageLoader)):
                 continue
-            plan = instance.resolve(path, context)
+            try:
+                plan = instance.resolve(path, context)
+            except Exception as exc:
+                AppLogger.warning(f"[GridResolver] resolve failed: plugin={plugin_cls.NAME} path={path} error={type(exc).__name__}: {exc}", exc=exc)
+                continue
             if isinstance(plan, RenderPlan) and isinstance(plan.handler, (WidgetGridPlugin, BaseImageLoader)):
                 return plan
         raise LookupError(f"no grid plugin resolved: {path}")

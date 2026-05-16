@@ -11,7 +11,7 @@ from ....core.qt.thread import utility_pool
 from ....plugin.query.composer import SearchComposer
 from ....builtins.filters import DirectoryFilter, SourceChildrenFilter
 from ....builtins.sorts import NaturalPathSort
-from ....utils.virtual_paths import is_virtual_path, owner_extensions, source_path
+from ....utils.virtual_paths import is_virtual_path, source_path
 from .file_model import FileViewModel
 from ..grid.items import GridItemModel
 
@@ -110,15 +110,26 @@ class FileListProvider(QtCore.QObject):
                 self._file_model.set_path(path)
                 self._query_directory(path)
 
+    def _has_contained_children(self, path: str) -> bool:
+        dbpath = self._file_model.dbpath
+        if not dbpath:
+            return False
+        engine = FileSearchEngine(dbpath)
+        try:
+            return engine.has_source_children(path)
+        finally:
+            engine.close()
+
     def _contained_source(self, path: str) -> str | None:
         if is_virtual_path(path):
             return source_path(path)
-        suffix = Path(path).suffix.lower()
-        return path if suffix in owner_extensions() else None
+        return path if self._has_contained_children(path) else None
 
     def _query_contained_files_if_available(self, path: str) -> bool:
+        if not self._file_model.dbpath:
+            return False
         source = self._contained_source(path)
-        if not source or not self._file_model.dbpath:
+        if not source:
             return False
         self._query_contained_files(source, path)
         return True

@@ -186,9 +186,12 @@ class PluginManagerWidget(QtWidgets.QWidget):
 
         from .extensions_tab import ExtensionsTab
 
+        enabled_overrides = self._settings.enabled_overrides()
+        legacy_enabled = None if self._settings.has_enabled_overrides() else self._settings.enabled_names()
         self._ext_tab = ExtensionsTab(
-            self._settings.enabled_names(),
+            enabled_overrides,
             self._dispatcher,
+            legacy_enabled=legacy_enabled,
         )
 
         self._tabs = QtWidgets.QTabWidget()
@@ -209,7 +212,8 @@ class PluginManagerWidget(QtWidgets.QWidget):
         builtin_command_names = self._compute_builtin_command_names(registry_data)
         self._order_tab = OrderTab(registry_data, saved_orders, builtin_command_names)
 
-        self._initial_enabled = self._settings.enabled_names() or set()
+        self._initial_enabled_overrides = dict(enabled_overrides)
+        self._initial_legacy_enabled = legacy_enabled
         self._initial_orders = dict(saved_orders)
         self._order_scroll = self._scrollable(self._order_tab)
         self._tabs.addTab(self._order_scroll, t("Order"))
@@ -267,17 +271,32 @@ class PluginManagerWidget(QtWidgets.QWidget):
         self._restart_label.setText(text)
         self._restart_label.show()
 
-    def _has_plugin_changes(self, enabled, orders):
-        if enabled != self._initial_enabled:
+    def _changed_plugin_classes(self) -> dict[str, type]:
+        result = {}
+        for qualified, plugin_cls, enabled in self._ext_tab.iter_plugin_states():
+            initial_enabled = PluginSettings.resolve_enabled(
+                qualified,
+                plugin_cls,
+                self._initial_enabled_overrides,
+                self._initial_legacy_enabled,
+            )
+            if enabled != initial_enabled:
+                result[qualified] = plugin_cls
+        return result
+
+    def _has_plugin_changes(self, enabled_overrides, orders):
+        if enabled_overrides != self._initial_enabled_overrides:
+            return True
+        if self._changed_plugin_classes():
             return True
         return orders != self._initial_orders
 
     def _on_save(self):
         if not self._collectors_tab.confirm_and_save():
             return
-        enabled = self._ext_tab.collect_enabled()
+        enabled_overrides = self._ext_tab.collect_enabled_overrides()
         orders = self._order_tab.get_orders()
-        has_changes = self._has_plugin_changes(enabled, orders) or self._collectors_tab.has_changes()
+        has_changes = self._has_plugin_changes(enabled_overrides, orders) or self._collectors_tab.has_changes()
         extensions_dir = get_plugin_dir()
         pending = installer_queue.has_pending_queue(extensions_dir)
         if not has_changes and not pending:
@@ -285,14 +304,9 @@ class PluginManagerWidget(QtWidgets.QWidget):
             return
 
         scope = RestartScope.NONE
-        if enabled != self._initial_enabled:
-            changed_names = enabled.symmetric_difference(self._initial_enabled)
-            qn_to_cls: dict[str, type] = {}
-            for card in self._ext_tab._cards.values():
-                for key, cls in card._plugins:
-                    qn_to_cls[qualify_plugin_name(key, cls)] = cls
-            changed_classes = [qn_to_cls[qn] for qn in changed_names if qn in qn_to_cls]
-            scope |= restart_scope_from_plugins(changed_classes) if changed_classes else RestartScope.VIEWER
+        changed_classes = list(self._changed_plugin_classes().values())
+        if changed_classes:
+            scope |= restart_scope_from_plugins(changed_classes)
         if orders != self._initial_orders:
             scope |= RestartScope.VIEWER
         if self._collectors_tab.has_changes():
@@ -302,11 +316,12 @@ class PluginManagerWidget(QtWidgets.QWidget):
 
         self._settings.merge_restart_scope(scope)
         if has_changes:
-            self._settings.set_enabled(enabled)
+            self._settings.set_enabled_overrides(enabled_overrides)
             for key, order in orders.items():
                 self._settings.set_priority_order(key, order)
-            AppLogger.info(f"[PluginManager] Saved: enabled={sorted(enabled)}, orders={orders}")
-            self._initial_enabled = set(enabled)
+            AppLogger.info(f"[PluginManager] Saved: enabled_overrides={enabled_overrides}, orders={orders}")
+            self._initial_enabled_overrides = dict(enabled_overrides)
+            self._initial_legacy_enabled = None
             self._initial_orders = dict(orders)
         self._update_restart_label()
         if has_changes:
@@ -334,11 +349,11 @@ class PluginManagerWidget(QtWidgets.QWidget):
     def _on_revert(self):
         from .viewers_tab import REGISTRY_KEYS
 
-        enabled = self._ext_tab.collect_enabled()
+        enabled_overrides = self._ext_tab.collect_enabled_overrides()
         orders = self._order_tab.get_orders()
-        if not self._has_plugin_changes(enabled, orders) and not self._collectors_tab.has_changes():
+        if not self._has_plugin_changes(enabled_overrides, orders) and not self._collectors_tab.has_changes():
             return
-        self._ext_tab.revert(self._initial_enabled)
+        self._ext_tab.revert(self._initial_enabled_overrides, self._initial_legacy_enabled)
         registry_data = {key: self._ext_tab.collect_enabled_plugins(key) for key in REGISTRY_KEYS}
         self._order_tab.revert(registry_data, self._compute_builtin_command_names(registry_data))
         self._collectors_tab.revert()

@@ -1,10 +1,9 @@
 from PySide6 import QtCore, QtGui
 
-from ...core.files.render_target import RenderTarget, ResolveContext, TARGET_IMAGE, TARGET_WIDGET
-from ...core.qt.image import numpy_to_qimage
-from ...utils.virtual_paths import source_path
+from ...core.files.render_target import RenderPlan, ResolveContext, SURFACE_GRID
 from ...utils.profiling import profiler
 from ..registry import FilePluginRegistry
+from ..imageloader.base import BaseImageLoader
 from .base import BaseGridPlugin, WidgetGridPlugin
 
 VIEWER_THUMBNAIL_DEFAULT_SIZE = 512
@@ -31,58 +30,33 @@ class GridResolver:
         merged.sort(key=lambda x: (x[0].PRIORITY, x[1] == WIDGET), reverse=True)
         return merged
 
-    def resolve_target(self, path: str, context: ResolveContext | None = None) -> RenderTarget:
-        context = context or ResolveContext(path)
-        from ..resolver.handler import resolver_registry
+    def resolve_plan(self, path: str, context: ResolveContext | None = None) -> RenderPlan[WidgetGridPlugin | BaseImageLoader]:
+        from ..imageloader.handler import image_loader_resolver
 
-        resolved = resolver_registry.resolve_target(
-            path,
-            purpose="grid",
-            context=context,
-            resolve_child=self.resolve_target,
-        )
-        if resolved is not None:
-            return resolved
-
+        context = context or ResolveContext.create(path, surface=SURFACE_GRID, resolver=self.resolve_plan)
         for plugin_cls, kind in self.resolve_merged_chain(path):
-            if not plugin_cls.can_handle(path):
-                continue
             if kind == WIDGET:
-                return RenderTarget(
-                    logical_path=context.logical_path,
-                    render_path=path,
-                    kind=TARGET_WIDGET,
-                    plugin_name=plugin_cls.NAME,
-                    source_path=source_path(context.logical_path),
-                )
-            return RenderTarget(
-                logical_path=context.logical_path,
-                render_path=path,
-                kind=TARGET_IMAGE,
-                plugin_name=plugin_cls.NAME,
-                source_path=source_path(context.logical_path),
-            )
-        return RenderTarget(
-            logical_path=context.logical_path,
-            render_path=path,
-            kind=TARGET_IMAGE,
-            source_path=source_path(context.logical_path),
-        )
+                instance = self.registry.instance(plugin_cls.NAME)
+            else:
+                instance = image_loader_resolver.registry.instance(plugin_cls.NAME)
+            if not isinstance(instance, (WidgetGridPlugin, BaseImageLoader)):
+                continue
+            plan = instance.resolve(path, context)
+            if isinstance(plan, RenderPlan) and isinstance(plan.handler, (WidgetGridPlugin, BaseImageLoader)):
+                return plan
+        raise LookupError(f"no grid plugin resolved: {path}")
 
     def is_widget_plugin(self, path: str) -> bool:
-        target = self.resolve_target(path)
-        return target.kind == TARGET_WIDGET and isinstance(self.registry.instance(target.plugin_name), WidgetGridPlugin)
+        return isinstance(self.resolve_plan(path).handler, WidgetGridPlugin)
 
     @profiler.profile
     def load(self, path: str, size: QtCore.QSize | None = None) -> QtGui.QImage | None:
         from ..imageloader.handler import image_loader_resolver
 
-        target = self.resolve_target(path)
         int_size = max(size.width(), size.height()) if size is not None else self.thumbnail_size
-        arr = image_loader_resolver.load(target.render_path, int_size)
-        if arr is None:
+        qimage = image_loader_resolver.load_qimage(path, int_size)
+        if qimage is None or qimage.isNull():
             return None
-        qimage = numpy_to_qimage(arr)
         if size is not None:
             qimage = qimage.scaled(size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
         return qimage

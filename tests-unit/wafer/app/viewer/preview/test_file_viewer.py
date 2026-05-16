@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 from PySide6 import QtGui
 from wafer.app.viewer.preview.file_viewer import _format_meta, FileViewerController, ViewerBatch
 from wafer.app.viewer.preview.content_viewer import ContentViewerWidget
-from wafer.core.files.render_target import RenderTarget, TARGET_WIDGET
+from wafer.core.files.render_target import RenderPlan
 from wafer.plugin.viewer.base import MultiWidgetViewerPlugin, ViewerContext, WidgetViewerPlugin
 from wafer.builtins.image_viewer.viewer import ImageViewer
 
@@ -410,16 +410,10 @@ class TestViewerBatchNavigation:
                 self.registry = FakeRegistry()
                 self.calls = 0
 
-            def resolve_target(self, path):
+            def resolve_plan(self, path):
                 self.calls += 1
                 plugin_name = "video" if path.endswith(".mp4") else "image"
-                return RenderTarget(
-                    logical_path=path,
-                    render_path=path,
-                    kind=TARGET_WIDGET,
-                    plugin_name=plugin_name,
-                    source_path=path,
-                )
+                return RenderPlan(source=path, path=path, resolved_path=path, handler=self.registry.instance(plugin_name))
 
         count = 5000
         paths = [f"{i}.png" if i % 2 == 0 else f"{i}.mp4" for i in range(count)]
@@ -695,13 +689,6 @@ def test_on_path_changed_widget_sets_target():
 
     initial_plugin = viewer.content_viewer._current_plugin_name
     with patch("wafer.app.viewer.preview.file_viewer.viewer_resolver") as mock_resolver:
-        mock_resolver.resolve_target.return_value = RenderTarget(
-            logical_path="/test.mp4",
-            render_path="/test.mp4",
-            kind=TARGET_WIDGET,
-            plugin_name="stub_widget",
-            source_path="/test.mp4",
-        )
         viewer._on_path_changed("/test.mp4")
 
     assert viewer.content_viewer._current_plugin_name == initial_plugin

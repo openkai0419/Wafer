@@ -10,8 +10,9 @@ from PIL import Image
 from extensions.zip import archive
 from extensions.zip.cache import ZipCache
 from extensions.zip.collector import ZipCollectorPlugin
-from extensions.zip.resolver import ZipResolverPlugin
-from wafer.core.files.render_target import RenderTarget, ResolveContext, TARGET_IMAGE
+from extensions.zip.resolver import ZipImageLoader
+from wafer.core.files.render_target import RenderPlan, ResolveContext, SURFACE_IMAGE
+from wafer.plugin.imageloader.base import BaseImageLoader
 from wafer.utils.formatting import natural_key
 from wafer.utils.virtual_paths import build_virtual_path, child_path
 
@@ -126,20 +127,22 @@ def test_zip_resolver_materializes_and_delegates(tmp_path, monkeypatch):
 
     monkeypatch.setattr("extensions.zip.resolver.zip_cache.materialize", fake_materialize)
 
-    def resolve_child(path: str, context: ResolveContext) -> RenderTarget:
-        return RenderTarget(context.logical_path, path, TARGET_IMAGE)
+    class StubLoader(BaseImageLoader):
+        NAME = "stub_loader"
 
-    target = ZipResolverPlugin().resolve_target(
+    def resolve_child(path: str, context: ResolveContext):
+        return RenderPlan(source=context.source, path=context.path, resolved_path=path, handler=StubLoader())
+
+    target = ZipImageLoader().resolve(
         logical,
-        purpose="viewer",
-        context=ResolveContext(logical),
-        resolve_child=resolve_child,
+        ResolveContext.create(logical, surface=SURFACE_IMAGE, resolver=resolve_child),
     )
 
     assert target is not None
-    assert target.logical_path == logical
-    assert target.render_path.endswith("image.png")
-    assert calls == [(logical, "viewer")]
+    assert target.path == logical
+    assert target.resolved_path.endswith("image.png")
+    assert isinstance(target.handler, StubLoader)
+    assert calls == [(logical, "image")]
 
 
 def test_zip_collector_returns_child_rows_and_generic_aspect(tmp_path, monkeypatch):

@@ -1,97 +1,34 @@
-from wafer.core.files.render_target import RenderTarget, ResolveContext, TARGET_IMAGE, TARGET_WIDGET
-from wafer.plugin.resolver.base import BaseResolverPlugin
-from wafer.plugin.resolver.handler import ResolverRegistry
-from wafer.utils.virtual_paths import build_virtual_path, register_owner_extension
+from wafer.core.files.render_target import RenderPlan, ResolveContext, SURFACE_VIEWER
+from wafer.plugin.viewer.base import WidgetViewerPlugin
 
 
-def test_resolver_accepts_non_virtual_extension_path():
-    class DemoResolver(BaseResolverPlugin):
-        NAME = "demo_resolver"
-        EXTENSIONS = (".demo",)
-
-        def materialize(self, path: str, *, purpose: str) -> str:
-            assert purpose == "viewer"
-            return path + ".png"
-
-    registry = ResolverRegistry()
-    registry.registry.register(DemoResolver)
-
-    def resolve_child(path: str, context: ResolveContext) -> RenderTarget:
-        return RenderTarget(context.logical_path, path, TARGET_IMAGE)
-
-    target = registry.resolve_target("sample.demo", purpose="viewer", context=ResolveContext("sample.demo"), resolve_child=resolve_child)
-
-    assert target is not None
-    assert target.logical_path == "sample.demo"
-    assert target.render_path == "sample.demo.png"
+class DemoViewer(WidgetViewerPlugin):
+    NAME = "demo_viewer"
+    EXTENSIONS = (".png",)
 
 
-def test_resolver_accepts_non_virtual_catch_all_path():
-    class CatchAllResolver(BaseResolverPlugin):
-        NAME = "catch_all_resolver"
-        EXTENSIONS = ()
+def test_resolve_context_preserves_original_path_when_resolving_new_path():
+    def resolver(path: str, context: ResolveContext):
+        return RenderPlan(source=context.source, path=context.path, resolved_path=path, handler=DemoViewer())
 
-        @classmethod
-        def can_handle(cls, path: str) -> bool:
-            return path.endswith(".external")
+    context = ResolveContext.create("archive.zip::child.demo", surface=SURFACE_VIEWER, resolver=resolver)
+    plan = context.resolve_new("materialized.png")
 
-        def materialize(self, path: str, *, purpose: str) -> str:
-            return path.removesuffix(".external") + ".jpg"
-
-    registry = ResolverRegistry()
-    registry.registry.register(CatchAllResolver)
-
-    def resolve_child(path: str, context: ResolveContext) -> RenderTarget:
-        return RenderTarget(context.logical_path, path, TARGET_IMAGE)
-
-    target = registry.resolve_target("asset.external", purpose="grid", context=ResolveContext("asset.external"), resolve_child=resolve_child)
-
-    assert target is not None
-    assert target.render_path == "asset.jpg"
+    assert plan is not None
+    assert plan.path == "archive.zip::child.demo"
+    assert plan.resolved_path == "materialized.png"
+    assert plan.source == "archive.zip"
 
 
-def test_virtual_path_uses_owner_resolver():
-    class PackResolver(BaseResolverPlugin):
-        NAME = "pack_resolver"
-        EXTENSIONS = (".pack",)
-        OWNS_VIRTUAL_CHILDREN = True
+def test_resolve_context_stops_recursive_resolution():
+    def resolver(path: str, context: ResolveContext):
+        return context.resolve_new(path)
 
-        def materialize(self, path: str, *, purpose: str) -> str:
-            return "materialized.png"
+    context = ResolveContext.create("asset.demo", surface=SURFACE_VIEWER, resolver=resolver, max_depth=1)
 
-    register_owner_extension(".pack")
-    registry = ResolverRegistry()
-    registry.registry.register(PackResolver)
-    logical = build_virtual_path("archive.pack", "child.png")
-
-    def resolve_child(path: str, context: ResolveContext) -> RenderTarget:
-        return RenderTarget(context.logical_path, path, TARGET_IMAGE)
-
-    target = registry.resolve_target(logical, purpose="viewer", context=ResolveContext(logical), resolve_child=resolve_child)
-
-    assert target is not None
-    assert target.logical_path == logical
-    assert target.render_path == "materialized.png"
-
-
-def test_resolver_can_return_widget_target_directly():
-    class WidgetResolver(BaseResolverPlugin):
-        NAME = "widget_resolver"
-        EXTENSIONS = (".remote",)
-
-        def resolve_target(self, path: str, *, purpose: str, context: ResolveContext, resolve_child) -> RenderTarget | None:
-            return RenderTarget(context.logical_path, path, TARGET_WIDGET, plugin_name="remote_widget")
-
-    registry = ResolverRegistry()
-    registry.registry.register(WidgetResolver)
-
-    target = registry.resolve_target(
-        "asset.remote",
-        purpose="viewer",
-        context=ResolveContext("asset.remote"),
-        resolve_child=lambda path, context: RenderTarget(context.logical_path, path, TARGET_IMAGE),
-    )
-
-    assert target is not None
-    assert target.kind == TARGET_WIDGET
-    assert target.plugin_name == "remote_widget"
+    try:
+        context.resolve_new("asset.png")
+    except RecursionError as exc:
+        assert "exceeded depth" in str(exc)
+    else:
+        raise AssertionError("recursive render plan resolution did not stop")

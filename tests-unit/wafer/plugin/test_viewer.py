@@ -1,6 +1,5 @@
 import py_compile
 
-from wafer.core.files.render_target import TARGET_WIDGET
 from wafer.builtins.image_viewer.viewer import ImageViewer
 from wafer.plugin import ViewerContext
 from wafer.plugin.viewer.handler import viewer_resolver
@@ -31,22 +30,22 @@ def test_resolve_unknown():
     assert viewer_resolver.resolve("file.xyz") is ImageViewer
 
 
-def test_resolve_target_uses_image_fallback_plugin():
-    target = viewer_resolver.resolve_target("photo.jpg")
-    assert target.kind == TARGET_WIDGET
-    assert target.plugin_name == ImageViewer.NAME
+def test_resolve_plan_uses_image_fallback_plugin():
+    plan = viewer_resolver.resolve_plan("photo.jpg")
+    assert plan.handler.NAME == ImageViewer.NAME
+    assert plan.path == "photo.jpg"
+    assert plan.resolved_path == "photo.jpg"
 
 
-def test_resolve_target_widget_plugin():
+def test_resolve_plan_widget_plugin():
     class Stub(WidgetViewerPlugin):
         NAME = "_stub_widget_viewer"
         EXTENSIONS = (".stubviewer",)
         PRIORITY = 1
 
     viewer_resolver.registry.register(Stub)
-    target = viewer_resolver.resolve_target("sample.stubviewer")
-    assert target.kind == TARGET_WIDGET
-    assert target.plugin_name == Stub.NAME
+    plan = viewer_resolver.resolve_plan("sample.stubviewer")
+    assert plan.handler.NAME == Stub.NAME
 
 
 def test_is_widget_plugin_image():

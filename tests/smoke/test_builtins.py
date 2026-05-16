@@ -57,7 +57,7 @@ class TestBuiltinNAMEUniqueness:
                 bucket[cls.NAME] = cls.__name__
 
     def test_valid_registry_keys(self):
-        valid_keys = {"viewer", "grid", "grid_overlay", "collector", "parser", "filter", "sort", "layout", "panel", "key_value_panel", "rename_source", "command", "imageloader", "resolver"}
+        valid_keys = {"viewer", "grid", "grid_overlay", "collector", "parser", "filter", "sort", "layout", "panel", "key_value_panel", "rename_source", "command", "imageloader"}
         registry_map = _get_registry_map()
         modules = _import_builtin_modules()
         for mod in modules:

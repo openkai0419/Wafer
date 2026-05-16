@@ -1,6 +1,7 @@
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
+from ...core.files.render_target import RenderPlan, ResolveContext
 from ..registry import BasePlugin
 
 
@@ -32,10 +33,25 @@ class WidgetViewerPlugin(BasePlugin):
     WIDGET_CLASS = None
 
     def __init__(self):
-        self.widget = self.WIDGET_CLASS() if self.WIDGET_CLASS else None
+        self._widget = None
+
+    @property
+    def widget(self):
+        if self._widget is None and self.WIDGET_CLASS is not None:
+            self._widget = self.WIDGET_CLASS()
+        return self._widget
+
+    @widget.setter
+    def widget(self, value):
+        self._widget = value
 
     def render(self, context: ViewerContext):
         pass
+
+    def resolve(self, path: str, context: ResolveContext) -> RenderPlan | None:
+        if not type(self).can_handle(path):
+            return None
+        return RenderPlan(source=context.source, path=context.path, resolved_path=path, handler=self)
 
     def clear(self):
         pass

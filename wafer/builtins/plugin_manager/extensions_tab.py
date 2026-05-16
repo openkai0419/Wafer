@@ -9,6 +9,7 @@ from ...core.color.theme import ThemeManager
 from ...core.lang.manager import t
 from ...core.qt.color_utils import mix_colors
 from ...plugin.loader import get_plugin_dir, PluginLoader, qualify_plugin_name
+from ...plugin.settings import PluginSettings
 from ...ui.widgets.eliding import ElidingLabel
 from ...plugin.kinds import PLUGIN_KIND_COLLECTOR, PLUGIN_KIND_PANEL, PLUGIN_KIND_PARSER, plugin_kind_color, plugin_kind_label
 from ...plugin.installer import (
@@ -143,7 +144,7 @@ class _ExtensionCard(QtWidgets.QFrame):
         self.badge = resolve_badge(folder_name)
         self._dispatcher = dispatcher
         self.setObjectName("extension_card")
-        self._rows: list[tuple[_PluginRow, str]] = []
+        self._rows: list[tuple[_PluginRow, str, type]] = []
         self._plugins: list[tuple[str, type]] = []
         self._plugin_area = QtWidgets.QVBoxLayout()
         self._plugin_area.setSpacing(dpix(2))
@@ -338,23 +339,37 @@ class _ExtensionCard(QtWidgets.QFrame):
             sb = self._log_view.verticalScrollBar()
             sb.setValue(sb.maximum())
 
-    def set_plugins(self, plugins: list[tuple[str, type]], enabled: set[str] | None):
+    def set_plugins(
+        self,
+        plugins: list[tuple[str, type]],
+        enabled_overrides: dict[str, bool] | None,
+        legacy_enabled: set[str] | None = None,
+    ):
         self._clear_plugin_area()
         self._rows.clear()
         self._plugins = list(plugins)
         for registry_key, plugin_cls in plugins:
             qualified = qualify_plugin_name(registry_key, plugin_cls)
-            if enabled is not None:
-                checked = qualified in enabled
-            else:
-                checked = getattr(plugin_cls, "DEFAULT_ENABLED", False)
+            checked = PluginSettings.resolve_enabled(qualified, plugin_cls, enabled_overrides, legacy_enabled)
             row = _PluginRow(registry_key, plugin_cls, checked)
             row.checkbox.stateChanged.connect(self._on_checkbox_changed)
-            self._rows.append((row, qualified))
+            self._rows.append((row, qualified, plugin_cls))
             self._plugin_area.addWidget(row)
 
     def get_enabled_names(self) -> set[str]:
-        return {name for row, name in self._rows if row.checkbox.isChecked()}
+        return {name for row, name, _plugin_cls in self._rows if row.checkbox.isChecked()}
+
+    def get_enabled_overrides(self) -> dict[str, bool]:
+        result = {}
+        for row, qualified, plugin_cls in self._rows:
+            override = PluginSettings.enabled_override(qualified, plugin_cls, row.checkbox.isChecked())
+            if override is not None:
+                result[override[0]] = override[1]
+        return result
+
+    def iter_plugin_states(self):
+        for row, qualified, plugin_cls in self._rows:
+            yield qualified, plugin_cls, row.checkbox.isChecked()
 
     def get_enabled_plugins(self, registry_key: str) -> list[type]:
         enabled = self.get_enabled_names()
@@ -419,9 +434,16 @@ class _ExtensionCard(QtWidgets.QFrame):
 class ExtensionsTab(QtWidgets.QWidget):
     enabled_changed = QtCore.Signal()
 
-    def __init__(self, enabled_names: set[str] | None, dispatcher: Dispatcher, parent=None):
+    def __init__(
+        self,
+        enabled_overrides: dict[str, bool] | set[str] | None,
+        dispatcher: Dispatcher,
+        legacy_enabled: set[str] | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
-        self._enabled = enabled_names
+        self._enabled_overrides = dict(enabled_overrides) if isinstance(enabled_overrides, dict) else {}
+        self._legacy_enabled = set(enabled_overrides) if isinstance(enabled_overrides, set) and legacy_enabled is None else legacy_enabled
         self._dispatcher = dispatcher
         self._cards: dict[str, _ExtensionCard] = {}
 
@@ -520,7 +542,7 @@ class ExtensionsTab(QtWidgets.QWidget):
         self._dispatcher.post(task, priority=5)
 
     def _on_discover_complete(self, card: _ExtensionCard, plugins: list[tuple[str, type]]):
-        card.set_plugins(plugins, self._enabled)
+        card.set_plugins(plugins, self._enabled_overrides, self._legacy_enabled)
         self.enabled_changed.emit()
 
     def _install_extension(self, card: _ExtensionCard):
@@ -560,6 +582,16 @@ class ExtensionsTab(QtWidgets.QWidget):
             result |= card.get_enabled_names()
         return result
 
+    def collect_enabled_overrides(self) -> dict[str, bool]:
+        result = {}
+        for card in self._cards.values():
+            result.update(card.get_enabled_overrides())
+        return result
+
+    def iter_plugin_states(self):
+        for card in self._cards.values():
+            yield from card.iter_plugin_states()
+
     def collect_enabled_plugins(self, registry_key: str) -> list[type]:
         result = []
         for card in self._cards.values():
@@ -579,10 +611,11 @@ class ExtensionsTab(QtWidgets.QWidget):
     def cancel_pending(self):
         pass
 
-    def revert(self, enabled_names: set[str]):
-        self._enabled = set(enabled_names)
+    def revert(self, enabled_overrides: dict[str, bool], legacy_enabled: set[str] | None = None):
+        self._enabled_overrides = dict(enabled_overrides)
+        self._legacy_enabled = legacy_enabled
         for card in self._cards.values():
-            for row, qualified in card._rows:
+            for row, qualified, plugin_cls in card._rows:
                 row.checkbox.blockSignals(True)
-                row.checkbox.setChecked(qualified in self._enabled)
+                row.checkbox.setChecked(PluginSettings.resolve_enabled(qualified, plugin_cls, self._enabled_overrides, self._legacy_enabled))
                 row.checkbox.blockSignals(False)

@@ -95,7 +95,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [0.6.9]
 ### Added
 - **ZIP archive extension** (`extensions/zip/`): `ZipCollectorPlugin` indexes entries inside `.zip` files as virtual paths with aspect-ratio probing; `ZipResolverPlugin` materializes entries via `ZipCache` (LRU + idle-sweep eviction) for grid and file viewer
-- **Virtual path system** (`wafer/utils/virtual_paths.py`): `build_virtual_path()` / `split_virtual_path()` / `is_virtual_path()` and related helpers encode archive member paths as `source::member`; `register_owner_extension()` / `OWNS_VIRTUAL_CHILDREN` plugin flag declare which plugins own virtual children
+- **Virtual path system** (`wafer/utils/virtual_paths.py`): `build_virtual_path()` / `split_virtual_path()` / `is_virtual_path()` and related helpers encode archive member paths as `source::member`; virtual paths are resolved by the source-side extension and each plugin decides whether it can handle the path
 - **`RenderTarget` / `ResolveContext`** (`wafer/core/files/render_target.py`): immutable render-dispatch value type with depth-limited recursive resolution; adopted by `GridResolver.resolve_target()` and `ViewerResolver.resolve_target()`, routing virtual paths to owner-plugin `resolve_target()` before the normal chain
 - **`DISPATCH_OWNER` / `DISPATCH_LEAF` registry modes**: `FilePluginRegistry.resolve()` / `resolve_chain()` accept a mode for owner- or leaf-extension-based dispatch
 - **Standard key constants** (`wafer/core/db/query.py`): `SYSTEM_FILE_HASH_KEY`, `STANDARD_KEYS`, `standard_key_columns()` — standard fields resolve directly from dedicated DB columns, eliminating `meta_info` round-trips for path/name/size/modified/created/collected/file_hash queries

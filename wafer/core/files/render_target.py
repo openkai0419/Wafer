@@ -2,49 +2,63 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from typing import TypeVar
+from typing import Generic, TypeVar
+
+from ...utils.virtual_paths import source_path
 
 
-TARGET_IMAGE = "image"
-TARGET_WIDGET = "widget"
+SURFACE_VIEWER = "viewer"
+SURFACE_GRID = "grid"
+SURFACE_IMAGE = "image"
 
 T = TypeVar("T")
 
 
 @dataclass(frozen=True)
-class RenderRequest:
-    logical_path: str
-    render_path: str | None = None
-    source_path: str | None = None
-
-    @property
-    def path(self) -> str:
-        return self.render_path or self.logical_path
+class RenderPlan(Generic[T]):
+    source: str
+    path: str
+    resolved_path: str
+    handler: T
 
 
-@dataclass(frozen=True)
-class RenderTarget:
-    logical_path: str
-    render_path: str
-    kind: str = TARGET_IMAGE
-    plugin_name: str | None = None
-    source_path: str | None = None
-
-    @property
-    def cache_path(self) -> str:
-        return self.logical_path
+ResolveCallback = Callable[[str, "ResolveContext"], RenderPlan | None]
 
 
 @dataclass(frozen=True)
 class ResolveContext:
-    logical_path: str
+    source: str
+    path: str
+    surface: str
+    resolver: ResolveCallback
     depth: int = 0
     max_depth: int = 4
 
-    def child(self, logical_path: str | None = None) -> ResolveContext:
-        if self.depth >= self.max_depth:
-            raise RecursionError(f"render target resolution exceeded depth={self.max_depth}: {self.logical_path}")
-        return replace(self, logical_path=logical_path or self.logical_path, depth=self.depth + 1)
+    @classmethod
+    def create(
+        cls,
+        path: str,
+        *,
+        surface: str,
+        resolver: ResolveCallback,
+        source: str | None = None,
+        max_depth: int = 4,
+    ) -> "ResolveContext":
+        return cls(
+            source=source or source_path(path),
+            path=path,
+            surface=surface,
+            resolver=resolver,
+            max_depth=max_depth,
+        )
 
-    def resolve_child(self, path: str, callback: Callable[[str, ResolveContext], T]) -> T:
-        return callback(path, self.child())
+    def child(self) -> "ResolveContext":
+        if self.depth >= self.max_depth:
+            raise RecursionError(f"render plan resolution exceeded depth={self.max_depth}: {self.path}")
+        return replace(self, depth=self.depth + 1)
+
+    def resolve_new(self, path: str) -> RenderPlan | None:
+        return self.resolver(path, self.child())
+
+
+__all__ = ["SURFACE_GRID", "SURFACE_IMAGE", "SURFACE_VIEWER", "RenderPlan", "ResolveContext"]

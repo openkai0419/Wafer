@@ -5,7 +5,6 @@ import os
 import sys
 
 from ..utils.logs import AppLogger
-from ..utils.virtual_paths import register_owner_extension
 from .installer import _PACKAGES_DIR, needs_setup
 from .registry import RegistryBase, CommandGroupRegistry
 from .viewer.base import WidgetViewerPlugin
@@ -19,7 +18,6 @@ from .panel.base import BasePanelPlugin
 from .key_value_panel.base import BaseKeyValuePanelPlugin
 from .rename.base import BaseRenameSourcePlugin
 from .imageloader.base import BaseImageLoader
-from .resolver.base import BaseResolverPlugin
 from .kinds import (
     PLUGIN_KIND_COLLECTOR,
     PLUGIN_KIND_COMMAND,
@@ -32,7 +30,6 @@ from .kinds import (
     PLUGIN_KIND_PANEL,
     PLUGIN_KIND_PARSER,
     PLUGIN_KIND_RENAME_SOURCE,
-    PLUGIN_KIND_RESOLVER,
     PLUGIN_KIND_SORT,
     PLUGIN_KIND_VIEWER,
 )
@@ -54,7 +51,6 @@ def _build_registry_map():
         BaseKeyValuePanelPlugin: PLUGIN_KIND_KEY_VALUE_PANEL,
         BaseRenameSourcePlugin: PLUGIN_KIND_RENAME_SOURCE,
         BaseImageLoader: PLUGIN_KIND_IMAGE_LOADER,
-        BaseResolverPlugin: PLUGIN_KIND_RESOLVER,
         MenuGroup: PLUGIN_KIND_COMMAND,
     }
 
@@ -110,10 +106,18 @@ def _setup_packages_dll_directories(packages_dir: str):
 
 
 class PluginLoader:
-    def __init__(self, plugin_dir: str, registries: dict[str, RegistryBase], *, enabled: set[str] | None = None):
+    def __init__(
+        self,
+        plugin_dir: str,
+        registries: dict[str, RegistryBase],
+        *,
+        enabled: dict[str, bool] | set[str] | None = None,
+        legacy_enabled: set[str] | None = None,
+    ):
         self._plugin_dir = plugin_dir
         self._registries = registries
-        self._enabled = enabled
+        self._enabled_overrides = dict(enabled) if isinstance(enabled, dict) else {}
+        self._legacy_enabled = set(enabled) if isinstance(enabled, set) else legacy_enabled
 
     def load_all(self, on_progress=None) -> list[str]:
         if not os.path.isdir(self._plugin_dir):
@@ -168,18 +172,20 @@ class PluginLoader:
         all_found = _import_extension(name, folder)
         for registry_key, cls in all_found:
             qualified = qualify_plugin_name(registry_key, cls)
-            if self._enabled is not None and qualified not in self._enabled:
-                continue
-            if self._enabled is None and not getattr(cls, "DEFAULT_ENABLED", False):
+            if not self._is_enabled(qualified, cls):
                 continue
             registry = self._registries.get(registry_key)
             if registry is not None:
                 registry.register(cls)
-                if getattr(cls, "OWNS_VIRTUAL_CHILDREN", False):
-                    for ext in getattr(cls, "EXTENSIONS", ()) or ():
-                        register_owner_extension(ext)
             total += 1
         return total
+
+    def _is_enabled(self, qualified: str, cls: type) -> bool:
+        if qualified in self._enabled_overrides:
+            return bool(self._enabled_overrides[qualified])
+        if self._legacy_enabled is not None:
+            return qualified in self._legacy_enabled
+        return bool(getattr(cls, "DEFAULT_ENABLED", False))
 
     @staticmethod
     def discover_extension(folder: str) -> list[tuple[str, type]]:
@@ -249,7 +255,6 @@ def load_plugins(*, on_progress=None) -> list[str]:
     from .key_value_panel.handler import key_value_panel_registry
     from .rename.handler import rename_source_registry
     from .imageloader.handler import image_loader_resolver
-    from .resolver.handler import resolver_registry
 
     command_registry = CommandGroupRegistry()
     registries = {
@@ -265,7 +270,6 @@ def load_plugins(*, on_progress=None) -> list[str]:
         PLUGIN_KIND_KEY_VALUE_PANEL: key_value_panel_registry,
         PLUGIN_KIND_RENAME_SOURCE: rename_source_registry,
         PLUGIN_KIND_IMAGE_LOADER: image_loader_resolver.registry,
-        PLUGIN_KIND_RESOLVER: resolver_registry.registry,
         PLUGIN_KIND_COMMAND: command_registry,
     }
     from ..builtins.registration import register_all
@@ -275,9 +279,10 @@ def load_plugins(*, on_progress=None) -> list[str]:
     from .settings import PluginSettings
 
     ps = PluginSettings()
-    enabled = ps.enabled_names()
+    enabled_overrides = ps.enabled_overrides()
+    legacy_enabled = None if ps.has_enabled_overrides() else ps.enabled_names()
 
-    loader = PluginLoader(get_plugin_dir(), registries, enabled=enabled)
+    loader = PluginLoader(get_plugin_dir(), registries, enabled=enabled_overrides, legacy_enabled=legacy_enabled)
     result = loader.load_all(on_progress=on_progress)
 
     for key, registry in registries.items():

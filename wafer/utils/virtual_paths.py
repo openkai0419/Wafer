@@ -3,37 +3,14 @@ from __future__ import annotations
 import os
 
 from ..constants import VIRTUAL_PATH_SEPARATOR
-from .logs import AppLogger
 
 _ESCAPE = "%"
 _SEP_ESCAPED = "%3A%3A" if VIRTUAL_PATH_SEPARATOR == "::" else "".join(f"%{ord(c):02X}" for c in VIRTUAL_PATH_SEPARATOR)
 _PERCENT_ESCAPED = "%25"
 
-_OWNER_EXTENSIONS: set[str] = set()
-
-
-def register_owner_extension(ext: str) -> None:
-    if not ext:
-        return
-    normalized = ext.lower() if ext.startswith(".") else f".{ext.lower()}"
-    _OWNER_EXTENSIONS.add(normalized)
-
-
-def owner_extensions() -> frozenset[str]:
-    return frozenset(_OWNER_EXTENSIONS)
-
-
-def _has_owner_extension(source: str) -> bool:
-    if not source:
-        return False
-    return os.path.splitext(source)[1].lower() in _OWNER_EXTENSIONS
-
 
 def is_virtual_path(path: str | None) -> bool:
-    if not path or VIRTUAL_PATH_SEPARATOR not in path:
-        return False
-    source = str(path).split(VIRTUAL_PATH_SEPARATOR, 1)[0]
-    return _has_owner_extension(source)
+    return split_virtual_path(path) is not None
 
 
 def escape_member_path(member_path: str) -> str:
@@ -60,12 +37,6 @@ def split_virtual_path(path: str) -> tuple[str, str] | None:
     source, member = str(path).split(VIRTUAL_PATH_SEPARATOR, 1)
     if not source or not member:
         return None
-    if not _has_owner_extension(source):
-        AppLogger.error(
-            f"[virtual_paths] Path contains separator '{VIRTUAL_PATH_SEPARATOR}' but source extension is not registered as owner: {path}. "
-            f"Registered owners: {sorted(_OWNER_EXTENSIONS)}. A collector may be producing virtual paths for an unsupported format."
-        )
-        raise ValueError(f"Unregistered owner extension for virtual path: {path}")
     return source, unescape_member_path(member)
 
 

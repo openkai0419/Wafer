@@ -135,7 +135,7 @@ class AdditionalWidgetPool:
             from ....plugin.grid.base import WidgetGridPlugin
 
             plugin_cls = self._grid.registry.get(plugin_name)
-            if plugin_cls is None or not issubclass(plugin_cls, WidgetGridPlugin):
+            if plugin_cls is None or not issubclass(plugin_cls, WidgetGridPlugin) or plugin_cls.WIDGET_CLASS is None:
                 return None
             widget = plugin_cls.WIDGET_CLASS(parent)
         self._in_use[widget] = plugin_name
@@ -164,7 +164,7 @@ class AdditionalWidgetPool:
         from ....plugin.grid.base import WidgetGridPlugin
 
         for plugin_cls in self._grid.registry.list_all():
-            if not issubclass(plugin_cls, WidgetGridPlugin):
+            if not issubclass(plugin_cls, WidgetGridPlugin) or plugin_cls.WIDGET_CLASS is None:
                 continue
             name = plugin_cls.NAME
             if self._pools.get(name):

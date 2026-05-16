@@ -26,9 +26,6 @@ def test_set_images_uses_multiple_scene_items(qtbot):
 
 
 def test_extend_context_uses_active_batch_paths(qtbot):
-    from wafer.utils.virtual_paths import register_owner_extension
-
-    register_owner_extension(".zip")
     widget = ImageDisplayWidget()
     qtbot.addWidget(widget)
     view = widget.view

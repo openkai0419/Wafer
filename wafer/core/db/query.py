@@ -6,6 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+from ...constants import VIRTUAL_PATH_SEPARATOR
 from .db_utils import apply_read_pragmas, build_like_condition, escape_like
 from .key_value import SCOPE_ALL, SCOPE_META_INFO, SCOPE_TAG, iter_data_scopes, key_prefix_lookup_sql
 from ...utils.paths import normalize_path
@@ -583,6 +584,25 @@ class FileSearchEngine:
         norm_path = self._normalize_path(path)
         row = cur.execute("SELECT * FROM files WHERE path = ?", (norm_path,)).fetchone()
         return dict(row) if row else {}
+
+    @profiler.profile
+    def has_source_children(self, source: str) -> bool:
+        if not self._connect_if_needed():
+            return False
+        cur = self.conn.cursor()
+        norm_source = self._normalize_path(source)
+        prefix = f"{norm_source}{VIRTUAL_PATH_SEPARATOR}"
+        row = cur.execute(
+            """
+            SELECT 1
+            FROM files
+            WHERE source = ?
+              AND path LIKE ? ESCAPE '\\'
+            LIMIT 1
+            """,
+            (norm_source, f"{escape_like(prefix)}%"),
+        ).fetchone()
+        return row is not None
 
     @profiler.profile
     def get_source_by_path(self, path: str) -> dict:

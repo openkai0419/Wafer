@@ -20,5 +20,6 @@ def test_file_registry_owner_and_leaf_dispatch():
     reg.register(_ZipOwner)
     reg.register(_PngLeaf)
     path = build_virtual_path("C:/data/archive.zip", "folder/image.png")
+    assert reg.resolve(path) is _ZipOwner
     assert reg.resolve(path, DISPATCH_OWNER) is _ZipOwner
     assert reg.resolve(path, DISPATCH_LEAF) is _PngLeaf

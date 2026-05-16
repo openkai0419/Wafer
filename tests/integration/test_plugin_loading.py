@@ -24,7 +24,6 @@ from wafer.plugin.layout.handler import layout_registry
 from wafer.plugin.panel.handler import panel_registry
 from wafer.plugin.rename.handler import rename_source_registry
 from wafer.plugin.imageloader.handler import image_loader_resolver
-from wafer.plugin.resolver.handler import resolver_registry
 
 
 EXTENSIONS_DIR = get_plugin_dir()
@@ -71,9 +70,11 @@ class TestViewerRegistryState:
         assert "default_viewer" not in viewer_resolver.registry.names()
 
 
-class TestResolverRegistryState:
-    def test_zip_resolver_registered(self):
-        assert "zip" in resolver_registry.registry.names()
+class TestPathResolutionRegistryState:
+    def test_zip_resolution_plugins_registered(self):
+        assert "zip" in viewer_resolver.registry.names()
+        assert "zip" in grid_resolver.registry.names()
+        assert "zip" in image_loader_resolver.registry.names()
 
 
 class TestCollectorRegistryState:
@@ -190,8 +191,9 @@ class TestResolutionChainOrder:
     def test_unknown_merged_chain_fallback_only(self):
         chain = grid_resolver.resolve_merged_chain("test.xyz_unknown")
         names = [cls.NAME for cls, kind in chain]
-        assert "system_thumbnail" in names
-        assert len(names) == 1
+        assert names[-1] == "system_thumbnail"
+        assert "image" not in names
+        assert "animated" not in names
 
     def test_viewer_gif_chain_animated_first(self):
         chain = viewer_resolver.registry.resolve_chain("test.gif")
@@ -233,19 +235,18 @@ class TestPluginLoaderFreshLoad:
         assert "wd14" not in registries["collector"].names()
         assert "novelai" not in registries["parser"].names()
 
-    def test_enabled_set_restricts_loading(self):
+    def test_enabled_override_false_disables_default_enabled_plugin(self):
         registries = self._make_fresh_registries()
         folder = os.path.join(EXTENSIONS_DIR, "image")
         found = _import_extension("image", folder)
-        real_enabled = set()
+        overrides = {}
         for rk, cls in found:
             if cls.__name__ == "ImageFileLoader":
-                real_enabled.add(qualify_plugin_name(rk, cls))
-        loader = PluginLoader(EXTENSIONS_DIR, registries, enabled=real_enabled)
+                overrides[qualify_plugin_name(rk, cls)] = False
+        loader = PluginLoader(EXTENSIONS_DIR, registries, enabled=overrides)
         loader.load_all()
-        assert "image" in registries["imageloader"].names()
-        assert "image" not in registries["viewer"].names()
-        assert "exiftool" not in registries["collector"].names()
+        assert "image" not in registries["imageloader"].names()
+        assert "zip" in registries["viewer"].names()
 
     def test_alphabetical_load_order(self):
         registries = self._make_fresh_registries()

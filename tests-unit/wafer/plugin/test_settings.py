@@ -7,6 +7,14 @@ from wafer.plugin.kinds import PLUGIN_KINDS
 import wafer.plugin.settings as settings_mod
 
 
+class DefaultEnabledPlugin:
+    DEFAULT_ENABLED = True
+
+
+class DefaultDisabledPlugin:
+    DEFAULT_ENABLED = False
+
+
 @pytest.fixture(autouse=True)
 def isolate_ini(tmp_path, monkeypatch):
     ini = str(tmp_path / "viewer_plugins.ini")
@@ -35,6 +43,57 @@ class TestPluginSettingsEnabledNames:
         ps.set_enabled({"image", "exif"})
         ps.set_enabled({"video"})
         assert ps.enabled_names() == {"video"}
+
+
+class TestPluginSettingsEnabledOverrides:
+    def test_empty_when_no_file(self):
+        ps = PluginSettings()
+        assert ps.enabled_overrides() == {}
+        assert not ps.has_enabled_overrides()
+
+    def test_roundtrip(self):
+        ps = PluginSettings()
+        ps.set_enabled_overrides({"viewer:Video": False, "grid:Zip": True})
+        assert ps.enabled_overrides() == {"viewer:Video": False, "grid:Zip": True}
+        assert ps.has_enabled_overrides()
+
+    def test_missing_override_uses_default_enabled(self):
+        ps = PluginSettings()
+        assert ps.is_plugin_enabled("viewer:DefaultEnabledPlugin", DefaultEnabledPlugin)
+        assert not ps.is_plugin_enabled("viewer:DefaultDisabledPlugin", DefaultDisabledPlugin)
+
+    def test_override_false_disables_default_enabled(self):
+        ps = PluginSettings()
+        overrides = {"viewer:DefaultEnabledPlugin": False}
+        assert not ps.is_plugin_enabled("viewer:DefaultEnabledPlugin", DefaultEnabledPlugin, overrides)
+
+    def test_override_true_enables_default_disabled(self):
+        ps = PluginSettings()
+        overrides = {"viewer:DefaultDisabledPlugin": True}
+        assert ps.is_plugin_enabled("viewer:DefaultDisabledPlugin", DefaultDisabledPlugin, overrides)
+
+    def test_legacy_enabled_set_behaves_as_allowlist(self):
+        ps = PluginSettings()
+        ps.set_enabled(set())
+        assert not ps.is_plugin_enabled("viewer:DefaultEnabledPlugin", DefaultEnabledPlugin)
+
+    def test_legacy_enabled_can_enable_default_disabled_plugin(self):
+        ps = PluginSettings()
+        ps.set_enabled({"viewer:DefaultDisabledPlugin"})
+        assert ps.is_plugin_enabled("viewer:DefaultDisabledPlugin", DefaultDisabledPlugin)
+
+    def test_new_overrides_take_precedence_over_legacy_enabled(self):
+        ps = PluginSettings()
+        ps.set_enabled({"viewer:DefaultDisabledPlugin"})
+        ps.set_enabled_overrides({})
+        assert not ps.is_plugin_enabled("viewer:DefaultDisabledPlugin", DefaultDisabledPlugin)
+
+    def test_enabled_override_omits_default_matching_state(self):
+        assert PluginSettings.enabled_override("viewer:DefaultEnabledPlugin", DefaultEnabledPlugin, True) is None
+        assert PluginSettings.enabled_override("viewer:DefaultEnabledPlugin", DefaultEnabledPlugin, False) == (
+            "viewer:DefaultEnabledPlugin",
+            False,
+        )
 
 
 class TestPluginSettingsPriorityOrder:

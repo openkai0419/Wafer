@@ -8,7 +8,7 @@ from natsort import natsorted
 from ....utils.formatting import format_aspect, format_size_detail, format_timestamp
 from ....utils.paths import db_name_from_path
 from ....core.db.query import FileSearchEngine
-from ....core.files.render_target import RenderTarget, TARGET_WIDGET
+from ....core.files.render_target import RenderPlan
 from ....plugin.viewer.handler import viewer_resolver
 from ....plugin.viewer.base import MultiWidgetViewerPlugin as _MultiWidgetViewerPlugin, ViewerContext, WidgetViewerPlugin as _WidgetViewerPlugin
 from ....core.qt.dispatcher import Dispatcher, CancelSlot
@@ -336,8 +336,8 @@ class FileViewerController(QtCore.QObject):
         start = start if start is not None else 0
         if path is None:
             return ViewerBatch(start, "", "", ())
-        first_target = viewer_resolver.resolve_target(path)
-        plugin_name = self._plugin_name(first_target)
+        first_plan = viewer_resolver.resolve_plan(path)
+        plugin_name = self._plugin_name(first_plan)
         contexts: list[ViewerContext] = []
         display_count = self._display_count(plugin_name, start, cancel=cancel)
         for offset in range(display_count):
@@ -346,19 +346,19 @@ class FileViewerController(QtCore.QObject):
             item_path = self.model.path_at(start + offset)
             if item_path is None:
                 break
-            target = viewer_resolver.resolve_target(item_path)
-            if not self._same_viewer(plugin_name, target):
+            plan = viewer_resolver.resolve_plan(item_path)
+            if not self._same_viewer(plugin_name, plan):
                 break
-            contexts.append(self._viewer_context(target))
+            contexts.append(self._viewer_context(plan))
         if not contexts:
-            contexts.append(self._viewer_context(first_target))
-        return ViewerBatch(start, plugin_name, first_target.logical_path, tuple(contexts))
+            contexts.append(self._viewer_context(first_plan))
+        return ViewerBatch(start, plugin_name, first_plan.path, tuple(contexts))
 
-    def _viewer_context(self, target: RenderTarget) -> ViewerContext:
+    def _viewer_context(self, plan: RenderPlan) -> ViewerContext:
         return ViewerContext(
-            path=target.logical_path,
-            source=target.source_path or target.logical_path,
-            render_path=target.render_path,
+            path=plan.path,
+            source=plan.source,
+            render_path=plan.resolved_path,
         )
 
     def _display_count(self, plugin_name: str, index: int | None, cancel=None) -> int:
@@ -384,11 +384,11 @@ class FileViewerController(QtCore.QObject):
             self._navigation_cache_starts.append(start)
             self._navigation_cache_starts.sort()
 
-    def _same_viewer(self, plugin_name: str, target: RenderTarget) -> bool:
-        return bool(plugin_name) and target.kind == TARGET_WIDGET and target.plugin_name == plugin_name
+    def _same_viewer(self, plugin_name: str, plan: RenderPlan) -> bool:
+        return bool(plugin_name) and isinstance(plan.handler, _WidgetViewerPlugin) and plan.handler.NAME == plugin_name
 
-    def _plugin_name(self, target: RenderTarget) -> str:
-        return target.plugin_name if target.kind == TARGET_WIDGET and target.plugin_name else ""
+    def _plugin_name(self, plan: RenderPlan) -> str:
+        return plan.handler.NAME if isinstance(plan.handler, _WidgetViewerPlugin) else ""
 
     def _current_navigation_cache_key(self):
         plugin_name = self._target_plugin or self.content_viewer._current_plugin_name
@@ -475,15 +475,15 @@ class FileViewerController(QtCore.QObject):
         previous_path = self.model.path_at(previous_index)
         if previous_path is None:
             return 0
-        previous_target = viewer_resolver.resolve_target(previous_path)
-        plugin_name = self._plugin_name(previous_target)
+        previous_plan = viewer_resolver.resolve_plan(previous_path)
+        plugin_name = self._plugin_name(previous_plan)
         span = self._display_count(plugin_name, previous_index)
         start = max(0, index - span)
         while start < previous_index:
             path = self.model.path_at(start)
             if path is None:
                 break
-            if self._same_viewer(plugin_name, viewer_resolver.resolve_target(path)):
+            if self._same_viewer(plugin_name, viewer_resolver.resolve_plan(path)):
                 break
             start += 1
         batch = self._navigation_batch_at(start)

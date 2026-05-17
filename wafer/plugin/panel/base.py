@@ -21,6 +21,9 @@ class BasePanelPlugin(PluginBase, ABC):
     @abstractmethod
     def create_widget(self) -> QtWidgets.QWidget: ...
 
+    def startup(self) -> None:
+        pass
+
     def save_ui_state(self) -> dict[str, Any]:
         return {}
 

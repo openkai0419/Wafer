@@ -2,7 +2,13 @@ import os
 import tempfile
 from pathlib import Path
 
-from wafer.utils.paths import normalize_path, natural_sort, stem, list_files
+from wafer.constants import APP_DATA_DIR_NAME
+from wafer.utils.paths import normalize_path, natural_sort, resolve_cache_path, stem, list_files
+
+
+class _FakePlatformDirs:
+    def __init__(self, appname=None):
+        self.user_cache_dir = "/tmp/wafer-cache"
 
 
 def test_normalize_path():
@@ -14,6 +20,15 @@ def test_normalize_path():
 def test_normalize_path_absolute():
     result = normalize_path(os.path.abspath("."))
     assert "/" in result
+
+
+def test_resolve_cache_path_uses_app_cache_dir(monkeypatch):
+    import wafer.utils.paths as paths
+
+    monkeypatch.setattr(paths, "PlatformDirs", _FakePlatformDirs)
+    result = resolve_cache_path("updates/latest.json")
+
+    assert result.endswith(f"/wafer-cache/{APP_DATA_DIR_NAME}/updates/latest.json")
 
 
 def test_natural_sort():

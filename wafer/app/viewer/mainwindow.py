@@ -100,6 +100,7 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.reload_database(self.get_last_used_db_name())
         self._check_first_run_plugin_panel()
+        self._run_panel_plugin_startups()
 
     @profiler.profile
     def get_last_used_db_name(self):
@@ -773,6 +774,19 @@ class MainWindow(QtWidgets.QMainWindow):
                 plugin.create_widget,
                 closable=plugin.CLOSABLE,
             )
+
+    def _run_panel_plugin_startups(self):
+        from ...plugin.panel.base import BasePanelPlugin
+        from ...plugin.panel.handler import panel_registry
+
+        for cls in panel_registry.list_all():
+            plugin = panel_registry.instance(cls.NAME)
+            if plugin is None or not isinstance(plugin, BasePanelPlugin):
+                continue
+            try:
+                plugin.startup()
+            except Exception as e:
+                AppLogger.warning(f"Failed to start panel plugin: {cls.NAME}", exc=e)
 
     @QtCore.Slot(str, str, str, str)
     def _on_dev_log(self, level: str, text: str, src: str, db: str):

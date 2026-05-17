@@ -279,3 +279,125 @@ class TestFolderCallout:
 
             add_btn.pressed.connect.assert_called_once_with(win._dismiss_folder_callout)
             single_shot.assert_called_once()
+
+
+class TestPanelPluginStartup:
+    def _make_win(self):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            return MainWindow.__new__(MainWindow), MainWindow
+
+    def test_runs_all_panel_plugin_startups(self):
+        win, MainWindow = self._make_win()
+        from wafer.plugin.panel.base import BasePanelPlugin
+
+        class ViewerPlugin(BasePanelPlugin):
+            NAME = "viewer_panel"
+            SCOPE = "viewer"
+
+            def __init__(self):
+                self.calls = 0
+
+            def startup(self):
+                self.calls += 1
+
+            def create_widget(self):
+                return MagicMock()
+
+        class GlobalPlugin(BasePanelPlugin):
+            NAME = "global_panel"
+            SCOPE = "*"
+
+            def __init__(self):
+                self.calls = 0
+
+            def startup(self):
+                self.calls += 1
+
+            def create_widget(self):
+                return MagicMock()
+
+        class TrayPlugin(BasePanelPlugin):
+            NAME = "tray_panel"
+            SCOPE = "tray"
+
+            def __init__(self):
+                self.calls = 0
+
+            def startup(self):
+                self.calls += 1
+
+            def create_widget(self):
+                return MagicMock()
+
+        viewer_plugin = ViewerPlugin()
+        global_plugin = GlobalPlugin()
+        tray_plugin = TrayPlugin()
+
+        registry = MagicMock()
+        registry.list_all.return_value = [
+            ViewerPlugin,
+            GlobalPlugin,
+            TrayPlugin,
+        ]
+        registry.instance.side_effect = lambda name: {
+            "viewer_panel": viewer_plugin,
+            "global_panel": global_plugin,
+            "tray_panel": tray_plugin,
+        }[name]
+
+        with patch("wafer.plugin.panel.handler.panel_registry", registry):
+            MainWindow._run_panel_plugin_startups(win)
+
+        assert viewer_plugin.calls == 1
+        assert global_plugin.calls == 1
+        assert tray_plugin.calls == 1
+
+    def test_logs_and_continues_when_panel_plugin_startup_fails(self):
+        win, MainWindow = self._make_win()
+        from wafer.plugin.panel.base import BasePanelPlugin
+
+        class FailingPlugin(BasePanelPlugin):
+            NAME = "broken_panel"
+            SCOPE = "viewer"
+
+            def startup(self):
+                raise RuntimeError("boom")
+
+            def create_widget(self):
+                return MagicMock()
+
+        class HealthyPlugin(BasePanelPlugin):
+            NAME = "healthy_panel"
+            SCOPE = "viewer"
+
+            def __init__(self):
+                self.calls = 0
+
+            def startup(self):
+                self.calls += 1
+
+            def create_widget(self):
+                return MagicMock()
+
+        failing_plugin = FailingPlugin()
+        healthy_plugin = HealthyPlugin()
+
+        registry = MagicMock()
+        registry.list_all.return_value = [
+            FailingPlugin,
+            HealthyPlugin,
+        ]
+        registry.instance.side_effect = lambda name: {
+            "broken_panel": failing_plugin,
+            "healthy_panel": healthy_plugin,
+        }[name]
+
+        with patch("wafer.plugin.panel.handler.panel_registry", registry), patch(
+            "wafer.app.viewer.mainwindow.AppLogger.warning"
+        ) as warning:
+            MainWindow._run_panel_plugin_startups(win)
+
+        assert healthy_plugin.calls == 1
+        warning.assert_called_once()

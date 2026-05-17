@@ -167,6 +167,7 @@ _EMPTY_RAW = {
     "slots": {},
     "active_slot_ids": [],
     "restore_slot_ids": [],
+    "viewer_run": {},
 }
 
 
@@ -206,6 +207,32 @@ class WorkspaceStore:
             result = fn(raw)
             self._save_raw(raw)
             return result
+
+    def _viewer_run(self, raw: dict[str, Any]) -> dict[str, Any]:
+        run = raw.get("viewer_run")
+        if not isinstance(run, dict):
+            run = {}
+            raw["viewer_run"] = run
+        run.setdefault("generation", 0)
+        run.setdefault("first_slot_id", "")
+        run.setdefault("started_at", "")
+        claims = run.get("claims")
+        if not isinstance(claims, dict):
+            claims = {}
+            run["claims"] = claims
+        return run
+
+    def _activate_slot(self, raw: dict[str, Any], slot_id: str) -> None:
+        active = raw.setdefault("active_slot_ids", [])
+        was_empty = not active
+        if slot_id not in active:
+            active.append(slot_id)
+        if was_empty and active:
+            run = self._viewer_run(raw)
+            run["generation"] = int(run.get("generation") or 0) + 1
+            run["first_slot_id"] = slot_id
+            run["started_at"] = _now_iso()
+            run["claims"] = {}
 
     # --- Preset helpers (shared CRUD across UI/Path/Query buckets) ---
     def _list_presets(self, bucket: str, cls):
@@ -480,8 +507,7 @@ class WorkspaceStore:
                 )
                 slots[entry.slot_id] = entry.to_dict()
                 existed = False
-            if entry.slot_id not in active_set:
-                active.append(entry.slot_id)
+            self._activate_slot(raw, entry.slot_id)
             return entry.slot_id, entry, existed
 
         return self._locked_update(_u)
@@ -495,8 +521,6 @@ class WorkspaceStore:
 
         def _u(raw):
             slots = raw.setdefault("slots", {})
-            active = raw.setdefault("active_slot_ids", [])
-            active_set = set(active)
             existed = bool(slot_id and slot_id in slots)
             if existed:
                 sid = slot_id
@@ -511,11 +535,39 @@ class WorkspaceStore:
                     query=dict(base.get("query") or {}),
                 )
                 slots[sid] = entry.to_dict()
-            if sid not in active_set:
-                active.append(sid)
+            self._activate_slot(raw, sid)
             return sid, entry, existed
 
         return self._locked_update(_u)
+
+    def viewer_startup_state(self) -> dict[str, Any]:
+        raw = self._load_raw()
+        run = self._viewer_run(raw)
+        return {
+            "generation": int(run.get("generation") or 0),
+            "first_slot_id": str(run.get("first_slot_id") or ""),
+            "started_at": str(run.get("started_at") or ""),
+            "claims": dict(run.get("claims") or {}),
+        }
+
+    def claim_viewer_startup_once(self, scope: str, slot_id: str) -> bool:
+        scope = str(scope or "").strip()
+        slot_id = str(slot_id or "").strip()
+        if not scope or not slot_id:
+            return False
+
+        def _u(raw):
+            run = self._viewer_run(raw)
+            generation = int(run.get("generation") or 0)
+            if generation <= 0 or run.get("first_slot_id") != slot_id:
+                return False
+            claims = run.setdefault("claims", {})
+            if int(claims.get(scope) or 0) == generation:
+                return False
+            claims[scope] = generation
+            return True
+
+        return bool(self._locked_update(_u))
 
     def release_slot(self, slot_id: str) -> None:
         def _u(raw):

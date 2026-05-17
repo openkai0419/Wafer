@@ -48,7 +48,6 @@ def _info(*, latest="0.6.19", is_newer=True):
         download_url="https://github.com/openkai0419/Wafer/releases/latest",
         published_at="2026-05-01T00:00:00Z",
         release_notes="release body",
-        changelog_markdown="# Changelog",
         is_newer=is_newer,
     )
 
@@ -71,7 +70,17 @@ def test_update_available_state_uses_primary_download_and_header(monkeypatch, qt
     assert w._skip_btn.text() == "Skip until next version"
     assert w._skip_btn.isEnabled() is True
     assert w._check_btn.text() == ""
-    assert w._browser.markdown == "# Changelog"
+    assert w._browser.markdown == "release body"
+
+
+def test_update_notes_are_empty_when_release_notes_are_empty(monkeypatch, qtbot):
+    w = _make_widget(monkeypatch, qtbot)
+    info = _info(is_newer=True)
+    info = UpdateInfo(**{**info.__dict__, "release_notes": ""})
+
+    w.set_update_info(info)
+
+    assert w._browser.markdown == ""
 
 
 def test_up_to_date_state_keeps_download_secondary_and_clickable(monkeypatch, qtbot):

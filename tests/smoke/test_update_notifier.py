@@ -25,8 +25,8 @@ def test_update_notifier_service_builds_smoke_result_without_network():
         "assets": [],
     }
 
-    info = build_update_info(release, "# Changelog", current_version="0.6.18")
+    info = build_update_info(release, "# Release Notes", current_version="0.6.18")
 
     assert info.latest_version == "0.6.19"
     assert info.is_newer is True
-    assert info.changelog_markdown == "# Changelog"
+    assert info.release_notes == "# Release Notes"

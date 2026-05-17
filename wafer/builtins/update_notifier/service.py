@@ -10,13 +10,14 @@ import requests
 from ..._version import __version__
 from ...utils.json_io import read_json_file, write_json_file
 from ...utils.logs import AppLogger
-from ...utils.paths import resolve_cache_path
+from ...utils.paths import get_app_root_dir, resolve_cache_path
 from .versioning import is_newer_version, normalize_version, parse_version
 
 
 REPOSITORY = "openkai0419/Wafer"
 LATEST_RELEASE_API_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
-CHANGELOG_RAW_BASE_URL = f"https://raw.githubusercontent.com/{REPOSITORY}"
+RELEASE_NOTES_RAW_BASE_URL = f"https://raw.githubusercontent.com/{REPOSITORY}"
+RELEASE_NOTES_FILENAME = "RELEASE_NOTES.md"
 DEFAULT_TIMEOUT = 5.0
 USER_AGENT = "Wafer Update Notifier"
 _ALLOWED_HOSTS = {"api.github.com", "github.com", "raw.githubusercontent.com", "objects.githubusercontent.com"}
@@ -31,7 +32,6 @@ class UpdateInfo:
     download_url: str
     published_at: str
     release_notes: str
-    changelog_markdown: str
     is_newer: bool
     from_cache: bool = False
 
@@ -47,9 +47,9 @@ def latest_release_cache_path() -> Path:
     return Path(resolve_cache_path("updates/latest.json"))
 
 
-def changelog_cache_path(tag_name: str) -> Path:
+def release_notes_cache_path(tag_name: str) -> Path:
     safe_tag = re.sub(r"[^A-Za-z0-9._-]+", "_", tag_name or "latest")
-    return Path(resolve_cache_path(f"updates/changelog/{safe_tag}.md"))
+    return Path(resolve_cache_path(f"updates/release_notes/{safe_tag}.md"))
 
 
 def validate_external_url(url: str) -> str:
@@ -72,12 +72,12 @@ def fetch_latest_release(*, timeout: float = DEFAULT_TIMEOUT) -> dict:
     return data
 
 
-def fetch_changelog(tag_name: str, *, timeout: float = DEFAULT_TIMEOUT) -> str:
+def fetch_remote_release_notes(tag_name: str, *, timeout: float = DEFAULT_TIMEOUT) -> str:
     if not tag_name:
         raise ValueError("release tag is empty")
-    url = validate_external_url(f"{CHANGELOG_RAW_BASE_URL}/{quote(tag_name, safe='')}/CHANGELOG.md")
+    url = validate_external_url(f"{RELEASE_NOTES_RAW_BASE_URL}/{quote(tag_name, safe='')}/{RELEASE_NOTES_FILENAME}")
     if not url:
-        raise ValueError("invalid changelog URL")
+        raise ValueError("invalid release notes URL")
     response = requests.get(url, timeout=timeout, headers={"User-Agent": USER_AGENT})
     response.raise_for_status()
     return response.text
@@ -95,30 +95,56 @@ def write_cached_latest_release(data: dict) -> None:
         AppLogger.warning("Failed to write update release cache", exc=e)
 
 
-def read_cached_changelog(tag_name: str) -> str:
+def read_cached_release_notes(tag_name: str) -> str:
     try:
-        path = changelog_cache_path(tag_name)
+        path = release_notes_cache_path(tag_name)
         return path.read_text(encoding="utf-8") if path.is_file() else ""
     except Exception as e:
-        AppLogger.warning("Failed to read cached update changelog", exc=e)
+        AppLogger.warning("Failed to read cached update release notes", exc=e)
         return ""
 
 
-def write_cached_changelog(tag_name: str, text: str) -> None:
+def write_cached_release_notes(tag_name: str, text: str) -> None:
     try:
-        path = changelog_cache_path(tag_name)
+        path = release_notes_cache_path(tag_name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text or "", encoding="utf-8")
     except Exception as e:
-        AppLogger.warning("Failed to write update changelog cache", exc=e)
+        AppLogger.warning("Failed to write update release notes cache", exc=e)
 
 
-def build_update_info(release: dict, changelog_markdown: str, *, current_version: str = __version__, from_cache: bool = False) -> UpdateInfo:
+def read_local_release_notes() -> str:
+    try:
+        path = get_app_root_dir() / RELEASE_NOTES_FILENAME
+        return path.read_text(encoding="utf-8") if path.is_file() else ""
+    except Exception as e:
+        AppLogger.warning("Failed to read local release notes", exc=e)
+        return ""
+
+
+def resolve_release_notes(tag_name: str, *, timeout: float = DEFAULT_TIMEOUT, use_cache: bool = True) -> str:
+    try:
+        notes = fetch_remote_release_notes(tag_name, timeout=timeout).strip()
+        if notes:
+            write_cached_release_notes(tag_name, notes)
+            return notes
+    except Exception as e:
+        AppLogger.warning("Update release notes fetch failed; falling back to cached or local notes", exc=e)
+
+    if use_cache:
+        notes = read_cached_release_notes(tag_name).strip()
+        if notes:
+            return notes
+    return read_local_release_notes().strip()
+
+
+def build_update_info(release: dict, release_notes: str = "", *, current_version: str = __version__, from_cache: bool = False) -> UpdateInfo:
     tag_name = str(release.get("tag_name") or "")
     latest_version = normalize_version(tag_name or release.get("name") or "")
     if parse_version(latest_version) is None:
         raise ValueError("latest release tag is not a supported version")
     release_url = validate_external_url(str(release.get("html_url") or ""))
+    release_body = str(release.get("body") or "").strip()
     return UpdateInfo(
         current_version=str(current_version or ""),
         latest_version=latest_version,
@@ -126,8 +152,7 @@ def build_update_info(release: dict, changelog_markdown: str, *, current_version
         release_url=release_url,
         download_url=release_url,
         published_at=str(release.get("published_at") or ""),
-        release_notes=str(release.get("body") or ""),
-        changelog_markdown=changelog_markdown or str(release.get("body") or ""),
+        release_notes=str(release_notes or "").strip() or release_body,
         is_newer=is_newer_version(current_version, latest_version),
         from_cache=from_cache,
     )
@@ -154,15 +179,10 @@ def check_for_updates(*, current_version: str = __version__, timeout: float = DE
             return UpdateCheckResult(error=str(e))
 
     try:
-        tag_name = str(release.get("tag_name") or "")
-        changelog = fetch_changelog(tag_name, timeout=timeout)
-        write_cached_changelog(tag_name, changelog)
-    except Exception as e:
-        AppLogger.warning("Update changelog fetch failed", exc=e)
-        changelog = read_cached_changelog(str(release.get("tag_name") or "")) if use_cache else ""
-
-    try:
-        info = build_update_info(release, changelog, current_version=current_version, from_cache=from_cache)
+        info = build_update_info(release, current_version=current_version, from_cache=from_cache)
+        if info.is_newer:
+            notes = resolve_release_notes(info.tag_name, timeout=timeout, use_cache=use_cache) or info.release_notes
+            info = build_update_info(release, notes, current_version=current_version, from_cache=from_cache)
     except Exception as e:
         AppLogger.warning("Update release response could not be parsed", exc=e)
         return UpdateCheckResult(error=str(e), from_cache=from_cache)

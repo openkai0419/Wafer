@@ -222,11 +222,7 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
         self._check_btn.setEnabled(True)
         if record_state:
             state.record_latest_result(info.latest_version)
-        self._title.setText(
-            t("New Update Available: v{version}", version=info.latest_version)
-            if info.is_newer
-            else t("Up to Date")
-        )
+        self._title.setText(t("New Update Available: v{version}", version=info.latest_version) if info.is_newer else t("Up to Date"))
         self._title.show()
         self._set_update_available(info.is_newer)
         status = ""
@@ -237,7 +233,7 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
         self._current_label.setText(t("Current : {version}", version=info.current_version))
         self._latest_label.setText(t("Latest : {version}", version=info.latest_version))
         self._published_label.setText(t("Published : {date}", date=info.published_at) if info.published_at else "")
-        self._browser.set_markdown(info.changelog_markdown or info.release_notes or "")
+        self._browser.set_markdown(info.release_notes or "")
         self._open_btn.setEnabled(bool(info.download_url or info.release_url))
         self._open_btn.setObjectName("primary_update_btn" if info.is_newer else "secondary_update_btn")
         self._refresh_button_style(self._open_btn)

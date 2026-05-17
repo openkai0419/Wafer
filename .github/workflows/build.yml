@@ -35,7 +35,21 @@ jobs:
 
       - name: Verify build output
         run: |
-          @('dist/Wafer/python/wafer-python.exe', 'dist/Wafer/main.py', 'dist/Wafer/Wafer.exe', 'dist/Wafer/LICENSE', 'dist/Wafer/extensions', 'dist/Wafer/_resources') | ForEach-Object {
+          @(
+            'dist/Wafer/python/wafer-python.exe',
+            'dist/Wafer/main.py',
+            'dist/Wafer/Wafer.exe',
+            'dist/Wafer/LICENSE',
+            'dist/Wafer/COPYING',
+            'dist/Wafer/COPYING.LESSER',
+            'dist/Wafer/README.md',
+            'dist/Wafer/README.jp.md',
+            'dist/Wafer/RELEASE_NOTES.md',
+            'dist/Wafer/CHANGELOG.md',
+            'dist/Wafer/THIRD-PARTY-NOTICES.txt',
+            'dist/Wafer/extensions',
+            'dist/Wafer/_resources'
+          ) | ForEach-Object {
             if (-not (Test-Path $_)) { throw "Missing: $_" }
           }
 
@@ -61,10 +75,17 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - uses: actions/download-artifact@v4
         with:
           name: Wafer-${{ github.ref_name || github.sha }}
           path: Wafer
+
+      - name: Extract release notes
+        run: python scripts/extract_release_notes.py RELEASE_NOTES.md release-notes.md ${{ github.ref_name }}
 
       - name: Create zip
         run: |
@@ -75,4 +96,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: Wafer-${{ github.ref_name }}.zip
-          generate_release_notes: true
+          body_path: release-notes.md

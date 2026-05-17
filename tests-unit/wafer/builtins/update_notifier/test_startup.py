@@ -53,7 +53,6 @@ def _new_result(version="0.6.19", *, is_newer=True):
         download_url="https://github.com/openkai0419/Wafer/releases/latest",
         published_at="",
         release_notes="",
-        changelog_markdown="# Changelog",
         is_newer=is_newer,
     )
     return UpdateCheckResult(info=info)

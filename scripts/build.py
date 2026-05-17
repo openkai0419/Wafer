@@ -68,6 +68,7 @@ META_FILES = [
     "COPYING.LESSER",
     "README.md",
     "README.jp.md",
+    "RELEASE_NOTES.md",
     "CHANGELOG.md",
     "cleanup.bat",
 ]
@@ -266,14 +267,21 @@ def create_launchers(dist_dir: Path, version: str):
 
 
 def generate_third_party_notices(dist_dir: Path):
+    env = os.environ.copy()
+    env.setdefault("PYTHONUTF8", "1")
+    env["PYTHONIOENCODING"] = "utf-8"
     try:
         result = subprocess.run(
             [sys.executable, "-m", "piplicenses", "--format=plain-vertical", "--with-license-file", "--no-license-path", "--packages", *sorted(RUNTIME_PACKAGES)],
             capture_output=True,
             text=True,
             cwd=ROOT,
+            env=env,
         )
-        if result.returncode == 0 and result.stdout.strip():
+        if result.returncode != 0:
+            error_text = (result.stderr or "").strip() or "pip-licenses exited with a non-zero status"
+            raise RuntimeError(f"Failed to generate THIRD-PARTY-NOTICES.txt: {error_text}")
+        if result.stdout.strip():
             (dist_dir / "THIRD-PARTY-NOTICES.txt").write_text(result.stdout, encoding="utf-8")
             print("  Generated THIRD-PARTY-NOTICES.txt")
     except FileNotFoundError:

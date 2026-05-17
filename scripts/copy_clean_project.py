@@ -18,6 +18,7 @@ COPY_FILES = [
     "requirements-dev.txt",
     "setup.bat",
     "cleanup.bat",
+    "RELEASE_NOTES.md",
     "CHANGELOG.md",
     "README.md",
     "README.jp.md",

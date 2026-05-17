@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt
 
 from ..rename_sources import ExtSource, NameSource
 from ...core.color.theme import ThemeManager
+from ...core.qt.icon_engine import themed_icon
 from ...core.platform.file_operations import PastePlanItem
 from ...core.platform.paste import execute_paste_plans_with_ui
 from ...core.qt.dispatcher import Dispatcher, CancelToken
@@ -108,6 +109,10 @@ def _fill_fs_timestamps(paths, keys, metadata):
 class BatchRenameWidget(QtWidgets.QWidget):
     _ADD_COL_LABEL = "+"
     THUMB_CACHE_LIMIT = 200
+    DEFAULT_SORT_INDICATOR = ("segment", 0, True)
+    THUMB_FIT_COVER = "cover"
+    THUMB_FIT_CONTAIN = "contain"
+    THUMB_FIT_MODES = {THUMB_FIT_COVER, THUMB_FIT_CONTAIN}
     _saved_state: dict[str, Any] = {}
     _instance_ref: BatchRenameWidget | None = None
 
@@ -146,6 +151,8 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._selected_row = -1
         self._thumb_cache: collections.OrderedDict[str, QtGui.QPixmap] = collections.OrderedDict()
         self._sort_indicator: tuple[str, int, bool] | None = None
+        self._row_thumb_fit_mode = self.THUMB_FIT_COVER
+        self._sel_thumb_fit_mode = self.THUMB_FIT_COVER
 
         p = ThemeManager.instance().palette
         self._p = p
@@ -232,14 +239,16 @@ class BatchRenameWidget(QtWidgets.QWidget):
     def set_files(self, paths: list[Path], keys: list[str] | None = None, db_path: Any = None):
         self._cancel_all_pending()
         self._db_path = db_path
-        self._paths = list(paths)
-        self._keys = list(keys) if keys else [str(p).replace("\\", "/") for p in paths]
+        sorted_paths, sorted_keys = self._sort_input_by_name(list(paths), list(keys) if keys else [str(p).replace("\\", "/") for p in paths])
+        self._paths = sorted_paths
+        self._keys = sorted_keys
         self._initial_keys = list(self._keys)
         self._initial_paths = list(self._paths)
         self._metadata = {}
         self._thumb_cache.clear()
         self._thumb_visible.clear()
         self._reset_columns()
+        self._sort_indicator = self.DEFAULT_SORT_INDICATOR
         self._title.setText(self._title_text())
         self._stack.setCurrentWidget(self._rename_page)
         self._rebuild()
@@ -260,6 +269,8 @@ class BatchRenameWidget(QtWidgets.QWidget):
             new_keys = [str(p).replace("\\", "/") for p in new_paths]
         self._paths.extend(new_paths)
         self._keys.extend(new_keys)
+        if self._sort_indicator == self.DEFAULT_SORT_INDICATOR:
+            self._paths, self._keys = self._sort_input_by_name(self._paths, self._keys)
         self._initial_paths = list(self._paths)
         self._initial_keys = list(self._keys)
         self._title.setText(self._title_text())
@@ -382,7 +393,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._seg_table.verticalHeader().setVisible(False)
         self._seg_table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self._seg_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
-        self._seg_table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
+        self._seg_table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked | QtWidgets.QAbstractItemView.EditKeyPressed)
         self._seg_table.setFocusPolicy(Qt.ClickFocus)
         self._seg_table.verticalHeader().setDefaultSectionSize(row_h)
         self._seg_table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -427,8 +438,9 @@ class BatchRenameWidget(QtWidgets.QWidget):
     def _init_bottom_bar(self, root):
         p = self._p
 
-        spacing_size = 12
+        spacing_size = 4
         bar = QtWidgets.QHBoxLayout()
+        self._bottom_bar = bar
         bar.setContentsMargins(0, dpix(2), 0, 0)
 
         self._status = QtWidgets.QLabel()
@@ -445,6 +457,11 @@ class BatchRenameWidget(QtWidgets.QWidget):
             f"border-radius: {dpix(5)}px; }}"
         )
 
+        row_fit_btn = self._create_thumb_fit_button("row")
+        self._row_thumb_fit_btn = row_fit_btn
+        self._apply_thumb_fit_button("row")
+        bar.addWidget(row_fit_btn)
+
         row_slider = QtWidgets.QSlider(Qt.Horizontal)
         row_slider.setRange(0, 100)
         row_slider.setValue(20)
@@ -457,6 +474,11 @@ class BatchRenameWidget(QtWidgets.QWidget):
         bar.addWidget(row_slider)
         bar.addSpacing(dpix(spacing_size))
 
+        sel_fit_btn = self._create_thumb_fit_button("sel")
+        self._sel_thumb_fit_btn = sel_fit_btn
+        self._apply_thumb_fit_button("sel")
+        bar.addWidget(sel_fit_btn)
+
         sel_slider = QtWidgets.QSlider(Qt.Horizontal)
         sel_slider.setRange(0, 100)
         sel_slider.setValue(20)
@@ -467,7 +489,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         sel_slider.valueChanged.connect(self._on_sel_opacity_changed)
         self._sel_opacity_slider = sel_slider
         bar.addWidget(sel_slider)
-        bar.addSpacing(dpix(spacing_size))
+        bar.addSpacing(dpix(4))
 
         self._rename_btn = QtWidgets.QPushButton(t("Rename"))
         self._rename_btn.setStyleSheet(
@@ -481,6 +503,22 @@ class BatchRenameWidget(QtWidgets.QWidget):
         bar.addWidget(self._rename_btn)
 
         root.addLayout(bar)
+
+    def _create_thumb_fit_button(self, side: str):
+        p = self._p
+        button = QtWidgets.QToolButton()
+        button.setText("")
+        button.setCheckable(True)
+        button.setIconSize(QtCore.QSize(dpix(14), dpix(14)))
+        button.setCursor(Qt.PointingHandCursor)
+        button.setStyleSheet(
+            f"QToolButton {{ background: {p.bg_secondary}; color: {p.text_primary}; "
+            f"border: 1px solid {p.border_default}; border-radius: {dpix(2)}px; }}"
+            f"QToolButton:hover {{ background: {p.bg_hover}; }}"
+            f"QToolButton:checked {{ background: {p.bg_hover}; border-color: {p.text_accent}; }}"
+        )
+        button.toggled.connect(lambda checked, s=side: self._set_thumb_fit_mode(s, self.THUMB_FIT_CONTAIN if checked else self.THUMB_FIT_COVER))
+        return button
 
     def _update_source_defaults(self):
         for col in self._columns:
@@ -497,6 +535,8 @@ class BatchRenameWidget(QtWidgets.QWidget):
             "source_defaults": dict(self._source_defaults),
             "row_opacity": self._row_opacity_slider.value(),
             "sel_opacity": self._sel_opacity_slider.value(),
+            "row_thumb_fit_mode": self._row_thumb_fit_mode,
+            "sel_thumb_fit_mode": self._sel_thumb_fit_mode,
         }
 
     def _restore_source_defaults(self):
@@ -513,6 +553,19 @@ class BatchRenameWidget(QtWidgets.QWidget):
             self._row_opacity_slider.setValue(state["row_opacity"])
         if "sel_opacity" in state:
             self._sel_opacity_slider.setValue(state["sel_opacity"])
+        if "thumb_fit_mode" in state:
+            self._set_thumb_fit_mode("row", state["thumb_fit_mode"])
+            self._set_thumb_fit_mode("sel", state["thumb_fit_mode"])
+        if "row_thumb_fit_mode" in state:
+            self._set_thumb_fit_mode("row", state["row_thumb_fit_mode"])
+        if "sel_thumb_fit_mode" in state:
+            self._set_thumb_fit_mode("sel", state["sel_thumb_fit_mode"])
+
+    @staticmethod
+    def _sort_input_by_name(paths: list[Path], keys: list[str]) -> tuple[list[Path], list[str]]:
+        pairs = list(zip(paths, keys))
+        pairs.sort(key=lambda item: natural_key(item[0].stem))
+        return [p for p, _ in pairs], [k for _, k in pairs]
 
     def _start_async_init(self):
         cancel = CancelToken()
@@ -803,6 +856,33 @@ class BatchRenameWidget(QtWidgets.QWidget):
 
     def _on_sel_opacity_changed(self, value):
         self._overlay.set_sel_opacity(value / 100.0)
+
+    def _normalise_thumb_fit_mode(self, fit_mode):
+        return fit_mode if fit_mode in self.THUMB_FIT_MODES else self.THUMB_FIT_COVER
+
+    def _set_thumb_fit_mode(self, side, fit_mode):
+        normalised = self._normalise_thumb_fit_mode(fit_mode)
+        if side == "row":
+            self._row_thumb_fit_mode = normalised
+            self._overlay.set_row_fit_mode(normalised)
+        elif side == "sel":
+            self._sel_thumb_fit_mode = normalised
+            self._overlay.set_sel_fit_mode(normalised)
+        self._apply_thumb_fit_button(side)
+
+    def _apply_thumb_fit_button(self, side):
+        button = getattr(self, f"_{side}_thumb_fit_btn", None)
+        if button is None:
+            return
+        fit_mode = self._row_thumb_fit_mode if side == "row" else self._sel_thumb_fit_mode
+        contain = fit_mode == self.THUMB_FIT_CONTAIN
+        prefix = t("Left thumbnail fit") if side == "row" else t("Right thumbnail fit")
+        label = t("Contain") if contain else t("Cover")
+        old = button.blockSignals(True)
+        button.setChecked(contain)
+        button.setIcon(themed_icon("fit_contain" if contain else "fit_cover", margin=0.04))
+        button.setToolTip(f"{prefix}: {label}")
+        button.blockSignals(old)
 
     def _on_seg_data_changed(self, top_left, bottom_right, roles):
         if self._refreshing:
@@ -1465,6 +1545,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._title.setText(self._title_text())
         self._status.setText(f"Renamed {len(succeeded)} file(s)")
         self._reset_columns(preserve_ext=True)
+        self._sort_indicator = self.DEFAULT_SORT_INDICATOR
         self._rebuild()
 
     def _reset_columns(self, preserve_ext=False):

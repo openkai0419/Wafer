@@ -1,0 +1,41 @@
+from types import SimpleNamespace
+
+import pytest
+
+from scripts import build, copy_clean_project
+
+
+def test_release_notes_are_included_in_portable_build_metadata():
+    assert "RELEASE_NOTES.md" in build.META_FILES
+    assert "CHANGELOG.md" in build.META_FILES
+
+
+def test_release_notes_are_included_in_clean_project_copy():
+    assert "RELEASE_NOTES.md" in copy_clean_project.COPY_FILES
+    assert "CHANGELOG.md" in copy_clean_project.COPY_FILES
+
+
+def test_generate_third_party_notices_uses_utf8_stdio_and_writes_output(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake_run(*args, **kwargs):
+        seen["env"] = kwargs["env"]
+        return SimpleNamespace(returncode=0, stdout="notices\n", stderr="")
+
+    monkeypatch.setattr(build.subprocess, "run", fake_run)
+
+    build.generate_third_party_notices(tmp_path)
+
+    assert (tmp_path / "THIRD-PARTY-NOTICES.txt").read_text(encoding="utf-8") == "notices\n"
+    assert seen["env"]["PYTHONIOENCODING"] == "utf-8"
+    assert seen["env"]["PYTHONUTF8"] == "1"
+
+
+def test_generate_third_party_notices_raises_on_subprocess_error(tmp_path, monkeypatch):
+    def fake_run(*args, **kwargs):
+        return SimpleNamespace(returncode=1, stdout="", stderr="boom")
+
+    monkeypatch.setattr(build.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        build.generate_third_party_notices(tmp_path)

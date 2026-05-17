@@ -4,18 +4,30 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [v0.6.18]
+## [v0.6.19]
 ### Added
-- **Built-in multi-page image viewer** (`wafer/builtins/image_viewer/viewer.py`, `wafer/builtins/image_viewer/widget.py`, `wafer/builtins/image_viewer/commands.py`, `wafer/plugin/viewer/base.py`, `extensions/image/loader.py`): added a built-in `ImageViewer` with `MultiWidgetViewerPlugin` / `ViewerContext` support, configurable `imgv.image_spread` page layout and direction, and shared `QImage` loading for static images
+- **In-app update notifier**: added an Update panel with manual and startup GitHub release checks, embedded release-note display, download-page links, and per-version skip or remind-later actions
 
 ### Changed
-- **Render-plan based file rendering** (`wafer/core/files/render_target.py`, `wafer/plugin/viewer/handler.py`, `wafer/plugin/grid/handler.py`, `wafer/plugin/imageloader/handler.py`, `extensions/zip/resolver.py`): unified viewer, grid, and image-loader dispatch around surface-aware `RenderPlan` resolution so virtual paths such as ZIP members materialize once and continue through the normal plugin chain
-- **File viewer batch navigation** (`wafer/app/viewer/preview/file_viewer.py`, `wafer/builtins/commands/content_viewer.py`): next/previous navigation and slideshow advance now follow the active viewer's batch size, so multi-page image spreads move through files in grouped steps
-- **Batch Renamer table editing** (`wafer/builtins/batch_renamer/widget.py`, `wafer/builtins/batch_renamer/table.py`): batch rename previews now use cell selection, keep sort order across refreshes, defer rebuilds while inline editors are open, support vertical Tab editing, and expose restore actions for selected per-cell overrides
-- **Plugin enable-state persistence** (`wafer/plugin/settings.py`, `wafer/plugin/loader.py`, `wafer/builtins/plugin_manager/widget.py`, `wafer/builtins/plugin_manager/extensions_tab.py`): plugin toggles now persist as explicit enabled or disabled overrides relative to `DEFAULT_ENABLED`, while legacy enabled-name settings are still honored during migration and restart prompts are derived from the plugins that actually changed
+- **Batch Renamer preview workflow**: file lists now default to natural-name sorting, selected cells can enter edit mode with Enter or F2, and left or right thumbnail overlays can independently switch between cover and contain fits
+- **Panel startup hooks**: panel plugins can now run startup actions after the main window finishes loading, enabling one-time viewer-session initialization such as automatic update checks
+- **Release packaging**: portable builds and clean-project copies now include `RELEASE_NOTES.md`, and tagged GitHub releases extract the matching release-notes section as the published release body
 
 ### Fixed
-- **Resolver failure fallback** (`wafer/plugin/viewer/handler.py`, `wafer/plugin/grid/handler.py`, `wafer/plugin/imageloader/handler.py`, `tests-unit/wafer/plugin/test_resolver.py`): viewer, grid, and image-loader resolution now skip plugins whose `resolve()` raises and continue to lower-priority matches instead of aborting the whole dispatch
+- **Portable third-party notices generation**: build-time license export now forces UTF-8 stdio and fails fast on `piplicenses` subprocess errors so `THIRD-PARTY-NOTICES.txt` is generated reliably on Windows
+
+## [v0.6.18]
+### Added
+- **Built-in multi-page image viewer**: added configurable image spreads and reading direction for the file viewer, with shared static-image loading across the built-in image viewer and image extension
+
+### Changed
+- **Virtual file rendering**: unified grid, viewer, and image-loader resolution so ZIP members and other materialized files continue through the normal plugin chain after one resolution step
+- **File viewer navigation**: next/previous navigation and slideshow advance now follow the active viewer's batch size, so multi-page image spreads move through files in grouped steps
+- **Batch Renamer table editing**: batch rename previews now use cell selection, keep sort order across refreshes, defer rebuilds while inline editors are open, support vertical Tab editing, and expose restore actions for selected per-cell overrides
+- **Plugin enable-state persistence**: plugin toggles now persist as explicit enabled or disabled overrides relative to `DEFAULT_ENABLED`, while legacy enabled-name settings are still honored during migration and restart prompts are derived from the plugins that actually changed
+
+### Fixed
+- **Resolver failure fallback**: viewer, grid, and image-loader resolution now skip plugins whose `resolve()` raises and continue to lower-priority matches instead of aborting the whole dispatch
 
 ## [v0.6.17]
 ### Added

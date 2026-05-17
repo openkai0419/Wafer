@@ -231,6 +231,51 @@ class TestSlotLifecycle:
         assert (sid2, existed2) == ("second", True)
         assert store.get_active_slot_ids() == ["first", "second"]
 
+    def test_viewer_startup_generation_starts_on_empty_to_active_transition(self, tmp_path):
+        store = WorkspaceStore(path=str(tmp_path / "ws.json"))
+        sid1, _, _ = store.acquire_slot("first")
+        run1 = store.viewer_startup_state()
+        sid2, _, _ = store.acquire_slot("second")
+        run2 = store.viewer_startup_state()
+
+        assert sid1 == "first"
+        assert sid2 == "second"
+        assert run1["generation"] == 1
+        assert run1["first_slot_id"] == "first"
+        assert run2["generation"] == 1
+        assert run2["first_slot_id"] == "first"
+
+    def test_viewer_startup_claim_allows_only_first_slot_once_per_scope(self, tmp_path):
+        store = WorkspaceStore(path=str(tmp_path / "ws.json"))
+        first, _, _ = store.acquire_slot("first")
+        second, _, _ = store.acquire_slot("second")
+
+        assert store.claim_viewer_startup_once("updates", second) is False
+        assert store.claim_viewer_startup_once("updates", first) is True
+        assert store.claim_viewer_startup_once("updates", first) is False
+        assert store.claim_viewer_startup_once("other", first) is True
+
+    def test_viewer_startup_claim_resets_after_all_slots_released(self, tmp_path):
+        store = WorkspaceStore(path=str(tmp_path / "ws.json"))
+        first, _, _ = store.acquire_slot("first")
+        assert store.claim_viewer_startup_once("updates", first) is True
+        store.release_slot(first)
+
+        second, _, _ = store.acquire_slot("second")
+
+        assert store.viewer_startup_state()["generation"] == 2
+        assert store.claim_viewer_startup_once("updates", second) is True
+
+    def test_viewer_startup_reserve_starts_generation_when_no_viewer_is_active(self, tmp_path):
+        store = WorkspaceStore(path=str(tmp_path / "ws.json"))
+        slot = WindowSlot(slot_id="reserved")
+        store.save_slot(slot)
+
+        sid, _, _ = store.reserve_next_window_slot()
+
+        assert sid == "reserved"
+        assert store.viewer_startup_state()["first_slot_id"] == "reserved"
+
 
 class TestPresetOverwrite:
     def test_update_ui_preset_replaces_state_and_keeps_metadata(self, tmp_path):

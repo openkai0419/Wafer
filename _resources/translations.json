@@ -1,4 +1,156 @@
 {
+  "New Update Available: v{version}": {
+    "en": "New Update Available: v{version}",
+    "ja": ""
+  },
+  "Current : {version}": {
+    "en": "Current : {version}",
+    "ja": ""
+  },
+  "Latest : not checked": {
+    "en": "Latest : not checked",
+    "ja": ""
+  },
+  "Latest : {version}": {
+    "en": "Latest : {version}",
+    "ja": ""
+  },
+  "Published : -": {
+    "en": "Published : -",
+    "ja": ""
+  },
+  "Published : {date}": {
+    "en": "Published : {date}",
+    "ja": ""
+  },
+  "Published at: {date}": {
+    "en": "Published at: {date}",
+    "ja": ""
+  },
+  "Up to Date": {
+    "en": "Up to Date",
+    "ja": ""
+  },
+  "New Update Available: {version}": {
+    "en": "New Update Available: {version}",
+    "ja": ""
+  },
+  "Already Up to date": {
+    "en": "Already Up to date",
+    "ja": ""
+  },
+  "New Update Available! : {}": {
+    "en": "New Update Available! : {}",
+    "ja": ""
+  },
+  "Update Available: {version}": {
+    "en": "Update Available: {version}",
+    "ja": ""
+  },
+  "Check for Updates": {
+    "en": "Check for Updates",
+    "ja": ""
+  },
+  "Check for updates": {
+    "en": "Check for updates",
+    "ja": ""
+  },
+  "Check for updates on startup": {
+    "en": "Check for updates on startup",
+    "ja": ""
+  },
+  "Checking for updates...": {
+    "en": "Checking for updates...",
+    "ja": ""
+  },
+  "Update check failed: {error}": {
+    "en": "Update check failed: {error}",
+    "ja": ""
+  },
+  "Current: {version}": {
+    "en": "Current: {version}",
+    "ja": ""
+  },
+  "Go to Download": {
+    "en": "Go to Download",
+    "ja": ""
+  },
+  "Go to download page": {
+    "en": "Go to download page",
+    "ja": ""
+  },
+  "Latest : not available": {
+    "en": "Latest : not available",
+    "ja": ""
+  },
+  "Latest: not checked": {
+    "en": "Latest: not checked",
+    "ja": ""
+  },
+  "Latest: {version}": {
+    "en": "Latest: {version}",
+    "ja": ""
+  },
+  "New Update Available": {
+    "en": "New Update Available",
+    "ja": ""
+  },
+  "Published: {date}": {
+    "en": "Published: {date}",
+    "ja": ""
+  },
+  "Ready to check for updates": {
+    "en": "Ready to check for updates",
+    "ja": ""
+  },
+  "cached result": {
+    "en": "cached result",
+    "ja": ""
+  },
+  "Remind Me Later": {
+    "en": "Remind Me Later",
+    "ja": ""
+  },
+  "Remind me later": {
+    "en": "Remind me later",
+    "ja": ""
+  },
+  "Skip automatic notification until the next version": {
+    "en": "Skip automatic notification until the next version",
+    "ja": ""
+  },
+  "Skip until next version": {
+    "en": "Skip until next version",
+    "ja": ""
+  },
+  "Up to date": {
+    "en": "Up to date",
+    "ja": ""
+  },
+  "Update": {
+    "en": "Update",
+    "ja": ""
+  },
+  "Update available: {version}": {
+    "en": "Update available: {version}",
+    "ja": ""
+  },
+  "Contain": {
+    "en": "Contain",
+    "ja": ""
+  },
+  "Cover": {
+    "en": "Cover",
+    "ja": ""
+  },
+  "Left thumbnail fit": {
+    "en": "Left thumbnail fit",
+    "ja": ""
+  },
+  "Right thumbnail fit": {
+    "en": "Right thumbnail fit",
+    "ja": ""
+  },
   "Delete all '{key}' entries from databases": {
     "en": "Delete all '{key}' entries from databases",
     "ja": ""

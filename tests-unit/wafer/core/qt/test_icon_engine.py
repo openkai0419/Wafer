@@ -61,6 +61,8 @@ ALL_KEYS = [
     "subfolder",
     "fullscreen",
     "window",
+    "fit_cover",
+    "fit_contain",
     "plus",
     "minus",
     "play",

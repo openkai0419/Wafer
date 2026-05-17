@@ -107,6 +107,12 @@ def resolve_data_path(relative_path):
     return normalize_path(_resolve_app_path(relative_path, base_dir))
 
 
+def resolve_cache_path(relative_path):
+    dirs = PlatformDirs(appname=None)
+    base_dir = Path(dirs.user_cache_dir) / APP_DATA_DIR_NAME
+    return normalize_path(_resolve_app_path(relative_path, base_dir))
+
+
 def resolve_config_path(relative_path):
     dirs = PlatformDirs(appname=None)
     base_dir = Path(dirs.user_config_dir) / APP_DATA_DIR_NAME

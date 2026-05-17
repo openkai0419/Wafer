@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.6.19]
+### Added
+- **In-app update notifier**: added an Update panel with manual and startup GitHub release checks, embedded release-note display, download-page links, and per-version skip or remind-later actions
+
+### Changed
+- **Batch Renamer preview workflow**: file lists now default to natural-name sorting, selected cells can enter edit mode with Enter or F2, and left or right thumbnail overlays can independently switch between cover and contain fits
+- **Panel startup hooks**: panel plugins can now run startup actions after the main window finishes loading, enabling one-time viewer-session initialization such as automatic update checks
+- **Release packaging**: portable builds and clean-project copies now include `RELEASE_NOTES.md`, and tagged GitHub releases extract the matching release-notes section as the published release body
+
+### Fixed
+- **Portable third-party notices generation**: build-time license export now forces UTF-8 stdio and fails fast on `piplicenses` subprocess errors so `THIRD-PARTY-NOTICES.txt` is generated reliably on Windows
+
 ## [v0.6.18]
 ### Added
 - **Built-in multi-page image viewer**: added configurable image spreads and reading direction for the file viewer, with shared static-image loading across the built-in image viewer and image extension

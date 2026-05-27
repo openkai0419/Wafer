@@ -1,88 +1,46 @@
+import io
 import os
+
 import pytest
+
 from extensions.exiftool._downloader import (
-    _validate_url,
-    _validate_archive_path,
     _fetch_latest_version,
     get_exiftool_path,
-    _EXIFTOOL_PATH,
     _VERSION_PATTERN,
 )
 
 
-class TestValidateUrl:
-    def test_valid_https_sourceforge(self):
-        url = "https://sourceforge.net/projects/exiftool/files/test.zip/download"
-        assert _validate_url(url, ("exiftool.org", "sourceforge.net")) == url
+class _Resp:
+    def __init__(self, payload: bytes):
+        self._buf = io.BytesIO(payload)
 
-    def test_valid_https_exiftool_org(self):
-        url = "https://exiftool.org/ver.txt"
-        assert _validate_url(url, ("exiftool.org", "sourceforge.net")) == url
+    def read(self, n=-1):
+        return self._buf.read(n)
 
-    def test_http_rejected(self):
-        with pytest.raises(ValueError, match="Insecure URL scheme"):
-            _validate_url("http://sourceforge.net/test", ("sourceforge.net",))
+    def __enter__(self):
+        return self
 
-    def test_untrusted_host(self):
-        with pytest.raises(ValueError, match="Untrusted host"):
-            _validate_url("https://evil.com/test", ("sourceforge.net",))
-
-    def test_subdomain_allowed(self):
-        url = "https://downloads.sourceforge.net/test"
-        assert _validate_url(url, ("sourceforge.net",)) == url
-
-    def test_empty_hostname(self):
-        with pytest.raises(ValueError, match="no hostname"):
-            _validate_url("https:///test", ("sourceforge.net",))
+    def __exit__(self, *a):
+        return False
 
 
-class TestValidateArchivePath:
-    def test_normal_path(self, tmp_path):
-        _validate_archive_path("exiftool.exe", str(tmp_path))
-
-    def test_nested_path(self, tmp_path):
-        _validate_archive_path("exiftool_files/lib/test.pm", str(tmp_path))
-
-    def test_path_traversal_rejected(self, tmp_path):
-        with pytest.raises(ValueError, match="Path traversal"):
-            _validate_archive_path("../../../etc/passwd", str(tmp_path))
-
-    def test_absolute_path_traversal_rejected(self, tmp_path):
-        with pytest.raises(ValueError, match="Path traversal"):
-            _validate_archive_path("C:\\Windows\\System32\\evil.exe", str(tmp_path))
-
+def _patch_urlopen(monkeypatch, payload: bytes):
+    from wafer.utils import downloader as dl
+    monkeypatch.setattr(dl.urllib.request, "urlopen", lambda req, timeout=None: _Resp(payload))
 
 
 class TestFetchLatestVersion:
     def test_valid_version(self, monkeypatch):
-        import io
-        import urllib.request
-
-        def fake_urlopen(req, **kw):
-            return io.BytesIO(b"13.55\n")
-
-        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        _patch_urlopen(monkeypatch, b"13.55\n")
         assert _fetch_latest_version() == "13.55"
 
     def test_rejects_invalid_format(self, monkeypatch):
-        import io
-        import urllib.request
-
-        def fake_urlopen(req, **kw):
-            return io.BytesIO(b"<html>hack</html>")
-
-        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        _patch_urlopen(monkeypatch, b"<html>hack</html>")
         with pytest.raises(RuntimeError, match="Unexpected version format"):
             _fetch_latest_version()
 
     def test_rejects_oversized_response(self, monkeypatch):
-        import io
-        import urllib.request
-
-        def fake_urlopen(req, **kw):
-            return io.BytesIO(b"x" * 100)
-
-        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        _patch_urlopen(monkeypatch, b"x" * 100)
         with pytest.raises(RuntimeError, match="too large"):
             _fetch_latest_version()
 
@@ -101,13 +59,21 @@ class TestEnsureExiftool:
             "extensions.exiftool._downloader._EXIFTOOL_PATH",
             os.path.join(str(tmp_path), "nonexistent", "exiftool.exe"),
         )
+        monkeypatch.setattr(
+            "extensions.exiftool._downloader._EXIFTOOL_PL",
+            os.path.join(str(tmp_path), "nonexistent", "exiftool_files", "exiftool.pl"),
+        )
         monkeypatch.setattr("extensions.exiftool._downloader.platform.system", lambda: "Windows")
         monkeypatch.setattr(
             "extensions.exiftool._downloader._fetch_latest_version",
             lambda: "13.55",
         )
         monkeypatch.setattr(
-            "extensions.exiftool._downloader._safe_download",
+            "extensions.exiftool._downloader._fetch_expected_sha256",
+            lambda v: "a" * 64,
+        )
+        monkeypatch.setattr(
+            "extensions.exiftool._downloader.safe_download",
             lambda *a, **kw: (_ for _ in ()).throw(ConnectionError("network error")),
         )
         from extensions.exiftool._downloader import ensure_exiftool
@@ -120,8 +86,12 @@ class TestEnsureExiftool:
             "extensions.exiftool._downloader._EXIFTOOL_PATH",
             os.path.join(str(tmp_path), "nonexistent", "exiftool.exe"),
         )
+        monkeypatch.setattr(
+            "extensions.exiftool._downloader._EXIFTOOL_PL",
+            os.path.join(str(tmp_path), "nonexistent", "exiftool_files", "exiftool.pl"),
+        )
         monkeypatch.setattr("extensions.exiftool._downloader.platform.system", lambda: "Linux")
-        monkeypatch.setattr("shutil.which", lambda _: None)
+        monkeypatch.setattr("extensions.exiftool._downloader.shutil.which", lambda _: None)
         from extensions.exiftool._downloader import ensure_exiftool
 
         with pytest.raises(RuntimeError, match="Install exiftool via package manager"):
@@ -132,37 +102,48 @@ class TestEnsureExiftool:
             "extensions.exiftool._downloader._EXIFTOOL_PATH",
             os.path.join(str(tmp_path), "nonexistent", "exiftool.exe"),
         )
+        monkeypatch.setattr(
+            "extensions.exiftool._downloader._EXIFTOOL_PL",
+            os.path.join(str(tmp_path), "nonexistent", "exiftool_files", "exiftool.pl"),
+        )
         monkeypatch.setattr("extensions.exiftool._downloader.platform.system", lambda: "Linux")
-        monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/exiftool")
+        monkeypatch.setattr("extensions.exiftool._downloader.shutil.which", lambda _: "/usr/bin/exiftool")
         from extensions.exiftool._downloader import ensure_exiftool
 
         assert ensure_exiftool() is True
 
-    def test_returns_true_when_exists(self, monkeypatch, tmp_path):
+    def test_returns_true_when_install_valid(self, monkeypatch, tmp_path):
         exe = tmp_path / "exiftool.exe"
         exe.write_text("fake")
-        monkeypatch.setattr(
-            "extensions.exiftool._downloader._EXIFTOOL_PATH",
-            str(exe),
-        )
+        pl_dir = tmp_path / "exiftool_files"
+        pl_dir.mkdir()
+        pl = pl_dir / "exiftool.pl"
+        pl.write_text("fake")
+        monkeypatch.setattr("extensions.exiftool._downloader._EXIFTOOL_PATH", str(exe))
+        monkeypatch.setattr("extensions.exiftool._downloader._EXIFTOOL_PL", str(pl))
         from extensions.exiftool._downloader import ensure_exiftool
 
         assert ensure_exiftool() is True
+
+
+class TestGetExiftoolPath:
     def test_returns_none_when_not_installed(self, monkeypatch):
         monkeypatch.setattr(
             "extensions.exiftool._downloader._EXIFTOOL_PATH",
             os.path.join("nonexistent", "exiftool.exe"),
         )
-        monkeypatch.setattr("shutil.which", lambda _: None)
+        monkeypatch.setattr("extensions.exiftool._downloader.shutil.which", lambda _: None)
         assert get_exiftool_path() is None
 
-    def test_returns_lib_path_when_exists(self, tmp_path, monkeypatch):
+    def test_returns_lib_path_when_valid(self, tmp_path, monkeypatch):
         exe = tmp_path / "exiftool.exe"
         exe.write_text("fake")
-        monkeypatch.setattr(
-            "extensions.exiftool._downloader._EXIFTOOL_PATH",
-            str(exe),
-        )
+        pl_dir = tmp_path / "exiftool_files"
+        pl_dir.mkdir()
+        pl = pl_dir / "exiftool.pl"
+        pl.write_text("fake")
+        monkeypatch.setattr("extensions.exiftool._downloader._EXIFTOOL_PATH", str(exe))
+        monkeypatch.setattr("extensions.exiftool._downloader._EXIFTOOL_PL", str(pl))
         assert get_exiftool_path() == str(exe)
 
     def test_falls_back_to_system(self, monkeypatch):
@@ -170,5 +151,5 @@ class TestEnsureExiftool:
             "extensions.exiftool._downloader._EXIFTOOL_PATH",
             os.path.join("nonexistent", "exiftool.exe"),
         )
-        monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/exiftool")
+        monkeypatch.setattr("extensions.exiftool._downloader.shutil.which", lambda _: "/usr/bin/exiftool")
         assert get_exiftool_path() == "/usr/bin/exiftool"

@@ -1,6 +1,7 @@
 import os
 import tempfile
-from wafer.utils.hashes import fast_signature_hash, full_hash
+import pytest
+from wafer.utils.hashes import fast_signature_hash, full_hash, sha256_file, verify_sha256
 
 
 def _make_file(content: bytes):
@@ -96,5 +97,42 @@ def test_fast_vs_full_different():
         assert isinstance(fh, str)
         assert isinstance(fl, str)
         assert fh != fl
+    finally:
+        os.unlink(path)
+
+
+_HELLO_SHA256 = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+
+
+def test_sha256_file_known_value():
+    path = _make_file(b"hello world")
+    try:
+        assert sha256_file(path) == _HELLO_SHA256
+    finally:
+        os.unlink(path)
+
+
+def test_verify_sha256_match():
+    path = _make_file(b"hello world")
+    try:
+        assert verify_sha256(path, _HELLO_SHA256) is True
+        assert verify_sha256(path, _HELLO_SHA256.upper()) is True
+    finally:
+        os.unlink(path)
+
+
+def test_verify_sha256_mismatch():
+    path = _make_file(b"hello world")
+    try:
+        assert verify_sha256(path, "a" * 64) is False
+    finally:
+        os.unlink(path)
+
+
+def test_verify_sha256_invalid_hex():
+    path = _make_file(b"hello world")
+    try:
+        with pytest.raises(ValueError):
+            verify_sha256(path, "not-a-valid-sha")
     finally:
         os.unlink(path)

@@ -1,3 +1,4 @@
+import hashlib
 import os
 from blake3 import blake3
 
@@ -42,3 +43,19 @@ def full_hash(path: str, threads: int | None = None) -> str:
     except (OSError, ValueError) as e:
         AppLogger.warning(f"full_hash failed: {path}", exc=e)
         return "f"
+
+
+def sha256_file(path: str, chunk_size: int = 8 * 1024 * 1024) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb", buffering=chunk_size) as f:
+        for chunk in iter(lambda: f.read(chunk_size), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def verify_sha256(path: str, expected_hex: str) -> bool:
+    expected = (expected_hex or "").strip().lower()
+    if len(expected) != 64 or not all(c in "0123456789abcdef" for c in expected):
+        raise ValueError(f"invalid sha256 hex: {expected_hex!r}")
+    actual = sha256_file(path)
+    return actual == expected

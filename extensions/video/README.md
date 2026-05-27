@@ -24,6 +24,6 @@ This extension downloads `libmpv-2.dll` at first launch and links to it via `cty
 | `libmpv-2.dll` | https://mpv.io/ (typical Windows builds) | **GPL-2.0+** by default; some builds may be configured as **LGPL-2.1+**. Full text of GPLv2 in `THIRD_PARTY_LICENSE`. |
 | `python-mpv` (`python-mpv==1.0.8`) | https://github.com/jaseg/python-mpv | Inherits libmpv's license: GPL-2.0+ or LGPL-2.1+. |
 | `7zr.exe` | https://www.7-zip.org/ | LGPL-2.1+ |
-| `py7zr` (Python dependency) | https://pypi.org/project/py7zr/ | LGPL-2.1+ |
+| `py7zr` (runtime dependency provided by Wafer core) | https://pypi.org/project/py7zr/ | LGPL-2.1+ |
 
 `libmpv` is loaded as a dynamic library at runtime. Users redistributing a build that statically embeds a GPL-licensed `libmpv` together with this extension must comply with the corresponding GPL terms.

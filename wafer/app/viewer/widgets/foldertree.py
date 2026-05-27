@@ -606,6 +606,9 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
     def binding_scope(self) -> str:
         return "FolderTree"
 
+    def keyboardSearch(self, search):
+        return
+
     def drawRow(self, painter, option, index):
         super().drawRow(painter, option, index)
         if not self._is_drop_target_index(index):

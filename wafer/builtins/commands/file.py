@@ -187,7 +187,7 @@ def _get_directory_from_path(path):
 
 @require(ftree="FolderTree")
 def select_path(ctx, ftree):
-    paths = _ctx_paths(ctx)
+    paths = _ctx_sources(ctx)
     if not paths:
         return
     folders = list(dict.fromkeys(_get_directory_from_path(str(p)) for p in paths))

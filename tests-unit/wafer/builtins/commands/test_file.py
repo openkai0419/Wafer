@@ -87,6 +87,13 @@ def test_file_commands_uses_explicit_source():
     assert file_mod._ctx_sources(_Ctx(source="C:/data/archive.zip")) == ["C:/data/archive.zip"]
 
 
+def test_file_commands_reject_virtual_source():
+    logical = build_virtual_path("C:/data/archive.zip", "folder/image.png")
+
+    assert file_mod._ctx_source(_Ctx(source=logical)) is None
+    assert file_mod._ctx_sources(_Ctx(sources=[logical])) == []
+
+
 def test_delete_files_send2trash_failure_falls_back(tmp_path, monkeypatch):
     p = tmp_path / "a.txt"
     p.write_text("x", encoding="utf-8")
@@ -251,3 +258,20 @@ def test_paste_here_requires_source(tmp_path, monkeypatch):
     file_mod.paste_here(_PathOnlyCtx(path=str(tmp_path)))
 
     assert called == []
+
+
+def test_paste_here_rejects_virtual_source(tmp_path, monkeypatch):
+    called = []
+    logical = build_virtual_path(str(tmp_path / "archive.zip"), "folder/image.png")
+    monkeypatch.setattr(file_mod, "paste_clipboard_files", lambda *a, **k: called.append((a, k)))
+
+    file_mod.paste_here(_Ctx(source=logical))
+
+    assert called == []
+
+
+def test_make_new_folder_here_rejects_virtual_source(tmp_path):
+    logical = build_virtual_path(str(tmp_path / "archive.zip"), "folder/image.png")
+
+    assert file_mod.make_new_folder_here(_Ctx(source=logical)) is None
+    assert list(tmp_path.iterdir()) == []

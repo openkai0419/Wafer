@@ -12,6 +12,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **Batch Renamer preview workflow**: file lists now default to natural-name sorting, selected cells can enter edit mode with Enter or F2, and left or right thumbnail overlays can independently switch between cover and contain fits
 - **Panel startup hooks**: panel plugins can now run startup actions after the main window finishes loading, enabling one-time viewer-session initialization such as automatic update checks
 - **Release packaging**: portable builds and clean-project copies now include `RELEASE_NOTES.md`, and tagged GitHub releases extract the matching release-notes section as the published release body
+- **Portable launcher packaging**: portable builds now ship only the windowed `Wafer.exe` launcher and use the bundled Python runtime directly for command-line smoke checks
 
 ### Fixed
 - **Portable third-party notices generation**: build-time license export now forces UTF-8 stdio and fails fast on `piplicenses` subprocess errors so `THIRD-PARTY-NOTICES.txt` is generated reliably on Windows

@@ -38,6 +38,21 @@ def test_runtime_packages_cover_root_requirements():
     assert build.ROOT_REQUIREMENT_PACKAGES <= build.RUNTIME_PACKAGES
 
 
+def test_create_launchers_builds_only_windowed_launcher(tmp_path, monkeypatch):
+    commands = []
+
+    monkeypatch.setattr(build, "find_csc", lambda: "csc.exe")
+    monkeypatch.setattr(build.subprocess, "run", lambda cmd, check: commands.append(cmd))
+
+    build.create_launchers(tmp_path, "0.0.0")
+
+    assert len(commands) == 1
+    command_text = " ".join(str(part) for part in commands[0])
+    assert "/target:winexe" in commands[0]
+    assert "Wafer.exe" in command_text
+    assert "WaferConsole" not in command_text
+
+
 def test_generate_third_party_notices_raises_on_subprocess_error(tmp_path, monkeypatch):
     def fake_run(*args, **kwargs):
         return SimpleNamespace(returncode=1, stdout="", stderr="boom")

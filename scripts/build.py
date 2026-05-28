@@ -269,18 +269,14 @@ def create_launchers(dist_dir: Path, version: str):
     csc = find_csc()
     print(f"  Using {csc}")
     icon_arg = f"/win32icon:{ICON_FILE}" if ICON_FILE.is_file() else ""
-    for cs_name, exe_name, target in [
-        ("Wafer.cs", "Wafer.exe", "/target:winexe"),
-        ("WaferConsole.cs", "WaferConsole.exe", "/target:exe"),
-    ]:
-        cs_path = LAUNCHER_DIR / cs_name
-        exe_path = dist_dir / exe_name
-        cmd = [csc, "/nologo", target, "/optimize+", f"/out:{exe_path}"]
-        if icon_arg:
-            cmd.append(icon_arg)
-        cmd.append(str(cs_path))
-        subprocess.run(cmd, check=True)
-        print(f"  Built {exe_name}")
+    cs_path = LAUNCHER_DIR / "Wafer.cs"
+    exe_path = dist_dir / "Wafer.exe"
+    cmd = [csc, "/nologo", "/target:winexe", "/optimize+", f"/out:{exe_path}"]
+    if icon_arg:
+        cmd.append(icon_arg)
+    cmd.append(str(cs_path))
+    subprocess.run(cmd, check=True)
+    print("  Built Wafer.exe")
 
 
 def generate_third_party_notices(dist_dir: Path):

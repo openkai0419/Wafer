@@ -22,10 +22,10 @@ def run_pending_installs(extensions_dir: str) -> bool:
         return False
 
     clear_cancel()
+    writer = InstallStatusWriter(total=len(entries))
     AppLogger.info(f"[StartupInstall] Processing {len(entries)} queued install(s)")
     _terminate_processes_holding_packages(extensions_dir)
     started_at = time.monotonic()
-    writer = InstallStatusWriter(total=len(entries))
     processed, failed, cancelled = _execute_installs(extensions_dir, entries, writer)
     installer_queue.remove_entries(extensions_dir, [name for name, _ in processed] + [name for name, _ in failed])
     failed_installs.clear(extensions_dir, [name for name, _ in processed])
@@ -149,6 +149,8 @@ def _terminate_processes_holding_packages(extensions_dir: str) -> None:
         return
     my_pid = os.getpid()
     targets: list[psutil.Process] = []
+    skipped_open_file_errors = 0
+    last_open_file_error: OSError | None = None
     for proc in psutil.process_iter(["pid"]):
         if proc.pid == my_pid:
             continue
@@ -159,6 +161,15 @@ def _terminate_processes_holding_packages(extensions_dir: str) -> None:
                     break
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
+        except OSError as e:
+            skipped_open_file_errors += 1
+            last_open_file_error = e
+            continue
+    if skipped_open_file_errors:
+        AppLogger.warning(
+            f"[StartupInstall] skipped {skipped_open_file_errors} process(es) while checking package locks",
+            exc=last_open_file_error,
+        )
     if not targets:
         return
     names = ", ".join(f"pid={p.pid}" for p in targets)

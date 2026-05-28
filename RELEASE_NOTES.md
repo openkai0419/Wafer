@@ -15,6 +15,7 @@ This release adds in-app update notifications and makes batch rename previews ea
 
 ### Notes
 - Portable packages now include release notes so update details remain available even when the app falls back to bundled notes instead of a live download.
+- Portable packages no longer include a separate `WaferConsole.exe`; command-line checks can use the bundled Python runtime directly.
 
 ## [v0.6.18]
 

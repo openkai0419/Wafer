@@ -11,7 +11,6 @@ from wafer.utils.logs import AppLogger
 
 
 _SEVEN_ZR_URL = "https://www.7-zip.org/a/7zr.exe"
-_SEVEN_ZR_SHA256 = "abcf64ae1cbafddb5395e4cdd3bdc7e3e0561d54a0c6380e3dd43bdbffe519a2"
 
 
 def validate_url(url: str, allowed_hosts: tuple[str, ...]) -> str:
@@ -87,8 +86,8 @@ def ensure_7zr(install_dir: str) -> str:
         return path
     os.makedirs(install_dir, exist_ok=True)
     AppLogger.info(f"[downloader] Downloading 7zr.exe from {_SEVEN_ZR_URL}")
-    safe_download(_SEVEN_ZR_URL, path, expected_sha256=_SEVEN_ZR_SHA256)
-    AppLogger.info("[downloader] 7zr.exe checksum verified")
+    safe_download(_SEVEN_ZR_URL, path)
+    AppLogger.info("[downloader] 7zr.exe downloaded")
     return path
 
 

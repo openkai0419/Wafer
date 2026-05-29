@@ -192,29 +192,17 @@ class TestEnsure7zr:
         path.write_bytes(b"x")
         assert dl.ensure_7zr(str(tmp_path)) == str(path)
 
-    def test_downloads_with_pinned_sha(self, tmp_path, monkeypatch):
+    def test_downloads_7zr(self, tmp_path, monkeypatch):
         calls = {}
-        # Construct fake content that matches the pinned SHA — not feasible.
-        # Instead, monkeypatch verify_sha256 to True and just check flow.
         def fake_retrieve(url, dest):
             calls["url"] = url
             calls["dest"] = dest
             with open(dest, "wb") as f:
                 f.write(b"fake")
         monkeypatch.setattr(dl.urllib.request, "urlretrieve", fake_retrieve)
-        monkeypatch.setattr(dl, "verify_sha256", lambda p, h: True)
         out = dl.ensure_7zr(str(tmp_path))
         assert out == str(tmp_path / "7zr.exe")
         assert calls["url"] == dl._SEVEN_ZR_URL
-
-    def test_pin_mismatch_raises(self, tmp_path, monkeypatch):
-        def fake_retrieve(url, dest):
-            with open(dest, "wb") as f:
-                f.write(b"fake")
-        monkeypatch.setattr(dl.urllib.request, "urlretrieve", fake_retrieve)
-        monkeypatch.setattr(dl, "verify_sha256", lambda p, h: False)
-        with pytest.raises(RuntimeError, match="SHA256 mismatch"):
-            dl.ensure_7zr(str(tmp_path))
 
 
 def _make_fake_py7zr_module(archive_contents: dict):

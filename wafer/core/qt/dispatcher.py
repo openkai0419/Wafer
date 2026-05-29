@@ -4,6 +4,7 @@ from collections.abc import Callable
 from PySide6 import QtCore
 
 from ...utils.logs import AppLogger
+from ...utils.profiling import profiler
 
 
 class CancelToken:
@@ -78,7 +79,7 @@ class Dispatcher:
         self._pool = pool
 
     def post(self, fn: Callable, priority: int = 5, cancel: CancelToken | None = None):
-        self._pool.submit(_PostRunnable(fn, cancel), priority)
+        self._pool.submit(_PostRunnable(profiler.wrap_queued(fn, ".post_wait"), cancel), priority)
 
     def invoke(self, fn: Callable):
         import shiboken6
@@ -86,4 +87,4 @@ class Dispatcher:
         if self._parent is not None and not shiboken6.isValid(self._parent):
             return
         if shiboken6.isValid(self._signals):
-            self._signals._to_main.emit(fn)
+            self._signals._to_main.emit(profiler.wrap_queued(fn, ".invoke_wait"))

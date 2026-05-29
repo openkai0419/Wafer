@@ -20,6 +20,7 @@ from .content_viewer import ContentViewerWidget
 from .meta_panel import MetaViewerWidget
 from ....core.color.theme import ThemeManager
 from ....utils.logs import AppLogger
+from ....utils.profiling import profiler
 
 _STANDARD_SOURCE_KEYS = ("source", "size", "created", "modified", "collected", "file_hash")
 _STANDARD_FILE_KEYS = ("name", "path", "aspect_ratio", "source_extension")
@@ -249,6 +250,7 @@ class FileViewerController(QtCore.QObject):
         if self.file_list_provider is not None:
             self.file_list_provider.restore_ui_state(state)
 
+    @profiler.profile
     def _on_path_changed(self, path):
         if not path:
             self._content_cancel.renew()
@@ -266,12 +268,14 @@ class FileViewerController(QtCore.QObject):
         self._update_meta(path)
         self._load_content(path)
 
+    @profiler.profile
     def _load_content(self, path):
         cancel = self._content_cancel.renew()
         current_index = self.model.current_index()
         self._target_plugin = None
         self._set_target_contexts((ViewerContext(path=path, source=self.model.source() or path, render_path=path),))
 
+        @profiler.profile
         def resolve_task():
             if cancel.is_cancelled():
                 return
@@ -282,6 +286,7 @@ class FileViewerController(QtCore.QObject):
 
         self._dispatcher.post(resolve_task, cancel=cancel)
 
+    @profiler.profile
     def _on_content_ready(self, cancel, batch: ViewerBatch, content=None):
         if cancel.is_cancelled():
             return
@@ -294,6 +299,7 @@ class FileViewerController(QtCore.QObject):
         self._pending_content = (batch, content)
         self._flush()
 
+    @profiler.profile
     def _flush(self):
         if self._pending_content is None or self._pending_meta is None:
             return
@@ -330,6 +336,7 @@ class FileViewerController(QtCore.QObject):
             return
         self._on_path_changed(path)
 
+    @profiler.profile
     def _resolve_viewer_batch(self, index: int | None, cancel=None) -> ViewerBatch:
         path = self.model.path_at(index) or self.model.path()
         start = int(index) if index is not None else self.model.index_of_path(path)
@@ -464,6 +471,7 @@ class FileViewerController(QtCore.QObject):
             return 0
         return self._previous_navigation_start(count)
 
+    @profiler.profile
     def _previous_navigation_start(self, index: int) -> int:
         count = self.model.count()
         if count <= 0:
@@ -505,6 +513,7 @@ class FileViewerController(QtCore.QObject):
                 return start
         return self._previous_navigation_start(index)
 
+    @profiler.profile
     def navigate_next(self, step: int = 1, loop: bool = False, origin: str = "command") -> str | None:
         if not self._ensure_current_initialized():
             return None
@@ -519,6 +528,7 @@ class FileViewerController(QtCore.QObject):
         self.model.set_current_index(index)
         return self.model.path_at(index)
 
+    @profiler.profile
     def navigate_prev(self, step: int = 1, loop: bool = False, origin: str = "command") -> str | None:
         if not self._ensure_current_initialized():
             return None
@@ -538,20 +548,24 @@ class FileViewerController(QtCore.QObject):
         if path:
             self._fetch_meta(path, self._on_meta_reloaded)
 
+    @profiler.profile
     def _on_meta_reloaded(self, cancel, path, result):
         if cancel.is_cancelled() or path != self.model.path():
             return
         self.meta_viewer.set_data(result)
 
+    @profiler.profile
     def _update_meta(self, path):
         self._fetch_meta(path, self._on_meta_ready)
 
+    @profiler.profile
     def _fetch_meta(self, path, callback):
         dbpath = self.model.dbpath
         if not dbpath:
             return
         cancel = self._meta_cancel.renew()
 
+        @profiler.profile
         def task():
             engine = FileSearchEngine(dbpath)
             result = _format_meta(engine, path, dbpath)
@@ -561,6 +575,7 @@ class FileViewerController(QtCore.QObject):
 
         self._dispatcher.post(task, cancel=cancel)
 
+    @profiler.profile
     def _on_meta_ready(self, cancel, path, result):
         if cancel.is_cancelled():
             return

@@ -1,5 +1,6 @@
 from ...core.files.render_target import RenderPlan, ResolveContext, SURFACE_VIEWER
 from ...utils.logs import AppLogger
+from ...utils.profiling import profiler
 from ..registry import FilePluginRegistry
 from .base import MultiWidgetViewerPlugin, WidgetViewerPlugin
 
@@ -11,6 +12,7 @@ class ViewerResolver:
     def resolve(self, path: str) -> type[WidgetViewerPlugin] | None:
         return self.registry.resolve(path)
 
+    @profiler.profile
     def resolve_plan(self, path: str, context: ResolveContext | None = None) -> RenderPlan[WidgetViewerPlugin]:
         context = context or ResolveContext.create(path, surface=SURFACE_VIEWER, resolver=self.resolve_plan)
         for plugin_cls in self.registry.resolve_chain(path):
@@ -38,6 +40,7 @@ class ViewerResolver:
                     result[p.NAME] = inst
         return result
 
+    @profiler.profile
     def render(self, contexts, plugin_name: str | None = None):
         contexts = tuple(contexts or ())
         if not contexts:

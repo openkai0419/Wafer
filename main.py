@@ -92,7 +92,8 @@ def _create_app():
 def _entry_viewer(app=None, slot_id=None):
     setproctitle.setproctitle(f'{APP_NAME}')
     from wafer.app.viewer.mainwindow import MainWindow
-    profiler.start()
+    if constants.DEV_MODE:
+        profiler.start()
     if app is None:
         app = _create_app()
     window = MainWindow(get_icon(), slot_id=slot_id)
@@ -102,7 +103,6 @@ def _entry_viewer(app=None, slot_id=None):
 def _entry_tray():
     try:
         setproctitle.setproctitle(f'{APP_NAME}-tray')
-        profiler.set_enabled(False)
 
         with SafeProcessLock(f'{APP_DATA_DIR_NAME}_tray'):
             _bootstrap_plugins_for_tray()
@@ -134,7 +134,6 @@ def _entry_tray():
 def _entry_indexer(name, parent_pid=None):
     try:
         setproctitle.setproctitle(f'{APP_NAME}-indexer-{name}')
-        profiler.set_enabled(False)
         with SafeProcessLock(f'{APP_DATA_DIR_NAME}_{name}', parent_pid=parent_pid):
             AppLogger.info(f'indexer start: {name}')
             stop_event = threading.Event()
@@ -171,7 +170,6 @@ def _entry_indexer(name, parent_pid=None):
 def _entry_collector(name, plugin, parent_pid=None):
     try:
         setproctitle.setproctitle(f'{APP_NAME}-collector-{plugin}')
-        profiler.set_enabled(False)
         from wafer.app.collector.worker import run_collector as _run
         _run(name, plugin, parent_pid=parent_pid)
     except FileExistsError:
@@ -180,7 +178,6 @@ def _entry_collector(name, plugin, parent_pid=None):
 def _entry_parser(name, plugin, parent_pid=None):
     try:
         setproctitle.setproctitle(f'{APP_NAME}-parser-{plugin}')
-        profiler.set_enabled(False)
         from wafer.app.parser.worker import run_parser as _run
         _run(name, plugin, parent_pid=parent_pid)
     except FileExistsError:

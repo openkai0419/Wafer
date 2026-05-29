@@ -23,15 +23,51 @@ class FunctionProfiler:
         self.local = threading.local()
         self.lock = threading.Lock()
         self._thread = None
-        self.enabled = True
+        self.enabled = False
         self._initialized = True
 
     def start(self):
+        self.enabled = True
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._report_loop, daemon=True)
         self._thread.start()
+
+    def record(self, name: str, duration: float, *, self_time: float | None = None, count: int = 1):
+        if not self.enabled:
+            return
+        own_time = duration if self_time is None else self_time
+        duration = max(0.0, float(duration))
+        own_time = max(0.0, float(own_time))
+        count = max(1, int(count))
+        with self.lock:
+            info = self.data[str(name)]
+            info["total_time"] += duration
+            info["self_time"] += own_time
+            info["count"] += count
+
+    def record_elapsed(self, name: str, started_at: float, *, ended_at: float | None = None) -> float:
+        finished_at = time.perf_counter() if ended_at is None else float(ended_at)
+        duration = max(0.0, finished_at - float(started_at))
+        self.record(name, duration)
+        return duration
+
+    def callable_name(self, fn) -> str:
+        return getattr(fn, "__qualname__", getattr(fn, "__name__", type(fn).__qualname__))
+
+    def wrap_queued(self, fn, suffix: str):
+        if not self.enabled:
+            return fn
+        queued_at = time.perf_counter()
+        wait_name = f"{self.callable_name(fn)}{suffix}"
+
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            self.record_elapsed(wait_name, queued_at)
+            return fn(*args, **kwargs)
+
+        return wrapper
 
     def profile(self, func):
 

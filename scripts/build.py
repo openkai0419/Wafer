@@ -17,6 +17,7 @@ VERSION_FILE = ROOT / "wafer" / "_version.py"
 LAUNCHER_DIR = ROOT / "scripts" / "launcher"
 DIST_NAME = "Wafer"
 ICON_FILE = ROOT / "_resources" / "icon.ico"
+REQUIREMENTS_FILE = ROOT / "requirements.txt"
 
 PYTHON_VERSION = "3.11.9"
 PYTHON_URL = f"https://www.python.org/ftp/python/{PYTHON_VERSION}/python-{PYTHON_VERSION}-embed-amd64.zip"
@@ -24,31 +25,47 @@ PYTHON_SHA256 = "009d6bf7e3b2ddca3d784fa09f90fe54336d5b60f0e0f305c37f400bf83cfd3
 GET_PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
 PTH_NAME = f"python{''.join(PYTHON_VERSION.split('.')[:2])}._pth"
 
-RUNTIME_PACKAGES = {
-    "blake3",
-    "comtypes",
-    "markdown",
-    "msgpack",
-    "natsort",
-    "numpy",
-    "pillow",
-    "platformdirs",
-    "psutil",
-    "PySide6",
-    "pywin32",
-    "setproctitle",
-    "pyzmq",
-    "requests",
-    "Send2Trash",
-    "shiboken6",
-    "watchdog",
-    "PySide6-Addons",
-    "PySide6-Essentials",
-    "certifi",
-    "charset-normalizer",
-    "idna",
-    "urllib3",
-}
+
+def _read_requirement_names(req_file: Path) -> frozenset[str]:
+    names: set[str] = set()
+    for raw in req_file.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line or line.startswith("-"):
+            continue
+        for sep in ("==", ">=", "<=", "~=", "!=", ">", "<", ";"):
+            if sep in line:
+                line = line.split(sep, 1)[0].strip()
+                break
+        if "[" in line:
+            line = line.split("[", 1)[0].strip()
+        if line:
+            names.add(line)
+    return frozenset(names)
+
+
+ROOT_REQUIREMENT_PACKAGES = _read_requirement_names(REQUIREMENTS_FILE)
+
+NOTICE_ONLY_RUNTIME_PACKAGES = frozenset(
+    {
+        "PySide6-Addons",
+        "PySide6-Essentials",
+        "backports.zstd",
+        "brotli",
+        "certifi",
+        "charset-normalizer",
+        "idna",
+        "inflate64",
+        "multivolumefile",
+        "pybcj",
+        "pycryptodomex",
+        "pyppmd",
+        "shiboken6",
+        "texttable",
+        "urllib3",
+    }
+)
+
+RUNTIME_PACKAGES = ROOT_REQUIREMENT_PACKAGES | NOTICE_ONLY_RUNTIME_PACKAGES
 
 SOURCE_ITEMS = [
     "wafer",
@@ -252,18 +269,14 @@ def create_launchers(dist_dir: Path, version: str):
     csc = find_csc()
     print(f"  Using {csc}")
     icon_arg = f"/win32icon:{ICON_FILE}" if ICON_FILE.is_file() else ""
-    for cs_name, exe_name, target in [
-        ("Wafer.cs", "Wafer.exe", "/target:winexe"),
-        ("WaferConsole.cs", "WaferConsole.exe", "/target:exe"),
-    ]:
-        cs_path = LAUNCHER_DIR / cs_name
-        exe_path = dist_dir / exe_name
-        cmd = [csc, "/nologo", target, "/optimize+", f"/out:{exe_path}"]
-        if icon_arg:
-            cmd.append(icon_arg)
-        cmd.append(str(cs_path))
-        subprocess.run(cmd, check=True)
-        print(f"  Built {exe_name}")
+    cs_path = LAUNCHER_DIR / "Wafer.cs"
+    exe_path = dist_dir / "Wafer.exe"
+    cmd = [csc, "/nologo", "/target:winexe", "/optimize+", f"/out:{exe_path}"]
+    if icon_arg:
+        cmd.append(icon_arg)
+    cmd.append(str(cs_path))
+    subprocess.run(cmd, check=True)
+    print("  Built Wafer.exe")
 
 
 def generate_third_party_notices(dist_dir: Path):

@@ -14,6 +14,7 @@ from ...utils.notifier import Notifier
 from ...core.lang.manager import t
 from ...core.app_settings import app_settings
 from ...utils.paths import safe_exists, safe_is_dir
+from ...utils.virtual_paths import is_virtual_path
 from .path_utils import unique_path
 from .file_operations import (
     CutCopy,
@@ -170,6 +171,8 @@ class ClipboardFilePaster:
         return (action, paths)
 
     def build_paste_plan(self, destination_dir: Path | str) -> list[PastePlanItem]:
+        if _reject_virtual_destination(destination_dir, "paste"):
+            return []
         dest_dir = Path(destination_dir)
         dest_dir.mkdir(parents=True, exist_ok=True)
 
@@ -206,6 +209,50 @@ class ClipboardFilePaster:
                 )
             )
         return plan
+
+
+def _reject_virtual_destination(destination_dir: Path | str, operation: str) -> bool:
+    if is_virtual_path(str(destination_dir)):
+        AppLogger.warning(f"[{operation}] virtual destination rejected: {destination_dir} (file ops must target source files)")
+        return True
+    return False
+
+
+def _is_virtual_plan_path(path: Path | None) -> bool:
+    return bool(path and is_virtual_path(str(path)))
+
+
+def _virtual_paste_plan_result(item: PastePlanItem) -> OperationResult:
+    action = "move" if item.action == "cut" else "copy"
+    dst = item.suggested_dst if _is_virtual_plan_path(item.suggested_dst) else item.dst_default
+    return OperationResult(action=action, src=str(item.src), dst=str(dst), status="skipped", error="virtual path rejected")
+
+
+def _partition_virtual_paste_plans(plans: list[PastePlanItem]) -> tuple[list[tuple[int, PastePlanItem]], dict[int, OperationResult]]:
+    accepted: list[tuple[int, PastePlanItem]] = []
+    rejected: dict[int, OperationResult] = {}
+    for position, item in enumerate(plans):
+        if _is_virtual_plan_path(item.src) or _is_virtual_plan_path(item.dst_default) or _is_virtual_plan_path(item.suggested_dst):
+            rejected[position] = _virtual_paste_plan_result(item)
+            continue
+        accepted.append((position, item))
+    if rejected:
+        AppLogger.warning(f"[paste] virtual paths rejected: {len(rejected)} plan(s) (file ops must target source files)")
+    return accepted, rejected
+
+
+def _merge_paste_plan_results(
+    total: int,
+    accepted: list[tuple[int, PastePlanItem]],
+    accepted_results: list[OperationResult],
+    rejected: dict[int, OperationResult],
+) -> list[OperationResult]:
+    merged: list[OperationResult | None] = [None] * total
+    for (position, _), result in zip(accepted, accepted_results):
+        merged[position] = result
+    for position, result in rejected.items():
+        merged[position] = result
+    return [result for result in merged if result is not None]
 
 
 def _confirm_action(message: str, parent: object | None) -> bool:
@@ -392,6 +439,8 @@ def paste_clipboard_files(
     parent: object | None = None,
     folder_message: str = "Folder with the same name already exists. Proceed?",
 ) -> list[OperationResult]:
+    if _reject_virtual_destination(destination_dir, "paste"):
+        return []
     plans = ClipboardFilePaster().build_paste_plan(destination_dir)
     if not plans:
         return []
@@ -413,14 +462,19 @@ def execute_paste_plans_with_ui(
 ) -> list[OperationResult]:
     if not plans:
         return []
+    accepted, rejected = _partition_virtual_paste_plans(plans)
+    if not accepted:
+        return _merge_paste_plan_results(len(plans), accepted, [], rejected)
     if confirm_message and not _confirm_action(confirm_message, parent):
         return []
-    op = "move" if plans[0].action == "cut" else "copy"
+    accepted_plans = [item for _, item in accepted]
+    op = "move" if accepted_plans[0].action == "cut" else "copy"
     try:
-        decisions = _resolve_conflicts_with_ui(plans=plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
+        decisions = _resolve_conflicts_with_ui(plans=accepted_plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
     except PasteCancelledError:
         return []
-    return _execute_paste_items(plans, decisions, parent, op)
+    accepted_results = _execute_paste_items(accepted_plans, decisions, parent, op)
+    return _merge_paste_plan_results(len(plans), accepted, accepted_results, rejected)
 
 
 def drop_files_with_ui(

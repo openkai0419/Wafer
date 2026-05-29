@@ -1,4 +1,5 @@
 from wafer.core.platform.folders import first_entry, first_file, make_directory
+from wafer.utils.virtual_paths import build_virtual_path
 
 
 def test_first_file_returns_none_for_missing(tmp_path):
@@ -67,3 +68,32 @@ def test_open_file_empty_path_is_noop():
     from wafer.core.platform import folders
 
     folders.open_file("")
+
+
+def test_open_file_rejects_virtual_path(monkeypatch, tmp_path):
+    from wafer.core.platform import folders
+    from PySide6 import QtGui
+
+    opened: list[str] = []
+    monkeypatch.setattr(QtGui.QDesktopServices, "openUrl", staticmethod(lambda url: opened.append(url.toLocalFile())))
+
+    folders.open_file(build_virtual_path(str(tmp_path / "archive.zip"), "image.png"))
+
+    assert opened == []
+
+
+def test_show_in_explorer_rejects_virtual_path(monkeypatch, tmp_path):
+    from wafer.core.platform import folders
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("virtual path reached show path resolution")
+
+    monkeypatch.setattr(folders, "_resolve_show_path", fail_if_called)
+
+    folders.show_in_explorer(build_virtual_path(str(tmp_path / "archive.zip"), "image.png"))
+
+
+def test_make_directory_rejects_virtual_path(tmp_path):
+    virtual_dir = build_virtual_path(str(tmp_path / "archive.zip"), "new_folder")
+
+    assert make_directory(virtual_dir) is None

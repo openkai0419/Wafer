@@ -131,6 +131,14 @@ def _copy_or_move(
     return _copy_file(src, dst, follow_symlinks, progress_callback=progress_callback, cancel_check=cancel_check)
 
 
+def _operation_name(action: Literal["copy", "cut"]) -> str:
+    return "move" if action == "cut" else "copy"
+
+
+def _is_virtual_operation_path(path: str | Path | None) -> bool:
+    return bool(path and is_virtual_path(str(path)))
+
+
 def count_operation_units(src: Path, dst: Path, action: Literal["copy", "cut"], cancel_check: CancelCheck | None = None) -> int:
     if not src.is_dir():
         return 1
@@ -149,11 +157,14 @@ def count_operation_units(src: Path, dst: Path, action: Literal["copy", "cut"], 
 
 
 def _save_remote_item(item: ParsedItem, target_path: str, *, move: bool = False) -> OperationResult:
+    src_info = str(getattr(item, "source", ""))
+    if _is_virtual_operation_path(target_path):
+        AppLogger.warning(f"[save] virtual destination rejected: {target_path} (file ops must target source files)")
+        return OperationResult(action="save", src=src_info, dst=str(target_path), status="skipped", error="virtual path rejected")
+
     d = os.path.dirname(target_path)
     if d:
         os.makedirs(d, exist_ok=True)
-
-    src_info = str(getattr(item, "source", ""))
 
     if getattr(item, "is_binary", False) and isinstance(getattr(item, "source", None), (bytes, bytearray)):
         try:
@@ -328,6 +339,9 @@ class FileExecutor:
         action: Literal["copy", "cut"],
         decision: PasteDecision,
     ) -> OperationResult:
+        if _is_virtual_operation_path(src) or _is_virtual_operation_path(dst):
+            AppLogger.warning(f"[{_operation_name(action)}] virtual path rejected: {src} -> {dst} (file ops must target source files)")
+            return OperationResult(action=_operation_name(action), src=str(src), dst=str(dst), status="skipped", error="virtual path rejected")
         is_dir = src.is_dir()
         if decision.mode == "skip":
             self._advance_item(src, dst, action)
@@ -336,6 +350,9 @@ class FileExecutor:
         final_dst = self._resolve_dst(dst, decision)
         if final_dst is None:
             return OperationResult(action="unknown", src=str(src), dst="", status="error", error=f"unknown mode: {decision.mode}")
+        if _is_virtual_operation_path(final_dst):
+            AppLogger.warning(f"[{_operation_name(action)}] virtual destination rejected: {src} -> {final_dst} (file ops must target source files)")
+            return OperationResult(action=_operation_name(action), src=str(src), dst=str(final_dst), status="skipped", error="virtual path rejected")
 
         conflict = check_copy_conflict(src, final_dst)
         if conflict == "same_path":

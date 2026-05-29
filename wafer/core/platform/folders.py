@@ -3,12 +3,22 @@ import sys
 import subprocess
 
 from ...utils.logs import AppLogger
+from ...utils.virtual_paths import is_virtual_path
 
 _explorer_argtypes_set = False
 
 
+def _reject_virtual_path(path: str, operation: str) -> bool:
+    if is_virtual_path(str(path)):
+        AppLogger.warning(f"[{operation}] virtual path rejected: {path} (file ops must target source files)")
+        return True
+    return False
+
+
 def show_in_explorer(path: str, *, show_first_if_folder: bool = False) -> None:
     if not path:
+        return
+    if _reject_virtual_path(path, "reveal"):
         return
     p, open_folder_only = _resolve_show_path(path, show_first_if_folder)
     if not p:
@@ -136,11 +146,15 @@ def first_entry(path: str) -> str | None:
 def open_file(path: str) -> None:
     if not path:
         return
+    if _reject_virtual_path(path, "open"):
+        return
     from PySide6 import QtCore, QtGui
 
     QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(path))
 
 
-def make_directory(path: str) -> str:
+def make_directory(path: str) -> str | None:
+    if _reject_virtual_path(path, "mkdir"):
+        return None
     os.makedirs(path, exist_ok=True)
     return path

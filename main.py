@@ -67,6 +67,9 @@ set_app_user_model_id(APP_ID)
 def _bootstrap_plugins_for_tray():
     run_pending_installs(get_plugin_dir())
     load_plugins()
+    from wafer.plugin.loader import get_command_registry
+
+    get_command_registry().activate('tray')
 
 
 def _wait_install_then_load_plugins(app):
@@ -100,11 +103,13 @@ def _entry_tray():
     try:
         setproctitle.setproctitle(f'{APP_NAME}-tray')
         profiler.set_enabled(False)
-        from PySide6 import QtWidgets
-        from wafer.app.tray.main_tray import TrayApp
-        from wafer.core.qt.tooltip import install_instant_tooltips
 
         with SafeProcessLock(f'{APP_DATA_DIR_NAME}_tray'):
+            _bootstrap_plugins_for_tray()
+            from PySide6 import QtWidgets
+            from wafer.app.tray.main_tray import TrayApp
+            from wafer.core.qt.tooltip import install_instant_tooltips
+
             procs = AppProcess.get_by_args_subset('--indexer')
             AppProcess.terminate_and_wait(procs)
             AppLogger.info('TRAY RUNNING')
@@ -205,9 +210,6 @@ def main():
         _entry_viewer(app, slot_id=restore_ids[0] if restore_ids else None)
         return
     if args.tray:
-        _bootstrap_plugins_for_tray()
-        from wafer.plugin.loader import get_command_registry
-        get_command_registry().activate('tray')
         _entry_tray()
     elif args.indexer:
         if isinstance(args.indexer, str):

@@ -15,6 +15,7 @@ from ...core.platform.file_operations import PastePlanItem, delete_to_trash
 from ...core.platform.folders import show_in_explorer as reveal_in_explorer, open_file as platform_open_file, make_directory
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
+from ...utils.virtual_paths import is_virtual_path
 from ...core.qt.dispatcher import Dispatcher
 from ...core.qt.thread import SimpleThreadPool
 
@@ -41,10 +42,18 @@ def _ctx_path(ctx) -> str | None:
 def _ctx_sources(ctx) -> list[str]:
     sources = ctx.get("sources")
     if isinstance(sources, list) and sources:
-        return list(dict.fromkeys(str(p) for p in sources if p))
+        raw = list(dict.fromkeys(str(p) for p in sources if p))
+        physical = [p for p in raw if not is_virtual_path(p)]
+        if len(physical) != len(raw):
+            AppLogger.warning(f"[file_cmd] virtual sources rejected: {len(raw) - len(physical)} entries (file ops must target source files)")
+        return physical
     source = ctx.get("source")
     if source:
-        return [str(source)]
+        source = str(source)
+        if is_virtual_path(source):
+            AppLogger.warning(f"[file_cmd] virtual source rejected: {source} (file ops must target source files)")
+            return []
+        return [source]
     AppLogger.warning("[file_cmd] context did not provide 'source'/'sources'; file operation skipped. UI must populate source via extend_context().")
     return []
 
@@ -52,7 +61,11 @@ def _ctx_sources(ctx) -> list[str]:
 def _ctx_source(ctx) -> str | None:
     source = ctx.get("source")
     if source:
-        return str(source)
+        source = str(source)
+        if is_virtual_path(source):
+            AppLogger.warning(f"[file_cmd] virtual source rejected: {source} (file ops must target source files)")
+            return None
+        return source
     AppLogger.warning("[file_cmd] context did not provide 'source'; file operation skipped. UI must populate source via extend_context().")
     return None
 
@@ -187,7 +200,7 @@ def _get_directory_from_path(path):
 
 @require(ftree="FolderTree")
 def select_path(ctx, ftree):
-    paths = _ctx_paths(ctx)
+    paths = _ctx_sources(ctx)
     if not paths:
         return
     folders = list(dict.fromkeys(_get_directory_from_path(str(p)) for p in paths))

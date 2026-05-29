@@ -3,8 +3,14 @@ import platform
 import re
 import shutil
 import tempfile
-import urllib.request
 import zipfile
+
+from wafer.utils.downloader import (
+    safe_download,
+    fetch_text,
+    validate_archive_path,
+)
+
 
 _LIB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib")
 _EXIFTOOL_EXE = "exiftool.exe"
@@ -13,9 +19,12 @@ _EXIFTOOL_PL = os.path.join(_LIB_DIR, "exiftool_files", "exiftool.pl")
 
 _VERSION_URL = "https://exiftool.org/ver.txt"
 _ARCHIVE_URL_TEMPLATE = "https://sourceforge.net/projects/exiftool/files/exiftool-{version}_64.zip/download"
+_CHECKSUMS_URL_TEMPLATE = "https://exiftool.org/checksums-{version}.txt"
 _ALLOWED_HOSTS = ("exiftool.org", "sourceforge.net")
 _VERSION_PATTERN = re.compile(r"^\d+\.\d+$")
 _MAX_VERSION_RESPONSE = 64
+_MAX_CHECKSUMS_RESPONSE = 16 * 1024
+_USER_AGENT = "wafer-exiftool-plugin"
 
 _MANUAL_HINT = "Download ExifTool from https://exiftool.org/ and place exiftool.exe + exiftool_files/ in extensions/exiftool/lib/"
 
@@ -33,48 +42,12 @@ def _log(msg, *, level="info", exc=None):
         pass
 
 
-def _validate_url(url: str, allowed_hosts: tuple[str, ...]) -> str:
-    from urllib.parse import urlparse
-
-    parsed = urlparse(url)
-    if parsed.scheme != "https":
-        raise ValueError(f"Insecure URL scheme: {parsed.scheme}")
-    hostname = parsed.hostname
-    if not hostname:
-        raise ValueError("URL has no hostname")
-    if not any(hostname == h or hostname.endswith("." + h) for h in allowed_hosts):
-        raise ValueError(f"Untrusted host: {hostname}")
-    return url
-
-
-def _safe_download(url: str, dest: str, *, allowed_hosts: tuple[str, ...] | None = None):
-    if allowed_hosts:
-        _validate_url(url, allowed_hosts)
-    tmp_dest = dest + ".tmp"
-    try:
-        urllib.request.urlretrieve(url, tmp_dest)
-        shutil.move(tmp_dest, dest)
-    finally:
-        if os.path.isfile(tmp_dest):
-            try:
-                os.remove(tmp_dest)
-            except OSError:
-                pass
-
-
-def _validate_archive_path(name: str, base_dir: str):
-    resolved = os.path.normpath(os.path.join(base_dir, name))
-    base = os.path.normpath(base_dir)
-    if not resolved.startswith(base + os.sep) and resolved != base:
-        raise ValueError(f"Path traversal detected: {name}")
-
-
 def _extract(archive_path: str):
     tmp = tempfile.mkdtemp()
     try:
         with zipfile.ZipFile(archive_path, "r") as zf:
             for info in zf.infolist():
-                _validate_archive_path(info.filename, tmp)
+                validate_archive_path(info.filename, tmp)
             zf.extractall(tmp)
         src = tmp
         entries = os.listdir(tmp)
@@ -113,18 +86,34 @@ def get_exiftool_path() -> str | None:
 
 
 def _fetch_latest_version() -> str:
-    req = urllib.request.Request(
+    text = fetch_text(
         _VERSION_URL,
-        headers={"User-Agent": "wafer-exiftool-plugin"},
+        allowed_hosts=_ALLOWED_HOSTS,
+        max_bytes=_MAX_VERSION_RESPONSE,
+        user_agent=_USER_AGENT,
+        timeout=15,
+    ).strip()
+    if not _VERSION_PATTERN.match(text):
+        raise RuntimeError(f"Unexpected version format: {text!r}")
+    return text
+
+
+def _fetch_expected_sha256(version: str) -> str:
+    url = _CHECKSUMS_URL_TEMPLATE.format(version=version)
+    text = fetch_text(
+        url,
+        allowed_hosts=_ALLOWED_HOSTS,
+        max_bytes=_MAX_CHECKSUMS_RESPONSE,
+        user_agent=_USER_AGENT,
     )
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        body = resp.read(_MAX_VERSION_RESPONSE + 1)
-        if len(body) > _MAX_VERSION_RESPONSE:
-            raise RuntimeError("ver.txt response too large")
-    version = body.decode("ascii", errors="replace").strip()
-    if not _VERSION_PATTERN.match(version):
-        raise RuntimeError(f"Unexpected version format: {version!r}")
-    return version
+    pattern = re.compile(
+        rf"^SHA2-256\(exiftool-{re.escape(version)}_64\.zip\)=\s*([0-9a-fA-F]{{64}})\s*$",
+        re.MULTILINE,
+    )
+    m = pattern.search(text)
+    if m is None:
+        raise RuntimeError(f"checksums-{version}.txt missing SHA2-256 line for exiftool-{version}_64.zip")
+    return m.group(1).lower()
 
 
 def ensure_exiftool():
@@ -144,9 +133,12 @@ def ensure_exiftool():
     try:
         version = _fetch_latest_version()
         archive_url = _ARCHIVE_URL_TEMPLATE.format(version=version)
+        _log(f"[exiftool] Fetching checksum for v{version}")
+        expected = _fetch_expected_sha256(version)
         _log(f"[exiftool] Downloading ExifTool v{version}: {archive_url}")
         archive = os.path.join(tmp, "exiftool.zip")
-        _safe_download(archive_url, archive, allowed_hosts=_ALLOWED_HOSTS)
+        safe_download(archive_url, archive, allowed_hosts=_ALLOWED_HOSTS, expected_sha256=expected)
+        _log("[exiftool] archive checksum verified")
         _extract(archive)
         if not os.path.isfile(_EXIFTOOL_PATH):
             raise FileNotFoundError(f"{_EXIFTOOL_EXE} not found after extraction")

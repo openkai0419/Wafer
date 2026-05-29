@@ -1,5 +1,6 @@
 import os
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -141,3 +142,55 @@ def test_cancel_request_before_loop_skips_all(ext_dir):
     ma.assert_not_called()
     mb.assert_not_called()
     assert len(installer_queue.read_queue(ext_dir)) == 1
+
+
+def test_open_files_oserror_does_not_abort_lock_scan(ext_dir):
+    packages_dir = os.path.join(ext_dir, ".packages")
+    os.makedirs(packages_dir)
+
+    broken_proc = Mock(pid=123)
+    broken_proc.open_files.side_effect = OSError(433, "device missing")
+
+    locked_proc = Mock(pid=456)
+    locked_proc.open_files.return_value = [SimpleNamespace(path=os.path.join(packages_dir, "pkg", "locked.pyd"))]
+
+    with patch.object(startup_install.os, "getpid", return_value=999), \
+         patch.object(startup_install.psutil, "process_iter", return_value=[broken_proc, locked_proc]), \
+         patch.object(startup_install.AppLogger, "warning") as warning, \
+         patch("wafer.core.platform.process.AppProcess.terminate_and_wait") as terminate:
+        startup_install._terminate_processes_holding_packages(ext_dir)
+
+    warning.assert_called_once()
+    terminate.assert_called_once_with([locked_proc])
+
+
+def test_status_writer_created_before_lock_scan(ext_dir):
+    plugin_dir = _make_plugin(ext_dir, "ext_a")
+    installer_queue.enqueue(ext_dir, "ext_a", plugin_dir)
+    events = []
+
+    class Writer:
+        def __init__(self, total):
+            events.append(("writer", total))
+
+        def begin_item(self, *_args):
+            return None
+
+        def append_log(self, _line):
+            return None
+
+        def finish(self, error=None):
+            events.append(("finish", error))
+
+    cancelled_result = InstallResult(success=False, cancelled=True)
+    with patch.object(startup_install, "InstallStatusWriter", Writer), \
+         patch.object(startup_install, "_terminate_processes_holding_packages", side_effect=lambda d: events.append(("terminate", d))), \
+         patch.object(startup_install, "install_requirements_only", return_value=cancelled_result), \
+         patch.object(startup_install, "run_post_install") as mb, \
+         patch("wafer.plugin.startup_install.Notifier"):
+        startup_install.run_pending_installs(ext_dir)
+
+    mb.assert_not_called()
+    assert events[0] == ("writer", 1)
+    assert events[1] == ("terminate", ext_dir)
+

@@ -1,383 +1,93 @@
+import io
+import json as _json
 import os
-import subprocess
 import sys
-import urllib.error
+
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
+
+import extensions.video._downloader as dl
+from wafer.utils import downloader as common
 
 
 @pytest.fixture(autouse=True)
 def _isolate_env(monkeypatch, tmp_path):
     lib_dir = str(tmp_path / "lib")
-    import extensions.video._downloader as dl
-
     monkeypatch.setattr(dl, "_LIB_DIR", lib_dir)
     monkeypatch.setattr(dl, "_DLL_PATH", os.path.join(lib_dir, "libmpv-2.dll"))
-    monkeypatch.setattr(dl, "_7ZR_PATH", os.path.join(lib_dir, "7zr.exe"))
     saved_path = os.environ.get("PATH", "")
     yield
     os.environ["PATH"] = saved_path
 
 
-class TestValidateUrl:
-    def test_accepts_github_https(self):
-        from extensions.video._downloader import _validate_url, _ALLOWED_HOSTS
-
-        url = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20250201/mpv.7z"
-        assert _validate_url(url, _ALLOWED_HOSTS) == url
-
-    def test_accepts_githubusercontent(self):
-        from extensions.video._downloader import _validate_url, _ALLOWED_HOSTS
-
-        url = "https://objects.githubusercontent.com/some/path"
-        assert _validate_url(url, _ALLOWED_HOSTS) == url
-
-    def test_rejects_http(self):
-        from extensions.video._downloader import _validate_url, _ALLOWED_HOSTS
-
-        with pytest.raises(ValueError, match="Insecure URL scheme"):
-            _validate_url("http://github.com/foo", _ALLOWED_HOSTS)
-
-    def test_rejects_untrusted_host(self):
-        from extensions.video._downloader import _validate_url, _ALLOWED_HOSTS
-
-        with pytest.raises(ValueError, match="Untrusted host"):
-            _validate_url("https://evil.com/mpv.7z", _ALLOWED_HOSTS)
-
-
-class TestSafeDownload:
-    def test_atomic_success(self, tmp_path):
-        from extensions.video._downloader import _safe_download
-
-        dest = str(tmp_path / "file.bin")
-
-        def fake_retrieve(url, d):
-            open(d, "w").close()
-
-        with patch("urllib.request.urlretrieve", side_effect=fake_retrieve):
-            _safe_download("https://example.com/f", dest)
-
-        assert os.path.isfile(dest)
-        assert not os.path.isfile(dest + ".tmp")
-
-    def test_cleans_up_on_failure(self, tmp_path):
-        from extensions.video._downloader import _safe_download
-
-        dest = str(tmp_path / "file.bin")
-
-        def fake_retrieve(url, d):
-            open(d, "w").close()
-            raise ConnectionError("network down")
-
-        with pytest.raises(ConnectionError):
-            with patch("urllib.request.urlretrieve", side_effect=fake_retrieve):
-                _safe_download("https://example.com/f", dest)
-
-        assert not os.path.isfile(dest)
-        assert not os.path.isfile(dest + ".tmp")
-
-    def test_validates_host_when_specified(self, tmp_path):
-        from extensions.video._downloader import _safe_download
-
-        dest = str(tmp_path / "file.bin")
-        with pytest.raises(ValueError, match="Untrusted host"):
-            _safe_download("https://evil.com/f", dest, allowed_hosts=("github.com",))
-
-
-class TestValidateArchivePath:
-    def test_allows_normal_path(self):
-        from extensions.video._downloader import _validate_archive_path
-
-        _validate_archive_path("libmpv-2.dll", "/some/base")
-
-    def test_allows_nested_path(self):
-        from extensions.video._downloader import _validate_archive_path
-
-        _validate_archive_path("subdir/libmpv-2.dll", "/some/base")
-
-    def test_rejects_traversal(self):
-        from extensions.video._downloader import _validate_archive_path
-
-        with pytest.raises(ValueError, match="Path traversal"):
-            _validate_archive_path("../../etc/passwd", "/some/base")
-
-    def test_rejects_absolute_escape(self):
-        from extensions.video._downloader import _validate_archive_path
-
-        with pytest.raises(ValueError, match="Path traversal"):
-            _validate_archive_path("../outside/file.dll", "/some/base")
-
-
-class TestFindAssetUrl:
-    def test_returns_pinned_url(self):
-        from extensions.video._downloader import _find_asset_url, _PINNED_URL
-
-        url = _find_asset_url()
-        assert url == _PINNED_URL
-
-    def test_pinned_url_is_trusted(self):
-        from extensions.video._downloader import _find_asset_url, _validate_url, _ALLOWED_HOSTS
-
-        url = _find_asset_url()
-        assert _validate_url(url, _ALLOWED_HOSTS) == url
-
-    def test_pinned_url_is_https(self):
-        from extensions.video._downloader import _find_asset_url
-
-        url = _find_asset_url()
-        assert url.startswith("https://")
-
-
-class TestExtractDll:
-    def test_py7zr_extracts_flat_dll(self, tmp_path):
-        from extensions.video._downloader import _extract_dll_py7zr, _DLL_NAME
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
-        dl._LIB_DIR = lib_dir
-        dl._DLL_PATH = os.path.join(lib_dir, _DLL_NAME)
-
-        fake_archive = str(tmp_path / "test.7z")
-
-        mock_7z = MagicMock()
-        mock_file = MagicMock()
-        mock_file.getnames.return_value = [_DLL_NAME]
-        mock_file.__enter__ = MagicMock(return_value=mock_file)
-        mock_file.__exit__ = MagicMock(return_value=False)
-        mock_7z.SevenZipFile.return_value = mock_file
-
-        with patch.dict(sys.modules, {"py7zr": mock_7z}):
-            os.makedirs(lib_dir, exist_ok=True)
-            dll_path = os.path.join(lib_dir, _DLL_NAME)
-            mock_file.extract.side_effect = lambda d, t: open(dll_path, "w").close()
-            _extract_dll_py7zr(fake_archive)
-
-        mock_file.extract.assert_called_once_with(lib_dir, [_DLL_NAME])
-
-    def test_py7zr_raises_when_dll_missing_in_archive(self, tmp_path):
-        from extensions.video._downloader import _extract_dll_py7zr
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
-        dl._LIB_DIR = lib_dir
-
-        mock_7z = MagicMock()
-        mock_file = MagicMock()
-        mock_file.getnames.return_value = ["include/mpv.h", "mpv.def"]
-        mock_file.__enter__ = MagicMock(return_value=mock_file)
-        mock_file.__exit__ = MagicMock(return_value=False)
-        mock_7z.SevenZipFile.return_value = mock_file
-
-        with patch.dict(sys.modules, {"py7zr": mock_7z}):
-            with pytest.raises(FileNotFoundError):
-                _extract_dll_py7zr(str(tmp_path / "test.7z"))
-
-    def test_py7zr_rejects_path_traversal(self, tmp_path):
-        from extensions.video._downloader import _extract_dll_py7zr
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
-        dl._LIB_DIR = lib_dir
-
-        mock_7z = MagicMock()
-        mock_file = MagicMock()
-        mock_file.getnames.return_value = ["../../etc/passwd", "libmpv-2.dll"]
-        mock_file.__enter__ = MagicMock(return_value=mock_file)
-        mock_file.__exit__ = MagicMock(return_value=False)
-        mock_7z.SevenZipFile.return_value = mock_file
-
-        with patch.dict(sys.modules, {"py7zr": mock_7z}):
-            with pytest.raises(ValueError, match="Path traversal"):
-                _extract_dll_py7zr(str(tmp_path / "test.7z"))
-
-    def test_fallback_py7zr_to_system_7z(self, tmp_path):
-        from extensions.video._downloader import _extract_dll, _DLL_NAME
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
-        dl._LIB_DIR = lib_dir
-        dl._DLL_PATH = os.path.join(lib_dir, _DLL_NAME)
-
-        mock_7z_mod = MagicMock()
-        mock_7z_mod.SevenZipFile.side_effect = Exception("BCJ2 unsupported")
-
-        def fake_run(cmd, **kwargs):
-            os.makedirs(lib_dir, exist_ok=True)
-            open(os.path.join(lib_dir, _DLL_NAME), "w").close()
-            return subprocess.CompletedProcess(cmd, 0, "", "")
-
-        with (
-            patch.dict(sys.modules, {"py7zr": mock_7z_mod}),
-            patch.object(dl, "_find_7z_exe", return_value="7z"),
-            patch("subprocess.run", side_effect=fake_run),
-        ):
-            _extract_dll(str(tmp_path / "archive.7z"))
-
-        assert os.path.isfile(os.path.join(lib_dir, _DLL_NAME))
-
-    def test_fallback_py7zr_to_downloaded_7zr(self, tmp_path):
-        from extensions.video._downloader import _extract_dll, _DLL_NAME
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
-        dl._LIB_DIR = lib_dir
-        dl._DLL_PATH = os.path.join(lib_dir, _DLL_NAME)
-        zr_path = os.path.join(lib_dir, "7zr.exe")
-        dl._7ZR_PATH = zr_path
-
-        mock_7z_mod = MagicMock()
-        mock_7z_mod.SevenZipFile.side_effect = Exception("BCJ2 unsupported")
-
-        def fake_retrieve(url, dest):
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            open(dest, "w").close()
-
-        def fake_run(cmd, **kwargs):
-            assert cmd[0] == zr_path
-            os.makedirs(lib_dir, exist_ok=True)
-            open(os.path.join(lib_dir, _DLL_NAME), "w").close()
-            return subprocess.CompletedProcess(cmd, 0, "", "")
-
-        with (
-            patch.dict(sys.modules, {"py7zr": mock_7z_mod}),
-            patch.object(dl, "_find_7z_exe", return_value=None),
-            patch("urllib.request.urlretrieve", side_effect=fake_retrieve),
-            patch("subprocess.run", side_effect=fake_run),
-        ):
-            _extract_dll(str(tmp_path / "archive.7z"))
-
-        assert os.path.isfile(os.path.join(lib_dir, _DLL_NAME))
-
-
-class TestRun7z:
-    def test_extracts_dll_successfully(self, tmp_path):
-        from extensions.video._downloader import _run_7z, _DLL_NAME
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
-        dl._LIB_DIR = lib_dir
-        dl._DLL_PATH = os.path.join(lib_dir, _DLL_NAME)
-
-        def fake_run(cmd, **kwargs):
-            os.makedirs(lib_dir, exist_ok=True)
-            open(os.path.join(lib_dir, _DLL_NAME), "w").close()
-            return subprocess.CompletedProcess(cmd, 0, "", "")
-
-        with patch("subprocess.run", side_effect=fake_run):
-            _run_7z("7z", str(tmp_path / "archive.7z"))
-
-        assert os.path.isfile(os.path.join(lib_dir, _DLL_NAME))
-
-    def test_raises_on_nonzero_returncode(self, tmp_path):
-        from extensions.video._downloader import _run_7z
-        import extensions.video._downloader as dl
-
-        dl._LIB_DIR = str(tmp_path / "lib")
-
-        with patch("subprocess.run", return_value=subprocess.CompletedProcess([], 2, "", "error")):
-            with pytest.raises(RuntimeError, match="7z extraction failed"):
-                _run_7z("7z", str(tmp_path / "archive.7z"))
-
-    def test_raises_when_dll_not_extracted(self, tmp_path):
-        from extensions.video._downloader import _run_7z
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
-        dl._LIB_DIR = lib_dir
-        dl._DLL_PATH = os.path.join(lib_dir, "libmpv-2.dll")
-
-        with patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")):
-            with pytest.raises(FileNotFoundError):
-                _run_7z("7z", str(tmp_path / "archive.7z"))
-
-
-class TestEnsure7zr:
-    def test_returns_cached_if_exists(self, tmp_path):
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
-        os.makedirs(lib_dir, exist_ok=True)
-        zr_path = os.path.join(lib_dir, "7zr.exe")
-        open(zr_path, "w").close()
-        dl._7ZR_PATH = zr_path
-
-        result = dl._ensure_7zr()
-        assert result == zr_path
-
-    def test_downloads_when_missing(self, tmp_path):
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
-        zr_path = os.path.join(lib_dir, "7zr.exe")
-        dl._LIB_DIR = lib_dir
-        dl._7ZR_PATH = zr_path
-
-        def fake_retrieve(url, dest):
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            open(dest, "w").close()
-
-        with patch("urllib.request.urlretrieve", side_effect=fake_retrieve):
-            result = dl._ensure_7zr()
-
-        assert result == zr_path
-        assert os.path.isfile(zr_path)
-
-    def test_no_partial_file_on_failure(self, tmp_path):
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
-        zr_path = os.path.join(lib_dir, "7zr.exe")
-        dl._LIB_DIR = lib_dir
-        dl._7ZR_PATH = zr_path
-
-        def fail_retrieve(url, dest):
-            open(dest, "w").close()
-            raise ConnectionError("interrupted")
-
-        with pytest.raises(ConnectionError):
-            with patch("urllib.request.urlretrieve", side_effect=fail_retrieve):
-                dl._ensure_7zr()
-
-        assert not os.path.isfile(zr_path)
-        assert not os.path.isfile(zr_path + ".tmp")
-
-
-class TestFind7zExe:
-    def test_finds_on_path(self):
-        from extensions.video._downloader import _find_7z_exe
-
-        with patch("shutil.which", return_value="7z"):
-            assert _find_7z_exe() == "7z"
-
-    def test_finds_in_program_files(self, tmp_path):
-        from extensions.video._downloader import _find_7z_exe
-
-        sevenzip_dir = tmp_path / "7-Zip"
-        sevenzip_dir.mkdir()
-        exe = sevenzip_dir / "7z.exe"
-        exe.touch()
-        with (
-            patch("shutil.which", return_value=None),
-            patch.dict(os.environ, {"ProgramFiles": str(tmp_path), "ProgramFiles(x86)": ""}),
-        ):
-            assert _find_7z_exe() == str(exe)
-
-    def test_returns_none_when_not_found(self):
-        from extensions.video._downloader import _find_7z_exe
-
-        with (
-            patch("shutil.which", return_value=None),
-            patch.dict(os.environ, {"ProgramFiles": "", "ProgramFiles(x86)": ""}),
-        ):
-            assert _find_7z_exe() is None
+class _Resp:
+    def __init__(self, payload: bytes):
+        self._buf = io.BytesIO(payload)
+
+    def read(self, n=-1):
+        return self._buf.read(n)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class TestFindAsset:
+    def _patch(self, monkeypatch, body: bytes):
+        monkeypatch.setattr(common.urllib.request, "urlopen",
+                            lambda req, timeout=None: _Resp(body))
+
+    def test_returns_tuple_for_matching_asset(self, monkeypatch):
+        digest = "sha256:" + ("a" * 64)
+        payload = {
+            "tag_name": "20260527",
+            "assets": [
+                {"name": "mpv-dev-x86_64-20260527-git-abcdef0.7z",
+                 "browser_download_url": "https://github.com/shinchiro/mpv/releases/download/20260527/x.7z",
+                 "digest": digest},
+            ],
+        }
+        self._patch(monkeypatch, _json.dumps(payload).encode("utf-8"))
+        url, sha, label = dl._find_asset()
+        assert url.startswith("https://github.com/")
+        assert sha == "a" * 64
+        assert "20260527" in label
+
+    def test_rejects_non_matching_asset_names(self, monkeypatch):
+        payload = {
+            "tag_name": "20260527",
+            "assets": [
+                {"name": "mpv-dev-aarch64-20260527-git-abcdef0.7z",
+                 "browser_download_url": "https://github.com/x.7z",
+                 "digest": "sha256:" + ("b" * 64)},
+                {"name": "mpv-dev-x86_64-v3-20260527-git-abcdef0.7z",
+                 "browser_download_url": "https://github.com/y.7z",
+                 "digest": "sha256:" + ("c" * 64)},
+            ],
+        }
+        self._patch(monkeypatch, _json.dumps(payload).encode("utf-8"))
+        with pytest.raises(RuntimeError, match="asset not found"):
+            dl._find_asset()
+
+    def test_missing_digest_skipped(self, monkeypatch):
+        payload = {
+            "tag_name": "20260527",
+            "assets": [
+                {"name": "mpv-dev-x86_64-20260527-git-abcdef0.7z",
+                 "browser_download_url": "https://github.com/x.7z",
+                 "digest": ""},
+            ],
+        }
+        self._patch(monkeypatch, _json.dumps(payload).encode("utf-8"))
+        with pytest.raises(RuntimeError, match="asset not found"):
+            dl._find_asset()
 
 
 class TestSetupDllPath:
-    def test_adds_lib_dir_to_path(self, tmp_path):
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
-        dl._LIB_DIR = lib_dir
+    def test_adds_lib_dir_to_path(self):
+        lib_dir = dl._LIB_DIR
         os.environ["PATH"] = ""
 
         with patch("os.add_dll_directory") as mock_add:
@@ -387,11 +97,8 @@ class TestSetupDllPath:
         if sys.platform == "win32":
             mock_add.assert_called_once_with(lib_dir)
 
-    def test_skips_duplicate_path_entry(self, tmp_path):
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
-        dl._LIB_DIR = lib_dir
+    def test_skips_duplicate_path_entry(self):
+        lib_dir = dl._LIB_DIR
         os.environ["PATH"] = lib_dir
 
         with patch("os.add_dll_directory"):
@@ -400,12 +107,9 @@ class TestSetupDllPath:
         entries = [e for e in os.environ["PATH"].split(os.pathsep) if e == lib_dir]
         assert len(entries) == 1
 
-    def test_no_false_substring_match(self, tmp_path):
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
+    def test_no_false_substring_match(self):
+        lib_dir = dl._LIB_DIR
         similar_dir = lib_dir + "2"
-        dl._LIB_DIR = lib_dir
         os.environ["PATH"] = similar_dir
 
         with patch("os.add_dll_directory"):
@@ -417,72 +121,33 @@ class TestSetupDllPath:
 
 
 class TestEnsureMpvDll:
-    def test_returns_true_when_dll_exists(self, tmp_path):
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
-        os.makedirs(lib_dir)
-        dll_path = os.path.join(lib_dir, "libmpv-2.dll")
-        open(dll_path, "w").close()
-
-        dl._LIB_DIR = lib_dir
-        dl._DLL_PATH = dll_path
+    def test_returns_true_when_dll_exists(self):
+        os.makedirs(dl._LIB_DIR, exist_ok=True)
+        open(dl._DLL_PATH, "w").close()
 
         with patch("os.add_dll_directory"):
             assert dl.ensure_mpv_dll() is True
 
-    def test_downloads_when_dll_missing(self, tmp_path):
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
-        dll_path = os.path.join(lib_dir, "libmpv-2.dll")
-        dl._LIB_DIR = lib_dir
-        dl._DLL_PATH = dll_path
-
+    def test_downloads_when_dll_missing(self):
+        asset = ("https://github.com/shinchiro/mpv.7z", "a" * 64, "tag/name")
         with (
-            patch.object(dl, "_find_asset_url", return_value="https://github.com/shinchiro/mpv.7z"),
-            patch.object(dl, "_extract_dll") as mock_extract,
-            patch.object(dl, "_safe_download") as mock_download,
+            patch.object(dl, "_find_asset", return_value=asset),
+            patch.object(dl, "extract_7z_members") as mock_extract,
+            patch.object(dl, "safe_download") as mock_download,
             patch("os.add_dll_directory"),
         ):
-            mock_extract.side_effect = lambda archive: os.makedirs(lib_dir, exist_ok=True) or open(dll_path, "w").close()
+            mock_extract.side_effect = lambda archive, target, members: (
+                os.makedirs(target, exist_ok=True) or open(dl._DLL_PATH, "w").close()
+            )
             assert dl.ensure_mpv_dll() is True
             mock_download.assert_called_once()
             mock_extract.assert_called_once()
 
-    def test_raises_when_no_asset_found(self, tmp_path):
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
-        dl._LIB_DIR = lib_dir
-        dl._DLL_PATH = os.path.join(lib_dir, "libmpv-2.dll")
-
-        with patch.object(dl, "_find_asset_url", return_value=None):
-            with pytest.raises(RuntimeError, match="mpv-dev asset not found"):
-                dl.ensure_mpv_dll()
-
-    def test_raises_on_network_error(self, tmp_path):
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
-        dl._LIB_DIR = lib_dir
-        dl._DLL_PATH = os.path.join(lib_dir, "libmpv-2.dll")
-
-        with patch.object(dl, "_find_asset_url", side_effect=urllib.error.URLError("timeout")):
-            with pytest.raises(RuntimeError, match="Failed to acquire mpv DLL"):
-                dl.ensure_mpv_dll()
-
-    def test_raises_on_extraction_error(self, tmp_path):
-        import extensions.video._downloader as dl
-
-        lib_dir = str(tmp_path / "lib")
-        dl._LIB_DIR = lib_dir
-        dl._DLL_PATH = os.path.join(lib_dir, "libmpv-2.dll")
-
+    def test_raises_when_download_fails(self):
+        asset = ("https://github.com/shinchiro/mpv.7z", "a" * 64, "tag/name")
         with (
-            patch.object(dl, "_find_asset_url", return_value="https://github.com/shinchiro/mpv.7z"),
-            patch.object(dl, "_safe_download"),
-            patch.object(dl, "_extract_dll", side_effect=FileNotFoundError("no dll")),
+            patch.object(dl, "_find_asset", return_value=asset),
+            patch.object(dl, "safe_download", side_effect=ConnectionError("offline")),
         ):
             with pytest.raises(RuntimeError, match="Failed to acquire mpv DLL"):
                 dl.ensure_mpv_dll()

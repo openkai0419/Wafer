@@ -3,11 +3,13 @@ import time
 import psutil
 from PySide6 import QtCore, QtWidgets
 
+from ..constants import APP_DATA_DIR_NAME
 from ..core.platform.process import AppProcess
 from ..plugin import installer_queue
 from ..plugin.install_status import read_status, request_cancel
 from ..plugin.loader import get_plugin_dir
 from ..utils.logs import AppLogger
+from ..utils.process_lock import SafeProcessLock
 from .splash import InstallSplash
 
 
@@ -19,44 +21,65 @@ _PHASE_LABEL = {
     "error": "Error",
 }
 _POLL_INTERVAL = 0.15
+_INSTALL_WAITER_LOCK = f"{APP_DATA_DIR_NAME}_install_waiter"
+
+
+def _acquire_waiter_lock(*, app) -> SafeProcessLock | None:
+    while installer_queue.has_pending_queue(get_plugin_dir()):
+        waiter_lock = SafeProcessLock(_INSTALL_WAITER_LOCK)
+        if waiter_lock.acquire():
+            if installer_queue.has_pending_queue(get_plugin_dir()):
+                return waiter_lock
+            waiter_lock.release()
+            return None
+        if app is not None:
+            app.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        time.sleep(_POLL_INTERVAL)
+    return None
 
 
 def wait_for_install_complete(*, icon=None, app=None, parent=None) -> None:
     if not installer_queue.has_pending_queue(get_plugin_dir()):
         return
     app = app or QtWidgets.QApplication.instance()
-    tray_pid = _prepare_tray(parent=parent)
-    if tray_pid is None:
-        AppLogger.info("[InstallWaiter] user skipped install")
+    waiter_lock = _acquire_waiter_lock(app=app)
+    if waiter_lock is None:
         return
-
-    splash = InstallSplash(
-        "Installing extensions",
-        icon=icon,
-        message=_format_message(read_status()),
-        show_log=True,
-        cancel_label="Cancel install",
-    )
-    cancelling = {"value": False}
-
-    def on_cancel():
-        if cancelling["value"]:
-            return
-        cancelling["value"] = True
-        AppLogger.info("[InstallWaiter] cancel requested by user")
-        request_cancel()
-        splash.set_message("Cancelling, please wait\u2026")
-        if splash.cancel_button is not None:
-            splash.cancel_button.setEnabled(False)
-
-    if splash.cancel_button is not None:
-        splash.cancel_button.clicked.connect(on_cancel)
-    splash.show()
-
     try:
-        _poll_until_done(splash, app, tray_pid, cancelling)
+        tray_pid = _prepare_tray(parent=parent)
+        if tray_pid is None:
+            AppLogger.info("[InstallWaiter] user skipped install")
+            return
+
+        splash = InstallSplash(
+            "Installing extensions",
+            icon=icon,
+            message=_format_message(read_status()),
+            show_log=True,
+            cancel_label="Cancel install",
+        )
+        cancelling = {"value": False}
+
+        def on_cancel():
+            if cancelling["value"]:
+                return
+            cancelling["value"] = True
+            AppLogger.info("[InstallWaiter] cancel requested by user")
+            request_cancel()
+            splash.set_message("Cancelling, please wait\u2026")
+            if splash.cancel_button is not None:
+                splash.cancel_button.setEnabled(False)
+
+        if splash.cancel_button is not None:
+            splash.cancel_button.clicked.connect(on_cancel)
+        splash.show()
+
+        try:
+            _poll_until_done(splash, app, tray_pid, cancelling)
+        finally:
+            splash.close()
     finally:
-        splash.close()
+        waiter_lock.release()
 
 
 def _prepare_tray(*, parent) -> int | None:

@@ -4,6 +4,7 @@ from PySide6 import QtCore
 
 from wafer.core.platform.dragparser import MimeDataParser, ParsedItem
 from wafer.core.platform.file_operations import FileSaver
+from wafer.utils.virtual_paths import build_virtual_path
 
 
 def test_compile():
@@ -110,3 +111,13 @@ def test_file_saver_skips_dir_into_itself(tmp_path):
     saver.save(ParsedItem(str(src_dir), "src"), str(dst_inside), move=False)
     assert (src_dir / "a.txt").exists()
     assert not dst_inside.exists()
+
+
+def test_file_saver_rejects_virtual_remote_destination(tmp_path):
+    saver = FileSaver()
+    virtual_dst = build_virtual_path(str(tmp_path / "archive.zip"), "remote.txt")
+
+    result = saver.save(ParsedItem(b"x", "remote.txt", is_binary=True), virtual_dst)
+
+    assert result.status == "skipped"
+    assert result.error == "virtual path rejected"

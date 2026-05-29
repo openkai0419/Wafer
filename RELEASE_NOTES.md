@@ -2,6 +2,18 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.7.0]
+
+This release focuses on install reliability and safety fixes.
+
+### Highlights
+- Dependency downloads are safer and more reliable.
+- Pending extension installs now finish more cleanly at startup.
+
+### Fixes
+- File actions now reject archive members and other non-physical paths.
+- Video hover playback cleans up idle timers more safely.
+
 ## [v0.6.19]
 
 This release adds in-app update notifications and makes batch rename previews easier to work with.

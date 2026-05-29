@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.7.0]
+### Added
+- **Runtime download verification**: automatic installs for ExifTool, FFmpeg, and video playback dependencies now share verified downloads with SHA-256 checks and latest-release asset resolution where supported.
+
+### Changed
+- **Extension install startup flow**: pending installs now run before tray command activation, duplicate install waiter windows are prevented, and package-lock scanning logs skipped open-file errors instead of failing silently.
+- **Portable launcher packaging**: portable builds now ship only the windowed `Wafer.exe` launcher, use the bundled Python runtime for command-line checks, and keep bundled third-party notices aligned with packaged runtime dependencies.
+
+### Fixed
+- **Virtual-path file-operation guards**: open, reveal, folder creation, copy, move, and paste flows now reject archive virtual paths consistently and keep file actions on physical source paths.
+- **Video playback idle timer cleanup**: hover playback now replaces idle timers under a lock and waits for cancellation during cleanup, reducing shutdown and rapid-hover races.
+
 ## [v0.6.19]
 ### Added
 - **In-app update notifier**: added an Update panel with manual and startup GitHub release checks, embedded release-note display, download-page links, and per-version skip or remind-later actions

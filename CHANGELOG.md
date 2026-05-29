@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.7.0]
+### Added
+- **Runtime download verification**: automatic installs for ExifTool, FFmpeg, and video playback dependencies now share verified downloads with SHA-256 checks and latest-release asset resolution where supported.
+
+### Changed
+- **Extension install startup flow**: pending installs now run before tray command activation, duplicate install waiter windows are prevented, and package-lock scanning logs skipped open-file errors instead of failing silently.
+- **Portable launcher packaging**: portable builds now ship only the windowed `Wafer.exe` launcher, use the bundled Python runtime for command-line checks, and keep bundled third-party notices aligned with packaged runtime dependencies.
+
+### Fixed
+- **Virtual-path file-operation guards**: open, reveal, folder creation, copy, move, and paste flows now reject archive virtual paths consistently and keep file actions on physical source paths.
+- **Video playback idle timer cleanup**: hover playback now replaces idle timers under a lock and waits for cancellation during cleanup, reducing shutdown and rapid-hover races.
+
 ## [v0.6.19]
 ### Added
 - **In-app update notifier**: added an Update panel with manual and startup GitHub release checks, embedded release-note display, download-page links, and per-version skip or remind-later actions
@@ -12,7 +24,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **Batch Renamer preview workflow**: file lists now default to natural-name sorting, selected cells can enter edit mode with Enter or F2, and left or right thumbnail overlays can independently switch between cover and contain fits
 - **Panel startup hooks**: panel plugins can now run startup actions after the main window finishes loading, enabling one-time viewer-session initialization such as automatic update checks
 - **Release packaging**: portable builds and clean-project copies now include `RELEASE_NOTES.md`, and tagged GitHub releases extract the matching release-notes section as the published release body
-- **Portable launcher packaging**: portable builds now ship only the windowed `Wafer.exe` launcher and use the bundled Python runtime directly for command-line smoke checks
 
 ### Fixed
 - **Portable third-party notices generation**: build-time license export now forces UTF-8 stdio and fails fast on `piplicenses` subprocess errors so `THIRD-PARTY-NOTICES.txt` is generated reliably on Windows

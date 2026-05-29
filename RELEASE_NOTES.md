@@ -2,6 +2,21 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.7.0]
+
+This release makes extension setup more reliable, tightens file-operation safety around archive contents, and smooths a few startup and video playback edge cases.
+
+### Highlights
+- Automatic downloads for ExifTool, FFmpeg, and video playback dependencies now verify SHA-256 checksums before installation, and FFmpeg or mpv downloads follow the latest upstream release instead of fixed bundled archives.
+- Pending extension installs now finish before the tray completes startup, and the install progress UI avoids opening duplicate waiter windows.
+
+### Improvements
+- Portable packages now use the bundled Python runtime directly for command-line checks and keep bundled third-party notices aligned with the shipped runtime dependencies.
+
+### Fixes
+- File actions now stop invalid open, reveal, create-folder, copy, move, and paste attempts against archive members and other non-physical paths.
+- Video hover playback now replaces and cancels idle timers safely, reducing cleanup races after rapid pointer movement or shutdown.
+
 ## [v0.6.19]
 
 This release adds in-app update notifications and makes batch rename previews easier to work with.
@@ -15,7 +30,6 @@ This release adds in-app update notifications and makes batch rename previews ea
 
 ### Notes
 - Portable packages now include release notes so update details remain available even when the app falls back to bundled notes instead of a live download.
-- Portable packages no longer include a separate `WaferConsole.exe`; command-line checks can use the bundled Python runtime directly.
 
 ## [v0.6.18]
 

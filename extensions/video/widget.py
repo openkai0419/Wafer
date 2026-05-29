@@ -283,6 +283,7 @@ class PlaybackSlotManager:
         self._appear_flushing = False
         self._last_activity: float = 0.0
         self._idle_timer: threading.Timer | None = None
+        self._idle_timer_lock = threading.Lock()
         self._cooled_down = False
         self._debounce_key = f"PlaybackSlotManager.hover.{id(self)}"
         if self._mpv_available:
@@ -372,14 +373,32 @@ class PlaybackSlotManager:
                 return True
         return any(v is overlay for v in self._appeared.values())
 
+    def _cancel_timer(self, timer: threading.Timer | None, wait: bool = False):
+        if timer is None:
+            return
+        timer.cancel()
+        if wait and timer.is_alive() and timer is not threading.current_thread():
+            timer.join(timeout=_IDLE_TIMEOUT + 1.0)
+
+    def _replace_idle_timer(self) -> threading.Timer | None:
+        timer = threading.Timer(_IDLE_TIMEOUT, self._check_idle)
+        timer.daemon = True
+        with self._idle_timer_lock:
+            previous = self._idle_timer
+            self._idle_timer = timer
+            timer.start()
+        return previous
+
+    def _cancel_idle_timer(self, wait: bool = False):
+        with self._idle_timer_lock:
+            timer = self._idle_timer
+            self._idle_timer = None
+        self._cancel_timer(timer, wait=wait)
+
     def _touch(self):
         self._last_activity = time.monotonic()
-        if self._idle_timer is not None:
-            self._idle_timer.cancel()
-        t = threading.Timer(_IDLE_TIMEOUT, self._check_idle)
-        t.daemon = True
-        t.start()
-        self._idle_timer = t
+        previous = self._replace_idle_timer()
+        self._cancel_timer(previous, wait=True)
 
     def _check_idle(self):
         if time.monotonic() - self._last_activity < _IDLE_TIMEOUT:
@@ -611,9 +630,7 @@ class PlaybackSlotManager:
 
     @profiler.profile
     def cleanup(self):
-        if self._idle_timer is not None:
-            self._idle_timer.cancel()
-            self._idle_timer = None
+        self._cancel_idle_timer(wait=True)
         if self._warm_cancel:
             self._warm_cancel.cancel()
         self._cancel_pending()

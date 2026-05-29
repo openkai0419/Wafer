@@ -4,18 +4,15 @@ User-facing highlights for each Wafer release. These notes are shown in the Upda
 
 ## [v0.7.0]
 
-This release makes extension setup more reliable, tightens file-operation safety around archive contents, and smooths a few startup and video playback edge cases.
+This release focuses on install reliability and safety fixes.
 
 ### Highlights
-- Automatic downloads for ExifTool, FFmpeg, and video playback dependencies now verify SHA-256 checksums before installation, and FFmpeg or mpv downloads follow the latest upstream release instead of fixed bundled archives.
-- Pending extension installs now finish before the tray completes startup, and the install progress UI avoids opening duplicate waiter windows.
-
-### Improvements
-- Portable packages now use the bundled Python runtime directly for command-line checks and keep bundled third-party notices aligned with the shipped runtime dependencies.
+- Dependency downloads are safer and more reliable.
+- Pending extension installs now finish more cleanly at startup.
 
 ### Fixes
-- File actions now stop invalid open, reveal, create-folder, copy, move, and paste attempts against archive members and other non-physical paths.
-- Video hover playback now replaces and cancels idle timers safely, reducing cleanup races after rapid pointer movement or shutdown.
+- File actions now reject archive members and other non-physical paths.
+- Video hover playback cleans up idle timers more safely.
 
 ## [v0.6.19]
 

@@ -15,22 +15,22 @@
 
 </div>
 
-Wafer is an extensible local file viewer built on **PySide6**, **SQLite**, and **ZMQ**.
-Collections runs in background process, letting you browse and search across huge amout of files.
-Plugin-based extensions add support for any file format. Currently Windows only — other OS contributions are welcome.
+Wafer is a multi-feature local file viewer built on **PySide6**, **SQLite**, and **ZMQ**.
+It collects local files in the background, allowing large file sets to be browsed, searched, and filtered quickly in Viewer windows.
+Viewers, metadata collection, AI analysis, search, layouts, and archive support can be managed dynamically as extensions.
 
-## Installation
+Platform: Windows
 
-### From zip 
+## Installation And Data
 
-1. Go to [Releases](https://github.com/openkai0419/Wafer/releases/latest)
+### From Zip
+
+1. Open the [Releases](https://github.com/openkai0419/Wafer/releases/latest) page
 2. Download `Wafer-vX.X.X.zip`
-3. Extract the zip to any folder (prefer SSD)
+3. Extract the zip to any folder (SSD recommended)
 4. Run `Wafer.exe`
 
-A bundled Python environment is included — no separate Python installation is required.
-
-To uninstall, run `cleanup.bat` to remove app data from `%LOCALAPPDATA%\Wafer`, and delete the extracted files.
+A bundled Python environment is included. No Python installation is required.
 
 ### From Source
 
@@ -45,108 +45,67 @@ To uninstall, run `cleanup.bat` to remove app data from `%LOCALAPPDATA%\Wafer`, 
 git clone https://github.com/openkai0419/Wafer.git
 cd Wafer
 
-# Create venv and install all dependencies
+# Create venv and install dependencies
 setup.bat
 
 # Run the app
+main.bat
+# Or
 python main.py
-
-# Run tests (layered runner: unit → smoke → benchmark)
-scripts\test.bat
-
-# Or run pytest directly (uses pyproject.toml defaults)
-.venv\Scripts\python.exe -m pytest
 ```
 
-## Design
+### Uninstall
 
-Wafer follows the principle **"one foundation, many extensions"**.
+On Windows, application data such as databases, settings, logs, and caches is created under `C:/Users/[username]/AppData/Local/Wafer` by default.
+To uninstall, run `cleanup.bat` to remove the application data, then delete the extracted application folder.
 
-- **`wafer/`** is the common foundation — it provides infrastructure for file collection, database indexing, search, and rendering, independent of any specific file format.
-- **`extensions/`** contains independent, folder-based extensions that implement support for specific file formats (images, video, audio, etc.).
+## Tray And Viewers
 
-The core design goals are:
+Wafer is mainly built around two user-visible processes: `Tray` and `Viewer`.
 
-1. **The foundation is shared; extensions are free.** The foundation aims to be a reliable common base. Extensions can be added, modified, or removed by anyone without touching it.
-2. **Extensions are first-class participants, not restricted guests.** Extensions can directly import `wafer` internals (`wafer.plugin`, `wafer.utils`, `wafer.core`). They are part of the same ecosystem, not walled off behind an API boundary.
-3. **Extensions are independent of each other.** The image extension does not know about the video extension. Each extension communicates with the foundation through `wafer/` alone.
-
-The ideal form of this project is an ecosystem where multiple developers freely build file format support on top of a shared `wafer/` foundation.
-
-Extensions are placed as folders under `extensions/`. `PluginLoader` auto-discovers and registers them at startup.
-
-## Currently Supporting Extensions
-
-#### Viewer / Grid
-
-| Extension | Formats | Description |
-|---|---|---|
-| **image** | jpg, png, bmp, gif, webp | Static image grid and viewer with zoom/pan |
-| **animated** | gif, apng, webp (animated) | Frame-by-frame animated playback in grid and viewer |
-| **video** | mp4, mkv, webm, avi, mov, etc. | Video playback via mpv with OpenGL rendering |
-
-#### Metadata / Collection
-
-| Extension | Formats | Description |
-|---|---|---|
-| **exiftool** | jpg, png, webp, tiff, heic, avif, jxl, raw, psd, etc. | Universal EXIF/IPTC/XMP metadata extraction via ExifTool |
-| **ffmpeg** | mp4, mkv, webm, mp3, flac, wav, etc. | Video/audio metadata extraction via ffprobe |
-| **zip** | zip | Expands `.zip` archives into virtual child paths and renders contained files through existing plugins |
-| **color** | *(images)* | Representative color extraction, palette display, and RGB-distance filtering |
-| **wd14** | *(images)* | WD14 model-based automatic tagging (ONNX, GPU accelerated) |
-| **florence** | *(images)* | Florence-2 vision-language captioning / tagging (GPU accelerated) |
-| **text_generation** | *(images with EXIF)* | NovelAI generation parameter extraction |
-
-#### UI
-
-| Extension | Description |
+| Type | Role |
 |---|---|
-| **additional_filters** | Date-range and regex query filters |
-| **additional_layout** | Multi-span, justified, and organic partition grid layouts |
+| `Tray` | A resident management process. It coordinates Viewer windows, databases, background work, and restarts. |
+| `Viewer` | A window for browsing and searching files. Multiple Viewer windows can be opened, each with its own window state. |
 
-### How It Works
+Collection and analysis run as background work under Tray, so multiple Viewer windows can be used while managing multiple databases.
+While Tray is running, file updates are detected immediately, keeping databases up to date.
 
-1. If `requirements.txt` exists and dependencies are not installed (or outdated), they are auto-installed to `extensions/.packages/` via pip
-2. `.packages/` is added to `sys.path`
-3. `lib/` is added to DLL search paths
-4. All `*.py` files are imported and plugin classes are auto-discovered by inheritance
+## Code Design
 
-### Extension Examples
+Wafer follows a **common foundation + extensions** design.
 
-Extensions import base classes from `wafer.plugin`. Note that the foundation is not yet stable, so external plugins may break on updates.
+- **`wafer/`** is the common foundation. It provides file collection, databases, search, rendering, process coordination, and plugin registration without depending on a specific file format.
+- **`extensions/`** contains independent folder-based extensions. They add image/video support, metadata extraction, AI analysis, search filters, layouts, and other features.
 
-```python
-from wafer.plugin import BaseCollectorPlugin, CollectorResult
+The goal is to keep the foundation shared while letting format-specific and analysis-specific features evolve as extensions.
 
-class MyCollector(BaseCollectorPlugin):
-    NAME = "my_ext"
-    EXTENSIONS = (".custom",)
+## Extensions
 
-    def process(self, path: str, file_info: tuple[float, int]) -> CollectorResult:
-        return CollectorResult(source=path, status=True, meta_info={"key": "value"})
-```
+Extensions are not limited to adding display formats. They extend many areas of the app, including collection, search, rendering, UI, and archive handling.
+Features can be added dynamically by placing appropriate Python files under the `extensions` folder.
 
-## Data Files
+| Extension point | What it adds | Representative extensions |
+|---|---|---|
+| Viewer / Grid | File rendering, thumbnails, and viewer behavior | `image`, `animated`, `video` |
+| Metadata & AI Collection | EXIF, video/audio metadata, colors, tags, captions, and other searchable or displayable data | `exiftool`, `ffmpeg`, `color`, `wd14`, `florence` |
+| Search / Filter | Additional ways to search and narrow results, such as date ranges, regular expressions, and color distance | `additional_filters`, `color` |
+| Layout / UI | Grid layouts, settings panels, and supporting UI | `additional_layout`, extension settings panels |
+| Archive Support | Treat archive contents as logical child paths and delegate rendering to existing plugins | `zip` |
 
-Application data is stored via `platformdirs` (`AppData/Local` on Windows).
-`_resources/` contains UI assets and binding presets that users can customize.
+## Plugin Manager
+
+`Plugin Manager` manages loaded extension states and collection or analysis assignments.
+
+- **Extensions**: Install extensions and switch them on or off from here. A full process restart is required after switching them.
+- **Collectors**: Extensions for metadata collection and AI analysis can choose which Database stores their results.
 
 ## License
 
 This project is licensed under the [GNU Lesser General Public License v2.1 or later](LICENSE).
 
+All Python source code in this repository (`wafer/` and `extensions/`) is licensed under LGPL-2.1-or-later.
 If you distribute modified versions of this project, you must provide the corresponding source code for your modifications under LGPL-2.1-or-later and keep clear change notices.
 
-All Python source code in this repository (`wafer/` and `extensions/`) is licensed under LGPL-2.1-or-later.
-
-Some extensions invoke runtime-downloaded third-party binaries or models whose own licenses differ; these are **not** redistributed in this repository (`extensions/*/lib/` is gitignored). See each extension's `README.md` and `THIRD_PARTY_LICENSE` (if present) for details.
-
-| Component | Python code | Runtime-downloaded binary / model |
-|---|---|---|
-| `wafer/` (core) | LGPL-2.1-or-later | — |
-| `extensions/video/` | LGPL-2.1-or-later | `libmpv-2.dll` — GPL-2.0+ (or LGPL-2.1+) |
-| `extensions/exiftool/` | LGPL-2.1-or-later | `exiftool.exe` — Artistic License / GPL ("same as Perl") |
-| `extensions/ffmpeg/` | LGPL-2.1-or-later | `ffmpeg.exe`, `ffprobe.exe` — GPL-3.0 (gyan.dev essentials build) |
-| `extensions/wd14/` | LGPL-2.1-or-later | WD SwinV2 Tagger v3 — Apache-2.0 |
-| `extensions/florence/` | LGPL-2.1-or-later | Florence-2 model (Microsoft) — MIT |
-| All other extensions | LGPL-2.1-or-later | — |
+Some extensions use runtime-downloaded third-party binaries or models. These are not redistributed in this repository and are governed by their own licenses.
+See each extension's `README.md` and `THIRD_PARTY_LICENSE` file, if present, for details.

@@ -7,6 +7,7 @@ import time
 import pytest
 
 from wafer.utils.logs import AppLogger
+from wafer.utils.logs import debug_non_recursive
 from wafer.utils.logs import set_suppress_dialog
 from wafer.plugin.loader import load_plugins, get_command_registry
 from wafer.plugin.settings import PluginSettings
@@ -63,7 +64,7 @@ _cleanup_errors: list[str] = []
 def _record_cleanup_error(label: str, exc: BaseException) -> None:
     text = f"{label}: {exc}"
     _cleanup_errors.append(text)
-    AppLogger.debug(f"[test cleanup] {text}")
+    debug_non_recursive(f"[test cleanup] {text}")
 
 
 @pytest.fixture(autouse=True)

@@ -239,7 +239,8 @@ class AppLogger:
 
 def debug_non_recursive(text: str) -> None:
     try:
-        logging.getLogger("AppLog").debug(text)
+        logger = _logger if _logger is not None else _LoggerFactory.get(_role)
+        logger.debug(text)
     except Exception:
         pass
 

@@ -7,7 +7,7 @@ def test_exiftool_collector_finalizer_logs_cleanup_failure(monkeypatch):
     messages = []
     plugin = ExifToolCollectorPlugin()
     monkeypatch.setattr(plugin, "shutdown", lambda: (_ for _ in ()).throw(RuntimeError("cleanup failed")))
-    monkeypatch.setattr(collector_module.AppLogger, "debug", lambda text: messages.append(text))
+    monkeypatch.setattr(collector_module, "debug_non_recursive", lambda text: messages.append(text))
 
     plugin.__del__()
 

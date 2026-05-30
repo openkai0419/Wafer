@@ -4,7 +4,7 @@ def test_record_cleanup_error_keeps_message_and_logs(monkeypatch):
     messages = []
     previous = list(conftest._cleanup_errors)
     conftest._cleanup_errors.clear()
-    monkeypatch.setattr(conftest.AppLogger, "debug", lambda text: messages.append(text))
+    monkeypatch.setattr(conftest, "debug_non_recursive", lambda text: messages.append(text))
 
     try:
         conftest._record_cleanup_error("cleanup step", RuntimeError("failed"))

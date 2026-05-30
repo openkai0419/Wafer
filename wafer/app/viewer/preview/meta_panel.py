@@ -180,9 +180,7 @@ class MetaViewerWidget(QtWidgets.QWidget):
 
     def _on_add_clicked(self):
         if not self._current_path or not self._current_file_hash or not self._current_db:
-            AppLogger.warning(
-                f"[MetaViewer] add aborted: missing context path={bool(self._current_path)} file_hash={bool(self._current_file_hash)} db={bool(self._current_db)}"
-            )
+            AppLogger.warning(f"[MetaViewer] add aborted: missing context path={bool(self._current_path)} file_hash={bool(self._current_file_hash)} db={bool(self._current_db)}")
             return
         self._open_global_add_dialog()
 

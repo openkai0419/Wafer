@@ -73,7 +73,7 @@ def test_exiftool_process_close_pipes_logs_failure(monkeypatch):
     proc = _Proc()
     proc.stdin = _FailClosePipe()
     proc.stdout = _FailClosePipe()
-    monkeypatch.setattr(parser_module.AppLogger, "debug", lambda text: messages.append(text))
+    monkeypatch.setattr(parser_module, "debug_non_recursive", lambda text: messages.append(text))
 
     parser_module.ExifToolProcess._close_pipes(proc)
 
@@ -111,7 +111,7 @@ def test_exiftool_process_finalizer_logs_cleanup_failure(monkeypatch):
     messages = []
     tool = ExifToolProcess("exiftool.exe")
     monkeypatch.setattr(tool, "stop", lambda: (_ for _ in ()).throw(RuntimeError("cleanup failed")))
-    monkeypatch.setattr(parser_module.AppLogger, "debug", lambda text: messages.append(text))
+    monkeypatch.setattr(parser_module, "debug_non_recursive", lambda text: messages.append(text))
 
     tool.__del__()
 

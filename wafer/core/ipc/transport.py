@@ -8,6 +8,7 @@ from typing import Any
 
 import zmq
 
+from ...utils.logs import debug_non_recursive
 from ...utils.paths import resolve_data_path
 
 
@@ -68,9 +69,7 @@ def try_put(q: Queue, item: Any, label: str = "") -> None:
             q.put_nowait(item)
         except Full:
             return
-        import logging
-
-        logging.getLogger("AppLog").debug(f"zmq queue eviction: {label} (size={q.maxsize})")
+        debug_non_recursive(f"zmq queue eviction: {label} (size={q.maxsize})")
 
 
 def drain_queue(q: Queue, sentinel: object) -> tuple[list[Any], bool]:

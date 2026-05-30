@@ -6,6 +6,7 @@ import time
 
 import pytest
 
+from wafer.utils.logs import AppLogger
 from wafer.utils.logs import set_suppress_dialog
 from wafer.plugin.loader import load_plugins, get_command_registry
 from wafer.plugin.settings import PluginSettings
@@ -56,6 +57,15 @@ def _drain_pool(pool, timeout_ms=1000):
     pool.waitForDone(timeout_ms)
 
 
+_cleanup_errors: list[str] = []
+
+
+def _record_cleanup_error(label: str, exc: BaseException) -> None:
+    text = f"{label}: {exc}"
+    _cleanup_errors.append(text)
+    AppLogger.debug(f"[test cleanup] {text}")
+
+
 @pytest.fixture(autouse=True)
 def _close_qt_widgets_after_test():
     yield
@@ -65,16 +75,16 @@ def _close_qt_widgets_after_test():
         _drain_pool(grid_thumb_pool.pool)
         _drain_pool(grid_render_pool.pool)
         _drain_pool(utility_pool.pool)
-    except Exception:
-        pass
+    except Exception as e:
+        _record_cleanup_error("drain qt pools after test", e)
     try:
         from PySide6 import QtWidgets
 
         app = QtWidgets.QApplication.instance()
         if app is not None:
             app.processEvents()
-    except Exception:
-        pass
+    except Exception as e:
+        _record_cleanup_error("process qt events after test", e)
     try:
         from extensions.animated._common import _driver, _viewer_driver
 
@@ -84,16 +94,16 @@ def _close_qt_widgets_after_test():
         if _viewer_driver is not None:
             _viewer_driver._timer.stop()
             _viewer_driver._cells.clear()
-    except Exception:
-        pass
+    except Exception as e:
+        _record_cleanup_error("reset animated drivers after test", e)
     try:
         from PySide6 import QtWidgets
 
         app = QtWidgets.QApplication.instance()
         if app is not None:
             app.processEvents()
-    except Exception:
-        pass
+    except Exception as e:
+        _record_cleanup_error("process qt events after driver reset", e)
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -105,24 +115,24 @@ def _cleanup_background_resources():
 
         CollectorDispatcher.reset_singleton_state()
         ParserDispatcher.reset_singleton_state()
-    except Exception:
-        pass
+    except Exception as e:
+        _record_cleanup_error("reset dispatcher singletons", e)
     try:
         from wafer.core.platform.process import AppProcess
 
         children = AppProcess.children(recursive=True)
         if children:
             AppProcess.terminate_and_wait(children, timeout=3, kill_timeout=2)
-    except Exception:
-        pass
+    except Exception as e:
+        _record_cleanup_error("terminate child processes", e)
     try:
         from wafer.core.qt.thread import grid_thumb_pool, grid_render_pool, utility_pool
 
         _drain_pool(grid_thumb_pool.pool)
         _drain_pool(grid_render_pool.pool)
         _drain_pool(utility_pool.pool)
-    except Exception:
-        pass
+    except Exception as e:
+        _record_cleanup_error("drain qt pools at session finish", e)
     try:
         from PySide6 import QtWidgets
         import shiboken6
@@ -135,20 +145,20 @@ def _cleanup_background_resources():
                     w.deleteLater()
             app.processEvents()
             app.processEvents()
-    except Exception:
-        pass
+    except Exception as e:
+        _record_cleanup_error("close qt top level widgets", e)
     try:
         from wafer.utils.profiling import profiler
 
         profiler.stop()
-    except Exception:
-        pass
+    except Exception as e:
+        _record_cleanup_error("stop profiler", e)
     try:
         from wafer.core.app_settings import app_settings
 
         app_settings.close()
-    except Exception:
-        pass
+    except Exception as e:
+        _record_cleanup_error("close app settings", e)
 
 
 _SUMMARY_PATH = os.environ.get("WAFER_TEST_SUMMARY_PATH", os.path.join(os.path.dirname(__file__), "tests", "test_summary.txt"))
@@ -273,8 +283,8 @@ def _write_summary(exitstatus=None):
                         f.write(f"    {msg}\n")
         if exitstatus != "running":
             _summary_written = True
-    except Exception:
-        pass
+    except Exception as e:
+        AppLogger.warning(f"[test summary] Failed to write summary: {e}", exc=e)
 
 
 def _write_summary_atexit():

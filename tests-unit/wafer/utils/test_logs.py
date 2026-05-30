@@ -155,6 +155,21 @@ class TestAppLogger:
         node.send.assert_called_once()
         assert node.send.call_args[0][0] == "dev.log"
 
+    def test_debug_non_recursive_uses_stdlib_logger(self):
+        from wafer.utils.logs import debug_non_recursive
+
+        with patch("logging.getLogger") as get_logger:
+            logger = get_logger.return_value
+            debug_non_recursive("queue eviction")
+        get_logger.assert_called_once_with("AppLog")
+        logger.debug.assert_called_once_with("queue eviction")
+
+    def test_debug_non_recursive_suppresses_logger_failure(self):
+        from wafer.utils.logs import debug_non_recursive
+
+        with patch("logging.getLogger", side_effect=RuntimeError("logging failed")):
+            debug_non_recursive("still safe")
+
 
 class TestLoggerFactory:
     @pytest.fixture(autouse=True)

@@ -166,5 +166,5 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
     def __del__(self):
         try:
             self.shutdown()
-        except Exception:
-            pass
+        except Exception as e:
+            AppLogger.debug(f"[ExifToolCollector] Cleanup failed: {e}")

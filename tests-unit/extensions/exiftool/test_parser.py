@@ -1,3 +1,5 @@
+import time
+
 import pytest
 from extensions.exiftool.parser import flatten, _parse_json_output
 
@@ -16,6 +18,22 @@ class _Pipe:
 
     def close(self):
         self.closed = True
+
+
+class _FailClosePipe(_Pipe):
+    def close(self):
+        raise OSError("close failed")
+
+
+class _SlowStdout(_Pipe):
+    def readline(self):
+        time.sleep(0.05)
+        return ""
+
+
+class _OkStdin(_Pipe):
+    def write(self, _value):
+        return None
 
 
 class _Proc:
@@ -46,6 +64,58 @@ def test_exiftool_process_stop_fallback_terminates_tree(monkeypatch):
     assert calls == [(["ps-12345"], 1, 2)]
     assert proc.stdin.closed is True
     assert proc.stdout.closed is True
+
+
+def test_exiftool_process_close_pipes_logs_failure(monkeypatch):
+    from extensions.exiftool import parser as parser_module
+
+    messages = []
+    proc = _Proc()
+    proc.stdin = _FailClosePipe()
+    proc.stdout = _FailClosePipe()
+    monkeypatch.setattr(parser_module.AppLogger, "debug", lambda text: messages.append(text))
+
+    parser_module.ExifToolProcess._close_pipes(proc)
+
+    assert len(messages) == 2
+    assert all("Pipe close failed" in msg for msg in messages)
+
+
+def test_exiftool_process_query_timeout_kills_process(monkeypatch):
+    from extensions.exiftool import parser as parser_module
+    from extensions.exiftool.parser import ExifToolProcess
+
+    warnings = []
+    kills = []
+    proc = _Proc()
+    proc.stdin = _OkStdin()
+    proc.stdout = _SlowStdout()
+    proc.poll = lambda: None
+    tool = ExifToolProcess("exiftool.exe")
+    tool._proc = proc
+
+    monkeypatch.setattr(parser_module, "_QUERY_TIMEOUT", 0.001)
+    monkeypatch.setattr(parser_module.AppLogger, "warning", lambda text: warnings.append(text))
+    monkeypatch.setattr(parser_module.ExifToolProcess, "_terminate_proc_tree", staticmethod(lambda p: kills.append(p)))
+
+    assert tool.query("slow.jpg") is None
+    assert warnings and "Query timed out" in warnings[0]
+    assert kills == [proc]
+    assert tool._proc is None
+
+
+def test_exiftool_process_finalizer_logs_cleanup_failure(monkeypatch):
+    from extensions.exiftool import parser as parser_module
+    from extensions.exiftool.parser import ExifToolProcess
+
+    messages = []
+    tool = ExifToolProcess("exiftool.exe")
+    monkeypatch.setattr(tool, "stop", lambda: (_ for _ in ()).throw(RuntimeError("cleanup failed")))
+    monkeypatch.setattr(parser_module.AppLogger, "debug", lambda text: messages.append(text))
+
+    tool.__del__()
+
+    assert messages == ["[exiftool] Process cleanup failed: cleanup failed"]
 
 
 class TestParseJsonOutput:

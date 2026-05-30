@@ -37,19 +37,17 @@ def test_remove_missing():
     remove_broker_port()
 
 
-def test_try_put_eviction_uses_stdlib_logging():
+def test_try_put_eviction_uses_non_recursive_log():
     q = Queue(maxsize=1)
     q.put_nowait("first")
-    with patch("logging.getLogger") as mock_get_logger:
-        mock_logger = mock_get_logger.return_value
+    with patch("wafer.core.ipc.transport.debug_non_recursive") as log:
         try_put(q, "second", label="test.evict")
-        mock_get_logger.assert_called_once_with("AppLog")
-        mock_logger.debug.assert_called_once()
-        assert "test.evict" in mock_logger.debug.call_args[0][0]
+        log.assert_called_once()
+        assert "test.evict" in log.call_args[0][0]
 
 
 def test_try_put_no_eviction_no_log():
     q = Queue(maxsize=2)
-    with patch("logging.getLogger") as mock_get_logger:
+    with patch("wafer.core.ipc.transport.debug_non_recursive") as log:
         try_put(q, "item", label="test")
-        mock_get_logger.assert_not_called()
+        log.assert_not_called()

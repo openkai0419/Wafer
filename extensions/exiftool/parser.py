@@ -134,14 +134,14 @@ class ExifToolProcess:
                 continue
             try:
                 pipe.close()
-            except OSError:
-                pass
+            except OSError as e:
+                AppLogger.debug(f"[exiftool] Pipe close failed: {e}")
 
     def __del__(self):
         try:
             self.stop()
-        except (OSError, RuntimeError):
-            pass
+        except (OSError, RuntimeError) as e:
+            AppLogger.debug(f"[exiftool] Process cleanup failed: {e}")
 
 
 def _parse_json_output(raw: str) -> dict | None:

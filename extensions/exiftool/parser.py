@@ -8,6 +8,7 @@ import psutil
 
 from wafer.core.platform.process import AppProcess
 from wafer.utils.logs import AppLogger
+from wafer.utils.logs import debug_non_recursive
 
 _QUERY_TIMEOUT = 30
 
@@ -134,14 +135,14 @@ class ExifToolProcess:
                 continue
             try:
                 pipe.close()
-            except OSError:
-                pass
+            except OSError as e:
+                debug_non_recursive(f"[exiftool] Pipe close failed: {e}")
 
     def __del__(self):
         try:
             self.stop()
-        except (OSError, RuntimeError):
-            pass
+        except (OSError, RuntimeError) as e:
+            debug_non_recursive(f"[exiftool] Process cleanup failed: {e}")
 
 
 def _parse_json_output(raw: str) -> dict | None:

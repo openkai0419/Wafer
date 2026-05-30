@@ -7,6 +7,7 @@ from ...core.qt.thread import utility_pool
 from ...plugin.imageloader.handler import image_loader_resolver
 from ...plugin.viewer.base import MultiWidgetViewerPlugin, ViewerContext
 from ...utils.logs import AppLogger
+from ...utils.profiling import profiler
 from .widget import ImageDisplayWidget
 
 _IMAGE_SPREAD_DIRECTIONS = {"left-to-right", "right-to-left", "top-to-bottom", "bottom-to-top"}
@@ -67,6 +68,7 @@ class ImageViewer(MultiWidgetViewerPlugin):
     def display_count(self, current_index: int, paths) -> int:
         return self._display_count
 
+    @profiler.profile
     def render_contexts(self, contexts: list[ViewerContext] | tuple[ViewerContext, ...]):
         contexts = tuple(contexts or ())
         if not contexts:
@@ -74,6 +76,7 @@ class ImageViewer(MultiWidgetViewerPlugin):
         cancel = self._render_cancel.renew()
         render_paths = tuple(context.render_path for context in contexts)
 
+        @profiler.profile
         def task():
             images = self.load_images(render_paths, cancel)
             if cancel.is_cancelled() or images is None:
@@ -82,6 +85,7 @@ class ImageViewer(MultiWidgetViewerPlugin):
 
         self._dispatcher.post(task, cancel=cancel)
 
+    @profiler.profile
     def _show_rendered(self, cancel, images):
         if cancel.is_cancelled():
             return
@@ -90,6 +94,7 @@ class ImageViewer(MultiWidgetViewerPlugin):
         else:
             self.show_error()
 
+    @profiler.profile
     def load_images(self, paths, cancel=None):
         images = []
         for path in paths:
@@ -110,13 +115,16 @@ class ImageViewer(MultiWidgetViewerPlugin):
             images.append((path, image))
         return images
 
+    @profiler.profile
     def show_images(self, images):
         rendered = [image or PixmapFactory.create_viewer_error_placeholder() for _, image in images]
         self.widget.set_images(rendered, direction=self._direction)
 
+    @profiler.profile
     def show_error(self):
         self.widget.set_images([PixmapFactory.create_viewer_error_placeholder()], direction=self._direction)
 
+    @profiler.profile
     def clear(self):
         self._render_cancel.renew()
         self.widget.clear()

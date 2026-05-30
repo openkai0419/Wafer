@@ -12,6 +12,7 @@ class TestExifToolCollector:
         assert ".jpg" in plugin.EXTENSIONS
         assert ".cr2" in plugin.EXTENSIONS
         assert plugin.DEFAULT_ENABLED is True
+        assert plugin.MAX_WORKERS == 1
 
     def test_match_jpg(self):
         plugin = ExifToolCollectorPlugin()

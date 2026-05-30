@@ -237,6 +237,14 @@ class AppLogger:
         AppLogger._forward("debug", text)
 
 
+def debug_non_recursive(text: str) -> None:
+    try:
+        logger = _logger if _logger is not None else _LoggerFactory.get(_role)
+        logger.debug(text)
+    except Exception:
+        pass
+
+
 def _create_exception_hook():
     def exception_hook(exc_type, exc_value, exc_traceback):
         if issubclass(exc_type, KeyboardInterrupt):

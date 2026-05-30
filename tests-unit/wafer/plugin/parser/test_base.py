@@ -50,10 +50,14 @@ def test_parser_result_fail():
 
 def test_base_parser_plugin_batch_size():
     assert DummyParser.BATCH_SIZE == 1200
+    assert DummyParser.MAX_WORKERS == 1
+    assert DummyParser.MAX_TIMEOUT == 300.0
 
 
 def test_base_singleton_parser_batch_size():
     assert DummySingleton.BATCH_SIZE == 300
+    assert DummySingleton.MAX_WORKERS == 1
+    assert DummySingleton.MAX_TIMEOUT == 300.0
 
 
 def test_trigger_keys():

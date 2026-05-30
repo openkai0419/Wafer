@@ -25,9 +25,13 @@ class CollectorResolver:
         cls = self.registry.get(name)
         return getattr(cls, "BATCH_SIZE", 1200) if cls else 1200
 
-    def chunk_timeout(self, name: str) -> float:
+    def max_workers(self, name: str) -> int:
         cls = self.registry.get(name)
-        return getattr(cls, "CHUNK_TIMEOUT", 300.0) if cls else 300.0
+        return max(1, int(getattr(cls, "MAX_WORKERS", 1))) if cls else 1
+
+    def batch_timeout(self, name: str) -> float:
+        cls = self.registry.get(name)
+        return float(getattr(cls, "MAX_TIMEOUT", 300.0)) if cls else 300.0
 
 
 collector_resolver = CollectorResolver()

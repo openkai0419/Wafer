@@ -202,6 +202,30 @@ class TestPeriodicTaskConfig:
         task = tasks["idle_rescan"].create_task()
         assert task.priority == TaskPriority.RETRY
 
+    @patch("wafer.app.indexer.main_indexer.parser_resolver.batch_timeout", return_value=900.0)
+    @patch("wafer.app.indexer.main_indexer.collector_resolver.batch_timeout", return_value=1200.0)
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_idle_base_delay_uses_child_batch_timeout(self, mock_node_cls, _collector_timeout, _parser_timeout):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        proc.scheduler = MagicMock()
+        proc._register_periodic_tasks(["florence"], ["novelai"])
+        tasks = {call.args[0].name: call.args[0] for call in proc.scheduler.add_periodic_task.call_args_list}
+        proc.scheduler.set_idle_base_delay.assert_called_once_with(1260.0)
+        assert tasks["retry_stale_dispatched"].idle_delay == 60.0
+        assert tasks["backfill_pending"].idle_delay == 120.0
+        assert tasks["idle_rescan"].idle_delay == 300.0
+        assert tasks["idle_progress_reset"].idle_delay == 30.0
+        assert tasks["cleanup_optimize"].idle_delay == 1800.0
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_idle_base_delay_uses_grace_without_children(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        proc.scheduler = MagicMock()
+        proc._register_periodic_tasks()
+        proc.scheduler.set_idle_base_delay.assert_called_once_with(60.0)
+
 
 class TestOnDeleteKeys:
     @patch("wafer.app.indexer.main_indexer.Node")

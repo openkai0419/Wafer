@@ -9,8 +9,6 @@ from ...core.ipc.transport import BROKER_LOST_TIMEOUT
 from ...plugin.parser.handler import parser_resolver
 from ...plugin.parser.base import ParserResult, BaseSingletonParser
 
-_MAX_WORKERS = 4
-_TASK_TIMEOUT = 120
 _SHUTDOWN_WAIT = 5
 
 
@@ -28,7 +26,9 @@ class ParserWorker:
         self._node.subscribe("parse.batch", self._handle_batch)
         self._node.subscribe("plugin.notify", self._on_notify)
         self._node.subscribe("worker.shutdown", self._on_shutdown)
-        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=_MAX_WORKERS)
+        self._max_workers = parser_resolver.max_workers(plugin_name)
+        self._batch_timeout = parser_resolver.batch_timeout(plugin_name)
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=self._max_workers)
         self._stop = threading.Event()
         self._plugin_shutdown = threading.Event()
 
@@ -102,13 +102,18 @@ class ParserWorker:
                     return {}
 
             futures = {self._executor.submit(process_one, p): p for p in paths}
+            done, not_done = concurrent.futures.wait(futures, timeout=self._batch_timeout)
             results_raw = []
-            for fut in concurrent.futures.as_completed(futures, timeout=_TASK_TIMEOUT):
+            for fut in done:
                 try:
                     results_raw.append(fut.result())
                 except Exception as e:
                     AppLogger.warning(f"[Parser] future failed: {futures[fut]}: {e}", exc=e)
                     results_raw.append({})
+            if not_done:
+                AppLogger.warning(f"[Parser] batch timeout: {len(not_done)}/{len(paths)} unfinished")
+                for fut in not_done:
+                    fut.cancel()
             results = [r for r in results_raw if r]
             if not results:
                 return

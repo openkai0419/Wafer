@@ -3,6 +3,7 @@ import threading
 
 from wafer.plugin import BaseCollectorPlugin, CollectorResult
 from wafer.utils.logs import AppLogger
+from wafer.utils.logs import debug_non_recursive
 
 _IDLE_TIMEOUT = 120.0
 
@@ -38,6 +39,8 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
     )
     PRIORITY = 100
     DEFAULT_ENABLED = True
+    MAX_WORKERS = 1
+    MAX_TIMEOUT = 300.0
 
     @classmethod
     def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None, on_log=None):
@@ -164,5 +167,5 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
     def __del__(self):
         try:
             self.shutdown()
-        except Exception:
-            pass
+        except Exception as e:
+            debug_non_recursive(f"[ExifToolCollector] Cleanup failed: {e}")

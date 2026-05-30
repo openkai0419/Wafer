@@ -1,6 +1,9 @@
 import pytest
-from PySide6 import QtWidgets
-from wafer.ui.panel.searchable_meta_widget import (
+from unittest.mock import MagicMock
+
+from PySide6 import QtCore, QtGui, QtWidgets
+from wafer.app.viewer.preview.searchable_meta_widget import (
+    SearchKvDetailDialog,
     SearchableMetaWidget,
     build_value_html,
     highlight_html,
@@ -8,6 +11,17 @@ from wafer.ui.panel.searchable_meta_widget import (
     SNIPPET_BUDGET,
     SAFETY_CHAR_LIMIT,
 )
+from wafer.app.viewer.preview.tag_edit_service import TagEditService
+
+
+@pytest.fixture(autouse=True)
+def reset_tag_edit_service():
+    TagEditService._instance = None
+    yield
+    inst = TagEditService._instance
+    if inst is not None and inst._timeout_timer is not None:
+        inst._timeout_timer.stop()
+    TagEditService._instance = None
 
 
 def _menu_action_label(action):
@@ -260,24 +274,27 @@ def test_key_for_row_returns_filtered_key(qtbot):
     assert w._key_for_row(-1) is None
 
 
-def test_double_click_opens_value_viewer(qtbot, monkeypatch):
+def test_double_click_opens_edit_dialog(qtbot, monkeypatch):
     w = SearchableMetaWidget()
     qtbot.addWidget(w)
     huge = "y" * (SHORT_VALUE_LIMIT + 1000)
     w.set_data({"big": huge})
     captured = {}
 
-    def fake_open(parent, key, text):
-        captured["key"] = key
-        captured["text"] = text
+    class _Dialog:
+        def __init__(self, parent, **kwargs):
+            captured.update(kwargs)
 
-    import wafer.ui.panel.searchable_meta_widget as mod
+        def exec(self):
+            return QtWidgets.QDialog.Rejected
 
-    monkeypatch.setattr(mod, "open_value_viewer", fake_open)
+    import wafer.app.viewer.preview.searchable_meta_widget as mod
+
+    monkeypatch.setattr(mod, "SearchKvDetailDialog", _Dialog)
     index = w._model.index(0, 0)
     w._on_double_clicked(index)
-    assert captured["text"] == huge
     assert captured["key"] == "big"
+    assert captured["value"] == huge
 
 
 def test_context_menu_copy_value_uses_full_text(qtbot):
@@ -287,14 +304,78 @@ def test_context_menu_copy_value_uses_full_text(qtbot):
     w.set_data({"big": huge})
 
     QtWidgets.QApplication.clipboard().clear()
-    menu = w._build_context_menu(0, "big", huge)
+    menu = w._build_context_menu(0, "big", "big", huge)
     labels = _menu_labels(menu)
     assert any("key" in a.lower() for a in labels)
     assert any("row" in a.lower() for a in labels)
-    assert any("viewer" in a.lower() for a in labels)
+    assert any("edit" in a.lower() for a in labels)
     copy_value = _find_menu_action(menu, "Copy value")
     assert copy_value is not None
     copy_value.trigger()
     assert QtWidgets.QApplication.clipboard().text() == huge
+
+
+def test_submit_upsert_uses_tag_context(qtbot, monkeypatch):
+    svc = TagEditService.instance()
+    node = MagicMock()
+    monkeypatch.setattr(svc, "_resolve_node", lambda: node)
+    w = SearchableMetaWidget(scope="tag")
+    qtbot.addWidget(w)
+    w.set_context({"rating": "old"}, {"rating": False}, path="/a.png", file_hash="h1", db="db", scope="tag")
+    w._submit_save("rating", "rating", "new", True)
+    payload = node.send_reliable.call_args[0][1]
+    assert payload["scope"] == "tag"
+    assert payload["upserts"] == [{"key": "rating", "value": "new", "locked": True}]
+
+
+def test_submit_rename_uses_prefixed_meta_key(qtbot, monkeypatch):
+    svc = TagEditService.instance()
+    node = MagicMock()
+    monkeypatch.setattr(svc, "_resolve_node", lambda: node)
+    w = SearchableMetaWidget(scope="meta_info", prefix="exiftool")
+    qtbot.addWidget(w)
+    w.set_context({"width": "100"}, {"width": False}, path="/a.png", db="db", scope="meta_info", prefix="exiftool")
+    w._submit_save("width", "image_width", "100", False)
+    payload = node.send_reliable.call_args[0][1]
+    assert payload["scope"] == "meta_info"
+    assert payload["renames"] == [{"old": "exiftool.width", "new": "exiftool.image_width", "value": "100", "locked": False}]
+
+
+def test_delete_uses_full_key(qtbot, monkeypatch):
+    svc = TagEditService.instance()
+    node = MagicMock()
+    monkeypatch.setattr(svc, "_resolve_node", lambda: node)
+    w = SearchableMetaWidget(scope="meta_info", prefix="custom")
+    qtbot.addWidget(w)
+    w.set_context({"k": "v"}, {}, path="/a.png", db="db", scope="meta_info", prefix="custom")
+    w._submit_delete("k")
+    payload = node.send_reliable.call_args[0][1]
+    assert payload["deletes"] == ["custom.k"]
+
+
+def test_detail_dialog_places_lock_and_delete_in_top_bar(qtbot):
+    dlg = SearchKvDetailDialog(None, title="Edit", key="k", value="v", locked=True)
+    qtbot.addWidget(dlg)
+    top_layout = dlg.layout().itemAt(0).widget().layout()
+    assert top_layout.itemAt(0).widget() is dlg.lock_check
+    assert top_layout.itemAt(2).widget() is dlg.delete_btn
+
+
+def test_lock_icon_draws_only_locked_rows(qtbot, monkeypatch):
+    import wafer.app.viewer.preview.searchable_meta_widget as mod
+
+    w = SearchableMetaWidget()
+    qtbot.addWidget(w)
+    w.set_data({"locked": "1", "open": "2"}, {"locked": True, "open": False})
+    calls = []
+    monkeypatch.setattr(mod, "icon_draw", lambda *args: calls.append(args))
+
+    rect = QtCore.QRectF(0, 0, 18, 20)
+    w._delegate._draw_lock_icon(None, rect, w._model.index(0, 0))
+    w._delegate._draw_lock_icon(None, rect, w._model.index(1, 0))
+
+    assert len(calls) == 1
+    assert calls[0][0] == "lock"
+    assert calls[0][3] == QtGui.QColor(mod.ThemeManager.instance().palette.warning)
 
 

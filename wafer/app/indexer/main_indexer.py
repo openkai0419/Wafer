@@ -21,6 +21,8 @@ from .task import Task, TaskPriority
 from .watch_folder import FolderWatcher
 from .watch_setting import SettingWatcher
 
+_IDLE_GRACE_SECONDS = 60.0
+
 
 class IndexerProcess:
     def __init__(self, name, stop_event=None, tray_pid=None):
@@ -60,10 +62,6 @@ class IndexerProcess:
         self.writer.start()
         self.writer.initialize()
 
-        self.scheduler = TaskScheduler()
-        self._register_periodic_tasks()
-        self.scheduler.start()
-
         all_collectors = collector_resolver.summary()
         enabled = self.setting_db.get_enabled_collectors()
         if enabled is not None:
@@ -76,6 +74,18 @@ class IndexerProcess:
             default_set = set(PluginSettings().resolve_default_collectors())
             collectors = [(n, exts) for n, exts in all_collectors if n in default_set]
             collector_names = [n for n, _ in collectors]
+
+        all_parsers = parser_resolver.names()
+        if enabled is not None:
+            all_known = {c[0] for c in all_collectors} | set(enabled)
+            parser_names = [n for n in all_parsers if n in enabled_set or (n not in all_known and getattr(parser_resolver.registry.get(n), "DEFAULT_ENABLED", False))]
+        else:
+            parser_names = [n for n in all_parsers if n in default_set]
+
+        self.scheduler = TaskScheduler()
+        self._register_periodic_tasks(collector_names, parser_names)
+        self.scheduler.start()
+
         progress = ProgressAggregator(self.db_name, self.zmq)
         self._progress = progress
 
@@ -97,12 +107,6 @@ class IndexerProcess:
         )
         self.dispatcher.start(self.zmq)
 
-        all_parsers = parser_resolver.names()
-        if enabled is not None:
-            all_known = {c[0] for c in all_collectors} | set(enabled)
-            parser_names = [n for n in all_parsers if n in enabled_set or (n not in all_known and getattr(parser_resolver.registry.get(n), "DEFAULT_ENABLED", False))]
-        else:
-            parser_names = [n for n in all_parsers if n in default_set]
         if parser_names:
             self.parser_receiver = ParserReceiver(self.scheduler, self.writer, progress)
             self.zmq.subscribe("parse.result", self.parser_receiver.handle_result)
@@ -137,7 +141,9 @@ class IndexerProcess:
         if is_new:
             self.zmq.send("db.created", self.db_name, dst="viewer")
 
-    def _register_periodic_tasks(self):
+    def _register_periodic_tasks(self, collector_names=(), parser_names=()):
+        self.scheduler.set_idle_base_delay(self._child_idle_delay(collector_names, parser_names))
+
         self.scheduler.add_periodic_task(
             PeriodicTask(
                 name="truncate_checkpoint",
@@ -212,6 +218,15 @@ class IndexerProcess:
                 ),
             )
         )
+
+    def _child_idle_delay(self, collector_names, parser_names) -> float:
+        timeouts = [collector_resolver.batch_timeout(name) for name in collector_names]
+        timeouts.extend(parser_resolver.batch_timeout(name) for name in parser_names)
+        if not timeouts:
+            return _IDLE_GRACE_SECONDS
+        delay = max(timeouts) + _IDLE_GRACE_SECONDS
+        AppLogger.info(f"[Indexer] Idle task delay floor: {delay:.1f}s (child batch timeout max={max(timeouts):.1f}s)")
+        return delay
 
     def _request_backfill(self):
         if self.scanner:

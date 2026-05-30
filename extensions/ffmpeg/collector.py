@@ -28,6 +28,8 @@ class FfmpegCollectorPlugin(BaseCollectorPlugin):
     PRIORITY = 100
     DEFAULT_ENABLED = True
     BATCH_SIZE = 600
+    MAX_WORKERS = 2
+    MAX_TIMEOUT = 600.0
 
     @classmethod
     def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None, on_log=None):

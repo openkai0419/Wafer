@@ -1,12 +1,23 @@
 import importlib
 from unittest.mock import MagicMock
 
+import pytest
 from PySide6 import QtWidgets
 from wafer.app.viewer.preview.meta_panel import MetaViewerWidget, _FIXED_SECTION_KEYS
+from wafer.app.viewer.preview.searchable_meta_widget import ScopedSearchKvAddDialog, SearchableMetaWidget
 from wafer.app.viewer.preview.tag_edit_service import TagEditService
 from wafer.ui.panel.meta_viewer import CollapsibleCard, MetaRowWidget
 from wafer.ui.panel.meta_viewer import SECTION_MARKER_META_PREFIX, SECTION_MARKER_META_ROOT, SECTION_MARKER_TAG_PREFIX, SECTION_MARKER_TAG_ROOT
-from wafer.app.viewer.preview.editable_tag_card import EditableTagCard
+
+
+@pytest.fixture(autouse=True)
+def reset_tag_edit_service():
+    TagEditService._instance = None
+    yield
+    inst = TagEditService._instance
+    if inst is not None and inst._timeout_timer is not None:
+        inst._timeout_timer.stop()
+    TagEditService._instance = None
 
 
 def _sample_meta():
@@ -36,6 +47,7 @@ def test_set_data_creates_sections(qtbot):
     assert "source" in w._sections
     assert "file" in w._sections
     assert "tag" in w._sections
+    assert "meta" not in w._sections
     assert "meta:exiftool" in w._sections
     assert "meta:image" in w._sections
     assert len(w._sections) == 5
@@ -48,6 +60,16 @@ def test_tag_section_hidden_when_empty(qtbot):
     meta["tag"] = {}
     w.set_data(meta)
     assert "tag" not in w._sections
+
+
+def test_meta_section_hidden_when_empty(qtbot):
+    w = MetaViewerWidget()
+    qtbot.addWidget(w)
+    meta = _sample_meta()
+    meta["meta"] = {}
+    meta["_path"] = "/a.png"
+    w.set_data(meta)
+    assert "meta" not in w._sections
 
 
 def test_header_visible_only_after_set_data(qtbot):
@@ -68,12 +90,158 @@ def test_reload_button_emits_signal(qtbot):
         w._reload_btn.click()
 
 
-def test_header_has_single_visible_add_button(qtbot):
+def test_header_has_reload_and_add_buttons(qtbot):
     w = MetaViewerWidget()
     qtbot.addWidget(w)
     w.set_data(_sample_meta())
     buttons = [btn for btn in w._header.findChildren(QtWidgets.QToolButton) if not btn.isHidden()]
     assert buttons == [w._reload_btn, w._add_btn]
+
+
+def test_global_add_dialog_embeds_scope_combo_with_legacy_wording(qtbot):
+    dlg = ScopedSearchKvAddDialog(
+        None,
+        title="Add tag or metadata",
+        existing_keys_by_scope={"tag": set(), "meta_info": set()},
+        scope_options=(
+            ("tag", "Tag (links to filehash)"),
+            ("meta_info", "Metadata (links to path)"),
+        ),
+    )
+    qtbot.addWidget(dlg)
+    combo = dlg.findChild(QtWidgets.QComboBox)
+    labels = [label.text() for label in dlg.findChildren(QtWidgets.QLabel)]
+    assert dlg.windowTitle() == "Add tag or metadata"
+    assert "Type:" in labels
+    assert combo.itemText(0) == "Tag (links to filehash)"
+    assert combo.itemData(0) == "tag"
+    assert combo.itemText(1) == "Metadata (links to path)"
+    assert combo.itemData(1) == "meta_info"
+
+
+def test_global_add_dialog_uses_scope_specific_duplicate_hint(qtbot):
+    dlg = ScopedSearchKvAddDialog(
+        None,
+        title="Add tag or metadata",
+        existing_keys_by_scope={"tag": {"same"}, "meta_info": {"other"}},
+        duplicate_hint="duplicate",
+        scope_options=(
+            ("tag", "Tag (links to filehash)"),
+            ("meta_info", "Metadata (links to path)"),
+        ),
+    )
+    qtbot.addWidget(dlg)
+    combo = dlg.findChild(QtWidgets.QComboBox)
+
+    dlg.key_edit.setText("same")
+    assert dlg.hint_label.text() == "duplicate"
+    combo.setCurrentIndex(1)
+    assert dlg.hint_label.text() == ""
+    dlg.key_edit.setText("other")
+    assert dlg.hint_label.text() == "duplicate"
+
+
+def test_global_add_collects_full_existing_keys(qtbot):
+    w = MetaViewerWidget()
+    qtbot.addWidget(w)
+    meta = _sample_meta()
+    meta["_file_hash"] = "h1"
+    meta["_db_name"] = "db"
+    meta["tag"] = {"root": "1"}
+    meta["tag_prefixed"] = {"mark": {"favorite": "1"}}
+    meta["meta"] = {"memo": "hello"}
+    w.set_data(meta)
+    assert w._current_tag_keys == {"root", "mark.favorite"}
+    assert w._current_meta_keys == {"memo", "exiftool.width", "exiftool.height", "image.format"}
+
+
+def test_global_add_submits_full_tag_key(qtbot, monkeypatch):
+    svc = TagEditService.instance()
+    node = MagicMock()
+    monkeypatch.setattr(svc, "_resolve_node", lambda: node)
+
+    captured = {}
+
+    class _Dialog:
+        def __init__(self, parent, **kwargs):
+            captured.update(kwargs)
+
+        def exec(self):
+            return QtWidgets.QDialog.Accepted
+
+        def key(self):
+            return "custom.rating"
+
+        def value(self):
+            return "5"
+
+        def locked(self):
+            return True
+
+        def scope(self):
+            return "tag"
+
+    import wafer.app.viewer.preview.meta_panel as mod
+
+    monkeypatch.setattr(mod, "ScopedSearchKvAddDialog", _Dialog)
+    w = MetaViewerWidget()
+    qtbot.addWidget(w)
+    meta = _sample_meta()
+    meta["_file_hash"] = "h1"
+    meta["_db_name"] = "db"
+    w.set_data(meta)
+
+    w._open_global_add_dialog()
+
+    payload = node.send_reliable.call_args[0][1]
+    assert captured["title"] == "Add tag or metadata"
+    assert captured["existing_keys_by_scope"] == {"tag": {"landscape"}, "meta_info": {"exiftool.width", "exiftool.height", "image.format"}}
+    assert captured["duplicate_hint"] == "Key already exists; will be auto-renamed on add."
+    assert captured["scope_options"] == (("tag", "Tag (links to filehash)"), ("meta_info", "Metadata (links to path)"))
+    assert payload["scope"] == "tag"
+    assert payload["upserts"] == [{"key": "custom.rating", "value": "5", "locked": True}]
+    assert node.send_reliable.call_args.kwargs["db"] == "db"
+
+
+def test_global_add_dedupes_full_meta_key(qtbot, monkeypatch):
+    svc = TagEditService.instance()
+    node = MagicMock()
+    monkeypatch.setattr(svc, "_resolve_node", lambda: node)
+
+    class _Dialog:
+        def __init__(self, parent, **kwargs):
+            pass
+
+        def exec(self):
+            return QtWidgets.QDialog.Accepted
+
+        def key(self):
+            return "exiftool.width"
+
+        def value(self):
+            return "300"
+
+        def locked(self):
+            return False
+
+        def scope(self):
+            return "meta_info"
+
+    import wafer.app.viewer.preview.meta_panel as mod
+
+    monkeypatch.setattr(mod, "ScopedSearchKvAddDialog", _Dialog)
+    w = MetaViewerWidget()
+    qtbot.addWidget(w)
+    meta = _sample_meta()
+    meta["_file_hash"] = "h1"
+    meta["_db_name"] = "db"
+    w.set_data(meta)
+
+    w._open_global_add_dialog()
+
+    payload = node.send_reliable.call_args[0][1]
+    assert payload["scope"] == "meta_info"
+    assert payload["upserts"] == [{"key": "exiftool.width_2", "value": "300", "locked": False}]
 
 
 def test_sections_default_expanded(qtbot):
@@ -144,7 +312,7 @@ def test_meta_root_section_is_separate_from_standard(qtbot):
     meta["meta_locks"] = {"memo": False}
     w.set_data(meta)
     assert "meta" in w._sections
-    assert isinstance(w._sections["meta"], EditableTagCard)
+    assert isinstance(w._sections["meta"].content_widget(), SearchableMetaWidget)
     assert "memo" not in meta["file"]
 
 
@@ -174,7 +342,7 @@ def test_builtin_section_is_collapsible_card(qtbot):
         card = w._sections[key]
         assert isinstance(card, CollapsibleCard)
         if key in ("tag", "meta:unknown_prefix"):
-            assert isinstance(card, EditableTagCard)
+            assert isinstance(card.content_widget(), SearchableMetaWidget)
         else:
             assert isinstance(card.content_widget(), MetaRowWidget)
 
@@ -208,7 +376,7 @@ def test_placeholder_visible_on_init(qtbot):
     assert not w._placeholder.isHidden()
 
 
-def test_tag_prefixed_falls_back_to_editable_tag_card(qtbot):
+def test_tag_prefixed_falls_back_to_search_kv(qtbot):
     w = MetaViewerWidget()
     qtbot.addWidget(w)
     meta = {
@@ -226,8 +394,9 @@ def test_tag_prefixed_falls_back_to_editable_tag_card(qtbot):
     w.set_data(meta)
     assert "tag:custom" in w._sections
     card = w._sections["tag:custom"]
-    assert isinstance(card, EditableTagCard)
-    assert card._prefix == "custom"
+    widget = card.content_widget()
+    assert isinstance(widget, SearchableMetaWidget)
+    assert widget._context.prefix == "custom"
 
 
 def test_tag_and_meta_same_prefix_create_two_cards(qtbot):
@@ -404,6 +573,111 @@ def test_key_value_panel_state_targets_scoped_instances(qtbot):
         StateStore.instance().unregister(f"key_value_panel_plugin.{StatefulPanel.NAME}")
 
 
+def test_key_value_panel_prefix_order_respects_registry_order(qtbot):
+    from wafer.core.state import StateStore
+    from wafer.plugin.key_value_panel.base import BaseKeyValuePanelPlugin
+    from wafer.plugin.key_value_panel.handler import key_value_panel_registry
+
+    class ReviewMetaZetaPanel(BaseKeyValuePanelPlugin):
+        NAME = "review_meta_zeta_panel"
+        PREFIX = "zeta"
+        DATA_SCOPE = "meta_info"
+        DEFAULT_ENABLED = True
+        PRIORITY = 10
+
+        def create_card(self, parent=None, *, scope="meta_info"):
+            return QtWidgets.QFrame(parent)
+
+        def update_data(self, data, locks=None, path="", file_hash="", db="", *, scope="meta_info"):
+            pass
+
+    class ReviewMetaAlphaPanel(BaseKeyValuePanelPlugin):
+        NAME = "review_meta_alpha_panel"
+        PREFIX = "alpha"
+        DATA_SCOPE = "meta_info"
+        DEFAULT_ENABLED = True
+        PRIORITY = 100
+
+        def create_card(self, parent=None, *, scope="meta_info"):
+            return QtWidgets.QFrame(parent)
+
+        def update_data(self, data, locks=None, path="", file_hash="", db="", *, scope="meta_info"):
+            pass
+
+    class ReviewTagOmegaPanel(BaseKeyValuePanelPlugin):
+        NAME = "review_tag_omega_panel"
+        PREFIX = "omega"
+        DATA_SCOPE = "tag"
+        DEFAULT_ENABLED = True
+        PRIORITY = 1
+
+        def create_card(self, parent=None, *, scope="meta_info"):
+            return QtWidgets.QFrame(parent)
+
+        def update_data(self, data, locks=None, path="", file_hash="", db="", *, scope="meta_info"):
+            pass
+
+    original_plugins = dict(key_value_panel_registry._plugins)
+    original_instances = dict(key_value_panel_registry._instances)
+    original_order = list(key_value_panel_registry._order)
+    try:
+        key_value_panel_registry._plugins = {}
+        key_value_panel_registry._instances = {}
+        key_value_panel_registry._order = []
+        key_value_panel_registry.register(ReviewMetaAlphaPanel)
+        key_value_panel_registry.register(ReviewMetaZetaPanel)
+        key_value_panel_registry.register(ReviewTagOmegaPanel)
+        key_value_panel_registry.set_order([ReviewMetaZetaPanel.NAME, ReviewMetaAlphaPanel.NAME, ReviewTagOmegaPanel.NAME])
+
+        w = MetaViewerWidget()
+        qtbot.addWidget(w)
+        meta = {
+            "source": {"name": "a"},
+            "file": {},
+            "tag": {},
+            "tag_prefixed": {
+                "omega": {"k": "v"},
+                "gamma": {"k": "v"},
+            },
+            "tag_prefixed_locks": {
+                "omega": {"k": False},
+                "gamma": {"k": False},
+            },
+            "meta": {},
+            "meta_locks": {},
+            "prefixed": {
+                "alpha": {"k": "v"},
+                "zeta": {"k": "v"},
+                "beta": {"k": "v"},
+            },
+            "prefixed_locks": {
+                "alpha": {"k": False},
+                "zeta": {"k": False},
+                "beta": {"k": False},
+            },
+            "_path": "/a.png",
+            "_file_hash": "h",
+            "_tag_locks": {},
+            "_db_name": "db",
+        }
+
+        w.set_data(meta)
+        assert list(w._sections.keys()) == [
+            *_FIXED_SECTION_KEYS,
+            "tag:omega",
+            "tag:gamma",
+            "meta:zeta",
+            "meta:alpha",
+            "meta:beta",
+        ]
+    finally:
+        key_value_panel_registry._plugins = original_plugins
+        key_value_panel_registry._instances = original_instances
+        key_value_panel_registry._order = original_order
+        for name in (ReviewMetaZetaPanel.NAME, ReviewMetaAlphaPanel.NAME, ReviewTagOmegaPanel.NAME):
+            StateStore.instance().unregister(f"key_value_panel_plugin.{name}")
+
+
 def test_section_marker_kinds(qtbot):
     w = MetaViewerWidget()
     qtbot.addWidget(w)
@@ -428,36 +702,3 @@ def test_section_marker_kinds(qtbot):
     assert w._sections["tag:custom"].marker_kind() == SECTION_MARKER_TAG_PREFIX
     assert w._sections["meta"].marker_kind() == SECTION_MARKER_META_ROOT
     assert w._sections["meta:user"].marker_kind() == SECTION_MARKER_META_PREFIX
-
-
-def test_add_metadata_uses_raw_key_without_auto_prefix(qtbot, monkeypatch):
-    import wafer.app.viewer.preview.meta_panel as meta_panel_mod
-
-    svc = TagEditService.instance()
-    node = MagicMock()
-    monkeypatch.setattr(svc, "_resolve_node", lambda: node)
-
-    class _DlgStub:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def exec(self):
-            return QtWidgets.QDialog.Accepted
-
-        def scope(self):
-            return "meta_info"
-
-        def values(self):
-            return "memo", "hello"
-
-    monkeypatch.setattr(meta_panel_mod, "AddTagDialog", _DlgStub)
-    w = MetaViewerWidget()
-    qtbot.addWidget(w)
-    meta = _sample_meta()
-    meta["_file_hash"] = "h"
-    meta["_db_name"] = "db"
-    w.set_data(meta)
-    w._on_add_clicked()
-    payload = node.send_reliable.call_args[0][1]
-    assert payload["scope"] == "meta_info"
-    assert payload["upserts"] == [{"key": "memo", "value": "hello", "locked": False}]

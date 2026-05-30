@@ -20,7 +20,7 @@ from ....ui.panel.meta_viewer import (
     SECTION_MARKER_TAG_PREFIX,
     SECTION_MARKER_TAG_ROOT,
 )
-from .editable_tag_card import EditableTagCard, AddTagDialog
+from .searchable_meta_widget import ScopedSearchKvAddDialog, SearchableMetaWidget
 from .tag_edit_service import TagEditService
 
 _FIXED_SECTION_KEYS = ("file", "source")
@@ -108,7 +108,7 @@ class MetaViewerWidget(QtWidgets.QWidget):
         self._reload_btn.clicked.connect(self.reload_requested.emit)
 
         self._add_btn = QtWidgets.QToolButton(bar)
-        self._add_btn.setIcon(themed_icon("plus"))
+        self._add_btn.setIcon(themed_icon("plus", margin=0.1))
         self._add_btn.setAutoRaise(True)
         self._add_btn.setCursor(QtCore.Qt.PointingHandCursor)
         self._add_btn.setToolTip(t("Add tag or metadata"))
@@ -152,8 +152,8 @@ class MetaViewerWidget(QtWidgets.QWidget):
         meta_root_locks: dict = meta.get("meta_locks", {}) or {}
         tag_prefixed: dict[str, dict] = meta.get("tag_prefixed", {}) or {}
         tag_root: dict = meta.get("tag", {}) or {}
-        self._current_tag_keys = set(tag_root) | {f"{prefix}.{key}" for prefix, data in tag_prefixed.items() for key in data}
-        self._current_meta_keys = set(meta_root) | {f"{prefix}.{key}" for prefix, data in meta_prefixed.items() for key in data}
+        self._current_tag_keys = self._collect_full_keys(tag_root, tag_prefixed)
+        self._current_meta_keys = self._collect_full_keys(meta_root, meta_prefixed)
 
         section_order = list(_FIXED_SECTION_KEYS)
         if tag_root:
@@ -171,16 +171,78 @@ class MetaViewerWidget(QtWidgets.QWidget):
 
         self._rebuild(meta, meta_root, meta_root_locks, meta_prefixed, meta_prefixed_locks, tag_prefixed, section_order)
 
+    @staticmethod
+    def _collect_full_keys(root: dict, prefixed: dict[str, dict]) -> set[str]:
+        keys = set(root or {})
+        for prefix, data in (prefixed or {}).items():
+            keys.update(f"{prefix}.{key}" for key in (data or {}))
+        return keys
+
+    def _on_add_clicked(self):
+        if not self._current_path or not self._current_file_hash or not self._current_db:
+            AppLogger.warning(
+                f"[MetaViewer] add aborted: missing context path={bool(self._current_path)} file_hash={bool(self._current_file_hash)} db={bool(self._current_db)}"
+            )
+            return
+        self._open_global_add_dialog()
+
+    def _open_global_add_dialog(self):
+        existing_by_scope = {"tag": set(self._current_tag_keys), "meta_info": set(self._current_meta_keys)}
+        dlg = ScopedSearchKvAddDialog(
+            self,
+            title=t("Add tag or metadata"),
+            existing_keys_by_scope=existing_by_scope,
+            duplicate_hint=t("Key already exists; will be auto-renamed on add."),
+            scope_options=(
+                ("tag", t("Tag (links to filehash)")),
+                ("meta_info", t("Metadata (links to path)")),
+            ),
+            initial_scope="tag",
+        )
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
+            return
+        scope = dlg.scope() or "tag"
+        existing_keys = existing_by_scope.get(scope, set())
+        key = self._dedupe_full_key(dlg.key(), existing_keys)
+        if not key:
+            return
+        rid = TagEditService.instance().submit(
+            [self._current_path],
+            [(key, dlg.value(), dlg.locked())],
+            [],
+            self._current_db,
+            scope=scope,
+            file_hash=self._current_file_hash if scope == "tag" else None,
+            target_id=self._current_path if scope == "meta_info" else None,
+        )
+        if rid is None:
+            return
+        AppLogger.info(f"[MetaViewer] add submitted scope={scope} key={key}")
+
+    @staticmethod
+    def _dedupe_full_key(key: str, used: set[str]) -> str:
+        key = key.strip()
+        if not key:
+            return ""
+        if key not in used:
+            return key
+        i = 2
+        while f"{key}_{i}" in used:
+            i += 1
+        return f"{key}_{i}"
+
     def _ordered_prefixes(self, data: dict[str, dict], scope: str) -> list[str]:
-        prefixes = set(data.keys())
-        ordered = []
+        remaining = {prefix for prefix, values in data.items() if values}
+        ordered: list[str] = []
         for plugin_cls in self._resolve_key_value_panel_plugins():
             if getattr(plugin_cls, "DATA_SCOPE", "*") not in (scope, "*"):
                 continue
             prefix = getattr(plugin_cls, "PREFIX", "")
-            if prefix in prefixes and prefix not in ordered:
-                ordered.append(prefix)
-        ordered += sorted(prefixes - set(ordered))
+            if prefix not in remaining:
+                continue
+            ordered.append(prefix)
+            remaining.remove(prefix)
+        ordered.extend(sorted(remaining))
         return ordered
 
     def _resolve_key_value_panel_plugins(self) -> list[type]:
@@ -318,7 +380,7 @@ class MetaViewerWidget(QtWidgets.QWidget):
 
         for key in section_order:
             if key == "tag":
-                card = EditableTagCard(prefix="", parent=self._inner)
+                card = self._build_search_kv_card("tag", "tag", prefix="", scope="tag", marker_kind=SECTION_MARKER_TAG_ROOT)
                 self._set_section_marker(card, SECTION_MARKER_TAG_ROOT)
                 self._update_tag_card(card, meta, prefix="")
             elif key.startswith(_TAG_PREFIX):
@@ -330,11 +392,11 @@ class MetaViewerWidget(QtWidgets.QWidget):
                     card = self._get_or_create_scope_card(plugin_cls, plugin, "tag", SECTION_MARKER_TAG_PREFIX)
                     self._update_tag_plugin(plugin, meta, tag_prefixed, prefix)
                 else:
-                    card = EditableTagCard(prefix=prefix, parent=self._inner)
+                    card = self._build_search_kv_card(prefix, key, prefix=prefix, scope="tag", marker_kind=SECTION_MARKER_TAG_PREFIX)
                     self._set_section_marker(card, SECTION_MARKER_TAG_PREFIX)
                     self._update_tag_card(card, meta, prefix=prefix, prefixed=tag_prefixed)
             elif key == _META_ROOT_KEY:
-                card = EditableTagCard(prefix="", parent=self._inner, scope="meta_info")
+                card = self._build_search_kv_card("meta", "meta", prefix="", scope="meta_info", marker_kind=SECTION_MARKER_META_ROOT)
                 self._set_section_marker(card, SECTION_MARKER_META_ROOT)
                 self._update_meta_card(card, meta, prefix="", data=meta_root, locks=meta_root_locks)
             elif key.startswith(_META_PREFIX):
@@ -346,7 +408,7 @@ class MetaViewerWidget(QtWidgets.QWidget):
                     card = self._get_or_create_scope_card(plugin_cls, plugin, "meta_info", SECTION_MARKER_META_PREFIX)
                     self._update_meta_plugin(plugin, meta, meta_prefixed, meta_prefixed_locks, prefix)
                 else:
-                    card = EditableTagCard(prefix=prefix, parent=self._inner, scope="meta_info")
+                    card = self._build_search_kv_card(prefix, key, prefix=prefix, scope="meta_info", marker_kind=SECTION_MARKER_META_PREFIX)
                     self._set_section_marker(card, SECTION_MARKER_META_PREFIX)
                     self._update_meta_card(card, meta, prefix=prefix, prefixed=meta_prefixed, locks_by_prefix=meta_prefixed_locks)
             else:
@@ -379,11 +441,20 @@ class MetaViewerWidget(QtWidgets.QWidget):
         card.update_title_count(len(data) if isinstance(data, Mapping) else 0)
         return card
 
+    def _build_search_kv_card(self, title: str, section_id: str, *, prefix: str, scope: str, marker_kind: str) -> CollapsibleCard:
+        card = CollapsibleCard(title, section_id, parent=self._inner)
+        self._set_section_marker(card, marker_kind)
+        widget = SearchableMetaWidget(card, scope=scope, prefix=prefix)
+        widget.count_changed.connect(card.update_title_count)
+        card.set_content_widget(widget)
+        card.toggled_card.connect(self._on_section_toggled)
+        return card
+
     def _update_existing(self, meta: dict, meta_root: dict, meta_root_locks: dict, meta_prefixed: dict[str, dict], meta_prefixed_locks: dict[str, dict], tag_prefixed: dict[str, dict]):
         rich_text_keys = {"collected by"}
 
         for key, card in self._sections.items():
-            if key == "tag" and isinstance(card, EditableTagCard):
+            if key == "tag" and self._search_widget(card) is not None:
                 self._update_tag_card(card, meta, prefix="")
                 continue
             if key.startswith(_TAG_PREFIX):
@@ -391,10 +462,10 @@ class MetaViewerWidget(QtWidgets.QWidget):
                 plugin = self._section_plugins.get(key)
                 if plugin is not None:
                     self._update_tag_plugin(plugin, meta, tag_prefixed, prefix)
-                elif isinstance(card, EditableTagCard):
+                elif self._search_widget(card) is not None:
                     self._update_tag_card(card, meta, prefix=prefix, prefixed=tag_prefixed)
                 continue
-            if key == _META_ROOT_KEY and isinstance(card, EditableTagCard):
+            if key == _META_ROOT_KEY and self._search_widget(card) is not None:
                 self._update_meta_card(card, meta, prefix="", data=meta_root, locks=meta_root_locks)
                 continue
             if key.startswith(_META_PREFIX):
@@ -402,7 +473,7 @@ class MetaViewerWidget(QtWidgets.QWidget):
                 plugin = self._section_plugins.get(key)
                 if plugin is not None:
                     self._update_meta_plugin(plugin, meta, meta_prefixed, meta_prefixed_locks, prefix)
-                elif isinstance(card, EditableTagCard):
+                elif self._search_widget(card) is not None:
                     self._update_meta_card(card, meta, prefix=prefix, prefixed=meta_prefixed, locks_by_prefix=meta_prefixed_locks)
                 else:
                     self._update_generic_card(card, meta_prefixed.get(prefix, {}), rich_text_keys=None)
@@ -427,7 +498,16 @@ class MetaViewerWidget(QtWidgets.QWidget):
             card.set_content_widget(new_content)
         card.update_title_count(len(data) if isinstance(data, Mapping) else 0)
 
-    def _update_tag_card(self, card: EditableTagCard, meta: dict, *, prefix: str, prefixed: dict[str, dict] | None = None):
+    def _search_widget(self, card) -> SearchableMetaWidget | None:
+        if not isinstance(card, CollapsibleCard):
+            return None
+        widget = card.content_widget()
+        return widget if isinstance(widget, SearchableMetaWidget) else None
+
+    def _update_tag_card(self, card: CollapsibleCard, meta: dict, *, prefix: str, prefixed: dict[str, dict] | None = None):
+        widget = self._search_widget(card)
+        if widget is None:
+            return
         path = meta.get("_path", "") or ""
         file_hash = meta.get("_file_hash", "") or ""
         db = meta.get("_db_name", "") or ""
@@ -437,7 +517,8 @@ class MetaViewerWidget(QtWidgets.QWidget):
         else:
             tags = meta.get("tag", {}) or {}
             locks = meta.get("_tag_locks", {}) or {}
-        card.update_data(tags, locks, None, path, file_hash, db)
+        widget.set_context(tags, locks, path=path, file_hash=file_hash, db=db, scope="tag", prefix=prefix)
+        card.update_title_count(len(tags))
 
     def _update_tag_plugin(self, plugin, meta: dict, tag_prefixed: dict[str, dict], prefix: str):
         tags = tag_prefixed.get(prefix, {}) or {}
@@ -449,7 +530,7 @@ class MetaViewerWidget(QtWidgets.QWidget):
 
     def _update_meta_card(
         self,
-        card: EditableTagCard,
+        card: CollapsibleCard,
         meta: dict,
         *,
         prefix: str,
@@ -458,11 +539,15 @@ class MetaViewerWidget(QtWidgets.QWidget):
         data: dict | None = None,
         locks: dict | None = None,
     ):
+        widget = self._search_widget(card)
+        if widget is None:
+            return
         path = meta.get("_path", "") or ""
         db = meta.get("_db_name", "") or ""
         data = data if data is not None else (prefixed or {}).get(prefix, {}) or {}
         locks = locks if locks is not None else (locks_by_prefix or {}).get(prefix, {}) or {}
-        card.update_data(data, locks, None, path, "", db)
+        widget.set_context(data, locks, path=path, file_hash="", db=db, scope="meta_info", prefix=prefix)
+        card.update_title_count(len(data))
 
     def _update_meta_plugin(self, plugin, meta: dict, meta_prefixed: dict[str, dict], meta_prefixed_locks: dict[str, dict], prefix: str):
         data = meta_prefixed.get(prefix, {}) or {}
@@ -471,47 +556,6 @@ class MetaViewerWidget(QtWidgets.QWidget):
         file_hash = meta.get("_file_hash", "") or ""
         db = meta.get("_db_name", "") or ""
         plugin.update_data(data, locks=locks, path=path, file_hash=file_hash, db=db, scope="meta_info")
-
-    def _on_add_clicked(self):
-        if not self._current_path or not self._current_db:
-            AppLogger.warning(f"[MetaViewer] add aborted: missing context path={bool(self._current_path)} db={bool(self._current_db)}")
-            return
-        scopes = ("tag", "meta_info") if self._current_file_hash else ("meta_info",)
-        existing_by_scope = {"tag": set(self._current_tag_keys), "meta_info": set(self._current_meta_keys)}
-        dlg = AddTagDialog(self, existing_by_scope, scopes=scopes, initial_scope="tag" if self._current_file_hash else "meta_info")
-        if dlg.exec() != QtWidgets.QDialog.Accepted:
-            return
-        scope = dlg.scope()
-        key, value = dlg.values()
-        key = key.strip()
-        if not key:
-            return
-        existing_keys = existing_by_scope.get(scope, set())
-        key = self._dedupe_full_key(key, existing_keys)
-        if scope == "tag" and not self._current_file_hash:
-            AppLogger.warning("[MetaViewer] add tag aborted: file hash unknown")
-            return
-        rid = TagEditService.instance().submit(
-            [self._current_path],
-            [(key, value, False)],
-            [],
-            self._current_db,
-            scope=scope,
-            file_hash=self._current_file_hash if scope == "tag" else None,
-            target_id=self._current_path if scope == "meta_info" else None,
-        )
-        if rid is None:
-            return
-        AppLogger.info(f"[MetaViewer] add submitted scope={scope} key={key}")
-
-    @staticmethod
-    def _dedupe_full_key(key: str, used: set[str]) -> str:
-        if key not in used:
-            return key
-        i = 2
-        while f"{key}_{i}" in used:
-            i += 1
-        return f"{key}_{i}"
 
     def _on_section_toggled(self, key: str, expanded: bool):
         self._collapse_state[key] = expanded

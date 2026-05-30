@@ -81,7 +81,6 @@ EXPECTED_PLUGINS = {
     },
     "exiftool": {
         ("collector", "ExifToolCollectorPlugin"),
-        ("key_value_panel", "ExifToolMetaPanelPlugin"),
         ("panel", "ExifSettingsPanelPlugin"),
     },
     "ffmpeg": {

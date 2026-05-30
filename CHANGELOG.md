@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.7.1]
+### Changed
+- **Metadata panel workflow**: tag and metadata cards now share a searchable list UI with dialog-based editing, and EXIF or media metadata sections use the same editable key-value flow instead of separate read-only panels.
+- **Collector and parser execution tuning**: worker counts and batch timeouts are now configured per plugin, and indexer idle maintenance waits for the longest active child timeout before treating the pipeline as idle.
+
+### Fixed
+- **Long-running indexing stability**: heavy metadata collectors and parsers no longer rely on one-size-fits-all worker timeouts, reducing premature batch cancellations during larger or slower metadata jobs.
+
 ## [v0.7.0]
 ### Added
 - **Runtime download verification**: automatic installs for ExifTool, FFmpeg, and video playback dependencies now share verified downloads with SHA-256 checks and latest-release asset resolution where supported.

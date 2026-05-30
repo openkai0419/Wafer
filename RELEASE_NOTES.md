@@ -2,6 +2,20 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.7.1]
+
+This release refreshes metadata browsing and improves stability for long-running metadata indexing.
+
+### Highlights
+- Metadata sections now share a searchable card layout with a unified edit dialog, making tag and metadata changes easier to browse and update.
+- EXIF and media metadata now follow the same editable workflow as other metadata cards, so the side panel behaves more consistently across extensions.
+
+### Improvements
+- Long-running metadata extraction and AI parsing now use extension-specific worker limits and timeout windows, which reduces premature interruptions during heavier indexing jobs.
+
+### Fixes
+- Background maintenance now waits more carefully for active metadata workers, reducing idle-time interference while larger indexing tasks are still running.
+
 ## [v0.7.0]
 
 This release focuses on install reliability and safety fixes.

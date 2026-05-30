@@ -21,6 +21,8 @@ class ColorCollector(BaseCollectorPlugin):
     EXTENSIONS = ()
     PRIORITY = 40
     BATCH_SIZE = 600
+    MAX_WORKERS = 4
+    MAX_TIMEOUT = 300.0
     DEFAULT_ENABLED = True
 
     def __init__(self):

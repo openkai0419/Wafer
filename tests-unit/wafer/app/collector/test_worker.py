@@ -2,7 +2,7 @@ import py_compile
 
 import pytest
 
-from wafer.app.collector.worker import CollectorWorker, _MAX_WORKERS, _CHUNK_SIZE, _SHUTDOWN_WAIT
+from wafer.app.collector.worker import CollectorWorker, _SHUTDOWN_WAIT
 from wafer.plugin.collector.handler import collector_resolver
 
 
@@ -28,11 +28,6 @@ def test_compile():
     py_compile.compile("wafer/app/collector/worker.py")
 
 
-def test_max_workers_is_reasonable():
-    assert _MAX_WORKERS >= 1
-    assert _MAX_WORKERS <= 16
-
-
 def test_unknown_plugin_raises():
     import pytest
 
@@ -45,6 +40,8 @@ def test_all_registered_plugins_constructable(make_worker):
         worker = make_worker(plugin_name=name)
         assert worker.plugin_name == name
         assert worker.db_name == "test_db"
+        assert worker._max_workers == collector_resolver.max_workers(name)
+        assert worker._batch_timeout == collector_resolver.batch_timeout(name)
 
 
 def test_process_one_error_excludes_from_results(make_worker):
@@ -276,7 +273,6 @@ def test_stop_continues_when_plugin_shutdown_fails(make_worker):
 
 
 def test_constants():
-    assert _CHUNK_SIZE > 0
     assert _SHUTDOWN_WAIT > 0
 
 

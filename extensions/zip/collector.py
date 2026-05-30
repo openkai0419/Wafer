@@ -19,6 +19,8 @@ class ZipCollectorPlugin(BaseSingletonCollector):
     PRIORITY = 80
     DEFAULT_ENABLED = True
     BATCH_SIZE = 1
+    MAX_WORKERS = 1
+    MAX_TIMEOUT = 600.0
 
     def shutdown(self):
         zip_cache.stop_idle_sweep()

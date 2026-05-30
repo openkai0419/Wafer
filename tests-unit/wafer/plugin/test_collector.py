@@ -123,8 +123,12 @@ def test_base_collector_hierarchy():
 def test_base_collector_defaults():
     assert not issubclass(BaseCollectorPlugin, BaseSingletonCollector)
     assert BaseCollectorPlugin.BATCH_SIZE == 1200
+    assert BaseCollectorPlugin.MAX_WORKERS == 1
+    assert BaseCollectorPlugin.MAX_TIMEOUT == 300.0
     assert issubclass(BaseSingletonCollector, BaseCollector)
     assert BaseSingletonCollector.BATCH_SIZE == 300
+    assert BaseSingletonCollector.MAX_WORKERS == 1
+    assert BaseSingletonCollector.MAX_TIMEOUT == 600.0
 
 
 def test_concrete_collector_plugin():
@@ -270,8 +274,19 @@ def test_batch_size_for_known_collector():
         assert bs > 0
 
 
+def test_execution_settings_for_known_collector():
+    for name in collector_resolver.names():
+        assert collector_resolver.max_workers(name) >= 1
+        assert collector_resolver.batch_timeout(name) > 0
+
+
 def test_batch_size_for_unknown_collector():
     assert collector_resolver.batch_size("nonexistent") == 1200
+
+
+def test_execution_settings_for_unknown_collector():
+    assert collector_resolver.max_workers("nonexistent") == 1
+    assert collector_resolver.batch_timeout("nonexistent") == 300.0
 
 
 def test_exif_is_per_indexer():

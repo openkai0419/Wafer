@@ -40,7 +40,11 @@ class BaseParser(BasePlugin):
 
 class BaseParserPlugin(BaseParser):
     BATCH_SIZE: int = 1200
+    MAX_WORKERS: int = 1
+    MAX_TIMEOUT: float = 300.0
 
 
 class BaseSingletonParser(BaseParser):
     BATCH_SIZE: int = 300
+    MAX_WORKERS: int = 1
+    MAX_TIMEOUT: float = 300.0

@@ -1,4 +1,19 @@
 {
+  "Background Restart Required": {
+    "en": "Background Restart Required"
+  },
+  "Not Now": {
+    "en": "Not Now"
+  },
+  "Plugin settings have been saved.\nBackground services restart is required.": {
+    "en": "Plugin settings have been saved.\nBackground services restart is required."
+  },
+  "Both Restart Required": {
+    "en": "Both Restart Required"
+  },
+  "Restart Required": {
+    "en": "Restart Required"
+  },
   "Add metadata": {
     "en": "Add metadata"
   },

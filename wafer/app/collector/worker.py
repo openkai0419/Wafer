@@ -10,8 +10,6 @@ from ...core.ipc.transport import BROKER_LOST_TIMEOUT
 from ...plugin.collector.handler import collector_resolver
 from ...plugin.collector.base import CollectorResult, BaseSingletonCollector
 
-_MAX_WORKERS = 4
-_CHUNK_SIZE = 50
 _SHUTDOWN_WAIT = 5
 
 
@@ -29,8 +27,9 @@ class CollectorWorker:
         self._node.subscribe("plugin.notify", self._on_notify)
         self._node.subscribe("service.request", self._on_service_request)
         self._node.subscribe("worker.shutdown", self._on_shutdown)
-        self._chunk_timeout = collector_resolver.chunk_timeout(plugin_name)
-        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=_MAX_WORKERS)
+        self._max_workers = collector_resolver.max_workers(plugin_name)
+        self._batch_timeout = collector_resolver.batch_timeout(plugin_name)
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=self._max_workers)
         self._stop = threading.Event()
         self._plugin_shutdown = threading.Event()
         self._batch_queue: queue.Queue = queue.Queue()
@@ -135,22 +134,18 @@ class CollectorWorker:
                     AppLogger.warning(f"[Collector] process failed: {p}: {e}", exc=e)
                     return []
 
+            futures = {self._executor.submit(process_one, p): p for p in paths}
+            done, not_done = concurrent.futures.wait(futures, timeout=self._batch_timeout)
             all_results = []
-            for i in range(0, len(paths), _CHUNK_SIZE):
-                if self._stop.is_set():
-                    break
-                chunk = paths[i : i + _CHUNK_SIZE]
-                futures = {self._executor.submit(process_one, p): p for p in chunk}
-                done, not_done = concurrent.futures.wait(futures, timeout=self._chunk_timeout)
-                for fut in done:
-                    try:
-                        all_results.extend(fut.result())
-                    except Exception as e:
-                        AppLogger.warning(f"[Collector] future failed: {futures[fut]}: {e}", exc=e)
-                if not_done:
-                    AppLogger.warning(f"[Collector] chunk timeout: {len(not_done)}/{len(chunk)} unfinished")
-                    for fut in not_done:
-                        fut.cancel()
+            for fut in done:
+                try:
+                    all_results.extend(fut.result())
+                except Exception as e:
+                    AppLogger.warning(f"[Collector] future failed: {futures[fut]}: {e}", exc=e)
+            if not_done:
+                AppLogger.warning(f"[Collector] batch timeout: {len(not_done)}/{len(paths)} unfinished")
+                for fut in not_done:
+                    fut.cancel()
             self._node.send_reliable(
                 "collect.result",
                 {"collector": self.plugin_name, "results": all_results},

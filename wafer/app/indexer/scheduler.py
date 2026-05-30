@@ -68,6 +68,10 @@ class TaskScheduler:
         self._tokens_lock = threading.Lock()
         self._active_tasks = 0
         self._active_lock = threading.Lock()
+        self._idle_base_delay = 0.0
+
+    def set_idle_base_delay(self, seconds: float) -> None:
+        self._idle_base_delay = max(0.0, float(seconds))
 
     def submit(self, task: Task):
         if task.cancel_token:
@@ -92,7 +96,9 @@ class TaskScheduler:
     def is_idle(self) -> bool:
         with self._active_lock:
             active_tasks = self._active_tasks
-        return active_tasks == 0 and self._immediate_queue.empty() and self._background_queue.empty()
+        if active_tasks != 0 or not self._immediate_queue.empty() or not self._background_queue.empty():
+            return False
+        return (time.monotonic() - self._last_active_time) >= self._idle_base_delay
 
     def start(self):
         self._immediate_thread = threading.Thread(
@@ -172,7 +178,7 @@ class TaskScheduler:
 
     def _check_periodic_tasks(self):
         now = time.monotonic()
-        idle_duration = now - self._last_active_time
+        idle_duration = max(0.0, now - self._last_active_time - self._idle_base_delay)
         for periodic in self._periodic_tasks:
             if periodic.should_run(now, idle_duration):
                 self.submit(periodic.create_task())

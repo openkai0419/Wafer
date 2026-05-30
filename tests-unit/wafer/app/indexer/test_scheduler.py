@@ -199,6 +199,33 @@ def test_idle_detection():
     s.stop()
 
 
+def test_idle_base_delay_is_applied_before_periodic_idle_delay():
+    task = PeriodicTask(
+        name="idle_base_check",
+        interval=0.0,
+        create_task=lambda: Task.create("op", priority=TaskPriority.MAINTENANCE, run=lambda: None),
+        idle_delay=60.0,
+    )
+    s = TaskScheduler()
+    s.set_idle_base_delay(1200.0)
+    s.add_periodic_task(task)
+    s._last_active_time = time.monotonic() - 1259.0
+    s._check_periodic_tasks()
+    assert s._background_queue.empty()
+    s._last_active_time = time.monotonic() - 1261.0
+    s._check_periodic_tasks()
+    assert not s._background_queue.empty()
+
+
+def test_is_idle_respects_idle_base_delay():
+    s = TaskScheduler()
+    s.set_idle_base_delay(1200.0)
+    s._last_active_time = time.monotonic() - 1199.0
+    assert not s.is_idle()
+    s._last_active_time = time.monotonic() - 1201.0
+    assert s.is_idle()
+
+
 def test_multiple_submits(scheduler):
     done = threading.Event()
     count = {"n": 0}

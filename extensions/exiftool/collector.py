@@ -38,6 +38,8 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
     )
     PRIORITY = 100
     DEFAULT_ENABLED = True
+    MAX_WORKERS = 1
+    MAX_TIMEOUT = 300.0
 
     @classmethod
     def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None, on_log=None):

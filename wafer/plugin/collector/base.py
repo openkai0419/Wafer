@@ -44,9 +44,11 @@ class BaseCollector(BasePlugin):
 
 class BaseCollectorPlugin(BaseCollector):
     BATCH_SIZE: int = 1200
-    CHUNK_TIMEOUT: float = 300.0
+    MAX_WORKERS: int = 1
+    MAX_TIMEOUT: float = 300.0
 
 
 class BaseSingletonCollector(BaseCollector):
     BATCH_SIZE: int = 300
-    CHUNK_TIMEOUT: float = 600.0
+    MAX_WORKERS: int = 1
+    MAX_TIMEOUT: float = 600.0

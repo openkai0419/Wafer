@@ -95,7 +95,12 @@ def test_stop_continues_when_plugin_shutdown_fails():
 
 
 def test_constants():
-    from wafer.app.parser.worker import _TASK_TIMEOUT, _SHUTDOWN_WAIT
+    from wafer.app.parser.worker import _SHUTDOWN_WAIT
 
-    assert _TASK_TIMEOUT > 0
     assert _SHUTDOWN_WAIT > 0
+
+
+def test_worker_uses_parser_execution_settings():
+    worker = _make_worker()
+    assert worker._max_workers == parser_resolver.max_workers(worker.plugin_name)
+    assert worker._batch_timeout == parser_resolver.batch_timeout(worker.plugin_name)

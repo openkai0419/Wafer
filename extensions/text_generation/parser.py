@@ -11,6 +11,8 @@ class NovelAiImageParser(BaseSingletonParser):
     PRIORITY = 100
     DEFAULT_ENABLED = False
     TRIGGER_KEYS = ("exiftool.PNG:Comment",)
+    MAX_WORKERS = 1
+    MAX_TIMEOUT = 300.0
 
     def process(self, path: str, file_info: tuple, metadata: dict) -> ParserResult:
         raw = metadata.get("exiftool.PNG:Comment")

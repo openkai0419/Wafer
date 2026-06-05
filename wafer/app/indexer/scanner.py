@@ -12,10 +12,10 @@ from ...utils.logs import AppLogger
 from ...utils.paths import normalize_path
 from ...utils.profiling import profiler
 from .db_writer import DatabaseWriter
-from .path_scope import contains_path_prefix, normalize_prefixes
-from .progress_notifier import ProgressAggregator
-from .scheduler import TaskScheduler
-from .task import CancelToken, Task, TaskPriority
+from .watch.path_scope import contains_path_prefix, normalize_prefixes
+from .runtime.progress_aggregator import ProgressAggregator
+from .runtime.scheduler import TaskScheduler
+from .runtime.task import CancelToken, Task, TaskPriority
 
 _CHUNK = 400
 

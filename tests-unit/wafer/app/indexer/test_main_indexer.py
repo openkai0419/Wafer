@@ -3,7 +3,7 @@ import threading
 from unittest.mock import MagicMock, patch
 
 from wafer.app.indexer.main_indexer import IndexerProcess
-from wafer.app.indexer.task import TaskPriority
+from wafer.app.indexer.runtime.task import TaskPriority
 
 
 def test_compile():
@@ -11,7 +11,7 @@ def test_compile():
 
 
 def test_compile_collector_receiver():
-    py_compile.compile("wafer/app/indexer/collector_receiver.py")
+    py_compile.compile("wafer/app/indexer/receivers/collector_receiver.py")
 
 
 def test_compile_scanner():

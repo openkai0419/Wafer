@@ -10,7 +10,7 @@ from wafer.core.db.file_db import FileDB
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.plugin.collector.base import CollectorResult
 from wafer.app.indexer.db_writer import DatabaseWriter
-from wafer.app.indexer.collector_receiver import _parse_batch
+from wafer.app.indexer.receivers.collector_receiver import _parse_batch
 from test_support.scan_harness import ScanHarness
 
 

@@ -4,12 +4,12 @@ import time
 
 import pytest
 
-from wafer.app.indexer.scheduler import TaskScheduler, PeriodicTask, _QUEUE_POLL_INTERVAL, _IMMEDIATE_THRESHOLD
-from wafer.app.indexer.task import Task, TaskPriority
+from wafer.app.indexer.runtime.scheduler import TaskScheduler, PeriodicTask, _QUEUE_POLL_INTERVAL, _IMMEDIATE_THRESHOLD
+from wafer.app.indexer.runtime.task import Task, TaskPriority
 
 
 def test_compile():
-    py_compile.compile("wafer/app/indexer/scheduler.py")
+    py_compile.compile("wafer/app/indexer/runtime/scheduler.py")
 
 
 @pytest.fixture
@@ -122,7 +122,7 @@ def test_on_complete_error_does_not_crash(scheduler):
 
 
 def test_cancelled_task_skipped(scheduler):
-    from wafer.app.indexer.task import CancelToken
+    from wafer.app.indexer.runtime.task import CancelToken
 
     ran = []
     done = threading.Event()
@@ -278,7 +278,7 @@ def test_is_idle_false_while_task_is_running(scheduler):
 
 
 def test_cancel_all_cancels_tracked_tokens(scheduler):
-    from wafer.app.indexer.task import CancelToken
+    from wafer.app.indexer.runtime.task import CancelToken
 
     tokens = [CancelToken() for _ in range(3)]
     for i, tok in enumerate(tokens):

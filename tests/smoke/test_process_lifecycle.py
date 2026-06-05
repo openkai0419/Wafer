@@ -183,8 +183,8 @@ class TestParserWorkerLifecycle:
 
 class TestDispatcherSingletonState:
     def test_reset_singleton_state(self):
-        from wafer.app.indexer.dispatcher import CollectorDispatcher
-        from wafer.app.indexer.parser_dispatcher import ParserDispatcher
+        from wafer.app.indexer.dispatch.collector_dispatcher import CollectorDispatcher
+        from wafer.app.indexer.dispatch.parser_dispatcher import ParserDispatcher
 
         CollectorDispatcher._singleton_started.add("test_plugin")
         ParserDispatcher._singleton_started.add("test_parser")

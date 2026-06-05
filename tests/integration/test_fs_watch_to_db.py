@@ -11,9 +11,9 @@ from wafer.builtins.mark.filter import MarkFilter
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.app.indexer.db_writer import DatabaseWriter
 from wafer.app.indexer.scanner import DirectoryScanner
-from wafer.app.indexer.scheduler import TaskScheduler
-from wafer.app.indexer.watch_folder import FolderWatcher
-from wafer.app.indexer.progress_notifier import ProgressAggregator
+from wafer.app.indexer.runtime.scheduler import TaskScheduler
+from wafer.app.indexer.watch.folder_watcher import FolderWatcher
+from wafer.app.indexer.runtime.progress_aggregator import ProgressAggregator
 
 
 class _StubNode:

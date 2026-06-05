@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
-from wafer.app.indexer.parser_receiver import (
+from wafer.app.indexer.receivers.parser_receiver import (
     trigger_parser_pending,
     _build_source_keys,
 )
@@ -45,7 +45,7 @@ def _register():
 
 
 def test_compile():
-    py_compile.compile("wafer/app/indexer/parser_receiver.py")
+    py_compile.compile("wafer/app/indexer/receivers/parser_receiver.py")
 
 
 def test_trigger_empty_source_keys():

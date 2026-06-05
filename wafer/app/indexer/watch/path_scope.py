@@ -3,7 +3,7 @@ from __future__ import annotations
 import bisect
 from collections.abc import Iterable, Sequence
 
-from ...utils.paths import normalize_path
+from ....utils.paths import normalize_path
 
 
 def normalize_prefixes(paths: Iterable[str]) -> list[str]:

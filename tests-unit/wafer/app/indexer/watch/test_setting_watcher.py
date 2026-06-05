@@ -3,11 +3,11 @@ import os
 import tempfile
 from unittest.mock import MagicMock
 
-from wafer.app.indexer.watch_setting import SettingWatcher
+from wafer.app.indexer.watch.setting_watcher import SettingWatcher
 
 
 def test_compile():
-    py_compile.compile("wafer/app/indexer/watch_setting.py")
+    py_compile.compile("wafer/app/indexer/watch/setting_watcher.py")
 
 
 def test_no_delete_requested_signal():

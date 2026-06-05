@@ -32,9 +32,9 @@ class ScanHarness:
 
     def __enter__(self):
         from wafer.app.indexer.db_writer import DatabaseWriter
-        from wafer.app.indexer.progress_notifier import ProgressAggregator
+        from wafer.app.indexer.runtime.progress_aggregator import ProgressAggregator
         from wafer.app.indexer.scanner import DirectoryScanner
-        from wafer.app.indexer.scheduler import TaskScheduler
+        from wafer.app.indexer.runtime.scheduler import TaskScheduler
 
         self.writer = DatabaseWriter(self._db_path)
         self.writer.start()

@@ -4,15 +4,15 @@ import threading
 import time
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
-from ...utils.logs import AppLogger
-from ...utils.paths import normalize_path
-from ...utils.profiling import profiler
-from .db_writer import DatabaseWriter
+from ....utils.logs import AppLogger
+from ....utils.paths import normalize_path
+from ....utils.profiling import profiler
+from ..db_writer import DatabaseWriter
 from .path_scope import contains_path_prefix, normalize_prefixes
-from .progress_notifier import ProgressAggregator
-from .scanner import DirectoryScanner
-from .scheduler import TaskScheduler
-from .task import Task, TaskPriority
+from ..runtime.progress_aggregator import ProgressAggregator
+from ..scanner import DirectoryScanner
+from ..runtime.scheduler import TaskScheduler
+from ..runtime.task import Task, TaskPriority
 
 DISABLE_MODIFY_EVENT = False
 _BATCH_TIMEOUT = 0.5

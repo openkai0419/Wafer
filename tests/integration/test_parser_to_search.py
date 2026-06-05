@@ -9,8 +9,8 @@ from wafer.core.db.file_db import FileDB
 from wafer.core.db.query import FileSearchEngine, SearchQuery
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.plugin.parser.handler import parser_resolver
-from wafer.app.indexer.collector_receiver import _parse_batch as _parse_collector_batch
-from wafer.app.indexer.parser_receiver import _parse_batch as _parse_parser_batch
+from wafer.app.indexer.receivers.collector_receiver import _parse_batch as _parse_collector_batch
+from wafer.app.indexer.receivers.parser_receiver import _parse_batch as _parse_parser_batch
 from test_support.scan_harness import ScanHarness
 
 

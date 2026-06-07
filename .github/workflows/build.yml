@@ -52,6 +52,12 @@ jobs:
           ) | ForEach-Object {
             if (-not (Test-Path $_)) { throw "Missing: $_" }
           }
+          @(
+            'dist/Wafer/conftest.py',
+            'dist/Wafer/pyproject.toml'
+          ) | ForEach-Object {
+            if (Test-Path $_) { throw "Unexpected file in portable build: $_" }
+          }
 
       - name: Smoke test
         run: |

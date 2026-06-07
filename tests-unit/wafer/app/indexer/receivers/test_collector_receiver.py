@@ -2,13 +2,13 @@ import py_compile
 import time
 from unittest.mock import MagicMock
 
-from wafer.app.indexer.collector_receiver import (
+from wafer.app.indexer.receivers.collector_receiver import (
     CollectorReceiver,
     _parse_batch,
     _merge_parsed,
     _write_batched,
 )
-from wafer.app.indexer._parse_utils import (
+from wafer.app.indexer.receivers._batch_utils import (
     BATCH_SIZE,
     FLUSH_DELAY,
     ResultBuffer,
@@ -23,7 +23,7 @@ class _StubMsg:
 
 
 def test_compile():
-    py_compile.compile("wafer/app/indexer/collector_receiver.py")
+    py_compile.compile("wafer/app/indexer/receivers/collector_receiver.py")
 
 
 def _make_receiver():

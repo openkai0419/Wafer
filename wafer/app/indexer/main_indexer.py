@@ -9,17 +9,17 @@ from ...plugin.collector.handler import collector_resolver
 from ...plugin.parser.handler import parser_resolver
 from ...core.ipc.node import Node
 from ...core.ipc.transport import BROKER_LOST_TIMEOUT
-from .collector_receiver import CollectorReceiver
+from .receivers.collector_receiver import CollectorReceiver
 from .db_writer import DatabaseWriter
-from .parser_dispatcher import ParserDispatcher
-from .parser_receiver import ParserReceiver
-from .dispatcher import CollectorDispatcher
-from .progress_notifier import ProgressAggregator
+from .dispatch.parser_dispatcher import ParserDispatcher
+from .receivers.parser_receiver import ParserReceiver
+from .dispatch.collector_dispatcher import CollectorDispatcher
+from .runtime.progress_aggregator import ProgressAggregator
 from .scanner import DirectoryScanner
-from .scheduler import TaskScheduler, PeriodicTask
-from .task import Task, TaskPriority
-from .watch_folder import FolderWatcher
-from .watch_setting import SettingWatcher
+from .runtime.scheduler import TaskScheduler, PeriodicTask
+from .runtime.task import Task, TaskPriority
+from .watch.folder_watcher import FolderWatcher
+from .watch.setting_watcher import SettingWatcher
 
 _IDLE_GRACE_SECONDS = 60.0
 
@@ -183,7 +183,7 @@ class IndexerProcess:
         self.scheduler.add_periodic_task(
             PeriodicTask(
                 name="idle_rescan",
-                interval=60 * 60 * 1.0,
+                interval=60 * 30 * 1.0,
                 idle_delay=60 * 5.0,
                 create_task=lambda: Task.create(
                     "idle_rescan",
@@ -234,7 +234,7 @@ class IndexerProcess:
 
     def _request_idle_rescan(self):
         if self.folder_watcher:
-            self.folder_watcher.rescan_all()
+            self.folder_watcher.refresh_watch()
 
     def rescan(self):
         if self.folder_watcher:

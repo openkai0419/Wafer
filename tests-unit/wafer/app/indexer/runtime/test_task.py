@@ -1,11 +1,11 @@
 import py_compile
 import queue
 
-from wafer.app.indexer.task import CancelToken, Task, TaskPriority
+from wafer.app.indexer.runtime.task import CancelToken, Task, TaskPriority
 
 
 def test_compile():
-    py_compile.compile("wafer/app/indexer/task.py")
+    py_compile.compile("wafer/app/indexer/runtime/task.py")
 
 
 def test_task_priority_ordering():

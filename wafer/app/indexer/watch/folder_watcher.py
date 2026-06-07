@@ -4,15 +4,15 @@ import threading
 import time
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
-from ...utils.logs import AppLogger
-from ...utils.paths import normalize_path
-from ...utils.profiling import profiler
-from .db_writer import DatabaseWriter
+from ....utils.logs import AppLogger
+from ....utils.paths import normalize_path
+from ....utils.profiling import profiler
+from ..db_writer import DatabaseWriter
 from .path_scope import contains_path_prefix, normalize_prefixes
-from .progress_notifier import ProgressAggregator
-from .scanner import DirectoryScanner
-from .scheduler import TaskScheduler
-from .task import Task, TaskPriority
+from ..runtime.progress_aggregator import ProgressAggregator
+from ..scanner import DirectoryScanner
+from ..runtime.scheduler import TaskScheduler
+from ..runtime.task import Task, TaskPriority
 
 DISABLE_MODIFY_EVENT = False
 _BATCH_TIMEOUT = 0.5
@@ -184,6 +184,7 @@ class FolderWatcher:
         self._q = queue.Queue()
         self._emitter = _FileEventHandler(self._q)
         self._observer = None
+        self._watch_roots = []
         self._folders = []
         self._ignore_paths = []
         self._pending_deletes: dict[str, tuple[str, float]] = {}
@@ -192,20 +193,19 @@ class FolderWatcher:
         self._worker.start()
 
     def start(self, folders):
-        self._stop_observer()
-        self._observer = Observer()
         folder_list = list(folders)
-        for path in folder_list:
-            if os.path.exists(path):
-                self._observer.schedule(self._emitter, path, recursive=True)
-        self._observer.start()
+        self._watch_roots = folder_list
         self._folders = normalize_prefixes(folder_list)
+        self._start_observer()
         AppLogger.info(f"watch start: {len(folder_list)} folders")
         self.rescan_all()
 
     def rescan_all(self):
         AppLogger.info(f"rescan: {len(self._folders)} folders")
         self._q.put(("rescan", self._folders))
+
+    def refresh_watch(self):
+        self._q.put(("refresh", None))
 
     def set_ignore_paths(self, paths):
         self._ignore_paths = normalize_prefixes(paths)
@@ -219,6 +219,14 @@ class FolderWatcher:
         self._q.put(("__stop__", None))
         self._stop_observer()
         self._worker.join(timeout=5.0)
+
+    def _start_observer(self):
+        self._stop_observer()
+        self._observer = Observer()
+        for path in self._watch_roots:
+            if os.path.exists(path):
+                self._observer.schedule(self._emitter, path, recursive=True)
+        self._observer.start()
 
     def _stop_observer(self):
         if self._observer:
@@ -251,8 +259,12 @@ class FolderWatcher:
                     acc.on_folder()
                 elif kind == "folder_moved":
                     acc.on_folder_moved(*data)
-                elif kind in ("rescan", "cleanup"):
+                elif kind in ("rescan", "cleanup", "refresh"):
                     self._flush(*acc.drain_all())
+                    if kind == "refresh":
+                        self._start_observer()
+                        AppLogger.info(f"watch refreshed: {len(self._watch_roots)} folders")
+                        kind, data = "rescan", self._folders
                     self._exec(kind, data)
                 elif kind == "__stop__":
                     return

@@ -1,7 +1,7 @@
 import threading
 
-from ...utils.profiling import profiler
-from ...utils.logs import AppLogger
+from ....utils.profiling import profiler
+from ....utils.logs import AppLogger
 
 
 class ProgressAggregator:

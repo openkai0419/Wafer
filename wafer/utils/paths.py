@@ -92,6 +92,11 @@ def get_app_root_dir():
         return Path.cwd()
 
 
+def get_launcher_path():
+    launcher = get_app_root_dir() / f"{APP_DATA_DIR_NAME}.exe"
+    return launcher if launcher.is_file() else None
+
+
 def _resolve_app_path(relative_path, base_dir):
     path = base_dir / relative_path
     if path.suffix == "" or str(relative_path).endswith(("/", "\\")):

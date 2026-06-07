@@ -1,11 +1,11 @@
 import py_compile
 import queue
 import time
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, call, patch
 
 
 def test_compile():
-    py_compile.compile("wafer/app/indexer/watch_folder.py")
+    py_compile.compile("wafer/app/indexer/watch/folder_watcher.py")
 
 
 class _Recorder:
@@ -23,7 +23,7 @@ class _FakeFsEvent:
 
 
 def test_deleted_event_marks_folder_dirty_even_when_not_directory():
-    from wafer.app.indexer.watch_folder import _FileEventHandler
+    from wafer.app.indexer.watch.folder_watcher import _FileEventHandler
 
     inbox = queue.Queue()
     handler = _FileEventHandler(inbox)
@@ -36,8 +36,8 @@ def test_deleted_event_marks_folder_dirty_even_when_not_directory():
 
 
 def _make_watcher():
-    from wafer.app.indexer.watch_folder import FolderWatcher
-    from wafer.app.indexer.path_scope import normalize_prefixes
+    from wafer.app.indexer.watch.folder_watcher import FolderWatcher
+    from wafer.app.indexer.watch.path_scope import normalize_prefixes
 
     scheduler = MagicMock()
     writer = MagicMock()
@@ -50,7 +50,7 @@ def _make_watcher():
 
 
 def _set_scope(wf, roots, ignores=()):
-    from wafer.app.indexer.path_scope import normalize_prefixes
+    from wafer.app.indexer.watch.path_scope import normalize_prefixes
 
     wf._folders = normalize_prefixes([str(p) for p in roots])
     wf._ignore_paths = normalize_prefixes([str(p) for p in ignores])
@@ -72,7 +72,7 @@ def _collect_exec_calls(scheduler, scanner):
 
 
 def _expire_pending_deletes(wf):
-    from wafer.app.indexer.watch_folder import _MOVE_INFER_WINDOW
+    from wafer.app.indexer.watch.folder_watcher import _MOVE_INFER_WINDOW
 
     if not wf._pending_deletes:
         return
@@ -124,7 +124,7 @@ def test_flush_only_deleted():
 
 
 def test_flush_infers_move_from_delete_create(tmp_path):
-    from wafer.app.indexer.watch_folder import _MOVE_INFER_WINDOW
+    from wafer.app.indexer.watch.folder_watcher import _MOVE_INFER_WINDOW
     from wafer.utils.paths import normalize_path
 
     root = tmp_path / "watched"
@@ -149,7 +149,7 @@ def test_flush_infers_move_from_delete_create(tmp_path):
 
 
 def test_flush_buffers_delete_until_move_window_expires(tmp_path):
-    from wafer.app.indexer.watch_folder import _MOVE_INFER_WINDOW
+    from wafer.app.indexer.watch.folder_watcher import _MOVE_INFER_WINDOW
     from wafer.utils.paths import normalize_path
 
     root = tmp_path / "watched"
@@ -269,9 +269,51 @@ def test_exec_cleanup():
     assert task.name == "delete_orphans"
 
 
+@patch("wafer.app.indexer.watch.folder_watcher.Observer")
+def test_start_reuses_observer_setup_and_rescans(mock_observer_cls, tmp_path):
+    from wafer.app.indexer.watch.path_scope import normalize_prefixes
+
+    existing = tmp_path / "watched"
+    existing.mkdir()
+    missing = tmp_path / "missing"
+    wf, *_ = _make_watcher()
+    wf.rescan_all = MagicMock()
+
+    wf.start([str(existing), str(missing)])
+
+    observer = mock_observer_cls.return_value
+    observer.schedule.assert_called_once_with(wf._emitter, str(existing), recursive=True)
+    observer.start.assert_called_once()
+    assert wf._watch_roots == [str(existing), str(missing)]
+    assert wf._folders == normalize_prefixes([str(existing), str(missing)])
+    wf.rescan_all.assert_called_once()
+
+
+def test_refresh_restarts_observer_and_rescans():
+    from wafer.app.indexer.watch.folder_watcher import FolderWatcher
+
+    scheduler = MagicMock()
+    writer = MagicMock()
+    scanner = MagicMock()
+    progress = MagicMock()
+    wf = FolderWatcher(scheduler, writer, scanner, progress)
+    wf._folders = ["/watched"]
+    wf._watch_roots = ["/watched"]
+    wf._start_observer = MagicMock()
+    wf._exec = MagicMock()
+
+    wf.refresh_watch()
+    wf._q.put(("__stop__", None))
+    wf._worker.join(timeout=1.0)
+
+    assert not wf._worker.is_alive()
+    wf._start_observer.assert_called_once_with()
+    wf._exec.assert_called_once_with("rescan", ["/watched"])
+
+
 class TestExtractStable:
     def test_all_stable(self, tmp_path):
-        from wafer.app.indexer.watch_folder import _extract_stable, _stat_signature, _STABLE_THRESHOLD
+        from wafer.app.indexer.watch.folder_watcher import _extract_stable, _stat_signature, _STABLE_THRESHOLD
 
         f1 = tmp_path / "a.txt"
         f2 = tmp_path / "b.txt"
@@ -286,7 +328,7 @@ class TestExtractStable:
         assert pending == {}
 
     def test_none_stable(self, tmp_path):
-        from wafer.app.indexer.watch_folder import _extract_stable, _stat_signature
+        from wafer.app.indexer.watch.folder_watcher import _extract_stable, _stat_signature
 
         f1 = tmp_path / "a.txt"
         f2 = tmp_path / "b.txt"
@@ -301,7 +343,7 @@ class TestExtractStable:
         assert len(pending) == 2
 
     def test_partial_stable(self, tmp_path):
-        from wafer.app.indexer.watch_folder import _extract_stable, _stat_signature, _STABLE_THRESHOLD
+        from wafer.app.indexer.watch.folder_watcher import _extract_stable, _stat_signature, _STABLE_THRESHOLD
 
         f_old = tmp_path / "old.txt"
         f_new = tmp_path / "new.txt"
@@ -318,7 +360,7 @@ class TestExtractStable:
         assert str(f_new) in pending
 
     def test_empty_pending(self):
-        from wafer.app.indexer.watch_folder import _extract_stable
+        from wafer.app.indexer.watch.folder_watcher import _extract_stable
 
         pending = {}
         stable = _extract_stable(pending)
@@ -326,7 +368,7 @@ class TestExtractStable:
         assert pending == {}
 
     def test_file_changed_since_pending_resets_timer(self, tmp_path):
-        from wafer.app.indexer.watch_folder import _extract_stable, _stat_signature, _STABLE_THRESHOLD
+        from wafer.app.indexer.watch.folder_watcher import _extract_stable, _stat_signature, _STABLE_THRESHOLD
 
         f = tmp_path / "dl.bin"
         f.write_bytes(b"part1")
@@ -341,7 +383,7 @@ class TestExtractStable:
         assert new_sig != old_sig
 
     def test_deleted_file_stabilizes(self):
-        from wafer.app.indexer.watch_folder import _extract_stable, _STABLE_THRESHOLD
+        from wafer.app.indexer.watch.folder_watcher import _extract_stable, _STABLE_THRESHOLD
 
         old_ts = time.monotonic() - _STABLE_THRESHOLD - 1
         pending = {"/nonexistent/file.tmp": (old_ts, (12345, 100))}
@@ -351,12 +393,12 @@ class TestExtractStable:
 
 class TestEventAccumulator:
     def _make_accumulator(self):
-        from wafer.app.indexer.watch_folder import _EventAccumulator
+        from wafer.app.indexer.watch.folder_watcher import _EventAccumulator
 
         return _EventAccumulator()
 
     def _run_and_flush(self, events):
-        from wafer.app.indexer.watch_folder import _EventAccumulator
+        from wafer.app.indexer.watch.folder_watcher import _EventAccumulator
 
         acc = _EventAccumulator()
         wf, scheduler, writer, scanner, _ = _make_watcher()
@@ -485,7 +527,7 @@ class TestZipWatchScenarios:
     """zip解凍・zip圧縮のWatchFolder検出テスト"""
 
     def _run_and_flush(self, events):
-        from wafer.app.indexer.watch_folder import _EventAccumulator
+        from wafer.app.indexer.watch.folder_watcher import _EventAccumulator
 
         acc = _EventAccumulator()
         wf, scheduler, writer, scanner, _ = _make_watcher()

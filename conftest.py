@@ -111,8 +111,8 @@ def _close_qt_widgets_after_test():
 def _cleanup_background_resources():
     yield
     try:
-        from wafer.app.indexer.dispatcher import CollectorDispatcher
-        from wafer.app.indexer.parser_dispatcher import ParserDispatcher
+        from wafer.app.indexer.dispatch.collector_dispatcher import CollectorDispatcher
+        from wafer.app.indexer.dispatch.parser_dispatcher import ParserDispatcher
 
         CollectorDispatcher.reset_singleton_state()
         ParserDispatcher.reset_singleton_state()

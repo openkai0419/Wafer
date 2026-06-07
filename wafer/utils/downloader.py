@@ -1,4 +1,5 @@
 import json
+import importlib
 import os
 import shutil
 import subprocess
@@ -127,7 +128,7 @@ def _move_members_into(temp_dir: str, target_dir: str, members_set: set[str]) ->
 
 
 def _extract_7z_py7zr(archive_path: str, target_dir: str, members_set: set[str]) -> None:
-    import py7zr
+    py7zr = importlib.import_module("py7zr")
 
     temp_dir = tempfile.mkdtemp()
     try:

@@ -8,7 +8,7 @@ from wafer.utils.hashes import fast_signature_hash
 from wafer.core.db.file_db import FileDB
 from wafer.core.db.query import FileSearchEngine, SearchQuery
 from wafer.plugin.collector.handler import collector_resolver
-from wafer.app.indexer.collector_receiver import _parse_batch
+from wafer.app.indexer.receivers.collector_receiver import _parse_batch
 from wafer.app.indexer.db_writer import DatabaseWriter
 from test_support.scan_harness import ScanHarness
 

@@ -1,11 +1,11 @@
 import py_compile
 from unittest.mock import MagicMock, patch
 
-from wafer.app.indexer.parser_dispatcher import ParserDispatcher, _DISPATCH_INTERVAL
+from wafer.app.indexer.dispatch.parser_dispatcher import ParserDispatcher, _DISPATCH_INTERVAL
 
 
 def test_compile():
-    py_compile.compile("wafer/app/indexer/parser_dispatcher.py")
+    py_compile.compile("wafer/app/indexer/dispatch/parser_dispatcher.py")
 
 
 def test_constants():
@@ -21,7 +21,7 @@ def test_terminate_parsers_requests_shutdown_before_fallback(tmp_path):
     dispatcher._node = MagicMock()
 
     with patch.object(dispatcher, "_wait_parser_stopped", return_value=False), patch(
-        "wafer.app.indexer.parser_dispatcher.AppProcess.terminate_cmd"
+        "wafer.app.indexer.dispatch.parser_dispatcher.AppProcess.terminate_cmd"
     ) as terminate_cmd:
         dispatcher._terminate_parsers()
 
@@ -43,7 +43,7 @@ def test_terminate_parsers_skips_fallback_when_graceful_stop_succeeds(tmp_path):
     dispatcher._node = MagicMock()
 
     with patch.object(dispatcher, "_wait_parser_stopped", return_value=True), patch(
-        "wafer.app.indexer.parser_dispatcher.AppProcess.terminate_cmd"
+        "wafer.app.indexer.dispatch.parser_dispatcher.AppProcess.terminate_cmd"
     ) as terminate_cmd:
         dispatcher._terminate_parsers()
 

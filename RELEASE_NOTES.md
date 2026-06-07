@@ -2,6 +2,19 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.7.2]
+
+This release improves Windows integration and makes background rescans recover more reliably.
+
+### Highlights
+- Viewer windows launched from Wafer now keep the correct Windows taskbar identity, so grouping and relaunch behavior stay aligned with the portable launcher.
+
+### Improvements
+- Portable packages no longer include test-only project files, and the bundled license materials are organized as a short project notice plus the full license texts and third-party notices.
+
+### Fixes
+- Idle rescans now refresh filesystem watches before rescanning and run more frequently, improving recovery when folder changes were missed after watcher state became stale.
+
 ## [v0.7.1]
 
 This release refreshes metadata browsing and improves stability for long-running metadata indexing.

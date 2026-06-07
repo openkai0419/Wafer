@@ -3,7 +3,7 @@ import threading
 from unittest.mock import MagicMock, patch
 
 from wafer.app.indexer.main_indexer import IndexerProcess
-from wafer.app.indexer.task import TaskPriority
+from wafer.app.indexer.runtime.task import TaskPriority
 
 
 def test_compile():
@@ -11,7 +11,7 @@ def test_compile():
 
 
 def test_compile_collector_receiver():
-    py_compile.compile("wafer/app/indexer/collector_receiver.py")
+    py_compile.compile("wafer/app/indexer/receivers/collector_receiver.py")
 
 
 def test_compile_scanner():
@@ -138,6 +138,21 @@ class TestPeriodicBackfill:
         proc = IndexerProcess("test")
         proc.scanner = None
         proc._request_backfill()
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_request_idle_rescan_delegates_to_watcher_refresh(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        proc.folder_watcher = MagicMock()
+        proc._request_idle_rescan()
+        proc.folder_watcher.refresh_watch.assert_called_once()
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_request_idle_rescan_without_watcher(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        proc.folder_watcher = None
+        proc._request_idle_rescan()
 
 
 class TestIdleProgressReset:

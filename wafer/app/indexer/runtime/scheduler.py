@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from queue import Empty, PriorityQueue
 from collections.abc import Callable
 
-from ...utils.logs import AppLogger
+from ....utils.logs import AppLogger
 from .task import CancelToken, Task, TaskPriority
 
 _QUEUE_POLL_INTERVAL = 1.0

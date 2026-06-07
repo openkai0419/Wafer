@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from ...core.platform.process import AppProcess
+from ....core.platform.process import AppProcess
 
 WORKER_SHUTDOWN_TIMEOUT = 5.0
 WORKER_SHUTDOWN_POLL_INTERVAL = 0.1

@@ -1,7 +1,7 @@
 import py_compile
 import threading
 
-from wafer.app.indexer.progress_notifier import ProgressAggregator
+from wafer.app.indexer.runtime.progress_aggregator import ProgressAggregator
 
 
 class _StubNode:
@@ -16,7 +16,7 @@ class _StubNode:
 
 
 def test_compile():
-    py_compile.compile("wafer/app/indexer/progress_notifier.py")
+    py_compile.compile("wafer/app/indexer/runtime/progress_aggregator.py")
 
 
 def test_add_increments():

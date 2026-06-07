@@ -1,7 +1,7 @@
 import py_compile
 import time
 
-from wafer.app.indexer._parse_utils import (
+from wafer.app.indexer.receivers._batch_utils import (
     BATCH_SIZE,
     FLUSH_DELAY,
     ResultBuffer,
@@ -11,7 +11,7 @@ from wafer.app.indexer._parse_utils import (
 
 
 def test_compile():
-    py_compile.compile("wafer/app/indexer/_parse_utils.py")
+    py_compile.compile("wafer/app/indexer/receivers/_batch_utils.py")
 
 
 def test_constants():

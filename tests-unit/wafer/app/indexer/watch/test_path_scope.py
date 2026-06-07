@@ -1,10 +1,10 @@
 import py_compile
 
-from wafer.app.indexer.path_scope import contains_path_prefix, normalize_prefixes
+from wafer.app.indexer.watch.path_scope import contains_path_prefix, normalize_prefixes
 
 
 def test_compile():
-    py_compile.compile("wafer/app/indexer/path_scope.py")
+    py_compile.compile("wafer/app/indexer/watch/path_scope.py")
 
 
 def test_contains_path_prefix_boundary():

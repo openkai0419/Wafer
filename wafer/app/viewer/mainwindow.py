@@ -38,6 +38,7 @@ from ...core.state import StateStore
 from ...ui.window import WindowStateController
 from ...core.qt.dispatcher import Dispatcher, CancelToken
 from ...core.qt.thread import utility_pool
+from ...core.platform.taskbar import apply_window_identity
 
 AppMenuRegistrar.setup_menu()
 
@@ -77,6 +78,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setup_ui()
         self._show_loading()
         self._acquire_slot_async(slot_id)
+        apply_window_identity(self.winId())
 
     def _acquire_slot_async(self, requested_id):
         store = self._workspace_store

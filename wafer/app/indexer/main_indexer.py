@@ -183,7 +183,7 @@ class IndexerProcess:
         self.scheduler.add_periodic_task(
             PeriodicTask(
                 name="idle_rescan",
-                interval=60 * 60 * 1.0,
+                interval=60 * 30 * 1.0,
                 idle_delay=60 * 5.0,
                 create_task=lambda: Task.create(
                     "idle_rescan",
@@ -234,7 +234,7 @@ class IndexerProcess:
 
     def _request_idle_rescan(self):
         if self.folder_watcher:
-            self.folder_watcher.rescan_all()
+            self.folder_watcher.refresh_watch()
 
     def rescan(self):
         if self.folder_watcher:

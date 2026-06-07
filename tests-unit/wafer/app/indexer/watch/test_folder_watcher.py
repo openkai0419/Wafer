@@ -1,7 +1,7 @@
 import py_compile
 import queue
 import time
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, call, patch
 
 
 def test_compile():
@@ -267,6 +267,48 @@ def test_exec_cleanup():
     assert scheduler.submit.called
     task = scheduler.submit.call_args[0][0]
     assert task.name == "delete_orphans"
+
+
+@patch("wafer.app.indexer.watch.folder_watcher.Observer")
+def test_start_reuses_observer_setup_and_rescans(mock_observer_cls, tmp_path):
+    from wafer.app.indexer.watch.path_scope import normalize_prefixes
+
+    existing = tmp_path / "watched"
+    existing.mkdir()
+    missing = tmp_path / "missing"
+    wf, *_ = _make_watcher()
+    wf.rescan_all = MagicMock()
+
+    wf.start([str(existing), str(missing)])
+
+    observer = mock_observer_cls.return_value
+    observer.schedule.assert_called_once_with(wf._emitter, str(existing), recursive=True)
+    observer.start.assert_called_once()
+    assert wf._watch_roots == [str(existing), str(missing)]
+    assert wf._folders == normalize_prefixes([str(existing), str(missing)])
+    wf.rescan_all.assert_called_once()
+
+
+def test_refresh_restarts_observer_and_rescans():
+    from wafer.app.indexer.watch.folder_watcher import FolderWatcher
+
+    scheduler = MagicMock()
+    writer = MagicMock()
+    scanner = MagicMock()
+    progress = MagicMock()
+    wf = FolderWatcher(scheduler, writer, scanner, progress)
+    wf._folders = ["/watched"]
+    wf._watch_roots = ["/watched"]
+    wf._start_observer = MagicMock()
+    wf._exec = MagicMock()
+
+    wf.refresh_watch()
+    wf._q.put(("__stop__", None))
+    wf._worker.join(timeout=1.0)
+
+    assert not wf._worker.is_alive()
+    wf._start_observer.assert_called_once_with()
+    wf._exec.assert_called_once_with("rescan", ["/watched"])
 
 
 class TestExtractStable:

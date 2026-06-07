@@ -1,4 +1,94 @@
 {
+  "Confirm": {
+    "en": "Confirm"
+  },
+  "Drop Target Required": {
+    "en": "Drop Target Required"
+  },
+  "Drop to the selected FolderTree folder?\n  {path}": {
+    "en": "Drop to the selected FolderTree folder?\n  {path}"
+  },
+  "Execute": {
+    "en": "Execute"
+  },
+  "OK": {
+    "en": "OK"
+  },
+  "Operation cancelled ({count} completed)": {
+    "en": "Operation cancelled ({count} completed)"
+  },
+  "Options": {
+    "en": "Options"
+  },
+  "Reset": {
+    "en": "Reset"
+  },
+  "Select a folder in FolderTree before dropping without a grid target.": {
+    "en": "Select a folder in FolderTree before dropping without a grid target."
+  },
+  "direction": {
+    "en": "direction"
+  },
+  "pages": {
+    "en": "pages"
+  },
+  "Move": {
+    "en": "Move"
+  },
+  "Blacklist (block selected)": {
+    "en": "Blacklist (block selected)"
+  },
+  "Block": {
+    "en": "Block"
+  },
+  "Check All": {
+    "en": "Check All"
+  },
+  "Click a key to see sample values": {
+    "en": "Click a key to see sample values"
+  },
+  "Count": {
+    "en": "Count"
+  },
+  "Drop a file here to preview ExifTool tags": {
+    "en": "Drop a file here to preview ExifTool tags"
+  },
+  "Filter Mode:": {
+    "en": "Filter Mode:"
+  },
+  "Filter keys...": {
+    "en": "Filter keys..."
+  },
+  "Key": {
+    "en": "Key"
+  },
+  "Key Browser": {
+    "en": "Key Browser"
+  },
+  "Sample Preview": {
+    "en": "Sample Preview"
+  },
+  "Value": {
+    "en": "Value"
+  },
+  "Whitelist (use selected only)": {
+    "en": "Whitelist (use selected only)"
+  },
+  "(empty)": {
+    "en": "(empty)"
+  },
+  "Aa": {
+    "en": "Aa"
+  },
+  "Enter regex pattern...": {
+    "en": "Enter regex pattern..."
+  },
+  "Ignore this folder": {
+    "en": "Ignore this folder"
+  },
+  "Moving files...": {
+    "en": "Moving files..."
+  },
   " Filter ": {
     "en": " Filter "
   },

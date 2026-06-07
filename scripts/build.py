@@ -70,8 +70,6 @@ RUNTIME_PACKAGES = ROOT_REQUIREMENT_PACKAGES | NOTICE_ONLY_RUNTIME_PACKAGES
 SOURCE_ITEMS = [
     "wafer",
     "main.py",
-    "conftest.py",
-    "pyproject.toml",
 ]
 
 RESOURCE_ITEMS = [

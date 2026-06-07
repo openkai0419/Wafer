@@ -13,6 +13,9 @@ This release refreshes metadata browsing and improves stability for long-running
 ### Improvements
 - Long-running metadata extraction and AI parsing now use extension-specific worker limits and timeout windows, which reduces premature interruptions during heavier indexing jobs.
 
+### Notes
+- Portable packages are now a little leaner: test-only configuration files are no longer bundled, while license materials are organized so the Wafer notice, full LGPL and GPL texts, and third-party notices stay clearly separated.
+
 ### Fixes
 - Background maintenance now waits more carefully for active metadata workers, reducing idle-time interference while larger indexing tasks are still running.
 

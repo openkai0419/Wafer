@@ -4,11 +4,18 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.7.2]
+### Changed
+- **Windows taskbar relaunch behavior**: viewer windows now set the correct Windows relaunch identity when opened from the bundled launcher so taskbar grouping and relaunch actions stay tied to Wafer.
+- **Portable package contents**: portable builds no longer bundle test-only project files, and the root `LICENSE` file is now a short project notice that points to `COPYING`, `COPYING.LESSER`, and bundled third-party notices instead of embedding the full LGPL text.
+
+### Fixed
+- **Watched-folder rescan recovery**: idle rescans now refresh filesystem watches before rescanning and run more frequently, helping Wafer recover sooner if a folder watcher stops reporting changes.
+
 ## [v0.7.1]
 ### Changed
 - **Metadata panel workflow**: tag and metadata cards now share a searchable list UI with dialog-based editing, and EXIF or media metadata sections use the same editable key-value flow instead of separate read-only panels.
 - **Collector and parser execution tuning**: worker counts and batch timeouts are now configured per plugin, and indexer idle maintenance waits for the longest active child timeout before treating the pipeline as idle.
-- **Portable package contents**: portable builds no longer bundle test-only pytest configuration files, and the shipped license documents now separate the Wafer notice from the canonical LGPL and GPL texts plus bundled third-party notices.
 
 ### Fixed
 - **Long-running indexing stability**: heavy metadata collectors and parsers no longer rely on one-size-fits-all worker timeouts, reducing premature batch cancellations during larger or slower metadata jobs.

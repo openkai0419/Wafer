@@ -2,6 +2,19 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.7.2]
+
+This release improves Windows integration and makes background rescans recover more reliably.
+
+### Highlights
+- Viewer windows launched from Wafer now keep the correct Windows taskbar identity, so grouping and relaunch behavior stay aligned with the portable launcher.
+
+### Improvements
+- Portable packages no longer include test-only project files, and the bundled license materials are organized as a short project notice plus the full license texts and third-party notices.
+
+### Fixes
+- Idle rescans now refresh filesystem watches before rescanning and run more frequently, improving recovery when folder changes were missed after watcher state became stale.
+
 ## [v0.7.1]
 
 This release refreshes metadata browsing and improves stability for long-running metadata indexing.
@@ -12,9 +25,6 @@ This release refreshes metadata browsing and improves stability for long-running
 
 ### Improvements
 - Long-running metadata extraction and AI parsing now use extension-specific worker limits and timeout windows, which reduces premature interruptions during heavier indexing jobs.
-
-### Notes
-- Portable packages are now a little leaner: test-only configuration files are no longer bundled, while license materials are organized so the Wafer notice, full LGPL and GPL texts, and third-party notices stay clearly separated.
 
 ### Fixes
 - Background maintenance now waits more carefully for active metadata workers, reducing idle-time interference while larger indexing tasks are still running.

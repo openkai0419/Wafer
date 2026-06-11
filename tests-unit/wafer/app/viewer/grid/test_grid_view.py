@@ -867,3 +867,130 @@ class TestRecalcLayoutEmptyGuard:
         gv.layout_started.connect(lambda: signals.append("started"))
         gv._recalc_layout()
         assert "started" in signals
+
+
+class TestScrollRestoreOnUpdate:
+    @pytest.fixture(autouse=True)
+    def _import(self, qtbot):
+        from wafer.app.viewer.grid.grid_view import GridView
+
+        self.GridView = GridView
+
+    def _make_layout(self, n, item_h=100, width=800):
+        from wafer.plugin.layout.calc import LayoutData
+
+        rects = [QtCore.QRectF(0, i * item_h, width, item_h) for i in range(n)]
+        return LayoutData(rects, n * item_h, True)
+
+    def _prepare(self, gv, qtbot, n=20):
+        qtbot.addWidget(gv)
+        gv._pipeline.schedule_render = MagicMock()
+        gv._pipeline.request_layout = MagicMock()
+        gv.resize(800, 600)
+        gv.show()
+        QtWidgets.QApplication.processEvents()
+        paths = [f"/img/{i}.png" for i in range(n)]
+        gv.items.set_items(paths, ["s"] * n, [1.0] * n)
+        gv._on_layout_ready(self._make_layout(n))
+        QtWidgets.QApplication.processEvents()
+        return paths
+
+    def _do_update(self, gv, paths, layout):
+        gv.set_paths(paths, ["s"] * len(paths), [1.0] * len(paths))
+        gv._on_layout_ready(layout)
+        QtWidgets.QApplication.processEvents()
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_default_is_off(self, mock_resolver, qtbot):
+        gv = self.GridView(MagicMock())
+        qtbot.addWidget(gv)
+        assert gv.follow_selection_on_update is False
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_setter_toggles_flag(self, mock_resolver, qtbot):
+        gv = self.GridView(MagicMock())
+        qtbot.addWidget(gv)
+        gv.set_follow_selection_on_update(True)
+        assert gv.follow_selection_on_update is True
+        gv.set_follow_selection_on_update(False)
+        assert gv.follow_selection_on_update is False
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_off_preserves_scroll_position(self, mock_resolver, qtbot):
+        gv = self.GridView(MagicMock())
+        paths = self._prepare(gv, qtbot, 20)
+        bar = gv._primary_bar()
+        bar.setValue(700)
+        QtWidgets.QApplication.processEvents()
+        self._do_update(gv, paths + ["/img/extra.png"], self._make_layout(21))
+        assert gv._primary_bar().value() == 700
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_off_follows_to_bottom_when_at_end(self, mock_resolver, qtbot):
+        gv = self.GridView(MagicMock())
+        paths = self._prepare(gv, qtbot, 20)
+        bar = gv._primary_bar()
+        bar.setValue(bar.maximum())
+        QtWidgets.QApplication.processEvents()
+        new_paths = paths + [f"/img/extra{i}.png" for i in range(10)]
+        self._do_update(gv, new_paths, self._make_layout(30))
+        bar2 = gv._primary_bar()
+        assert bar2.maximum() > 0
+        assert bar2.value() == bar2.maximum()
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_on_follows_selection(self, mock_resolver, qtbot):
+        gv = self.GridView(MagicMock())
+        paths = self._prepare(gv, qtbot, 20)
+        gv.set_follow_selection_on_update(True)
+        gv.items.set_selected([10])
+        gv._primary_bar().setValue(0)
+        QtWidgets.QApplication.processEvents()
+        self._do_update(gv, paths + ["/img/extra.png"], self._make_layout(21))
+        assert gv.get_center_image_index() == 10
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_on_without_selection_preserves_scroll(self, mock_resolver, qtbot):
+        gv = self.GridView(MagicMock())
+        paths = self._prepare(gv, qtbot, 20)
+        gv.set_follow_selection_on_update(True)
+        bar = gv._primary_bar()
+        bar.setValue(700)
+        QtWidgets.QApplication.processEvents()
+        self._do_update(gv, paths + ["/img/extra.png"], self._make_layout(21))
+        assert gv._primary_bar().value() == 700
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_pending_scroll_index_takes_priority(self, mock_resolver, qtbot):
+        gv = self.GridView(MagicMock())
+        paths = self._prepare(gv, qtbot, 20)
+        gv._primary_bar().setValue(700)
+        QtWidgets.QApplication.processEvents()
+        gv.set_pending_scroll_index(5)
+        self._do_update(gv, paths + ["/img/extra.png"], self._make_layout(21))
+        assert gv.get_center_image_index() == 5
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_zoom_keeps_center_when_off(self, mock_resolver, qtbot):
+        gv = self.GridView(MagicMock())
+        self._prepare(gv, qtbot, 20)
+        gv._primary_bar().setValue(700)
+        QtWidgets.QApplication.processEvents()
+        center_before = gv.get_center_image_index()
+        assert center_before is not None
+        gv._capture_center_path()
+        gv._on_layout_ready(self._make_layout(20, item_h=160))
+        QtWidgets.QApplication.processEvents()
+        assert gv.get_center_image_index() == center_before
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_debounce_recalc_captures_center(self, mock_resolver, qtbot):
+        gv = self.GridView(MagicMock())
+        self._prepare(gv, qtbot, 20)
+        gv._primary_bar().setValue(700)
+        QtWidgets.QApplication.processEvents()
+        gv._restore_scroll_path = None
+        gv._recalc_layout = MagicMock()
+        type(gv)._debounce_recalc_layout.__wrapped__(gv)
+        assert gv._restore_scroll_path is not None
+        gv._recalc_layout.assert_called_once()

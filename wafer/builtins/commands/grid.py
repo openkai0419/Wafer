@@ -84,6 +84,11 @@ def _scroll_anchor_checked(anchor: str):
     return g is not None and getattr(g, "scroll_anchor", "center") == anchor
 
 
+def _scroll_follow_checked():
+    g = _grid()
+    return g is not None and getattr(g, "follow_selection_on_update", False)
+
+
 class GridViewCommands(ActionKit.MenuBase):
     NAME = "GridView"
     PRIORITY = 40
@@ -351,6 +356,11 @@ class GridViewCommands(ActionKit.MenuBase):
         GridViewCommands.get_view(ctx).set_scroll_anchor("center")
 
     @staticmethod
+    def toggle_scroll_follow_selection(ctx):
+        view = GridViewCommands.get_view(ctx)
+        view.set_follow_selection_on_update(not getattr(view, "follow_selection_on_update", False))
+
+    @staticmethod
     def set_orientation_z(ctx):
         GridViewCommands.get_view(ctx).set_orientation(0)
 
@@ -459,6 +469,14 @@ class GridViewCommands(ActionKit.MenuBase):
                 display="Toggle cell overlay",
                 func=cls.toggle_cell_overlay,
                 params=[ActionKit.Param(name="name", value="", required=True)],
+            ),
+            ActionKit.Command(
+                path="grid.toggle_scroll_follow_selection",
+                display="Scroll to selection on update",
+                func=cls.toggle_scroll_follow_selection,
+                checkable=True,
+                default_checked=False,
+                checked_resolver=_scroll_follow_checked,
             ),
             "Scroll Anchor/:Scroll Anchor",
             ActionKit.Command(

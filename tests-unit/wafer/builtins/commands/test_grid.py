@@ -120,3 +120,33 @@ class TestRadioCommandsHaveResolvers:
         for c in anchor_cmds:
             assert c.checked_resolver is not None
             assert c.action_group == "grid_scroll_anchor"
+
+
+class TestFollowSelectionCommand:
+    def _cmd(self):
+        from wafer.builtins.commands.grid import GridViewCommands
+
+        for c in GridViewCommands.commands():
+            if getattr(c, "path", None) == "grid.toggle_scroll_follow_selection":
+                return c
+        return None
+
+    def test_command_registered_checkable_with_resolver(self):
+        cmd = self._cmd()
+        assert cmd is not None
+        assert cmd.checkable is True
+        assert cmd.default_checked is False
+        assert cmd.checked_resolver is not None
+
+    def test_toggle_flips_view_flag(self):
+        from unittest.mock import MagicMock
+        from wafer.builtins.commands.grid import GridViewCommands
+
+        ctx = MagicMock()
+        view = MagicMock()
+        view.follow_selection_on_update = False
+        ctx.get_instance.return_value = view
+
+        GridViewCommands.toggle_scroll_follow_selection(ctx)
+
+        view.set_follow_selection_on_update.assert_called_once_with(True)

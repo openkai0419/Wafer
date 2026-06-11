@@ -439,6 +439,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "layout_mode": self.grid_view.layout_mode,
             "scroll_index": self.grid_view.get_center_image_index(),
             "scroll_anchor": self.grid_view.scroll_anchor,
+            "follow_selection_on_update": self.grid_view.follow_selection_on_update,
         }
 
     def _restore_grid(self, state):
@@ -459,6 +460,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.grid_view.set_scroll_anchor("top")
             elif anchor == "grid.scroll_anchor_center":
                 self.grid_view.set_scroll_anchor("center")
+        follow = state.get("follow_selection_on_update")
+        if isinstance(follow, bool):
+            self.grid_view.set_follow_selection_on_update(follow)
         if "zoom" in state:
             self.grid_view.layout_ready.connect(self._clear_zoom_restore_guard, QtCore.Qt.SingleShotConnection)
 

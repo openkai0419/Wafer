@@ -327,7 +327,8 @@ def test_rename_paths_single_file(tmp_path):
         [("hash1", "rating", "5", 5.0)],
     )
     db.insert_pending_collection(["c:/old/img.jpg"], ["exif"])
-    db.rename_paths([("c:/old/img.jpg", "c:/new/img.jpg")])
+    missing = db.rename_paths([("c:/old/img.jpg", "c:/new/img.jpg")])
+    assert missing == []
     assert db.read_conn.execute("SELECT COUNT(*) FROM sources WHERE source='c:/old/img.jpg'").fetchone()[0] == 0
     src_row = db.read_conn.execute("SELECT file_hash, size FROM sources WHERE source='c:/new/img.jpg'").fetchone()
     assert src_row == ("hash1", 100)
@@ -450,7 +451,8 @@ def test_rename_paths_nonexistent_source(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
     db.initialize_database()
-    db.rename_paths([("c:/nonexistent.jpg", "c:/new.jpg")])
+    missing = db.rename_paths([("c:/nonexistent.jpg", "c:/new.jpg")])
+    assert missing == ["c:/new.jpg"]
     assert db.read_conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 0
     db.close()
 

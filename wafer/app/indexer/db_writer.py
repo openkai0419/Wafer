@@ -40,9 +40,10 @@ class DatabaseWriter:
         self._db.try_checkpoint("PASSIVE")
 
     @profiler.profile
-    def rename_paths(self, pairs: Sequence[tuple[str, str]]):
-        self._db.rename_paths(pairs)
+    def rename_paths(self, pairs: Sequence[tuple[str, str]]) -> list[str]:
+        missing = self._db.rename_paths(pairs)
         self._db.try_checkpoint("PASSIVE")
+        return missing
 
     @profiler.profile
     def infer_moved_sources(self, deleted_paths: Sequence[str], candidate_paths: Sequence[str]) -> list[tuple[str, str]]:

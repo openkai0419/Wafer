@@ -1,4 +1,25 @@
 {
+  "axis": {
+    "en": "axis"
+  },
+  "by_display_count": {
+    "en": "by_display_count"
+  },
+  "invert": {
+    "en": "invert"
+  },
+  "loop": {
+    "en": "loop"
+  },
+  "step": {
+    "en": "step"
+  },
+  "Scroll to selection on update": {
+    "en": "Scroll to selection on update"
+  },
+  "Remove from view": {
+    "en": "Remove from view"
+  },
   "Confirm": {
     "en": "Confirm"
   },

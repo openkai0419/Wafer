@@ -1,4 +1,4 @@
-from ...core.commands.bridge import ActionKit
+from ...core.commands.bridge import ActionKit, Command as BridgeCommand
 from ...core.commands.command.require import require
 from ...core.commands.binding.instance_registry import InstanceRegistry
 from ...app.viewer.preview.file_list_provider import ListMode
@@ -50,17 +50,17 @@ def _nav_direction(local_pos, center, axis: str = "left/right", invert: bool = F
 
 
 @require(fv="FileViewerController")
-def next_file(ctx, fv, step: int = 1, loop: bool = False):
-    fv.navigate_next(step=int(step), loop=bool(loop), origin="command")
+def next_file(ctx, fv, step: int = 1, loop: bool = False, by_display_count: bool = False):
+    fv.navigate_next(step=int(step), loop=bool(loop), by_display_count=bool(by_display_count), origin="command")
 
 
 @require(fv="FileViewerController")
-def prev_file(ctx, fv, step: int = 1, loop: bool = False):
-    fv.navigate_prev(step=int(step), loop=bool(loop), origin="command")
+def prev_file(ctx, fv, step: int = 1, loop: bool = False, by_display_count: bool = False):
+    fv.navigate_prev(step=int(step), loop=bool(loop), by_display_count=bool(by_display_count), origin="command")
 
 
 @require(fv="FileViewerController")
-def navigate_file_by_mouse_position(ctx, fv, axis: str = "left/right", invert: bool = False, loop: bool = False):
+def navigate_file_by_mouse_position(ctx, fv, axis: str = "left/right", invert: bool = False, loop: bool | None = None):
     widget = getattr(ctx, "_widget", None)
     global_pos = getattr(ctx, "global_pos", None)
     if widget is None or global_pos is None or not hasattr(widget, "rect") or not hasattr(widget, "mapFromGlobal"):
@@ -69,9 +69,9 @@ def navigate_file_by_mouse_position(ctx, fv, axis: str = "left/right", invert: b
     local_pos = widget.mapFromGlobal(global_pos)
     direction = _nav_direction(local_pos, widget.rect().center(), axis=axis, invert=bool(invert))
     if direction == "next":
-        fv.navigate_next(step=1, loop=bool(loop), origin="mouse")
+        BridgeCommand.invoke("fv.next_file", ctx=ctx)
         return
-    fv.navigate_prev(step=1, loop=bool(loop), origin="mouse")
+    BridgeCommand.invoke("fv.prev_file", ctx=ctx)
 
 
 @require(fv="FileViewerController")
@@ -163,13 +163,21 @@ class FileViewerCommands(ActionKit.MenuBase):
                 path="fv.prev_file",
                 display="Prev File",
                 func=prev_file,
-                params=[ActionKit.Param(name="step", value=1), ActionKit.Param(name="loop", value=False)],
+                params=[
+                    ActionKit.Param(name="step", value=1),
+                    ActionKit.Param(name="loop", value=False),
+                    ActionKit.Param(name="by_display_count", value=False),
+                ],
             ),
             ActionKit.Command(
                 path="fv.next_file",
                 display="Next File",
                 func=next_file,
-                params=[ActionKit.Param(name="step", value=1), ActionKit.Param(name="loop", value=False)],
+                params=[
+                    ActionKit.Param(name="step", value=1),
+                    ActionKit.Param(name="loop", value=False),
+                    ActionKit.Param(name="by_display_count", value=False),
+                ],
             ),
             ActionKit.Command(
                 path="fv.navigate_file_by_mouse_position",
@@ -178,7 +186,6 @@ class FileViewerCommands(ActionKit.MenuBase):
                 params=[
                     ActionKit.Param(name="axis", value=("left/right", "up/down"), default="left/right"),
                     ActionKit.Param(name="invert", value=False),
-                    ActionKit.Param(name="loop", value=False),
                 ],
             ),
             "-",

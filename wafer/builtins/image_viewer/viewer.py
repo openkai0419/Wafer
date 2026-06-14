@@ -53,9 +53,6 @@ class ImageViewer(MultiWidgetViewerPlugin):
     def image_spread_direction(self) -> str:
         return self._direction
 
-    def navigation_cache_key(self) -> tuple[int, str]:
-        return (self._display_count, self._direction)
-
     def set_image_spread(self, pages: int = 1, direction: str = "right-to-left"):
         pages = max(1, min(int(pages), 16))
         direction = direction if direction in _IMAGE_SPREAD_DIRECTIONS else "right-to-left"

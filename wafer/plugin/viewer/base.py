@@ -65,9 +65,6 @@ class WidgetViewerPlugin(BasePlugin):
     def set_autoplay(self, advance: Callable[[], None] | None) -> bool:
         return False
 
-    def navigation_cache_key(self) -> object:
-        return None
-
     def save_ui_state(self) -> dict[str, Any]:
         return {}
 

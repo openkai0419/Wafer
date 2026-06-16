@@ -1,4 +1,94 @@
 {
+  "align": {
+    "en": "align"
+  },
+  "Add Column": {
+    "en": "Add Column"
+  },
+  "BatchRenamer": {
+    "en": "BatchRenamer"
+  },
+  "Contain": {
+    "en": "Contain"
+  },
+  "Cover": {
+    "en": "Cover"
+  },
+  "Datetime": {
+    "en": "Datetime"
+  },
+  "Find": {
+    "en": "Find"
+  },
+  "Left thumbnail fit": {
+    "en": "Left thumbnail fit"
+  },
+  "Meta (Raw)": {
+    "en": "Meta (Raw)"
+  },
+  "Remove \"{filename}\"": {
+    "en": "Remove \"{filename}\""
+  },
+  "Remove column": {
+    "en": "Remove column"
+  },
+  "Restore selected override(s)": {
+    "en": "Restore selected override(s)"
+  },
+  "Right thumbnail fit": {
+    "en": "Right thumbnail fit"
+  },
+  "Row thumbnail opacity": {
+    "en": "Row thumbnail opacity"
+  },
+  "Select files and run Batch Renamer\nor drop files here": {
+    "en": "Select files and run Batch Renamer\nor drop files here"
+  },
+  "Select folder": {
+    "en": "Select folder"
+  },
+  "Selected thumbnail opacity": {
+    "en": "Selected thumbnail opacity"
+  },
+  "Sequential": {
+    "en": "Sequential"
+  },
+  "prefix": {
+    "en": "prefix"
+  },
+  "suffix": {
+    "en": "suffix"
+  },
+  "text": {
+    "en": "text"
+  },
+  "Alt +": {
+    "en": "Alt +"
+  },
+  "Ctrl +": {
+    "en": "Ctrl +"
+  },
+  "Mouse Actions:": {
+    "en": "Mouse Actions:"
+  },
+  "Mouse Bindings": {
+    "en": "Mouse Bindings"
+  },
+  "Override": {
+    "en": "Override"
+  },
+  "Reset to Defaults": {
+    "en": "Reset to Defaults"
+  },
+  "Shift +": {
+    "en": "Shift +"
+  },
+  "{button} +": {
+    "en": "{button} +"
+  },
+  "★ No Modifier": {
+    "en": "★ No Modifier"
+  },
   "axis": {
     "en": "axis"
   },

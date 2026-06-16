@@ -28,12 +28,12 @@ def toggle_fit_mode(ctx, gv):
     gv.fit_in_view(padding=0.0)
 
 
-def set_image_spread(ctx, pages: int = 2, direction: str = "right-to-left"):
+def set_image_spread(ctx, pages: int = 2, direction: str = "right-to-left", match_size: bool = True):
     image_viewer = viewer_resolver.registry.instance(ImageViewer.NAME)
     if image_viewer is None or not hasattr(image_viewer, "set_image_spread"):
         AppLogger.warning("Image viewer plugin is not available; image spread was not changed")
         return
-    image_viewer.set_image_spread(pages=pages, direction=direction)
+    image_viewer.set_image_spread(pages=pages, direction=direction, match_size=match_size)
 
 
 @require(gv="ImageView")
@@ -109,6 +109,7 @@ class ImageViewCommands(ActionKit.MenuBase):
                 params=[
                     ActionKit.Param(name="pages", value=2, min_value=1, max_value=16),
                     ActionKit.Param(name="direction", value=("right-to-left", "left-to-right", "top-to-bottom", "bottom-to-top")),
+                    ActionKit.Param(name="match_size", value=True),
                 ],
             ),
         ]

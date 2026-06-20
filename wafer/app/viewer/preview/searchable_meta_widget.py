@@ -16,6 +16,7 @@ from ....core.commands.bridge import ActionKit, Menu
 from ....core.qt.dispatcher import Dispatcher, CancelSlot
 from ....core.qt.icon_engine import icon_draw, themed_icon
 from ....core.qt.thread import utility_pool
+from ....ui.dialogs import ConfirmDialog
 from .tag_edit_service import TagEditService
 
 SHORT_VALUE_LIMIT = 1000
@@ -260,22 +261,6 @@ class SearchKvDetailDialog(QtWidgets.QDialog):
         self.resize(dpix(820), dpix(560))
 
         layout = QtWidgets.QVBoxLayout(self)
-        top_bar = QtWidgets.QWidget(self)
-        top_layout = QtWidgets.QHBoxLayout(top_bar)
-        top_layout.setContentsMargins(0, 0, 0, dpix(4))
-        top_layout.setSpacing(dpix(6))
-
-        self.lock_check = QtWidgets.QCheckBox(t("Lock"), top_bar)
-        self.lock_check.setChecked(locked)
-        self.delete_btn = QtWidgets.QPushButton(t("Delete"), top_bar)
-        self.delete_btn.setIcon(themed_icon("cross", margin=0.12))
-        self.delete_btn.setVisible(not add_mode)
-        self.delete_btn.clicked.connect(self._on_delete_clicked)
-
-        top_layout.addWidget(self.lock_check)
-        top_layout.addStretch(1)
-        top_layout.addWidget(self.delete_btn)
-        layout.addWidget(top_bar)
 
         form = QtWidgets.QFormLayout()
         form.setContentsMargins(0, 0, 0, 0)
@@ -299,6 +284,12 @@ class SearchKvDetailDialog(QtWidgets.QDialog):
         button_layout.setContentsMargins(0, dpix(4), 0, 0)
         button_layout.setSpacing(dpix(6))
 
+        self.lock_check = QtWidgets.QCheckBox(t("Lock"), buttons)
+        self.lock_check.setChecked(locked)
+        self.delete_btn = QtWidgets.QPushButton(t("Delete"), buttons)
+        self.delete_btn.setIcon(themed_icon("cross", margin=0.12))
+        self.delete_btn.setVisible(not add_mode)
+        self.delete_btn.clicked.connect(self._on_delete_clicked)
         self.revert_btn = QtWidgets.QPushButton(t("Revert"), buttons)
         self.revert_btn.clicked.connect(self.revert)
         self.save_btn = QtWidgets.QPushButton(t("Save"), buttons)
@@ -306,6 +297,8 @@ class SearchKvDetailDialog(QtWidgets.QDialog):
         self.cancel_btn = QtWidgets.QPushButton(t("Cancel"), buttons)
         self.cancel_btn.clicked.connect(self.reject)
 
+        button_layout.addWidget(self.delete_btn)
+        button_layout.addWidget(self.lock_check)
         button_layout.addStretch(1)
         button_layout.addWidget(self.revert_btn)
         button_layout.addWidget(self.save_btn)
@@ -323,6 +316,15 @@ class SearchKvDetailDialog(QtWidgets.QDialog):
         pass
 
     def _on_delete_clicked(self):
+        delete_label = t("Delete")
+        result = ConfirmDialog.ask(
+            t('Delete metadata "{key}"?\nThis cannot be undone.', key=self._initial_key),
+            title=t("Delete metadata"),
+            buttons=(delete_label, t("Cancel")),
+            parent=self,
+        )
+        if result != delete_label:
+            return
         self._delete_requested = True
         self.accept()
 

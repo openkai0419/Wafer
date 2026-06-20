@@ -1,4 +1,43 @@
 {
+  "collected": {
+    "en": "collected"
+  },
+  "created": {
+    "en": "created"
+  },
+  "modified": {
+    "en": "modified"
+  },
+  "name": {
+    "en": "name"
+  },
+  "none": {
+    "en": "none"
+  },
+  "path": {
+    "en": "path"
+  },
+  "random": {
+    "en": "random"
+  },
+  "reverse": {
+    "en": "reverse"
+  },
+  "size": {
+    "en": "size"
+  },
+  "Create": {
+    "en": "Create"
+  },
+  "Create New": {
+    "en": "Create New"
+  },
+  "Enter a name for the new table": {
+    "en": "Enter a name for the new table"
+  },
+  "Please enter text...": {
+    "en": "Please enter text..."
+  },
   "align": {
     "en": "align"
   },
@@ -373,6 +412,12 @@
   },
   "Delete": {
     "en": "Delete"
+  },
+  "Delete metadata": {
+    "en": "Delete metadata"
+  },
+  "Delete metadata \"{key}\"?\nThis cannot be undone.": {
+    "en": "Delete metadata \"{key}\"?\nThis cannot be undone."
   },
   "Delete Path Preset": {
     "en": "Delete Path Preset"

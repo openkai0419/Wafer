@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from wafer.builtins.image_viewer.commands import ImageViewCommands, set_image_spread
+from wafer.builtins.image_viewer.commands import ImageViewCommands, set_image_spread, toggle_image_spread
 from wafer.builtins.image_viewer.viewer import ImageViewer
 
 
@@ -30,3 +30,38 @@ def test_image_spread_command_is_not_checkable():
 
     assert command.checkable is False
     assert command.checked_resolver is None
+
+
+def test_toggle_image_spread_enables_with_saved_settings():
+    image_viewer = MagicMock()
+    image_viewer.image_spread_enabled = False
+
+    with patch("wafer.builtins.image_viewer.commands.viewer_resolver") as mock_resolver, patch(
+        "wafer.builtins.image_viewer.commands.Command"
+    ) as mock_command:
+        mock_resolver.registry.instance.return_value = image_viewer
+        toggle_image_spread(MagicMock())
+
+    mock_command.invoke.assert_called_once_with("imgv.image_spread")
+    image_viewer.set_image_spread.assert_not_called()
+
+
+def test_toggle_image_spread_disables_to_single_page():
+    image_viewer = MagicMock()
+    image_viewer.image_spread_enabled = True
+
+    with patch("wafer.builtins.image_viewer.commands.viewer_resolver") as mock_resolver, patch(
+        "wafer.builtins.image_viewer.commands.Command"
+    ) as mock_command:
+        mock_resolver.registry.instance.return_value = image_viewer
+        toggle_image_spread(MagicMock())
+
+    image_viewer.set_image_spread.assert_called_once_with(pages=1)
+    mock_command.invoke.assert_not_called()
+
+
+def test_toggle_image_spread_command_is_checkable():
+    command = next(c for c in ImageViewCommands.commands() if getattr(c, "path", "") == "imgv.toggle_image_spread")
+
+    assert command.checkable is True
+    assert command.checked_resolver is not None

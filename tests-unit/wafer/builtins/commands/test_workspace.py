@@ -239,4 +239,5 @@ class TestWorkspaceCommands:
         assert "ws.show_filter_popup" in paths
         assert "ws.show_recent_popup" in paths
         assert "ws.rename_slot" in paths
+        assert "ws.reset_panel_layout" not in paths
         assert LayoutManager._command_id("Workspace") not in items

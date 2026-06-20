@@ -397,6 +397,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 return json.load(f)
         return {"mode": "locked", "tree": {"root": None, "floating": {}}}
 
+    def reset_panel_layout_to_default(self):
+        default_layout = self._load_default_layout()
+        self._layout_manager.reset_to_default(default_layout)
+        self._save_slot()
+
     def _on_layout_mode_changed(self, mode):
         from ...ui.layout.manager import MODE_EDIT
 

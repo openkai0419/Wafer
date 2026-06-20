@@ -300,15 +300,12 @@ class LayoutManager(QtCore.QObject):
             if entry and fs_dict:
                 entry.last_floating = FloatingState(**fs_dict)
 
-        extra_floating: dict[str, FloatingState] = {}
         for name in registered - saved_names - saved_dormant:
             entry = self._panels[name]
             if entry.has_visible_presence():
-                source = entry.floating_window or entry.dock_widget
-                fs = capture_floating_state(source)
+                fs = entry.last_floating or self._next_floating_position()
                 entry.last_floating = fs
-                extra_floating[name] = fs
-        self._tree.floating.update(extra_floating)
+                self._tree.floating[name] = fs
 
         old_floating: list[FloatingWindow] = []
         old_docks: list[PanelDockWidget] = []
@@ -362,6 +359,11 @@ class LayoutManager(QtCore.QObject):
 
         if old_mode != target_mode:
             self.mode_changed.emit(target_mode)
+
+    def reset_to_default(self, default_state: dict):
+        for entry in self._panels.values():
+            entry.last_floating = None
+        self.restore_state(default_state)
 
     def _to_edit_mode(self):
         self._sync_tree_from_current()

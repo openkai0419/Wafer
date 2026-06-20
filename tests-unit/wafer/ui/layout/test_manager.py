@@ -1664,3 +1664,95 @@ class TestToggleCommandCheckable:
         mgr.toggle_panel("dyn")
         _process()
         assert cmd_cls.meta.checked_resolver() is True
+
+
+class TestResetToDefault:
+    def test_reset_relocates_default_external_floating(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
+        _process()
+
+        entry = mgr._panels["dyn"]
+        assert entry.floating_window is not None
+        entry.floating_window.setGeometry(5000, 5000, 400, 300)
+        _process()
+
+        mgr.reset_to_default(_DEFAULT_STATE)
+        _process()
+
+        assert entry.floating_window is not None
+        assert "dyn" in mgr._tree.floating
+
+        geo = win.geometry()
+        fs = mgr._tree.floating["dyn"]
+        assert fs.x == geo.x() + geo.width() // 2 - 200
+        assert fs.y == geo.y() + geo.height() // 2 - 150
+
+    def test_reset_returns_floated_default_panel_to_dock(self, layout_env):
+        mgr, win, panels = layout_env
+        mgr.set_mode(MODE_EDIT)
+        _process()
+        mgr._panels["viewer"].dock_widget.close()
+        _process()
+        mgr.set_mode(MODE_LOCKED)
+        _process()
+        mgr.toggle_panel("viewer")
+        _process()
+        assert mgr._panels["viewer"].floating_window is not None
+        assert "viewer" in mgr._tree.floating
+
+        mgr.reset_to_default(_DEFAULT_STATE)
+        _process()
+
+        assert mgr._panels["viewer"].floating_window is None
+        assert "viewer" not in mgr._tree.floating
+        assert "viewer" in set(mgr._tree.docked_names())
+        assert mgr.is_panel_visible("viewer")
+
+    def test_reset_clears_last_floating(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
+        _process()
+        mgr._panels["dyn"].floating_window.setGeometry(5000, 5000, 400, 300)
+        _process()
+
+        mgr.toggle_panel("dyn")
+        _process()
+        assert mgr._panels["dyn"].last_floating.x == 5000
+
+        mgr.reset_to_default(_DEFAULT_STATE)
+        _process()
+
+        assert mgr._panels["dyn"].last_floating is None
+
+    def test_reset_cascades_multiple_external_floating(self, layout_env):
+        mgr, win, panels = layout_env
+        wa = _make_panel("dyn_a")
+        wb = _make_panel("dyn_b")
+        _register_floating(mgr, "dyn_a", wa)
+        _register_floating(mgr, "dyn_b", wb)
+        _process()
+
+        mgr.reset_to_default(_DEFAULT_STATE)
+        _process()
+
+        assert "dyn_a" in mgr._tree.floating
+        assert "dyn_b" in mgr._tree.floating
+        fa = mgr._tree.floating["dyn_a"]
+        fb = mgr._tree.floating["dyn_b"]
+        assert (fa.x, fa.y) != (fb.x, fb.y)
+
+    def test_reset_keeps_main_window_geometry(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
+        _process()
+
+        before = win.geometry()
+        mgr.reset_to_default(_DEFAULT_STATE)
+        _process()
+        after = win.geometry()
+
+        assert before == after

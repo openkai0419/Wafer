@@ -1,4 +1,55 @@
 {
+  "Check for updates": {
+    "en": "Check for updates"
+  },
+  "Check for updates on startup": {
+    "en": "Check for updates on startup"
+  },
+  "Checking for updates...": {
+    "en": "Checking for updates..."
+  },
+  "Current : {version}": {
+    "en": "Current : {version}"
+  },
+  "Go to Download": {
+    "en": "Go to Download"
+  },
+  "Go to download page": {
+    "en": "Go to download page"
+  },
+  "Latest : not checked": {
+    "en": "Latest : not checked"
+  },
+  "Latest : {version}": {
+    "en": "Latest : {version}"
+  },
+  "Published : -": {
+    "en": "Published : -"
+  },
+  "Published : {date}": {
+    "en": "Published : {date}"
+  },
+  "Remind Me Later": {
+    "en": "Remind Me Later"
+  },
+  "Remind me later": {
+    "en": "Remind me later"
+  },
+  "Skip automatic notification until the next version": {
+    "en": "Skip automatic notification until the next version"
+  },
+  "Skip until next version": {
+    "en": "Skip until next version"
+  },
+  "Up to Date": {
+    "en": "Up to Date"
+  },
+  "Reset Panel Layout": {
+    "en": "Reset Panel Layout"
+  },
+  "match_size": {
+    "en": "match_size"
+  },
   "collected": {
     "en": "collected"
   },

@@ -48,8 +48,13 @@ def _notify_solo_failed(name: str = ""):
 @require(w="MainWindow")
 def reset_panel_layout(ctx, *, w):
     w.reset_panel_layout_to_default()
-    Notifier.info("Panel layout reset")
     AppLogger.info(f"panel layout reset: slot={getattr(w, 'slot_id', '')}")
+
+
+@require(w="MainWindow")
+def reset_floating_position(ctx, *, w):
+    count = w.reset_floating_positions()
+    AppLogger.info(f"floating positions reset: count={count} slot={getattr(w, 'slot_id', '')}")
 
 
 @require(w="MainWindow")
@@ -107,6 +112,11 @@ class PanelCommands(ActionKit.MenuBase):
                 path="panel.reset_layout",
                 display=t("Reset Panel Layout"),
                 func=reset_panel_layout,
+            ),
+            ActionKit.Command(
+                path="panel.reset_floating",
+                display=t("Reset Floating Position"),
+                func=reset_floating_position,
             ),
             "-",
             ":Solo",

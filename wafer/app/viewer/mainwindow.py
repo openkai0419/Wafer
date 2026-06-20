@@ -402,6 +402,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._layout_manager.reset_to_default(default_layout)
         self._save_slot()
 
+    def reset_floating_positions(self):
+        count = self._layout_manager.reset_floating_positions()
+        if count:
+            self._save_slot()
+        return count
+
     def _on_layout_mode_changed(self, mode):
         from ...ui.layout.manager import MODE_EDIT
 

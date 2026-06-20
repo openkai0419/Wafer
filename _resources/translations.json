@@ -1,4 +1,55 @@
 {
+  "Add Ignore Folder": {
+    "en": "Add Ignore Folder"
+  },
+  "Add Source Folder": {
+    "en": "Add Source Folder"
+  },
+  "Collected Data": {
+    "en": "Collected Data"
+  },
+  "Collectors": {
+    "en": "Collectors"
+  },
+  "Data": {
+    "en": "Data"
+  },
+  "Databases": {
+    "en": "Databases"
+  },
+  "Delete Database": {
+    "en": "Delete Database"
+  },
+  "Delete Selected Data": {
+    "en": "Delete Selected Data"
+  },
+  "Ignored Folders": {
+    "en": "Ignored Folders"
+  },
+  "Loading...": {
+    "en": "Loading..."
+  },
+  "Parsers": {
+    "en": "Parsers"
+  },
+  "Paths": {
+    "en": "Paths"
+  },
+  "Refresh": {
+    "en": "Refresh"
+  },
+  "Remove Selected": {
+    "en": "Remove Selected"
+  },
+  "Select a database": {
+    "en": "Select a database"
+  },
+  "Selected: 0 items": {
+    "en": "Selected: 0 items"
+  },
+  "Source Folders": {
+    "en": "Source Folders"
+  },
   "Check for updates": {
     "en": "Check for updates"
   },
@@ -46,6 +97,9 @@
   },
   "Reset Panel Layout": {
     "en": "Reset Panel Layout"
+  },
+  "Reset Floating Position": {
+    "en": "Reset Floating Position"
   },
   "match_size": {
     "en": "match_size"

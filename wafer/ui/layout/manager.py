@@ -365,6 +365,22 @@ class LayoutManager(QtCore.QObject):
             entry.last_floating = None
         self.restore_state(default_state)
 
+    def reset_floating_positions(self) -> int:
+        targets = [(name, e) for name, e in self._panels.items() if self._is_floating(e) or e.last_floating is not None]
+        for i, (name, entry) in enumerate(targets):
+            cx, cy = self._cascade_origin(i)
+            window = self._floating_window(entry)
+            if window is not None:
+                geo = window.geometry()
+                fs = FloatingState(cx, cy, geo.width(), geo.height())
+                window.setGeometry(cx, cy, geo.width(), geo.height())
+                self._tree.floating[name] = fs
+                entry.last_floating = fs
+            elif entry.last_floating is not None:
+                lf = entry.last_floating
+                entry.last_floating = FloatingState(cx, cy, lf.width, lf.height)
+        return len(targets)
+
     def _to_edit_mode(self):
         self._sync_tree_from_current()
 
@@ -621,20 +637,28 @@ class LayoutManager(QtCore.QObject):
         extents = [self._subtree_extent(c, docks, orientation) for c in node.children]
         return max(extents) if extents else 0
 
-    def _is_floating(self, entry: PanelEntry) -> bool:
+    def _floating_window(self, entry: PanelEntry) -> QtWidgets.QWidget | None:
         if entry.floating_window:
-            return True
-        return bool(entry.dock_widget and entry.dock_widget.isFloating())
+            return entry.floating_window
+        if entry.dock_widget and entry.dock_widget.isFloating():
+            return entry.dock_widget
+        return None
+
+    def _is_floating(self, entry: PanelEntry) -> bool:
+        return self._floating_window(entry) is not None
 
     _CASCADE_OFFSET = 30
     _CASCADE_MAX_STEPS = 10
 
-    def _next_floating_position(self) -> FloatingState:
+    def _cascade_origin(self, step_index: int) -> tuple[int, int]:
         geo = self._window.geometry()
-        n = len(self._tree.floating)
-        step = n % self._CASCADE_MAX_STEPS
+        step = step_index % self._CASCADE_MAX_STEPS
         cx = geo.x() + geo.width() // 2 - 200 + step * self._CASCADE_OFFSET
         cy = geo.y() + geo.height() // 2 - 150 + step * self._CASCADE_OFFSET
+        return cx, cy
+
+    def _next_floating_position(self) -> FloatingState:
+        cx, cy = self._cascade_origin(len(self._tree.floating))
         return FloatingState(cx, cy, 400, 300)
 
     def _make_floating(self, entry: PanelEntry, state: FloatingState | None = None):

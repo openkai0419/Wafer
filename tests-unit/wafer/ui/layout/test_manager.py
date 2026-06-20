@@ -1756,3 +1756,82 @@ class TestResetToDefault:
         after = win.geometry()
 
         assert before == after
+
+
+class TestResetFloatingPositions:
+    def _cascade_origin(self, win, step=0):
+        geo = win.geometry()
+        cx = geo.x() + geo.width() // 2 - 200 + step * 30
+        cy = geo.y() + geo.height() // 2 - 150 + step * 30
+        return cx, cy
+
+    def test_reposition_keeps_size(self, layout_env):
+        mgr, win, panels = layout_env
+        _register_floating(mgr, "dyn", _make_panel("dyn"))
+        _process()
+
+        entry = mgr._panels["dyn"]
+        entry.floating_window.setGeometry(5000, 5000, 640, 480)
+        _process()
+        before = entry.floating_window.geometry()
+
+        count = mgr.reset_floating_positions()
+        _process()
+
+        assert count == 1
+        fs = mgr._tree.floating["dyn"]
+        assert (fs.x, fs.y) == self._cascade_origin(win)
+        assert (fs.width, fs.height) == (before.width(), before.height())
+
+    def test_cascade_multiple_distinct_positions(self, layout_env):
+        mgr, win, panels = layout_env
+        _register_floating(mgr, "dyn_a", _make_panel("dyn_a"))
+        _register_floating(mgr, "dyn_b", _make_panel("dyn_b"))
+        _process()
+
+        mgr.reset_floating_positions()
+        _process()
+
+        fa = mgr._tree.floating["dyn_a"]
+        fb = mgr._tree.floating["dyn_b"]
+        assert (fa.x, fa.y) != (fb.x, fb.y)
+
+    def test_dormant_position_reset_keeps_size(self, layout_env):
+        mgr, win, panels = layout_env
+        _register_floating(mgr, "dyn", _make_panel("dyn"))
+        _process()
+        mgr._panels["dyn"].floating_window.setGeometry(5000, 5000, 640, 480)
+        _process()
+
+        mgr.toggle_panel("dyn")
+        _process()
+        lf_before = mgr._panels["dyn"].last_floating
+        assert lf_before is not None
+
+        count = mgr.reset_floating_positions()
+        _process()
+
+        assert count == 1
+        lf = mgr._panels["dyn"].last_floating
+        assert (lf.x, lf.y) == self._cascade_origin(win)
+        assert (lf.width, lf.height) == (lf_before.width, lf_before.height)
+
+    def test_no_floating_returns_zero(self, layout_env):
+        mgr, win, panels = layout_env
+        _process()
+
+        assert mgr.reset_floating_positions() == 0
+
+    def test_docked_tree_unchanged(self, layout_env):
+        mgr, win, panels = layout_env
+        _register_floating(mgr, "dyn", _make_panel("dyn"))
+        _process()
+
+        before_docked = set(mgr._tree.docked_names())
+        before_sizes = _get_splitter_sizes(mgr)
+
+        mgr.reset_floating_positions()
+        _process()
+
+        assert set(mgr._tree.docked_names()) == before_docked
+        assert _get_splitter_sizes(mgr) == before_sizes

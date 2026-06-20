@@ -35,7 +35,6 @@ def set_image_spread(ctx, pages: int = 2, direction: str = "right-to-left", matc
         return
     image_viewer.set_image_spread(pages=pages, direction=direction, match_size=match_size)
 
-
 @require(gv="ImageView")
 def zoom_in(ctx, gv, base: float = 1.1):
     _zoom(gv, base=float(base), steps=int(ctx.get("wheel_steps")), pos=ctx.pos)

@@ -283,7 +283,7 @@ class TestMenuSession:
 
 class TestCheckableCommands:
     def test_checkable_command_state(self, cmd_registry, menu_hub, qtbot):
-        cmd = _make_command("chk_a", display="Check A", checkable=True, default_checked=True)
+        cmd = _make_command("chk_a", display="Check A", checked=lambda: True)
         cmd_registry.register(cmd)
         menu_hub.register_paths(
             type("ChkGroup", (), {}),
@@ -303,14 +303,13 @@ class TestCheckableCommands:
         cmd_a = _make_command(
             "radio_a",
             display="Radio A",
-            checkable=True,
+            checked=lambda: True,
             action_group="radio_group",
-            default_checked=True,
         )
         cmd_b = _make_command(
             "radio_b",
             display="Radio B",
-            checkable=True,
+            checked=lambda: False,
             action_group="radio_group",
         )
         cmd_registry.register(cmd_a)

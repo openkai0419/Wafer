@@ -53,12 +53,10 @@ def _reset_singletons(tmp_path):
     CommandOptionStore._default_path = None
     CommandOptionStore.configure(tmp_path / "command_options.json")
     CommandMenuBuilder._menu_cache.clear()
-    CommandMenuBuilder._check_states.clear()
     CommandMenuBuilder._action_groups.clear()
     _cleanup_registry()
     yield
     CommandMenuBuilder._menu_cache.clear()
-    CommandMenuBuilder._check_states.clear()
     CommandMenuBuilder._action_groups.clear()
     _cleanup_registry()
     CommandOptionStore._instance = prev_instance

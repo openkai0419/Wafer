@@ -29,7 +29,7 @@ def test_image_spread_command_is_not_checkable():
     command = next(c for c in ImageViewCommands.commands() if getattr(c, "path", "") == "imgv.image_spread")
 
     assert command.checkable is False
-    assert command.checked_resolver is None
+    assert command.checked is None
 
 
 def test_toggle_image_spread_enables_with_saved_settings():
@@ -64,4 +64,4 @@ def test_toggle_image_spread_command_is_checkable():
     command = next(c for c in ImageViewCommands.commands() if getattr(c, "path", "") == "imgv.toggle_image_spread")
 
     assert command.checkable is True
-    assert command.checked_resolver is not None
+    assert command.checked is not None

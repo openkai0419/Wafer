@@ -139,8 +139,7 @@ class ImageViewCommands(ActionKit.MenuBase):
                 path="imgv.toggle_image_spread",
                 display="Toggle Image Spread",
                 func=toggle_image_spread,
-                checkable=True,
-                checked_resolver=_image_spread_enabled,
+                checked=_image_spread_enabled,
             ),
         ]
 

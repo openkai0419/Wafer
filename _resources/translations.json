@@ -1,4 +1,34 @@
 {
+  "Add Filter": {
+    "en": "Add Filter"
+  },
+  "Add filter after this": {
+    "en": "Add filter after this"
+  },
+  "Color": {
+    "en": "Color"
+  },
+  "Delete filter": {
+    "en": "Delete filter"
+  },
+  "Disabled": {
+    "en": "Disabled"
+  },
+  "Filter Menu": {
+    "en": "Filter Menu"
+  },
+  "Move to top": {
+    "en": "Move to top"
+  },
+  "Move up": {
+    "en": "Move up"
+  },
+  "Regex": {
+    "en": "Regex"
+  },
+  "Text": {
+    "en": "Text"
+  },
   "Add Ignore Folder": {
     "en": "Add Ignore Folder"
   },

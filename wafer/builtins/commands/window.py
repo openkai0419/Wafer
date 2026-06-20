@@ -74,7 +74,7 @@ class WindowPanelCommands(ActionKit.MenuBase):
         return [
             ":Window",
             ActionKit.Command(path="win.toggle_fullscreen", display="Full Screen", func=toggle_fullscreen),
-            ActionKit.Command(path="win.toggle_always_on_top", display="Always on Top", func=toggle_always_on_top, checkable=True, checked_resolver=_is_always_on_top),
+            ActionKit.Command(path="win.toggle_always_on_top", display="Always on Top", func=toggle_always_on_top, checked=_is_always_on_top),
         ]
 
 

@@ -105,8 +105,7 @@ class PanelCommands(ActionKit.MenuBase):
                 path="win.toggle_layout_mode",
                 display="Edit Mode (might have visual issues)",
                 func=toggle_layout_mode,
-                checkable=True,
-                checked_resolver=_is_layout_edit,
+                checked=_is_layout_edit,
             ),
             ActionKit.Command(
                 path="panel.reset_layout",

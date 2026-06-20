@@ -179,7 +179,7 @@ class TestRegisterCommandDefs:
             id="test.grp_member",
             display="Member",
             action_group="test_group",
-            checkable=True,
+            checked=lambda: False,
             func=lambda ctx: None,
         )
         register_command_defs([meta])
@@ -191,7 +191,6 @@ class TestRegisterCommandDefs:
             id="test.grp_nochk",
             display="NoCheck",
             action_group="test_group",
-            checkable=False,
             func=lambda ctx: None,
         )
         register_command_defs([meta])

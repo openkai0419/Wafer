@@ -1605,8 +1605,8 @@ class TestToggleCommandCheckable:
         mgr, win, panels = layout_env
         cmd_id = LayoutManager._command_id("folder")
         cmd_cls = CommandRegistry.instance().get_command(cmd_id)
-        assert cmd_cls.meta.checked_resolver is not None
-        assert cmd_cls.meta.checked_resolver() is True
+        assert cmd_cls.meta.checked is not None
+        assert cmd_cls.meta.checked() is True
 
     def test_resolver_returns_true_for_collapsed_panel(self, layout_env):
         from wafer.core.commands.command.core import CommandRegistry
@@ -1618,7 +1618,7 @@ class TestToggleCommandCheckable:
 
         cmd_id = LayoutManager._command_id("viewer")
         cmd_cls = CommandRegistry.instance().get_command(cmd_id)
-        assert cmd_cls.meta.checked_resolver() is True
+        assert cmd_cls.meta.checked() is True
 
     def test_resolver_returns_true_for_floating_panel(self, layout_env):
         from wafer.core.commands.command.core import CommandRegistry
@@ -1629,7 +1629,7 @@ class TestToggleCommandCheckable:
 
         cmd_id = LayoutManager._command_id("dyn")
         cmd_cls = CommandRegistry.instance().get_command(cmd_id)
-        assert cmd_cls.meta.checked_resolver() is True
+        assert cmd_cls.meta.checked() is True
 
     def test_resolver_returns_false_for_dormant_panel(self, layout_env):
         from wafer.core.commands.command.core import CommandRegistry
@@ -1644,7 +1644,7 @@ class TestToggleCommandCheckable:
 
         cmd_id = LayoutManager._command_id("dyn")
         cmd_cls = CommandRegistry.instance().get_command(cmd_id)
-        assert cmd_cls.meta.checked_resolver() is False
+        assert cmd_cls.meta.checked() is False
 
     def test_resolver_tracks_state_changes_dynamically(self, layout_env):
         from wafer.core.commands.command.core import CommandRegistry
@@ -1655,15 +1655,15 @@ class TestToggleCommandCheckable:
 
         cmd_id = LayoutManager._command_id("dyn")
         cmd_cls = CommandRegistry.instance().get_command(cmd_id)
-        assert cmd_cls.meta.checked_resolver() is True
+        assert cmd_cls.meta.checked() is True
 
         mgr.toggle_panel("dyn")
         _process()
-        assert cmd_cls.meta.checked_resolver() is False
+        assert cmd_cls.meta.checked() is False
 
         mgr.toggle_panel("dyn")
         _process()
-        assert cmd_cls.meta.checked_resolver() is True
+        assert cmd_cls.meta.checked() is True
 
 
 class TestResetToDefault:

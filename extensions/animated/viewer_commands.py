@@ -24,7 +24,6 @@ class AnimatedViewerCommands(MenuGroup):
                 path="aview.toggle_fit_mode",
                 display="Contain/Cover",
                 func=toggle_fit_mode,
-                checkable=True,
-                checked_resolver=lambda: getattr(_avw(), "cover_mode", False),
+                checked=lambda: getattr(_avw(), "cover_mode", False),
             ),
         ]

@@ -357,8 +357,8 @@ def test_detail_dialog_places_lock_and_delete_in_bottom_action_row(qtbot):
     dlg = SearchKvDetailDialog(None, title="Edit", key="k", value="v", locked=True)
     qtbot.addWidget(dlg)
     button_layout = dlg.layout().itemAt(dlg.layout().count() - 1).widget().layout()
-    assert button_layout.itemAt(0).widget() is dlg.lock_check
-    assert button_layout.itemAt(1).widget() is dlg.delete_btn
+    assert button_layout.itemAt(0).widget() is dlg.delete_btn
+    assert button_layout.itemAt(1).widget() is dlg.lock_check
     assert button_layout.itemAt(2).spacerItem() is not None
     assert button_layout.itemAt(3).widget() is dlg.revert_btn
     assert button_layout.itemAt(4).widget() is dlg.save_btn
@@ -369,8 +369,8 @@ def test_detail_dialog_hides_delete_in_add_mode(qtbot):
     dlg = SearchKvDetailDialog(None, title="Add", add_mode=True)
     qtbot.addWidget(dlg)
     button_layout = dlg.layout().itemAt(dlg.layout().count() - 1).widget().layout()
-    assert button_layout.itemAt(0).widget() is dlg.lock_check
-    assert button_layout.itemAt(1).widget() is dlg.delete_btn
+    assert button_layout.itemAt(0).widget() is dlg.delete_btn
+    assert button_layout.itemAt(1).widget() is dlg.lock_check
     assert dlg.delete_btn.isHidden()
 
 

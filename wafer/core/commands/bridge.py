@@ -200,11 +200,7 @@ class Command:
         cmd_class = Command._registry().get_command(str(command_id))
         if cmd_class is None:
             return False
-        return ActionKit.CommandMenuBuilder.instance()._get_checked(str(command_id), cmd_class.meta)
-
-    @staticmethod
-    def set_checked(command_id: str, state: bool):
-        ActionKit.CommandMenuBuilder.instance().set_checked(str(command_id), bool(state))
+        return ActionKit.CommandMenuBuilder.instance()._get_checked(cmd_class.meta)
 
     @staticmethod
     def register_commands(defs) -> None:

@@ -122,7 +122,6 @@ class CommandBindingMixin:
                 Command._show_options_for_required(str(cmd.id), cls, None, ctx=ctx)
                 return
         self._registry.execute(str(cmd.id), ctx=ctx, **args)
-        self._update_checkable_state(cmd, ctx)
 
     def _build_execution_context(self, cmd: CommandPayload, event=None, key: MouseActionKey | None = None, source: str | None = None, extra: dict[str, Any] | None = None) -> CommandContext:
         ctx = CommandContext.create(self, self.binding_scope(), source=str(source or ""), event=event)
@@ -142,25 +141,4 @@ class CommandBindingMixin:
         store = CommandOptionStore.instance()
         stored_payload = store.get(cmd.id)
         args = dict(cmd.args or {}) or dict(stored_payload.args or {})
-        cls = self._registry.get_command(str(cmd.id))
-        if cls and getattr(getattr(cls, "meta", None), "checkable", False):
-            meta = getattr(cls, "meta", None)
-            cur_checked = bool(dict(getattr(stored_payload, "args", {}) or {}).get("checked", getattr(meta, "default_checked", False)))
-            ctx.put("checked", not cur_checked)
-            if "checked" in args:
-                args.pop("checked", None)
         return args
-
-    def _update_checkable_state(self, cmd: CommandPayload, ctx: CommandContext):
-        try:
-            cls = self._registry.get_command(str(cmd.id))
-            if cls and getattr(getattr(cls, "meta", None), "checkable", False):
-                from ..command.state import CommandOptionStore
-
-                store = CommandOptionStore.instance()
-                stored_payload = store.get(cmd.id)
-                opts = dict(getattr(stored_payload, "args", {}) or {})
-                opts["checked"] = bool(ctx.get("checked", opts.get("checked", False)))
-                store.set(cmd.id, opts)
-        except Exception as e:
-            AppLogger.warning(f"_update_checkable_state failed: {cmd.id}", exc=e)

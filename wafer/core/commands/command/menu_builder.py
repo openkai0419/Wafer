@@ -76,7 +76,6 @@ class CommandMenuBuilder:
         self._active_seed_ctx: CommandContext | None = None
         CommandMenuBuilder._initialized = True
 
-    _check_states: dict[str, bool] = {}
     _action_groups: dict[str, QtGui.QActionGroup] = {}
     _menu_cache: dict[tuple, QtWidgets.QMenu] = {}
 
@@ -170,7 +169,6 @@ class CommandMenuBuilder:
     ) -> QtWidgets.QMenu:
         menus_cache: dict[str, QtWidgets.QMenu] = {}
         action_groups: dict[str, QtGui.QActionGroup] = {}
-        group_defaults: dict[str, tuple[str, CommandMeta]] = {}
         hotkey_map = self._resolve_hotkeys_batch(parent)
         self._active_seed_ctx = seed_ctx
         checkable_tracker: list[tuple] = []
@@ -214,8 +212,6 @@ class CommandMenuBuilder:
             target_menu, text_override = self._display_override(menu, menus_cache, parent, target_menu, command_id, meta, display_map)
             if meta.action_group and meta.checkable:
                 self.state_manager.register_member(meta.action_group, command_id)
-                if meta.default_checked:
-                    group_defaults[meta.action_group] = (command_id, meta)
             self._add_entry(
                 target_menu,
                 parent,
@@ -226,12 +222,9 @@ class CommandMenuBuilder:
                 selection_callback,
                 allow_options_with_selection,
                 action_groups,
-                group_defaults,
                 hotkey_map=hotkey_map,
                 checkable_tracker=checkable_tracker,
             )
-        for gname, (default_id, _) in group_defaults.items():
-            self.state_manager.register_default(gname, default_id)
         menu.setProperty("__checkable_tracker__", checkable_tracker)
         return menu
 
@@ -287,7 +280,6 @@ class CommandMenuBuilder:
         selection_callback: Callable[[Any], None] | None = None,
         allow_options_with_selection: bool = False,
         action_groups: dict[str, QtGui.QActionGroup] | None = None,
-        group_defaults: dict[str, tuple[str, CommandMeta]] | None = None,
         hotkey_map: dict[str, str] | None = None,
         checkable_tracker: list[tuple] | None = None,
     ):
@@ -308,10 +300,7 @@ class CommandMenuBuilder:
         widget_action.setDefaultWidget(container)
         if meta.checkable and selection_callback is None:
             widget_action.setCheckable(True)
-            if meta.action_group:
-                checked = self._get_checked_for_group(name, meta.action_group, meta, group_defaults)
-            else:
-                checked = self._get_checked(name, meta)
+            checked = self._get_checked(meta)
             widget_action.setChecked(checked)
             self._update_checkmark(container, checked)
             if meta.action_group:
@@ -377,54 +366,17 @@ class CommandMenuBuilder:
             AppLogger.warning(f"Failed to execute selection callback for '{name}': {e}")
 
     def _get_action_checked(self, action: MenuAction) -> bool:
-        if action.checked_resolver is not None:
-            return bool(action.checked_resolver())
-        return bool(action.default_checked)
+        return bool(action.checked()) if action.checked is not None else False
 
     @profiler.profile
-    def _get_checked(self, name: str, meta: CommandMeta) -> bool:
-        if meta.checked_resolver is not None:
-            return meta.checked_resolver()
-        stored = CommandOptionStore.instance().get(name)
-        args = getattr(stored, "args", None)
-        if isinstance(args, dict) and "checked" in args:
-            return bool(args["checked"])
-        if name in self._check_states:
-            return self._check_states[name]
-        return meta.default_checked
-
-    @profiler.profile
-    def _get_checked_for_group(self, name: str, group_name: str, meta: CommandMeta, group_defaults: dict[str, tuple[str, CommandMeta]] | None = None) -> bool:
-        if meta.checked_resolver is not None:
-            return bool(meta.checked_resolver())
-        current = self.state_manager.find_current(group_name, self.registry)
-        if current:
-            return current == name
-        if group_defaults and group_name in group_defaults:
-            return group_defaults[group_name][0] == name
-        return meta.default_checked
+    def _get_checked(self, meta: CommandMeta) -> bool:
+        return bool(meta.checked()) if meta.checked is not None else False
 
     def _on_toggled(self, name: str, container: QtWidgets.QWidget, state: bool):
         self._update_checkmark(container, state)
-        self.set_checked(name, state)
 
     def _on_action_toggled(self, container: QtWidgets.QWidget, state: bool):
         self._update_checkmark(container, state)
-
-    def set_checked(self, name: str, state: bool):
-        cmd = self.registry.get_command(name)
-        if cmd and cmd.meta.checked_resolver is not None:
-            return
-        self._check_states[name] = state
-        store = CommandOptionStore.instance()
-        cur = store.get(name)
-        opts = getattr(cur, "args", None)
-        if not isinstance(opts, dict):
-            opts = {}
-        opts["checked"] = state
-        store.set(name, opts)
-        if not store.commit():
-            AppLogger.warning(f"Failed to save command options: {name}")
 
     def _on_radio_toggled(self, name: str, container: QtWidgets.QWidget, state: bool, group_name: str):
         self._on_toggled(name, container, state)
@@ -588,7 +540,7 @@ class CommandMenuBuilder:
             merged = dict(opts)
             ctx = self._build_ctx(parent, command_name, merged)
             if ctx is not None and command_class.meta.checkable:
-                ctx.put("checked", bool(self._get_checked(command_name, command_class.meta)))
+                ctx.put("checked", bool(self._get_checked(command_class.meta)))
             if ctx is None:
                 ctx = CommandContext.create(parent, "*", source="menu", event=None, seed=seed_ctx)
             else:
@@ -653,13 +605,8 @@ class CommandMenuBuilder:
         tracker = menu.property("__checkable_tracker__")
         if not tracker:
             return
-        for widget_action, container, name, meta, is_group in tracker:
-            if isinstance(meta, MenuAction):
-                checked = self._get_action_checked(meta)
-            elif is_group:
-                checked = self._get_checked_for_group(name, meta.action_group, meta)
-            else:
-                checked = self._get_checked(name, meta)
+        for widget_action, container, _name, meta, _is_group in tracker:
+            checked = self._get_action_checked(meta) if isinstance(meta, MenuAction) else self._get_checked(meta)
             widget_action.blockSignals(True)
             widget_action.setChecked(checked)
             widget_action.blockSignals(False)

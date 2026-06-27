@@ -124,7 +124,6 @@ class ActionGroupStateManager:
             inst = object.__new__(cls)
             inst._group_members = {}
             inst._command_to_group = {}
-            inst._group_defaults = {}
             cls._instance = inst
         return cls._instance
 
@@ -141,9 +140,6 @@ class ActionGroupStateManager:
     def get_group_for_command(self, command_id: str) -> str | None:
         return self._command_to_group.get(command_id)
 
-    def register_default(self, group_name: str, command_id: str) -> None:
-        self._group_defaults.setdefault(group_name, command_id)
-
     @profiler.profile
     def find_current(self, group_name: str, registry) -> str | None:
         members = self._group_members.get(group_name)
@@ -153,12 +149,12 @@ class ActionGroupStateManager:
             cmd = registry.get_command(member)
             if cmd is None:
                 continue
-            resolver = cmd.meta.checked_resolver
+            resolver = cmd.meta.checked
             if resolver is None:
                 continue
             try:
                 if bool(resolver()):
                     return member
             except Exception as e:
-                AppLogger.warning(f"checked_resolver failed for '{member}' in group '{group_name}': {e}")
-        return self._group_defaults.get(group_name)
+                AppLogger.warning(f"checked resolver failed for '{member}' in group '{group_name}': {e}")
+        return None

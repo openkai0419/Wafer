@@ -110,6 +110,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.last_selections = []
         self._restore_scroll_path = None
         self._pending_scroll_index = None
+        self._update_scroll = None
         self._rect_select_mode = "replace"
         self._rect_select_dragging = False
         self._rect_select_start_pos = None
@@ -133,6 +134,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self._apply_scrollbar_policy()
         self.layout_mode = "justified"
         self.scroll_anchor = "center"
+        self.follow_selection_on_update = False
         self.image_cache = MemoryLimitedImageCache(app_settings.get("window/cache_size", 500))
         self.pixmap_item_pool = GraphicsItemPool(self._scene)
         self.additional_pool = AdditionalWidgetPool(grid_resolver)
@@ -268,6 +270,14 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             return
         self.scroll_anchor = anchor
 
+    def set_follow_selection_on_update(self, enabled):
+        self.follow_selection_on_update = bool(enabled)
+
+    def _is_at_scroll_end(self, bar):
+        if self._is_primary_reversed():
+            return bar.value() <= bar.minimum()
+        return bar.value() >= bar.maximum()
+
     def set_speed_callback(self, callback):
         self._speed_callback = callback
 
@@ -398,11 +408,12 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self.layout_ready.emit()
             return
         self.last_selections = self.items.selected_paths()
+        self._restore_scroll_path = None
         if keep_scroll:
-            center_idx = self.get_center_image_index()
-            self._restore_scroll_path = self.items.path_at(center_idx) if center_idx is not None else None
+            bar = self._primary_bar()
+            self._update_scroll = (bar.value(), self._is_at_scroll_end(bar))
         else:
-            self._restore_scroll_path = None
+            self._update_scroll = None
         self._clear_all_widgets()
         with self.items.selection_noemit():
             self.items.set_items(path_list, sources, aspect_ratios)
@@ -438,8 +449,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self._width_ref = sv
         elif self._width_ref == 0 and sv > 0:
             self._width_ref = sv
-        center_idx = self.get_center_image_index()
-        self._restore_scroll_path = self.items.path_at(center_idx) if center_idx is not None else None
+        self._capture_center_path()
         self._recalc_layout()
 
     def resizeEvent(self, event):
@@ -447,8 +457,13 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.resized.emit()
         self.on_resize_event()
 
+    def _capture_center_path(self):
+        center_idx = self.get_center_image_index()
+        self._restore_scroll_path = self.items.path_at(center_idx) if center_idx is not None else None
+
     @qt_debounce(100)
     def _debounce_recalc_layout(self):
+        self._capture_center_path()
         self._recalc_layout()
 
     @profiler.profile
@@ -663,6 +678,10 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 with self.items.selection_noemit():
                     self.items.clear_selection()
         self._prev_selection_set = set(self.items.selected_indices())
+        if self._restore_raw_scroll_if_needed():
+            if was_scrolling:
+                self._start_auto_scroll_from_current()
+            return
         index = self.get_restore_index()
         if index is None or index >= len(self.rects):
             index = 0
@@ -691,6 +710,25 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             if idx is not None:
                 return idx
         return None
+
+    def _restore_raw_scroll_if_needed(self):
+        if self._update_scroll is None:
+            return False
+        value, at_end = self._update_scroll
+        self._update_scroll = None
+        if self._pending_scroll_index is not None:
+            return False
+        if self.follow_selection_on_update:
+            last_path = self.items.last_selected_path()
+            if last_path is not None and self.items.index_of_path(last_path) is not None:
+                return False
+        bar = self._primary_bar()
+        if at_end:
+            target = bar.minimum() if self._is_primary_reversed() else bar.maximum()
+        else:
+            target = max(bar.minimum(), min(value, bar.maximum()))
+        self._scroll_to(target, animated=False)
+        return True
 
     @profiler.profile
     def _update_visible_items(self):

@@ -353,12 +353,53 @@ def test_delete_uses_full_key(qtbot, monkeypatch):
     assert payload["deletes"] == ["custom.k"]
 
 
-def test_detail_dialog_places_lock_and_delete_in_top_bar(qtbot):
+def test_detail_dialog_places_lock_and_delete_in_bottom_action_row(qtbot):
     dlg = SearchKvDetailDialog(None, title="Edit", key="k", value="v", locked=True)
     qtbot.addWidget(dlg)
-    top_layout = dlg.layout().itemAt(0).widget().layout()
-    assert top_layout.itemAt(0).widget() is dlg.lock_check
-    assert top_layout.itemAt(2).widget() is dlg.delete_btn
+    button_layout = dlg.layout().itemAt(dlg.layout().count() - 1).widget().layout()
+    assert button_layout.itemAt(0).widget() is dlg.delete_btn
+    assert button_layout.itemAt(1).widget() is dlg.lock_check
+    assert button_layout.itemAt(2).spacerItem() is not None
+    assert button_layout.itemAt(3).widget() is dlg.revert_btn
+    assert button_layout.itemAt(4).widget() is dlg.save_btn
+    assert button_layout.itemAt(5).widget() is dlg.cancel_btn
+
+
+def test_detail_dialog_hides_delete_in_add_mode(qtbot):
+    dlg = SearchKvDetailDialog(None, title="Add", add_mode=True)
+    qtbot.addWidget(dlg)
+    button_layout = dlg.layout().itemAt(dlg.layout().count() - 1).widget().layout()
+    assert button_layout.itemAt(0).widget() is dlg.delete_btn
+    assert button_layout.itemAt(1).widget() is dlg.lock_check
+    assert dlg.delete_btn.isHidden()
+
+
+def test_detail_dialog_delete_requires_confirmation(qtbot, monkeypatch):
+    import wafer.app.viewer.preview.searchable_meta_widget as mod
+
+    calls = []
+    monkeypatch.setattr(mod.ConfirmDialog, "ask", staticmethod(lambda *args, **kwargs: calls.append((args, kwargs)) or "Cancel"))
+    dlg = SearchKvDetailDialog(None, title="Edit", key="rating", value="v")
+    qtbot.addWidget(dlg)
+
+    dlg._on_delete_clicked()
+
+    assert calls
+    assert dlg.delete_requested() is False
+    assert dlg.result() == QtWidgets.QDialog.DialogCode.Rejected
+
+
+def test_detail_dialog_delete_accepts_after_confirmation(qtbot, monkeypatch):
+    import wafer.app.viewer.preview.searchable_meta_widget as mod
+
+    monkeypatch.setattr(mod.ConfirmDialog, "ask", staticmethod(lambda *args, **kwargs: "Delete"))
+    dlg = SearchKvDetailDialog(None, title="Edit", key="rating", value="v")
+    qtbot.addWidget(dlg)
+
+    dlg._on_delete_clicked()
+
+    assert dlg.delete_requested() is True
+    assert dlg.result() == QtWidgets.QDialog.DialogCode.Accepted
 
 
 def test_lock_icon_draws_only_locked_rows(qtbot, monkeypatch):

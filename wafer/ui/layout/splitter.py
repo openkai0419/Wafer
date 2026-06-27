@@ -55,8 +55,6 @@ def build_splitter(
     if isinstance(node, LeafNode):
         w = widgets.get(node.panel_name)
         if w is not None:
-            if collapsed and node.panel_name in collapsed:
-                w.hide()
             w.setParent(parent)
         return w
 

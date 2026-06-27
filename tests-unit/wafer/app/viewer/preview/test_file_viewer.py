@@ -3,8 +3,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 from PySide6 import QtGui
 from wafer.app.viewer.preview.file_viewer import _format_meta, FileViewerController, ViewerBatch
 from wafer.app.viewer.preview.content_viewer import ContentViewerWidget
-from wafer.core.files.render_target import RenderPlan
-from wafer.plugin.viewer.base import MultiWidgetViewerPlugin, ViewerContext, WidgetViewerPlugin
+from wafer.plugin.viewer.base import ViewerContext, WidgetViewerPlugin
 from wafer.builtins.image_viewer.viewer import ImageViewer
 
 _IMAGE_VIEWER_NAME = ImageViewer.NAME
@@ -311,39 +310,69 @@ class TestViewerBatchNavigation:
     def test_navigate_next_prev_defaults_to_single_item(self, qtbot):
         w, model = self._make_controller(qtbot)
         model.set_items(["a", "b", "c"], None)
+        model.set_current_index(0)
 
         assert w.navigate_next() == "b"
         assert model.current_index() == 1
         assert w.navigate_prev() == "a"
         assert model.current_index() == 0
 
-    def test_navigate_next_uses_actual_batch_count(self, qtbot):
+    def test_navigate_default_step_one_ignores_display_count(self, qtbot):
         w, model = self._make_controller(qtbot)
         model.set_items(["a", "b", "c", "d", "e"], None)
-        _image_viewer(w).set_image_spread(pages=2)
+        model.set_current_index(0)
+        w._set_target_contexts((_context("a"), _context("b")))
 
-        assert w.navigate_next() == "c"
+        assert w.navigate_next() == "b"
+        assert model.current_index() == 1
+
+    def test_navigate_by_display_count_advances_by_target_contexts(self, qtbot):
+        w, model = self._make_controller(qtbot)
+        model.set_items(["a", "b", "c", "d", "e"], None)
+        model.set_current_index(0)
+        w._set_target_contexts((_context("a"), _context("b")))
+
+        assert w.navigate_next(by_display_count=True) == "c"
         assert model.current_index() == 2
-        assert w.navigate_next() == "e"
-        assert model.current_index() == 4
-        assert w.navigate_next() == "e"
-        assert model.current_index() == 4
 
-    def test_navigate_prev_uses_cached_forward_spans(self, qtbot):
+    def test_navigate_prev_by_display_count_steps_back_by_target_contexts(self, qtbot):
         w, model = self._make_controller(qtbot)
         model.set_items(["a", "b", "c", "d", "e", "f"], None)
-        _image_viewer(w).set_image_spread(pages=2)
         model.set_current_index(4)
+        w._set_target_contexts((_context("e"), _context("f")))
 
-        assert w.navigate_prev() == "c"
+        assert w.navigate_prev(by_display_count=True) == "c"
         assert model.current_index() == 2
-        assert w.navigate_prev() == "a"
-        assert model.current_index() == 0
 
-    def test_navigate_loop_uses_span_boundaries(self, qtbot):
+    def test_navigate_step_multiplies_display_count(self, qtbot):
+        w, model = self._make_controller(qtbot)
+        model.set_items([str(i) for i in range(8)], None)
+        model.set_current_index(0)
+        w._set_target_contexts((_context("0"), _context("1")))
+
+        assert w.navigate_next(step=2, by_display_count=True) == "4"
+        assert model.current_index() == 4
+
+    def test_navigate_step_without_display_count_is_plain_multiplier(self, qtbot):
         w, model = self._make_controller(qtbot)
         model.set_items(["a", "b", "c", "d", "e"], None)
-        _image_viewer(w).set_image_spread(pages=2)
+        model.set_current_index(0)
+
+        assert w.navigate_next(step=2) == "c"
+        assert model.current_index() == 2
+
+    def test_navigate_single_viewer_by_display_count_advances_one(self, qtbot):
+        w, model = self._make_controller(qtbot)
+        model.set_items(["a", "b", "c"], None)
+        model.set_current_index(0)
+        w._set_target_contexts((_context("a"),))
+
+        assert w.navigate_next(by_display_count=True) == "b"
+        assert model.current_index() == 1
+
+    def test_navigate_loop_wraps_with_default_step(self, qtbot):
+        w, model = self._make_controller(qtbot)
+        model.set_items(["a", "b", "c", "d", "e"], None)
         model.set_current_index(0)
 
         assert w.navigate_prev(loop=True) == "e"
@@ -351,82 +380,27 @@ class TestViewerBatchNavigation:
         assert w.navigate_next(loop=True) == "a"
         assert model.current_index() == 0
 
-    def test_autoplay_advance_uses_actual_batch_count(self, qtbot):
+    def test_autoplay_advance_uses_display_count(self, qtbot):
         w, model = self._make_controller(qtbot)
         model.set_items(["a", "b", "c", "d"], None)
         model.set_current_index(0)
-        _image_viewer(w).set_image_spread(pages=2)
+        w._set_target_contexts((_context("a"), _context("b")))
         w._autoplay_active = True
 
         w._do_advance()
 
         assert model.current_index() == 2
 
-    def test_navigate_step_counts_batches(self, qtbot):
+    def test_autoplay_advance_single_viewer_advances_one(self, qtbot):
         w, model = self._make_controller(qtbot)
-        model.set_items(["a", "b", "c", "d", "e"], None)
-        _image_viewer(w).set_image_spread(pages=2)
+        model.set_items(["a", "b", "c"], None)
+        model.set_current_index(0)
+        w._set_target_contexts((_context("a"),))
+        w._autoplay_active = True
 
-        assert w.navigate_next(step=2) == "e"
-        assert model.current_index() == 4
+        w._do_advance()
 
-    def test_navigate_prev_uses_resolved_uncached_spread_boundaries(self, qtbot, tmp_path):
-        paths = [tmp_path / f"{i}.png" for i in range(4)]
-        for path in paths:
-            _save_image(path, 100, 200)
-        w, model = self._make_controller(qtbot)
-        model.set_items([str(path) for path in paths], None)
-        _image_viewer(w).set_image_spread(pages=2)
-        model.set_current_index(2)
-        batch = w._resolve_viewer_batch(2)
-        w._remember_navigation_batch(batch)
-
-        assert batch.start_index == 2
-        assert batch.count == 2
-        assert w.navigate_prev() == str(paths[0])
-        assert model.current_index() == 0
-
-    def test_prev_navigation_does_not_scan_from_start_for_mixed_viewers(self, qtbot):
-        class FakeImage(MultiWidgetViewerPlugin):
-            NAME = "image"
-            EXTENSIONS = ()
-            WIDGET_CLASS = None
-
-            def display_count(self, current_index, paths):
-                return 2
-
-            def navigation_cache_key(self):
-                return 2
-
-        class FakeRegistry:
-            def __init__(self):
-                self.image = FakeImage()
-
-            def instance(self, name):
-                return self.image if name == "image" else None
-
-        class FakeResolver:
-            def __init__(self):
-                self.registry = FakeRegistry()
-                self.calls = 0
-
-            def resolve_plan(self, path):
-                self.calls += 1
-                plugin_name = "video" if path.endswith(".mp4") else "image"
-                return RenderPlan(source=path, path=path, resolved_path=path, handler=self.registry.instance(plugin_name))
-
-        count = 5000
-        paths = [f"{i}.png" if i % 2 == 0 else f"{i}.mp4" for i in range(count)]
-        w, model = self._make_controller(qtbot)
-        model.set_items(paths, None)
-        model._current_index = count - 1
-        model._display_path = paths[-1]
-        resolver = FakeResolver()
-
-        with patch("wafer.app.viewer.preview.file_viewer.viewer_resolver", resolver):
-            assert w._prev_navigation_index(count - 1, loop=False) == count - 2
-
-        assert resolver.calls <= 6
+        assert model.current_index() == 1
 
     def test_image_display_count_uses_declared_max_without_orientation_probe(self, qtbot, tmp_path):
         first = tmp_path / "first.png"
@@ -440,7 +414,7 @@ class TestViewerBatchNavigation:
         _image_viewer(w).set_image_spread(pages=3)
 
         assert _image_viewer(w).display_count(0, model.paths) == 3
-        assert w._active_batch_count(0) == 3
+        assert len(w._resolve_viewer_batch(0).contexts) == 3
 
     def test_image_display_count_can_group_multiple_images(self, qtbot, tmp_path):
         paths = [tmp_path / f"{i}.png" for i in range(4)]
@@ -451,7 +425,7 @@ class TestViewerBatchNavigation:
         _image_viewer(w).set_image_spread(pages=3)
 
         assert _image_viewer(w).display_count(0, model.paths) == 3
-        assert w._active_batch_count(0) == 3
+        assert len(w._resolve_viewer_batch(0).contexts) == 3
 
     def test_single_widget_viewer_does_not_expand_display_count(self, qtbot):
         class GreedySingleViewer(WidgetViewerPlugin):
@@ -538,9 +512,6 @@ def _make_viewer_stub():
     viewer._target_paths = ()
     viewer._target_render_path = None
     viewer._target_render_paths = ()
-    viewer._navigation_cache_key = None
-    viewer._navigation_cache_starts = []
-    viewer._navigation_cache_batches = {}
     viewer.content_viewer = content_viewer
     viewer.meta_viewer = meta_viewer
     viewer.image_cache = MagicMock()
@@ -569,7 +540,7 @@ def test_flush_does_not_switch_when_content_missing():
 def test_flush_does_not_switch_when_meta_missing():
     viewer = _make_viewer_stub()
     viewer._target_plugin = _IMAGE_VIEWER_NAME
-    viewer._pending_content = (ViewerBatch(0, _IMAGE_VIEWER_NAME, "/a.png", (_context("/a.png"),)), MagicMock())
+    viewer._pending_content = (ViewerBatch(_IMAGE_VIEWER_NAME, "/a.png", (_context("/a.png"),)), MagicMock())
     viewer._pending_meta = None
     viewer._flush()
     assert viewer._pending_content is not None
@@ -578,7 +549,7 @@ def test_flush_does_not_switch_when_meta_missing():
 def test_flush_shows_image_for_default():
     viewer = _make_viewer_stub()
     viewer._target_plugin = _IMAGE_VIEWER_NAME
-    batch = ViewerBatch(0, _IMAGE_VIEWER_NAME, "/a.png", (_context("/a.png"),))
+    batch = ViewerBatch(_IMAGE_VIEWER_NAME, "/a.png", (_context("/a.png"),))
     viewer._pending_content = (batch, None)
     viewer._pending_meta = [{"size": "0"}, {}, {}, {}]
 
@@ -595,7 +566,7 @@ def test_flush_shows_image_for_default():
 def test_flush_shows_error_image_when_content_none_for_default():
     viewer = _make_viewer_stub()
     viewer._target_plugin = _IMAGE_VIEWER_NAME
-    viewer._pending_content = (ViewerBatch(0, _IMAGE_VIEWER_NAME, "/a.zip", (_context("/a.zip"),)), None)
+    viewer._pending_content = (ViewerBatch(_IMAGE_VIEWER_NAME, "/a.zip", (_context("/a.zip"),)), None)
     viewer._pending_meta = [{"size": "0"}, {}, {}, {}]
 
     batch = viewer._pending_content[0]
@@ -610,7 +581,7 @@ def test_flush_renders_widget_plugin():
     viewer = _make_viewer_stub()
     viewer._target_plugin = "stub_widget"
     context = ViewerContext(path="/archive.zip::a.mp4", source="/archive.zip", render_path="/cache/a.mp4")
-    viewer._pending_content = (ViewerBatch(0, "stub_widget", "/archive.zip::a.mp4", (context,)), None)
+    viewer._pending_content = (ViewerBatch("stub_widget", "/archive.zip::a.mp4", (context,)), None)
     viewer._pending_meta = [{"size": "0"}, {}, {}, {}]
 
     call_order = []
@@ -684,7 +655,7 @@ def test_on_path_changed_widget_sets_target():
     viewer.model.path_at.return_value = "/test.mp4"
     viewer.model.paths = ["/test.mp4"]
     viewer.model.count.return_value = 1
-    viewer._resolve_viewer_batch = lambda index, cancel=None: ViewerBatch(0, "stub_widget", "/test.mp4", (_context("/test.mp4"),))
+    viewer._resolve_viewer_batch = lambda index, cancel=None: ViewerBatch("stub_widget", "/test.mp4", (_context("/test.mp4"),))
     viewer._on_content_ready = lambda cancel, batch: FileViewerController._on_content_ready(viewer, cancel, batch)
 
     initial_plugin = viewer.content_viewer._current_plugin_name
@@ -782,7 +753,6 @@ def test_image_viewer_settings_change_reloads_from_current_batch_anchor():
             _context("/archive.zip::second.png", source="/archive.zip", render_path="/cache/second.png"),
         )
     )
-    viewer.invalidate_navigation_cache = lambda: FileViewerController.invalidate_navigation_cache(viewer)
     viewer._on_viewer_settings_changed = lambda: FileViewerController._on_viewer_settings_changed(viewer)
 
     viewer._on_viewer_settings_changed()
@@ -800,7 +770,6 @@ def test_image_viewer_settings_change_forces_reload_when_anchor_matches_current_
             _context("/archive.zip::second.png", source="/archive.zip", render_path="/cache/second.png"),
         )
     )
-    viewer.invalidate_navigation_cache = lambda: FileViewerController.invalidate_navigation_cache(viewer)
     viewer._on_path_changed = MagicMock()
     viewer._on_viewer_settings_changed = lambda: FileViewerController._on_viewer_settings_changed(viewer)
 

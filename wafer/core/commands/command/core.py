@@ -78,8 +78,7 @@ class CommandMeta:
     hotkey: str = ""
     icon: str = ""
     has_options: bool = False
-    checkable: bool = False
-    default_checked: bool = False
+    checked: Callable[[], bool] | None = None
     action_group: str = ""
     category: str = ""
     target_widgets: list[str] = field(default_factory=list)
@@ -87,12 +86,15 @@ class CommandMeta:
     drag_callbacks: dict[str, Callable[..., Any]] | None = None
     drop_callbacks: dict[str, Callable[..., Any]] | None = None
     drop_acceptor: Callable[..., bool] | None = None
-    checked_resolver: Callable[[], bool] | None = None
+    checkable: bool = field(init=False, default=False)
 
     def __post_init__(self):
         if self.hotkey:
             raise ValueError("hotkey must not be set on CommandMeta; it is resolved from bindings")
         self.has_options = bool(self.has_options or self.params)
+        if self.checked is not None and not callable(self.checked):
+            raise ValueError("checked must be a callable returning bool")
+        self.checkable = self.checked is not None
 
 
 @dataclass
@@ -100,11 +102,15 @@ class MenuAction:
     path: str = ""
     display: str = ""
     icon: str = ""
-    checkable: bool = False
-    default_checked: bool = False
-    checked_resolver: Callable[[], bool] | None = None
+    checked: Callable[[], bool] | None = None
     func: Callable[..., Any] | None = None
     translate: bool = True
+    checkable: bool = field(init=False, default=False)
+
+    def __post_init__(self):
+        if self.checked is not None and not callable(self.checked):
+            raise ValueError("checked must be a callable returning bool")
+        self.checkable = self.checked is not None
 
 
 class CommandBase:

@@ -334,6 +334,12 @@ class FolderWatcher:
     def _is_in_scope(self, path: str) -> bool:
         return contains_path_prefix(self._folders, path) and not contains_path_prefix(self._ignore_paths, path)
 
+    def _rename_with_fallback(self, pairs):
+        missing = self._writer.rename_paths(pairs)
+        if missing:
+            AppLogger.info(f"watcher rename fallback scan: {len(missing)} files had no source row")
+            self._scanner.request_update(missing)
+
     @profiler.profile
     def _exec(self, cmd, data=None):
         if cmd == "rename":
@@ -345,7 +351,7 @@ class FolderWatcher:
                     Task.create(
                         "rename_paths",
                         priority=TaskPriority.REALTIME,
-                        run=lambda p=pairs: self._writer.rename_paths(p),
+                        run=lambda p=pairs: self._rename_with_fallback(p),
                         on_complete=lambda n=len(pairs): (
                             self._progress.increment(n, 0),
                             self._progress.send_event("update"),

@@ -1,8 +1,8 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from PySide6 import QtWidgets
 
-from wafer.builtins.commands.panel import PanelCommands, solo_current_panel, solo_panel
+from wafer.builtins.commands.panel import PanelCommands, reset_floating_position, reset_panel_layout, solo_current_panel, solo_panel
 from wafer.plugin.panel.base import BasePanelPlugin
 from wafer.ui.layout.manager import LayoutManager
 
@@ -47,12 +47,44 @@ class TestPanelCommandsCategories:
         items = PanelCommands.commands()
         solo = next(x for x in items if getattr(x, "path", "") == "panel.solo")
         current = next(x for x in items if getattr(x, "path", "") == "panel.solo_current")
+        reset = next(x for x in items if getattr(x, "path", "") == "panel.reset_layout")
 
         assert ":Solo" in items
         assert solo.params[0].name == "name"
         assert solo.params[0].required is True
         assert callable(solo.params[0].choices_fn)
         assert current.params == []
+        assert reset.hidden is False
+
+    def test_reset_panel_layout_calls_mainwindow_reset(self):
+        win = MagicMock()
+        win.slot_id = "slot1"
+        ctx = _Ctx(win)
+
+        with patch("wafer.builtins.commands.panel.AppLogger.info") as log:
+            reset_panel_layout(ctx)
+
+        win.reset_panel_layout_to_default.assert_called_once_with()
+        log.assert_called_once()
+
+    def test_commands_contains_reset_floating(self):
+        items = PanelCommands.commands()
+        reset_floating = next(x for x in items if getattr(x, "path", "") == "panel.reset_floating")
+
+        assert reset_floating.func is reset_floating_position
+        assert reset_floating.hidden is False
+
+    def test_reset_floating_position_calls_mainwindow(self):
+        win = MagicMock()
+        win.slot_id = "slot1"
+        win.reset_floating_positions.return_value = 2
+        ctx = _Ctx(win)
+
+        with patch("wafer.builtins.commands.panel.AppLogger.info") as log:
+            reset_floating_position(ctx)
+
+        win.reset_floating_positions.assert_called_once_with()
+        log.assert_called_once()
 
     def test_commands_separates_core_builtin_plugin(self):
         from wafer.plugin.registry import PluginRegistry

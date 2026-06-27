@@ -28,30 +28,9 @@ _STANDARD_FILE_KEYS = ("name", "path", "aspect_ratio", "source_extension")
 
 @dataclass(frozen=True)
 class ViewerBatch:
-    start_index: int
     plugin_name: str
     logical_path: str
     contexts: tuple[ViewerContext, ...]
-
-    @property
-    def count(self) -> int:
-        return len(self.contexts)
-
-    @property
-    def end_index_exclusive(self) -> int:
-        return self.start_index + self.count
-
-    @property
-    def paths(self) -> tuple[str, ...]:
-        return tuple(context.path for context in self.contexts)
-
-    @property
-    def render_paths(self) -> tuple[str, ...]:
-        return tuple(context.render_path for context in self.contexts)
-
-    @property
-    def first_render_path(self) -> str:
-        return self.contexts[0].render_path if self.contexts else self.logical_path
 
 
 def _format_meta(engine, path, dbpath):
@@ -167,15 +146,11 @@ class FileViewerController(QtCore.QObject):
         self._autoplay_loop = True
         self._autoplay_held = False
         self._autoplay_generation = 0
-        self._navigation_cache_key = None
-        self._navigation_cache_starts: list[int] = []
-        self._navigation_cache_batches: dict[int, ViewerBatch] = {}
         self._autoplay_timer = QtCore.QTimer(self)
         self._autoplay_timer.setSingleShot(True)
         self._autoplay_timer.timeout.connect(self._on_autoplay_tick)
         self._register_states()
         self._connect_viewer_settings()
-        self.model.itemsChanged.connect(self.invalidate_navigation_cache)
         self.model.pathChanged.connect(self._on_path_changed)
 
     def viewer_plugin(self, name: str):
@@ -293,7 +268,6 @@ class FileViewerController(QtCore.QObject):
         path = batch.logical_path
         if path != self._loading_path:
             return
-        self._remember_navigation_batch(batch)
         self._target_plugin = batch.plugin_name
         self._set_target_contexts(batch.contexts)
         self._pending_content = (batch, content)
@@ -320,13 +294,7 @@ class FileViewerController(QtCore.QObject):
             return
         self.model.set_path(path)
 
-    def invalidate_navigation_cache(self):
-        self._navigation_cache_key = None
-        self._navigation_cache_starts = []
-        self._navigation_cache_batches = {}
-
     def _on_viewer_settings_changed(self, _plugin_name: str | None = None):
-        self.invalidate_navigation_cache()
         paths = self.current_paths()
         path = paths[0] if paths else self.model.path()
         if not path:
@@ -342,7 +310,7 @@ class FileViewerController(QtCore.QObject):
         start = int(index) if index is not None else self.model.index_of_path(path)
         start = start if start is not None else 0
         if path is None:
-            return ViewerBatch(start, "", "", ())
+            return ViewerBatch("", "", ())
         first_plan = viewer_resolver.resolve_plan(path)
         plugin_name = self._plugin_name(first_plan)
         contexts: list[ViewerContext] = []
@@ -359,7 +327,7 @@ class FileViewerController(QtCore.QObject):
             contexts.append(self._viewer_context(plan))
         if not contexts:
             contexts.append(self._viewer_context(first_plan))
-        return ViewerBatch(start, plugin_name, first_plan.path, tuple(contexts))
+        return ViewerBatch(plugin_name, first_plan.path, tuple(contexts))
 
     def _viewer_context(self, plan: RenderPlan) -> ViewerContext:
         return ViewerContext(
@@ -380,168 +348,27 @@ class FileViewerController(QtCore.QObject):
         remaining = max(1, self.model.count() - int(index))
         return max(1, min(int(count), remaining))
 
-    def _remember_navigation_batch(self, batch: ViewerBatch):
-        count = self.model.count()
-        start = batch.start_index
-        if count <= 0 or start < 0 or start >= count:
-            return
-        self._ensure_navigation_cache()
-        self._navigation_cache_batches[start] = batch
-        if start not in self._navigation_cache_starts:
-            self._navigation_cache_starts.append(start)
-            self._navigation_cache_starts.sort()
-
     def _same_viewer(self, plugin_name: str, plan: RenderPlan) -> bool:
         return bool(plugin_name) and isinstance(plan.handler, _WidgetViewerPlugin) and plugin_name == plan.handler.NAME
 
     def _plugin_name(self, plan: RenderPlan) -> str:
         return plan.handler.NAME if isinstance(plan.handler, _WidgetViewerPlugin) else ""
 
-    def _current_navigation_cache_key(self):
-        plugin_name = self._target_plugin or self.content_viewer._current_plugin_name
-        plugin = viewer_resolver.registry.instance(plugin_name) if plugin_name else None
-        plugin_key = plugin.navigation_cache_key() if isinstance(plugin, _WidgetViewerPlugin) else None
-        return (plugin_name, id(self.model.paths), self.model.count(), plugin_key)
+    def _navigation_step(self, step: int, by_display_count: bool) -> int:
+        unit = (len(self._target_contexts) or 1) if by_display_count else 1
+        return max(1, int(step)) * unit
 
-    def _ensure_navigation_cache(self):
-        key = self._current_navigation_cache_key()
-        if key != self._navigation_cache_key:
-            self._navigation_cache_key = key
-            self._navigation_cache_starts = []
-            self._navigation_cache_batches = {}
-
-    def _navigation_batch_at(self, index: int) -> ViewerBatch:
-        count = self.model.count()
-        if count <= 0:
-            return ViewerBatch(0, "", "", ())
-        index = max(0, min(int(index), count - 1))
-        self._ensure_navigation_cache()
-        cached = self._navigation_cache_batches.get(index)
-        if cached is not None:
-            return cached
-        batch = self._resolve_viewer_batch(index)
-        self._remember_navigation_batch(batch)
-        return batch
-
-    def _ensure_navigation_cache_until(self, index: int):
-        self._ensure_navigation_cache()
-        count = self.model.count()
-        if count <= 0:
-            return
-        index = max(0, min(int(index), count - 1))
-        start = 0
-        while start < count:
-            batch = self._navigation_batch_at(start)
-            if batch.start_index >= index or batch.end_index_exclusive > index:
-                return
-            next_start = batch.end_index_exclusive
-            if next_start <= start or next_start >= count:
-                return
-            start = next_start
-
-    def _ensure_navigation_cache_complete(self):
-        count = self.model.count()
-        if count <= 0:
-            return
-        self._ensure_navigation_cache_until(count - 1)
-
-    def _active_batch_count(self, index: int) -> int:
-        count = self.model.count()
-        if index < 0 or index >= count:
-            return 1
-        return max(1, self._navigation_batch_at(index).count)
-
-    def _ensure_current_initialized(self) -> bool:
+    @profiler.profile
+    def navigate_next(self, step: int = 1, loop: bool = False, by_display_count: bool = False, origin: str = "command") -> str | None:
         if self.model.count() <= 0:
-            return False
-        if self.model.current_index() is None:
-            self.model.set_current_index(0)
-        return self.model.current_index() is not None
-
-    def _next_navigation_index(self, index: int, loop: bool) -> int:
-        count = self.model.count()
-        next_index = self._navigation_batch_at(index).end_index_exclusive
-        if next_index < count:
-            return next_index
-        return 0 if loop else index
-
-    def _last_navigation_start(self) -> int:
-        count = self.model.count()
-        if count <= 0:
-            return 0
-        return self._previous_navigation_start(count)
+            return None
+        return self.model.move_current_next(step=self._navigation_step(step, by_display_count), loop=bool(loop))
 
     @profiler.profile
-    def _previous_navigation_start(self, index: int) -> int:
-        count = self.model.count()
-        if count <= 0:
-            return 0
-        index = max(0, min(int(index), count))
-        if index <= 0:
-            return 0
-        previous_index = index - 1
-        previous_path = self.model.path_at(previous_index)
-        if previous_path is None:
-            return 0
-        previous_plan = viewer_resolver.resolve_plan(previous_path)
-        plugin_name = self._plugin_name(previous_plan)
-        span = self._display_count(plugin_name, previous_index)
-        start = max(0, index - span)
-        while start < previous_index:
-            path = self.model.path_at(start)
-            if path is None:
-                break
-            if self._same_viewer(plugin_name, viewer_resolver.resolve_plan(path)):
-                break
-            start += 1
-        batch = self._navigation_batch_at(start)
-        if batch.end_index_exclusive <= previous_index:
-            batch = self._navigation_batch_at(previous_index)
-        return batch.start_index
-
-    def _prev_navigation_index(self, index: int, loop: bool) -> int:
-        count = self.model.count()
-        if count <= 0:
-            return 0
-        if index <= 0:
-            return self._last_navigation_start() if loop else 0
-        self._ensure_navigation_cache()
-        previous_index = index - 1
-        for start in reversed(self._navigation_cache_starts):
-            cached = self._navigation_cache_batches.get(start)
-            if start < index and cached is not None and cached.end_index_exclusive > previous_index:
-                return start
-        return self._previous_navigation_start(index)
-
-    @profiler.profile
-    def navigate_next(self, step: int = 1, loop: bool = False, origin: str = "command") -> str | None:
-        if not self._ensure_current_initialized():
+    def navigate_prev(self, step: int = 1, loop: bool = False, by_display_count: bool = False, origin: str = "command") -> str | None:
+        if self.model.count() <= 0:
             return None
-        index = self.model.current_index()
-        if index is None:
-            return None
-        for _ in range(max(1, int(step))):
-            next_index = self._next_navigation_index(index, bool(loop))
-            if next_index == index:
-                break
-            index = next_index
-        self.model.set_current_index(index)
-        return self.model.path_at(index)
-
-    @profiler.profile
-    def navigate_prev(self, step: int = 1, loop: bool = False, origin: str = "command") -> str | None:
-        if not self._ensure_current_initialized():
-            return None
-        index = self.model.current_index()
-        if index is None:
-            return None
-        for _ in range(max(1, int(step))):
-            prev_index = self._prev_navigation_index(index, bool(loop))
-            if prev_index == index:
-                break
-            index = prev_index
-        self.model.set_current_index(index)
-        return self.model.path_at(index)
+        return self.model.move_current_prev(step=self._navigation_step(step, by_display_count), loop=bool(loop))
 
     def reload_meta(self):
         path = self.model.path()
@@ -622,7 +449,7 @@ class FileViewerController(QtCore.QObject):
     def _do_advance(self):
         self._autoplay_timer.stop()
         self._autoplay_generation += 1
-        self.navigate_next(step=1, loop=self._autoplay_loop, origin="slideshow")
+        self.navigate_next(step=1, loop=self._autoplay_loop, by_display_count=True, origin="slideshow")
 
     def _active_viewer_plugin(self) -> _WidgetViewerPlugin | None:
         name = self.content_viewer._current_plugin_name

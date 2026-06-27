@@ -200,6 +200,54 @@ class TestToolbarPanel:
         assert panel.layout().itemAt(2).widget() is win.iconbar
 
 
+class TestPanelLayoutReset:
+    def test_restores_default_layout_and_saves_slot(self):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            default_layout = {"mode": "locked", "tree": {"root": None, "floating": {}}}
+            win._load_default_layout = MagicMock(return_value=default_layout)
+            win._layout_manager = MagicMock()
+            win._save_slot = MagicMock()
+
+            win.reset_panel_layout_to_default()
+
+        win._load_default_layout.assert_called_once_with()
+        win._layout_manager.reset_to_default.assert_called_once_with(default_layout)
+        win._save_slot.assert_called_once_with()
+
+    def test_reset_floating_positions_saves_slot_when_repositioned(self):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            win._layout_manager = MagicMock()
+            win._layout_manager.reset_floating_positions.return_value = 2
+            win._save_slot = MagicMock()
+
+            result = win.reset_floating_positions()
+
+        assert result == 2
+        win._layout_manager.reset_floating_positions.assert_called_once_with()
+        win._save_slot.assert_called_once_with()
+
+    def test_reset_floating_positions_skips_save_when_none(self):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            win._layout_manager = MagicMock()
+            win._layout_manager.reset_floating_positions.return_value = 0
+            win._save_slot = MagicMock()
+
+            result = win.reset_floating_positions()
+
+        assert result == 0
+        win._layout_manager.reset_floating_positions.assert_called_once_with()
+        win._save_slot.assert_not_called()
+
+
 class TestToggleShow:
     def _make_win(self):
         with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):

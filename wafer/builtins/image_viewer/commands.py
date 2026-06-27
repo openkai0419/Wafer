@@ -1,6 +1,6 @@
 from PySide6 import QtCore
 
-from ...core.commands.bridge import ActionKit
+from ...core.commands.bridge import ActionKit, Command
 from ...core.commands.command.require import require
 from ...plugin.viewer.handler import viewer_resolver
 from ...utils.logs import AppLogger
@@ -28,12 +28,35 @@ def toggle_fit_mode(ctx, gv):
     gv.fit_in_view(padding=0.0)
 
 
-def set_image_spread(ctx, pages: int = 2, direction: str = "right-to-left"):
+def _image_viewer():
     image_viewer = viewer_resolver.registry.instance(ImageViewer.NAME)
     if image_viewer is None or not hasattr(image_viewer, "set_image_spread"):
+        return None
+    return image_viewer
+
+
+def set_image_spread(ctx, pages: int = 2, direction: str = "right-to-left", match_size: bool = True):
+    image_viewer = _image_viewer()
+    if image_viewer is None:
         AppLogger.warning("Image viewer plugin is not available; image spread was not changed")
         return
-    image_viewer.set_image_spread(pages=pages, direction=direction)
+    image_viewer.set_image_spread(pages=pages, direction=direction, match_size=match_size)
+
+
+def toggle_image_spread(ctx):
+    image_viewer = _image_viewer()
+    if image_viewer is None:
+        AppLogger.warning("Image viewer plugin is not available; image spread was not changed")
+        return
+    if image_viewer.image_spread_enabled:
+        image_viewer.set_image_spread(pages=1)
+    else:
+        Command.invoke("imgv.image_spread")
+
+
+def _image_spread_enabled() -> bool:
+    image_viewer = _image_viewer()
+    return bool(image_viewer and image_viewer.image_spread_enabled)
 
 
 @require(gv="ImageView")
@@ -109,7 +132,14 @@ class ImageViewCommands(ActionKit.MenuBase):
                 params=[
                     ActionKit.Param(name="pages", value=2, min_value=1, max_value=16),
                     ActionKit.Param(name="direction", value=("right-to-left", "left-to-right", "top-to-bottom", "bottom-to-top")),
+                    ActionKit.Param(name="match_size", value=True),
                 ],
+            ),
+            ActionKit.Command(
+                path="imgv.toggle_image_spread",
+                display="Toggle Image Spread",
+                func=toggle_image_spread,
+                checked=_image_spread_enabled,
             ),
         ]
 

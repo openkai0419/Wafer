@@ -130,7 +130,7 @@ class _FakeRegistry:
         spec = self._members.get(cmd_id)
         if spec is None:
             return None
-        meta = SimpleNamespace(checked_resolver=spec.get("resolver"))
+        meta = SimpleNamespace(checked=spec.get("resolver"))
         return SimpleNamespace(meta=meta)
 
 
@@ -182,17 +182,6 @@ class TestActionGroupStateManager:
         })
         assert mgr.find_current("grp", registry) == "cmd.b"
 
-    def test_find_current_falls_back_to_default(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp", "cmd.a")
-        mgr.register_member("grp", "cmd.b")
-        mgr.register_default("grp", "cmd.b")
-        registry = _FakeRegistry({
-            "cmd.a": {"resolver": lambda: False},
-            "cmd.b": {"resolver": lambda: False},
-        })
-        assert mgr.find_current("grp", registry) == "cmd.b"
-
     def test_find_current_no_default_no_resolver_match(self):
         mgr = ActionGroupStateManager.instance()
         mgr.register_member("grp", "cmd.a")
@@ -217,15 +206,3 @@ class TestActionGroupStateManager:
         mgr = ActionGroupStateManager.instance()
         registry = _FakeRegistry({})
         assert mgr.find_current("nonexistent", registry) is None
-
-    def test_register_default_only_first_wins(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp", "cmd.a")
-        mgr.register_member("grp", "cmd.b")
-        mgr.register_default("grp", "cmd.a")
-        mgr.register_default("grp", "cmd.b")
-        registry = _FakeRegistry({
-            "cmd.a": {"resolver": lambda: False},
-            "cmd.b": {"resolver": lambda: False},
-        })
-        assert mgr.find_current("grp", registry) == "cmd.a"

@@ -435,9 +435,10 @@ class FileDB:
                 cur.close()
 
     @profiler.profile
-    def rename_paths(self, pairs: Sequence[tuple[str, str]]):
+    def rename_paths(self, pairs: Sequence[tuple[str, str]]) -> list[str]:
         if not pairs:
-            return
+            return []
+        missing: list[str] = []
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             try:
@@ -445,6 +446,9 @@ class FileDB:
                 for old, new in pairs:
                     path_map = self._renamed_file_paths(cur, old, new)
                     cur.execute("UPDATE sources SET source = ? WHERE source = ?", (new, old))
+                    if cur.rowcount == 0:
+                        missing.append(new)
+                        continue
                     for old_path, new_path in path_map.items():
                         if old_path != new_path:
                             cur.execute("UPDATE files SET path = ? WHERE path = ?", (new_path, old_path))
@@ -454,6 +458,7 @@ class FileDB:
                     )
             finally:
                 cur.close()
+        return missing
 
     def load_source_signatures(self, paths: Sequence[str]) -> dict[str, tuple[str, int | None]]:
         if not paths:

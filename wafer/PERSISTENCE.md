@@ -52,7 +52,7 @@ wafer の永続化クラスは「**スコープ**」と「**用途**」の 2 軸
 - **「最後に開いた DB」を `app_settings` に書かない。** WindowSlot ごとに違うため、`WorkspaceStore.get_last_used_database_name()` から取る。
 - **プラグイン設定を `app_settings` に書かない。** プラグインごとに `PluginConfig` を用意する（wd14 / florence / exiftool が参考実装）。
 - **`StateStore` は永続化しない。** 自分で JSON を書こうとしないこと。`WindowSlot` に渡すだけのインメモリレジストリ。
-- **`ActionGroupStateManager` で「現在チェックされている項目」を保持しない。** 状態は UI/データ側が真実で、コマンドの `checked_resolver` 経由で都度問い合わせる。
+- **`ActionGroupStateManager` で「現在チェックされている項目」を保持しない。** 状態は UI/データ側が真実で、コマンドの `checked` リゾルバ経由で都度問い合わせる。
 - **パネルの「設定値」と「UI 状態」を混ぜない。**
   - 設定値（収集器に渡したい、blacklist 等） → `PluginConfig.save_and_notify(...)`
   - UI 状態（スプリッタ・展開・スクロール） → `BasePanelPlugin.save_ui_state / restore_ui_state`

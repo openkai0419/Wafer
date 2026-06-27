@@ -18,11 +18,54 @@ def test_set_images_uses_multiple_scene_items(qtbot):
     first.fill(QtGui.QColor("red"))
     second.fill(QtGui.QColor("blue"))
 
-    widget.set_images([first, second], direction="left-to-right")
+    widget.set_images([first, second], direction="left-to-right", match_size=False)
 
     assert len(widget.view._pix_items) == 2
     assert widget.view._image_rect().width() == 40
     assert widget.view._image_rect().height() == 40
+
+
+def test_set_images_match_size_is_enabled_by_default(qtbot):
+    widget = ImageDisplayWidget()
+    qtbot.addWidget(widget)
+    first = QtGui.QImage(10, 20, QtGui.QImage.Format_ARGB32)
+    second = QtGui.QImage(30, 40, QtGui.QImage.Format_ARGB32)
+    first.fill(QtGui.QColor("red"))
+    second.fill(QtGui.QColor("blue"))
+
+    widget.set_images([first, second], direction="left-to-right")
+
+    assert len(widget.view._pix_items) == 2
+    assert widget.view._image_rect().width() == 50
+    assert widget.view._image_rect().height() == 40
+
+
+def test_set_images_match_size_matches_height_when_horizontal(qtbot):
+    widget = ImageDisplayWidget()
+    qtbot.addWidget(widget)
+    first = QtGui.QImage(10, 20, QtGui.QImage.Format_ARGB32)
+    second = QtGui.QImage(30, 40, QtGui.QImage.Format_ARGB32)
+    first.fill(QtGui.QColor("red"))
+    second.fill(QtGui.QColor("blue"))
+
+    widget.set_images([first, second], direction="left-to-right", match_size=True)
+
+    heights = {round(item.sceneBoundingRect().height()) for item in widget.view._pix_items}
+    assert heights == {40}
+
+
+def test_set_images_match_size_matches_width_when_vertical(qtbot):
+    widget = ImageDisplayWidget()
+    qtbot.addWidget(widget)
+    first = QtGui.QImage(10, 20, QtGui.QImage.Format_ARGB32)
+    second = QtGui.QImage(30, 40, QtGui.QImage.Format_ARGB32)
+    first.fill(QtGui.QColor("red"))
+    second.fill(QtGui.QColor("blue"))
+
+    widget.set_images([first, second], direction="top-to-bottom", match_size=True)
+
+    widths = {round(item.sceneBoundingRect().width()) for item in widget.view._pix_items}
+    assert widths == {30}
 
 
 def test_extend_context_uses_active_batch_paths(qtbot):

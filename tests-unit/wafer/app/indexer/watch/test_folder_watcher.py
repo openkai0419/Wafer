@@ -41,6 +41,7 @@ def _make_watcher():
 
     scheduler = MagicMock()
     writer = MagicMock()
+    writer.rename_paths.return_value = []
     scanner = MagicMock()
     progress = MagicMock()
     wf = FolderWatcher(scheduler, writer, scanner, progress)
@@ -97,6 +98,25 @@ def test_flush_create_then_rename():
     assert len(rename_names) == 1
     assert len(update_paths) == 1
     assert "B" in update_paths[0]
+
+
+def test_rename_fallback_scans_destination_when_source_missing():
+    wf, scheduler, writer, scanner, _ = _make_watcher()
+    writer.rename_paths.return_value = ["B"]
+    wf._flush(set(), set(), {"A": "B"})
+    task = scheduler.submit.call_args[0][0]
+    assert task.name == "rename_paths"
+    task.run()
+    scanner.request_update.assert_called_once_with(["B"])
+
+
+def test_rename_no_fallback_when_source_present():
+    wf, scheduler, writer, scanner, _ = _make_watcher()
+    writer.rename_paths.return_value = []
+    wf._flush(set(), set(), {"A": "B"})
+    task = scheduler.submit.call_args[0][0]
+    task.run()
+    assert not scanner.request_update.called
 
 
 def test_flush_rename_then_delete(tmp_path):

@@ -39,7 +39,7 @@ class ZoomPanImageView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         viewer = ctx.get_instance("FileViewerController")
         return viewer_context_values(viewer.current_viewer_contexts() if viewer is not None else ())
 
-    def set_pixmaps(self, pixmaps: list[QtGui.QPixmap], direction: str = "right-to-left"):
+    def set_pixmaps(self, pixmaps: list[QtGui.QPixmap], direction: str = "right-to-left", match_size: bool = True):
         scene = self.scene()
         for item in self._pix_items:
             scene.removeItem(item)
@@ -55,11 +55,15 @@ class ZoomPanImageView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             item = scene.addPixmap(pixmap)
             item.setTransformationMode(QtCore.Qt.SmoothTransformation)
             if horizontal:
-                item.setPos(offset, (max_height - pixmap.height()) / 2.0)
-                offset += pixmap.width()
+                scale = max_height / pixmap.height() if match_size and pixmap.height() else 1.0
+                item.setScale(scale)
+                item.setPos(offset, (max_height - pixmap.height() * scale) / 2.0)
+                offset += pixmap.width() * scale
             else:
-                item.setPos((max_width - pixmap.width()) / 2.0, offset)
-                offset += pixmap.height()
+                scale = max_width / pixmap.width() if match_size and pixmap.width() else 1.0
+                item.setScale(scale)
+                item.setPos((max_width - pixmap.width() * scale) / 2.0, offset)
+                offset += pixmap.height() * scale
             self._pix_items.append(item)
         self.viewport().update()
         self.fit_in_view(padding=0.0)
@@ -184,12 +188,12 @@ class ImageDisplayWidget(QtWidgets.QWidget):
         self.resized.emit()
         return super().resizeEvent(event)
 
-    def set_images(self, images, direction: str = "right-to-left"):
+    def set_images(self, images, direction: str = "right-to-left", match_size: bool = True):
         images = [image for image in images if image is not None and not image.isNull()]
         if not images:
             self.clear()
             return
-        self.view.set_pixmaps([QtGui.QPixmap.fromImage(image) for image in images], direction=direction)
+        self.view.set_pixmaps([QtGui.QPixmap.fromImage(image) for image in images], direction=direction, match_size=match_size)
 
     def clear(self):
         self.view.clear_pixmaps()

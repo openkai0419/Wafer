@@ -210,9 +210,7 @@ class SearchContainer(QtWidgets.QWidget):
             ActionKit.Action(
                 path=f"inline.search.{uid}.sort.{cls.NAME}",
                 display=cls.NAME.capitalize(),
-                checkable=True,
-                default_checked=self._sort_name == cls.NAME,
-                checked_resolver=lambda name=cls.NAME: self._sort_name == name,
+                checked=lambda name=cls.NAME: self._sort_name == name,
                 func=lambda ctx, name=cls.NAME: self._set_sort_name(name),
             )
             for cls in sort_registry.list_all()
@@ -224,17 +222,13 @@ class SearchContainer(QtWidgets.QWidget):
                 ActionKit.Action(
                     path=f"inline.search.{uid}.order.ascending",
                     display="Ascending",
-                    checkable=True,
-                    default_checked=self._ascending,
-                    checked_resolver=lambda: self._ascending,
+                    checked=lambda: self._ascending,
                     func=lambda ctx: self._set_sort_order(True),
                 ),
                 ActionKit.Action(
                     path=f"inline.search.{uid}.order.descending",
                     display="Descending",
-                    checkable=True,
-                    default_checked=not self._ascending,
-                    checked_resolver=lambda: not self._ascending,
+                    checked=lambda: not self._ascending,
                     func=lambda ctx: self._set_sort_order(False),
                 ),
             ]
@@ -346,9 +340,7 @@ class SearchContainer(QtWidgets.QWidget):
             ActionKit.Action(
                 path=f"inline.filter.{uid}.enabled",
                 display="Enabled",
-                checkable=True,
-                default_checked=row.is_enabled(),
-                checked_resolver=lambda r=row: r.is_enabled(),
+                checked=lambda r=row: r.is_enabled(),
                 func=lambda ctx, r=row: self._set_row_enabled(r, bool(ctx.get("checked"))),
             ),
             "-",

@@ -84,6 +84,11 @@ def _scroll_anchor_checked(anchor: str):
     return g is not None and getattr(g, "scroll_anchor", "center") == anchor
 
 
+def _scroll_follow_checked():
+    g = _grid()
+    return g is not None and getattr(g, "follow_selection_on_update", False)
+
+
 class GridViewCommands(ActionKit.MenuBase):
     NAME = "GridView"
     PRIORITY = 40
@@ -351,6 +356,11 @@ class GridViewCommands(ActionKit.MenuBase):
         GridViewCommands.get_view(ctx).set_scroll_anchor("center")
 
     @staticmethod
+    def toggle_scroll_follow_selection(ctx):
+        view = GridViewCommands.get_view(ctx)
+        view.set_follow_selection_on_update(not getattr(view, "follow_selection_on_update", False))
+
+    @staticmethod
     def set_orientation_z(ctx):
         GridViewCommands.get_view(ctx).set_orientation(0)
 
@@ -378,16 +388,13 @@ class GridViewCommands(ActionKit.MenuBase):
         for layout_cls in layout_registry.list_all():
             name = layout_cls.NAME
             display = layout_cls.DISPLAY_NAME
-            is_default = name == "justified"
             cmds.append(
                 ActionKit.Command(
                     path=f"Layout/grid.layout_{name}",
                     display=display,
                     func=lambda ctx, m=name: cls.set_layout(ctx, m),
-                    checkable=True,
-                    default_checked=is_default,
                     action_group="grid_layout_mode",
-                    checked_resolver=lambda n=name: _layout_checked(n),
+                    checked=lambda n=name: _layout_checked(n),
                 )
             )
         return cmds
@@ -444,9 +451,7 @@ class GridViewCommands(ActionKit.MenuBase):
                 path="grid.toggle_overlay",
                 display="Show overlay badges",
                 func=cls.toggle_overlay,
-                checkable=True,
-                default_checked=True,
-                checked_resolver=_overlay_badge_visible,
+                checked=_overlay_badge_visible,
             ),
             ActionKit.Command(
                 path="grid.set_overlay_size",
@@ -460,23 +465,26 @@ class GridViewCommands(ActionKit.MenuBase):
                 func=cls.toggle_cell_overlay,
                 params=[ActionKit.Param(name="name", value="", required=True)],
             ),
+            ActionKit.Command(
+                path="grid.toggle_scroll_follow_selection",
+                display="Scroll to selection on update",
+                func=cls.toggle_scroll_follow_selection,
+                checked=_scroll_follow_checked,
+            ),
             "Scroll Anchor/:Scroll Anchor",
             ActionKit.Command(
                 path="Scroll Anchor/grid.scroll_anchor_top",
                 display="Top",
                 func=cls.set_scroll_anchor_top,
-                checkable=True,
                 action_group="grid_scroll_anchor",
-                checked_resolver=lambda: _scroll_anchor_checked("top"),
+                checked=lambda: _scroll_anchor_checked("top"),
             ),
             ActionKit.Command(
                 path="Scroll Anchor/grid.scroll_anchor_center",
                 display="Center",
                 func=cls.set_scroll_anchor_center,
-                checkable=True,
-                default_checked=True,
                 action_group="grid_scroll_anchor",
-                checked_resolver=lambda: _scroll_anchor_checked("center"),
+                checked=lambda: _scroll_anchor_checked("center"),
             ),
             "Layout/:Layout",
             *cls._layout_commands(),
@@ -484,34 +492,29 @@ class GridViewCommands(ActionKit.MenuBase):
                 path="Layout/grid.orientation_z",
                 display="Z (↘)",
                 func=cls.set_orientation_z,
-                checkable=True,
-                default_checked=True,
                 action_group="grid_orientation",
-                checked_resolver=lambda: _orientation_checked(0),
+                checked=lambda: _orientation_checked(0),
             ),
             ActionKit.Command(
                 path="Layout/grid.orientation_reverse_z",
                 display="S (↙)",
                 func=cls.set_orientation_reverse_z,
-                checkable=True,
                 action_group="grid_orientation",
-                checked_resolver=lambda: _orientation_checked(1),
+                checked=lambda: _orientation_checked(1),
             ),
             ActionKit.Command(
                 path="Layout/grid.orientation_n",
                 display="И (↘)",
                 func=cls.set_orientation_n,
-                checkable=True,
                 action_group="grid_orientation",
-                checked_resolver=lambda: _orientation_checked(2),
+                checked=lambda: _orientation_checked(2),
             ),
             ActionKit.Command(
                 path="Layout/grid.orientation_reverse_n",
                 display="N (↙)",
                 func=cls.set_orientation_reverse_n,
-                checkable=True,
                 action_group="grid_orientation",
-                checked_resolver=lambda: _orientation_checked(3),
+                checked=lambda: _orientation_checked(3),
             ),
             ActionKit.Command(
                 path="grid.cycle_orientation",

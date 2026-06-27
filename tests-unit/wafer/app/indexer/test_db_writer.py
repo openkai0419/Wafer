@@ -87,13 +87,19 @@ def test_rename_paths(writer):
     image_entries = [("/old.png", "/old.png", 1.0)]
     writer.upsert_sources(source_entries, image_entries)
 
-    writer.rename_paths([("/old.png", "/new.png")])
+    missing = writer.rename_paths([("/old.png", "/new.png")])
+    assert missing == []
 
     cur = writer.db.get_reader_cursor()
     cur.execute("SELECT source FROM sources")
     rows = cur.fetchall()
     cur.close()
     assert rows[0][0] == "/new.png"
+
+
+def test_rename_paths_reports_missing_source(writer):
+    missing = writer.rename_paths([("/gone.png", "/final.png")])
+    assert missing == ["/final.png"]
 
 
 def test_infer_moved_sources_matches_delete_create_by_signature(writer, tmp_path):

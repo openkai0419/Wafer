@@ -40,6 +40,7 @@ class ImageViewer(MultiWidgetViewerPlugin):
         self._image_cache = MemoryLimitedImageCache(app_settings.get("window/cache_size", 500))
         self._display_count = 1
         self._direction = "right-to-left"
+        self._match_size = True
 
     @property
     def image_spread_pages(self) -> int:
@@ -53,15 +54,18 @@ class ImageViewer(MultiWidgetViewerPlugin):
     def image_spread_direction(self) -> str:
         return self._direction
 
-    def navigation_cache_key(self) -> tuple[int, str]:
-        return (self._display_count, self._direction)
+    @property
+    def image_spread_match_size(self) -> bool:
+        return self._match_size
 
-    def set_image_spread(self, pages: int = 1, direction: str = "right-to-left"):
+    def set_image_spread(self, pages: int = 1, direction: str = "right-to-left", match_size: bool = True):
         pages = max(1, min(int(pages), 16))
         direction = direction if direction in _IMAGE_SPREAD_DIRECTIONS else "right-to-left"
-        changed = pages != self._display_count or direction != self._direction
+        match_size = bool(match_size)
+        changed = pages != self._display_count or direction != self._direction or match_size != self._match_size
         self._display_count = pages
         self._direction = direction
+        self._match_size = match_size
         if changed:
             self.settingsChanged.emit()
 
@@ -118,11 +122,11 @@ class ImageViewer(MultiWidgetViewerPlugin):
     @profiler.profile
     def show_images(self, images):
         rendered = [image or PixmapFactory.create_viewer_error_placeholder() for _, image in images]
-        self.widget.set_images(rendered, direction=self._direction)
+        self.widget.set_images(rendered, direction=self._direction, match_size=self._match_size)
 
     @profiler.profile
     def show_error(self):
-        self.widget.set_images([PixmapFactory.create_viewer_error_placeholder()], direction=self._direction)
+        self.widget.set_images([PixmapFactory.create_viewer_error_placeholder()], direction=self._direction, match_size=self._match_size)
 
     @profiler.profile
     def clear(self):
@@ -137,13 +141,15 @@ class ImageViewer(MultiWidgetViewerPlugin):
             "fit_mode": "contain" if self.widget.is_contain_mode() else "cover",
             "image_spread_pages": self._display_count,
             "image_spread_direction": self._direction,
+            "image_spread_match_size": self._match_size,
         }
 
     def restore_ui_state(self, state: dict) -> None:
         if "fit_mode" in state:
             self.widget.set_contain_mode(state["fit_mode"] == "contain")
-        if "image_spread_pages" in state or "image_spread_direction" in state:
+        if "image_spread_pages" in state or "image_spread_direction" in state or "image_spread_match_size" in state:
             self.set_image_spread(
                 pages=state.get("image_spread_pages", self._display_count),
                 direction=state.get("image_spread_direction", self._direction),
+                match_size=state.get("image_spread_match_size", self._match_size),
             )

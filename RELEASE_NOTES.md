@@ -2,6 +2,23 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.7.3]
+
+This release improves image-spread viewing, panel layout recovery, and update stability while refreshing file lists.
+
+### Highlights
+- Image Spread now has a dedicated toggle and can keep visible pages aligned to a shared size, making multi-page viewing easier to switch and compare.
+- Panel menus now include quick reset actions for the full panel layout and for floating panel placement, which helps recover from messy workspace arrangements.
+
+### Improvements
+- Multi-image spreads now keep normal next and previous navigation on single-file steps, while slideshow playback still advances by the visible spread size.
+- Grid refreshes now keep the current scroll position by default, and an optional setting can re-enable scrolling to the selected item after updates.
+
+### Fixes
+- Watched-folder rename handling now falls back to a targeted rescan when move events arrive without a matching source entry, helping renamed files recover in the database sooner.
+- Restarting while a panel is isolated no longer leaves the layout stuck in a collapsed state.
+- Metadata deletion now asks for confirmation before removing a key.
+
 ## [v0.7.2]
 
 This release improves Windows integration and makes background rescans recover more reliably.

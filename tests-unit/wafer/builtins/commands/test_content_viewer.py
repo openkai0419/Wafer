@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from PySide6 import QtCore
 
@@ -52,7 +52,7 @@ def test_next_file_delegates_to_controller():
 
     next_file(DummyCtx(viewer))
 
-    viewer.navigate_next.assert_called_once_with(step=1, loop=False, origin="command")
+    viewer.navigate_next.assert_called_once_with(step=1, loop=False, by_display_count=False, origin="command")
 
 
 def test_prev_file_delegates_to_controller():
@@ -60,7 +60,7 @@ def test_prev_file_delegates_to_controller():
 
     prev_file(DummyCtx(viewer))
 
-    viewer.navigate_prev.assert_called_once_with(step=1, loop=False, origin="command")
+    viewer.navigate_prev.assert_called_once_with(step=1, loop=False, by_display_count=False, origin="command")
 
 
 def test_next_prev_forward_step_and_loop_parameters():
@@ -70,8 +70,19 @@ def test_next_prev_forward_step_and_loop_parameters():
     next_file(ctx, step=2, loop=True)
     prev_file(ctx, step=3, loop=True)
 
-    viewer.navigate_next.assert_called_once_with(step=2, loop=True, origin="command")
-    viewer.navigate_prev.assert_called_once_with(step=3, loop=True, origin="command")
+    viewer.navigate_next.assert_called_once_with(step=2, loop=True, by_display_count=False, origin="command")
+    viewer.navigate_prev.assert_called_once_with(step=3, loop=True, by_display_count=False, origin="command")
+
+
+def test_next_prev_forward_by_display_count_flag():
+    viewer = _make_viewer()
+    ctx = DummyCtx(viewer)
+
+    next_file(ctx, by_display_count=True)
+    prev_file(ctx, by_display_count=True)
+
+    viewer.navigate_next.assert_called_once_with(step=1, loop=False, by_display_count=True, origin="command")
+    viewer.navigate_prev.assert_called_once_with(step=1, loop=False, by_display_count=True, origin="command")
 
 
 def test_nav_direction_defaults_to_left_right_axis():
@@ -92,38 +103,69 @@ def test_nav_direction_supports_axis_aliases_and_invert():
     assert _nav_direction(QtCore.QPoint(90, 60), center, invert=True) == "prev"
 
 
-def test_navigate_file_by_mouse_position_moves_next_and_prev():
+def test_navigate_file_by_mouse_position_invokes_next_and_prev_commands():
     viewer = _make_viewer()
     right_widget = _WidgetStub(QtCore.QRect(0, 0, 100, 100), QtCore.QPoint(90, 40))
     left_widget = _WidgetStub(QtCore.QRect(0, 0, 100, 100), QtCore.QPoint(10, 40))
 
-    navigate_file_by_mouse_position(DummyCtx(viewer, widget=right_widget, global_pos=QtCore.QPoint(0, 0)))
-    viewer.navigate_next.assert_called_once_with(step=1, loop=False, origin="mouse")
+    right_ctx = DummyCtx(viewer, widget=right_widget, global_pos=QtCore.QPoint(0, 0))
+    left_ctx = DummyCtx(viewer, widget=left_widget, global_pos=QtCore.QPoint(0, 0))
+    with patch("wafer.builtins.commands.content_viewer.BridgeCommand.invoke") as mock_invoke:
+        navigate_file_by_mouse_position(right_ctx)
+        mock_invoke.assert_called_once_with("fv.next_file", ctx=right_ctx)
 
-    navigate_file_by_mouse_position(DummyCtx(viewer, widget=left_widget, global_pos=QtCore.QPoint(0, 0)))
-    viewer.navigate_prev.assert_called_once_with(step=1, loop=False, origin="mouse")
+        mock_invoke.reset_mock()
+        navigate_file_by_mouse_position(left_ctx)
+        mock_invoke.assert_called_once_with("fv.prev_file", ctx=left_ctx)
+
+    viewer.navigate_next.assert_not_called()
+    viewer.navigate_prev.assert_not_called()
 
 
 def test_navigate_file_by_mouse_position_honors_invert():
     viewer = _make_viewer()
     widget = _WidgetStub(QtCore.QRect(0, 0, 100, 100), QtCore.QPoint(90, 40))
 
-    navigate_file_by_mouse_position(DummyCtx(viewer, widget=widget, global_pos=QtCore.QPoint(0, 0)), invert=True)
-    viewer.navigate_prev.assert_called_once_with(step=1, loop=False, origin="mouse")
+    invert_ctx = DummyCtx(viewer, widget=widget, global_pos=QtCore.QPoint(0, 0))
+    normal_ctx = DummyCtx(viewer, widget=widget, global_pos=QtCore.QPoint(0, 0))
+    with patch("wafer.builtins.commands.content_viewer.BridgeCommand.invoke") as mock_invoke:
+        navigate_file_by_mouse_position(invert_ctx, invert=True)
+        mock_invoke.assert_called_once_with("fv.prev_file", ctx=invert_ctx)
 
-    navigate_file_by_mouse_position(DummyCtx(viewer, widget=widget, global_pos=QtCore.QPoint(0, 0)))
-    viewer.navigate_next.assert_called_once_with(step=1, loop=False, origin="mouse")
+        mock_invoke.reset_mock()
+        navigate_file_by_mouse_position(normal_ctx)
+        mock_invoke.assert_called_once_with("fv.next_file", ctx=normal_ctx)
+
+    viewer.navigate_next.assert_not_called()
+    viewer.navigate_prev.assert_not_called()
 
 
 def test_navigate_file_by_mouse_position_honors_axis_selection():
     viewer = _make_viewer()
     widget = _WidgetStub(QtCore.QRect(0, 0, 100, 100), QtCore.QPoint(10, 90))
 
-    navigate_file_by_mouse_position(DummyCtx(viewer, widget=widget, global_pos=QtCore.QPoint(0, 0)), axis="left/right")
-    viewer.navigate_prev.assert_called_once_with(step=1, loop=False, origin="mouse")
+    horizontal_ctx = DummyCtx(viewer, widget=widget, global_pos=QtCore.QPoint(0, 0))
+    vertical_ctx = DummyCtx(viewer, widget=widget, global_pos=QtCore.QPoint(0, 0))
+    with patch("wafer.builtins.commands.content_viewer.BridgeCommand.invoke") as mock_invoke:
+        navigate_file_by_mouse_position(horizontal_ctx, axis="left/right")
+        mock_invoke.assert_called_once_with("fv.prev_file", ctx=horizontal_ctx)
 
-    navigate_file_by_mouse_position(DummyCtx(viewer, widget=widget, global_pos=QtCore.QPoint(0, 0)), axis="up/down")
-    viewer.navigate_next.assert_called_once_with(step=1, loop=False, origin="mouse")
+        mock_invoke.reset_mock()
+        navigate_file_by_mouse_position(vertical_ctx, axis="up/down")
+        mock_invoke.assert_called_once_with("fv.next_file", ctx=vertical_ctx)
+
+    viewer.navigate_next.assert_not_called()
+    viewer.navigate_prev.assert_not_called()
+
+
+def test_navigate_file_by_mouse_position_ignores_legacy_loop_argument():
+    viewer = _make_viewer()
+    ctx = DummyCtx(viewer, widget=_WidgetStub(QtCore.QRect(0, 0, 100, 100), QtCore.QPoint(90, 40)), global_pos=QtCore.QPoint(0, 0))
+
+    with patch("wafer.builtins.commands.content_viewer.BridgeCommand.invoke") as mock_invoke:
+        navigate_file_by_mouse_position(ctx, loop=True)
+
+    mock_invoke.assert_called_once_with("fv.next_file", ctx=ctx)
 
 
 def test_navigate_file_by_mouse_position_warns_without_widget(monkeypatch):
@@ -132,9 +174,11 @@ def test_navigate_file_by_mouse_position_warns_without_widget(monkeypatch):
 
     monkeypatch.setattr("wafer.builtins.commands.content_viewer.Notifier.warning", warnings.append)
 
-    navigate_file_by_mouse_position(DummyCtx(viewer))
+    with patch("wafer.builtins.commands.content_viewer.BridgeCommand.invoke") as mock_invoke:
+        navigate_file_by_mouse_position(DummyCtx(viewer))
 
     assert warnings == ["Positional navigation requires a bound widget"]
+    mock_invoke.assert_not_called()
     viewer.navigate_next.assert_not_called()
     viewer.navigate_prev.assert_not_called()
 

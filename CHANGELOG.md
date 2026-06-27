@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.7.3]
+### Added
+- **Panel layout recovery commands**: added reset actions for restoring the default panel layout and recascading floating panel positions from the panel menu.
+- **Image spread controls**: added a dedicated toggle for image spreads and a persisted `match_size` option so multi-page image layouts can be enabled quickly and aligned consistently.
+- **Grid update scroll option**: added a toggle for scrolling back to the selected item after grid updates, with the preference saved in workspace state.
+
+### Changed
+- **Image spread navigation**: multi-image viewing now separates display count from navigation step size, so regular next/previous movement stays file-by-file while slideshow playback advances by the visible spread.
+- **Grid refresh behavior**: grid updates now preserve the current scroll position by default instead of jumping back to the selected item unless the follow-selection option is enabled.
+- **Command menu check states**: checkable and radio menu entries now resolve their state from the live UI or service state, keeping viewer, grid, query, window, and panel menus synchronized.
+
+### Fixed
+- **Watched-folder rename fallback**: rename events that arrive without a matching source row now trigger a targeted rescan so moved files recover more reliably in the database.
+- **Solo panel restart recovery**: restarting while a panel is isolated no longer leaves collapsed panels unable to reopen.
+- **Metadata delete confirmation**: searchable metadata edits now require explicit confirmation before deleting a key.
+
 ## [v0.7.2]
 ### Changed
 - **Windows taskbar relaunch behavior**: viewer windows now set the correct Windows relaunch identity when opened from the bundled launcher so taskbar grouping and relaunch actions stay tied to Wafer.

@@ -591,6 +591,101 @@ class TestAutoScroll:
         GridView.start_auto_scroll(gv, speed=25)
         assert gv._autoscroll_base_speed == 50
 
+    def test_start_auto_scroll_updates_loop_flags_when_explicit(self):
+        gv = MagicMock()
+        gv._scroll_speed = 100
+        gv._autoscroll_base_speed = 50
+        gv._autoscroll_loop = False
+        gv._autoscroll_query_on_loop = False
+
+        from wafer.app.viewer.grid.grid_view import GridView
+
+        GridView.start_auto_scroll(gv, speed=25, loop=True, query_on_loop=True)
+        assert gv._autoscroll_loop is True
+        assert gv._autoscroll_query_on_loop is True
+
+    def test_start_auto_scroll_preserves_loop_flags_by_default(self):
+        gv = MagicMock()
+        gv._scroll_speed = 100
+        gv._autoscroll_base_speed = 50
+        gv._autoscroll_loop = True
+        gv._autoscroll_query_on_loop = True
+
+        from wafer.app.viewer.grid.grid_view import GridView
+
+        GridView.start_auto_scroll(gv, speed=25)
+        assert gv._autoscroll_loop is True
+        assert gv._autoscroll_query_on_loop is True
+
+    def test_stop_auto_scroll_clears_loop_flags(self):
+        gv = MagicMock()
+        gv._autoscroll_loop = True
+        gv._autoscroll_query_on_loop = True
+        gv._auto_scroll_anim = MagicMock()
+
+        from wafer.app.viewer.grid.grid_view import GridView
+
+        GridView.stop_auto_scroll(gv)
+        assert gv._autoscroll_loop is False
+        assert gv._autoscroll_query_on_loop is False
+        gv._auto_scroll_anim.stop.assert_called_once_with()
+
+    @patch("wafer.app.viewer.grid.grid_view.Command")
+    def test_finished_restarts_from_top_when_loop_enabled(self, mock_command):
+        gv = MagicMock()
+        gv._autoscroll_loop = True
+        gv._autoscroll_query_on_loop = False
+        gv._is_at_scroll_end.return_value = True
+        gv._is_primary_reversed.return_value = False
+        gv._start_auto_scroll_from_current = MagicMock()
+        bar = MagicMock()
+        bar.minimum.return_value = 0
+        bar.maximum.return_value = 100
+        gv._primary_bar.return_value = bar
+
+        from wafer.app.viewer.grid.grid_view import GridView
+
+        GridView._on_auto_scroll_finished(gv)
+        bar.setValue.assert_called_once_with(0)
+        gv._start_auto_scroll_from_current.assert_called_once_with()
+        mock_command.invoke.assert_not_called()
+
+    @patch("wafer.app.viewer.grid.grid_view.Command")
+    def test_finished_invokes_query_when_query_on_loop_enabled(self, mock_command):
+        gv = MagicMock()
+        gv._autoscroll_loop = True
+        gv._autoscroll_query_on_loop = True
+        gv._is_at_scroll_end.return_value = True
+        gv._is_primary_reversed.return_value = False
+        gv._start_auto_scroll_from_current = MagicMock()
+        bar = MagicMock()
+        bar.minimum.return_value = 0
+        bar.maximum.return_value = 100
+        gv._primary_bar.return_value = bar
+
+        from wafer.app.viewer.grid.grid_view import GridView
+
+        GridView._on_auto_scroll_finished(gv)
+        mock_command.invoke.assert_called_once_with("qry.search", force=True)
+        gv._start_auto_scroll_from_current.assert_called_once_with()
+
+    @patch("wafer.app.viewer.grid.grid_view.Command")
+    def test_finished_does_nothing_when_not_at_scroll_end(self, mock_command):
+        gv = MagicMock()
+        gv._autoscroll_loop = True
+        gv._autoscroll_query_on_loop = True
+        gv._is_at_scroll_end.return_value = False
+        gv._start_auto_scroll_from_current = MagicMock()
+        bar = MagicMock()
+        gv._primary_bar.return_value = bar
+
+        from wafer.app.viewer.grid.grid_view import GridView
+
+        GridView._on_auto_scroll_finished(gv)
+        bar.setValue.assert_not_called()
+        gv._start_auto_scroll_from_current.assert_not_called()
+        mock_command.invoke.assert_not_called()
+
     def test_get_adjusted_scroll_speed_scales_with_base(self):
         gv = MagicMock()
         gv.base_height = 100

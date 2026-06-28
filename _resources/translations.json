@@ -2,11 +2,101 @@
   "Add Filter": {
     "en": "Add Filter"
   },
-  "Add filter after this": {
-    "en": "Add filter after this"
-  },
   "Color": {
     "en": "Color"
+  },
+  "Justified (Optimized) N(↙)": {
+    "en": "Justified (Optimized) N(↙)"
+  },
+  "Justified (Optimized) S(↙)": {
+    "en": "Justified (Optimized) S(↙)"
+  },
+  "Justified (Optimized) Z(↘)": {
+    "en": "Justified (Optimized) Z(↘)"
+  },
+  "Justified (Optimized) И(↘)": {
+    "en": "Justified (Optimized) И(↘)"
+  },
+  "Justified N(↙)": {
+    "en": "Justified N(↙)"
+  },
+  "Justified S(↙)": {
+    "en": "Justified S(↙)"
+  },
+  "Justified Z(↘)": {
+    "en": "Justified Z(↘)"
+  },
+  "Justified И(↘)": {
+    "en": "Justified И(↘)"
+  },
+  "Masonry N(↙)": {
+    "en": "Masonry N(↙)"
+  },
+  "Masonry S(↙)": {
+    "en": "Masonry S(↙)"
+  },
+  "Masonry Z(↘)": {
+    "en": "Masonry Z(↘)"
+  },
+  "Masonry И(↘)": {
+    "en": "Masonry И(↘)"
+  },
+  "MultiSpan Grid N(↙)": {
+    "en": "MultiSpan Grid N(↙)"
+  },
+  "MultiSpan Grid S(↙)": {
+    "en": "MultiSpan Grid S(↙)"
+  },
+  "MultiSpan Grid Z(↘)": {
+    "en": "MultiSpan Grid Z(↘)"
+  },
+  "MultiSpan Grid И(↘)": {
+    "en": "MultiSpan Grid И(↘)"
+  },
+  "MultiSpan Tiling N(↙)": {
+    "en": "MultiSpan Tiling N(↙)"
+  },
+  "MultiSpan Tiling S(↙)": {
+    "en": "MultiSpan Tiling S(↙)"
+  },
+  "MultiSpan Tiling Z(↘)": {
+    "en": "MultiSpan Tiling Z(↘)"
+  },
+  "MultiSpan Tiling И(↘)": {
+    "en": "MultiSpan Tiling И(↘)"
+  },
+  "Partition (Aspect) N(↙)": {
+    "en": "Partition (Aspect) N(↙)"
+  },
+  "Partition (Aspect) S(↙)": {
+    "en": "Partition (Aspect) S(↙)"
+  },
+  "Partition (Aspect) Z(↘)": {
+    "en": "Partition (Aspect) Z(↘)"
+  },
+  "Partition (Aspect) И(↘)": {
+    "en": "Partition (Aspect) И(↘)"
+  },
+  "Regex": {
+    "en": "Regex"
+  },
+  "Remove {count} file(s)": {
+    "en": "Remove {count} file(s)"
+  },
+  "Text": {
+    "en": "Text"
+  },
+  "interval": {
+    "en": "interval"
+  },
+  "speed": {
+    "en": "speed"
+  },
+  "trigger_search": {
+    "en": "trigger_search"
+  },
+  "Add filter after this": {
+    "en": "Add filter after this"
   },
   "Delete filter": {
     "en": "Delete filter"
@@ -22,12 +112,6 @@
   },
   "Move up": {
     "en": "Move up"
-  },
-  "Regex": {
-    "en": "Regex"
-  },
-  "Text": {
-    "en": "Text"
   },
   "Add Ignore Folder": {
     "en": "Add Ignore Folder"
@@ -274,6 +358,9 @@
   },
   "loop": {
     "en": "loop"
+  },
+  "query_on_loop": {
+    "en": "Query on Loop"
   },
   "step": {
     "en": "step"

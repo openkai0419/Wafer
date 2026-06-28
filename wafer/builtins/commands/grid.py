@@ -89,6 +89,11 @@ def _scroll_follow_checked():
     return g is not None and getattr(g, "follow_selection_on_update", False)
 
 
+def _autoscroll_checked():
+    g = _grid()
+    return g is not None and g.is_scrolling()
+
+
 class GridViewCommands(ActionKit.MenuBase):
     NAME = "GridView"
     PRIORITY = 40
@@ -284,7 +289,7 @@ class GridViewCommands(ActionKit.MenuBase):
         GridViewCommands.set_scale(ctx, int(int(w) / 10))
 
     @staticmethod
-    def toggle_autoscroll(ctx, speed: int = 50):
+    def toggle_autoscroll(ctx, speed: int = 50, loop: bool = False, query_on_loop: bool = False):
         view = GridViewCommands.get_view(ctx)
         scroll = getattr(view, "parent_scroll", None)
         if scroll is None:
@@ -294,7 +299,7 @@ class GridViewCommands(ActionKit.MenuBase):
         else:
             base_speed = int(speed)
             adjusted = view.get_adjusted_scroll_speed(base_speed) if hasattr(view, "get_adjusted_scroll_speed") else float(base_speed)
-            scroll.start_auto_scroll(adjusted, base_speed)
+            scroll.start_auto_scroll(adjusted, base_speed, loop=bool(loop), query_on_loop=bool(query_on_loop))
 
     @staticmethod
     def autoscroll_speed_up(ctx, step: int = 10):
@@ -529,7 +534,17 @@ class GridViewCommands(ActionKit.MenuBase):
             ActionKit.Command(path="grid.set_scale", display="Set Scale", func=cls.set_scale, params=[ActionKit.Param(name="height", value=500)]),
             ActionKit.Command(path="grid.scale_reset", display="Reset Scale", func=cls.scale_reset),
             "-",
-            ActionKit.Command(path="grid.toggle_autoscroll", display="AutoScroll", func=cls.toggle_autoscroll, params=[ActionKit.Param(name="speed", value=50, min_value=1, max_value=500)]),
+            ActionKit.Command(
+                path="grid.toggle_autoscroll",
+                display="AutoScroll",
+                func=cls.toggle_autoscroll,
+                checked=_autoscroll_checked,
+                params=[
+                    ActionKit.Param(name="speed", value=50, min_value=1, max_value=500),
+                    ActionKit.Param(name="loop", value=False),
+                    ActionKit.Param(name="query_on_loop", value=False),
+                ],
+            ),
             ActionKit.Command(
                 path="grid.autoscroll_speed_up", display="AutoScroll Speed Up", func=cls.autoscroll_speed_up, params=[ActionKit.Param(name="step", value=10, min_value=1, max_value=100)]
             ),

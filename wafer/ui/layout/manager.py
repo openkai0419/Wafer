@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from PySide6 import QtCore, QtWidgets
 
 from ...utils.logs import AppLogger
+from ..geometry import constrain_to_screens
 from .dock import (
     FloatingWindow,
     PanelDockWidget,
@@ -464,7 +465,8 @@ class LayoutManager(QtCore.QObject):
                 fs = (floating_overrides or {}).get(name) or self._tree.floating.get(name)
                 dock.setFloating(True)
                 if fs:
-                    dock.setGeometry(fs.x, fs.y, fs.width, fs.height)
+                    rect = constrain_to_screens(QtCore.QRect(fs.x, fs.y, fs.width, fs.height))
+                    dock.setGeometry(rect)
 
         self._arrange_docks_from_tree()
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtWidgets
 
 from ...utils.formatting import dpix
+from ..geometry import constrain_to_screens
 from .tree import FloatingState
 
 
@@ -68,7 +69,8 @@ def apply_floating(
 ) -> FloatingWindow:
     win = FloatingWindow(name, widget, parent)
     if state:
-        win.setGeometry(state.x, state.y, state.width, state.height)
+        rect = constrain_to_screens(QtCore.QRect(state.x, state.y, state.width, state.height))
+        win.setGeometry(rect)
     else:
         win.resize(400, 300)
     win.show()

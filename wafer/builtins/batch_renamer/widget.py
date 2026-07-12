@@ -16,6 +16,7 @@ from ...core.platform.paste import execute_paste_plans_with_ui
 from ...core.qt.dispatcher import Dispatcher, CancelToken
 from ...core.qt.rate_limit import qt_throttle
 from ...core.qt.thread import utility_pool
+from ...ui.geometry import screen_geometry_for
 from ...utils.formatting import dpix, natural_key
 from ...utils.logs import AppLogger
 from ...utils.paths import safe_is_file
@@ -1205,10 +1206,9 @@ class BatchRenameWidget(QtWidgets.QWidget):
     def _column_popup_pos(self, header, section, size):
         sec_x = header.sectionPosition(section) - header.offset()
         below = header.mapToGlobal(QtCore.QPoint(sec_x, header.height()))
-        screen = QtWidgets.QApplication.screenAt(below) or header.screen() or QtWidgets.QApplication.primaryScreen()
-        if screen is None:
+        geo = screen_geometry_for(below, header)
+        if geo is None:
             return below
-        geo = screen.availableGeometry()
         below_space = geo.bottom() + 1 - below.y()
         header_top = header.mapToGlobal(QtCore.QPoint(sec_x, 0))
         above_space = header_top.y() - geo.top()

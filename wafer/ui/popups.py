@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets
 
+from .geometry import clamp_point, screen_geometry_for
+
 
 class PopupBase(QtWidgets.QFrame):
     closed = QtCore.Signal()
@@ -57,20 +59,10 @@ class PopupBase(QtWidgets.QFrame):
         return QtCore.QSize(width, height)
 
     def _clamped_pos(self, pos: QtCore.QPoint, size: QtCore.QSize, anchor: QtWidgets.QWidget | None) -> QtCore.QPoint:
-        screen = QtWidgets.QApplication.screenAt(pos)
-        if screen is None and anchor is not None:
-            screen = anchor.screen()
-        if screen is None:
-            screen = QtWidgets.QApplication.primaryScreen()
-        if screen is None:
+        geo = screen_geometry_for(pos, anchor)
+        if geo is None:
             return pos
-        geo = screen.availableGeometry()
-        max_x = geo.left() + max(0, geo.width() - size.width())
-        max_y = geo.top() + max(0, geo.height() - size.height())
-        return QtCore.QPoint(
-            min(max(pos.x(), geo.left()), max_x),
-            min(max(pos.y(), geo.top()), max_y),
-        )
+        return clamp_point(pos, size, geo)
 
     def keyPressEvent(self, event):
         if event.key() == QtCore.Qt.Key_Escape:

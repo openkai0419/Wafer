@@ -62,6 +62,28 @@ def test_app_process_terminate_and_wait_empty():
     AppProcess.terminate_and_wait([])
 
 
+def test_app_process_terminate_and_wait_delegates_to_wait_procs_then_kill(monkeypatch):
+    calls = []
+    processes = [object()]
+    monkeypatch.setattr(
+        AppProcess,
+        "terminate",
+        staticmethod(lambda procs: calls.append(("terminate", procs))),
+    )
+    monkeypatch.setattr(
+        AppProcess,
+        "wait_procs_then_kill",
+        staticmethod(lambda procs, wait=5, kill_timeout=3: calls.append(("wait", procs, wait, kill_timeout))),
+    )
+
+    AppProcess.terminate_and_wait(processes, timeout=7, kill_timeout=2)
+
+    assert calls == [
+        ("terminate", processes),
+        ("wait", processes, 7, 2),
+    ]
+
+
 def test_app_process_terminate_and_wait_kills_process():
     import subprocess
     import time
@@ -113,3 +135,63 @@ def test_app_process_terminate_tree_kills_descendants():
 
 def test_app_process_shutdown_children():
     AppProcess.shutdown_children()
+
+
+def test_list_app_excludes_self():
+    procs = AppProcess.list_app(exclude_self=True)
+    assert os.getpid() not in [p.pid for p in procs]
+
+
+def test_wait_procs_then_kill_empty():
+    AppProcess.wait_procs_then_kill([])
+
+
+def test_wait_procs_then_kill_force_kills_unresponsive():
+    import subprocess
+
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        ps = psutil.Process(proc.pid)
+        AppProcess.wait_procs_then_kill([ps], wait=1, kill_timeout=2)
+        proc.wait(timeout=3)
+        assert proc.returncode is not None
+    finally:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+
+
+def test_force_close_all_no_app_processes(monkeypatch):
+    calls = {}
+    monkeypatch.setattr(AppProcess, "list_app", classmethod(lambda cls, exclude_self=True: []))
+    monkeypatch.setattr(
+        AppProcess,
+        "terminate_and_wait",
+        staticmethod(lambda procs, timeout=5, kill_timeout=3: calls.setdefault("terminated", procs)),
+    )
+    count = AppProcess.force_close_all(timeout=1, kill_timeout=1)
+    assert count == 0
+    assert calls["terminated"] == []
+
+
+def test_list_viewers_excludes_workers(monkeypatch):
+    class _FakeProc:
+        def __init__(self, pid, cmdline):
+            self.pid = pid
+            self.info = {"pid": pid, "cmdline": cmdline}
+
+    exe, main = AppProcess.base_command()
+    fakes = [
+        _FakeProc(101, [exe, main]),
+        _FakeProc(102, [exe, main, "--viewer", "--slot", "abc"]),
+        _FakeProc(103, [exe, main, "--tray"]),
+        _FakeProc(104, [exe, main, "--indexer", "db"]),
+        _FakeProc(105, [exe, main, "--collector", "db"]),
+        _FakeProc(106, [exe, main, "--parser", "db"]),
+    ]
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: iter(fakes))
+    pids = sorted(p.pid for p in AppProcess.list_viewers(exclude_self=False))
+    assert pids == [101, 102]
+
+

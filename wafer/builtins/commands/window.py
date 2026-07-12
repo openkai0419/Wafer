@@ -65,6 +65,26 @@ def restart_all(ctx):
         AppProcess.new_main("--tray")
 
 
+def close_all(ctx):
+    tray = ctx.get_instance("Tray")
+    if tray:
+        tray.close_all()
+        return
+    w = _win(ctx)
+    if not w:
+        return
+    node = getattr(w, "_node", None)
+    if node and AppProcess.get_by_args_subset("--tray"):
+        node.send("app.quit_all", dst="tray")
+        return
+    from ...app.lifecycle import CloseReason
+
+    AppLogger.info("close_all: tray unreachable, force-terminating all app processes")
+    AppProcess.force_close_all()
+    w._close_reason = CloseReason.SHUTDOWN
+    w.close()
+
+
 class WindowPanelCommands(ActionKit.MenuBase):
     NAME = "Window"
     PRIORITY = 83
@@ -93,4 +113,7 @@ class WindowRestartCommands(ActionKit.MenuBase):
             ActionKit.Command(path="win.restart_all", display="Restart All", func=restart_all),
             ActionKit.Command(path="win.restart_tray", display="Restart Tray", func=restart_tray),
             ActionKit.Command(path="win.restart_viewer", display="Restart Viewer", func=restart_viewer),
+            "-",
+            ":Quit",
+            ActionKit.Command(path="win.close_all", display="Quit All", func=close_all),
         ]

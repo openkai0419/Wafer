@@ -35,7 +35,7 @@ class TestSubscription:
         expected = {
             "update", "folderchanged", "progress", "maximum",
             "show_toggle", "slot.close",
-            "slot.restart", "slot.shutdown", "db.created", "db.deleted", "dev.log",
+            "slot.restart", "slot.shutdown", "app.shutdown", "db.created", "db.deleted", "dev.log",
             "tags.updated", "settings.changed",
         }
         assert topics == expected

@@ -30,6 +30,7 @@ from .widgets.callout_overlay import CalloutOverlay
 from .widgets.workspace_toolbar import WorkspaceToolbarWidget
 
 from ...builtins.commands.menu import AppMenuRegistrar
+from ..lifecycle import CloseReason
 from .search import SearchService
 from ...core.workspace import WorkspaceStore, WindowSlot
 from ...core.commands.bridge import UI, Command, Menu
@@ -49,7 +50,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._workspace_store = WorkspaceStore.instance()
         self.slot_id = None
         self._slot_entry: WindowSlot | None = None
-        self._slot_deleted = False
+        self._close_reason = CloseReason.NORMAL
         self._slot_ready = False
         self._folder_callout: CalloutOverlay | None = None
         if icon:
@@ -268,6 +269,7 @@ class MainWindow(QtWidgets.QMainWindow):
         b.slot_closed.connect(self._on_slot_closed)
         b.slot_restarted.connect(self._on_slot_restarted)
         b.slot_shutdown.connect(self._on_slot_shutdown)
+        b.app_shutdown.connect(self._on_app_shutdown)
         b.db_created.connect(self._on_db_created)
         b.db_deleted.connect(self._on_db_deleted)
         b.remote_log_received.connect(self._on_dev_log)
@@ -588,13 +590,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @QtCore.Slot()
     def close_by_slot_delete(self):
-        self._slot_deleted = True
+        self._close_reason = CloseReason.SLOT_DELETE
         self.close()
 
     def _perform_system_restart(self, include_self=False):
         from ...core.platform.process import AppProcess
 
         node = getattr(self, "_node", None)
+        others = []
         if node:
             store = self._workspace_store
             active_ids = store.get_active_slot_ids()
@@ -602,11 +605,13 @@ class MainWindow(QtWidgets.QMainWindow):
             restore_ids = active_ids if include_self else [sid for sid in active_ids if sid != own_sid]
             if restore_ids:
                 store.set_restore_slot_ids(restore_ids)
+            others = AppProcess.list_viewers()
             for sid in active_ids:
                 if sid != own_sid:
                     node.send("slot.restart", sid, dst="viewer")
 
         AppProcess.terminate_cmd("--tray", wait=True)
+        AppProcess.wait_procs_then_kill(others)
         AppProcess.new_main("--tray")
 
     def _restart_other_viewers(self):
@@ -621,6 +626,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @QtCore.Slot()
     def close_by_restart(self):
+        self._close_reason = CloseReason.RESTART
         self._save_slot()
         from ...core.platform.process import AppProcess
 
@@ -676,7 +682,13 @@ class MainWindow(QtWidgets.QMainWindow):
     @QtCore.Slot(str)
     def _on_slot_shutdown(self, slot_id: str):
         if slot_id == self.slot_id:
+            self._close_reason = CloseReason.SHUTDOWN
             self.close()
+
+    @QtCore.Slot()
+    def _on_app_shutdown(self):
+        self._close_reason = CloseReason.SHUTDOWN
+        self.close()
 
     def _show_query_menu(self):
         Menu.session(self).from_folder("Query").exec()
@@ -722,7 +734,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.path_coord.restore(entry.path, on_complete=after_path)
 
     def _save_slot(self):
-        if self._slot_deleted or not self._slot_ready or not self.slot_id:
+        if self._close_reason == CloseReason.SLOT_DELETE or not self._slot_ready or not self.slot_id:
             return
         entry = self._slot_entry or WindowSlot(slot_id=self.slot_id)
         entry.ui = self.ui_coord.capture()
@@ -754,14 +766,15 @@ class MainWindow(QtWidgets.QMainWindow):
             from ...plugin.installer import RestartScope
             from ...plugin.loader import get_plugin_dir
 
-            ps = PluginSettings()
-            scope = ps.needs_restart(get_plugin_dir())
-            if scope != RestartScope.NONE:
-                ps.clear_restart_scope()
-                if RestartScope.TRAY in scope:
-                    self._perform_system_restart()
-                elif RestartScope.VIEWER in scope:
-                    self._restart_other_viewers()
+            if self._close_reason == CloseReason.NORMAL:
+                ps = PluginSettings()
+                scope = ps.needs_restart(get_plugin_dir())
+                if scope != RestartScope.NONE:
+                    ps.clear_restart_scope()
+                    if RestartScope.TRAY in scope:
+                        self._perform_system_restart()
+                    elif RestartScope.VIEWER in scope:
+                        self._restart_other_viewers()
         except Exception as e:
             AppLogger.warning(f"on_close restart failed: {e}", exc=e)
         try:

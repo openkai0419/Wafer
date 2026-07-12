@@ -1,4 +1,16 @@
 {
+  "Quit": {
+    "en": "Quit"
+  },
+  "Quit All": {
+    "en": "Quit All"
+  },
+  "Close": {
+    "en": "Close"
+  },
+  "Close All": {
+    "en": "Close All"
+  },
   "New Update Available: v{version}": {
     "en": "New Update Available: v{version}"
   },

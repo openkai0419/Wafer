@@ -209,17 +209,20 @@ def restart_into_launcher(main_window) -> bool:
     from ...core.platform.process import AppProcess
 
     node = getattr(main_window, "_node", None)
+    others = []
     if node:
         store = main_window._workspace_store
         active_ids = store.get_active_slot_ids()
         if active_ids:
             store.set_restore_slot_ids(active_ids)
+        others = AppProcess.list_viewers()
         for sid in active_ids:
             if sid != main_window.slot_id:
                 node.send("slot.shutdown", sid, dst="viewer")
 
     AppLogger.info("[Updater] Restarting through launcher to apply staged update")
     AppProcess.terminate_cmd("--tray", wait=True)
+    AppProcess.wait_procs_then_kill(others)
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
     subprocess.Popen([str(launcher)], cwd=str(get_app_root_dir()), close_fds=True, creationflags=flags)
     main_window.close()

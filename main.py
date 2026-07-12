@@ -137,6 +137,7 @@ def _entry_tray():
 
             sys.exit(app.exec())
     except FileExistsError:
+        AppLogger.info('tray already running, this instance exits (single-tray lock held by another process)')
         return
 
 def _entry_indexer(name, parent_pid=None):

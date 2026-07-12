@@ -70,23 +70,12 @@ class ProcessMatcher:
 
     @staticmethod
     def _same_executable(pcmd0, expected_normpath):
-        pcmd_norm = ProcessMatcher._normalize_path(pcmd0)
-        if pcmd_norm == expected_normpath:
+        if ProcessMatcher._normalize_path(pcmd0) == expected_normpath:
             return True
         try:
-            if os.path.samefile(pcmd0, expected_normpath):
-                return True
+            return os.path.samefile(pcmd0, expected_normpath)
         except (FileNotFoundError, PermissionError, OSError):
-            pass
-        base = getattr(sys, "_base_executable", None)
-        if base:
-            equiv = {
-                ProcessMatcher._normalize_path(sys.executable),
-                ProcessMatcher._normalize_path(base),
-            }
-            if pcmd_norm in equiv and expected_normpath in equiv:
-                return True
-        return False
+            return False
 
 
 class AppProcess:
@@ -204,32 +193,24 @@ class AppProcess:
         return len(procs)
 
     @staticmethod
+    def _in_venv():
+        return sys.prefix != getattr(sys, "base_prefix", sys.prefix)
+
+    @staticmethod
     def base_command():
         main_path = os.path.abspath(sys.argv[0])
         exe = sys.executable
-        if sys.platform == "win32":
-            exe_dir = os.path.dirname(exe)
-            exe_base = os.path.basename(exe)
-            stem, ext = os.path.splitext(exe_base)
-            candidates = [
-                f"{stem}w{ext}",
-                f"{stem}-w{ext}",
-                stem.replace("python", "pythonw") + ext,
-                "pythonw.exe",
-            ]
-            for name in candidates:
-                if not name or name == exe_base:
-                    continue
-                candidate = os.path.join(exe_dir, name)
-                if os.path.isfile(candidate):
-                    exe = candidate
-                    break
+        base_exe = getattr(sys, "_base_executable", None)
+        if base_exe and AppProcess._in_venv() and os.path.normcase(base_exe) != os.path.normcase(exe):
+            exe = base_exe
         return [exe, main_path]
 
     @staticmethod
     def new_main(*args, **popen_kwargs):
         cmd = AppProcess.base_command() + list(args)
         env = os.environ.copy()
+        if AppProcess._in_venv():
+            env["__PYVENV_LAUNCHER__"] = sys.executable
         popen_kwargs.setdefault("stdin", subprocess.DEVNULL)
         popen_kwargs.setdefault("stdout", subprocess.DEVNULL)
         popen_kwargs.setdefault("stderr", subprocess.DEVNULL)
@@ -240,4 +221,6 @@ class AppProcess:
             flags = _windows_no_window_flags(flags)
             popen_kwargs["creationflags"] = flags
             popen_kwargs.setdefault("close_fds", True)
-        return subprocess.Popen(cmd, env=env, **popen_kwargs)
+        proc = subprocess.Popen(cmd, env=env, **popen_kwargs)
+        AppLogger.info(f"new_main: spawned pid={proc.pid} args={list(args)}")
+        return proc

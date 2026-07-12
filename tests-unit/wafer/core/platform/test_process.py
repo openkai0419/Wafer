@@ -1,5 +1,6 @@
 import os
 import sys
+import subprocess
 import pytest
 import psutil
 from wafer.core.platform.process import ProcessMatcher, AppProcess
@@ -29,8 +30,25 @@ def test_same_executable_nonexistent():
     )
 
 
+def test_same_executable_cross_interpreter_rejected():
+    # After the venv-redirector fix every process runs under the same real
+    # interpreter, so matching is strict: distinct interpreters do NOT match.
+    venv_pythonw = r"F:\proj\.venv\Scripts\pythonw.exe"
+    base_pythonw = r"C:\Python311\pythonw.exe"
+    assert not ProcessMatcher._same_executable(
+        venv_pythonw, ProcessMatcher._normalize_path(base_pythonw)
+    )
+
+
+def test_same_executable_portable_identical_exe():
+    portable = r"C:\App\python\wafer-pythonw.exe"
+    assert ProcessMatcher._same_executable(
+        portable, ProcessMatcher._normalize_path(portable)
+    )
+
+
 def test_find_by_args_subset_self():
-    matcher = ProcessMatcher([sys.executable])
+    matcher = ProcessMatcher([AppProcess.base_command()[0]])
     procs = matcher.find_by_args_subset()
     pids = [p.pid for p in procs]
     assert os.getpid() in pids
@@ -44,9 +62,65 @@ def test_find_by_args_exact_with_impossible_args():
 
 def test_app_process_base_command():
     cmd = AppProcess.base_command()
-    assert len(cmd) >= 1
-    exe_dir = os.path.dirname(sys.executable)
-    assert os.path.dirname(cmd[0]) == exe_dir
+    assert len(cmd) == 2
+    assert os.path.isfile(cmd[0])
+    assert cmd[1] == os.path.abspath(sys.argv[0])
+
+
+def test_base_command_prefers_base_executable_in_venv(monkeypatch):
+    monkeypatch.setattr(sys, "executable", r"X:\proj\.venv\Scripts\pythonw.exe", raising=False)
+    monkeypatch.setattr(sys, "_base_executable", r"X:\Python311\pythonw.exe", raising=False)
+    monkeypatch.setattr(sys, "prefix", r"X:\proj\.venv", raising=False)
+    monkeypatch.setattr(sys, "base_prefix", r"X:\Python311", raising=False)
+    cmd = AppProcess.base_command()
+    assert cmd[0] == r"X:\Python311\pythonw.exe"
+
+
+def test_base_command_uses_sys_executable_when_not_in_venv(monkeypatch):
+    portable = r"X:\app\python\wafer-pythonw.exe"
+    monkeypatch.setattr(sys, "executable", portable, raising=False)
+    monkeypatch.setattr(sys, "_base_executable", portable, raising=False)
+    monkeypatch.setattr(sys, "prefix", r"X:\app\python", raising=False)
+    monkeypatch.setattr(sys, "base_prefix", r"X:\app\python", raising=False)
+    cmd = AppProcess.base_command()
+    assert cmd[0] == portable
+
+
+def test_new_main_sets_pyvenv_launcher_in_venv(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(sys, "prefix", r"X:\proj\.venv", raising=False)
+    monkeypatch.setattr(sys, "base_prefix", r"X:\Python311", raising=False)
+    monkeypatch.setattr(sys, "executable", r"X:\proj\.venv\Scripts\pythonw.exe", raising=False)
+    monkeypatch.setattr(AppProcess, "base_command", staticmethod(lambda: ["exe", "main.py"]))
+
+    class _P:
+        pid = 123
+
+    def fake_popen(cmd, env=None, **kw):
+        captured["env"] = env
+        return _P()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    AppProcess.new_main("--tray")
+    assert captured["env"]["__PYVENV_LAUNCHER__"] == r"X:\proj\.venv\Scripts\pythonw.exe"
+
+
+def test_new_main_no_pyvenv_launcher_when_not_in_venv(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(sys, "prefix", r"X:\app\python", raising=False)
+    monkeypatch.setattr(sys, "base_prefix", r"X:\app\python", raising=False)
+    monkeypatch.setattr(AppProcess, "base_command", staticmethod(lambda: ["exe", "main.py"]))
+
+    class _P:
+        pid = 123
+
+    def fake_popen(cmd, env=None, **kw):
+        captured["env"] = env
+        return _P()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    AppProcess.new_main("--tray")
+    assert "__PYVENV_LAUNCHER__" not in captured["env"]
 
 
 def test_app_process_children():

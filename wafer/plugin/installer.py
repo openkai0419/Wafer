@@ -1,6 +1,7 @@
 import importlib
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -11,6 +12,7 @@ from enum import Enum, Flag, auto
 from pathlib import Path
 from collections.abc import Iterable
 
+from ..utils.hashes import sha256_file
 from ..utils.logs import AppLogger
 
 
@@ -60,6 +62,8 @@ _PYTHON_VERSION_STAMP = ".python_version"
 _LEGACY_DIRS = (".pending", ".pip_staging")
 
 _SUBPROCESS_POLL_INTERVAL = 0.05
+
+_POST_INSTALL_VERSION_RE = re.compile(r'^\s*POST_INSTALL_VERSION\s*=\s*["\']([^"\']*)["\']', re.MULTILINE)
 
 _packages_lock = threading.Lock()
 
@@ -213,7 +217,7 @@ def _ensure_python_version(extensions_dir: str):
         AppLogger.info(f"[Installer] Python version changed, purging {pkg_dir}")
         shutil.rmtree(pkg_dir, ignore_errors=True)
     os.makedirs(stamps, exist_ok=True)
-    _write_install_stamp(ver_file)
+    _write_install_stamp(ver_file, _python_version())
 
 
 def install_requirements(plugin_dir: str, extensions_dir: str, on_progress=None, is_cancelled=None, on_log=None) -> bool:
@@ -222,12 +226,12 @@ def install_requirements(plugin_dir: str, extensions_dir: str, on_progress=None,
     with _packages_lock:
         _ensure_python_version(extensions_dir)
         if not os.path.isfile(req_file):
-            _write_install_stamp(_stamp_path(plugin_dir, ".installed"))
+            _write_install_stamp(_stamp_path(plugin_dir, ".installed"), "")
             return True
         try:
             ep = EmbeddedPython()
             ep.pip_install(req_file, pkg_dir, on_progress=on_progress, is_cancelled=is_cancelled, context=os.path.basename(plugin_dir), on_log=on_log)
-            _write_install_stamp(_stamp_path(plugin_dir, ".installed"))
+            _write_install_stamp(_stamp_path(plugin_dir, ".installed"), _requirements_hash(req_file))
             AppLogger.info(f"[Installer] Dependencies installed: {os.path.basename(plugin_dir)}")
             return True
         except Exception as e:
@@ -237,20 +241,42 @@ def install_requirements(plugin_dir: str, extensions_dir: str, on_progress=None,
 
 def write_post_install_stamp(plugin_dir: str):
     stamp = _stamp_path(plugin_dir, ".post_installed")
-    os.makedirs(os.path.dirname(stamp), exist_ok=True)
-    Path(stamp).touch()
+    _write_install_stamp(stamp, declared_post_install_version(plugin_dir))
 
 
-def _write_install_stamp(stamp_path: str):
+def declared_post_install_version(plugin_dir: str) -> str:
+    try:
+        for path in sorted(Path(plugin_dir).glob("*.py")):
+            match = _POST_INSTALL_VERSION_RE.search(path.read_text("utf-8", errors="replace"))
+            if match:
+                return match.group(1).strip()
+    except OSError as e:
+        AppLogger.warning(f"[Installer] Failed to read POST_INSTALL_VERSION in {plugin_dir}: {e}", exc=e)
+    return ""
+
+
+def _requirements_hash(req_file: str) -> str:
+    try:
+        return sha256_file(req_file)
+    except OSError as e:
+        AppLogger.warning(f"[Installer] Failed to hash {req_file}: {e}", exc=e)
+        return ""
+
+
+def _write_install_stamp(stamp_path: str, content: str):
     os.makedirs(os.path.dirname(stamp_path), exist_ok=True)
-    Path(stamp_path).write_text(_python_version(), "utf-8")
+    Path(stamp_path).write_text(content, "utf-8")
+
+
+def _read_stamp(stamp_path: str) -> str | None:
+    try:
+        return Path(stamp_path).read_text("utf-8").strip()
+    except OSError:
+        return None
 
 
 def _stamp_version_matches(stamp_path: str) -> bool:
-    try:
-        return Path(stamp_path).read_text("utf-8").strip() == _python_version()
-    except (OSError, ValueError):
-        return False
+    return _read_stamp(stamp_path) == _python_version()
 
 
 def needs_install(plugin_dir: str) -> bool:
@@ -261,18 +287,16 @@ def needs_install(plugin_dir: str) -> bool:
     ver_stamp = os.path.join(_stamps_dir(extensions_dir), _PYTHON_VERSION_STAMP)
     if os.path.isfile(ver_stamp) and not _stamp_version_matches(ver_stamp):
         return True
-    stamp = _stamp_path(plugin_dir, ".installed")
-    if not os.path.isfile(stamp):
-        return True
-    return os.path.getmtime(req_file) > os.path.getmtime(stamp)
+    stamp = _read_stamp(_stamp_path(plugin_dir, ".installed"))
+    return stamp is None or stamp != _requirements_hash(req_file)
 
 
 def needs_post_install(plugin_dir: str) -> bool:
     req_file = os.path.join(plugin_dir, "requirements.txt")
     if not os.path.isfile(req_file):
         return False
-    stamp = _stamp_path(plugin_dir, ".post_installed")
-    return not os.path.isfile(stamp)
+    stamp = _read_stamp(_stamp_path(plugin_dir, ".post_installed"))
+    return stamp is None or stamp != declared_post_install_version(plugin_dir)
 
 
 def needs_setup(plugin_dir: str) -> bool:

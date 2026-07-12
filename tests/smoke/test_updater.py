@@ -1,9 +1,9 @@
 from wafer.builtins.registration import _discover_builtins, _import_builtin_modules
-from wafer.builtins.update_notifier.service import build_update_info
+from wafer.builtins.updater.service import build_update_info
 from wafer.plugin.loader import _get_registry_map
 
 
-def test_update_notifier_builtin_is_discoverable():
+def test_updater_builtin_is_discoverable():
     registry_map = _get_registry_map()
     found = []
     for module in _import_builtin_modules():
@@ -12,11 +12,11 @@ def test_update_notifier_builtin_is_discoverable():
     panels = {cls.NAME for key, cls in found if key == "panel"}
     commands = {cls.__name__ for key, cls in found if key == "command"}
 
-    assert "update_notifier" in panels
+    assert "updater" in panels
     assert "UpdateCommands" in commands
 
 
-def test_update_notifier_service_builds_smoke_result_without_network():
+def test_updater_service_builds_smoke_result_without_network():
     release = {
         "tag_name": "v0.6.19",
         "html_url": "https://github.com/openkai0419/Wafer/releases/tag/v0.6.19",

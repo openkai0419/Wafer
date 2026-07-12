@@ -34,8 +34,10 @@ from wafer.plugin.installer import (
     _PACKAGES_DIR,
     _STAMPS_DIR,
     _PYTHON_VERSION_STAMP,
+    _requirements_hash,
     _write_install_stamp,
     _stamp_version_matches,
+    declared_post_install_version,
 )
 
 
@@ -101,7 +103,7 @@ class TestEnsurePythonVersion:
     def test_noop_when_version_matches(self, tmp_path):
         stamps = tmp_path / _PACKAGES_DIR / _STAMPS_DIR
         stamps.mkdir(parents=True)
-        _write_install_stamp(str(stamps / _PYTHON_VERSION_STAMP))
+        _write_install_stamp(str(stamps / _PYTHON_VERSION_STAMP), _python_version())
         pkg = tmp_path / _PACKAGES_DIR / "numpy"
         pkg.mkdir()
 
@@ -247,6 +249,29 @@ class TestWritePostInstallStamp:
         stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
         assert stamp.exists()
 
+    def test_records_declared_version(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        (plugin / "collector.py").write_text('POST_INSTALL_VERSION = "2"\n', "utf-8")
+        write_post_install_stamp(str(plugin))
+        stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
+        assert stamp.read_text("utf-8") == "2"
+
+
+class TestDeclaredPostInstallVersion:
+    def test_default_empty(self, tmp_path):
+        plugin = tmp_path / "plugin"
+        plugin.mkdir()
+        (plugin / "__init__.py").write_text("x = 1\n", "utf-8")
+        assert declared_post_install_version(str(plugin)) == ""
+
+    def test_reads_class_attribute(self, tmp_path):
+        plugin = tmp_path / "plugin"
+        plugin.mkdir()
+        (plugin / "__init__.py").write_text('class P:\n    POST_INSTALL_VERSION = "1.2"\n', "utf-8")
+        assert declared_post_install_version(str(plugin)) == "1.2"
+
 
 class TestNeedsInstall:
     def test_no_requirements_returns_false(self, tmp_path):
@@ -262,30 +287,41 @@ class TestNeedsInstall:
         (plugin / "requirements.txt").write_text("some-package\n")
         assert needs_install(str(plugin)) is True
 
-    def test_stamp_newer_returns_false(self, tmp_path):
+    def test_stamp_hash_matches_returns_false(self, tmp_path):
         ext_dir = tmp_path / "extensions"
         plugin = ext_dir / "plugin"
         plugin.mkdir(parents=True)
         req = plugin / "requirements.txt"
         req.write_text("some-package\n")
-        os.utime(str(req), (0, 0))
         stamps = ext_dir / _PACKAGES_DIR / _STAMPS_DIR
         stamps.mkdir(parents=True)
-        _write_install_stamp(str(stamps / _PYTHON_VERSION_STAMP))
-        _write_install_stamp(str(stamps / "plugin.installed"))
+        _write_install_stamp(str(stamps / _PYTHON_VERSION_STAMP), _python_version())
+        _write_install_stamp(str(stamps / "plugin.installed"), _requirements_hash(str(req)))
         assert needs_install(str(plugin)) is False
 
-    def test_stamp_older_returns_true(self, tmp_path):
+    def test_stamp_hash_mismatch_returns_true(self, tmp_path):
         ext_dir = tmp_path / "extensions"
         plugin = ext_dir / "plugin"
         plugin.mkdir(parents=True)
-        (plugin / "requirements.txt").write_text("some-package\n")
+        req = plugin / "requirements.txt"
+        req.write_text("some-package\n")
         stamps = ext_dir / _PACKAGES_DIR / _STAMPS_DIR
         stamps.mkdir(parents=True)
-        _write_install_stamp(str(stamps / _PYTHON_VERSION_STAMP))
-        stamp = stamps / "plugin.installed"
-        _write_install_stamp(str(stamp))
-        os.utime(str(stamp), (0, 0))
+        _write_install_stamp(str(stamps / _PYTHON_VERSION_STAMP), _python_version())
+        _write_install_stamp(str(stamps / "plugin.installed"), _requirements_hash(str(req)))
+        req.write_text("some-package==2.0\n")
+        assert needs_install(str(plugin)) is True
+
+    def test_legacy_version_stamp_returns_true(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        req = plugin / "requirements.txt"
+        req.write_text("some-package\n")
+        stamps = ext_dir / _PACKAGES_DIR / _STAMPS_DIR
+        stamps.mkdir(parents=True)
+        _write_install_stamp(str(stamps / _PYTHON_VERSION_STAMP), _python_version())
+        _write_install_stamp(str(stamps / "plugin.installed"), _python_version())
         assert needs_install(str(plugin)) is True
 
     def test_version_mismatch_returns_true(self, tmp_path):
@@ -294,11 +330,10 @@ class TestNeedsInstall:
         plugin.mkdir(parents=True)
         req = plugin / "requirements.txt"
         req.write_text("some-package\n")
-        os.utime(str(req), (0, 0))
         stamps = ext_dir / _PACKAGES_DIR / _STAMPS_DIR
         stamps.mkdir(parents=True)
         (stamps / _PYTHON_VERSION_STAMP).write_text("3.10.9", "utf-8")
-        _write_install_stamp(str(stamps / "plugin.installed"))
+        _write_install_stamp(str(stamps / "plugin.installed"), _requirements_hash(str(req)))
         assert needs_install(str(plugin)) is True
 
 
@@ -326,6 +361,17 @@ class TestNeedsPostInstall:
         plugin.mkdir(parents=True)
         assert needs_post_install(str(plugin)) is False
 
+    def test_returns_true_when_declared_version_changed(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        (plugin / "requirements.txt").write_text("some-pkg\n")
+        (plugin / "__init__.py").write_text('POST_INSTALL_VERSION = "1"\n', "utf-8")
+        write_post_install_stamp(str(plugin))
+        assert needs_post_install(str(plugin)) is False
+        (plugin / "__init__.py").write_text('POST_INSTALL_VERSION = "2"\n', "utf-8")
+        assert needs_post_install(str(plugin)) is True
+
 
 class TestNeedsSetup:
     def test_true_when_pip_needed(self, tmp_path):
@@ -339,24 +385,24 @@ class TestNeedsSetup:
         ext_dir = tmp_path / "extensions"
         plugin = ext_dir / "plugin"
         plugin.mkdir(parents=True)
-        (plugin / "requirements.txt").write_text("pkg\n")
-        os.utime(str(plugin / "requirements.txt"), (0, 0))
+        req = plugin / "requirements.txt"
+        req.write_text("pkg\n")
         stamps = ext_dir / _PACKAGES_DIR / _STAMPS_DIR
         stamps.mkdir(parents=True)
-        _write_install_stamp(str(stamps / _PYTHON_VERSION_STAMP))
-        _write_install_stamp(str(stamps / "plugin.installed"))
+        _write_install_stamp(str(stamps / _PYTHON_VERSION_STAMP), _python_version())
+        _write_install_stamp(str(stamps / "plugin.installed"), _requirements_hash(str(req)))
         assert needs_setup(str(plugin)) is True
 
     def test_false_when_both_stamps_exist(self, tmp_path):
         ext_dir = tmp_path / "extensions"
         plugin = ext_dir / "plugin"
         plugin.mkdir(parents=True)
-        (plugin / "requirements.txt").write_text("pkg\n")
-        os.utime(str(plugin / "requirements.txt"), (0, 0))
+        req = plugin / "requirements.txt"
+        req.write_text("pkg\n")
         stamps = ext_dir / _PACKAGES_DIR / _STAMPS_DIR
         stamps.mkdir(parents=True)
-        _write_install_stamp(str(stamps / _PYTHON_VERSION_STAMP))
-        _write_install_stamp(str(stamps / "plugin.installed"))
+        _write_install_stamp(str(stamps / _PYTHON_VERSION_STAMP), _python_version())
+        _write_install_stamp(str(stamps / "plugin.installed"), _requirements_hash(str(req)))
         (stamps / "plugin.post_installed").touch()
         assert needs_setup(str(plugin)) is False
 

@@ -26,12 +26,24 @@ def validate_url(url: str, allowed_hosts: tuple[str, ...]) -> str:
     return url
 
 
-def safe_download(url: str, dest: str, *, allowed_hosts: tuple[str, ...] | None = None, expected_sha256: str | None = None) -> None:
+def safe_download(url: str, dest: str, *, allowed_hosts: tuple[str, ...] | None = None, expected_sha256: str | None = None, on_progress=None, timeout: int = 30, user_agent: str | None = None) -> None:
     if allowed_hosts:
         validate_url(url, allowed_hosts)
     tmp_dest = dest + ".tmp"
     try:
-        urllib.request.urlretrieve(url, tmp_dest)
+        headers = {"User-Agent": user_agent} if user_agent else {}
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as resp, open(tmp_dest, "wb") as out:
+            total = int(resp.headers.get("Content-Length") or 0)
+            done = 0
+            while True:
+                chunk = resp.read(1024 * 256)
+                if not chunk:
+                    break
+                out.write(chunk)
+                done += len(chunk)
+                if on_progress is not None:
+                    on_progress(done, total)
         if expected_sha256 is not None:
             if not verify_sha256(tmp_dest, expected_sha256):
                 raise RuntimeError(f"SHA256 mismatch for {os.path.basename(dest)}: expected {expected_sha256.lower()}")

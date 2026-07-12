@@ -79,10 +79,17 @@ def _wait_install_then_load_plugins(app):
     load_plugins()
 
 
+def _enable_shared_opengl_contexts():
+    from PySide6 import QtCore
+
+    QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_ShareOpenGLContexts, True)
+
+
 def _create_app():
     from PySide6 import QtWidgets
     from wafer.core.qt.tooltip import install_instant_tooltips
 
+    _enable_shared_opengl_contexts()
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(__version__)
@@ -114,6 +121,7 @@ def _entry_tray():
             AppProcess.terminate_and_wait(procs)
             AppLogger.info('TRAY RUNNING')
 
+            _enable_shared_opengl_contexts()
             app = QtWidgets.QApplication(sys.argv)
             app.setQuitOnLastWindowClosed(False)
             app.setApplicationName(APP_NAME)

@@ -39,6 +39,7 @@ jobs:
             'dist/Wafer/python/wafer-python.exe',
             'dist/Wafer/main.py',
             'dist/Wafer/Wafer.exe',
+            'dist/Wafer/Uninstaller.exe',
             'dist/Wafer/LICENSE',
             'dist/Wafer/COPYING',
             'dist/Wafer/COPYING.LESSER',
@@ -98,8 +99,13 @@ jobs:
           cd Wafer
           zip -r ../Wafer-${{ github.ref_name }}.zip .
 
+      - name: Create update manifest
+        run: python3 scripts/make_update_manifest.py Wafer-${{ github.ref_name }}.zip ${{ github.ref_name }} manifest.json
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: Wafer-${{ github.ref_name }}.zip
+          files: |
+            Wafer-${{ github.ref_name }}.zip
+            manifest.json
           body_path: release-notes.md

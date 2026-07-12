@@ -1,5 +1,6 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from wafer.core.commands.binding.instance_registry import InstanceRegistry
 from wafer.core.commands.binding.mixins import CommandBindingMixin
 from wafer.core.commands.binding.mouse.types import ClickType, MouseActionKey, MouseButton
 from wafer.core.commands.binding.mouse.store import MouseBindingStore
@@ -55,6 +56,7 @@ def test_drag_enter_is_rejected_without_drop_acceptor(qtbot):
         store.set_all({})
         reg._commands = prev_cmds
         DropAcceptRegistry.instance()._acceptors = prev_acceptors
+        InstanceRegistry._instance = None
 
 
 def test_drag_enter_is_accepted_with_drop_acceptor(qtbot):
@@ -95,3 +97,4 @@ def test_drag_enter_is_accepted_with_drop_acceptor(qtbot):
         store.set_all({})
         reg._commands = prev_cmds
         DropAcceptRegistry.instance()._acceptors = prev_acceptors
+        InstanceRegistry._instance = None

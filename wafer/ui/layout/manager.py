@@ -259,6 +259,22 @@ class LayoutManager(QtCore.QObject):
         active = self._tree.all_names()
         return [n for n in self._panels if n not in active]
 
+    def close_floating_windows(self):
+        closed = 0
+        for entry in self._panels.values():
+            win = entry.floating_window
+            if win is None:
+                continue
+            try:
+                win.closed.disconnect(self._on_floating_closed)
+            except (RuntimeError, TypeError):
+                pass
+            entry.floating_window = None
+            win.close()
+            closed += 1
+        if closed:
+            AppLogger.info(f"LayoutManager closed {closed} floating window(s) on shutdown")
+
     def save_state(self) -> dict:
         self._sync_tree_from_current()
         result = {

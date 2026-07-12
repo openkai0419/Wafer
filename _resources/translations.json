@@ -1,4 +1,37 @@
 {
+  "New Update Available: v{version}": {
+    "en": "New Update Available: v{version}"
+  },
+  "Click to toggle all databases": {
+    "en": "Click to toggle all databases"
+  },
+  "Default for New Databases": {
+    "en": "Default for New Databases"
+  },
+  "Install Recommended for general use": {
+    "en": "Install Recommended for general use"
+  },
+  "Installed": {
+    "en": "Installed"
+  },
+  "No Dependencies": {
+    "en": "No Dependencies"
+  },
+  "Open": {
+    "en": "Open"
+  },
+  "Per-Database Assignment": {
+    "en": "Per-Database Assignment"
+  },
+  "Show Log": {
+    "en": "Show Log"
+  },
+  "This extension is marked as HEAVY. This may:\n- use large amount of GPU\n- take long time to install": {
+    "en": "This extension is marked as HEAVY. This may:\n- use large amount of GPU\n- take long time to install"
+  },
+  "add folders from here": {
+    "en": "add folders from here"
+  },
   "CAPTION": {
     "en": "CAPTION"
   },

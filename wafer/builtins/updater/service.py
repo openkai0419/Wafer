@@ -18,6 +18,7 @@ REPOSITORY = "openkai0419/Wafer"
 LATEST_RELEASE_API_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 RELEASE_NOTES_RAW_BASE_URL = f"https://raw.githubusercontent.com/{REPOSITORY}"
 RELEASE_NOTES_FILENAME = "RELEASE_NOTES.md"
+MANIFEST_ASSET_NAME = "manifest.json"
 DEFAULT_TIMEOUT = 5.0
 USER_AGENT = "Wafer Update Notifier"
 _ALLOWED_HOSTS = {"api.github.com", "github.com", "raw.githubusercontent.com", "objects.githubusercontent.com"}
@@ -34,6 +35,7 @@ class UpdateInfo:
     release_notes: str
     is_newer: bool
     from_cache: bool = False
+    supports_in_app_update: bool = True
 
 
 @dataclass(frozen=True)
@@ -155,7 +157,15 @@ def build_update_info(release: dict, release_notes: str = "", *, current_version
         release_notes=str(release_notes or "").strip() or release_body,
         is_newer=is_newer_version(current_version, latest_version),
         from_cache=from_cache,
+        supports_in_app_update=release_supports_in_app_update(release),
     )
+
+
+def release_supports_in_app_update(release: dict) -> bool:
+    assets = release.get("assets")
+    if not isinstance(assets, list):
+        return False
+    return any(isinstance(a, dict) and a.get("name") == MANIFEST_ASSET_NAME for a in assets)
 
 
 def should_notify_update(info: UpdateInfo | None, skipped_version: str = "") -> bool:

@@ -16,6 +16,7 @@ class ViewerIpcBridge(QtCore.QObject):
     show_toggled = QtCore.Signal(str, bool)
     slot_closed = QtCore.Signal(str)
     slot_restarted = QtCore.Signal(str)
+    slot_shutdown = QtCore.Signal(str)
     db_created = QtCore.Signal(str)
     db_deleted = QtCore.Signal(str)
     remote_log_received = QtCore.Signal(str, str, str, str)
@@ -54,6 +55,7 @@ class ViewerIpcBridge(QtCore.QObject):
         n.subscribe("show_toggle", self._on_show_toggle)
         n.subscribe("slot.close", self._on_slot_close)
         n.subscribe("slot.restart", self._on_slot_restart)
+        n.subscribe("slot.shutdown", self._on_slot_shutdown)
         n.subscribe("db.created", self._on_db_created)
         n.subscribe("db.deleted", self._on_db_deleted)
         n.subscribe("dev.log", self._on_dev_log)
@@ -107,6 +109,9 @@ class ViewerIpcBridge(QtCore.QObject):
 
     def _on_slot_restart(self, msg):
         return self._invoke("_emit_slot_restarted", QtCore.Q_ARG(str, str(msg.payload)))
+
+    def _on_slot_shutdown(self, msg):
+        return self._invoke("_emit_slot_shutdown", QtCore.Q_ARG(str, str(msg.payload)))
 
     def _on_db_created(self, msg):
         return self._invoke("_emit_db_created", QtCore.Q_ARG(str, str(msg.payload)))
@@ -169,6 +174,10 @@ class ViewerIpcBridge(QtCore.QObject):
     @QtCore.Slot(str)
     def _emit_slot_restarted(self, slot_id: str):
         self.slot_restarted.emit(slot_id)
+
+    @QtCore.Slot(str)
+    def _emit_slot_shutdown(self, slot_id: str):
+        self.slot_shutdown.emit(slot_id)
 
     @QtCore.Slot(str)
     def _emit_db_created(self, name: str):

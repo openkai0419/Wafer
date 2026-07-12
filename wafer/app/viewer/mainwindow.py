@@ -267,6 +267,7 @@ class MainWindow(QtWidgets.QMainWindow):
         b.show_toggled.connect(self.toggle_show)
         b.slot_closed.connect(self._on_slot_closed)
         b.slot_restarted.connect(self._on_slot_restarted)
+        b.slot_shutdown.connect(self._on_slot_shutdown)
         b.db_created.connect(self._on_db_created)
         b.db_deleted.connect(self._on_db_deleted)
         b.remote_log_received.connect(self._on_dev_log)
@@ -672,6 +673,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if slot_id == self.slot_id:
             self.close_by_restart()
 
+    @QtCore.Slot(str)
+    def _on_slot_shutdown(self, slot_id: str):
+        if slot_id == self.slot_id:
+            self.close()
+
     def _show_query_menu(self):
         Menu.session(self).from_folder("Query").exec()
 
@@ -742,6 +748,7 @@ class MainWindow(QtWidgets.QMainWindow):
             t.dump_missing_keys()
         except Exception as e:
             AppLogger.warning(f"on_close failed: {e}", exc=e)
+        self._layout_manager.close_floating_windows()
         try:
             from ...plugin.settings import PluginSettings
             from ...plugin.installer import RestartScope

@@ -59,7 +59,7 @@ def _import_builtin_modules():
         viewers_tab,
         widget as _pm_widget,
     )
-    from .update_notifier import commands as _update_commands, widget as _update_widget
+    from .updater import commands as _update_commands, widget as _update_widget
 
     return [
         _image_viewer,

@@ -1,6 +1,6 @@
 import pytest
 
-from wafer.builtins.update_notifier.versioning import is_newer_version, normalize_version, parse_version
+from wafer.builtins.updater.versioning import is_newer_version, normalize_version, parse_version
 
 
 @pytest.mark.parametrize(

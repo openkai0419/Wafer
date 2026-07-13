@@ -73,8 +73,8 @@ def stage_update(target_tag: str, target_version: str, *, on_progress=None, is_c
     stack = ExitStack()
     try:
         stack.enter_context(file_lock(str(lock_path), timeout=0.2))
-    except TimeoutError:
-        raise StageError("Another update download is already in progress")
+    except TimeoutError as exc:
+        raise StageError("Another update download is already in progress") from exc
     with stack:
         try:
             return _stage_locked(root, target_tag, target_version, on_progress, is_cancelled)

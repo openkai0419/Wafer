@@ -96,7 +96,4 @@ def keep_window_on_screen(window: QtWidgets.QWidget) -> None:
     if corrected.topLeft() == frame.topLeft():
         return
     window.move(corrected.topLeft())
-    AppLogger.info(
-        f"Window '{window.objectName() or window.windowTitle() or type(window).__name__}' "
-        f"was off-screen; repositioned to ({corrected.left()}, {corrected.top()})."
-    )
+    AppLogger.info(f"Window '{window.objectName() or window.windowTitle() or type(window).__name__}' was off-screen; repositioned to ({corrected.left()}, {corrected.top()}).")

@@ -1,12 +1,14 @@
 from PySide6 import QtCore, QtWidgets
 
 from wafer.ui.geometry import (
+    MIN_VISIBLE_TITLE_PX,
     TITLE_BAND_PX,
     clamp_point,
     constrain_to_screens,
     keep_window_on_screen,
     screen_geometry_for,
 )
+from wafer.utils.formatting import dpix
 
 
 def _primary_geo():
@@ -33,6 +35,10 @@ def _grab_visible_on_any_screen(rect):
     return False
 
 
+def _required_visible_title_width(width):
+    return min(width, dpix(MIN_VISIBLE_TITLE_PX))
+
+
 def test_screen_geometry_for_returns_available(qtbot):
     geo = _primary_geo()
     result = screen_geometry_for(geo.center())
@@ -56,7 +62,9 @@ def test_constrain_keeps_on_screen_rect_unchanged(qtbot):
 
 def test_constrain_keeps_sufficient_title_visible(qtbot):
     rightmost = max(_all_geos(), key=lambda g: g.right())
-    rect = QtCore.QRect(rightmost.right() - 150, rightmost.top() + 100, 300, 200)
+    width = 300
+    visible = _required_visible_title_width(width)
+    rect = QtCore.QRect(rightmost.right() + 1 - visible, rightmost.top() + 100, width, 200)
     assert constrain_to_screens(rect) == rect
 
 

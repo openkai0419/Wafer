@@ -1,4 +1,22 @@
 {
+  "Cover": {
+    "en": "Cover"
+  },
+  "Left thumbnail fit": {
+    "en": "Left thumbnail fit"
+  },
+  "Right thumbnail fit": {
+    "en": "Right thumbnail fit"
+  },
+  "Row thumbnail opacity": {
+    "en": "Row thumbnail opacity"
+  },
+  "Select files and run Batch Renamer\nor drop files here": {
+    "en": "Select files and run Batch Renamer\nor drop files here"
+  },
+  "Selected thumbnail opacity": {
+    "en": "Selected thumbnail opacity"
+  },
   "Quit": {
     "en": "Quit"
   },

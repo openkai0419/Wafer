@@ -197,7 +197,7 @@ class Program
 
         if (!WaitForExclusiveAccess(appRoot))
         {
-            Log("Skipped: other Wafer processes are still running, will retry on next start");
+            Log("Skipped: other Wafer process is still running, will retry on next start");
             return false;
         }
 
@@ -477,50 +477,6 @@ class Program
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppDataDirName);
     }
 
-    static bool ConfirmUninstall(string appRoot, out bool deleteUserData)
-    {
-        using (Form form = new Form())
-        using (Label label = new Label())
-        using (CheckBox userDataCheck = new CheckBox())
-        using (Button okButton = new Button())
-        using (Button cancelButton = new Button())
-        {
-            form.Text = UninstallerTitle;
-            form.FormBorderStyle = FormBorderStyle.FixedDialog;
-            form.MaximizeBox = false;
-            form.MinimizeBox = false;
-            form.ShowInTaskbar = true;
-            form.StartPosition = FormStartPosition.CenterScreen;
-            form.ClientSize = new Size(480, 172);
-
-            label.Text = "Uninstall Wafer?\n\nThis removes the install folder:\n" + appRoot;
-            label.SetBounds(16, 16, 448, 76);
-
-            userDataCheck.Text = "Also delete user data (settings, database, cache)";
-            userDataCheck.Checked = true;
-            userDataCheck.SetBounds(16, 96, 448, 24);
-
-            okButton.Text = "Uninstall";
-            okButton.DialogResult = DialogResult.OK;
-            okButton.SetBounds(296, 132, 80, 26);
-
-            cancelButton.Text = "Cancel";
-            cancelButton.DialogResult = DialogResult.Cancel;
-            cancelButton.SetBounds(384, 132, 80, 26);
-
-            form.Controls.Add(label);
-            form.Controls.Add(userDataCheck);
-            form.Controls.Add(okButton);
-            form.Controls.Add(cancelButton);
-            form.AcceptButton = okButton;
-            form.CancelButton = cancelButton;
-
-            bool confirmed = form.ShowDialog() == DialogResult.OK;
-            deleteUserData = userDataCheck.Checked;
-            return confirmed;
-        }
-    }
-
     static int RunUninstallMode(string appRoot)
     {
         Application.EnableVisualStyles();
@@ -529,44 +485,163 @@ class Program
             MessageBox.Show("Install folder not found: " + appRoot, UninstallerTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
-        bool deleteUserData;
-        if (!ConfirmUninstall(appRoot, out deleteUserData))
-            return 0;
-        while (OtherAppProcessesRunning(appRoot))
+        using (UninstallWindow window = new UninstallWindow(appRoot))
         {
-            DialogResult choice = MessageBox.Show(
-                "Wafer is still running. Close all Wafer windows and retry.",
-                UninstallerTitle, MessageBoxButtons.RetryCancel, MessageBoxIcon.Warning);
-            if (choice != DialogResult.Retry)
-                return 0;
+            Application.Run(window);
+            return window.ExitCode;
         }
-        try
+    }
+
+    class UninstallWindow : Form
+    {
+        readonly string appRoot;
+        readonly Label statusLabel = new Label();
+        readonly Label pathLabel = new Label();
+        readonly CheckBox userDataCheck = new CheckBox();
+        readonly ProgressBar progressBar = new ProgressBar();
+        readonly Button primaryButton = new Button();
+        readonly Button cancelButton = new Button();
+        bool removing;
+
+        public int ExitCode { get; private set; }
+
+        public UninstallWindow(string appRoot)
         {
-            Directory.Delete(appRoot, true);
+            this.appRoot = appRoot;
+            Text = UninstallerTitle;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ShowInTaskbar = true;
+            StartPosition = FormStartPosition.CenterScreen;
+            ClientSize = new Size(480, 200);
+
+            statusLabel.SetBounds(16, 16, 448, 44);
+            statusLabel.Text = "Uninstall Wafer?\n\nThis removes the whole folder:";
+
+            pathLabel.SetBounds(16, 62, 448, 32);
+            pathLabel.Text = appRoot;
+
+            userDataCheck.SetBounds(16, 100, 448, 24);
+            userDataCheck.Text = "Delete user data";
+            userDataCheck.Checked = true;
+
+            progressBar.SetBounds(16, 100, 448, 24);
+            progressBar.Style = ProgressBarStyle.Marquee;
+            progressBar.MarqueeAnimationSpeed = 30;
+            progressBar.Visible = false;
+
+            primaryButton.SetBounds(296, 160, 80, 26);
+            primaryButton.Text = "Uninstall";
+            primaryButton.Click += OnPrimaryClick;
+
+            cancelButton.SetBounds(384, 160, 80, 26);
+            cancelButton.Text = "Cancel";
+            cancelButton.Click += (s, e) => Close();
+
+            Controls.Add(statusLabel);
+            Controls.Add(pathLabel);
+            Controls.Add(userDataCheck);
+            Controls.Add(progressBar);
+            Controls.Add(primaryButton);
+            Controls.Add(cancelButton);
+            AcceptButton = primaryButton;
+            CancelButton = cancelButton;
         }
-        catch (Exception ex)
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            MessageBox.Show(
-                "Failed to remove the install folder:\n" + ex.Message + "\n\nRemove the remaining files manually:\n" + appRoot,
-                UninstallerTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return 1;
+            if (removing)
+            {
+                e.Cancel = true;
+                return;
+            }
+            base.OnFormClosing(e);
         }
-        string summary = "Wafer has been uninstalled.";
-        if (deleteUserData)
+
+        void OnPrimaryClick(object sender, EventArgs e)
         {
-            string dataDir = UserDataDir();
+            if (removing)
+                return;
+            if (primaryButton.Text == "Close")
+            {
+                Close();
+                return;
+            }
+            while (OtherAppProcessesRunning(appRoot))
+            {
+                DialogResult choice = MessageBox.Show(this,
+                    "Other Wafer process is still running. Close all processes and retry.",
+                    UninstallerTitle, MessageBoxButtons.RetryCancel, MessageBoxIcon.Warning);
+                if (choice != DialogResult.Retry)
+                    return;
+            }
+            StartRemoval();
+        }
+
+        void StartRemoval()
+        {
+            removing = true;
+            bool deleteUserData = userDataCheck.Checked;
+            userDataCheck.Visible = false;
+            progressBar.Visible = true;
+            primaryButton.Enabled = false;
+            cancelButton.Enabled = false;
+            statusLabel.Text = "Removing files. Please wait…";
+            Thread worker = new Thread(() =>
+            {
+                string summary;
+                bool ok = RemoveAll(deleteUserData, out summary);
+                BeginInvoke((MethodInvoker)(() => FinishRemoval(ok, summary)));
+            });
+            worker.IsBackground = true;
+            worker.Start();
+        }
+
+        bool RemoveAll(bool deleteUserData, out string summary)
+        {
             try
             {
-                if (Directory.Exists(dataDir))
-                    Directory.Delete(dataDir, true);
+                Directory.Delete(appRoot, true);
             }
             catch (Exception ex)
             {
-                summary += "\n\nUser data could not be fully removed: " + ex.Message + "\n" + dataDir;
+                summary = "Failed to remove the install folder:\n" + ex.Message
+                    + "\n\nPlease end all Wafer processes and remove the remaining files manually:\n" + appRoot;
+                return false;
             }
+            summary = "Wafer has been uninstalled.";
+            if (deleteUserData)
+            {
+                string dataDir = UserDataDir();
+                try
+                {
+                    if (Directory.Exists(dataDir))
+                        Directory.Delete(dataDir, true);
+                }
+                catch (Exception ex)
+                {
+                    summary += "\n\nUser data could not be fully removed: " + ex.Message + "\n" + dataDir;
+                }
+            }
+            return true;
         }
-        MessageBox.Show(summary, UninstallerTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
-        return 0;
+
+        void FinishRemoval(bool ok, string summary)
+        {
+            removing = false;
+            ExitCode = ok ? 0 : 1;
+            progressBar.Visible = false;
+            pathLabel.Visible = false;
+            statusLabel.SetBounds(16, 16, 448, 128);
+            statusLabel.Text = summary;
+            primaryButton.Text = "Close";
+            primaryButton.Enabled = true;
+            cancelButton.Visible = false;
+            AcceptButton = primaryButton;
+            CancelButton = primaryButton;
+            primaryButton.Focus();
+        }
     }
 
     [STAThread]

@@ -93,6 +93,7 @@ def _create_app():
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(__version__)
+    app.setWindowIcon(get_icon())
     install_instant_tooltips(app)
     return app
 
@@ -113,19 +114,14 @@ def _entry_tray():
 
         with SafeProcessLock(f'{APP_DATA_DIR_NAME}_tray'):
             _bootstrap_plugins_for_tray()
-            from PySide6 import QtWidgets
             from wafer.app.tray.main_tray import TrayApp
-            from wafer.core.qt.tooltip import install_instant_tooltips
 
             procs = AppProcess.get_by_args_subset('--indexer')
             AppProcess.terminate_and_wait(procs)
             AppLogger.info('TRAY RUNNING')
 
-            _enable_shared_opengl_contexts()
-            app = QtWidgets.QApplication(sys.argv)
+            app = _create_app()
             app.setQuitOnLastWindowClosed(False)
-            app.setApplicationName(APP_NAME)
-            install_instant_tooltips(app)
             app.aboutToQuit.connect(AppProcess.shutdown_children)
             tray_icon = TrayApp(get_icon())
             tray_icon.show()

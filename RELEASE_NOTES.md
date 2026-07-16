@@ -2,88 +2,78 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
-## [v0.7.3]
-
-This release improves image-spread viewing, panel layout recovery, and update stability while refreshing file lists.
+## [v0.7.4]
 
 ### Highlights
-- Image Spread now has a dedicated toggle and can keep visible pages aligned to a shared size, making multi-page viewing easier to switch and compare.
-- Panel menus now include quick reset actions for the full panel layout and for floating panel placement, which helps recover from messy workspace arrangements.
+- Portable builds can now download and apply updates from the Update panel, then restart to finish.
+- Portable builds now include an uninstaller that removes the app and optionally your data.
 
 ### Improvements
-- Multi-image spreads now keep normal next and previous navigation on single-file steps, while slideshow playback still advances by the visible spread size.
-- Grid refreshes now keep the current scroll position by default, and an optional setting can re-enable scrolling to the selected item after updates.
+- Windows that would open off-screen are now moved back into view.
+- AutoScroll can now loop back to the top.
 
 ### Fixes
-- Watched-folder rename handling now falls back to a targeted rescan when move events arrive without a matching source entry, helping renamed files recover in the database sooner.
-- Restarting while a panel is isolated no longer leaves the layout stuck in a collapsed state.
-- Metadata deletion now asks for confirmation before removing a key.
+- Quit and restart now close all windows and background processes more reliably.
+
+## [v0.7.3]
+
+### Highlights
+- Image Spread now has its own toggle and can keep visible pages the same size for easier multi-page viewing.
+- Panel menus now include quick actions to reset the whole layout or floating panel positions.
+
+### Improvements
+- Normal navigation now moves file-by-file while slideshow advances by the visible spread.
+- Grid refreshes keep your scroll position by default; an option can scroll to the selected item instead.
+
+### Fixes
+- Renamed files in watched folders recover in the database more reliably.
+- Restarting with a panel isolated no longer leaves the layout collapsed.
+- Deleting a metadata key now asks for confirmation.
 
 ## [v0.7.2]
 
-This release improves Windows integration and makes background rescans recover more reliably.
-
-### Highlights
-- Viewer windows launched from Wafer now keep the correct Windows taskbar identity, so grouping and relaunch behavior stay aligned with the portable launcher.
-
 ### Improvements
-- Portable packages no longer include test-only project files, and the bundled license materials are organized as a short project notice plus the full license texts and third-party notices.
+- Viewer windows keep the correct Windows taskbar identity for consistent grouping and relaunch.
+- Portable packages no longer include test-only files.
 
 ### Fixes
-- Idle rescans now refresh filesystem watches before rescanning and run more frequently, improving recovery when folder changes were missed after watcher state became stale.
+- Idle rescans recover missed folder changes more reliably.
 
 ## [v0.7.1]
 
-This release refreshes metadata browsing and improves stability for long-running metadata indexing.
-
 ### Highlights
-- Metadata sections now share a searchable card layout with a unified edit dialog, making tag and metadata changes easier to browse and update.
-- EXIF and media metadata now follow the same editable workflow as other metadata cards, so the side panel behaves more consistently across extensions.
-
-### Improvements
-- Long-running metadata extraction and AI parsing now use extension-specific worker limits and timeout windows, which reduces premature interruptions during heavier indexing jobs.
+- Metadata sections now share a searchable card layout with a unified edit dialog.
+- EXIF and media metadata are now editable like other metadata cards.
 
 ### Fixes
-- Background maintenance now waits more carefully for active metadata workers, reducing idle-time interference while larger indexing tasks are still running.
+- Long-running metadata indexing is interrupted less often.
 
 ## [v0.7.0]
 
-This release focuses on install reliability and safety fixes.
-
 ### Highlights
 - Dependency downloads are safer and more reliable.
-- Pending extension installs now finish more cleanly at startup.
+- Pending extension installs finish more cleanly at startup.
 
 ### Fixes
 - File actions now reject archive members and other non-physical paths.
-- Video hover playback cleans up idle timers more safely.
+- Video hover playback cleans up more safely.
 
 ## [v0.6.19]
 
-This release adds in-app update notifications and makes batch rename previews easier to work with.
-
 ### Highlights
-- Added an Update panel that can check the latest GitHub release, show release notes inside Wafer, and open the download page directly.
-- Wafer can now check for updates automatically on startup, with options to skip notifications for the current version or dismiss them until later.
+- Added an Update panel to check the latest release, read notes in-app, and open the download page.
+- Wafer can check for updates on startup, with options to skip or remind later.
 
 ### Improvements
-- Batch Rename now opens file lists in natural name order, lets you start editing the selected cell with Enter or F2, and adds separate cover or contain controls for the left and right thumbnail previews.
-
-### Notes
-- Portable packages now include release notes so update details remain available even when the app falls back to bundled notes instead of a live download.
+- Batch Rename opens in natural name order, starts editing with Enter or F2, and adds separate fit controls for the left and right previews.
 
 ## [v0.6.18]
 
-This release improves image viewing, archive rendering, batch rename editing, and plugin state handling.
-
 ### Highlights
 - Added a built-in multi-page image viewer with configurable spreads and reading direction.
-- ZIP members and other virtual files now render more consistently across the grid and file viewer.
-- Batch rename editing now keeps its table steadier while you work, including selected-cell edits and restore actions.
-- Plugin enable and disable choices are saved more predictably across restarts.
+- Archive members and other virtual files render more consistently.
+- Batch rename editing stays steadier while you work.
+- Plugin enable/disable choices are saved more reliably across restarts.
 
 ### Fixes
-- If one renderer cannot resolve a file, Wafer now continues to the next available renderer instead of stopping the whole display flow.
-
-### Notes
-- Some plugin changes may still require a restart, but the restart prompt now follows the plugins that actually changed.
+- If one renderer can't open a file, Wafer now tries the next one instead of stopping.

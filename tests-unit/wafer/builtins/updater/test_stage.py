@@ -197,3 +197,26 @@ class TestProcessApplyResults:
         monkeypatch.setattr(stage, "__version__", "1.0.0")
         stage.process_apply_results()
         assert stage.staged_version() == "2.0.0"
+
+    def test_applied_processed_once_under_concurrency(self, app_root, monkeypatch):
+        base = app_root / ".update"
+        base.mkdir()
+        (base / "applied.txt").write_text("2.0.0", encoding="utf-8")
+        notes = []
+        monkeypatch.setattr(stage.Notifier, "info", staticmethod(lambda msg: notes.append(msg)))
+        stage.process_apply_results()
+        stage.process_apply_results()
+        assert notes == ["Updated to v2.0.0"]
+
+
+class TestClaimResultFile:
+    def test_claims_content_once(self, tmp_path):
+        target = tmp_path / "applied.txt"
+        target.write_text("2.0.0", encoding="utf-8")
+        assert stage.claim_result_file(target) == "2.0.0"
+        assert not target.exists()
+        assert stage.claim_result_file(target) is None
+
+    def test_missing_returns_none(self, tmp_path):
+        assert stage.claim_result_file(tmp_path / "absent.txt") is None
+

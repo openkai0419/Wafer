@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -177,23 +178,31 @@ def _verify_staged(staged: Path, version: str) -> None:
         raise StageError(f"Staged package version mismatch: expected {version}, got {staged_ver or 'unknown'}")
 
 
+def claim_result_file(path: Path) -> str | None:
+    claimed = path.with_name(path.name + ".claimed")
+    try:
+        os.replace(path, claimed)
+    except OSError:
+        return None
+    try:
+        return claimed.read_text(encoding="utf-8").strip()
+    finally:
+        claimed.unlink(missing_ok=True)
+
+
 def process_apply_results() -> None:
     root = get_app_root_dir()
     base = update_plan.update_dir(root)
-    applied = base / update_plan.APPLIED_FILENAME
-    failed = base / update_plan.FAILED_FILENAME
-    if applied.is_file():
-        version = applied.read_text(encoding="utf-8").strip()
+    version = claim_result_file(base / update_plan.APPLIED_FILENAME)
+    if version is not None:
         AppLogger.info(f"[Updater] Update applied successfully: v{version}")
         Notifier.info(f"Updated to v{version}")
-        applied.unlink(missing_ok=True)
         discard_staged(root)
         return
-    if failed.is_file():
-        detail = failed.read_text(encoding="utf-8").strip()
+    detail = claim_result_file(base / update_plan.FAILED_FILENAME)
+    if detail is not None:
         AppLogger.error(f"[Updater] Update apply failed and was rolled back: {detail}. See {base / update_plan.APPLY_LOG_FILENAME} for details")
         Notifier.error("Update failed. Previous version was restored")
-        failed.unlink(missing_ok=True)
         discard_staged(root)
         return
     version = staged_version(root)

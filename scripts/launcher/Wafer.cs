@@ -101,6 +101,58 @@ class Program
         }
     }
 
+    static string BusyActionOverride()
+    {
+        string raw = Environment.GetEnvironmentVariable("WAFER_UPDATE_BUSY_ACTION");
+        return raw == null ? "" : raw.Trim().ToLowerInvariant();
+    }
+
+    static bool PromptToCloseAndUpdate(string exeDir, string version)
+    {
+        string action = BusyActionOverride();
+        if (action == "skip")
+            return false;
+        if (action != "close")
+        {
+            Application.EnableVisualStyles();
+            DialogResult choice = MessageBox.Show(
+                "Other Wafer windows are still open.\n\nClose them now to finish updating to v" + version + "?",
+                "Wafer Update",
+                MessageBoxButtons.OKCancel,
+                MessageBoxIcon.Question);
+            if (choice != DialogResult.OK)
+                return false;
+        }
+        Log("User approved closing " + version + " blockers; terminating them");
+        TerminateOtherAppProcesses(exeDir);
+        return WaitForExclusiveAccess(exeDir);
+    }
+
+    static void TerminateOtherAppProcesses(string exeDir)
+    {
+        string prefix = exeDir.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        int ownPid = Process.GetCurrentProcess().Id;
+        foreach (Process p in Process.GetProcesses())
+        {
+            try
+            {
+                if (p.Id == ownPid)
+                    continue;
+                string path = p.MainModule.FileName;
+                if (path != null && path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    Log("Terminating process " + p.Id + " (" + path + ")");
+                    p.Kill();
+                }
+            }
+            catch (Exception) { }
+            finally
+            {
+                p.Dispose();
+            }
+        }
+    }
+
     static string ValidateRelPath(string raw)
     {
         string value = (raw ?? "").Trim().Replace('/', Path.DirectorySeparatorChar);
@@ -197,8 +249,11 @@ class Program
 
         if (!WaitForExclusiveAccess(appRoot))
         {
-            Log("Skipped: other Wafer process is still running, will retry on next start");
-            return false;
+            if (!PromptToCloseAndUpdate(appRoot, version))
+            {
+                Log("Skipped: other Wafer process is still running, will retry on next start");
+                return false;
+            }
         }
 
         List<PlanOp> ops;

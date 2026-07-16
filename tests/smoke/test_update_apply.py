@@ -70,8 +70,8 @@ def build_tree(root: Path, launcher_exe: Path) -> None:
     (root / ".update/ready.json").write_text(json.dumps({"schema": 1, "target_version": "2.0.0"}), encoding="utf-8")
 
 
-def run_helper(root: Path, launcher_exe: Path, wait_seconds: int = 0) -> subprocess.CompletedProcess:
-    env = dict(os.environ, WAFER_UPDATE_WAIT_SECONDS=str(wait_seconds))
+def run_helper(root: Path, launcher_exe: Path, wait_seconds: int = 0, busy_action: str = "skip") -> subprocess.CompletedProcess:
+    env = dict(os.environ, WAFER_UPDATE_WAIT_SECONDS=str(wait_seconds), WAFER_UPDATE_BUSY_ACTION=busy_action)
     cmd = [str(launcher_exe), "--wafer-apply", str(root), "--wafer-no-launch"]
     return subprocess.run(cmd, cwd=launcher_exe.parent, env=env, timeout=25, capture_output=True)
 
@@ -153,18 +153,23 @@ def test_csharp_rolls_back_on_failure(tmp_path, launcher_exe):
     assert after == before
 
 
+def spawn_blocker(root: Path) -> subprocess.Popen:
+    dummy = root / "python" / "dummy.exe"
+    shutil.copy(Path(os.environ["ComSpec"]), dummy)
+    holder = subprocess.Popen([str(dummy), "/c", "ping", "-n", "20", "127.0.0.1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    deadline = time.monotonic() + 10
+    while psutil.Process(holder.pid).exe() != str(dummy):
+        assert time.monotonic() < deadline
+        time.sleep(0.05)
+    return holder
+
+
 def test_csharp_skips_when_other_process_running(tmp_path, launcher_exe):
     root = tmp_path / "app"
     build_tree(root, launcher_exe)
-    dummy = root / "python" / "dummy.exe"
-    shutil.copy(Path(os.environ["ComSpec"]), dummy)
-    holder = subprocess.Popen([str(dummy), "/c", "ping", "-n", "10", "127.0.0.1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    holder = spawn_blocker(root)
     try:
-        deadline = time.monotonic() + 10
-        while psutil.Process(holder.pid).exe() != str(dummy):
-            assert time.monotonic() < deadline
-            time.sleep(0.05)
-        proc = run_helper(root, launcher_exe, wait_seconds=1)
+        proc = run_helper(root, launcher_exe, wait_seconds=1, busy_action="skip")
 
         assert proc.returncode == 1
         assert (root / ".update/apply.plan").is_file()
@@ -172,6 +177,25 @@ def test_csharp_skips_when_other_process_running(tmp_path, launcher_exe):
         assert (root / "python/wafer-pythonw.exe").read_text(encoding="utf-8") == "old-python"
         assert not (root / ".update/applied.txt").exists()
         assert not (root / ".update/failed.txt").exists()
+    finally:
+        holder.kill()
+        holder.wait(timeout=10)
+
+
+def test_csharp_force_closes_blocker_then_applies(tmp_path, launcher_exe):
+    root = tmp_path / "app"
+    build_tree(root, launcher_exe)
+    holder = spawn_blocker(root)
+    try:
+        proc = run_helper(root, launcher_exe, wait_seconds=1, busy_action="close")
+
+        log = (root / ".update/apply.log").read_text(encoding="utf-8", errors="replace")
+        assert proc.returncode == 0, log
+        assert holder.wait(timeout=10) != 0
+        assert (root / ".update/applied.txt").read_text(encoding="utf-8") == "2.0.0", log
+        assert (root / "main.py").read_text(encoding="utf-8") == "new-main"
+        assert not (root / ".update/apply.plan").exists()
+        assert not (root / ".update/ready.json").exists()
     finally:
         holder.kill()
         holder.wait(timeout=10)

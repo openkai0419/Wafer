@@ -153,3 +153,53 @@ class TestGetExiftoolPath:
         )
         monkeypatch.setattr("extensions.exiftool._downloader.shutil.which", lambda _: "/usr/bin/exiftool")
         assert get_exiftool_path() == "/usr/bin/exiftool"
+
+
+class TestVersionMarker:
+    def _prepare(self, monkeypatch, tmp_path):
+        lib = tmp_path / "lib"
+        exe = lib / "exiftool.exe"
+        pl = lib / "exiftool_files" / "exiftool.pl"
+        monkeypatch.setattr("extensions.exiftool._downloader._LIB_DIR", str(lib))
+        monkeypatch.setattr("extensions.exiftool._downloader._EXIFTOOL_PATH", str(exe))
+        monkeypatch.setattr("extensions.exiftool._downloader._EXIFTOOL_PL", str(pl))
+        return lib, exe, pl
+
+    def test_marker_stores_post_install_version_not_upstream(self, monkeypatch, tmp_path):
+        from wafer.utils import downloader as common
+        from extensions.exiftool import _downloader as dl
+
+        lib, exe, pl = self._prepare(monkeypatch, tmp_path)
+        monkeypatch.setattr("extensions.exiftool._downloader.platform.system", lambda: "Windows")
+        monkeypatch.setattr(dl, "_fetch_latest_version", lambda: "13.55")
+        monkeypatch.setattr(dl, "_fetch_expected_sha256", lambda v: "a" * 64)
+        monkeypatch.setattr(dl, "safe_download", lambda *a, **k: None)
+
+        def fake_extract(_archive):
+            pl.parent.mkdir(parents=True, exist_ok=True)
+            exe.write_text("x")
+            pl.write_text("x")
+
+        monkeypatch.setattr(dl, "_extract", fake_extract)
+
+        assert dl.ensure_exiftool(version="1") is True
+        assert common.read_lib_version(str(lib)) == "1"
+
+    def test_reinstall_with_marker_skips_download(self, monkeypatch, tmp_path):
+        from wafer.utils import downloader as common
+        from extensions.exiftool import _downloader as dl
+
+        lib, exe, pl = self._prepare(monkeypatch, tmp_path)
+        pl.parent.mkdir(parents=True, exist_ok=True)
+        exe.write_text("x")
+        pl.write_text("x")
+        common.write_lib_version(str(lib), "1")
+
+        def boom(*a, **k):
+            raise AssertionError("should not download when marker matches")
+
+        monkeypatch.setattr(dl, "_fetch_latest_version", boom)
+        monkeypatch.setattr(dl, "safe_download", boom)
+
+        assert dl.ensure_exiftool(version="1") is True
+

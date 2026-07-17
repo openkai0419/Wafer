@@ -1,6 +1,8 @@
 from wafer.plugin import BaseCollectorPlugin, CollectorResult
 from wafer.utils.logs import AppLogger
 
+POST_INSTALL_VERSION = "1"
+
 
 class FfmpegCollectorPlugin(BaseCollectorPlugin):
     NAME = "ffmpeg"
@@ -35,7 +37,7 @@ class FfmpegCollectorPlugin(BaseCollectorPlugin):
     def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None, on_log=None):
         from ._downloader import ensure_ffmpeg
 
-        ensure_ffmpeg()
+        ensure_ffmpeg(version=POST_INSTALL_VERSION)
 
     def __init__(self):
         super().__init__()

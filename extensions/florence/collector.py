@@ -19,6 +19,8 @@ from .settings import TAG_MAP, enabled_tasks, florence_config
 _CACHE_MAX = 5000
 _ENGINE_IDLE_TIMEOUT = 120.0
 
+POST_INSTALL_VERSION = "1"
+
 
 class FlorenceCollector(BaseSingletonCollector):
     NAME = "florence"
@@ -33,7 +35,7 @@ class FlorenceCollector(BaseSingletonCollector):
     def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None, on_log=None):
         if on_progress:
             on_progress(phase="Downloading Florence-2 model…")
-        ensure_model()
+        ensure_model(version=POST_INSTALL_VERSION)
 
     def __init__(self):
         self._engine: FlorenceInference | None = None
@@ -61,7 +63,7 @@ class FlorenceCollector(BaseSingletonCollector):
             from ._inference import FlorenceInference
 
             try:
-                model_dir = ensure_model(variant)
+                model_dir = ensure_model(variant, version=POST_INSTALL_VERSION)
                 self._engine = FlorenceInference(model_dir)
                 self._loaded_variant = variant
             except Exception as exc:

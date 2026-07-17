@@ -12,6 +12,30 @@ from wafer.utils.logs import AppLogger
 
 
 _SEVEN_ZR_URL = "https://www.7-zip.org/a/7zr.exe"
+_LIB_VERSION_FILE = ".version"
+
+
+def read_lib_version(marker_dir: str) -> str:
+    try:
+        with open(os.path.join(marker_dir, _LIB_VERSION_FILE), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def write_lib_version(marker_dir: str, version: str) -> None:
+    if not version:
+        return
+    os.makedirs(marker_dir, exist_ok=True)
+    with open(os.path.join(marker_dir, _LIB_VERSION_FILE), "w", encoding="utf-8") as f:
+        f.write(version)
+
+
+def lib_needs_download(marker_dir: str, version: str, *required_files: str) -> bool:
+    if not all(os.path.isfile(p) for p in required_files):
+        return True
+    current = read_lib_version(marker_dir)
+    return bool(version) and current != "" and current != version
 
 
 def validate_url(url: str, allowed_hosts: tuple[str, ...]) -> str:

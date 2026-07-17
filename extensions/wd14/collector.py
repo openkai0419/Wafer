@@ -19,6 +19,8 @@ from .settings import parse_blacklist, wd14_config
 _CACHE_MAX = 5000
 _ENGINE_IDLE_TIMEOUT = 30.0
 
+POST_INSTALL_VERSION = "1"
+
 
 class WD14TaggerCollector(BaseSingletonCollector):
     NAME = "wd14"
@@ -32,7 +34,7 @@ class WD14TaggerCollector(BaseSingletonCollector):
     def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None, on_log=None):
         if on_progress:
             on_progress(phase="Downloading WD14 model…")
-        ensure_model()
+        ensure_model(version=POST_INSTALL_VERSION)
 
     def __init__(self):
         self._engine: WD14Inference | None = None
@@ -51,7 +53,7 @@ class WD14TaggerCollector(BaseSingletonCollector):
                 return
             from ._inference import WD14Inference
 
-            model_dir = ensure_model()
+            model_dir = ensure_model(version=POST_INSTALL_VERSION)
             self._engine = WD14Inference(model_dir)
             AppLogger.info(f"WD14 engine loaded: {self._engine.session.get_providers()[0]}")
 

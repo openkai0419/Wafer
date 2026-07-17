@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+from wafer.utils.downloader import lib_needs_download, write_lib_version
 from wafer.utils.logs import AppLogger
 
 MODELS = {
@@ -13,7 +14,7 @@ _LIB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib")
 _MODELS_DIR = os.path.join(_LIB_DIR, "models")
 
 
-def ensure_model(variant: str = DEFAULT_VARIANT) -> Path:
+def ensure_model(variant: str = DEFAULT_VARIANT, version: str = "") -> Path:
     if variant not in MODELS:
         raise ValueError(f"Unknown variant: {variant}. Expected one of {list(MODELS.keys())}")
 
@@ -22,7 +23,8 @@ def ensure_model(variant: str = DEFAULT_VARIANT) -> Path:
         raise ValueError(f"Invalid variant: {variant}")
 
     config_path = model_dir / "config.json"
-    if config_path.exists():
+    if not lib_needs_download(str(model_dir), version, str(config_path)):
+        write_lib_version(str(model_dir), version)
         AppLogger.debug(f"Florence-2 model already exists: {model_dir}")
         return model_dir
 
@@ -40,5 +42,6 @@ def ensure_model(variant: str = DEFAULT_VARIANT) -> Path:
     if not config_path.exists():
         raise FileNotFoundError(f"config.json not found after download: {config_path}")
 
+    write_lib_version(str(model_dir), version)
     AppLogger.info(f"Florence-2 model download complete: {model_dir}")
     return model_dir

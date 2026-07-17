@@ -9,6 +9,8 @@ from wafer.utils.downloader import (
     safe_download,
     fetch_text,
     validate_archive_path,
+    lib_needs_download,
+    write_lib_version,
 )
 
 
@@ -116,10 +118,11 @@ def _fetch_expected_sha256(version: str) -> str:
     return m.group(1).lower()
 
 
-def ensure_exiftool():
-    if _is_bundled_install_valid():
+def ensure_exiftool(version: str = ""):
+    if not lib_needs_download(_LIB_DIR, version, _EXIFTOOL_PATH, _EXIFTOOL_PL):
+        write_lib_version(_LIB_DIR, version)
         return True
-    if os.path.isfile(_EXIFTOOL_PATH):
+    if os.path.isfile(_EXIFTOOL_PATH) and not os.path.isfile(_EXIFTOOL_PL):
         _log("[exiftool] exiftool.exe found but exiftool.pl missing — removing broken install", level="warning")
         try:
             os.remove(_EXIFTOOL_PATH)
@@ -131,17 +134,18 @@ def ensure_exiftool():
         raise RuntimeError("Auto-download is Windows-only. Install exiftool via package manager.")
     tmp = tempfile.mkdtemp()
     try:
-        version = _fetch_latest_version()
-        archive_url = _ARCHIVE_URL_TEMPLATE.format(version=version)
-        _log(f"[exiftool] Fetching checksum for v{version}")
-        expected = _fetch_expected_sha256(version)
-        _log(f"[exiftool] Downloading ExifTool v{version}: {archive_url}")
+        remote_version = _fetch_latest_version()
+        archive_url = _ARCHIVE_URL_TEMPLATE.format(version=remote_version)
+        _log(f"[exiftool] Fetching checksum for v{remote_version}")
+        expected = _fetch_expected_sha256(remote_version)
+        _log(f"[exiftool] Downloading ExifTool v{remote_version}: {archive_url}")
         archive = os.path.join(tmp, "exiftool.zip")
         safe_download(archive_url, archive, allowed_hosts=_ALLOWED_HOSTS, expected_sha256=expected)
         _log("[exiftool] archive checksum verified")
         _extract(archive)
         if not os.path.isfile(_EXIFTOOL_PATH):
             raise FileNotFoundError(f"{_EXIFTOOL_EXE} not found after extraction")
+        write_lib_version(_LIB_DIR, version)
         _log("[exiftool] ExifTool installed successfully")
         return True
     except Exception as e:

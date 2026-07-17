@@ -329,3 +329,51 @@ class TestExtract7zMembers:
         target = tmp_path / "lib"
         dl.extract_7z_members(str(tmp_path / "fake.7z"), str(target), ("ffmpeg.exe",))
         assert (target / "ffmpeg.exe").read_bytes() == b"DATA"
+
+
+class TestLibVersion:
+    def _lib(self, tmp_path, *files: str):
+        lib = tmp_path / "lib"
+        lib.mkdir()
+        paths = []
+        for f in files:
+            p = lib / f
+            p.write_bytes(b"x")
+            paths.append(str(p))
+        return str(lib), paths
+
+    def test_missing_files_needs_download(self, tmp_path):
+        lib = str(tmp_path / "lib")
+        assert dl.lib_needs_download(lib, "1", str(tmp_path / "lib" / "a.exe")) is True
+
+    def test_present_no_version_never_downloads(self, tmp_path):
+        lib, paths = self._lib(tmp_path, "a.exe")
+        assert dl.lib_needs_download(lib, "", *paths) is False
+
+    def test_legacy_no_marker_is_adopted(self, tmp_path):
+        lib, paths = self._lib(tmp_path, "a.exe")
+        assert dl.lib_needs_download(lib, "1", *paths) is False
+
+    def test_marker_match_skips(self, tmp_path):
+        lib, paths = self._lib(tmp_path, "a.exe")
+        dl.write_lib_version(lib, "1")
+        assert dl.lib_needs_download(lib, "1", *paths) is False
+
+    def test_marker_mismatch_downloads(self, tmp_path):
+        lib, paths = self._lib(tmp_path, "a.exe")
+        dl.write_lib_version(lib, "1")
+        assert dl.lib_needs_download(lib, "2", *paths) is True
+
+    def test_write_then_read_roundtrip(self, tmp_path):
+        lib = str(tmp_path / "lib")
+        dl.write_lib_version(lib, "3")
+        assert dl.read_lib_version(lib) == "3"
+
+    def test_write_empty_is_noop(self, tmp_path):
+        lib = str(tmp_path / "lib")
+        dl.write_lib_version(lib, "")
+        assert dl.read_lib_version(lib) == ""
+        assert not os.path.exists(os.path.join(lib, dl._LIB_VERSION_FILE))
+
+    def test_read_missing_returns_empty(self, tmp_path):
+        assert dl.read_lib_version(str(tmp_path / "nope")) == ""

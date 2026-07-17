@@ -7,6 +7,8 @@ from wafer.utils.downloader import (
     safe_download,
     fetch_text,
     extract_7z_members,
+    lib_needs_download,
+    write_lib_version,
 )
 
 
@@ -65,8 +67,9 @@ def get_ffmpeg_path() -> str | None:
     return None
 
 
-def ensure_ffmpeg():
-    if os.path.isfile(_FFPROBE_PATH) and os.path.isfile(_FFMPEG_PATH):
+def ensure_ffmpeg(version: str = ""):
+    if not lib_needs_download(_LIB_DIR, version, _FFPROBE_PATH, _FFMPEG_PATH):
+        write_lib_version(_LIB_DIR, version)
         return True
     tmp = tempfile.mkdtemp()
     try:
@@ -77,6 +80,7 @@ def ensure_ffmpeg():
         safe_download(_ARCHIVE_URL, archive, allowed_hosts=_ALLOWED_HOSTS, expected_sha256=expected)
         _log("[ffmpeg] archive checksum verified")
         extract_7z_members(archive, _LIB_DIR, _BINARIES)
+        write_lib_version(_LIB_DIR, version)
         _log("[ffmpeg] ffprobe + ffmpeg installed successfully")
         return True
     except Exception as e:

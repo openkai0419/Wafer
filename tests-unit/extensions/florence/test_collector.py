@@ -305,6 +305,19 @@ class TestIdleTimeout:
             self.collector._ensure_engine()
             assert self.collector._engine is mock_instance
 
+    def test_ensure_engine_passes_post_install_version(self):
+        from extensions.florence.collector import POST_INSTALL_VERSION
+
+        self.collector._settings["model_variant"] = "large"
+        mock_inference_mod = MagicMock()
+        mock_inference_mod.FlorenceInference.return_value = MagicMock()
+
+        with patch("extensions.florence.collector.ensure_model") as mock_ensure, patch.dict("sys.modules", {"extensions.florence._inference": mock_inference_mod}):
+            mock_ensure.return_value = "/fake/model"
+            self.collector._ensure_engine()
+            mock_ensure.assert_called_once_with("large", version=POST_INSTALL_VERSION)
+
+
 
 class TestPostInstall:
     def test_post_install_calls_ensure_model(self):

@@ -166,14 +166,14 @@ def test_portable_stage_phase_switches_to_busy_progress(monkeypatch, qtbot):
     w._on_stage_phase("extract")
 
     assert w._progress.minimum() == 0 and w._progress.maximum() == 0
-    assert w._progress_label.text() == "Extracting update..."
+    assert w._progress_label.text() == "Extracting..."
     assert w._status.isHidden() is True
 
     w._on_stage_phase("verify")
-    assert w._progress_label.text() == "Verifying update..."
+    assert w._progress_label.text() == "Verifying..."
 
     w._on_stage_phase("prepare")
-    assert w._progress_label.text() == "Preparing to apply..."
+    assert w._progress_label.text() == "Preparing..."
 
 
 def test_stage_phase_past_download_disables_cancel(monkeypatch, qtbot):

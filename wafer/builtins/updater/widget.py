@@ -28,11 +28,11 @@ def _hex_rgb(hex_color: str) -> str:
 
 def _phase_status(phase: str) -> str:
     if phase == "extract":
-        return t("Extracting...")
+        return t("Extracting update...")
     if phase == "verify":
-        return t("Verifying...")
+        return t("Verifying update...")
     if phase == "prepare":
-        return t("Preparing...")
+        return t("Preparing to apply...")
     return t("Finalizing...")
 
 

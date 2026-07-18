@@ -15,6 +15,7 @@ While forcing, ``wafer._version.__version__`` is pinned to ``DEV_VERSION`` so
 every check sees an update. Reset FORCE_UPDATE_ENABLED to False before
 committing or shipping.
 """
+
 from __future__ import annotations
 
 import os
@@ -22,7 +23,7 @@ import tempfile
 from pathlib import Path
 
 FORCE_UPDATE_ENABLED = False
-#FORCE_UPDATE_ENABLED = True
+# FORCE_UPDATE_ENABLED = True
 
 SOURCE_DIR_ENV = "WAFER_UPDATE_SOURCE_DIR"
 

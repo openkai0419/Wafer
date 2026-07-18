@@ -6,7 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [v0.7.4]
 ### Added
-- Portable builds can download updates in the Update panel and apply them after restart.
+- Portable builds can download updates in the Update panel, follow progress, and apply them after restart.
 - Portable builds now include an uninstaller that removes the app and can also remove user data.
 - `Quit All` command to close all Viewer and Tray processes together.
 
@@ -15,7 +15,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Grid AutoScroll can loop back to the start, optionally rerunning the current query.
 
 ### Fixed
-- Quit, restart, and update installs now close leftover windows and background processes more reliably.
+- Quit, restart, and update installs now close leftover windows, floating panels, and background processes more reliably.
 
 ## [v0.7.3]
 ### Added

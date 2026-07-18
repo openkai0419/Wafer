@@ -2,22 +2,28 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import shutil
 import sys
 import time
 import zipfile
 from pathlib import Path
+from types import ModuleType
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "scripts"))
-
-import build as build_mod
-from make_update_manifest import make_manifest
 
 
 def load_dev():
     dev_path = ROOT / "wafer" / "_dev.py"
     spec = importlib.util.spec_from_file_location("wafer_update_dev", dev_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_script_module(module_name: str, filename: str) -> ModuleType:
+    module_path = ROOT / "scripts" / filename
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Failed to load {module_name} from {module_path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -45,6 +51,8 @@ def make_latest_json(version: str, zip_name: str) -> dict:
 
 def main(argv: list[str]) -> int:
     dev = load_dev()
+    build_mod = load_script_module("wafer_build", "build.py")
+    manifest_mod = load_script_module("wafer_make_update_manifest", "make_update_manifest.py")
     out_dir = dev.source_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -58,7 +66,7 @@ def main(argv: list[str]) -> int:
     print(f"[local-update] Zipping {dist_dir} -> {zip_path}")
     zip_dist(dist_dir, zip_path)
 
-    manifest = make_manifest(zip_path, version)
+    manifest = manifest_mod.make_manifest(zip_path, version)
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     (out_dir / "latest.json").write_text(json.dumps(make_latest_json(version, zip_name), indent=2) + "\n", encoding="utf-8")
 

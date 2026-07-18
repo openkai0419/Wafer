@@ -8,6 +8,7 @@ from urllib.parse import quote, urlparse
 import requests
 
 from ..._version import __version__
+from ... import _dev
 from ...utils.json_io import read_json_file, write_json_file
 from ...utils.logs import AppLogger
 from ...utils.paths import get_app_root_dir, resolve_cache_path
@@ -22,6 +23,12 @@ MANIFEST_ASSET_NAME = "manifest.json"
 DEFAULT_TIMEOUT = 5.0
 USER_AGENT = "Wafer Update Notifier"
 _ALLOWED_HOSTS = {"api.github.com", "github.com", "raw.githubusercontent.com", "objects.githubusercontent.com"}
+
+
+def effective_current_version() -> str:
+    if _dev.FORCE_UPDATE_ENABLED and _dev.CURRENT_VERSION:
+        return _dev.CURRENT_VERSION
+    return __version__
 
 
 @dataclass(frozen=True)
@@ -62,6 +69,11 @@ def validate_external_url(url: str) -> str:
 
 
 def fetch_latest_release(*, timeout: float = DEFAULT_TIMEOUT) -> dict:
+    if _dev.FORCE_UPDATE_ENABLED:
+        data = read_json_file(_dev.asset("latest.json"), default=None)
+        if not isinstance(data, dict):
+            raise ValueError(f"Local update latest.json is missing or invalid at {_dev.source_dir()}")
+        return data
     response = requests.get(
         LATEST_RELEASE_API_URL,
         timeout=timeout,
@@ -140,7 +152,8 @@ def resolve_release_notes(tag_name: str, *, timeout: float = DEFAULT_TIMEOUT, us
     return read_local_release_notes().strip()
 
 
-def build_update_info(release: dict, release_notes: str = "", *, current_version: str = __version__, from_cache: bool = False) -> UpdateInfo:
+def build_update_info(release: dict, release_notes: str = "", *, current_version: str | None = None, from_cache: bool = False) -> UpdateInfo:
+    current_version = current_version or effective_current_version()
     tag_name = str(release.get("tag_name") or "")
     latest_version = normalize_version(tag_name or release.get("name") or "")
     if parse_version(latest_version) is None:
@@ -174,7 +187,8 @@ def should_notify_update(info: UpdateInfo | None, skipped_version: str = "") -> 
     return str(skipped_version or "") != info.latest_version
 
 
-def check_for_updates(*, current_version: str = __version__, timeout: float = DEFAULT_TIMEOUT, use_cache: bool = True) -> UpdateCheckResult:
+def check_for_updates(*, current_version: str | None = None, timeout: float = DEFAULT_TIMEOUT, use_cache: bool = True) -> UpdateCheckResult:
+    current_version = current_version or effective_current_version()
     release = None
     from_cache = False
     try:

@@ -188,13 +188,13 @@ class TestProcessApplyResults:
 
     def test_stale_ready_discarded(self, app_root, fake_network, monkeypatch):
         stage.stage_update("v2.0.0", "2.0.0")
-        monkeypatch.setattr(stage, "__version__", "2.0.0")
+        monkeypatch.setattr(stage, "effective_current_version", lambda: "2.0.0")
         stage.process_apply_results()
         assert stage.staged_version() == ""
 
     def test_pending_newer_ready_kept(self, app_root, fake_network, monkeypatch):
         stage.stage_update("v2.0.0", "2.0.0")
-        monkeypatch.setattr(stage, "__version__", "1.0.0")
+        monkeypatch.setattr(stage, "effective_current_version", lambda: "1.0.0")
         stage.process_apply_results()
         assert stage.staged_version() == "2.0.0"
 

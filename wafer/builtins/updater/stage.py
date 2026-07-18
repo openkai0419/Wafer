@@ -10,15 +10,16 @@ import zipfile
 from contextlib import ExitStack
 from pathlib import Path
 
-from ..._version import __version__
 from ...utils.downloader import fetch_json, safe_download, validate_archive_path
+from ...utils.hashes import verify_sha256
 from ...utils.json_io import read_json_file, write_json_file
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
 from ...utils.paths import get_app_root_dir, get_launcher_path
 from ...utils.process_lock import file_lock
+from ... import _dev
 from . import plan as update_plan
-from .service import MANIFEST_ASSET_NAME, USER_AGENT, read_cached_latest_release
+from .service import MANIFEST_ASSET_NAME, USER_AGENT, effective_current_version, read_cached_latest_release
 from .versioning import is_newer_version, normalize_version
 
 
@@ -103,10 +104,6 @@ def _stage_locked(root: Path, target_tag: str, target_version: str, on_progress,
     if not full_asset or not full_asset.get("name") or not full_asset.get("sha256"):
         raise StageError("Update manifest has no downloadable package")
 
-    zip_url = _release_asset_url(release, str(full_asset["name"]))
-    if not zip_url:
-        raise StageError(f"Release asset not found: {full_asset['name']}")
-
     _check_cancelled(is_cancelled)
     downloads = update_plan.download_dir(root)
     if downloads.is_dir():
@@ -119,8 +116,7 @@ def _stage_locked(root: Path, target_tag: str, target_version: str, on_progress,
         if on_progress is not None:
             on_progress(done, total)
 
-    AppLogger.info(f"[Updater] Downloading update package v{version} from {zip_url}")
-    safe_download(zip_url, str(zip_path), allowed_hosts=_ASSET_HOSTS, expected_sha256=str(full_asset["sha256"]), on_progress=progress_hook, user_agent=USER_AGENT)
+    _acquire_package(release, str(full_asset["name"]), zip_path, str(full_asset["sha256"]), version, progress_hook)
 
     _check_cancelled(is_cancelled)
     staged = update_plan.next_dir(root)
@@ -138,13 +134,35 @@ def _stage_locked(root: Path, target_tag: str, target_version: str, on_progress,
 
 
 def _fetch_manifest(release: dict) -> dict:
-    url = _release_asset_url(release, MANIFEST_ASSET_NAME)
-    if not url:
-        raise StageError("This release does not support in-app update. Use the download page instead")
-    manifest = fetch_json(url, allowed_hosts=_ASSET_HOSTS, max_bytes=_MANIFEST_MAX_BYTES, user_agent=USER_AGENT)
+    if _dev.FORCE_UPDATE_ENABLED:
+        manifest = read_json_file(_dev.asset(MANIFEST_ASSET_NAME), default=None)
+    else:
+        url = _release_asset_url(release, MANIFEST_ASSET_NAME)
+        if not url:
+            raise StageError("This release does not support in-app update. Use the download page instead")
+        manifest = fetch_json(url, allowed_hosts=_ASSET_HOSTS, max_bytes=_MANIFEST_MAX_BYTES, user_agent=USER_AGENT)
     if not isinstance(manifest, dict) or manifest.get("schema") != MANIFEST_SCHEMA:
         raise StageError("Unsupported update manifest schema")
     return manifest
+
+
+def _acquire_package(release: dict, name: str, dest: Path, sha256: str, version: str, progress_hook) -> None:
+    if _dev.FORCE_UPDATE_ENABLED:
+        source = _dev.asset(name)
+        AppLogger.info(f"[Updater] [DEV] Copying update package v{version} from {source}")
+        if not source.is_file():
+            raise StageError(f"Local update package not found: {source}")
+        shutil.copy(source, dest)
+        if not verify_sha256(str(dest), sha256):
+            raise StageError(f"SHA256 mismatch for {name}")
+        size = dest.stat().st_size
+        progress_hook(size, size)
+        return
+    url = _release_asset_url(release, name)
+    if not url:
+        raise StageError(f"Release asset not found: {name}")
+    AppLogger.info(f"[Updater] Downloading update package v{version} from {url}")
+    safe_download(url, str(dest), allowed_hosts=_ASSET_HOSTS, expected_sha256=sha256, on_progress=progress_hook, user_agent=USER_AGENT)
 
 
 def _release_asset_url(release: dict, name: str) -> str:
@@ -206,8 +224,8 @@ def process_apply_results() -> None:
         discard_staged(root)
         return
     version = staged_version(root)
-    if version and not is_newer_version(__version__, version):
-        AppLogger.info(f"[Updater] Discarding stale staged update v{version} (current v{__version__})")
+    if version and not is_newer_version(effective_current_version(), version):
+        AppLogger.info(f"[Updater] Discarding stale staged update v{version} (current v{effective_current_version()})")
         discard_staged(root)
 
 

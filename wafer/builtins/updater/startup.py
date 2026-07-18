@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore
 
+from ... import _dev
 from ...core.commands.binding.instance_registry import InstanceRegistry
 from ...core.workspace import WorkspaceStore
 from ...utils.logs import AppLogger
@@ -31,6 +32,8 @@ def run_startup_update_check() -> None:
     slot_id = str(getattr(main_window, "slot_id", "") or "")
     if manager is None or dispatcher is None or not slot_id:
         return
+    if _dev.FORCE_UPDATE_ENABLED:
+        AppLogger.warning(f"[Updater] DEV update source active: {_dev.source_dir()} (reporting version {_dev.CURRENT_VERSION})")
     process_apply_results()
     if PANEL_DISPLAY_NAME not in manager.panel_names():
         return

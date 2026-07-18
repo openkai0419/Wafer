@@ -15,9 +15,9 @@
 
 </div>
 
-Wafer is a multi-feature local file viewer built on **PySide6**, **SQLite**, and **ZMQ**.
-It collects local files in the background, allowing large file sets to be browsed, searched, and filtered quickly in Viewer windows.
-Viewers, metadata collection, AI analysis, search, layouts, and archive support can be managed dynamically as extensions.
+Wafer is a file viewer built on **PySide6**, **SQLite**, and **ZMQ**.
+It collects local files in the background so large file sets can be browsed, searched, and filtered quickly.
+Viewing, metadata, AI analysis, search, layouts, and archive support are added through extensions.
 
 Platform: Windows
 
@@ -32,7 +32,7 @@ Platform: Windows
 
 A bundled Python environment is included. No Python installation is required.
 
-### From Source
+### With Git
 
 #### Requirements
 
@@ -54,36 +54,41 @@ main.bat
 python main.py
 ```
 
+### Updates
+
+Use the **Update** panel to download and apply the latest version, then restart.
+
 ### Uninstall
 
-On Windows, application data such as databases, settings, logs, and caches is created under `C:/Users/[username]/AppData/Local/Wafer` by default.
-To uninstall, run `cleanup.bat` to remove the application data, then delete the extracted application folder.
+On Windows, application data such as databases, settings, logs, and caches is stored under `C:/Users/[username]/AppData/Local/Wafer` by default.
 
-## Tray And Viewers
+- **Portable (zip)**: Run `Uninstaller.exe` in the application folder.
+- **From source**: Run `cleanup.bat`, then delete the cloned repository folder.
 
-Wafer is mainly built around two user-visible processes: `Tray` and `Viewer`.
+## Tray And Viewer
+
+Wafer mainly uses two user-visible processes: `Tray` and `Viewer`.
 
 | Type | Role |
 |---|---|
-| `Tray` | A resident management process. It coordinates Viewer windows, databases, background work, and restarts. |
-| `Viewer` | A window for browsing and searching files. Multiple Viewer windows can be opened, each with its own window state. |
+| `Tray` | Resident manager for Viewer windows, databases, background work, and restarts. |
+| `Viewer` | Window for browsing and searching files. Multiple Viewer windows can be opened. |
 
-Collection and analysis run as background work under Tray, so multiple Viewer windows can be used while managing multiple databases.
-While Tray is running, file updates are detected immediately, keeping databases up to date.
+While Tray is running, file changes are detected and the database stays up to date.
 
 ## Code Design
 
-Wafer follows a **common foundation + extensions** design.
+Wafer uses a **common foundation + extensions** design.
 
-- **`wafer/`** is the common foundation. It provides file collection, databases, search, rendering, process coordination, and plugin registration without depending on a specific file format.
-- **`extensions/`** contains independent folder-based extensions. They add image/video support, metadata extraction, AI analysis, search filters, layouts, and other features.
+- **`wafer/`** is the common foundation. It provides file collection, databases, search, rendering, process coordination, and plugin registration.
+- **`extensions/`** contains independent folder-based extensions for image/video support, metadata extraction, AI analysis, search filters, layouts, and more.
 
-The goal is to keep the foundation shared while letting format-specific and analysis-specific features evolve as extensions.
+The foundation stays shared while format-specific features live in extensions.
 
 ## Extensions
 
-Extensions are not limited to adding display formats. They extend many areas of the app, including collection, search, rendering, UI, and archive handling.
-Features can be added dynamically by placing appropriate Python files under the `extensions` folder.
+Extensions add more than display formats. They can extend collection, search, rendering, UI, and archive handling.
+Features can be added by placing Python files under the `extensions` folder.
 
 | Extension point | What it adds | Representative extensions |
 |---|---|---|
@@ -95,16 +100,16 @@ Features can be added dynamically by placing appropriate Python files under the 
 
 ## Plugin Manager
 
-`Plugin Manager` manages loaded extension states and collection or analysis assignments.
+`Plugin Manager` manages extension states and collection or analysis assignments.
 
-- **Extensions**: Install extensions and switch them on or off from here. A full process restart is required after switching them.
-- **Collectors**: Extensions for metadata collection and AI analysis can choose which Database stores their results.
+- **Extensions**: Install extensions and switch them on or off. Restart is required after switching them.
+- **Collectors**: Choose which Database stores metadata collection and AI analysis results.
 
 ## License
 
 This project is licensed under the [GNU Lesser General Public License v2.1 or later](LICENSE).
 
-All Python source code in this repository (`wafer/` and `extensions/`) is licensed under LGPL-2.1-or-later.
+All Python source code in this repository (`wafer/`, `extensions/`) is licensed under LGPL-2.1-or-later.
 If you distribute modified versions of this project, you must provide the corresponding source code for your modifications under LGPL-2.1-or-later and keep clear change notices.
 
 Some extensions use runtime-downloaded third-party binaries or models. These are not redistributed in this repository and are governed by their own licenses.

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from PySide6 import QtCore, QtWidgets
 
 from ...utils.logs import AppLogger
+from ..geometry import constrain_to_screens
 from .dock import (
     FloatingWindow,
     PanelDockWidget,
@@ -259,6 +260,22 @@ class LayoutManager(QtCore.QObject):
         active = self._tree.all_names()
         return [n for n in self._panels if n not in active]
 
+    def close_floating_windows(self):
+        closed = 0
+        for entry in self._panels.values():
+            win = entry.floating_window
+            if win is None:
+                continue
+            try:
+                win.closed.disconnect(self._on_floating_closed)
+            except (RuntimeError, TypeError):
+                pass
+            entry.floating_window = None
+            win.close()
+            closed += 1
+        if closed:
+            AppLogger.info(f"LayoutManager closed {closed} floating window(s) on shutdown")
+
     def save_state(self) -> dict:
         self._sync_tree_from_current()
         result = {
@@ -448,7 +465,8 @@ class LayoutManager(QtCore.QObject):
                 fs = (floating_overrides or {}).get(name) or self._tree.floating.get(name)
                 dock.setFloating(True)
                 if fs:
-                    dock.setGeometry(fs.x, fs.y, fs.width, fs.height)
+                    rect = constrain_to_screens(QtCore.QRect(fs.x, fs.y, fs.width, fs.height))
+                    dock.setGeometry(rect)
 
         self._arrange_docks_from_tree()
 

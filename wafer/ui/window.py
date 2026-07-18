@@ -2,6 +2,8 @@ import base64
 
 from PySide6 import QtCore, QtWidgets
 
+from .geometry import keep_window_on_screen
+
 
 class WindowSnapshot:
     __slots__ = ("geometry", "state")
@@ -77,6 +79,7 @@ class WindowStateController:
         if "geometry" in state:
             geo = QtCore.QByteArray(base64.b64decode(state["geometry"]))
             self._window.restoreGeometry(geo)
+            keep_window_on_screen(self._window)
         if "always_on_top" in state:
             self.set_always_on_top(state["always_on_top"])
 
@@ -101,6 +104,7 @@ class DialogLayoutStore:
         geo = self._settings.value(f"{self._key}/geometry")
         if geo:
             dialog.restoreGeometry(geo)
+            keep_window_on_screen(dialog)
         for name, splitter in splitters.items():
             raw = self._settings.value(f"{self._key}/{name}")
             if raw and isinstance(raw, list):

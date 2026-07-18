@@ -4,515 +4,342 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [v0.7.3]
+## [v0.7.4]
 ### Added
-- **Panel layout recovery commands**: added reset actions for restoring the default panel layout and recascading floating panel positions from the panel menu.
-- **Image spread controls**: added a dedicated toggle for image spreads and a persisted `match_size` option so multi-page image layouts can be enabled quickly and aligned consistently.
-- **Grid update scroll option**: added a toggle for scrolling back to the selected item after grid updates, with the preference saved in workspace state.
+- Portable builds can download updates in the Update panel, follow progress, and apply them after restart.
+- Portable builds now include an uninstaller that removes the app and can also remove user data.
+- `Quit All` command to close all Viewer and Tray processes together.
 
 ### Changed
-- **Image spread navigation**: multi-image viewing now separates display count from navigation step size, so regular next/previous movement stays file-by-file while slideshow playback advances by the visible spread.
-- **Grid refresh behavior**: grid updates now preserve the current scroll position by default instead of jumping back to the selected item unless the follow-selection option is enabled.
-- **Command menu check states**: checkable and radio menu entries now resolve their state from the live UI or service state, keeping viewer, grid, query, window, and panel menus synchronized.
+- Restored windows, dialogs, floating panels, and popups are moved back onto a visible screen.
+- Grid AutoScroll can loop back to the start, optionally rerunning the current query.
 
 ### Fixed
-- **Watched-folder rename fallback**: rename events that arrive without a matching source row now trigger a targeted rescan so moved files recover more reliably in the database.
-- **Solo panel restart recovery**: restarting while a panel is isolated no longer leaves collapsed panels unable to reopen.
-- **Metadata delete confirmation**: searchable metadata edits now require explicit confirmation before deleting a key.
+- Quit, restart, and update installs now close leftover windows, floating panels, and background processes more reliably.
+
+## [v0.7.3]
+### Added
+- Panel menu commands to reset the default layout and recascade floating panels.
+- A dedicated Image Spread toggle and a match-size option for aligned multi-page layouts.
+- An option to scroll back to the selected item after grid updates.
+
+### Changed
+- Normal navigation moves file-by-file while slideshow advances by the visible spread.
+- Grid refreshes keep the current scroll position by default.
+- Checkable menu entries now reflect the live UI state.
+
+### Fixed
+- Renamed files in watched folders recover more reliably.
+- Restarting with a panel isolated no longer leaves panels collapsed.
+- Deleting a metadata key now requires confirmation.
 
 ## [v0.7.2]
 ### Changed
-- **Windows taskbar relaunch behavior**: viewer windows now set the correct Windows relaunch identity when opened from the bundled launcher so taskbar grouping and relaunch actions stay tied to Wafer.
-- **Portable package contents**: portable builds no longer bundle test-only project files, and the root `LICENSE` file is now a short project notice that points to `COPYING`, `COPYING.LESSER`, and bundled third-party notices instead of embedding the full LGPL text.
+- Viewer windows keep the correct Windows taskbar identity when opened from the launcher.
+- Portable builds no longer bundle test-only files, and the root license notice points to the full license texts.
 
 ### Fixed
-- **Watched-folder rescan recovery**: idle rescans now refresh filesystem watches before rescanning and run more frequently, helping Wafer recover sooner if a folder watcher stops reporting changes.
+- Idle rescans recover missed folder changes more reliably.
 
 ## [v0.7.1]
 ### Changed
-- **Metadata panel workflow**: tag and metadata cards now share a searchable list UI with dialog-based editing, and EXIF or media metadata sections use the same editable key-value flow instead of separate read-only panels.
-- **Collector and parser execution tuning**: worker counts and batch timeouts are now configured per plugin, and indexer idle maintenance waits for the longest active child timeout before treating the pipeline as idle.
+- Tag and metadata cards now share a searchable list with dialog-based editing, and EXIF and media metadata are editable the same way.
+- Collector and parser timeouts are now configured per plugin.
 
 ### Fixed
-- **Long-running indexing stability**: heavy metadata collectors and parsers no longer rely on one-size-fits-all worker timeouts, reducing premature batch cancellations during larger or slower metadata jobs.
+- Heavy metadata indexing is interrupted less often.
 
 ## [v0.7.0]
 ### Added
-- **Runtime download verification**: automatic installs for ExifTool, FFmpeg, and video playback dependencies now share verified downloads with SHA-256 checks and latest-release asset resolution where supported.
+- Verified downloads with SHA-256 checks for ExifTool, FFmpeg, and video dependencies.
 
 ### Changed
-- **Extension install startup flow**: pending installs now run before tray command activation, duplicate install waiter windows are prevented, and package-lock scanning logs skipped open-file errors instead of failing silently.
-- **Portable launcher packaging**: portable builds now ship only the windowed `Wafer.exe` launcher, use the bundled Python runtime for command-line checks, and keep bundled third-party notices aligned with packaged runtime dependencies.
+- Pending extension installs now run before startup completes, and duplicate install windows are prevented.
+- Portable builds ship only the windowed launcher and use the bundled Python runtime for checks.
 
 ### Fixed
-- **Virtual-path file-operation guards**: open, reveal, folder creation, copy, move, and paste flows now reject archive virtual paths consistently and keep file actions on physical source paths.
-- **Video playback idle timer cleanup**: hover playback now replaces idle timers under a lock and waits for cancellation during cleanup, reducing shutdown and rapid-hover races.
+- File actions now reject archive members and other non-physical paths.
+- Video hover playback cleans up more safely.
 
 ## [v0.6.19]
 ### Added
-- **In-app update notifier**: added an Update panel with manual and startup GitHub release checks, embedded release-note display, download-page links, and per-version skip or remind-later actions
+- An Update panel with manual and startup release checks, in-app release notes, download links, and skip or remind-later actions.
 
 ### Changed
-- **Batch Renamer preview workflow**: file lists now default to natural-name sorting, selected cells can enter edit mode with Enter or F2, and left or right thumbnail overlays can independently switch between cover and contain fits
-- **Panel startup hooks**: panel plugins can now run startup actions after the main window finishes loading, enabling one-time viewer-session initialization such as automatic update checks
-- **Release packaging**: portable builds and clean-project copies now include `RELEASE_NOTES.md`, and tagged GitHub releases extract the matching release-notes section as the published release body
+- Batch Rename defaults to natural-name sorting, supports Enter or F2 to edit, and adds separate cover/contain fits for the left and right previews.
+- Panels can run startup actions after the main window loads.
+- Portable builds and releases now include release notes.
 
 ### Fixed
-- **Portable third-party notices generation**: build-time license export now forces UTF-8 stdio and fails fast on `piplicenses` subprocess errors so `THIRD-PARTY-NOTICES.txt` is generated reliably on Windows
+- Third-party notices are generated reliably on Windows.
 
 ## [v0.6.18]
 ### Added
-- **Built-in multi-page image viewer**: added configurable image spreads and reading direction for the file viewer, with shared static-image loading across the built-in image viewer and image extension
+- A built-in multi-page image viewer with configurable spreads and reading direction.
 
 ### Changed
-- **Virtual file rendering**: unified grid, viewer, and image-loader resolution so ZIP members and other materialized files continue through the normal plugin chain after one resolution step
-- **File viewer navigation**: next/previous navigation and slideshow advance now follow the active viewer's batch size, so multi-page image spreads move through files in grouped steps
-- **Batch Renamer table editing**: batch rename previews now use cell selection, keep sort order across refreshes, defer rebuilds while inline editors are open, support vertical Tab editing, and expose restore actions for selected per-cell overrides
-- **Plugin enable-state persistence**: plugin toggles now persist as explicit enabled or disabled overrides relative to `DEFAULT_ENABLED`, while legacy enabled-name settings are still honored during migration and restart prompts are derived from the plugins that actually changed
+- Archive members and other virtual files render consistently across the grid and viewer.
+- Navigation and slideshow follow the active viewer's page count for multi-page spreads.
+- Batch rename previews keep sort order, defer rebuilds while editing, and add restore actions.
+- Plugin enable/disable choices persist more reliably across restarts.
 
 ### Fixed
-- **Resolver failure fallback**: viewer, grid, and image-loader resolution now skip plugins whose `resolve()` raises and continue to lower-priority matches instead of aborting the whole dispatch
+- If a renderer fails to open a file, Wafer continues to the next one instead of stopping.
 
 ## [v0.6.17]
 ### Added
-- **Drop target chooser for GridView fallback drops** (`wafer/builtins/commands/grid.py`, `wafer/ui/dialogs.py`, `_resources/translations.json`): added a destination chooser and confirmation flow when a GridView drop falls back to FolderTree-selected folders instead of a hovered grid item
+- A destination chooser when a grid drop falls back to the selected folder.
 
 ### Changed
-- **Default binding presets** (`_resources/key_bindings/standard.json`, `_resources/mouse_bindings/standard.json`): refreshed the shipped key and mouse presets with `W`/`A`/`S`/`D` FolderTree navigation, side-button mark toggles, and updated GridView and viewer mouse actions for drag, drop, open, fit-mode, and row navigation
-- **Nearest-target drop resolution** (`wafer/app/viewer/widgets/foldertree.py`, `wafer/app/viewer/grid/grid_view.py`, `wafer/plugin/layout/calc.py`, `wafer/builtins/commands/grid.py`): GridView and FolderTree drops now resolve to the nearest visible cell or row, and FolderTree highlights the resolved destination row during drag feedback
-- **FolderTree navigation and reload flow** (`wafer/app/viewer/widgets/foldertree.py`, `wafer/builtins/commands/foldertree.py`, `wafer/app/viewer/mainwindow.py`, `_resources/translations.json`): replaced visible-row folder navigation with sibling-folder navigation, added optional collapse-on-parent navigation, and deferred folder-tree reloads while inline edits are active so renames are not interrupted
-- **Batch Renamer preview popups** (`wafer/builtins/batch_renamer/widget.py`, `wafer/builtins/batch_renamer/popup.py`): column setting popups now reopen within the available screen space and preview thumbnails load at `512px` for higher-detail rename previews
+- Refreshed the default key and mouse presets with folder navigation, mark toggles, and updated grid/viewer actions.
+- Grid and folder-tree drops resolve to the nearest visible target.
+- Folder-tree navigation moves between sibling folders and defers reloads while editing.
+- Rename preview thumbnails load at higher detail.
 
 ### Fixed
-- **Virtual-path drop safety** (`wafer/core/platform/file_operations.py`, `wafer/builtins/commands/grid.py`, `wafer/app/viewer/widgets/foldertree.py`): app-managed drops now reject archive virtual paths as destinations and resolve file operations against physical source directories before executing copy or move plans
-- **Folder delete event classification** (`wafer/app/indexer/watch_folder.py`): folder delete notifications no longer rely solely on backend `is_directory` flags, restoring folder-removal handling when watcher backends mislabel directory deletions
+- Drops now reject archive paths as destinations and use physical source paths.
+- Folder deletions are handled correctly even when watchers mislabel them.
 
 ## [v0.6.16]
 ### Added
-- **Scope-aware mark storage and conversion** (`wafer/builtins/mark/dialogs.py`, `wafer/builtins/mark/registry.py`, `wafer/core/db/file_db.py`, `wafer/core/db/key_value.py`): added metadata-scoped and tag-scoped mark definitions, per-mark scope conversion requests across databases, and shared key-value scope helpers so marks can be stored per path or per file hash
-- **Grid overlay plugin API** (`wafer/plugin/grid_overlay/`, `wafer/app/viewer/grid/overlay_host.py`, `wafer/core/qt/badge_engine.py`, `wafer/builtins/mark/overlay.py`, `wafer/builtins/mark/shapes.py`, `wafer/builtins/commands/grid.py`): added generic badge and cell overlay hosting for `GridView`, shape-based mark badges, and grid commands for overlay visibility and badge size
-- **Right-side `NOT` query operator** (`wafer/plugin/query/composer.py`, `wafer/app/viewer/widgets/search_container.py`): added `NOT` as a search-row set operator so later filters can subtract their result set from the composed query
+- Marks can be stored per path or per file content, with conversion between the two.
+- Grid badges and overlays for marks, with visibility and size controls.
+- A NOT operator for subtracting a filter's results from a search.
 
 ### Changed
-- **Metadata panel plugin API** (`wafer/plugin/key_value_panel/base.py`, `wafer/app/viewer/preview/meta_panel.py`, `extensions/exiftool/meta_panel.py`, `extensions/ffmpeg/meta_panel.py`, `extensions/color/panel.py`, `wafer/plugin/__init__.py`): replaced the separate meta/tag panel plugin bases with `BaseKeyValuePanelPlugin`, added scope-aware cards and per-scope UI state, and updated built-in panels to target `tag` or `meta_info` data explicitly
+- Metadata panels now use a unified scope-aware card layout.
 
 ### Fixed
-- **Watch-folder move inference** (`wafer/app/indexer/watch_folder.py`, `wafer/app/indexer/db_writer.py`, `wafer/core/db/file_db.py`): the watcher now correlates delete/create bursts by file signature and treats them as moves when possible, preserving rename handling for file moves that arrive without native move events
-- **Folder-scoped key suggestions** (`wafer/app/viewer/widgets/search_container.py`, `wafer/app/viewer/mainwindow.py`, `wafer/app/viewer/state_coordinator.py`): `list_all_keys()` now respects `include_subfolders` and `include_contained_files` when refreshing key choices for the selected folders
-- **Folder tree scroll retention** (`wafer/app/viewer/widgets/foldertree.py`, `wafer/app/viewer/mainwindow.py`): reloading folder roots now preserves the current vertical scroll position instead of jumping back to the selected item
-- **Async markdown preview safety** (`wafer/utils/markdown_browser.py`, `wafer/builtins/plugin_manager/extensions_tab.py`): markdown preview widgets now guard async HTML updates against deleted Qt objects, avoiding stale Plugin Manager README updates
+- Watched-folder moves are inferred more reliably from delete/create pairs.
+- Key suggestions respect subfolder and contained-file options.
+- Reloading folders keeps the current scroll position.
+- Plugin Manager README previews no longer error on stale updates.
 
 ## [v0.6.15]
 ### Added
-- **Color search extension** (`extensions/color/collector.py`, `extensions/color/filter.py`, `extensions/color/panel.py`, `extensions/color/widget.py`, `extensions/color/settings.py`): added a `color` collector that stores representative image palette tags, a multi-color RGB-distance search filter, and metadata swatches that can be applied directly to color queries; palette-slot changes can optionally delete and re-collect existing database data
+- A color search extension: stores image palette tags and searches by color similarity, with swatches you can apply to queries.
 
 ### Changed
-- **WD14 extension naming** (`extensions/wd14/`, `wafer/plugin/badges.py`, `README.md`, `README.jp.md`): renamed the former `ai_tagger` extension to `wd14` across the shipped extension folder, plugin badges, and user documentation so the public name matches the model it provides
-- **Query sort defaults** (`wafer/builtins/sorts.py`, `wafer/app/viewer/search.py`, `wafer/app/viewer/widgets/search_container.py`, `wafer/core/workspace.py`, `wafer/builtins/commands/query.py`): added an explicit `None` sort mode and made unsorted queries the default for new searches and saved query presets instead of defaulting to path sorting
+- Renamed the ai_tagger extension to wd14 to match the model it provides.
+- New searches and saved presets now default to unsorted instead of path order.
 
 ### Fixed
-- **ExifTool key browser bulk toggles** (`extensions/exiftool/panel.py`): `Check All` and `Uncheck All` now apply only to the keys currently shown by the search filter, avoiding accidental changes to hidden keys
+- Check All and Uncheck All in the ExifTool key browser now apply only to filtered keys.
 
 ## [v0.6.14]
 ### Added
-- **Positional file navigation command** (`wafer/builtins/commands/content_viewer.py`, `_resources/mouse_bindings/standard.json`, `_resources/translations.json`): added `fv.navigate_file_by_mouse_position` with configurable axis and invert options so image, animated, and video viewers can move to the previous or next file based on the clicked side of the widget
+- A command to move to the previous or next file based on the clicked side of the viewer.
 
 ### Changed
-- **Workspace slot reservation for new windows** (`wafer/core/workspace.py`, `wafer/builtins/commands/workspace.py`): opening a new viewer now reserves the newest inactive workspace slot, skips active and restoring slots, and releases the reservation if process launch fails
-- **Default binding presets** (`_resources/key_bindings/standard.json`, `_resources/mouse_bindings/standard.json`): refreshed the shipped key and mouse presets with shortcuts for mark toggling, clipboard file actions, binding settings, panel solo mode, and mouse-position file navigation while moving video pause to middle click
-- **Portable build metadata** (`scripts/build.py`, `wafer/_version.py`): portable builds now ship `README.jp.md` and `cleanup.bat`, and the fallback version string was updated from a stale development identifier to `0.6.13`
+- Opening a new viewer reserves the newest free workspace slot.
+- Refreshed the default presets with shortcuts for marks, clipboard actions, binding settings, panel solo, and mouse-position navigation.
+- Portable builds now ship the Japanese README and cleanup script.
 
 ## [v0.6.13]
 ### Changed
-- **Worker shutdown lifecycle** (`wafer/plugin/registry.py`, `wafer/app/collector/worker.py`, `wafer/app/parser/worker.py`, `wafer/app/indexer/dispatcher.py`, `wafer/app/indexer/parser_dispatcher.py`, `wafer/app/indexer/worker_shutdown.py`, `wafer/core/platform/process.py`): added plugin `shutdown()` hooks, `worker.shutdown` requests, and process-tree termination so collector/parser workers can stop cleanly before forced shutdown
-- **Viewer toolbar and combo-box interaction** (`wafer/app/viewer/mainwindow.py`, `wafer/app/viewer/widgets/combo_with_buttons.py`): reordered the main toolbar buttons and made `ComboBoxWithButtons` ignore mouse-wheel input to prevent accidental selection changes while scrolling
+- Collector and parser workers now shut down cleanly before forced termination.
+- Reordered the main toolbar and stopped the combo box from changing on scroll.
 
 ### Fixed
-- **Lingering extension worker resources** (`extensions/exiftool/collector.py`, `extensions/exiftool/parser.py`, `extensions/wd14/collector.py`, `extensions/florence/collector.py`, `extensions/zip/collector.py`): ExifTool, ZIP, and ML collectors now stop idle timers, caches, cache sweep tasks, and subprocess trees during worker shutdown instead of leaving background resources alive
+- ExifTool, ZIP, and ML collectors release background resources on shutdown.
 
 ## [v0.6.12]
 ### Added
-- **Drop operation chooser and preference** (`wafer/core/platform/paste.py`, `wafer/ui/dialogs.py`, `wafer/builtins/commands/grid.py`, `wafer/app/viewer/widgets/foldertree.py`): added a copy/move chooser for GridView and folder-tree drops, persisted the selected default drop operation, and exposed ask-mode drop handling that previews using the saved mode
-- **Database-update auto execute toggle** (`wafer/app/viewer/search.py`, `wafer/app/viewer/state_coordinator.py`, `wafer/builtins/commands/query.py`, `_resources/translations.json`): added `auto_execute_on_update` search state and menu commands so database refreshes can be decoupled from parameter-change auto execution
+- A copy/move chooser for grid and folder-tree drops, with a saved default.
+- An option to decouple database refreshes from auto-executing searches.
 
 ### Changed
-- **Paste execution progress** (`wafer/core/platform/file_operations.py`, `wafer/core/platform/paste.py`): copy and move progress now starts indeterminate while sizing recursive work, advances by actual file-operation units, supports cancellation during recursive operations, and falls back to copy-then-delete for cross-device moves
-- **Tag-update refresh flow** (`wafer/app/viewer/mainwindow.py`, `wafer/app/viewer/state_coordinator.py`): tag edit acknowledgements now refresh `TagEditService` and mark overlays without forcing a full search rerun, and workspace query state now restores the new database-update auto execute option
+- Copy and move progress shows real progress, supports cancellation, and handles cross-device moves.
+- Tag edits refresh marks without rerunning the whole search.
 
 ### Fixed
-- **Grid and folder-tree drop finalization** (`wafer/builtins/commands/grid.py`, `wafer/app/viewer/widgets/foldertree.py`): internal copy drops are now accepted, and app-managed drops always finish with `IgnoreAction` after handling so Qt does not keep stale move/copy drop state
-- **Scanner update filtering** (`wafer/app/indexer/scanner.py`): update batches now skip non-regular paths and log invalid targets instead of trying to index unsupported files
+- Internal copy drops are accepted and drops finalize cleanly.
+- Scanner updates skip unsupported files.
 
 ## [v0.6.11]
 ### Changed
-- **Project licensing** (`LICENSE`, `COPYING`, `COPYING.LESSER`, `README.md`, `README.jp.md`, `extensions/wd14/README.md`, `extensions/exiftool/README.md`, `extensions/ffmpeg/README.md`, `extensions/florence/README.md`, `extensions/video/README.md`, `pyproject.toml`): changed the repository source license from Apache-2.0 to LGPL-2.1-or-later and updated badges, license guidance, and package metadata to match
-- **Bundled license files** (`NOTICE`, `scripts/build.py`, `scripts/copy_clean_project.py`): removed the separate `NOTICE` file and switched packaged project metadata to ship `COPYING` and `COPYING.LESSER` with release and clean-copy outputs
+- Changed the source license from Apache-2.0 to LGPL-2.1-or-later and updated the related docs.
+- Reorganized the bundled license files.
 
 ## [v0.6.10]
 ### Added
-- **Panel solo commands** (`wafer/builtins/commands/panel.py`, `wafer/ui/layout/manager.py`): added `panel.solo` / `panel.solo_current` to isolate a docked panel in locked layout mode or maximize a floating panel in place
-- **Contained-file query controls** (`wafer/builtins/commands/query.py`, `wafer/builtins/filters.py`, `wafer/app/viewer/preview/file_list_provider.py`): added `include_contained_files` search state, internal contained-file filters, and a file-viewer option to open archive members as their own list
+- Panel solo commands to isolate a docked panel or maximize a floating one.
+- Search controls for including archive members as their own list.
 
 ### Changed
-- **Viewer toolbar and restored state** (`wafer/app/viewer/mainwindow.py`, `wafer/app/viewer/state_coordinator.py`): the right-side toolbar now opens the Query menu instead of exposing only the subfolder toggle button, and workspace restore now preserves contained-file search and file-list options
-- **Watch-folder path scoping** (`wafer/app/indexer/path_scope.py`, `wafer/app/indexer/watch_folder.py`, `wafer/app/indexer/db_writer.py`): watcher cleanup now uses normalized path prefixes so whole source trees can be renamed or removed consistently
+- The right-side toolbar now opens the Query menu.
+- Watched-folder cleanup handles renaming or removing whole source trees.
 
 ### Fixed
-- **ZIP archive handling** (`extensions/zip/archive.py`, `extensions/zip/cache.py`, `extensions/zip/collector.py`): improved member resolution across legacy metadata encodings, Unicode path extra fields, duplicate display paths, normalized backslash members, and malformed deflated entries with zero declared size
-- Watch-folder updates now correctly rename nested sources when a directory moves inside the watched root and remove nested rows when a directory moves outside the watched or into ignored paths
+- Improved ZIP member handling for legacy encodings and malformed entries.
+- Nested folder moves inside the watched root rename correctly.
 
 ## [0.6.9]
 ### Added
-- **ZIP archive extension** (`extensions/zip/`): `ZipCollectorPlugin` indexes entries inside `.zip` files as virtual paths with aspect-ratio probing; `ZipResolverPlugin` materializes entries via `ZipCache` (LRU + idle-sweep eviction) for grid and file viewer
-- **Virtual path system** (`wafer/utils/virtual_paths.py`): `build_virtual_path()` / `split_virtual_path()` / `is_virtual_path()` and related helpers encode archive member paths as `source::member`; virtual paths are resolved by the source-side extension and each plugin decides whether it can handle the path
-- **`RenderTarget` / `ResolveContext`** (`wafer/core/files/render_target.py`): immutable render-dispatch value type with depth-limited recursive resolution; adopted by `GridResolver.resolve_target()` and `ViewerResolver.resolve_target()`, routing virtual paths to owner-plugin `resolve_target()` before the normal chain
-- **`DISPATCH_OWNER` / `DISPATCH_LEAF` registry modes**: `FilePluginRegistry.resolve()` / `resolve_chain()` accept a mode for owner- or leaf-extension-based dispatch
-- **Standard key constants** (`wafer/core/db/query.py`): `SYSTEM_FILE_HASH_KEY`, `STANDARD_KEYS`, `standard_key_columns()` — standard fields resolve directly from dedicated DB columns, eliminating `meta_info` round-trips for path/name/size/modified/created/collected/file_hash queries
+- A ZIP extension that indexes archive members as browsable virtual files.
+- Standard file fields (path, name, size, dates, hash) now resolve directly from the database for faster queries.
 
 ### Changed
-- **DB schema**: `sources` gains `created` and `collected` columns; `files` gains `name` and `source_extension` columns; `files_full` view and indexes updated; `path`/`name`/`size`/`modified`/`created`/`collected` entries are no longer written to `meta_info` during basic indexing
-- **Schema migration** (`FileDB._recreate_tables()`): changed tables are backed up, recreated, and data-migrated column-by-column instead of being dropped
-- **`TextFilter` / `SearchQuery` / `SearchComposer`**: standard keys and `file_hash` route to DB columns; `available_keys()` includes standard keys; sort plugins use `SORT_COLUMN` instead of `META_KEY`, eliminating `meta_info` JOIN for common sort fields
-- **`GridPipeline` / `FileViewerController`**: refactored to use `RenderTarget` throughout; virtual-path entries are resolved and rendered via the correct materialized path
-- **`CollectorResult`** gains `size`, `modified`, `created` fields; `FileDB.upsert_collection_results()` cleans up stale virtual child rows after successful collection; `delete_collector()` also removes child rows keyed by `source_extension`
-- File rename propagation extended to virtual child paths; batch renamer and file commands updated to use physical source paths correctly
-- Plugin kind badge colors updated (`wafer/plugin/kinds.py`)
+- Database schema updated for faster common queries and sorts.
+- Schema changes now migrate existing data instead of dropping it.
+- Renames now propagate to files inside archives.
 
 ## [v0.6.8]
 ### Added
-- **`wafer/plugin/kinds.py`**: centralized plugin-kind labels, colors, and ordering shared by the loader and Plugin Manager UI
-- **`wafer/ui/popups.py`** (`PopupBase`): reusable anchored popup frame with screen clamping and Escape-to-close behavior, adopted by workspace, text-filter, and batch-renamer popups
-- **Editable `meta_info` support**: `MetaViewerWidget`, `EditableTagCard`, `TagEditService`, `DatabaseWriter.apply_user_kv()`, and `FileDB.apply_user_meta_info()` now allow adding, renaming, deleting, and locking user metadata keys alongside tags
+- Editable metadata: add, rename, delete, and lock your own metadata keys alongside tags.
+- Centralized plugin-kind labels and colors shared by the loader and Plugin Manager.
+- Reusable anchored popups with screen clamping.
 
 ### Changed
-- **Plugin Manager UI**: extension cards, badge tooltips, and order views now use centralized plugin-kind metadata so collector/parser/panel/loader/command badges render with consistent labels and colors
-- **Metadata panel** (`wafer/app/viewer/preview/meta_panel.py`): root metadata is split from standard file fields, tag/meta sections get visual markers, and the add dialog can target either tags or metadata depending on current file context
-- **Meta panel plugin API**: `BaseMetaPanelPlugin.update_data()` now receives `locks`, `path`, and `db`, and the built-in ffmpeg/exiftool panels were updated to the new signature
+- Plugin Manager badges render with consistent labels and colors.
+- The metadata panel separates standard file fields from tags and metadata, and the add dialog targets tags or metadata by context.
 
 ### Fixed
-- **Locked metadata preservation**: `meta_info` now migrates a `locked` column when missing, collector upserts skip locked rows, and delete/cleanup paths avoid removing locked user metadata
-- Scope-aware `tags.updated` acknowledgements now return target IDs for both tags and metadata, keeping overlay state and metadata reloads synchronized after edits
+- Locked metadata is preserved during collection and cleanup.
+- Tag and metadata edits keep overlays and reloads in sync.
 
 ## [v0.6.7]
 ### Added
-- **Workspace persistence system** (`wafer/core/workspace.py`): JSON-backed `WorkspaceStore`, `WindowSlot`, and UI/path/query preset dataclasses with active/restore slot tracking
-- **Workspace toolbar** (`wafer/app/viewer/widgets/workspace_toolbar.py`): compact Recent/UI/Path/Filter popups for saving, applying, overwriting, renaming, and deleting presets and recent workspace slots
-- **Workspace commands** (`wafer/builtins/commands/workspace.py`): `ws.*`, `ui_preset.*`, `path_preset.*`, and `query_preset.*` commands replacing profile/bookmark commands with slot and preset operations
-- **State coordinators** (`wafer/app/viewer/state_coordinator.py`): separate UI, path, and query capture/restore flows used by window slots and presets
-- **Inline menu actions** (`MenuAction` / `ActionKit.Action`): command-menu builder can now host lightweight non-registered actions for context menus and inline popups
-- **FolderTree recursive expand/collapse** (`wafer/app/viewer/widgets/foldertree.py`): Shift-clicking a branch indicator expands or collapses a subtree using batched background scanning with cancellation
-- **`ElidingLabel` / `ElidingToolButton`** (`wafer/ui/widgets/eliding.py`): reusable eliding text widgets used by workspace and plugin-manager UI
-- App-settings synchronization across viewers via `settings.changed` IPC and `SettingManager.committed` / `key_changed` signals
-- New themed icons: `history`, `save`, `pencil`, and `trash`
+- A workspace system that saves and restores window state as slots and UI/path/filter presets.
+- A workspace toolbar and commands for saving, applying, and managing presets.
+- Recursive expand/collapse in the folder tree via Shift-click.
+- App settings now sync across open viewers.
 
 ### Changed
-- **Profile system replaced by workspace slots**: viewer CLI now uses `--slot` instead of `--profile`; IPC topics changed from `profile.close` / `profile.restart` to `slot.close` / `slot.restart`; tray/viewer restore logic now uses `WorkspaceStore`
-- **`MainWindow` state persistence**: window geometry/UI state, selected database/folders, and query bars are saved into `WindowSlot` snapshots instead of `ProfileStore` and `app_settings`
-- **Search filter bars** (`wafer/app/viewer/widgets/search_container.py`): rows now support context-menu enable/disable, insert-after, move up/down/top/bottom, and delete actions; saved state uses `bars` and can be applied in replace or append mode
-- Query sort/order command check states now resolve from live `SearchService` values instead of persisted action-group state
-- Grid orientation, layout mode, and scroll anchor check states now resolve from live `GridView` state; `GridView` stores `scroll_anchor` directly and applies scrollbar policies based on orientation
-- **Plugin UI state API**: plugin bases and built-in/extension implementations renamed `save_state()` / `restore_state()` to `save_ui_state()` / `restore_ui_state()`; `BasePanelPlugin.plugin_config` can declare the panel-owned `PluginConfig`
-- **ExifTool settings** (`extensions/exiftool/settings.py`): filter and sort settings now use `PluginConfig`, with filter changes saved through `save_and_notify()`
-- Active metadata key selection and mark overlay visibility/radius moved from global `app_settings` to window-scoped `StateStore`
-- `SearchContainer`, mark, rename dropdown, folder-list, binding-override, and sort popups now use the shared command-menu framework instead of direct ad-hoc `QMenu` actions
+- Replaced profiles with workspace slots; the viewer now uses slots for restore.
+- Search rows support enable/disable, reorder, and insert actions.
+- Plugin UI state is saved and restored more consistently.
 
 ### Fixed
-- Tag update acknowledgements now force a current-DB search refresh, keeping tag edits, mark filters, and grid overlays in sync after writes
-- `FileListProvider.set_mode()` now immediately syncs from current grid results when switching back to sync mode
-- `MarkRegistry` refreshes mark definitions when remote settings changes arrive, keeping multi-window mark color/name state synchronized
-- `Dispatcher.invoke()` now checks parent QObject validity before emitting, avoiding queued callbacks to deleted parents
-- Broker active/restore slot updates now use a locked debounce timer that is cancelled safely during shutdown
+- Tag edits refresh the current search so marks and overlays stay in sync.
 
 ### Removed
-- `wafer/core/profile.py` and `wafer/builtins/commands/profile.py` profile/bookmark storage and commands, replaced by workspace slots plus UI/path/query presets
+- The old profile and bookmark storage, replaced by workspace slots and presets.
 
 ## [v0.6.6]
 ### Added
-- **`value_viewer_dialog.py`** (`wafer/ui/panel/value_viewer_dialog.py`): shared full-value dialog with selectable key label and read-only text area
-- `SearchableMetaWidget` double-click and context menu support for opening full metadata values and copying key, value, or row text
+- A shared dialog for viewing full metadata values, with copy actions.
 
 ### Changed
-- **`FileSearchEngine.get_tag_keys_for_paths()` renamed to `get_tag_keys_by_prefix()`**: supports full-DB prefix fetch with `paths=None` and path-restricted fetch with `paths=[...]`
-- **`MarkOverlayService`** now reloads a whole-DB mark cache on database/search reload and rejects stale async reload results by sequence number instead of tracking only the current result paths
-- `MetaRowWidget` now uses the shared value viewer dialog for full metadata display
+- Tag-key lookups support full-database and path-restricted fetches.
+- Mark overlays reload from a whole-database cache and ignore stale results.
 
 ## [v0.6.5]
 ### Added
-- **Mark system** (`wafer/builtins/mark/`): user-defined named, colored marks stored in `app_settings`; `MarkRegistry` singleton with `Mark` dataclass, color swatch icon generation, and duplicate-name resolution on load
-- **Mark commands** (`wafer/builtins/mark/commands.py`): `mark.add`, `mark.remove`, `mark.toggle`, `mark.clear`, `mark.define`, `mark.rename`, `mark.set_color`, `mark.remove_def` registered under `File/Mark` menu group via `MarkCommands`
-- **`MarkOverlayService`** (`wafer/app/viewer/grid/mark_overlay_service.py`): background-loaded mark data per grid item; draws colored dot badges (single color, pie segments, or rainbow for 5+ marks) on grid overlay; configurable radius and visibility saved to `app_settings`
-- **`MarkTagPanelPlugin`** (`wafer/builtins/mark/panel.py`): `BaseTagPanelPlugin` implementation displaying mark-badge row in the metadata side panel with per-mark toggle and "Add new mark" button
-- **`MarkFilter`** (`wafer/builtins/filters.py`): new `BaseFilterPlugin` for filtering by selected marks; `MarkFilterWidget` shows per-mark toggle buttons with match count and OR/AND mode popup; mark overlay settings (visibility, radius) accessible from filter widget
-- **`EditableTagCard`** (`wafer/app/viewer/preview/editable_tag_card.py`): inline tag editor in the metadata panel — add, delete, rename, and lock/unlock individual tags; `LineEditor` and `PlainEditor` inline widgets with commit-on-Enter/blur and Escape-to-cancel; `AddTagDialog` for adding new tags
-- **`TagEditService`** (`wafer/app/viewer/preview/tag_edit_service.py`): singleton handling in-flight tag edit tracking, IPC submission via `tags.update`, timeout/fail detection, and `commit_confirmed` signal for panel reload on write confirmation
-- **`BaseTagPanelPlugin`** (`wafer/plugin/tag_panel/`): new plugin type for tag section cards rendered in the metadata panel; auto-discovered via `tag_panel_registry`
-- **`ColorPickerDialog`** (`wafer/ui/widgets/color_picker.py`): custom HSV color picker with hue ring + saturation/value square (`HueRingSVSquare`), hex/RGB input fields, optional alpha channel, and persistent recent color swatches; used for mark color assignment
-- **`FlowLayout`** (`wafer/ui/widgets/flow_layout.py`): reusable wrapping flow layout widget for badge/button rows
-- **`wafer/utils/recent_colors.py`**: persistent recent colors list (load/save) used by `ColorPickerDialog`
-- **`tags.update` / `tags.updated` IPC topics**: indexer handles user tag writes via `_on_tags_update()`; runs `apply_user_tags()` as a `USER_REQUEST` priority task; replies to viewer with per-path applied/deleted/file_hash results
-- **`FileDB.apply_user_tags()`**: writes user-managed tags (upsert/delete/rename) with lock support across multiple paths, returning per-path results
-- **`FileDB._migrate_tags_on_hash_change()`**: preserves existing tags (including locked user tags) when a file's content hash changes during indexing
-- **`FileSearchEngine.get_tag_keys_for_paths()`**: batch fetches tag key suffixes by prefix for a list of paths; used by `MarkOverlayService` to load mark data
-- **`FileSearchEngine.close()`**: explicit connection close for use outside long-lived query flows
-- **`DatabaseWriter.apply_user_tags()`**: wraps `FileDB.apply_user_tags()` with WAL checkpoint
-- New themed icons: `empty`, `checkbox_unchecked`, `checkbox_checked`, `lock`, `lock_open`
+- A mark system: user-defined named, colored marks with grid badges, filtering, and a side-panel toggle.
+- Inline tag editing in the metadata panel: add, delete, rename, and lock tags.
+- A custom color picker with recent colors.
 
 ### Changed
-- **`tags` table schema**: `locked INTEGER NOT NULL DEFAULT 0` column added; collector upserts (`_SQL_UPSERT_TAGS`) have `WHERE tags.locked = 0` guard preserving user-locked tags; `delete_collector`, `delete_keys`, and per-file delete operations also filter `locked = 0`
-- **`FileSearchEngine.get_tags_by_path()`** renamed to `get_tags_with_lock_by_path()`, now returns `(file_hash, dict[key, (value, locked)])` instead of bare `dict`
-- **`FileSearchEngine.get_all_metadata()`** refactored to single-query flow; returns `(file_record, file_hash, tags_with_lock, meta_info)` 4-tuple (was 3-element list without file_hash or lock info)
-- **`MetaViewerWidget`** (`wafer/app/viewer/preview/meta_panel.py`): header bar with "Add tag" (`+`) and "Reload" buttons; `tag:` prefixed sections (tag panel plugins) separated from `meta:` prefixed sections; `reload_requested` signal; `set_data()` and `clear()` now track current path/hash/db
-- **`FilterRow`** (`wafer/app/viewer/widgets/search_container.py`): per-row enable/disable toggle button; disabled rows are excluded from query execution; visual dimming on disable
-- **`LogPanel`** (`wafer/builtins/log_panel.py`): log colors and background now driven by `ThemeManager` palette (theme-aware); `_LogTab` emits `user_scrolled_away`/`user_scrolled_to_bottom` signals; "Auto Scroll" checkbox auto-unchecks on manual scroll-away and re-checks on scroll-to-bottom
-- **Profile color palette** (`wafer/app/viewer/widgets/profile_popup.py`): "More..." button opens `ColorPickerDialog` for arbitrary custom profile colors beyond the preset swatches
-- `window` icon improved with filled title-bar button; `folder_plus` padding tightened
-- `TextFilter.bind_key_store()` class method removed (key store binding moved into `SearchContainer` directly)
-- `FileListProvider.set_search_service()` removed; `_query_directory()` now uses `NaturalPathSort` directly
+- User-locked tags are preserved during collection.
+- The metadata panel adds tag and reload actions and separates tags from metadata.
+- The log panel is now theme-aware with smarter auto-scroll.
 
 ## [v0.6.4]
 ### Added
-- **Florence-2 captioner extension** (`extensions/florence/`): singleton collector using Microsoft Florence-2 vision-language model with multi-task captioning (`<CAPTION>`, `<DETAILED_CAPTION>`, `<MORE_DETAILED_CAPTION>`), `base`/`large` variant selection, configurable `max_new_tokens`/`num_beams`, GPU/CPU fallback, idle engine unloading, and settings panel with drag-and-drop live preview — replaces BLIP captioner
-- **Deferred install pipeline**: Plugin Manager no longer runs pip in-process; installs are enqueued to `extensions/.installer_queue/` and processed by the tray on next startup
-- **`wafer/plugin/installer_queue.py`**: persistent JSON-backed install queue (`enqueue`/`dequeue`/`has_pending_queue`/`queued_names`)
-- **`wafer/plugin/install_status.py`**: cross-process install progress reporting (`InstallStatusWriter`, `read_status`) and user cancel flag (`request_cancel`, `is_cancel_requested`)
-- **`wafer/plugin/failed_installs.py`**: persistent record of failed install attempts (`mark_failed`, `failed_names`, `failure_info`)
-- **`wafer/plugin/startup_install.py`** (`run_pending_installs()`): tray-side processor that drains the install queue, terminates processes holding `.packages/` files, and writes phase status
-- **`wafer/plugin/badges.py`**: `ExtensionBadge` (`PREFERRED`/`HEAVY`/`EXTERNAL`) classification with `KNOWN_EXTENSIONS` registry and `badge_sort_key()` for ordering
-- **`wafer/ui/install_waiter.py`** (`wait_for_install_complete`): viewer-side splash that spawns/attaches to the tray installer, polls status, and shows live log with Cancel button
-- **`wafer/core/qt/tooltip.py`** (`InstantTooltipEventFilter`, `install_instant_tooltips()`): app-wide instant-tooltip event filter (opt-out via `wafer_disable_instant_tooltip` widget property)
-- **`wafer/core/qt/color_utils.py`** (`mix_colors()`): linear color blending utility for badge coloring
-- New themed icons `star`, `warning_triangle`, `external_link` in `wafer/core/qt/icon_engine.py`; `themed_icon()` accepts optional `color` override
-- **Two-lane TaskScheduler** (`wafer/app/indexer/scheduler.py`): immediate/background queues split at `TaskPriority.SCAN` threshold on separate threads so high-priority dispatch tasks aren't blocked by long scans
-- **`InstallSplash` log view + cancel button**: `show_log` / `cancel_label` constructor params; `set_message()`, `append_log()`, `replace_log()` with error/warning line colorization
-- **Heavy-extension UI guards**: install confirmation dialog for `HEAVY` badge cards, warning icon next to heavy collectors in `CollectorsTab`, multi-heavy enable warning
-- **`installer.install_requirements_only()` / `run_post_install()`**: install pipeline split into two callable phases; `cleanup_legacy_dirs()` removes obsolete `.pending/`/`.pip_staging/`
-- **`Node.is_registered`** property; `_send_to_broker()` returns `bool` and warns once on initial registration failure
-- **`AppProcess.terminate_cmd(wait=True)`**: terminate-and-wait variant used by tray/viewer restart paths
-- `OrderTab.revert()` / `CollectorsTab.revert()` for in-place revert in Plugin Manager
-- `_ExtensionCard` now shows a phase label, badge icon, and `Show/Hide Log` toggle with live `QPlainTextEdit` log view; visual separator between first-party and external extensions
+- A Florence-2 captioner extension with multiple caption modes and settings, replacing the BLIP captioner.
+- Extension installs now run at startup from a queue instead of in-process, with progress, cancel, and failure tracking.
+- Install confirmation and warnings for heavy extensions.
 
 ### Changed
-- **Installer simplified** (~830 → ~370 lines): removed staging-and-merge / deferred-pending / cross-extension version-negotiation machinery; `EmbeddedPython.pip_install()` installs directly into `extensions/.packages/` via `pip install --target ... --upgrade --upgrade-strategy only-if-needed` and streams stdout/stderr through `on_log`
-- **Install UX inverted**: Install button enqueues and immediately marks `RESTART_REQUIRED`; Cancel dequeues. Pip and `post_install` only run in the tray at startup
-- `install_extension()` / `install_requirements()` / `post_install()` accept `on_log` callback; `install_requirements()` returns plain `bool` (was tuple); `InstallResult.deferred` removed
-- `_run_subprocess()` drains both stdout and stderr, forwards each pip line via `AppLogger.debug` and `on_log`; failure messages include last 2000 bytes of stderr
-- **WD14 `post_install` simplified**: sequential model download; `onnxruntime-gpu` and `nvidia-cudnn-cu12` moved into `requirements.txt`. Idle engine timeout reduced from 120s to 30s
-- Numpy requirement loosened to `numpy>=2,<3` in `extensions/wd14` and `extensions/image`
-- **Startup process model** (`main.py`): default and `--viewer` entry spawn tray, then `wait_for_install_complete()` before `load_plugins()`; `--tray` runs `run_pending_installs()` + `load_plugins()` and constructs the `QApplication`/tray icon before spawning indexer children
-- Tray/viewer restart paths (`restart_tray`, `restart_all`, `MainWindow._perform_system_restart()`) use `terminate_cmd(wait=True)`; `restart_tray` auto-promotes to `restart_all` when an install is queued
-- `AppProcess.base_command()` on Windows prefers `pythonw.exe`; `new_main()` and `ProcessMatcher.start_if_not_running()` apply `CREATE_NO_WINDOW`/`DETACHED_PROCESS`/`CREATE_NEW_PROCESS_GROUP` and `close_fds=True`
-- `AppLogger._forward()` skips forwarding until the IPC node is registered; `try_put()` uses raw `logging.getLogger("AppLog")` to avoid recursion
-- `PluginSettings.needs_restart()` consults `installer_queue.has_pending_queue()` (was `has_pending_packages()`)
-- `ExtensionsTab` sorts cards by badge (preferred → neutral → heavy → external) with separator before external extensions; restores `RESTART_REQUIRED`/`FAILED` state from queue and failed-installs records
-- ExifTool collector `_ensure_process()` stops the previous `ExifToolProcess` after starting a new one; `_extract()` extracts to a temp dir then moves into place; `ensure_exiftool()` validates both `exiftool.exe` and `exiftool_files/exiftool.pl` and repairs broken installs
-- WD14 and ExifTool preview widgets load images via `image_loader_resolver.load()` + `numpy_to_qimage()` (was `QPixmap`/`QImage` directly)
-- FFmpeg / Video `_run_7z()` and `wafer/_version.py` `git describe` add `CREATE_NO_WINDOW` flag on Windows (no console flash)
-- `_on_revert()` in Database Manager, WD14 settings, ExifTool settings, and Plugin Manager: silent no-op when nothing changed (removed "Changes reverted" toast)
-- `cleanup.bat`, `scripts/build.py`, `scripts/copy_clean_project.py` exclude/clean `.pending/` and `.pip_staging/` legacy directories
-- `conftest.py` vendored-module reload now restores original modules on `ImportError`
-- `pyproject.toml`: lint rules disabled for `extensions/**/lib/**` (vendored binaries)
-- `main.bat` no longer pauses on non-zero exit code
+- Simplified the installer and inverted install UX: installs are queued and applied at startup.
+- Startup spawns the tray first, then loads plugins after installs complete.
+- Restart paths now wait for clean process termination.
 
 ### Removed
-- **BLIP captioner extension** (`extensions/blip_captioner/`) — replaced by `extensions/florence/`
-- Installer staging/pending machinery: `apply_pending_packages()`, `has_pending_packages()`, `_merge_or_defer()`, `_merge_dir()`, `_is_locked()`, `_remove_stale_packages()`, `_merge_requirements()`, `_collect_installed_extensions()`, `install_packages()`, `_PIP_STAGING`/`_PENDING_DIR` constants
-- `InstallResult.deferred` field
-- `PluginSettings.is_restart_pending()` / `set_restart_pending()` / `clear_restart_pending()` (use scope-based API)
-- `ExtensionsTab.installing_changed` signal and "Don't close while installing" warning label
+- The BLIP captioner extension, replaced by Florence-2.
 
 ## [v0.6.3]
 ### Added
-- **`SearchableMetaWidget`** (`wafer/ui/panel/searchable_meta_widget.py`): reusable metadata display widget with live search, keyword highlighting, long-value snippet extraction, and DPI-aware layout — replaces per-extension inline meta widgets
-- **`wafer/ui/panel/` package**: new top-level UI panel module; `meta_viewer.py` (`CollapsibleCard`, `MetaRowWidget`) moved from `wafer/app/viewer/preview/` to `wafer/ui/panel/` for shared use by extensions
-- **FFmpeg MetaPanel** (`extensions/ffmpeg/meta_panel.py`): `FFmpegMetaPanelPlugin` using `SearchableMetaWidget` for ffmpeg metadata display
-- **`_ElidingLabel`** (`wafer/builtins/plugin_manager/extensions_tab.py`): auto-eliding label widget with tooltip for long extension lists in Plugin Manager rows
-- **`MenuPlan.all_roots()`**: tray menu now auto-discovers all registered menu groups via `Menu.session().all_roots()` instead of hardcoded item list
-- **`MenuPlan.hide()` supports prefix matching**: `hide(["File"])` now removes entire menu groups by name prefix, with non-fatal warning on missing targets (was `ValueError`)
+- A reusable searchable metadata widget with live search and highlighting, shared by extensions.
+- The tray menu now auto-discovers all registered menu groups.
 
 ### Changed
-- **Builtin command files renamed** for consistency: `file_commands.py` → `file.py`, `grid_commands.py` → `grid.py`, `database_commands.py` → `database.py`, `debug_commands.py` → `debug.py`, `panel_commands.py` → `panel.py`, `profile_commands.py` → `profile.py`, `query_commands.py` → `query.py`, `setting_commands.py` → `setting.py`, `window_commands.py` → `window.py`, `foldertree_commands.py` → `foldertree.py`, `file_viewer.py` → `content_viewer.py`, `image_view.py` → `image_viewer.py`, `app.py` → `tools.py`
-- **Profile and Window commands consolidated**: `ProfileCommands`, `WindowPanelCommands`, `WindowRestartCommands` merged into `window.py`; `ToolCommands` and `HelpCommands` moved from `app.py` to `tools.py`; `SettingCommands` separated into its own file `setting.py`
-- **Tray `open_new_window` removed** from `TrayViewerCommands`; `tray.show_window` display changed to "Show/Hide Viewer"; `TrayDatabaseCommands` adds `:Database` section header
-- **Tray menu built dynamically**: `TrayApp._build_menu()` uses `Menu.session().all_roots().hide(["File"]).build()` instead of a hardcoded menu item list
-- **ExifTool MetaPanel refactored**: inline `_ExifToolMetaWidget` (grid-based key/value display with search) replaced by shared `SearchableMetaWidget`
-- **`Dispatcher` lifecycle safety**: `_execute` slot moved to `_DispatchSignals` QObject; `invoke()` checks `shiboken6.isValid()` before emitting to prevent use-after-delete crashes; constructor accepts optional `parent` for QObject ownership
-- **Grid `on_appear` timing improved**: `_promote_to_widget` now suppresses immediate `appear` notification; `GridPipeline` calls a dedicated `appear_fn` callback after widget render completes, ensuring plugins receive `on_appear` only after content is rendered
-- Video `vgrid.toggle_appear_autoplay` display renamed from "Autoplay on Scroll" to "Autoplay on Appear"
-- Video `PlaybackSlotManager.set_volume()` now propagates volume to `_appeared` overlays (was missing)
-- `wafer/builtins/registration.py` updated for all command module renames
+- Renamed builtin command files for consistency and consolidated related commands.
+- The tray menu is built dynamically instead of from a fixed list.
+- Grid on-appear callbacks fire only after content is rendered.
 
 ### Removed
-- `wafer/app/viewer/preview/meta_viewer.py` (moved to `wafer/ui/panel/meta_viewer.py`)
-- `_ExifToolMetaWidget` class from `extensions/exiftool/meta_panel.py` (replaced by `SearchableMetaWidget`)
-- `tray.open_new_window` command (new window functionality available via `win.new_window`)
+- Redundant per-extension metadata widgets, replaced by the shared one.
 
 ## [v0.6.2]
 ### Added
-- **ImageLoader plugin type** (`wafer/plugin/imageloader/`): new `BaseImageLoader` base class, `ImageLoaderResolver` with `load()` / `load_pil()` resolution chain, and `image_loader_resolver` singleton — decouples raw image loading from grid rendering so collectors and other subsystems can load images without depending on Qt
-- **`ImageFileLoader`** (`extensions/image/loader.py`): `BaseImageLoader` implementation using OpenCV with PIL fallback, replaces the former `ImageGridPlugin` for image loading; returns `np.ndarray` / `PIL.Image` instead of `QImage`
-- **`SystemImageLoader`** (`wafer/builtins/imageloader.py`): fallback `BaseImageLoader` using `FileThumbnailer`, replaces `SystemThumbnailPlugin` (former `ImageGridPlugin` in `wafer/builtins/grid.py`)
-- **WD14 Tagger Settings panel** (`extensions/wd14/panel.py`): `WD14SettingsPanelPlugin` with drag-and-drop live preview, configurable thresholds (`general_threshold`, `character_threshold`), rating mode selection (top/name/all), character and tag output toggles, tag blacklist, device info display, and save with optional delete & re-collect confirmation dialog
-- **`wd14_config`** (`extensions/wd14/settings.py`): WD14-specific `PluginConfig` instance with default inference parameters and `parse_blacklist()` helper
-- **`numpy_to_qimage()` and `pil_to_qimage()`** (`wafer/core/qt/image.py`): centralized numpy/PIL-to-QImage conversion utilities supporting Grayscale8, RGB888, RGBA8888 formats with buffer pinning
-- **`CHUNK_TIMEOUT` class variable** on `BaseCollectorPlugin` and `BaseSingletonCollector` (`wafer/plugin/collector/base.py`): per-collector configurable chunk processing timeout (default 120s); `CollectorResolver.chunk_timeout()` accessor added
-- **`_DeleteConfirmDialog`** (`wafer/builtins/database_manager/data_tab.py`): dedicated confirmation dialog for data deletion with re-collect checkbox, replacing inline `QMessageBox`
-- **`_BlipSaveConfirmDialog`** (`extensions/blip_captioner/panel.py`): save confirmation dialog with separate delete/re-collect checkboxes
-- **`_ContainImageLabel`** (`extensions/exiftool/panel.py`): auto-scaling image label widget that maintains aspect ratio on resize
-- **Loading indicator** in ExifTool key browser tab via `OverlayLoadingIndicator`
-- `WD14TaggerCollector.on_request()` handling `wd14.preview` and `wd14.device_info` actions for live settings panel preview
-- `WD14TaggerCollector.on_notify()` reloads settings from `wd14_config` and clears caches
+- An image-loader plugin type so images can be loaded without depending on Qt.
+- A WD14 Tagger settings panel with live preview and configurable thresholds.
 
 ### Changed
-- **Grid thumbnail pipeline refactored**: `GridResolver` now merges widget plugins and image loaders into a unified `resolve_merged_chain()` sorted by priority; `GridResolver.load()` delegates to `image_loader_resolver` instead of iterating `ImageGridPlugin` instances; `GridPipeline` uses merged chain for resolve dispatch
-- **Collectors use `image_loader_resolver`**: `WD14TaggerCollector` and `BlipCaptionerCollector` load thumbnails via `image_loader_resolver.load_pil()` instead of `FileThumbnailer` directly
-- `WD14TaggerCollector._build_tags()` now respects configurable settings: rating mode (top/name/all), enable/disable flags for rating/character/tags, and tag blacklist filtering
-- `WD14TaggerCollector.process()` reads thresholds from `wd14_config` settings instead of hardcoded constants
-- `PluginConfig.load()` now acquires `ini_lock` for the entire read operation (was previously unlocked)
-- `BlipCaptionerCollector.CHUNK_TIMEOUT` set to 360s (heavy model inference)
-- `DevLogPanel` renamed to `LogPanel`, `DevLogPanelPlugin` renamed to `LogPanelPlugin` with NAME `"log"` and DISPLAY_NAME `"Log"` (`wafer/builtins/devlog.py` → `wafer/builtins/log_panel.py`); `DEFAULT_ENABLED` changed from `DEV_MODE` to `False`
-- `ImageGridPlugin` base class removed from `wafer/plugin/grid/base.py`; removed from `wafer/plugin/__init__.py` public API; `BaseImageLoader` added to public API
-- BLIP Settings panel: preview auto-triggers on drop, resizable thumbnail, `Dispatcher.post()` replaces raw `threading.Thread`, save flow shows confirmation dialog with separate delete/re-collect options, added "Revert" button
-- ExifTool Settings panel: "Save & Delete Data" button renamed to "Save", "Cancel" button renamed to "Revert", save skips when no changes detected, sample preview thumbnail uses `_ContainImageLabel` for responsive scaling
-- Database Manager: "Cancel" button renamed to "Revert"; data deletion re-collect checkbox moved from inline to `_DeleteConfirmDialog`
-- Plugin Manager: "Cancel" button renamed to "Revert"; `open_panel_btn` color changed from `success` to `accent` theme color
-- `AppLogger._forward()` now forwards all log levels to remote (removed `DEV_MODE` gate and `_ALWAYS_FORWARD` filter)
-- `FunctionProfiler` summary output downgraded from `info` to `debug` level
-- IPC `try_put()` accepts optional `label` parameter for improved queue eviction diagnostics; all call sites updated with descriptive labels
-- IPC `Broker` simplified ZMQError logging (removed `EHOSTUNREACH` filter)
-- `Outbox.scan_all_outbox()` checks for `outbox` table existence before querying (prevents crash on empty/new DBs)
-- Duplicate `_pil_to_qimage()` in `wafer/ui/dialogs.py` replaced with shared `pil_to_qimage()` from `wafer/core/qt/image.py`
-- `_setup_faulthandler()` in `main.py` accepts `force` parameter
-- Silent `except` blocks replaced with logged warnings in `BatchRenamerPlugin.save_state()`, `DatabaseManagerPlugin.save_state()`/`restore_state()`, `file_operations.py` `_rmtree_onerror()`/cut cleanup, and `installer.py` `apply_pending_packages()`
-- `CollectorWorker` reads `CHUNK_TIMEOUT` from collector class via `collector_resolver.chunk_timeout()` instead of using a hardcoded constant
+- The grid thumbnail pipeline now merges widget plugins and image loaders by priority.
+- WD14 tagging respects configurable thresholds, rating mode, and a blacklist.
+- Renamed the Dev Log panel to Log.
 
 ### Removed
-- `wafer/builtins/grid.py` (`SystemThumbnailPlugin` — replaced by `SystemImageLoader` in `wafer/builtins/imageloader.py`)
-- `extensions/image/grid.py` (`ImageGridPlugin` — image loading moved to `ImageFileLoader` in `extensions/image/loader.py`)
-- `ImageGridPlugin` abstract base class from `wafer/plugin/grid/base.py`
-- `GridResolver.resolve_chain()`, `resolve_instance()`, `resolve_image_instance()` methods (replaced by `resolve_merged_chain()`)
-- Hardcoded `GENERAL_THRESHOLD` / `CHARACTER_THRESHOLD` constants from `extensions/wd14/collector.py` (replaced by `wd14_config` settings)
-- `_CHUNK_TIMEOUT` constant from `wafer/app/collector/worker.py` (replaced by per-collector `CHUNK_TIMEOUT` class variable)
+- The old per-type thumbnail plugins, replaced by the image-loader system.
 
 ## [v0.6.1]
 ### Added
-- **`PluginConfig`** (`wafer/plugin/config.py`): INI-based per-plugin configuration system with typed load/save, section-scoped caching, thread-safe writes via shared `ini_lock`, and `save_and_notify()` for IPC propagation to running collectors
-- **BLIP Settings panel** (`extensions/blip_captioner/panel.py`): `BlipSettingsPanelPlugin` with live preview via drag-and-drop, adjustable inference parameters (`min_length`, `max_length`, `num_beams`), device info display, and "Save & Re-collect" triggering IPC data deletion and re-collection
-- **`blip_config`** (`extensions/blip_captioner/settings.py`): BLIP-specific `PluginConfig` instance with default inference parameters
-- **Installation cancellation support**: `InstallerCancelled` exception and `is_cancelled` callback threaded through `_run_subprocess()`, `install_requirements()`, `install_packages()`, `install_extension()`, and all `post_install()` methods; cancel button added to Plugin Manager extension cards
-- **`InstallResult` dataclass** and **`InstallState` enum** (`wafer/plugin/installer.py`): structured return types for install operations replacing bare tuples
-- **`RestartScope` flag enum** (`wafer/plugin/installer.py`): granular restart scope tracking (`VIEWER`, `TRAY`, `ALL`) with `restart_scope_of()` and `restart_scope_from_plugins()` helpers
-- **Deferred package installation**: locked files during install are staged in `.pending/` and applied on next startup via `apply_pending_packages()`; stale dist-info cleanup via `_remove_stale_packages()`
-- **Broker-lost detection** (`wafer/core/ipc/node.py`): `Node.on_broker_lost()` callback with configurable timeout; `BROKER_LOST_TIMEOUT` (20s) constant in `transport.py`; collector, parser, and indexer processes auto-shutdown when broker becomes unreachable
-- **`Node.enqueue()`** method for sending pre-built `Message` objects directly
-- **IPC request/reply for collectors**: `BaseCollector.on_request()` virtual method; `CollectorWorker` handles `service.request` topic and routes replies via `msg.reply()`
-- **Restart scope tracking in Plugin Manager**: `PluginSettings.restart_scope()` / `merge_restart_scope()` / `needs_restart()` methods; restart label in UI shows differentiated messages per scope (viewer / tray / both)
-- `MainWindow._perform_system_restart()` and `_restart_other_viewers()` for coordinated restart on close when pending plugin changes exist
-- DLL directory registration for `.libs` subdirectories in shared packages (`_setup_packages_dll_directories` in `loader.py`) for Windows native library resolution
-- `setup` pytest marker for extension install smoke tests (`pyproject.toml`)
+- Per-plugin INI configuration with live propagation to running collectors.
+- A BLIP settings panel with live preview and adjustable parameters.
+- Cancellable installs with a cancel button in Plugin Manager.
+- Automatic shutdown of background processes when the broker becomes unreachable.
 
 ### Changed
-- `BaseCollector.on_notify()` and `BaseParser.on_notify()` now accept optional `payload: dict | None` parameter; `notify_to()` forwards optional payload via IPC
-- `PluginBase.post_install()` signature extended with `is_cancelled` parameter across all base classes and all extensions (`wd14`, `blip_captioner`, `exiftool`, `ffmpeg`, `video`)
-- `install_requirements()` and `install_packages()` return `tuple[bool, bool]` (success, deferred) instead of `bool`; `install_extension()` returns `InstallResult` dataclass instead of `tuple[bool, bool, list]`
-- `_run_subprocess()` default timeout changed from 300s to 0 (no limit); supports `is_cancelled` callback for cooperative cancellation
-- **`BaseFilterPlugin.SCOPE` renamed to `QUERY_SCOPE`** to avoid collision with the new `PluginBase.SCOPE` attribute (`"viewer"` default; `BaseCollector`/`BaseParser` override to `"tray"`)
-- `PluginSettings._write_ini_value()` uses shared `ini_lock` from `config.py` for thread safety
-- `BlipInference.predict()` accepts configurable `min_length`, `max_length`, `num_beams` keyword arguments (previously hardcoded)
-- `BlipCaptionerCollector` and `WD14TaggerCollector` `post_install()` now parallelizes model download with package installation via background thread; post-install GPU/device verification removed
-- Idle engine unload logging in `WD14TaggerCollector` and `BlipCaptionerCollector` moved outside the lock
-- `PluginLoader.load_all()` calls `apply_pending_packages()` at startup; `get_plugin_dir()` returns normalized path
-- `restart_all` command delegates to `MainWindow._perform_system_restart()` and clears restart scope
-- Extensions tab uses `CardStatus` enum and `resolve_install_state()` for unified status management with installing / cancelling / deferred / restart-required states
-- Plugin Manager save flow computes per-change `RestartScope` (enabled plugins → scope from plugin classes, order → viewer, collectors → tray) and shows differentiated restart messages
-- `ffmpeg/parser.py` uses `encoding="utf-8", errors="replace"` instead of `text=True`; added debug logging for ffprobe failures
-- `scripts/build.py`: download URLs restricted to HTTPS from allowed hosts only; empty download validation added; `.pip_staging` excluded from build output
-- `WaferConsole.cs`: proper argument escaping via `EscapeArg()`; `Process` wrapped in `using` block
+- Collector and parser notifications can carry a payload.
+- Restart scope is tracked per change, showing whether the viewer, tray, or both need to restart.
+- Model downloads now run alongside package installation.
 
 ### Fixed
-- `DirectoryFilter.SCOPE` renamed to `QUERY_SCOPE` to match the base class rename (was referencing the old attribute name)
+- Corrected a filter scope attribute name.
 
 ## [v0.6.0]
 ### Added
-- **Portable build system**: replaced PyInstaller with Python-bundling approach — `scripts/build.py` now downloads embeddable Python 3.11, installs pip and runtime deps, copies source, and compiles C# launcher executables
-- `scripts/launcher/Wafer.cs` and `WaferConsole.cs`: C# launchers for windowed and console mode
-- `main.bat` now pauses on non-zero exit code
-- Extension `requirements.txt` files now explicitly pin shared dependencies (`pillow`, `numpy`) per-extension
+- A portable build system that bundles Python and C# launchers instead of PyInstaller.
+- Extension requirements now pin shared dependencies per extension.
 
 ### Changed
-- **Plugin installer rewritten**: removed embedded Python download/setup; now uses host `sys.executable` directly. Per-extension `.packages/` dirs replaced with single shared `extensions/.packages/` with `_merge_requirements()` for version conflict resolution (highest pinned version wins). Install stamps moved to `.stamps/` subdirectory
-- `get_app_root_dir()`, `AppProcess.base_command()`, `get_version()`, and `get_plugin_dir()` no longer use `sys.frozen` check — simplified for portable (non-PyInstaller) build
-- `main.py` stdout/stderr `StringIO` fallback now applies unconditionally (not only when frozen)
-- Plugin loader: shared packages loaded from `extensions/.packages/` instead of per-extension vendor dirs; per-extension `.packages/` no longer added to `sys.path`
-- `cleanup.bat` updated with improved logging and adapted for new `.packages` directory structure
-- `BlipCaptionerCollector.post_install` now passes explicit timeout for torch downloads
+- Rewrote the plugin installer to use a single shared packages directory with conflict resolution.
+- Simplified path and version handling for portable builds.
 
 ### Removed
-- `main.spec` (PyInstaller spec file)
-- `extensions/requirements.txt` (shared deps moved into individual extension requirements)
-- `pyinstaller` and `pyinstaller-hooks-contrib` from `requirements-dev.txt`
-- `sys.frozen` checks removed from `wafer/_version.py`, `wafer/utils/paths.py`, `wafer/core/platform/process.py`, `wafer/plugin/loader.py`
+- The PyInstaller build setup.
 
 ## [v0.5.9]
 ### Added
-- **BLIP Captioner extension** (`extensions/blip_captioner/`): singleton collector for generating image captions using Salesforce BLIP model, with GPU/CPU fallback, idle engine unloading, hash/pixel caching, and auto-download via HuggingFace Hub
-- `faulthandler` crash logging: opt-in via `WAFER_FAULTHANDLER=1` env var, writes crash logs to `.crashlog/` directory
-- Crash log cleanup (`_cleanup_crash_logs`) in `AppLogger` initialization — removes empty and rotates old crash logs
-- `atexit` handler and `BaseException` catch in `main.py` for process exit logging and fatal crash reporting
-- Version stamp mechanism in `EmbeddedPython` to detect Python version mismatches and auto-purge outdated embedded runtimes
-- Thread-safe directory-level locking (`_get_dir_lock`) in plugin installer for concurrent install safety
-- `PluginManagerWidget` connects to `ViewerIpcBridge.db_content_updated` to mark collectors tab dirty and refresh on next show
-- `PluginManagerWidget` now preserves scroll position when refreshing Collectors and Order tabs
+- A BLIP captioner extension for generating image captions, with GPU/CPU fallback and caching.
+- Optional crash logging via an environment variable.
+- Automatic cleanup of outdated embedded Python runtimes.
 
 ### Changed
-- Renamed "Detacher" to "Parser" across all internal code, modules, IPC topics, and CLI args (`wafer/plugin/detacher/` → `wafer/plugin/parser/`, `wafer/app/detacher/` → `wafer/app/parser/`, `--detacher` → `--parser`, `detach.result` → `parse.result`, `BaseDetacherPlugin` → `BaseParserPlugin`, etc.)
-- Embedded Python version upgraded from 3.10.9 to 3.11.9
-- Minimum Python version raised to 3.11 (`pyproject.toml`, `setup.bat`, pyright, ruff target)
-- `datetime.timezone.utc` replaced with `datetime.UTC` across codebase (Python 3.11+ constant)
-- `EmbeddedPython.ensure_ready()` now runs under a global lock for thread safety
-- `AppLogger` log retention changed from 0 to 5 latest logs; cleanup errors now use `AppLogger.warning()` instead of `print()`
-- `install_requirements` purges vendor dir when Python version changes
-- IPC `Broker` poll loop now logs `ZMQError` as warning instead of silently ignoring
-- Runtime and dev dependency versions bumped (blake3, comtypes, msgpack, pillow, platformdirs, psutil, pyzmq, requests, setproctitle, pyright, pytest, ruff, etc.)
+- Renamed "Detacher" to "Parser" throughout.
+- Upgraded the embedded Python to 3.11 and raised the minimum version to 3.11.
+- Keep the 5 most recent logs.
 
 ### Removed
-- `wafer/plugin/detacher/` package (replaced by `wafer/plugin/parser/`)
-- `wafer/app/detacher/` package (replaced by `wafer/app/parser/`)
-- `wafer/app/indexer/detacher_dispatcher.py` and `detacher_receiver.py` (replaced by `parser_dispatcher.py` and `parser_receiver.py`)
+- The old detacher packages, replaced by parser.
 
 ## [v0.5.8]
 ### Added
-- `WindowRestartCommands` menu group: restart commands (`win.restart_all`, `win.restart_tray`, `win.restart_viewer`) registered under Window menu
+- Restart commands (all, tray, viewer) under the Window menu.
 
 ### Changed
-- Tray menu reorganized into logical groups: Viewer, Database, Window, Tray (separate `TrayViewerCommands`, `TrayDatabaseCommands`, `TraySystemCommands` classes)
-- Restart commands moved from Settings (`app.py`) to Window menu group (`window_commands.py`)
-- Help (README, About) separated into its own `Help` menu group (was part of `Setting`)
-- Tray command paths prefixed with `tray.` namespace (e.g., `show_window` → `tray.show_window`)
+- Reorganized the tray menu into Viewer, Database, Window, and Tray groups.
+- Moved Help (README, About) into its own menu group.
 
 ### Fixed
-- Plugin Manager collectors tab now refreshes on open and correctly preserves default/per-DB state across rebuilds
-- README release links updated to correct repository URL
+- Plugin Manager collectors tab refreshes on open and preserves state.
+- Corrected README release links.
 
 ## [v0.5.7]
 ### Added
-- `PluginSettings.default_enabled_collectors` / `resolve_default_collectors`: new DB creation now seeds enabled collectors from global defaults
-- Multi-select ignore in FolderTree (`ignore_folder` accepts multiple paths, batch confirmation dialog)
-- Copy/paste support (Ctrl+C/V) for source and ignore path lists in Database Manager
-- Multi-select deletion for source/ignore path lists (`ExtendedSelection` mode)
-- `CalloutOverlay.suspend` / `resume`: callout hides when window loses focus or is minimized
-- `_ClickableLabel` widget in Plugin Manager collectors tab for clickable DB links
+- New databases seed enabled collectors from global defaults.
+- Multi-select ignore, copy/paste, and multi-delete for path lists in Database Manager.
 
 ### Changed
-- Renamed "Purge" to "Delete" across IPC topics (`purge.collector` → `delete.collector`, `purge.keys` → `delete.keys`), DB methods, UI labels, and signal names
-- Collector worker now uses a queue-based `_batch_loop` with chunked processing (`_CHUNK_SIZE=50`) instead of spawning a thread per dispatch
-- Callout overlay now checks if folders already exist before showing on first run
-- Database creation (`_create_database`) moved to background thread via `Dispatcher.post`
-- Extension licenses added/updated (exiftool, ffmpeg, video)
-- README and README.jp.md rewritten
+- Renamed "Purge" to "Delete" across the UI and internals.
+- Database creation now runs in the background.
 
 ### Fixed
-- Plugin installer not working in exe-packaged builds (path resolution fix)
-- Video viewer loop default state
+- Plugin installer now works in packaged builds.
+- Video viewer loop default.
 
 ## [v0.5.6] - 2026-04-12
 ### Changed
@@ -524,63 +351,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [v0.5.4] - 2026-04-12
 ### Fixed
-- `option_dialog.py`: fixed `decimal.InvalidOperation` import (was using undefined `decimal` module reference)
-- `meta_panel.py` / `meta_viewer.py`: removed unnecessary f-string in static CSS (no interpolation needed)
-- `callout_overlay.py`: removed unused variable `w`, consolidated window flags to single line
-- `cleanup.bat` rewritten with improved logic
-- `scripts/test.py`: test runner improvements
-- `scripts/copy_clean_project.py`: enhanced clean-copy logic
+- Minor code and tooling fixes across dialogs, metadata panels, and build scripts.
 
 ## [v0.5.3] - 2026-04-12
 ### Added
-- **ExifTool extension** (`extensions/exiftool/`): new collector, parser, settings panel, meta panel, and auto-downloader for ExifTool binary
-- **FFmpeg extension** (`extensions/ffmpeg/`): new collector, parser, and auto-downloader for FFmpeg binary
-- **ComfyUI parser** (`extensions/text_generation/comfyui_parser.py`): workflow metadata extraction for ComfyUI-generated images
-- **MetaPanel plugin system** (`wafer/plugin/meta_panel/`): new plugin type for extensible metadata display panels
-- **Profile system** (`wafer/core/profile.py`): replaced Session with Profile — `ProfileEntry`, `ProfileStore`, `QueryState`, `UIState` as dataclasses with JSON persistence
-- **ViewerIpcBridge** (`wafer/app/viewer/ipc_bridge.py`): centralized Qt signal bridge for all IPC messages (db updates, progress, folder changes, etc.)
-- **CalloutOverlay** (`wafer/app/viewer/widgets/callout_overlay.py`): animated tooltip overlay with arrow, tracking, and auto-dismiss
-- **Database Manager Data Tab** (`wafer/builtins/database_manager/data_tab.py`): per-prefix data inspection with row counts, delete/re-collect controls
-- **Markdown browser** (`wafer/utils/markdown_browser.py`): WebEngine-based Markdown viewer with GitHub dark/light CSS themes
-- **Key selector popup** (`wafer/plugin/query/widgets.py`): tree-based metadata key browser with active key filtering and catalog display
-- `wafer/ui/` layer: new top-level UI package (dialogs, splash, window, layout, settings, file conflict resolver — all moved from `core/`)
-- README files added for all extensions (image, animated, video, wd14, additional_filters, additional_layout, text_generation)
-- LICENSE and NOTICE added to repository root
-- `cleanup.bat`, `scripts/lint.py`, `scripts/test.py` build/dev tooling
-- GitHub Actions `build.yml` CI workflow
+- ExifTool and FFmpeg extensions with auto-downloaders.
+- A ComfyUI metadata parser.
+- A metadata panel plugin system.
+- A profile system with JSON persistence.
+- A database data tab for per-prefix inspection and cleanup.
+- A Markdown viewer and a metadata key browser.
 
 ### Changed
-- **Session → Profile rename**: `session.py` → `profile.py`, `SessionEntry` → `ProfileEntry`, `SessionStore` → `ProfileStore`, `session_commands.py` → `profile_commands.py`, `session_popup.py` → `profile_popup.py`
-- **Package restructure**: `wafer/core/layout/` → `wafer/ui/layout/`, `wafer/core/setting/` → `wafer/ui/settings/`, `wafer/core/qt/dialog.py` → `wafer/ui/dialogs.py`, `wafer/core/qt/window.py` → `wafer/ui/window.py`, `wafer/core/qt/splash.py` → `wafer/ui/splash.py`
-- **Image EXIF extraction delegated to ExifTool**: removed `extensions/image/collector.py` and `extensions/image/exif_parser.py`, image metadata now collected via exiftool extension
-- **IPC refactored**: MainWindow no longer subscribes to IPC directly; all message routing goes through `ViewerIpcBridge` with Qt signals
-- Video playback slot manager now has idle cooldown (`_cooldown` / `_cooled_down`) to release resources when idle
-- `TranslatorMixin` removed from MainWindow; direct `t()` function calls used instead
-- `plugin/query/widgets.py` expanded with `_ActiveKeyItem`, `_KeySelectorPopup` for interactive metadata key filtering
-- Filter widget, regex filter, and layout plugins refactored for clarity
-- Indexer scanner, watch_folder, and dispatchers refactored
-- AppLogger refactored with improved formatting and remote log relay
-- Plugin installer rewritten with clearer flow and SHA256 verification for get-pip.py
+- Renamed Session to Profile throughout.
+- Reorganized UI code into a top-level UI package.
+- Image EXIF extraction now goes through the ExifTool extension.
 
 ### Removed
-- `wafer/core/session.py` (replaced by `wafer/core/profile.py`)
-- `wafer/builtins/plugin_manager/data_tab.py` (moved to `wafer/builtins/database_manager/data_tab.py`)
-- `extensions/image/collector.py` and `extensions/image/exif_parser.py` (functionality moved to exiftool extension)
-- `wafer/core/setting/` package (moved to `wafer/ui/settings/`)
-- `.github/` config files (copilot-instructions, memory, plan, rule, code_review, AGENTS.md)
+- The old session storage, replaced by profiles.
 
 ## [v0.5.2] - 2026-04-06
 ### Added
-- Version management (`wafer/_version.py`)
+- Version management.
 
 ## [v0.5.1] - 2026-04-06
-- Initial public release
-- Core viewer: grid view, image/video preview, file viewer
-- Plugin architecture: collector, parser, grid, layout, query, rename, viewer, panel plugin types with auto-discovery via `PluginLoader`
-- Database system: SQLite-based file metadata DB with setting DB, indexer process, scanner, watch folder
-- IPC system: ZMQ-based multi-process communication (Node, Outbox, Transport)
-- Command system: key/mouse binding, command registry, options dialog
-- UI: MainWindow, FolderTree, search container, progress bar, profile popup, loading overlay
-- Extensions: image, animated (GIF/APNG), video (mpv-based), wd14 (WD14), additional_filters (regex), additional_layout (justified/organic/multispan), text_generation (prompt parser)
-- Batch renamer with preview and conflict resolution
-- App settings, theme system, translation (i18n) support
+- Initial public release.
+- Core viewer with grid, image/video preview, and file viewer.
+- Plugin architecture with auto-discovery.
+- SQLite metadata database with background indexing.
+- Multi-process IPC.
+- Command and key/mouse binding system.
+- Bundled extensions: image, animated, video, wd14, filters, layouts, prompt parser.
+- Batch renamer with preview.
+- Theme and translation support.

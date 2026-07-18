@@ -3,10 +3,9 @@ import time
 import psutil
 from PySide6 import QtCore, QtWidgets
 
-from ..constants import APP_DATA_DIR_NAME
 from ..core.platform.process import AppProcess
 from ..plugin import installer_queue
-from ..plugin.install_status import read_status, request_cancel
+from ..plugin.install_status import INSTALL_WAITER_LOCK_NAME, read_status, request_cancel
 from ..plugin.loader import get_plugin_dir
 from ..utils.logs import AppLogger
 from ..utils.process_lock import SafeProcessLock
@@ -21,7 +20,7 @@ _PHASE_LABEL = {
     "error": "Error",
 }
 _POLL_INTERVAL = 0.15
-_INSTALL_WAITER_LOCK = f"{APP_DATA_DIR_NAME}_install_waiter"
+_INSTALL_WAITER_LOCK = INSTALL_WAITER_LOCK_NAME
 
 
 def _acquire_waiter_lock(*, app) -> SafeProcessLock | None:
@@ -88,7 +87,7 @@ def _prepare_tray(*, parent) -> int | None:
         AppLogger.info("[InstallWaiter] spawning tray for pending install")
         proc = AppProcess.new_main("--tray")
         return proc.pid
-    if read_status() is not None:
+    if _status_is_active(read_status()):
         AppLogger.info("[InstallWaiter] tray already installing, attaching to splash")
         return existing[0].pid
     return _ask_restart_tray(existing, parent=parent)
@@ -119,16 +118,24 @@ def _poll_until_done(splash: InstallSplash, app, tray_pid: int, cancelling: dict
             AppLogger.warning("[InstallWaiter] tray exited before install completed")
             return
         status = read_status()
-        if cancelling["value"]:
-            if status is None:
-                return
-        else:
-            if status is None and not installer_queue.has_pending_queue(get_plugin_dir()):
-                return
         _refresh_splash(splash, status, cancelling["value"])
+        if _is_install_finished(status, cancelling["value"]):
+            return
         if app is not None:
             app.processEvents(QtCore.QEventLoop.AllEvents, 50)
         time.sleep(_POLL_INTERVAL)
+
+
+def _status_is_active(status: dict | None) -> bool:
+    return status is not None and str(status.get("phase")) not in ("done", "error")
+
+
+def _is_install_finished(status: dict | None, cancelling: bool) -> bool:
+    if _status_is_active(status):
+        return False
+    if status is not None:
+        return True
+    return cancelling or not installer_queue.has_pending_queue(get_plugin_dir())
 
 
 def _refresh_splash(splash: InstallSplash, status: dict | None, cancelling: bool) -> None:

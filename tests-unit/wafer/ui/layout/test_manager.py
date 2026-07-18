@@ -193,6 +193,40 @@ class TestFloatingTracking:
 
         assert "viewer" in mgr._tree.floating
 
+    def test_close_floating_windows_closes_and_clears(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
+        _process()
+
+        window = mgr._panels["dyn"].floating_window
+        assert window is not None
+
+        mgr.close_floating_windows()
+        _process()
+
+        assert mgr._panels["dyn"].floating_window is None
+        assert not window.isVisible()
+        assert "dyn" in mgr.panel_names()
+
+    def test_close_floating_windows_survives_severed_transient_parent(self, layout_env):
+        mgr, win, panels = layout_env
+        w = _make_panel("dyn")
+        _register_floating(mgr, "dyn", w)
+        _process()
+
+        window = mgr._panels["dyn"].floating_window
+        handle = window.windowHandle()
+        if handle is not None:
+            handle.setTransientParent(None)
+
+        mgr.close_floating_windows()
+        _process()
+
+        assert mgr._panels["dyn"].floating_window is None
+        assert not window.isVisible()
+
+
 
 class TestDynamicPanels:
     def test_dynamic_panel_registers_floating(self, layout_env):

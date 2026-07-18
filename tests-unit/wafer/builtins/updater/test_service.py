@@ -1,6 +1,6 @@
 import pytest
 
-from wafer.builtins.update_notifier import service
+from wafer.builtins.updater import service
 
 
 def _release(tag="v0.6.19", *, html_url="https://github.com/openkai0419/Wafer/releases/tag/v0.6.19", assets=None):
@@ -96,6 +96,27 @@ def test_build_update_info_strips_release_body():
     info = service.build_update_info(release, "", current_version="0.6.18")
 
     assert info.release_notes == "release body"
+
+
+def test_build_update_info_marks_in_app_update_supported_when_manifest_present():
+    release = _release(assets=[
+        {"name": "Wafer-v0.6.19.zip", "browser_download_url": "https://github.com/openkai0419/Wafer/releases/download/v0.6.19/Wafer.zip"},
+        {"name": "manifest.json", "browser_download_url": "https://github.com/openkai0419/Wafer/releases/download/v0.6.19/manifest.json"},
+    ])
+
+    info = service.build_update_info(release, "", current_version="0.6.18")
+
+    assert info.supports_in_app_update is True
+
+
+def test_build_update_info_marks_in_app_update_unsupported_without_manifest():
+    release = _release(assets=[
+        {"name": "Wafer-v0.6.19.zip", "browser_download_url": "https://github.com/openkai0419/Wafer/releases/download/v0.6.19/Wafer.zip"},
+    ])
+
+    info = service.build_update_info(release, "", current_version="0.6.18")
+
+    assert info.supports_in_app_update is False
 
 
 def test_remote_release_notes_failure_falls_back_to_release_body(cache_dir, tmp_path, monkeypatch):

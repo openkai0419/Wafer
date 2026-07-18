@@ -943,6 +943,7 @@ class TestWindowRestartCommands:
 
     def test_restart_tray_calls_process(self, monkeypatch):
         calls = []
+        monkeypatch.setattr("wafer.builtins.commands.window.installer_queue.has_pending_queue", lambda _dir: False)
         monkeypatch.setattr(
             "wafer.builtins.commands.window.AppProcess",
             type(
@@ -973,6 +974,7 @@ class TestWindowRestartCommands:
         mock_store = MagicMock()
         mock_store.get_active_slot_ids.return_value = ["sess1", "sess2"]
         monkeypatch.setattr("wafer.builtins.commands.window.WorkspaceStore", type("", (), {"instance": staticmethod(lambda: mock_store)}))
+        monkeypatch.setattr("wafer.builtins.commands.window.installer_queue.has_pending_queue", lambda _dir: False)
         mock_ps = MagicMock()
         monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_scope", mock_ps.clear_restart_scope)
         from wafer.builtins.commands.window import restart_all

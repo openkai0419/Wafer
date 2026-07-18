@@ -43,6 +43,7 @@ from wafer.utils.profiling import profiler
 from wafer import __version__
 from wafer.constants import APP_DATA_DIR_NAME, APP_ID, APP_NAME, DEFAULT_DB_NAME
 from wafer.app.indexer.main_indexer import IndexerProcess
+from wafer.plugin import installer_queue
 from wafer.plugin.loader import load_plugins, get_plugin_dir
 from wafer.plugin.startup_install import run_pending_installs
 from wafer.core.platform.process import AppProcess
@@ -79,13 +80,21 @@ def _wait_install_then_load_plugins(app):
     load_plugins()
 
 
+def _enable_shared_opengl_contexts():
+    from PySide6 import QtCore
+
+    QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_ShareOpenGLContexts, True)
+
+
 def _create_app():
     from PySide6 import QtWidgets
     from wafer.core.qt.tooltip import install_instant_tooltips
 
+    _enable_shared_opengl_contexts()
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(__version__)
+    app.setWindowIcon(get_icon())
     install_instant_tooltips(app)
     return app
 
@@ -106,18 +115,14 @@ def _entry_tray():
 
         with SafeProcessLock(f'{APP_DATA_DIR_NAME}_tray'):
             _bootstrap_plugins_for_tray()
-            from PySide6 import QtWidgets
             from wafer.app.tray.main_tray import TrayApp
-            from wafer.core.qt.tooltip import install_instant_tooltips
 
             procs = AppProcess.get_by_args_subset('--indexer')
             AppProcess.terminate_and_wait(procs)
             AppLogger.info('TRAY RUNNING')
 
-            app = QtWidgets.QApplication(sys.argv)
+            app = _create_app()
             app.setQuitOnLastWindowClosed(False)
-            app.setApplicationName(APP_NAME)
-            install_instant_tooltips(app)
             app.aboutToQuit.connect(AppProcess.shutdown_children)
             tray_icon = TrayApp(get_icon())
             tray_icon.show()
@@ -129,6 +134,7 @@ def _entry_tray():
 
             sys.exit(app.exec())
     except FileExistsError:
+        AppLogger.info('tray already running, this instance exits (single-tray lock held by another process)')
         return
 
 def _entry_indexer(name, parent_pid=None):
@@ -198,7 +204,10 @@ def main():
     args = parser.parse_args()
     if not any([args.tray, args.viewer, args.indexer, args.collector, args.parser]):
         app = _create_app()
-        AppProcess.new_main('--tray')
+        if os.environ.pop('WAFER_REPLACE_TRAY', None):
+            AppProcess.terminate_cmd('--tray', wait=True)
+        if not installer_queue.has_pending_queue(get_plugin_dir()):
+            AppProcess.new_main('--tray')
         _wait_install_then_load_plugins(app)
         from wafer.core.workspace import WorkspaceStore
         restore_ids = WorkspaceStore.instance().get_restore_slot_ids()

@@ -31,7 +31,7 @@ class TestOrientationMappings:
 
 
 class TestToggleAutoscrollCommand:
-    def test_command_has_speed_param(self):
+    def test_command_has_expected_params_and_resolver(self):
         from wafer.builtins.commands.grid import GridViewCommands
 
         cmds = GridViewCommands.commands()
@@ -43,6 +43,10 @@ class TestToggleAutoscrollCommand:
         assert autoscroll_cmd is not None
         param_names = [p.name for p in autoscroll_cmd.params]
         assert "speed" in param_names
+        assert "loop" in param_names
+        assert "query_on_loop" in param_names
+        assert autoscroll_cmd.checked is not None
+        assert autoscroll_cmd.checkable is True
 
     def test_speed_param_has_range(self):
         from wafer.builtins.commands.grid import GridViewCommands
@@ -71,7 +75,23 @@ class TestToggleAutoscrollCommand:
         GridViewCommands.toggle_autoscroll(ctx, speed=100)
 
         view.get_adjusted_scroll_speed.assert_called_once_with(100)
-        scroll.start_auto_scroll.assert_called_once_with(42.0, 100)
+        scroll.start_auto_scroll.assert_called_once_with(42.0, 100, loop=False, query_on_loop=False)
+
+    def test_toggle_autoscroll_passes_loop_options(self):
+        from unittest.mock import MagicMock, PropertyMock
+        from wafer.builtins.commands.grid import GridViewCommands
+
+        ctx = MagicMock()
+        view = MagicMock()
+        scroll = MagicMock()
+        scroll.is_scrolling.return_value = False
+        view.get_adjusted_scroll_speed.return_value = 42.0
+        type(view).parent_scroll = PropertyMock(return_value=scroll)
+        ctx.get_instance.return_value = view
+
+        GridViewCommands.toggle_autoscroll(ctx, speed=100, loop=True, query_on_loop=True)
+
+        scroll.start_auto_scroll.assert_called_once_with(42.0, 100, loop=True, query_on_loop=True)
 
     def test_toggle_autoscroll_stops_when_scrolling(self):
         from unittest.mock import MagicMock, PropertyMock

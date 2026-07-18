@@ -2,19 +2,28 @@ from __future__ import annotations
 
 from PySide6 import QtCore
 
+from ... import _dev
+from ..._version import __version__
 from ...core.commands.binding.instance_registry import InstanceRegistry
 from ...core.workspace import WorkspaceStore
 from ...utils.logs import AppLogger
-from . import state
+from . import stage, state
 from .service import check_for_updates, should_notify_update
 from .widget import PANEL_DISPLAY_NAME
 
 
-STARTUP_SCOPE = "update_notifier.auto_panel"
+STARTUP_SCOPE = "updater.auto_panel"
 
 
 def schedule_startup_update_check(delay_ms: int = 1000) -> None:
     QtCore.QTimer.singleShot(int(delay_ms), run_startup_update_check)
+
+
+def process_apply_results() -> None:
+    try:
+        stage.process_apply_results()
+    except Exception as e:
+        AppLogger.warning("Failed to process update apply results", exc=e)
 
 
 def run_startup_update_check() -> None:
@@ -24,6 +33,9 @@ def run_startup_update_check() -> None:
     slot_id = str(getattr(main_window, "slot_id", "") or "")
     if manager is None or dispatcher is None or not slot_id:
         return
+    if _dev.FORCE_UPDATE_ENABLED:
+        AppLogger.warning(f"[Updater] DEV update source active: {_dev.source_dir()} (reporting version {__version__})")
+    process_apply_results()
     if PANEL_DISPLAY_NAME not in manager.panel_names():
         return
     if not state.is_auto_check_enabled():

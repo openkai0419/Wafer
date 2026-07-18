@@ -8,6 +8,7 @@ from urllib.parse import quote, urlparse
 import requests
 
 from ..._version import __version__
+from ... import _dev
 from ...utils.json_io import read_json_file, write_json_file
 from ...utils.logs import AppLogger
 from ...utils.paths import get_app_root_dir, resolve_cache_path
@@ -18,6 +19,7 @@ REPOSITORY = "openkai0419/Wafer"
 LATEST_RELEASE_API_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 RELEASE_NOTES_RAW_BASE_URL = f"https://raw.githubusercontent.com/{REPOSITORY}"
 RELEASE_NOTES_FILENAME = "RELEASE_NOTES.md"
+MANIFEST_ASSET_NAME = "manifest.json"
 DEFAULT_TIMEOUT = 5.0
 USER_AGENT = "Wafer Update Notifier"
 _ALLOWED_HOSTS = {"api.github.com", "github.com", "raw.githubusercontent.com", "objects.githubusercontent.com"}
@@ -34,6 +36,7 @@ class UpdateInfo:
     release_notes: str
     is_newer: bool
     from_cache: bool = False
+    supports_in_app_update: bool = True
 
 
 @dataclass(frozen=True)
@@ -60,6 +63,11 @@ def validate_external_url(url: str) -> str:
 
 
 def fetch_latest_release(*, timeout: float = DEFAULT_TIMEOUT) -> dict:
+    if _dev.FORCE_UPDATE_ENABLED:
+        data = read_json_file(_dev.asset("latest.json"), default=None)
+        if not isinstance(data, dict):
+            raise ValueError(f"Local update latest.json is missing or invalid at {_dev.source_dir()}")
+        return data
     response = requests.get(
         LATEST_RELEASE_API_URL,
         timeout=timeout,
@@ -155,7 +163,15 @@ def build_update_info(release: dict, release_notes: str = "", *, current_version
         release_notes=str(release_notes or "").strip() or release_body,
         is_newer=is_newer_version(current_version, latest_version),
         from_cache=from_cache,
+        supports_in_app_update=release_supports_in_app_update(release),
     )
+
+
+def release_supports_in_app_update(release: dict) -> bool:
+    assets = release.get("assets")
+    if not isinstance(assets, list):
+        return False
+    return any(isinstance(a, dict) and a.get("name") == MANIFEST_ASSET_NAME for a in assets)
 
 
 def should_notify_update(info: UpdateInfo | None, skipped_version: str = "") -> bool:

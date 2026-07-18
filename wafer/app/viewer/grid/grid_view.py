@@ -12,7 +12,7 @@ from ....plugin.layout.calc import LayoutData
 from .pipeline import GridPipeline
 from .items import GridItemModel
 from ....core.color.theme import ThemeManager
-from ....core.commands.bridge import ActionKit
+from ....core.commands.bridge import ActionKit, Command
 
 
 class _SelectionOverlay(QtWidgets.QWidget):
@@ -182,6 +182,8 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
 
         self._scroll_speed = 100
         self._autoscroll_base_speed = 50
+        self._autoscroll_loop = False
+        self._autoscroll_query_on_loop = False
         self._speed_callback = lambda: self.get_adjusted_scroll_speed(self._autoscroll_base_speed)
         self._connected_bar = None
         self._auto_scroll_anim = None
@@ -243,6 +245,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self._auto_scroll_anim.stop()
         self._auto_scroll_anim = QtCore.QPropertyAnimation(bar, b"value")
         self._auto_scroll_anim.setEasingCurve(QtCore.QEasingCurve.Linear)
+        self._auto_scroll_anim.finished.connect(self._on_auto_scroll_finished)
         bar.sliderPressed.connect(self._on_auto_scroll_user_interaction)
         bar.actionTriggered.connect(self._on_auto_scroll_user_interaction)
         self._connected_bar = bar
@@ -281,12 +284,18 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     def set_speed_callback(self, callback):
         self._speed_callback = callback
 
-    def start_auto_scroll(self, speed=100, base_speed=50):
+    def start_auto_scroll(self, speed=100, base_speed=50, loop=None, query_on_loop=None):
         self._scroll_speed = speed
         self._autoscroll_base_speed = base_speed
+        if loop is not None:
+            self._autoscroll_loop = bool(loop)
+        if query_on_loop is not None:
+            self._autoscroll_query_on_loop = bool(query_on_loop)
         self._start_auto_scroll_from_current()
 
     def stop_auto_scroll(self):
+        self._autoscroll_loop = False
+        self._autoscroll_query_on_loop = False
         self._auto_scroll_anim.stop()
 
     def is_scrolling(self):
@@ -295,6 +304,18 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     def _on_auto_scroll_user_interaction(self):
         if self.is_scrolling():
             self._start_auto_scroll_from_current()
+
+    def _on_auto_scroll_finished(self):
+        if not self._autoscroll_loop:
+            return
+        bar = self._primary_bar()
+        if not self._is_at_scroll_end(bar):
+            return
+        top = bar.maximum() if self._is_primary_reversed() else bar.minimum()
+        bar.setValue(top)
+        if self._autoscroll_query_on_loop:
+            Command.invoke("qry.search", force=True)
+        self._start_auto_scroll_from_current()
 
     def _start_auto_scroll_from_current(self):
         bar = self._primary_bar()

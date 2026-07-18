@@ -8,6 +8,8 @@ from wafer.utils.downloader import (
     safe_download,
     fetch_json,
     extract_7z_members,
+    lib_needs_download,
+    write_lib_version,
 )
 
 
@@ -69,8 +71,9 @@ def _setup_dll_path():
         os.add_dll_directory(_LIB_DIR)
 
 
-def ensure_mpv_dll():
-    if os.path.isfile(_DLL_PATH):
+def ensure_mpv_dll(version: str = ""):
+    if not lib_needs_download(_LIB_DIR, version, _DLL_PATH):
+        write_lib_version(_LIB_DIR, version)
         _setup_dll_path()
         return True
     tmp = tempfile.mkdtemp()
@@ -82,6 +85,7 @@ def ensure_mpv_dll():
         safe_download(url, archive, allowed_hosts=_ALLOWED_HOSTS, expected_sha256=expected)
         _log("[video] archive checksum verified")
         extract_7z_members(archive, _LIB_DIR, (_DLL_NAME,))
+        write_lib_version(_LIB_DIR, version)
         _setup_dll_path()
         _log("[video] mpv DLL installed successfully")
         return True

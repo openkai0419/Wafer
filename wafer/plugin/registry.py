@@ -14,6 +14,7 @@ class PluginBase:
     PRIORITY: int = 0
     SCOPE: str = "viewer"
     DEFAULT_ENABLED: bool = False
+    POST_INSTALL_VERSION: str = ""
 
     @classmethod
     def post_install(cls, plugin_dir: str, on_progress=None, is_cancelled=None, on_log=None):

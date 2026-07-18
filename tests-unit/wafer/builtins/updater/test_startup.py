@@ -1,5 +1,5 @@
-from wafer.builtins.update_notifier import startup
-from wafer.builtins.update_notifier.service import UpdateCheckResult, UpdateInfo
+from wafer.builtins.updater import startup
+from wafer.builtins.updater.service import UpdateCheckResult, UpdateInfo
 from wafer.core.commands.binding.instance_registry import InstanceRegistry
 from wafer.core.workspace import WorkspaceStore
 

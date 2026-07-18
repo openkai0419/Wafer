@@ -7,6 +7,8 @@ from wafer.utils.logs import debug_non_recursive
 
 _IDLE_TIMEOUT = 120.0
 
+POST_INSTALL_VERSION = "1"
+
 
 class ExifToolCollectorPlugin(BaseCollectorPlugin):
     NAME = "exiftool"
@@ -46,7 +48,7 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
     def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None, on_log=None):
         from ._downloader import ensure_exiftool
 
-        ensure_exiftool()
+        ensure_exiftool(version=POST_INSTALL_VERSION)
 
     def __init__(self):
         super().__init__()

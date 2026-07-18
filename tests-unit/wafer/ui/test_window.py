@@ -4,7 +4,8 @@ from unittest.mock import MagicMock, PropertyMock, patch
 import pytest
 from PySide6 import QtCore, QtWidgets
 
-from wafer.ui.window import WindowSnapshot, WindowStateController
+from wafer.ui.geometry import constrain_to_screens
+from wafer.ui.window import DialogLayoutStore, WindowSnapshot, WindowStateController
 
 WS = QtCore.Qt.WindowState
 
@@ -290,3 +291,37 @@ class TestWindowStateControllerComplex:
         assert not ctrl.is_always_on_top
         assert _has_frame(win)
         assert win.normalGeometry() == original_geo
+
+
+class TestDialogLayoutStore:
+    def test_restore_repositions_offscreen_dialog(self, qtbot, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "wafer.utils.paths.resolve_data_path",
+            lambda name: tmp_path / name,
+        )
+
+        screens = QtWidgets.QApplication.screens()
+        right = max(screen.availableGeometry().right() for screen in screens)
+        bottom = max(screen.availableGeometry().bottom() for screen in screens)
+        far = QtCore.QPoint(right + 5000, bottom + 5000)
+
+        store = DialogLayoutStore("test_offscreen_dialog")
+
+        dlg = QtWidgets.QDialog()
+        qtbot.addWidget(dlg)
+        dlg.resize(400, 300)
+        dlg.show()
+        qtbot.waitExposed(dlg)
+        dlg.move(far)
+        QtWidgets.QApplication.processEvents()
+        store.save(dlg)
+        dlg.close()
+
+        dlg2 = QtWidgets.QDialog()
+        qtbot.addWidget(dlg2)
+        dlg2.resize(400, 300)
+        store.restore(dlg2)
+        dlg2.show()
+        qtbot.waitExposed(dlg2)
+
+        assert constrain_to_screens(dlg2.frameGeometry()) == dlg2.frameGeometry()

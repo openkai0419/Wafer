@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+from wafer.utils.downloader import lib_needs_download, write_lib_version
 from wafer.utils.logs import AppLogger
 
 KNOWN_MODELS = {
@@ -16,7 +17,7 @@ _LIB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib")
 _MODELS_DIR = os.path.join(_LIB_DIR, "models")
 
 
-def ensure_model(model_key: str = DEFAULT_MODEL) -> Path:
+def ensure_model(model_key: str = DEFAULT_MODEL, version: str = "") -> Path:
     if model_key not in KNOWN_MODELS:
         raise ValueError(f"Unknown model: {model_key}. Available: {list(KNOWN_MODELS)}")
 
@@ -24,7 +25,8 @@ def ensure_model(model_key: str = DEFAULT_MODEL) -> Path:
     model_path = model_dir / "model.onnx"
     tags_path = model_dir / "selected_tags.csv"
 
-    if model_path.exists() and tags_path.exists():
+    if not lib_needs_download(str(model_dir), version, str(model_path), str(tags_path)):
+        write_lib_version(str(model_dir), version)
         AppLogger.debug(f"WD14 model already exists: {model_dir}")
         return model_dir
 
@@ -43,5 +45,6 @@ def ensure_model(model_key: str = DEFAULT_MODEL) -> Path:
     if not tags_path.exists():
         raise FileNotFoundError(f"selected_tags.csv not found after download: {tags_path}")
 
+    write_lib_version(str(model_dir), version)
     AppLogger.info(f"WD14 model download complete: {model_dir}")
     return model_dir

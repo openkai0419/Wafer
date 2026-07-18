@@ -19,10 +19,11 @@ class ProcessMatcher:
             raise ValueError("cmd_list must not be empty")
         self._raw_cmd = list(cmd_list)
         self.exe_path = self._normalize_path(cmd_list[0])
-        self.args_set = set(cmd_list[1:])
+        self.script_path = self._normalize_path(cmd_list[1]) if len(cmd_list) > 1 else None
+        self.args_set = set(cmd_list[2:])
 
-    def find_by_args_subset(self):
-        return list(self._iter_matches(compare="subset"))
+    def find_by_args_subset(self, exclude_args=None):
+        return list(self._iter_matches(compare="subset", exclude_args=exclude_args))
 
     def find_by_args_exact(self):
         return list(self._iter_matches(compare="equal"))
@@ -41,7 +42,7 @@ class ProcessMatcher:
             return (True, [])
         return (True, [proc])
 
-    def _iter_matches(self, compare):
+    def _iter_matches(self, compare, exclude_args=None):
         for p in psutil.process_iter(["pid", "cmdline"]):
             try:
                 pcmd = p.info.get("cmdline") or []
@@ -49,7 +50,14 @@ class ProcessMatcher:
                     continue
                 if not self._same_executable(pcmd[0], self.exe_path):
                     continue
-                proc_args_set = set(pcmd[1:])
+                if self.script_path is not None:
+                    if len(pcmd) < 2 or not self._same_executable(pcmd[1], self.script_path):
+                        continue
+                    proc_args_set = set(pcmd[2:])
+                else:
+                    proc_args_set = set(pcmd[1:])
+                if exclude_args and not exclude_args.isdisjoint(proc_args_set):
+                    continue
                 if compare == "subset":
                     if self.args_set.issubset(proc_args_set):
                         yield p
@@ -68,26 +76,17 @@ class ProcessMatcher:
 
     @staticmethod
     def _same_executable(pcmd0, expected_normpath):
-        pcmd_norm = ProcessMatcher._normalize_path(pcmd0)
-        if pcmd_norm == expected_normpath:
+        if ProcessMatcher._normalize_path(pcmd0) == expected_normpath:
             return True
         try:
-            if os.path.samefile(pcmd0, expected_normpath):
-                return True
+            return os.path.samefile(pcmd0, expected_normpath)
         except (FileNotFoundError, PermissionError, OSError):
-            pass
-        base = getattr(sys, "_base_executable", None)
-        if base:
-            equiv = {
-                ProcessMatcher._normalize_path(sys.executable),
-                ProcessMatcher._normalize_path(base),
-            }
-            if pcmd_norm in equiv and expected_normpath in equiv:
-                return True
-        return False
+            return False
 
 
 class AppProcess:
+    WORKER_FLAGS = frozenset({"--tray", "--indexer", "--collector", "--parser"})
+
     @classmethod
     def get_by_args_exact(cls, *args):
         return ProcessMatcher(cls.base_command() + list(args)).find_by_args_exact()
@@ -130,18 +129,10 @@ class AppProcess:
 
     @staticmethod
     def terminate_and_wait(processes, timeout=5, kill_timeout=3):
-        for p in processes:
-            try:
-                p.terminate()
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-        _, alive = psutil.wait_procs(processes, timeout=timeout)
-        for p in alive:
-            try:
-                p.kill()
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-        psutil.wait_procs(alive, timeout=kill_timeout)
+        if not processes:
+            return
+        AppProcess.terminate(processes)
+        AppProcess.wait_procs_then_kill(processes, wait=timeout, kill_timeout=kill_timeout)
 
     @staticmethod
     def collect_process_tree(processes):
@@ -170,33 +161,64 @@ class AppProcess:
         AppLogger.info(f"shutdown_children: terminating {len(children)} child processes")
         AppProcess.terminate_and_wait(children, timeout, kill_timeout)
 
+    @classmethod
+    def list_app(cls, *args, exclude_self=True):
+        procs = ProcessMatcher(cls.base_command() + list(args)).find_by_args_subset()
+        if exclude_self:
+            me = os.getpid()
+            procs = [p for p in procs if p.pid != me]
+        return procs
+
+    @classmethod
+    def list_viewers(cls, exclude_self=True):
+        procs = ProcessMatcher(cls.base_command()).find_by_args_subset(exclude_args=cls.WORKER_FLAGS)
+        if exclude_self:
+            me = os.getpid()
+            procs = [p for p in procs if p.pid != me]
+        return procs
+
+    @staticmethod
+    def wait_procs_then_kill(processes, wait=5, kill_timeout=3):
+        if not processes:
+            return
+        _, alive = psutil.wait_procs(processes, timeout=wait)
+        for p in alive:
+            try:
+                p.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        if alive:
+            AppLogger.info(f"wait_procs_then_kill: force-killed {len(alive)} unresponsive processes")
+            psutil.wait_procs(alive, timeout=kill_timeout)
+
+    @classmethod
+    def force_close_all(cls, timeout=5, kill_timeout=3):
+        procs = cls.list_app(exclude_self=True)
+        AppLogger.info(f"force_close_all: terminating {len(procs)} app processes")
+        cls.terminate_and_wait(procs, timeout=timeout, kill_timeout=kill_timeout)
+        return len(procs)
+
+    @staticmethod
+    def _in_venv():
+        return sys.prefix != getattr(sys, "base_prefix", sys.prefix)
+
     @staticmethod
     def base_command():
         main_path = os.path.abspath(sys.argv[0])
         exe = sys.executable
-        if sys.platform == "win32":
-            exe_dir = os.path.dirname(exe)
-            exe_base = os.path.basename(exe)
-            stem, ext = os.path.splitext(exe_base)
-            candidates = [
-                f"{stem}w{ext}",
-                f"{stem}-w{ext}",
-                stem.replace("python", "pythonw") + ext,
-                "pythonw.exe",
-            ]
-            for name in candidates:
-                if not name or name == exe_base:
-                    continue
-                candidate = os.path.join(exe_dir, name)
-                if os.path.isfile(candidate):
-                    exe = candidate
-                    break
+        base_exe = getattr(sys, "_base_executable", None)
+        if base_exe and AppProcess._in_venv() and os.path.normcase(base_exe) != os.path.normcase(exe):
+            exe = base_exe
         return [exe, main_path]
 
     @staticmethod
-    def new_main(*args, **popen_kwargs):
+    def new_main(*args, extra_env=None, **popen_kwargs):
         cmd = AppProcess.base_command() + list(args)
         env = os.environ.copy()
+        if AppProcess._in_venv():
+            env["__PYVENV_LAUNCHER__"] = sys.executable
+        if extra_env:
+            env.update(extra_env)
         popen_kwargs.setdefault("stdin", subprocess.DEVNULL)
         popen_kwargs.setdefault("stdout", subprocess.DEVNULL)
         popen_kwargs.setdefault("stderr", subprocess.DEVNULL)
@@ -207,4 +229,6 @@ class AppProcess:
             flags = _windows_no_window_flags(flags)
             popen_kwargs["creationflags"] = flags
             popen_kwargs.setdefault("close_fds", True)
-        return subprocess.Popen(cmd, env=env, **popen_kwargs)
+        proc = subprocess.Popen(cmd, env=env, **popen_kwargs)
+        AppLogger.info(f"new_main: spawned pid={proc.pid} args={list(args)}")
+        return proc

@@ -2,6 +2,8 @@ from wafer.plugin import WidgetGridPlugin
 from wafer.utils.profiling import profiler
 from .widget import MpvCellWidget, DEFAULT_VOLUME
 
+POST_INSTALL_VERSION = "1"
+
 
 class VideoGridPlugin(WidgetGridPlugin):
     NAME = "video"
@@ -27,7 +29,7 @@ class VideoGridPlugin(WidgetGridPlugin):
     def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None, on_log=None):
         from ._downloader import ensure_mpv_dll
 
-        ensure_mpv_dll()
+        ensure_mpv_dll(version=POST_INSTALL_VERSION)
 
     @classmethod
     def configure(cls):

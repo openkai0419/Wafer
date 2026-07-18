@@ -4,6 +4,7 @@ import threading
 import time
 from collections import deque
 
+from ..constants import APP_DATA_DIR_NAME
 from ..utils.logs import AppLogger
 from ..utils.paths import resolve_data_path
 
@@ -12,6 +13,8 @@ _STATUS_FILENAME = "install_status.json"
 _CANCEL_FILENAME = "install_cancel.flag"
 _LOG_TAIL_MAX = 200
 _lock = threading.Lock()
+
+INSTALL_WAITER_LOCK_NAME = f"{APP_DATA_DIR_NAME}_install_waiter"
 
 
 def status_path() -> str:

@@ -19,7 +19,8 @@ class ProcessMatcher:
             raise ValueError("cmd_list must not be empty")
         self._raw_cmd = list(cmd_list)
         self.exe_path = self._normalize_path(cmd_list[0])
-        self.args_set = set(cmd_list[1:])
+        self.script_path = self._normalize_path(cmd_list[1]) if len(cmd_list) > 1 else None
+        self.args_set = set(cmd_list[2:])
 
     def find_by_args_subset(self, exclude_args=None):
         return list(self._iter_matches(compare="subset", exclude_args=exclude_args))
@@ -49,7 +50,12 @@ class ProcessMatcher:
                     continue
                 if not self._same_executable(pcmd[0], self.exe_path):
                     continue
-                proc_args_set = set(pcmd[1:])
+                if self.script_path is not None:
+                    if len(pcmd) < 2 or not self._same_executable(pcmd[1], self.script_path):
+                        continue
+                    proc_args_set = set(pcmd[2:])
+                else:
+                    proc_args_set = set(pcmd[1:])
                 if exclude_args and not exclude_args.isdisjoint(proc_args_set):
                     continue
                 if compare == "subset":
@@ -206,11 +212,13 @@ class AppProcess:
         return [exe, main_path]
 
     @staticmethod
-    def new_main(*args, **popen_kwargs):
+    def new_main(*args, extra_env=None, **popen_kwargs):
         cmd = AppProcess.base_command() + list(args)
         env = os.environ.copy()
         if AppProcess._in_venv():
             env["__PYVENV_LAUNCHER__"] = sys.executable
+        if extra_env:
+            env.update(extra_env)
         popen_kwargs.setdefault("stdin", subprocess.DEVNULL)
         popen_kwargs.setdefault("stdout", subprocess.DEVNULL)
         popen_kwargs.setdefault("stderr", subprocess.DEVNULL)

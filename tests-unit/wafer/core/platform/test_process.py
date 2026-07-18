@@ -60,6 +60,91 @@ def test_find_by_args_exact_with_impossible_args():
     assert len(procs) == 0
 
 
+class _FakeProc:
+    def __init__(self, pid, cmdline):
+        self.pid = pid
+        self.info = {"pid": pid, "cmdline": cmdline}
+
+
+def test_find_by_args_subset_matches_relative_script(monkeypatch):
+    # The user-launched root process has a relative "main.py" in its cmdline
+    # (dev: `python main.py`), while base_command() uses the absolute path.
+    # ProcessMatcher must normalize the script path so both still match,
+    # otherwise force_close_all()/list_viewers() silently miss the root viewer.
+    abs_script = os.path.abspath("main.py")
+    fake = _FakeProc(4321, [sys.executable, "main.py", "--viewer"])
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: [fake])
+    matcher = ProcessMatcher([sys.executable, abs_script])
+    procs = matcher.find_by_args_subset()
+    assert [p.pid for p in procs] == [4321]
+
+
+def test_find_by_args_subset_rejects_different_script(monkeypatch):
+    abs_script = os.path.abspath("main.py")
+    fake = _FakeProc(9999, [sys.executable, "other_entry.py", "--viewer"])
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: [fake])
+    matcher = ProcessMatcher([sys.executable, abs_script])
+    assert matcher.find_by_args_subset() == []
+
+
+def test_find_by_args_subset_matches_portable_absolute_script(monkeypatch):
+    # Portable (exe) launch: the Wafer.exe launcher runs
+    # `wafer-pythonw.exe <appRoot>\main.py ...`, so cmdline[1] is already an
+    # absolute path. Matching must still succeed (and stays robust with the
+    # script-path normalization).
+    exe = r"C:\App\python\wafer-pythonw.exe"
+    script = r"C:\App\main.py"
+    fake = _FakeProc(4321, [exe, script, "--viewer"])
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: [fake])
+    matcher = ProcessMatcher([exe, script])
+    assert [p.pid for p in matcher.find_by_args_subset()] == [4321]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows path normalization")
+def test_find_by_args_subset_matches_windows_case_and_separator(monkeypatch):
+    # Portable installs under paths like "C:\Program Files\Wafer" can surface
+    # in psutil cmdline with different casing or forward slashes than
+    # base_command()'s abspath. Normalization must absorb both.
+    exe = r"C:\App\python\wafer-pythonw.exe"
+    fake = _FakeProc(4321, [exe.lower(), "c:/app/MAIN.py", "--viewer"])
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: [fake])
+    matcher = ProcessMatcher([exe, r"C:\App\main.py"])
+    assert [p.pid for p in matcher.find_by_args_subset()] == [4321]
+
+
+def test_list_viewers_captures_relative_root_and_excludes_workers(monkeypatch):
+    # End-to-end guard for the reported bug: a dev root viewer launched with a
+    # relative "main.py" must be enumerated by list_viewers(), while tray and
+    # worker processes are excluded by WORKER_FLAGS.
+    exe = sys.executable
+    abs_script = os.path.abspath("main.py")
+    monkeypatch.setattr(AppProcess, "base_command", staticmethod(lambda: [exe, abs_script]))
+    root_viewer = _FakeProc(101, [exe, "main.py"])
+    child_viewer = _FakeProc(102, [exe, abs_script, "--viewer", "--slot", "s1"])
+    tray = _FakeProc(201, [exe, abs_script, "--tray"])
+    indexer = _FakeProc(202, [exe, abs_script, "--indexer", "lib"])
+    monkeypatch.setattr(
+        psutil, "process_iter",
+        lambda attrs=None: [root_viewer, child_viewer, tray, indexer],
+    )
+    pids = sorted(p.pid for p in AppProcess.list_viewers(exclude_self=False))
+    assert pids == [101, 102]
+
+
+def test_list_app_captures_relative_root_viewer(monkeypatch):
+    exe = sys.executable
+    abs_script = os.path.abspath("main.py")
+    monkeypatch.setattr(AppProcess, "base_command", staticmethod(lambda: [exe, abs_script]))
+    root_viewer = _FakeProc(101, [exe, "main.py"])
+    tray = _FakeProc(201, [exe, abs_script, "--tray"])
+    monkeypatch.setattr(
+        psutil, "process_iter",
+        lambda attrs=None: [root_viewer, tray],
+    )
+    pids = sorted(p.pid for p in AppProcess.list_app(exclude_self=False))
+    assert pids == [101, 201]
+
+
 def test_app_process_base_command():
     cmd = AppProcess.base_command()
     assert len(cmd) == 2
@@ -121,6 +206,24 @@ def test_new_main_no_pyvenv_launcher_when_not_in_venv(monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
     AppProcess.new_main("--tray")
     assert "__PYVENV_LAUNCHER__" not in captured["env"]
+
+
+def test_new_main_merges_extra_env(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(sys, "prefix", r"X:\app\python", raising=False)
+    monkeypatch.setattr(sys, "base_prefix", r"X:\app\python", raising=False)
+    monkeypatch.setattr(AppProcess, "base_command", staticmethod(lambda: ["exe", "main.py"]))
+
+    class _P:
+        pid = 123
+
+    def fake_popen(cmd, env=None, **kw):
+        captured["env"] = env
+        return _P()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    AppProcess.new_main(extra_env={"WAFER_REPLACE_TRAY": "1"})
+    assert captured["env"]["WAFER_REPLACE_TRAY"] == "1"
 
 
 def test_app_process_children():

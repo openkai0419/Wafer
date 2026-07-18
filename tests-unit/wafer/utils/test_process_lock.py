@@ -164,3 +164,33 @@ def test_acquire_timeout_constant():
 
     assert _ACQUIRE_TIMEOUT > 0
     assert _ACQUIRE_TIMEOUT <= 120
+
+
+class TestReadOwnerPid:
+    def _patch_path(self, monkeypatch, lock_path):
+        from wafer.utils import process_lock as process_lock_mod
+
+        monkeypatch.setattr(process_lock_mod, "resolve_data_path", lambda _: str(lock_path))
+        return process_lock_mod.SafeProcessLock
+
+    def test_reads_pid_from_json(self, tmp_path, monkeypatch):
+        lock_path = tmp_path / "waiter.lock"
+        lock_path.write_text(json.dumps({"pid": 4321, "create_time": 1.0}), encoding="utf-8")
+        lock_cls = self._patch_path(monkeypatch, lock_path)
+        assert lock_cls.read_owner_pid("waiter") == 4321
+
+    def test_reads_pid_from_plain_int(self, tmp_path, monkeypatch):
+        lock_path = tmp_path / "waiter.lock"
+        lock_path.write_text("777", encoding="utf-8")
+        lock_cls = self._patch_path(monkeypatch, lock_path)
+        assert lock_cls.read_owner_pid("waiter") == 777
+
+    def test_returns_none_when_missing(self, tmp_path, monkeypatch):
+        lock_cls = self._patch_path(monkeypatch, tmp_path / "absent.lock")
+        assert lock_cls.read_owner_pid("absent") is None
+
+    def test_returns_none_on_corrupt_content(self, tmp_path, monkeypatch):
+        lock_path = tmp_path / "waiter.lock"
+        lock_path.write_text("not json {", encoding="utf-8")
+        lock_cls = self._patch_path(monkeypatch, lock_path)
+        assert lock_cls.read_owner_pid("waiter") is None

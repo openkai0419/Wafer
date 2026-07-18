@@ -3,10 +3,9 @@ import time
 import psutil
 from PySide6 import QtCore, QtWidgets
 
-from ..constants import APP_DATA_DIR_NAME
 from ..core.platform.process import AppProcess
 from ..plugin import installer_queue
-from ..plugin.install_status import read_status, request_cancel
+from ..plugin.install_status import INSTALL_WAITER_LOCK_NAME, read_status, request_cancel
 from ..plugin.loader import get_plugin_dir
 from ..utils.logs import AppLogger
 from ..utils.process_lock import SafeProcessLock
@@ -21,7 +20,7 @@ _PHASE_LABEL = {
     "error": "Error",
 }
 _POLL_INTERVAL = 0.15
-_INSTALL_WAITER_LOCK = f"{APP_DATA_DIR_NAME}_install_waiter"
+_INSTALL_WAITER_LOCK = INSTALL_WAITER_LOCK_NAME
 
 
 def _acquire_waiter_lock(*, app) -> SafeProcessLock | None:

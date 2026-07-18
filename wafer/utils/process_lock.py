@@ -71,6 +71,25 @@ class SafeProcessLock:
         except psutil.Error:
             return None
 
+    @classmethod
+    def read_owner_pid(cls, name):
+        lock_file = resolve_data_path(f".temp/{name}.lock")
+        try:
+            with open(lock_file) as f:
+                content = f.read().strip()
+        except OSError:
+            return None
+        if not content:
+            return None
+        if content.isdigit():
+            return int(content)
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError:
+            return None
+        pid = data.get("pid") if isinstance(data, dict) else None
+        return pid if isinstance(pid, int) else None
+
     def _load_lock_info(self):
         with open(self.lock_file) as f:
             content = f.read().strip()

@@ -5,15 +5,16 @@ User-facing highlights for each Wafer release. These notes are shown in the Upda
 ## [v0.7.4]
 
 ### Highlights
-- Portable builds can now download and apply updates from the Update panel, then restart to finish.
-- Portable builds now include an uninstaller that removes the app and optionally your data.
+- Portable builds can now download updates in the Update panel and apply them after restart.
+- Portable builds now include an uninstaller that removes the app and can also remove your data.
 
 ### Improvements
+- A new Quit All command closes every Viewer and the Tray together.
 - Windows that would open off-screen are now moved back into view.
 - AutoScroll can now loop back to the top.
 
 ### Fixes
-- Quit and restart now close all windows and background processes more reliably.
+- Quit, restart, and update installs now close leftover windows and background processes more reliably.
 
 ## [v0.7.3]
 

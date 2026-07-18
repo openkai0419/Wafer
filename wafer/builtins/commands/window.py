@@ -49,12 +49,18 @@ def restart_viewer(ctx):
 
 
 def restart_all(ctx):
-    w = _win(ctx)
-
     from ...plugin.settings import PluginSettings
 
     PluginSettings().clear_restart_scope()
 
+    if installer_queue.has_pending_queue(get_plugin_dir()):
+        store = WorkspaceStore.instance()
+        store.set_restore_slot_ids(store.get_active_slot_ids())
+        Notifier.info("Restarting to install extensions")
+        _shutdown_all(ctx, then_restart=True)
+        return
+
+    w = _win(ctx)
     if w:
         w._perform_system_restart(include_self=True)
         w.close_by_restart()
@@ -66,21 +72,30 @@ def restart_all(ctx):
 
 
 def close_all(ctx):
+    _shutdown_all(ctx, then_restart=False)
+
+
+def _shutdown_all(ctx, *, then_restart):
     tray = ctx.get_instance("Tray")
     if tray:
-        tray.close_all()
+        (tray.restart_all if then_restart else tray.close_all)()
         return
+
     w = _win(ctx)
     if not w:
         return
+
     node = getattr(w, "_node", None)
     if node and AppProcess.get_by_args_subset("--tray"):
-        node.send("app.quit_all", dst="tray")
+        node.send("app.restart_all" if then_restart else "app.quit_all", dst="tray")
         return
+
     from ...app.lifecycle import CloseReason
 
-    AppLogger.info("close_all: tray unreachable, force-terminating all app processes")
+    AppLogger.info(f"shutdown_all(restart={then_restart}): tray unreachable, force-terminating all app processes")
     AppProcess.force_close_all()
+    if then_restart:
+        AppProcess.new_main()
     w._close_reason = CloseReason.SHUTDOWN
     w.close()
 

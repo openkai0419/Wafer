@@ -6,16 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [v0.7.4]
 ### Added
-- Portable in-app updates: download and apply updates from the Update panel, with validation and automatic rollback on failure.
-- Portable uninstaller that removes the app and optionally user data.
+- Portable builds can download updates in the Update panel and apply them after restart.
+- Portable builds now include an uninstaller that removes the app and can also remove user data.
 - `Quit All` command to close all Viewer and Tray processes together.
 
 ### Changed
-- Off-screen windows, dialogs, panels, and popups are moved back onto a visible screen when restored.
+- Restored windows, dialogs, floating panels, and popups are moved back onto a visible screen.
 - Grid AutoScroll can loop back to the start, optionally rerunning the current query.
 
 ### Fixed
-- Quit, restart, and update-apply now shut down leftover processes and windows more reliably.
+- Quit, restart, and update installs now close leftover windows and background processes more reliably.
 
 ## [v0.7.3]
 ### Added

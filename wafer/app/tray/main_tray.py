@@ -24,7 +24,8 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.broker = Broker()
         self.broker.start()
         self._node = Node("tray")
-        self._node.subscribe("app.quit_all", lambda msg: self._request_close_all() or True)
+        self._node.subscribe("app.quit_all", lambda msg: self._request_shutdown_all(then_restart=False) or True)
+        self._node.subscribe("app.restart_all", lambda msg: self._request_shutdown_all(then_restart=True) or True)
         self._node.start(self.broker.port)
         AppLogger.set_node(self._node, role="tray")
         UI.register_instance("Tray", self)
@@ -51,12 +52,20 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
     def _on_trigger(self):
         Command.run("tray.show_window")
 
-    def _request_close_all(self):
-        QtCore.QMetaObject.invokeMethod(self, "close_all", QtCore.Qt.QueuedConnection)
+    def _request_shutdown_all(self, *, then_restart):
+        slot = "restart_all" if then_restart else "close_all"
+        QtCore.QMetaObject.invokeMethod(self, slot, QtCore.Qt.QueuedConnection)
 
     @QtCore.Slot()
     def close_all(self):
-        AppLogger.info("close_all: shutting down all viewers, then tray")
+        self._shutdown_all(then_restart=False)
+
+    @QtCore.Slot()
+    def restart_all(self):
+        self._shutdown_all(then_restart=True)
+
+    def _shutdown_all(self, *, then_restart):
+        AppLogger.info(f"_shutdown_all: shutting down all viewers, then tray (restart={then_restart})")
         from ...plugin.settings import PluginSettings
 
         PluginSettings().clear_restart_scope()
@@ -66,6 +75,8 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         def finish():
             AppProcess.wait_procs_then_kill(viewers)
             AppProcess.force_close_all()
+            if then_restart:
+                AppProcess.new_main(extra_env={"WAFER_REPLACE_TRAY": "1"})
             self._close_all_ready.emit()
 
         threading.Thread(target=finish, daemon=True).start()

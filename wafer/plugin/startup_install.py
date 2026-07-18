@@ -1,12 +1,11 @@
 import os
 import time
 
-import psutil
-
 from ..utils.logs import AppLogger
 from ..utils.notifier import Notifier
+from ..utils.process_lock import SafeProcessLock
 from . import failed_installs, installer_queue
-from .install_status import InstallStatusWriter, clear_cancel, clear_status, is_cancel_requested
+from .install_status import INSTALL_WAITER_LOCK_NAME, InstallStatusWriter, clear_cancel, clear_status, is_cancel_requested
 from .installer import cleanup_legacy_dirs, install_requirements_only, run_post_install
 
 
@@ -24,7 +23,7 @@ def run_pending_installs(extensions_dir: str) -> bool:
     clear_cancel()
     writer = InstallStatusWriter(total=len(entries))
     AppLogger.info(f"[StartupInstall] Processing {len(entries)} queued install(s)")
-    _terminate_processes_holding_packages(extensions_dir)
+    _terminate_conflicting_processes()
     started_at = time.monotonic()
     processed, failed, cancelled = _execute_installs(extensions_dir, entries, writer)
     installer_queue.remove_entries(extensions_dir, [name for name, _ in processed] + [name for name, _ in failed])
@@ -143,37 +142,13 @@ def _notify_result(processed: list, failed: list, cancelled: list) -> None:
         Notifier.info(msg)
 
 
-def _terminate_processes_holding_packages(extensions_dir: str) -> None:
-    target_root = os.path.realpath(os.path.join(extensions_dir, ".packages"))
-    if not os.path.isdir(target_root):
-        return
-    my_pid = os.getpid()
-    targets: list[psutil.Process] = []
-    skipped_open_file_errors = 0
-    last_open_file_error: OSError | None = None
-    for proc in psutil.process_iter(["pid"]):
-        if proc.pid == my_pid:
-            continue
-        try:
-            for handle in proc.open_files():
-                if os.path.realpath(handle.path).startswith(target_root):
-                    targets.append(proc)
-                    break
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-        except OSError as e:
-            skipped_open_file_errors += 1
-            last_open_file_error = e
-            continue
-    if skipped_open_file_errors:
-        AppLogger.warning(
-            f"[StartupInstall] skipped {skipped_open_file_errors} process(es) while checking package locks",
-            exc=last_open_file_error,
-        )
+def _terminate_conflicting_processes() -> None:
+    from ..core.platform.process import AppProcess
+
+    waiter_pid = SafeProcessLock.read_owner_pid(INSTALL_WAITER_LOCK_NAME)
+    targets = [p for p in AppProcess.list_app(exclude_self=True) if p.pid != waiter_pid]
     if not targets:
         return
     names = ", ".join(f"pid={p.pid}" for p in targets)
-    AppLogger.info(f"[StartupInstall] terminating {len(targets)} process(es) holding package files: {names}")
-    from ..core.platform.process import AppProcess
-
+    AppLogger.info(f"[StartupInstall] terminating {len(targets)} app process(es) before install (waiter={waiter_pid}): {names}")
     AppProcess.terminate_and_wait(targets)

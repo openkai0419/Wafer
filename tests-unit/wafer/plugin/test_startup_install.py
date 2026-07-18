@@ -1,5 +1,4 @@
 import os
-from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
@@ -7,12 +6,20 @@ import pytest
 from wafer.plugin import installer_queue, startup_install
 from wafer.plugin.installer import InstallResult
 
+_real_terminate = startup_install._terminate_conflicting_processes
+
 
 @pytest.fixture
 def ext_dir(tmp_path):
     d = tmp_path / "extensions"
     d.mkdir()
     return str(d)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_process_scan():
+    with patch.object(startup_install, "_terminate_conflicting_processes"):
+        yield
 
 
 def _make_plugin(ext_dir: str, name: str) -> str:
@@ -144,24 +151,39 @@ def test_cancel_request_before_loop_skips_all(ext_dir):
     assert len(installer_queue.read_queue(ext_dir)) == 1
 
 
-def test_open_files_oserror_does_not_abort_lock_scan(ext_dir):
-    packages_dir = os.path.join(ext_dir, ".packages")
-    os.makedirs(packages_dir)
+def test_terminate_conflicting_kills_app_processes_and_spares_waiter(ext_dir):
+    waiter = Mock(pid=100)
+    old_viewer = Mock(pid=200)
+    other = Mock(pid=300)
 
-    broken_proc = Mock(pid=123)
-    broken_proc.open_files.side_effect = OSError(433, "device missing")
-
-    locked_proc = Mock(pid=456)
-    locked_proc.open_files.return_value = [SimpleNamespace(path=os.path.join(packages_dir, "pkg", "locked.pyd"))]
-
-    with patch.object(startup_install.os, "getpid", return_value=999), \
-         patch.object(startup_install.psutil, "process_iter", return_value=[broken_proc, locked_proc]), \
-         patch.object(startup_install.AppLogger, "warning") as warning, \
+    with patch.object(startup_install.SafeProcessLock, "read_owner_pid", return_value=100), \
+         patch("wafer.core.platform.process.AppProcess.list_app", return_value=[waiter, old_viewer, other]), \
          patch("wafer.core.platform.process.AppProcess.terminate_and_wait") as terminate:
-        startup_install._terminate_processes_holding_packages(ext_dir)
+        _real_terminate()
 
-    warning.assert_called_once()
-    terminate.assert_called_once_with([locked_proc])
+    terminate.assert_called_once_with([old_viewer, other])
+
+
+def test_terminate_conflicting_noop_when_only_waiter(ext_dir):
+    waiter = Mock(pid=100)
+
+    with patch.object(startup_install.SafeProcessLock, "read_owner_pid", return_value=100), \
+         patch("wafer.core.platform.process.AppProcess.list_app", return_value=[waiter]), \
+         patch("wafer.core.platform.process.AppProcess.terminate_and_wait") as terminate:
+        _real_terminate()
+
+    terminate.assert_not_called()
+
+
+def test_terminate_conflicting_kills_all_when_no_waiter(ext_dir):
+    old_viewer = Mock(pid=200)
+
+    with patch.object(startup_install.SafeProcessLock, "read_owner_pid", return_value=None), \
+         patch("wafer.core.platform.process.AppProcess.list_app", return_value=[old_viewer]), \
+         patch("wafer.core.platform.process.AppProcess.terminate_and_wait") as terminate:
+        _real_terminate()
+
+    terminate.assert_called_once_with([old_viewer])
 
 
 def test_status_writer_created_before_lock_scan(ext_dir):
@@ -184,7 +206,7 @@ def test_status_writer_created_before_lock_scan(ext_dir):
 
     cancelled_result = InstallResult(success=False, cancelled=True)
     with patch.object(startup_install, "InstallStatusWriter", Writer), \
-         patch.object(startup_install, "_terminate_processes_holding_packages", side_effect=lambda d: events.append(("terminate", d))), \
+         patch.object(startup_install, "_terminate_conflicting_processes", side_effect=lambda: events.append(("terminate",))), \
          patch.object(startup_install, "install_requirements_only", return_value=cancelled_result), \
          patch.object(startup_install, "run_post_install") as mb, \
          patch("wafer.plugin.startup_install.Notifier"):
@@ -192,5 +214,5 @@ def test_status_writer_created_before_lock_scan(ext_dir):
 
     mb.assert_not_called()
     assert events[0] == ("writer", 1)
-    assert events[1] == ("terminate", ext_dir)
+    assert events[1] == ("terminate",)
 

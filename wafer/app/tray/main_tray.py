@@ -11,6 +11,17 @@ from ...core.platform.process import AppProcess
 import threading
 
 
+def _disarm_child_reaper():
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        return
+    try:
+        app.aboutToQuit.disconnect(AppProcess.shutdown_children)
+        AppLogger.info("restart: disarmed shutdown_children so the replacement ROOT survives tray exit")
+    except (RuntimeError, TypeError) as e:
+        AppLogger.warning(f"restart: could not disarm shutdown_children; replacement ROOT may be reaped on tray exit: {e}")
+
+
 class TrayApp(QtWidgets.QSystemTrayIcon):
     _close_all_ready = QtCore.Signal()
 
@@ -20,6 +31,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         AppLogger.info("TRAY APP EXECUTED")
         self.setToolTip(f"{APP_NAME}")
         self.show_state = False
+        self.shutting_down = False
         self.activated.connect(self.on_activated)
         self.broker = Broker()
         self.broker.start()
@@ -50,6 +62,8 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
 
     @qt_debounce(10)
     def _on_trigger(self):
+        if self.shutting_down:
+            return
         Command.run("tray.show_window")
 
     def _request_shutdown_all(self, *, then_restart):
@@ -69,6 +83,9 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         from ...plugin.settings import PluginSettings
 
         PluginSettings().clear_restart_scope()
+        self.shutting_down = True
+        if then_restart:
+            _disarm_child_reaper()
         viewers = AppProcess.list_viewers()
         self._node.send("app.shutdown", dst="viewer")
 

@@ -87,7 +87,7 @@ def _prepare_tray(*, parent) -> int | None:
         AppLogger.info("[InstallWaiter] spawning tray for pending install")
         proc = AppProcess.new_main("--tray")
         return proc.pid
-    if read_status() is not None:
+    if _status_is_active(read_status()):
         AppLogger.info("[InstallWaiter] tray already installing, attaching to splash")
         return existing[0].pid
     return _ask_restart_tray(existing, parent=parent)
@@ -118,16 +118,24 @@ def _poll_until_done(splash: InstallSplash, app, tray_pid: int, cancelling: dict
             AppLogger.warning("[InstallWaiter] tray exited before install completed")
             return
         status = read_status()
-        if cancelling["value"]:
-            if status is None:
-                return
-        else:
-            if status is None and not installer_queue.has_pending_queue(get_plugin_dir()):
-                return
         _refresh_splash(splash, status, cancelling["value"])
+        if _is_install_finished(status, cancelling["value"]):
+            return
         if app is not None:
             app.processEvents(QtCore.QEventLoop.AllEvents, 50)
         time.sleep(_POLL_INTERVAL)
+
+
+def _status_is_active(status: dict | None) -> bool:
+    return status is not None and str(status.get("phase")) not in ("done", "error")
+
+
+def _is_install_finished(status: dict | None, cancelling: bool) -> bool:
+    if _status_is_active(status):
+        return False
+    if status is not None:
+        return True
+    return cancelling or not installer_queue.has_pending_queue(get_plugin_dir())
 
 
 def _refresh_splash(splash: InstallSplash, status: dict | None, cancelling: bool) -> None:

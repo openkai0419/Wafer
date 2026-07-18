@@ -71,11 +71,16 @@ def read_status() -> dict | None:
 
 def clear_status() -> None:
     path = status_path()
-    try:
-        if os.path.isfile(path):
-            os.remove(path)
-    except OSError as e:
-        AppLogger.debug(f"[InstallStatus] clear failed: {e}")
+    for attempt in range(10):
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+            return
+        except OSError as e:
+            if attempt == 9:
+                AppLogger.warning(f"[InstallStatus] clear failed after retries: {e}", exc=e)
+                return
+            time.sleep(0.05)
 
 
 class InstallStatusWriter:

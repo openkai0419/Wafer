@@ -71,5 +71,37 @@ def test_clear_status_removes_file(tmp_status):
     assert not os.path.isfile(tmp_status)
 
 
+def test_clear_status_retries_on_transient_lock(tmp_status, monkeypatch):
+    install_status.InstallStatusWriter(total=1)
+    calls = {"n": 0}
+    real_remove = os.remove
+
+    def flaky_remove(path):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise OSError("locked")
+        real_remove(path)
+
+    monkeypatch.setattr(install_status.os, "remove", flaky_remove)
+    monkeypatch.setattr(install_status.time, "sleep", lambda _s: None)
+    install_status.clear_status()
+    assert not os.path.isfile(tmp_status)
+    assert calls["n"] == 3
+
+
+def test_clear_status_warns_when_all_retries_fail(tmp_status, monkeypatch):
+    install_status.InstallStatusWriter(total=1)
+
+    def always_locked(_path):
+        raise OSError("locked")
+
+    warnings = []
+    monkeypatch.setattr(install_status.os, "remove", always_locked)
+    monkeypatch.setattr(install_status.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(install_status.AppLogger, "warning", lambda *a, **kw: warnings.append(a))
+    install_status.clear_status()
+    assert len(warnings) == 1
+
+
 def test_read_status_returns_none_when_missing(tmp_status):
     assert install_status.read_status() is None

@@ -125,3 +125,57 @@ def test_restart_all_shuts_down_then_spawns_root(monkeypatch):
         ("new_main", (), {"extra_env": {"WAFER_REPLACE_TRAY": "1"}}),
     ]
     assert fake._close_all_ready.emitted is True
+
+
+def test_disarm_reaper_called_on_restart_only(monkeypatch):
+    disarmed = []
+
+    class _Signal:
+        def emit(self):
+            pass
+
+    class _Node:
+        def send(self, *args, **kwargs):
+            pass
+
+    class _Thread:
+        def __init__(self, target=None, daemon=None):
+            pass
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr("wafer.app.tray.main_tray.threading.Thread", _Thread)
+    monkeypatch.setattr("wafer.app.tray.main_tray.AppProcess.list_viewers", lambda: [])
+    monkeypatch.setattr("wafer.app.tray.main_tray._disarm_child_reaper", lambda: disarmed.append(True))
+    monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_scope", lambda self: None)
+
+    def _make_fake():
+        fake = type("FakeTray", (), {})()
+        fake._node = _Node()
+        fake._close_all_ready = _Signal()
+        return fake
+
+    close_fake = _make_fake()
+    TrayApp._shutdown_all(close_fake, then_restart=False)
+    assert disarmed == []
+    assert close_fake.shutting_down is True
+
+    restart_fake = _make_fake()
+    TrayApp._shutdown_all(restart_fake, then_restart=True)
+    assert disarmed == [True]
+    assert restart_fake.shutting_down is True
+
+
+def test_on_trigger_noop_while_shutting_down(monkeypatch):
+    ran = []
+    monkeypatch.setattr("wafer.app.tray.main_tray.Command.run", lambda *a, **kw: ran.append(a))
+
+    fake = type("FakeTray", (), {})()
+    fake.shutting_down = True
+    TrayApp._on_trigger.__wrapped__(fake)
+    assert ran == []
+
+    fake.shutting_down = False
+    TrayApp._on_trigger.__wrapped__(fake)
+    assert ran == [("tray.show_window",)]

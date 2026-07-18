@@ -149,11 +149,59 @@ def test_portable_download_enters_cancel_state_until_background_task_finishes(mo
 
     assert w._stage_in_progress is True
     assert w._check_btn.isEnabled() is False
-    assert w._progress.isHidden() is False
-    assert w._status.text() == "Downloading update..."
+    assert w._progress_row.isHidden() is False
+    assert w._progress_label.text() == "0%"
+    assert w._status.isHidden() is True
     assert w._primary_btn.isEnabled() is True
     assert w._primary_btn.text() == "Cancel Download"
     assert w._primary_btn.property("actionState") == "cancel"
+
+
+def test_portable_stage_phase_switches_to_busy_progress(monkeypatch, qtbot):
+    w = _make_widget(monkeypatch, qtbot, mode="portable")
+    w.set_update_info(_info(is_newer=True))
+    monkeypatch.setattr(w._dispatcher, "post", lambda fn, priority=5: None)
+    w._on_primary_action_clicked()
+
+    w._on_stage_phase("extract")
+
+    assert w._progress.minimum() == 0 and w._progress.maximum() == 0
+    assert w._progress_label.text() == "Extracting update..."
+    assert w._status.isHidden() is True
+
+    w._on_stage_phase("verify")
+    assert w._progress_label.text() == "Verifying update..."
+
+    w._on_stage_phase("prepare")
+    assert w._progress_label.text() == "Preparing to apply..."
+
+
+def test_stage_phase_past_download_disables_cancel(monkeypatch, qtbot):
+    w = _make_widget(monkeypatch, qtbot, mode="portable")
+    w.set_update_info(_info(is_newer=True))
+    monkeypatch.setattr(w._dispatcher, "post", lambda fn, priority=5: None)
+    w._on_primary_action_clicked()
+
+    w._on_stage_phase("extract")
+
+    assert w._primary_btn.isEnabled() is False
+    assert w._primary_btn.text() == "Restart to Update"
+    assert w._primary_btn.property("actionState") == "disabled"
+
+    w._on_primary_action_clicked()
+    assert w._cancel_requested is False
+
+
+def test_stage_phase_ignored_after_cancel_request(monkeypatch, qtbot):
+    w = _make_widget(monkeypatch, qtbot, mode="portable")
+    w.set_update_info(_info(is_newer=True))
+    monkeypatch.setattr(w._dispatcher, "post", lambda fn, priority=5: None)
+    w._on_primary_action_clicked()
+    w._on_primary_action_clicked()
+
+    w._on_stage_phase("extract")
+
+    assert w._progress_label.text() == "Cancelling..."
 
 
 def test_portable_cancel_request_enters_cancelling_state(monkeypatch, qtbot):
@@ -165,9 +213,9 @@ def test_portable_cancel_request_enters_cancelling_state(monkeypatch, qtbot):
     w._on_primary_action_clicked()
 
     assert w._cancel_requested is True
-    assert w._status.text() == "Cancelling download..."
+    assert w._progress_label.text() == "Cancelling..."
     assert w._primary_btn.isEnabled() is False
-    assert w._primary_btn.text() == "Cancelling..."
+    assert w._primary_btn.text() == "Cancel Download"
     assert w._primary_btn.property("actionState") == "cancelling"
 
 

@@ -96,6 +96,11 @@ class TestStageUpdate:
         assert not list((app_root / ".update/download").glob("*.zip"))
         assert progress
 
+    def test_phase_progression(self, app_root, fake_network):
+        phases = []
+        stage.stage_update("v2.0.0", "2.0.0", on_phase=phases.append)
+        assert phases == ["download", "extract", "verify", "prepare"]
+
     def test_no_manifest_raises(self, app_root, monkeypatch):
         monkeypatch.setattr(stage, "read_cached_latest_release", lambda: make_release(with_manifest=False))
         with pytest.raises(StageError, match="does not support"):
@@ -188,13 +193,13 @@ class TestProcessApplyResults:
 
     def test_stale_ready_discarded(self, app_root, fake_network, monkeypatch):
         stage.stage_update("v2.0.0", "2.0.0")
-        monkeypatch.setattr(stage, "effective_current_version", lambda: "2.0.0")
+        monkeypatch.setattr(stage, "__version__", "2.0.0")
         stage.process_apply_results()
         assert stage.staged_version() == ""
 
     def test_pending_newer_ready_kept(self, app_root, fake_network, monkeypatch):
         stage.stage_update("v2.0.0", "2.0.0")
-        monkeypatch.setattr(stage, "effective_current_version", lambda: "1.0.0")
+        monkeypatch.setattr(stage, "__version__", "1.0.0")
         stage.process_apply_results()
         assert stage.staged_version() == "2.0.0"
 

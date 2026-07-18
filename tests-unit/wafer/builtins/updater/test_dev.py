@@ -6,7 +6,6 @@ import pytest
 
 import wafer._dev as _dev
 from wafer.builtins.updater import service, stage
-from wafer._version import __version__
 
 
 ZIP_NAME = "Wafer-v2.0.0.zip"
@@ -41,17 +40,6 @@ def write_source(src):
     latest = {"tag_name": "v2.0.0", "assets": [{"name": "manifest.json"}, {"name": ZIP_NAME}]}
     (src / "latest.json").write_text(json.dumps(latest), encoding="utf-8")
     return sha
-
-
-class TestEffectiveCurrentVersion:
-    def test_disabled_returns_real_version(self, monkeypatch):
-        monkeypatch.setattr(_dev, "FORCE_UPDATE_ENABLED", False)
-        assert service.effective_current_version() == __version__
-
-    def test_enabled_returns_override(self, monkeypatch):
-        monkeypatch.setattr(_dev, "FORCE_UPDATE_ENABLED", True)
-        monkeypatch.setattr(_dev, "CURRENT_VERSION", "0.0.0")
-        assert service.effective_current_version() == "0.0.0"
 
 
 class TestLocalSource:

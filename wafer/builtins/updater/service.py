@@ -25,12 +25,6 @@ USER_AGENT = "Wafer Update Notifier"
 _ALLOWED_HOSTS = {"api.github.com", "github.com", "raw.githubusercontent.com", "objects.githubusercontent.com"}
 
 
-def effective_current_version() -> str:
-    if _dev.FORCE_UPDATE_ENABLED and _dev.CURRENT_VERSION:
-        return _dev.CURRENT_VERSION
-    return __version__
-
-
 @dataclass(frozen=True)
 class UpdateInfo:
     current_version: str
@@ -152,8 +146,7 @@ def resolve_release_notes(tag_name: str, *, timeout: float = DEFAULT_TIMEOUT, us
     return read_local_release_notes().strip()
 
 
-def build_update_info(release: dict, release_notes: str = "", *, current_version: str | None = None, from_cache: bool = False) -> UpdateInfo:
-    current_version = current_version or effective_current_version()
+def build_update_info(release: dict, release_notes: str = "", *, current_version: str = __version__, from_cache: bool = False) -> UpdateInfo:
     tag_name = str(release.get("tag_name") or "")
     latest_version = normalize_version(tag_name or release.get("name") or "")
     if parse_version(latest_version) is None:
@@ -187,8 +180,7 @@ def should_notify_update(info: UpdateInfo | None, skipped_version: str = "") -> 
     return str(skipped_version or "") != info.latest_version
 
 
-def check_for_updates(*, current_version: str | None = None, timeout: float = DEFAULT_TIMEOUT, use_cache: bool = True) -> UpdateCheckResult:
-    current_version = current_version or effective_current_version()
+def check_for_updates(*, current_version: str = __version__, timeout: float = DEFAULT_TIMEOUT, use_cache: bool = True) -> UpdateCheckResult:
     release = None
     from_cache = False
     try:

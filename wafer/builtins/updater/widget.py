@@ -26,6 +26,16 @@ def _hex_rgb(hex_color: str) -> str:
     return f"{int(hex_color[1:3], 16)},{int(hex_color[3:5], 16)},{int(hex_color[5:7], 16)}"
 
 
+def _phase_status(phase: str) -> str:
+    if phase == "extract":
+        return t("Extracting...")
+    if phase == "verify":
+        return t("Verifying...")
+    if phase == "prepare":
+        return t("Preparing...")
+    return t("Finalizing...")
+
+
 def _button(icon_name: str, tooltip: str, text: str = "") -> QtWidgets.QPushButton:
     button = QtWidgets.QPushButton(text)
     button.setIcon(themed_icon(icon_name))
@@ -62,6 +72,9 @@ def _build_stylesheet() -> str:
             font-weight: normal;
         }}
         QLabel#update_meta {{
+            color: {p.text_primary};
+        }}
+        QLabel#update_progress_label {{
             color: {p.text_primary};
         }}
         QPushButton#primary_update_btn {{
@@ -122,6 +135,7 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
         self._refresh_requested = False
         self._stage_in_progress = False
         self._cancel_requested = False
+        self._stage_phase = "download"
         self._last_percent = -1
 
         self.setStyleSheet(_build_stylesheet())
@@ -159,8 +173,19 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
 
         self._progress = QtWidgets.QProgressBar()
         self._progress.setRange(0, 100)
-        self._progress.setTextVisible(True)
-        self._progress.hide()
+        self._progress.setTextVisible(False)
+        self._progress.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+
+        self._progress_label = QtWidgets.QLabel()
+        self._progress_label.setObjectName("update_progress_label")
+
+        self._progress_row = QtWidgets.QWidget()
+        progress_row = QtWidgets.QHBoxLayout(self._progress_row)
+        progress_row.setContentsMargins(0, 0, 0, 0)
+        progress_row.setSpacing(dpix(6))
+        progress_row.addWidget(self._progress, 1)
+        progress_row.addWidget(self._progress_label)
+        self._progress_row.hide()
 
         self._skip_btn = _button("check", t("Skip automatic notification until the next version"), t("Skip until next version"))
         self._skip_btn.setObjectName("secondary_update_btn")
@@ -194,7 +219,7 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
         layout.addWidget(self._current_label)
         layout.addWidget(self._browser, 1)
         layout.addWidget(self._auto_check)
-        layout.addWidget(self._progress)
+        layout.addWidget(self._progress_row)
         layout.addSpacing(dpix(4))
         layout.addLayout(button_row)
 
@@ -216,7 +241,7 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
         self._skip_btn.setEnabled(False)
         self._later_btn.setEnabled(True)
         self._primary_btn.show()
-        self._progress.hide()
+        self._progress_row.hide()
         self._update_action_buttons()
 
     def showEvent(self, event):
@@ -241,7 +266,7 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
         self._check_btn.setEnabled(False)
 
         def task():
-            result = check_for_updates(current_version=__version__)
+            result = check_for_updates()
             self._dispatcher.invoke(lambda: self.apply_check_result(result, explicit=explicit))
 
         self._dispatcher.post(task, priority=5)
@@ -335,11 +360,21 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
 
         if state_name == "cancelling":
             self._apply_primary_button(
-                text=t("Cancelling..."),
+                text=t("Cancel Download"),
                 tooltip=t("Cancelling the update download"),
                 enabled=False,
                 icon_name="save",
                 action_state="cancelling",
+            )
+            return
+
+        if state_name == "finalizing":
+            self._apply_primary_button(
+                text=t("Restart to Update"),
+                tooltip=t("Finishing the update; you can restart once it is ready"),
+                enabled=False,
+                icon_name="refresh",
+                action_state="disabled",
             )
             return
 
@@ -364,6 +399,8 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
         if ready:
             return "restart"
         if self._stage_in_progress:
+            if self._stage_phase != "download":
+                return "finalizing"
             return "cancelling" if self._cancel_requested else "cancel"
         if newer:
             return "download" if info.supports_in_app_update else "download_page"
@@ -393,8 +430,8 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
             return
         if state_name == "cancel":
             self._cancel_requested = True
-            self._status.setText(t("Cancelling download..."))
-            self._status.show()
+            self._progress.setRange(0, 0)
+            self._progress_label.setText(t("Cancelling..."))
             self._update_action_buttons()
             return
         if state_name != "download":
@@ -404,18 +441,20 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
             return
         self._stage_in_progress = True
         self._cancel_requested = False
+        self._stage_phase = "download"
         self._last_percent = -1
         self._check_btn.setEnabled(False)
+        self._progress.setRange(0, 100)
         self._progress.setValue(0)
-        self._progress.show()
-        self._status.setText(t("Downloading update..."))
-        self._status.show()
+        self._progress_label.setText("0%")
+        self._progress_row.show()
+        self._status.hide()
         self._update_action_buttons()
         tag, version = info.tag_name, info.latest_version
 
         def task():
             try:
-                staged = stage.stage_update(tag, version, on_progress=self._on_download_progress, is_cancelled=lambda: self._cancel_requested)
+                staged = stage.stage_update(tag, version, on_progress=self._on_download_progress, on_phase=self._on_stage_phase, is_cancelled=lambda: self._cancel_requested)
                 self._dispatcher.invoke(lambda: self._on_stage_finished(staged, ""))
             except StageCancelled:
                 self._dispatcher.invoke(lambda: self._on_stage_finished("", t("Download cancelled")))
@@ -429,13 +468,37 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
         percent = int(done * 100 / total) if total > 0 else 0
         if percent != self._last_percent:
             self._last_percent = percent
-            self._dispatcher.invoke(lambda: self._progress.setValue(percent))
+            self._dispatcher.invoke(lambda p=percent: self._set_download_percent(p))
+
+    def _set_download_percent(self, percent: int) -> None:
+        self._progress.setValue(percent)
+        self._progress_label.setText(f"{percent}%")
+
+    def _on_stage_phase(self, phase: str) -> None:
+        self._dispatcher.invoke(lambda: self._apply_stage_phase(phase))
+
+    def _apply_stage_phase(self, phase: str) -> None:
+        if not self._stage_in_progress or self._cancel_requested:
+            return
+        self._stage_phase = phase
+        if phase == "download":
+            self._progress.setRange(0, 100)
+            self._progress_label.setText(f"{max(self._last_percent, 0)}%")
+        else:
+            self._progress.setRange(0, 0)
+            self._progress_label.setText(_phase_status(phase))
+        self._status.hide()
+        self._progress_row.show()
+        self._update_action_buttons()
 
     def _on_stage_finished(self, version: str, error: str) -> None:
         self._stage_in_progress = False
         self._cancel_requested = False
+        self._stage_phase = "download"
         self._check_btn.setEnabled(True)
-        self._progress.hide()
+        self._progress.setRange(0, 100)
+        self._progress_label.setText("")
+        self._progress_row.hide()
         self._status.setText(t("Update v{version} is ready. Restart to apply", version=version) if version else error)
         self._status.setVisible(bool(version or error))
         self._update_action_buttons()

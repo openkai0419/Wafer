@@ -11,8 +11,9 @@ Generate the local source folder with ``scripts/make_local_update.bat`` (writes
 resolved from ``WAFER_UPDATE_SOURCE_DIR`` or the system temp dir, so the same
 path works from both the repo and a built portable app on the same machine.
 
-``CURRENT_VERSION`` is the version the app reports while forcing, so every check
-sees an update. Reset FORCE_UPDATE_ENABLED to False before committing or shipping.
+While forcing, ``wafer._version.__version__`` is pinned to ``DEV_VERSION`` so
+every check sees an update. Reset FORCE_UPDATE_ENABLED to False before
+committing or shipping.
 """
 from __future__ import annotations
 
@@ -22,8 +23,6 @@ from pathlib import Path
 
 FORCE_UPDATE_ENABLED = False
 #FORCE_UPDATE_ENABLED = True
-
-CURRENT_VERSION = "0.0.0"
 
 SOURCE_DIR_ENV = "WAFER_UPDATE_SOURCE_DIR"
 

@@ -31,4 +31,7 @@ def get_version() -> str:
 
 
 __version__ = get_version()
-# __version__ = "0.6.17"
+
+from . import _dev
+if _dev.FORCE_UPDATE_ENABLED:
+    __version__ = "0.6.2"

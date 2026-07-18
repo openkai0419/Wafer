@@ -18,8 +18,9 @@ from ...utils.notifier import Notifier
 from ...utils.paths import get_app_root_dir, get_launcher_path
 from ...utils.process_lock import file_lock
 from ... import _dev
+from ..._version import __version__
 from . import plan as update_plan
-from .service import MANIFEST_ASSET_NAME, USER_AGENT, effective_current_version, read_cached_latest_release
+from .service import MANIFEST_ASSET_NAME, USER_AGENT, read_cached_latest_release
 from .versioning import is_newer_version, normalize_version
 
 
@@ -69,7 +70,7 @@ def discard_staged(app_root: str | Path | None = None) -> None:
             shutil.rmtree(directory, ignore_errors=True)
 
 
-def stage_update(target_tag: str, target_version: str, *, on_progress=None, is_cancelled=None) -> str:
+def stage_update(target_tag: str, target_version: str, *, on_progress=None, on_phase=None, is_cancelled=None) -> str:
     root = get_app_root_dir()
     lock_path = update_plan.update_dir(root) / STAGE_LOCK_FILENAME
     stack = ExitStack()
@@ -79,7 +80,7 @@ def stage_update(target_tag: str, target_version: str, *, on_progress=None, is_c
         raise StageError("Another update download is already in progress") from exc
     with stack:
         try:
-            return _stage_locked(root, target_tag, target_version, on_progress, is_cancelled)
+            return _stage_locked(root, target_tag, target_version, on_progress, on_phase, is_cancelled)
         except Exception:
             discard_staged(root)
             raise
@@ -90,7 +91,12 @@ def _check_cancelled(is_cancelled) -> None:
         raise StageCancelled("Update download cancelled")
 
 
-def _stage_locked(root: Path, target_tag: str, target_version: str, on_progress, is_cancelled) -> str:
+def _emit_phase(on_phase, phase: str) -> None:
+    if on_phase is not None:
+        on_phase(phase)
+
+
+def _stage_locked(root: Path, target_tag: str, target_version: str, on_progress, on_phase, is_cancelled) -> str:
     release = read_cached_latest_release()
     if not isinstance(release, dict) or normalize_version(str(release.get("tag_name", ""))) != normalize_version(target_tag):
         raise StageError("Cached release info is outdated. Run the update check again")
@@ -116,16 +122,20 @@ def _stage_locked(root: Path, target_tag: str, target_version: str, on_progress,
         if on_progress is not None:
             on_progress(done, total)
 
+    _emit_phase(on_phase, "download")
     _acquire_package(release, str(full_asset["name"]), zip_path, str(full_asset["sha256"]), version, progress_hook)
 
     _check_cancelled(is_cancelled)
+    _emit_phase(on_phase, "extract")
     staged = update_plan.next_dir(root)
     _extract_zip(zip_path, staged, is_cancelled)
     zip_path.unlink(missing_ok=True)
 
+    _emit_phase(on_phase, "verify")
     _verify_staged(staged, version)
     _check_cancelled(is_cancelled)
 
+    _emit_phase(on_phase, "prepare")
     ops = update_plan.generate_plan(root)
     update_plan.write_plan(update_plan.plan_path(root), ops)
     write_json_file(ready_path(root), {"schema": 1, "target_version": version, "staged_at": time.strftime("%Y-%m-%dT%H:%M:%S")})
@@ -224,8 +234,8 @@ def process_apply_results() -> None:
         discard_staged(root)
         return
     version = staged_version(root)
-    if version and not is_newer_version(effective_current_version(), version):
-        AppLogger.info(f"[Updater] Discarding stale staged update v{version} (current v{effective_current_version()})")
+    if version and not is_newer_version(__version__, version):
+        AppLogger.info(f"[Updater] Discarding stale staged update v{version} (current v{__version__})")
         discard_staged(root)
 
 

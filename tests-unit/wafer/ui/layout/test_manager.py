@@ -356,32 +356,28 @@ class TestPanelSolo:
         assert mgr.solo_panel("grid")
         _process()
 
-        assert mgr.solo_target == "grid"
         assert mgr.is_panel_visible("grid")
         assert mgr.is_panel_collapsed("folder")
         assert mgr.is_panel_collapsed("viewer")
 
-    def test_solo_same_panel_restores_previous_collapsed_state(self, layout_env):
+    def test_solo_again_expands_all_docked_panels(self, layout_env):
         mgr, win, panels = layout_env
         _process(10)
         mgr.toggle_panel("folder")
         _process()
-        before = set(mgr._tree.collapsed)
 
         assert mgr.solo_panel("grid")
         _process()
         assert mgr.solo_panel("grid")
         _process()
 
-        assert mgr.solo_target is None
-        assert mgr._tree.collapsed == before
+        assert mgr._tree.collapsed == set()
 
-    def test_solo_shows_target_that_was_collapsed_then_restores(self, layout_env):
+    def test_solo_shows_target_that_was_collapsed_then_expands_all(self, layout_env):
         mgr, win, panels = layout_env
         _process(10)
         mgr.toggle_panel("grid")
         _process()
-        before = set(mgr._tree.collapsed)
 
         assert mgr.solo_panel("grid")
         _process()
@@ -392,28 +388,44 @@ class TestPanelSolo:
 
         assert mgr.solo_panel("grid")
         _process()
-        assert mgr._tree.collapsed == before
+        assert mgr._tree.collapsed == set()
 
-    def test_solo_switches_target_without_losing_original_state(self, layout_env):
+    def test_solo_switches_target(self, layout_env):
         mgr, win, panels = layout_env
         _process(10)
         mgr.toggle_panel("folder")
         _process()
-        before = set(mgr._tree.collapsed)
 
         assert mgr.solo_panel("grid")
         _process()
         assert mgr.solo_panel("viewer")
         _process()
 
-        assert mgr.solo_target == "viewer"
         assert mgr.is_panel_visible("viewer")
         assert mgr.is_panel_collapsed("folder")
         assert mgr.is_panel_collapsed("grid")
 
         assert mgr.solo_panel("viewer")
         _process()
-        assert mgr._tree.collapsed == before
+        assert mgr._tree.collapsed == set()
+
+    def test_solo_survives_save_restore_and_re_solo_expands(self, layout_env):
+        mgr, win, panels = layout_env
+        _process(10)
+
+        assert mgr.solo_panel("grid")
+        _process()
+        soloed = set(mgr._tree.collapsed)
+
+        mgr.restore_state(mgr.save_state())
+        _process(10)
+
+        assert mgr._tree.collapsed == soloed
+        assert mgr.is_panel_visible("grid")
+
+        assert mgr.solo_panel("grid")
+        _process()
+        assert mgr._tree.collapsed == set()
 
     def test_solo_collapses_nested_sibling_branch(self, qtbot):
         win = QtWidgets.QMainWindow()
@@ -481,7 +493,6 @@ class TestPanelSolo:
         assert not mgr.solo_panel("dyn")
         _process()
 
-        assert mgr.solo_target is None
         assert mgr._tree.collapsed == before
         assert "dyn" in mgr.dormant_panels()
 
@@ -515,15 +526,17 @@ class TestPanelSolo:
 
         assert mgr.panel_at_widget(child) == "dyn"
 
-    def test_manual_toggle_clears_solo_state(self, layout_env):
+    def test_manual_toggle_after_solo_expands_panel(self, layout_env):
         mgr, win, panels = layout_env
         _process(10)
         assert mgr.solo_panel("grid")
+        _process()
+        assert mgr.is_panel_collapsed("folder")
 
         mgr.toggle_panel("folder")
         _process()
 
-        assert mgr.solo_target is None
+        assert mgr.is_panel_visible("folder")
 
 
 class TestToggleEditMode:

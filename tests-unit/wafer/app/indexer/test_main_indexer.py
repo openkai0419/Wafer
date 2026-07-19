@@ -50,6 +50,14 @@ class TestIndexerProcessInit:
         topics = [call.args[0] for call in node.subscribe.call_args_list]
         assert "kv.convert_scope" in topics
 
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_subscribes_to_keyfilter_reload(self, mock_node_cls):
+        node = MagicMock()
+        mock_node_cls.return_value = node
+        IndexerProcess("test")
+        topics = [call.args[0] for call in node.subscribe.call_args_list]
+        assert "keyfilter.reload" in topics
+
 
 class TestOnDeleteRequested:
     @patch("wafer.app.indexer.main_indexer.Node")

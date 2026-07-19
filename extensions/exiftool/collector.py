@@ -57,15 +57,9 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
         self._exe_path: str | None = None
         self._last_used: float = 0.0
         self._idle_timer: threading.Timer | None = None
-        self._filter_mode: str = "blacklist"
-        self._filter_keys: set[str] = set()
-        self._load_filter()
+        from .settings import migrate_legacy_filter
 
-    def on_notify(self, payload=None) -> None:
-        self._close_process()
-        self._exe_path = None
-        self._load_filter()
-        AppLogger.info(f"[ExifToolCollector] Reloaded: mode={self._filter_mode}, {len(self._filter_keys)} keys")
+        migrate_legacy_filter()
 
     def shutdown(self):
         self._close_process()
@@ -141,11 +135,6 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
             from .parser import flatten
 
             meta, aspect = flatten(data)
-            if meta and self._filter_keys:
-                if self._filter_mode == "whitelist":
-                    meta = {k: v for k, v in meta.items() if k in self._filter_keys}
-                else:
-                    meta = {k: v for k, v in meta.items() if k not in self._filter_keys}
             return CollectorResult(
                 source=path,
                 status=True,
@@ -155,16 +144,6 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
         except Exception as e:
             AppLogger.debug(f"[exiftool] flatten failed for {path}: {e}")
             return CollectorResult(source=path, status=False)
-
-    def _load_filter(self):
-        try:
-            from .settings import read_filter_config
-
-            self._filter_mode, self._filter_keys = read_filter_config()
-        except Exception as e:
-            AppLogger.warning(f"[ExifToolCollector] Failed to load filter config: {e}", exc=e)
-            self._filter_mode = "blacklist"
-            self._filter_keys = set()
 
     def __del__(self):
         try:

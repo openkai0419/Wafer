@@ -247,6 +247,63 @@ def test_parse_batch_skips_none_meta():
     assert "exif.bad" not in tag_keys
 
 
+def test_parse_batch_blacklist_filters_meta_and_tags(monkeypatch):
+    from wafer.plugin.key_filter import KeyFilter
+
+    monkeypatch.setattr(KeyFilter, "_cache", {"exif": ("blacklist", frozenset({"secret"}))})
+    results = [
+        {
+            "source": "s",
+            "file_hash": "h",
+            "meta_info": {"width": "100", "secret": "x"},
+            "tags": {"rating": "5", "secret": "y"},
+            "status": True,
+            "collector": "exif",
+        }
+    ]
+    data = _parse_batch(results)
+    meta_keys = [e[1] for e in data["meta_info_entries"]]
+    tag_keys = [e[1] for e in data["tag_entries"]]
+    assert "exif.width" in meta_keys
+    assert "exif.secret" not in meta_keys
+    assert "exif.rating" in tag_keys
+    assert "exif.secret" not in tag_keys
+
+
+def test_parse_batch_whitelist_keeps_only_selected(monkeypatch):
+    from wafer.plugin.key_filter import KeyFilter
+
+    monkeypatch.setattr(KeyFilter, "_cache", {"exif": ("whitelist", frozenset({"width"}))})
+    results = [
+        {
+            "source": "s",
+            "meta_info": {"width": "100", "height": "50"},
+            "status": True,
+            "collector": "exif",
+        }
+    ]
+    data = _parse_batch(results)
+    meta_keys = [e[1] for e in data["meta_info_entries"]]
+    assert meta_keys == ["exif.width"]
+
+
+def test_parse_batch_unfiltered_prefix_passes_all(monkeypatch):
+    from wafer.plugin.key_filter import KeyFilter
+
+    monkeypatch.setattr(KeyFilter, "_cache", {"other": ("whitelist", frozenset())})
+    results = [
+        {
+            "source": "s",
+            "meta_info": {"a": "1", "b": "2"},
+            "status": True,
+            "collector": "exif",
+        }
+    ]
+    data = _parse_batch(results)
+    meta_keys = [e[1] for e in data["meta_info_entries"]]
+    assert set(meta_keys) == {"exif.a", "exif.b"}
+
+
 def test_parse_batch_multi_path():
     child_a = build_virtual_path("zip.zip", "a.png")
     child_b = build_virtual_path("zip.zip", "b.png")

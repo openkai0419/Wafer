@@ -1,4 +1,91 @@
 {
+  "Reload counts": {
+    "en": "Reload counts"
+  },
+  "Targets:": {
+    "en": "Targets:"
+  },
+  "Delete existing filtered data": {
+    "en": "Delete existing filtered data"
+  },
+  "Delete existing data for newly blocked keys": {
+    "en": "Delete existing data for newly blocked keys"
+  },
+  "ExifTool Preview": {
+    "en": "ExifTool Preview"
+  },
+  "Filter Manager": {
+    "en": "Filter Manager"
+  },
+  "Filter settings have been modified.\nThis will apply to all databases.": {
+    "en": "Filter settings have been modified.\nThis will apply to all databases."
+  },
+  "Re-collect after deletion": {
+    "en": "Re-collect after deletion"
+  },
+  "Uncheck All": {
+    "en": "Uncheck All"
+  },
+  "Use": {
+    "en": "Use"
+  },
+  "Value": {
+    "en": "Value"
+  },
+  "State": {
+    "en": "State"
+  },
+  "Block": {
+    "en": "Block"
+  },
+  "Edited keys ({n})": {
+    "en": "Edited keys ({n})"
+  },
+  "All individual  →  rating_general, ...": {
+    "en": "All individual  →  rating_general, ..."
+  },
+  "Character": {
+    "en": "Character"
+  },
+  "Clear All": {
+    "en": "Clear All"
+  },
+  "Click tags in Raw preview to toggle": {
+    "en": "Click tags in Raw preview to toggle"
+  },
+  "Device: {device}  ({name})\nModel: wd-swinv2-tagger-v3 (SmilingWolf)": {
+    "en": "Device: {device}  ({name})\nModel: wd-swinv2-tagger-v3 (SmilingWolf)"
+  },
+  "Drop a file here for preview": {
+    "en": "Drop a file here for preview"
+  },
+  "General": {
+    "en": "General"
+  },
+  "Move": {
+    "en": "Move"
+  },
+  "Output": {
+    "en": "Output"
+  },
+  "Rating": {
+    "en": "Rating"
+  },
+  "Raw": {
+    "en": "Raw"
+  },
+  "Tag Blacklist": {
+    "en": "Tag Blacklist"
+  },
+  "Threshold:": {
+    "en": "Threshold:"
+  },
+  "Top + score  →  rating, rating_score": {
+    "en": "Top + score  →  rating, rating_score"
+  },
+  "Top name only  →  rating": {
+    "en": "Top name only  →  rating"
+  },
   "Continue?": {
     "en": "Continue?"
   },
@@ -115,9 +202,6 @@
   },
   "Blacklist (block selected)": {
     "en": "Blacklist (block selected)"
-  },
-  "Block": {
-    "en": "Block"
   },
   "Check All": {
     "en": "Check All"
@@ -1141,5 +1225,23 @@
   },
   "И (↘)": {
     "en": "И (↘)"
+  },
+  "  {prefix}: all files": {
+    "en": "  {prefix}: all files"
+  },
+  "  {prefix}: no collector (delete only)": {
+    "en": "  {prefix}: no collector (delete only)"
+  },
+  "Filter settings saved ({n} changed)": {
+    "en": "Filter settings saved ({n} changed)"
+  },
+  "Metadata Filter Manager": {
+    "en": "Metadata Filter Manager"
+  },
+  "Metadata Filter": {
+    "en": "Metadata Filter"
+  },
+  "Re-collect targets:": {
+    "en": "Re-collect targets:"
   }
 }

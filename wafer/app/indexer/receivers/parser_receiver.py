@@ -6,11 +6,14 @@ from typing import Any
 from ....utils.logs import AppLogger
 from ....utils.profiling import profiler
 from ....plugin.parser.handler import parser_resolver
+from ....plugin.key_filter import KeyFilter
 from ._batch_utils import BATCH_SIZE, FLUSH_DELAY, ResultBuffer, try_float
 from ..db_writer import DatabaseWriter
 from ..runtime.progress_aggregator import ProgressAggregator
 from ..runtime.scheduler import TaskScheduler
 from ..runtime.task import Task, TaskPriority
+
+_UNSET = object()
 
 
 def trigger_parser_pending(
@@ -147,6 +150,7 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
     tag_entries: list[tuple] = []
     delete_entries: list[tuple] = []
     collector_status_map: dict[tuple[str, str], tuple] = {}
+    predicate_cache: dict[str, Any] = {}
     now = time.time()
 
     for r in results:
@@ -168,11 +172,19 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
 
         if ok:
             prefix = f"{parser}." if parser else ""
+            keep = predicate_cache.get(parser, _UNSET)
+            if keep is _UNSET:
+                keep = KeyFilter.predicate(parser) if parser else None
+                predicate_cache[parser] = keep
             for k, v in meta_info.items():
-                if v is not None:
+                if v is not None and (keep is None or keep(k)):
                     meta_info_entries.append((path, f"{prefix}{k}", str(v), try_float(v)))
             if file_hash:
-                tag_entries.extend((file_hash, f"{prefix}{k}", str(v), try_float(v)) for k, v in tags.items() if v is not None)
+                tag_entries.extend(
+                    (file_hash, f"{prefix}{k}", str(v), try_float(v))
+                    for k, v in tags.items()
+                    if v is not None and (keep is None or keep(k))
+                )
             if delete_keys:
                 delete_entries.append((path, file_hash, delete_keys))
 

@@ -15,6 +15,7 @@ from .query.base import BaseFilterPlugin, BaseSortPlugin
 from .layout.base import BaseLayoutPlugin
 from .panel.base import BasePanelPlugin
 from .config import PluginConfig
+from .key_filter import KeyFilter, MODE_BLACKLIST, MODE_WHITELIST
 from .key_value_panel.base import BaseKeyValuePanelPlugin
 from .rename.base import BaseRenameSourcePlugin, SegmentInfo
 from .imageloader.base import BaseImageLoader

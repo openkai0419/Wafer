@@ -46,6 +46,7 @@ class IndexerProcess:
         self.zmq.subscribe("db.delete", lambda msg: self._on_delete_requested() or True)
         self.zmq.subscribe("delete.collector", self._on_delete_collector)
         self.zmq.subscribe("delete.keys", self._on_delete_keys)
+        self.zmq.subscribe("keyfilter.reload", self._on_keyfilter_reload)
         self.zmq.subscribe("tags.update", self._on_tags_update)
         self.zmq.subscribe("kv.convert_scope", self._on_kv_convert_scope)
         self.zmq.start()
@@ -315,6 +316,13 @@ class IndexerProcess:
                 ),
             )
         )
+        return True
+
+    def _on_keyfilter_reload(self, msg):
+        from ...plugin.key_filter import KeyFilter
+
+        KeyFilter.reload()
+        AppLogger.info("[Indexer] Key filter reloaded")
         return True
 
     def _on_tags_update(self, msg):

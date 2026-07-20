@@ -317,22 +317,18 @@ class TestOnDeleteKeys:
         proc.writer.reset_collector_status.assert_called_once_with("exif")
 
     @patch("wafer.app.indexer.main_indexer.Node")
-    def test_sends_delete_complete(self, mock_node_cls):
-        node = MagicMock()
-        mock_node_cls.return_value = node
+    def test_sends_update_on_complete(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
         proc = IndexerProcess("test")
         proc.writer = MagicMock()
         proc.scheduler = MagicMock()
+        proc._progress = MagicMock()
         msg = MagicMock()
         msg.payload = {"keys": ["exif.width"], "collector": "exif", "re_collect": False}
         proc._on_delete_keys(msg)
         task = proc.scheduler.submit.call_args[0][0]
         task.on_complete()
-        node.send.assert_called_with(
-            "delete.complete",
-            {"collector": "exif", "keys": ["exif.width"], "db": "test"},
-            dst="viewer",
-        )
+        proc._progress.send_event.assert_called_with("update")
 
     @patch("wafer.app.indexer.main_indexer.Node")
     def test_invalid_payload_returns_true(self, mock_node_cls):
@@ -356,11 +352,11 @@ class TestOnDeleteCollector:
 
     @patch("wafer.app.indexer.main_indexer.Node")
     def test_submits_delete_collector_task(self, mock_node_cls):
-        node = MagicMock()
-        mock_node_cls.return_value = node
+        mock_node_cls.return_value = MagicMock()
         proc = IndexerProcess("test")
         proc.writer = MagicMock()
         proc.scheduler = MagicMock()
+        proc._progress = MagicMock()
         msg = MagicMock()
         msg.payload = {"collector": "color", "re_collect": True}
         assert proc._on_delete_collector(msg) is True
@@ -371,11 +367,7 @@ class TestOnDeleteCollector:
         task.run()
         proc.writer.delete_collector.assert_called_once_with("color", re_collect=True)
         task.on_complete()
-        node.send.assert_called_with(
-            "delete.complete",
-            {"collector": "color", "db": "test"},
-            dst="viewer",
-        )
+        proc._progress.send_event.assert_called_with("update")
 
 
 class TestOnKvConvertScope:

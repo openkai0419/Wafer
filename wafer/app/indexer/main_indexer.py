@@ -275,11 +275,7 @@ class IndexerProcess:
                 "delete_collector_data",
                 priority=TaskPriority.USER_REQUEST,
                 run=lambda: self.writer.delete_collector(collector, re_collect=re_collect),
-                on_complete=lambda: self.zmq.send(
-                    "delete.complete",
-                    {"collector": collector, "db": self.db_name},
-                    dst="viewer",
-                ),
+                on_complete=lambda: self._progress.send_event("update"),
             )
         )
         return True
@@ -309,11 +305,7 @@ class IndexerProcess:
                 "delete_keys",
                 priority=TaskPriority.USER_REQUEST,
                 run=_run,
-                on_complete=lambda: self.zmq.send(
-                    "delete.complete",
-                    {"collector": collector, "keys": keys, "db": self.db_name},
-                    dst="viewer",
-                ),
+                on_complete=lambda: self._progress.send_event("update"),
             )
         )
         return True

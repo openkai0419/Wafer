@@ -1,4 +1,22 @@
 {
+  "Background Restart Required": {
+    "en": "Background Restart Required"
+  },
+  "HEAVY Extension": {
+    "en": "HEAVY Extension"
+  },
+  "Multiple HEAVY extensions are enabled:": {
+    "en": "Multiple HEAVY extensions are enabled:"
+  },
+  "Not Now": {
+    "en": "Not Now"
+  },
+  "Plugin settings have been saved.\nBackground services restart is required.": {
+    "en": "Plugin settings have been saved.\nBackground services restart is required."
+  },
+  "This may cause high GPU usage or instability.": {
+    "en": "This may cause high GPU usage or instability."
+  },
   "Reload counts": {
     "en": "Reload counts"
   },

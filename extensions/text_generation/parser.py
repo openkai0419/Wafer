@@ -3,8 +3,6 @@ import json
 from wafer.plugin import BaseSingletonParser, ParserResult
 from wafer.utils.logs import AppLogger
 
-using_keywords = ["noise_schedule", "prompt", "steps", "uc", "sampler", "seed", "cfg", "model"]
-
 
 class NovelAiImageParser(BaseSingletonParser):
     NAME = "novelai"
@@ -26,5 +24,5 @@ class NovelAiImageParser(BaseSingletonParser):
         if not isinstance(parsed, dict):
             AppLogger.debug(f"NovelAiImageParser JSON was not dict: {raw}")
             return ParserResult(source=path, status=False)
-        meta_info = {k: str(v) for k, v in parsed.items() if k in using_keywords}
-        return ParserResult(source=path, status=True, meta_info=meta_info, delete_keys=["exiftool.PNG:Comment", "exiftool.PNG:Description"])
+        meta_info = {k: str(v) for k, v in parsed.items()}
+        return ParserResult(source=path, status=True, meta_info=meta_info, delete_keys=["exiftool.PNG:Comment"])

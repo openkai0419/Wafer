@@ -85,10 +85,22 @@ class _PluginRow(QtWidgets.QWidget):
 
         name_label = QtWidgets.QLabel(plugin_cls.NAME)
 
-        extensions = getattr(plugin_cls, "EXTENSIONS", ())
-        ext_text = ", ".join(extensions) if extensions else ""
+        trigger_keys = getattr(plugin_cls, "TRIGGER_KEYS", ())
+        if trigger_keys:
+            from ...plugin.parser.base import required_collectors
+            from .badge_texts import required_collectors_text
+
+            required = required_collectors(trigger_keys)
+            ext_text = required_collectors_text(required)
+            ext_tooltip = ext_text
+        else:
+            extensions = getattr(plugin_cls, "EXTENSIONS", ())
+            ext_text = ", ".join(extensions) if extensions else ""
+            ext_tooltip = ""
         ext_label = ElidingLabel(ext_text, minimum_hint_width=dpix(40), horizontal_policy=QtWidgets.QSizePolicy.Expanding)
         ext_label.setStyleSheet(f"color: #888; font-size: {dpix(11)}px;")
+        if ext_tooltip:
+            ext_label.setToolTip(ext_tooltip)
 
         row_layout = QtWidgets.QHBoxLayout(self)
         row_layout.setContentsMargins(dpix(4), dpix(1), dpix(4), dpix(1))

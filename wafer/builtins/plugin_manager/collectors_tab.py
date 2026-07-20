@@ -7,7 +7,7 @@ from ...core.color.theme import ThemeManager
 from ...core.qt.color_utils import mix_colors
 from ...core.qt.icon_engine import themed_icon
 from ...plugin.badges import ExtensionBadge
-from .badge_texts import badge_tooltip_text, heavy_multi_warning_text, heavy_warning_title
+from .badge_texts import badge_tooltip_text, heavy_multi_warning_text, heavy_warning_title, parser_requirement_question_text, parser_requirement_text, parser_requirement_title
 
 
 class _ClickableLabel(QtWidgets.QLabel):
@@ -165,6 +165,8 @@ class CollectorsTab(QtWidgets.QWidget):
                 cb.setChecked(name in self._initial_state.get(db, set()))
                 if name in self._heavy_collectors:
                     cb.stateChanged.connect(lambda state, n=name: self._on_heavy_toggled(state, n))
+                if name in self._parser_names:
+                    cb.stateChanged.connect(lambda state, n=name, d=db: self._on_parser_toggled(state, n, d))
                 self._matrix[(name, db)] = cb
                 grid.addWidget(cb, row_idx + 1, col_idx + 2, QtCore.Qt.AlignCenter)
 
@@ -197,6 +199,37 @@ class CollectorsTab(QtWidgets.QWidget):
                 heavy_warning_title(),
                 heavy_multi_warning_text([current_folder, *other_folders]),
             )
+
+    def _on_parser_toggled(self, state: int, name: str, db: str):
+        if state != QtCore.Qt.Checked.value:
+            return
+        from ...plugin.parser.handler import parser_resolver
+
+        required = parser_resolver.required_collectors(name)
+        if not required:
+            return
+        if any((collector, db) in self._matrix and self._matrix[(collector, db)].isChecked() for collector in required):
+            return
+        present = [collector for collector in required if (collector, db) in self._matrix]
+        missing = [collector for collector in required if (collector, db) not in self._matrix]
+        if not present:
+            QtWidgets.QMessageBox.warning(
+                self,
+                parser_requirement_title(False),
+                parser_requirement_text(name, db, required, missing),
+            )
+            return
+        available_required = {collector: required[collector] for collector in present}
+        answer = QtWidgets.QMessageBox.question(
+            self,
+            parser_requirement_title(True),
+            parser_requirement_question_text(name, db, available_required),
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.Yes,
+        )
+        if answer == QtWidgets.QMessageBox.Yes:
+            for collector in present:
+                self._matrix[(collector, db)].setChecked(True)
 
     @staticmethod
     def _heavy_badge_color() -> QtGui.QColor:

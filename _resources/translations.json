@@ -1,4 +1,22 @@
 {
+  "Create": {
+    "en": "Create"
+  },
+  "Create New": {
+    "en": "Create New"
+  },
+  "Enter a name for the new table": {
+    "en": "Enter a name for the new table"
+  },
+  "Please enter text...": {
+    "en": "Please enter text..."
+  },
+  "Delete table? : {dbname}": {
+    "en": "Delete table? : {dbname}"
+  },
+  "Select folder": {
+    "en": "Select folder"
+  },
   "Background Restart Required": {
     "en": "Background Restart Required"
   },
@@ -16,6 +34,21 @@
   },
   "This may cause high GPU usage or instability.": {
     "en": "This may cause high GPU usage or instability."
+  },
+  "Requires": {
+    "en": "Requires"
+  },
+  "Enable Required Collector?": {
+    "en": "Enable Required Collector?"
+  },
+  "Required Collector Unavailable": {
+    "en": "Required Collector Unavailable"
+  },
+  "Parser '{parser}' on '{db}' needs a disabled collector:": {
+    "en": "Parser '{parser}' on '{db}' needs a disabled collector:"
+  },
+  "Enable these extensions first:": {
+    "en": "Enable these extensions first:"
   },
   "Reload counts": {
     "en": "Reload counts"

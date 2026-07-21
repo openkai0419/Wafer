@@ -1,4 +1,31 @@
 {
+  "Add filter after this": {
+    "en": "Add filter after this"
+  },
+  "Delete filter": {
+    "en": "Delete filter"
+  },
+  "Filter Menu": {
+    "en": "Filter Menu"
+  },
+  "Move to top": {
+    "en": "Move to top"
+  },
+  "Move up": {
+    "en": "Move up"
+  },
+  "Delete Collected Data": {
+    "en": "Delete Collected Data"
+  },
+  "Delete data for {count} prefix(es)?\n\n": {
+    "en": "Delete data for {count} prefix(es)?\n\n"
+  },
+  "Selected: {count} items": {
+    "en": "Selected: {count} items"
+  },
+  "Moving files...": {
+    "en": "Moving files..."
+  },
   "Create": {
     "en": "Create"
   },

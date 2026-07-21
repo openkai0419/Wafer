@@ -155,7 +155,7 @@ class KeyFilterWidget(QtWidgets.QWidget):
                 tab.mark_stale()
         self._refresh_current()
 
-    def _insert_tab_sorted(self, prefix: str, tab: "_FilterTab"):
+    def _insert_tab_sorted(self, prefix: str, tab: _FilterTab):
         index = self._tabs.count()
         for i in range(self._tabs.count()):
             if prefix < self._tabs.tabText(i):
@@ -677,10 +677,7 @@ def _query_prefix_keys(prefix: str) -> list[tuple[str, int]]:
 def _query_sample_values(key: str, limit: int = 10) -> list[tuple[str, str, str]]:
     results: list[tuple[str, str, str]] = []
     remaining = limit
-    sql = (
-        "SELECT * FROM (SELECT path, value FROM meta_info WHERE key = ? LIMIT ?)"
-        " UNION ALL SELECT * FROM (SELECT file_hash, value FROM tags WHERE key = ? LIMIT ?)"
-    )
+    sql = "SELECT * FROM (SELECT path, value FROM meta_info WHERE key = ? LIMIT ?) UNION ALL SELECT * FROM (SELECT file_hash, value FROM tags WHERE key = ? LIMIT ?)"
     for db_name in list_setting_db_names():
         if remaining <= 0:
             break

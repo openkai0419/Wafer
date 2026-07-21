@@ -155,11 +155,7 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
                 if v is not None and (keep is None or keep(k)):
                     meta_info_entries.append((path, f"{prefix}{k}", str(v), try_float(v)))
             if file_hash:
-                tag_entries.extend(
-                    (file_hash, f"{prefix}{k}", str(v), try_float(v))
-                    for k, v in tags.items()
-                    if v is not None and (keep is None or keep(k))
-                )
+                tag_entries.extend((file_hash, f"{prefix}{k}", str(v), try_float(v)) for k, v in tags.items() if v is not None and (keep is None or keep(k)))
 
     return {
         "image_entries": image_entries,

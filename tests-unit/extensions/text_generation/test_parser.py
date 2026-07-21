@@ -12,7 +12,7 @@ class TestNovelAiImageParser:
         assert isinstance(self.parser, BaseSingletonParser)
 
     def test_trigger_keys(self):
-        assert self.parser.TRIGGER_KEYS == ("exiftool.PNG:Comment",)
+        assert self.parser.TRIGGER_KEYS == ("exiftool.PNG:Comment", "exiftool.ExifIFD:UserComment")
 
     def test_valid_json_dict(self):
         data = {"prompt": "a cat", "steps": 20, "cfg": 7.5}
@@ -24,14 +24,18 @@ class TestNovelAiImageParser:
             "steps": "20",
             "cfg": "7.5",
         }
-        assert result.delete_keys == ["exiftool.PNG:Comment", "exiftool.PNG:Description"]
+        assert result.delete_keys == ["exiftool.PNG:Comment", "exiftool.ExifIFD:UserComment"]
 
-    def test_nested_value_stringified(self):
-        data = {"model": {"name": "v3", "hash": "abc"}}
+    def test_nested_value_flattened_recursively(self):
+        data = {"model": {"name": "v3", "details": {"hash": "abc", "samplers": ["k_euler"]}}}
         metadata = {"exiftool.PNG:Comment": json.dumps(data)}
         result = self.parser.process("img.png", (100, 1.0), metadata)
         assert result.status is True
-        assert result.meta_info["model"] == "{'name': 'v3', 'hash': 'abc'}"
+        assert result.meta_info == {
+            "model/name": "v3",
+            "model/details/hash": "abc",
+            "model/details/samplers": "['k_euler']",
+        }
 
     def test_empty_dict(self):
         metadata = {"exiftool.PNG:Comment": "{}"}

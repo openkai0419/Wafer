@@ -14,4 +14,3 @@ def migrate_legacy_filter() -> None:
     if (keys or mode != MODE_BLACKLIST) and not KeyFilter.get("exiftool")[1]:
         KeyFilter.set_keys("exiftool", mode, keys)
     exiftool_config.save(migrated=True)
-

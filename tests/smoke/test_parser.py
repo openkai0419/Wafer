@@ -126,7 +126,7 @@ class TestSmokeParser:
 
         assert result.status is True
         assert result.meta_info == {"seed": "42", "model": "nai-v3"}
-        assert result.delete_keys == ["exiftool.PNG:Comment", "exiftool.PNG:Description"]
+        assert result.delete_keys == ["exiftool.PNG:Comment", "exiftool.ExifIFD:UserComment"]
 
     def test_plugin_fail_on_non_json(self):
         plugin = parser_resolver.registry.instance("novelai")

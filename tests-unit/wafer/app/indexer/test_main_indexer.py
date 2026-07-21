@@ -369,6 +369,33 @@ class TestOnDeleteCollector:
         task.on_complete()
         proc._progress.send_event.assert_called_with("update")
 
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_recollect_only_resets_status(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        proc.writer = MagicMock()
+        proc.scheduler = MagicMock()
+        proc._progress = MagicMock()
+        msg = MagicMock()
+        msg.payload = {"collector": "color", "delete": False, "re_collect": True}
+        assert proc._on_delete_collector(msg) is True
+        task = proc.scheduler.submit.call_args[0][0]
+        task.run()
+        proc.writer.reset_collector_status.assert_called_once_with("color")
+        proc.writer.delete_collector.assert_not_called()
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_no_delete_no_recollect_is_noop(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        proc.writer = MagicMock()
+        proc.scheduler = MagicMock()
+        proc._progress = MagicMock()
+        msg = MagicMock()
+        msg.payload = {"collector": "color", "delete": False, "re_collect": False}
+        assert proc._on_delete_collector(msg) is True
+        proc.scheduler.submit.assert_not_called()
+
 
 class TestOnKvConvertScope:
     @patch("wafer.app.indexer.main_indexer.Node")

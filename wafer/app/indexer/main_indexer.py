@@ -265,16 +265,24 @@ class IndexerProcess:
             AppLogger.warning(f"delete.collector: invalid payload: {type(payload)}")
             return True
         collector = payload.get("collector", "")
+        delete = payload.get("delete", True)
         re_collect = payload.get("re_collect", False)
         if not collector or not self.writer or not self.scheduler:
             return True
-        AppLogger.info(f"[Indexer] Delete collector={collector}, re_collect={re_collect}")
+        if not delete and not re_collect:
+            return True
+        AppLogger.info(f"[Indexer] Data action collector={collector}, delete={delete}, re_collect={re_collect}")
+
+        if delete:
+            run = lambda: self.writer.delete_collector(collector, re_collect=re_collect)
+        else:
+            run = lambda: self.writer.reset_collector_status(collector)
 
         self.scheduler.submit(
             Task.create(
                 "delete_collector_data",
                 priority=TaskPriority.USER_REQUEST,
-                run=lambda: self.writer.delete_collector(collector, re_collect=re_collect),
+                run=run,
                 on_complete=lambda: self._progress.send_event("update"),
             )
         )

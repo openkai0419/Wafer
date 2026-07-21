@@ -842,7 +842,7 @@ class TestDatabaseManagerTabs:
         assert dlg._tabs.tabText(0) == "Paths"
         assert dlg._tabs.tabText(1) == "Data"
 
-    def test_send_delete(self, qtbot, tmp_path, monkeypatch):
+    def test_apply_data_actions(self, qtbot, tmp_path, monkeypatch):
         monkeypatch.setattr(
             "wafer.builtins.database_manager.widget.list_setting_db_names",
             lambda: ["db1"],
@@ -860,13 +860,62 @@ class TestDatabaseManagerTabs:
         dlg = DatabaseManagerWidget()
         qtbot.addWidget(dlg)
 
-        dlg._send_delete([("db1", "exif")], True)
-        mock_node.send_reliable.assert_called_once_with(
+        dlg._apply_data_actions([("db1", "exif", True, False), ("db1", "nai", False, True)])
+        assert mock_node.send_reliable.call_count == 2
+        mock_node.send_reliable.assert_any_call(
             "delete.collector",
-            {"collector": "exif", "re_collect": True},
+            {"collector": "exif", "delete": True, "re_collect": False},
             dst="indexer",
             db="db1",
         )
+        mock_node.send_reliable.assert_any_call(
+            "delete.collector",
+            {"collector": "nai", "delete": False, "re_collect": True},
+            dst="indexer",
+            db="db1",
+        )
+
+    def test_apply_data_actions_clears_on_success(self, qtbot, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.list_setting_db_names",
+            lambda: ["db1"],
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.setting_db_path",
+            lambda name: str(tmp_path / f"{name}.db"),
+        )
+        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+
+        monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: MagicMock())
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
+
+        dlg = DatabaseManagerWidget()
+        qtbot.addWidget(dlg)
+        dlg._data_tab.clear_checks = MagicMock()
+
+        dlg._apply_data_actions([("db1", "exif", True, False)])
+        dlg._data_tab.clear_checks.assert_called_once()
+
+    def test_apply_data_actions_no_node_keeps_checks(self, qtbot, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.list_setting_db_names",
+            lambda: ["db1"],
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.setting_db_path",
+            lambda name: str(tmp_path / f"{name}.db"),
+        )
+        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+
+        monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: None)
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
+
+        dlg = DatabaseManagerWidget()
+        qtbot.addWidget(dlg)
+        dlg._data_tab.clear_checks = MagicMock()
+
+        dlg._apply_data_actions([("db1", "exif", True, False)])
+        dlg._data_tab.clear_checks.assert_not_called()
 
     def test_paths_tab_uses_scroll_area(self, qtbot, tmp_path, monkeypatch):
         from PySide6 import QtWidgets
@@ -1042,6 +1091,7 @@ class TestSplitters:
         dlg.show()
         dlg.resize(400, 800)
         from PySide6.QtWidgets import QApplication
+
         QApplication.processEvents()
 
         state = dlg._save_ui_state()
@@ -1073,6 +1123,7 @@ class TestSplitters:
         dlg.show()
         dlg.resize(400, 800)
         from PySide6.QtWidgets import QApplication
+
         QApplication.processEvents()
 
         saved_paths = dlg._save_ui_state()

@@ -1,6 +1,6 @@
 import json
 
-from extensions.text_generation.parser import NovelAiImageParser
+from extensions.text_generation.novelai_parser import NovelAiImageParser
 from wafer.plugin.parser.base import BaseSingletonParser, ParserResult
 
 

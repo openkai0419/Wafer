@@ -1,10 +1,12 @@
 ## Text Generation Extension
 
-Extracts generation parameters embedded in NovelAI images.
+Extracts generation parameters embedded in AI-generated images.
 
-### Features
-- **Metadata Extraction** — Parses EXIF Comment JSON to recover prompt, steps, sampler, seed, CFG, model and other fields
-- **Automatic Cleanup** — Removes raw JSON from displayed metadata after extraction
+### Parsers
+- **NovelAI** — Parses EXIF Comment JSON to recover prompt, steps, sampler, seed, CFG, model and nested fields
+- **WebUI** — Parses Stable Diffusion WebUI / Forge infotext (PNG `parameters` or EXIF UserComment). Extracts prompt, negative prompt and the `Key: value` parameter line. `Size` is split into `width`/`height`; quoted JSON values (e.g. `Hashes`) are expanded recursively
+- **ComfyUI** — Extracts workflow data from video comments
 
 ### Notes
-Disabled by default. Enable in Plugin Manager to activate.
+All parsers are disabled by default. Enable them in Plugin Manager to activate.
+

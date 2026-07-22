@@ -340,3 +340,36 @@ class TestQuerySampleValues:
         rows = _query_sample_values("exif.Make", limit=1)
         assert len(rows) == 1
 
+    def test_orders_by_value_length_desc(self, monkeypatch):
+        import sqlite3
+        from wafer.builtins.key_filter.panel import _query_sample_values
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE meta_info (path TEXT, key TEXT, value TEXT)")
+        conn.execute("CREATE TABLE tags (file_hash TEXT, key TEXT, value TEXT)")
+        for i, val in enumerate(["ab", "abcd", "a", "abc"]):
+            conn.execute("INSERT INTO meta_info VALUES (?, 'k.v', ?)", (f"/{i}.jpg", val))
+        conn.commit()
+        monkeypatch.setattr(f"{MODULE}.list_setting_db_names", lambda: ["db1"])
+        monkeypatch.setattr(f"{MODULE}._open_ro", lambda name: conn)
+        rows = _query_sample_values("k.v", limit=3)
+        assert [r[2] for r in rows] == ["abcd", "abc", "ab"]
+
+    def test_fills_remaining_with_empty(self, monkeypatch, tmp_path):
+        import sqlite3
+        from wafer.builtins.key_filter.panel import _query_sample_values
+        db_file = tmp_path / "sample.db"
+        setup = sqlite3.connect(db_file)
+        setup.execute("CREATE TABLE meta_info (path TEXT, key TEXT, value TEXT)")
+        setup.execute("CREATE TABLE tags (file_hash TEXT, key TEXT, value TEXT)")
+        setup.execute("INSERT INTO meta_info VALUES ('/x.jpg', 'k.v', 'meaningful')")
+        setup.execute("INSERT INTO meta_info VALUES ('/y.jpg', 'k.v', NULL)")
+        setup.execute("INSERT INTO meta_info VALUES ('/z.jpg', 'k.v', '')")
+        setup.commit()
+        setup.close()
+        monkeypatch.setattr(f"{MODULE}.list_setting_db_names", lambda: ["db1"])
+        monkeypatch.setattr(f"{MODULE}._open_ro", lambda name: sqlite3.connect(db_file))
+        rows = _query_sample_values("k.v", limit=3)
+        assert rows[0][2] == "meaningful"
+        assert len(rows) == 3
+        assert all(v in (None, "") for v in [r[2] for r in rows[1:]])
+

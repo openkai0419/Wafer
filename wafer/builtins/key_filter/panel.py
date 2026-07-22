@@ -674,23 +674,41 @@ def _query_prefix_keys(prefix: str) -> list[tuple[str, int]]:
     return sorted(merged.items(), key=lambda x: x[0])
 
 
-def _query_sample_values(key: str, limit: int = 10) -> list[tuple[str, str, str]]:
-    results: list[tuple[str, str, str]] = []
-    remaining = limit
-    sql = "SELECT * FROM (SELECT path, value FROM meta_info WHERE key = ? LIMIT ?) UNION ALL SELECT * FROM (SELECT file_hash, value FROM tags WHERE key = ? LIMIT ?)"
+_SAMPLE_POOL = 1000
+_NONEMPTY_SAMPLE_SQL = (
+    "SELECT * FROM (SELECT path, value FROM meta_info WHERE key = ? AND value IS NOT NULL AND value != '' LIMIT ?)"
+    " UNION ALL SELECT * FROM (SELECT file_hash, value FROM tags WHERE key = ? AND value IS NOT NULL AND value != '' LIMIT ?)"
+)
+_EMPTY_SAMPLE_SQL = (
+    "SELECT * FROM (SELECT path, value FROM meta_info WHERE key = ? AND (value IS NULL OR value = '') LIMIT ?)"
+    " UNION ALL SELECT * FROM (SELECT file_hash, value FROM tags WHERE key = ? AND (value IS NULL OR value = '') LIMIT ?)"
+)
+
+
+def _collect_samples(sql: str, key: str, budget: int) -> list[tuple[str, str, str]]:
+    out: list[tuple[str, str, str]] = []
+    remaining = budget
     for db_name in list_setting_db_names():
         if remaining <= 0:
             break
         conn = None
         try:
             conn = _open_ro(db_name)
-            rows = conn.execute(sql, (key, remaining, key, remaining)).fetchall()
-            for row in rows[:remaining]:
-                results.append((db_name, row[0], row[1]))
-            remaining -= len(rows[:remaining])
+            rows = conn.execute(sql, (key, remaining, key, remaining)).fetchall()[:remaining]
+            out.extend((db_name, row[0], row[1]) for row in rows)
+            remaining -= len(rows)
         except Exception as e:
             AppLogger.warning(f"[MetadataFilter] Sample query failed for {key} in {db_name}: {e}", exc=e)
         finally:
             if conn:
                 conn.close()
+    return out
+
+
+def _query_sample_values(key: str, limit: int = 20, pool: int = _SAMPLE_POOL) -> list[tuple[str, str, str]]:
+    candidates = _collect_samples(_NONEMPTY_SAMPLE_SQL, key, pool)
+    candidates.sort(key=lambda row: len(str(row[2])), reverse=True)
+    results = candidates[:limit]
+    if len(results) < limit:
+        results.extend(_collect_samples(_EMPTY_SAMPLE_SQL, key, limit - len(results)))
     return results

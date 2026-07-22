@@ -37,6 +37,26 @@ class TestNovelAiImageParser:
             "model/details/samplers": "['k_euler']",
         }
 
+    def test_embedded_json_comment_expanded_transparently(self):
+        inner = {"prompt": "a cat", "steps": 28, "seed": 123}
+        data = {"Software": "NovelAI", "Comment": json.dumps(inner)}
+        metadata = {"exiftool.ExifIFD:UserComment": json.dumps(data)}
+        result = self.parser.process("img.jpg", (100, 1.0), metadata)
+        assert result.status is True
+        assert result.meta_info == {
+            "Software": "NovelAI",
+            "prompt": "a cat",
+            "steps": "28",
+            "seed": "123",
+        }
+
+    def test_embedded_json_string_not_dict_kept_as_string(self):
+        data = {"Comment": "[1, 2, 3]", "note": '"plain"'}
+        metadata = {"exiftool.PNG:Comment": json.dumps(data)}
+        result = self.parser.process("img.png", (100, 1.0), metadata)
+        assert result.status is True
+        assert result.meta_info == {"Comment": "[1, 2, 3]", "note": '"plain"'}
+
     def test_empty_dict(self):
         metadata = {"exiftool.PNG:Comment": "{}"}
         result = self.parser.process("img.png", (100, 1.0), metadata)

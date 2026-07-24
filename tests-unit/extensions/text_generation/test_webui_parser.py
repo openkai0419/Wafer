@@ -38,7 +38,7 @@ class TestWebUiImageParser:
             "Clip skip": "2",
             "Version": "f1.0.0",
         }
-        assert result.delete_keys == ["exiftool.PNG:Parameters", "exiftool.ExifIFD:UserComment"]
+        assert result.delete_keys == ["exiftool.PNG:Parameters"]
 
     def test_multiline_prompt(self):
         raw = (

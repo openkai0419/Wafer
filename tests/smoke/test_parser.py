@@ -129,7 +129,7 @@ class TestSmokeParser:
 
         assert result.status is True
         assert result.meta_info == {"seed": "42", "model": "nai-v3"}
-        assert result.delete_keys == ["exiftool.PNG:Comment", "exiftool.ExifIFD:UserComment"]
+        assert result.delete_keys == ["exiftool.PNG:Comment"]
 
     def test_plugin_fail_on_non_json(self):
         plugin = parser_resolver.registry.instance("novelai")
@@ -204,7 +204,7 @@ class TestSmokeWebUiParser:
         assert result.status is True
         assert result.meta_info["negative_prompt"] == "lowres"
         assert result.meta_info["Seed"] == "12345"
-        assert result.delete_keys == ["exiftool.PNG:Parameters", "exiftool.ExifIFD:UserComment"]
+        assert result.delete_keys == ["exiftool.PNG:Parameters"]
 
     def test_plugin_fail_on_novelai_json(self):
         plugin = parser_resolver.registry.instance("webui")

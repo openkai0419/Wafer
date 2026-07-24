@@ -3,6 +3,12 @@ import json
 from extensions.text_generation.comfyui_parser import ComfyUiParser
 from wafer.plugin.parser.base import BaseSingletonParser, ParserResult
 
+PROMPT = {
+    "3": {"class_type": "KSampler", "inputs": {"seed": 42, "steps": 20, "model": ["4", 0]}},
+    "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "v3.safetensors"}},
+}
+WORKFLOW = {"nodes": [{"id": 3, "type": "KSampler"}], "links": []}
+
 
 class TestComfyUiParser:
     def setup_method(self):
@@ -11,63 +17,106 @@ class TestComfyUiParser:
     def test_inherits_singleton(self):
         assert isinstance(self.parser, BaseSingletonParser)
 
+    def test_name_matches_prefix(self):
+        assert self.parser.NAME == "comfyui"
+
     def test_trigger_keys(self):
-        assert self.parser.TRIGGER_KEYS == ("ffmpeg.Tag/comment",)
+        assert self.parser.TRIGGER_KEYS == (
+            "exiftool.PNG:Prompt",
+            "exiftool.PNG:Workflow",
+            "exiftool.IFD0:Model",
+            "exiftool.IFD0:Make",
+            "ffmpeg.Tag/prompt",
+            "ffmpeg.Tag/workflow",
+            "ffmpeg.Tag/comment",
+        )
 
-    def test_valid_json_dict(self):
-        data = {"prompt": "a cat", "steps": 20, "cfg": 7.5}
-        metadata = {"ffmpeg.Tag/comment": json.dumps(data)}
-        result = self.parser.process("video.mp4", (100, 1.0), metadata)
+    def test_png_prompt_and_workflow(self):
+        metadata = {"exiftool.PNG:Prompt": json.dumps(PROMPT), "exiftool.PNG:Workflow": json.dumps(WORKFLOW)}
+        result = self.parser.process("a.png", (100, 1.0), metadata)
         assert result.status is True
-        assert result.meta_info == {"prompt": "a cat", "steps": "20", "cfg": "7.5"}
-        assert result.delete_keys == ["ffmpeg.Tag/comment"]
+        assert result.meta_info["KSampler#0/seed"] == "42"
+        assert result.meta_info["KSampler#0/steps"] == "20"
+        assert "KSampler#0/model" not in result.meta_info
+        assert result.meta_info["CheckpointLoaderSimple#0/ckpt_name"] == "v3.safetensors"
+        assert result.meta_info["workflow"] == json.dumps(WORKFLOW)
+        assert set(result.delete_keys) == {"exiftool.PNG:Prompt", "exiftool.PNG:Workflow"}
 
-    def test_all_toplevel_keys_included(self):
-        data = {"workflow": "basic", "seed": 42, "custom_key": "value"}
-        metadata = {"ffmpeg.Tag/comment": json.dumps(data)}
-        result = self.parser.process("video.mp4", (100, 1.0), metadata)
+    def test_webp_prefix_stripped(self):
+        metadata = {
+            "exiftool.IFD0:Model": "prompt:" + json.dumps(PROMPT),
+            "exiftool.IFD0:Make": "workflow:" + json.dumps(WORKFLOW),
+        }
+        result = self.parser.process("a.webp", (100, 1.0), metadata)
         assert result.status is True
-        assert result.meta_info == {"workflow": "basic", "seed": "42", "custom_key": "value"}
+        assert result.meta_info["KSampler#0/seed"] == "42"
+        assert result.meta_info["workflow"] == json.dumps(WORKFLOW)
 
-    def test_nested_value_stringified(self):
-        data = {"model": {"name": "v3", "hash": "abc"}}
-        metadata = {"ffmpeg.Tag/comment": json.dumps(data)}
-        result = self.parser.process("video.mp4", (100, 1.0), metadata)
+    def test_ffmpeg_prompt_workflow(self):
+        metadata = {"ffmpeg.Tag/prompt": json.dumps(PROMPT), "ffmpeg.Tag/workflow": json.dumps(WORKFLOW)}
+        result = self.parser.process("a.flac", (100, 1.0), metadata)
         assert result.status is True
-        assert result.meta_info["model"] == "{'name': 'v3', 'hash': 'abc'}"
+        assert result.meta_info["CheckpointLoaderSimple#0/ckpt_name"] == "v3.safetensors"
 
-    def test_empty_dict(self):
-        metadata = {"ffmpeg.Tag/comment": "{}"}
-        result = self.parser.process("video.mp4", (100, 1.0), metadata)
+    def test_comment_wrapper(self):
+        metadata = {"ffmpeg.Tag/comment": json.dumps({"prompt": PROMPT, "workflow": WORKFLOW})}
+        result = self.parser.process("a.mp4", (100, 1.0), metadata)
         assert result.status is True
-        assert result.meta_info == {}
+        assert result.meta_info["KSampler#0/seed"] == "42"
+        assert result.meta_info["workflow"] == json.dumps(WORKFLOW)
+
+    def test_comment_workflow_only(self):
+        metadata = {"ffmpeg.Tag/comment": json.dumps(WORKFLOW)}
+        result = self.parser.process("a.mp4", (100, 1.0), metadata)
+        assert result.status is True
+        assert result.meta_info["workflow"] == json.dumps(WORKFLOW)
+
+    def test_ordinal_by_ascending_node_id(self):
+        prompt = {
+            "10": {"class_type": "KSampler", "inputs": {"seed": 10}},
+            "2": {"class_type": "KSampler", "inputs": {"seed": 2}},
+        }
+        metadata = {"exiftool.PNG:Prompt": json.dumps(prompt)}
+        result = self.parser.process("a.png", (100, 1.0), metadata)
+        assert result.meta_info["KSampler#0/seed"] == "2"
+        assert result.meta_info["KSampler#1/seed"] == "10"
+
+    def test_title_ignored_uses_class_type(self):
+        prompt = {"3": {"class_type": "KSampler", "_meta": {"title": "MySampler"}, "inputs": {"seed": 7}}}
+        metadata = {"exiftool.PNG:Prompt": json.dumps(prompt)}
+        result = self.parser.process("a.png", (100, 1.0), metadata)
+        assert result.meta_info["KSampler#0/seed"] == "7"
+        assert "MySampler#0/seed" not in result.meta_info
+
+    def test_connections_excluded(self):
+        prompt = {"3": {"class_type": "KSampler", "inputs": {"seed": 42, "model": ["4", 0], "latent": ["5", 0]}}}
+        metadata = {"exiftool.PNG:Prompt": json.dumps(prompt)}
+        result = self.parser.process("a.png", (100, 1.0), metadata)
+        assert result.meta_info == {"KSampler#0/seed": "42"}
+
+    def test_nested_input_expanded(self):
+        prompt = {"3": {"class_type": "Node", "inputs": {"opts": {"a": 1, "b": 2}}}}
+        metadata = {"exiftool.PNG:Prompt": json.dumps(prompt)}
+        result = self.parser.process("a.png", (100, 1.0), metadata)
+        assert result.meta_info["Node#0/opts/a"] == "1"
+        assert result.meta_info["Node#0/opts/b"] == "2"
+
+    def test_non_comfy_trigger_marked_fail(self):
+        metadata = {"exiftool.IFD0:Make": "Canon", "exiftool.IFD0:Model": "EOS R5"}
+        result = self.parser.process("photo.jpg", (100, 1.0), metadata)
+        assert result.status is False
+        assert result.meta_info is None
+
+    def test_missing_keys(self):
+        result = self.parser.process("a.png", (100, 1.0), {})
+        assert result is None
 
     def test_invalid_json(self):
-        metadata = {"ffmpeg.Tag/comment": "not json"}
-        result = self.parser.process("video.mp4", (100, 1.0), metadata)
+        metadata = {"exiftool.PNG:Prompt": "not json"}
+        result = self.parser.process("a.png", (100, 1.0), metadata)
         assert result.status is False
-
-    def test_json_list_rejected(self):
-        metadata = {"ffmpeg.Tag/comment": "[1, 2, 3]"}
-        result = self.parser.process("video.mp4", (100, 1.0), metadata)
-        assert result.status is False
-
-    def test_json_string_rejected(self):
-        metadata = {"ffmpeg.Tag/comment": '"just a string"'}
-        result = self.parser.process("video.mp4", (100, 1.0), metadata)
-        assert result.status is False
-
-    def test_missing_key(self):
-        result = self.parser.process("video.mp4", (100, 1.0), {})
-        assert result is None
-
-    def test_none_value(self):
-        metadata = {"ffmpeg.Tag/comment": None}
-        result = self.parser.process("video.mp4", (100, 1.0), metadata)
-        assert result is None
 
     def test_result_type(self):
-        data = {"seed": 42}
-        metadata = {"ffmpeg.Tag/comment": json.dumps(data)}
-        result = self.parser.process("video.mp4", (100, 1.0), metadata)
+        metadata = {"exiftool.PNG:Prompt": json.dumps(PROMPT)}
+        result = self.parser.process("a.png", (100, 1.0), metadata)
         assert isinstance(result, ParserResult)

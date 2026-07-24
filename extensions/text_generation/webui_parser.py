@@ -73,10 +73,13 @@ class WebUiImageParser(BaseSingletonParser):
     MAX_TIMEOUT = 300.0
 
     def process(self, path: str, file_info: tuple, metadata: dict) -> ParserResult:
-        raw = metadata.get("exiftool.PNG:Parameters") or metadata.get("exiftool.ExifIFD:UserComment")
-        if raw is None:
+        for key in TRIGGER_KEYS:
+            raw = metadata.get(key)
+            if raw:
+                break
+        else:
             return None
         meta_info = parse_infotext(raw)
         if not meta_info:
             return ParserResult(source=path, status=False)
-        return ParserResult(source=path, status=True, meta_info=meta_info, delete_keys=list(TRIGGER_KEYS))
+        return ParserResult(source=path, status=True, meta_info=meta_info, delete_keys=[key])

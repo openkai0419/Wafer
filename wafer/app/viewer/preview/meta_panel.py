@@ -451,6 +451,7 @@ class MetaViewerWidget(QtWidgets.QWidget):
         )
         card.set_content_widget(content)
         card.update_title_count(len(data) if isinstance(data, Mapping) else 0)
+        card.toggled_card.connect(self._on_section_toggled)
         return card
 
     def _build_search_kv_card(self, title: str, section_id: str, *, prefix: str, scope: str, marker_kind: str) -> CollapsibleCard:

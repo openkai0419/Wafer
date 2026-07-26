@@ -1,3 +1,5 @@
+import gc
+import weakref
 from unittest.mock import MagicMock, patch
 import time
 import threading
@@ -142,6 +144,41 @@ class TestExifToolCooldown:
         plugin._touch()
         assert plugin._last_used > 0.0
         plugin._idle_timer.cancel()
+
+    def test_touch_timer_callback_does_not_keep_plugin_alive(self, monkeypatch):
+        timers = []
+
+        class FakeTimer:
+            def __init__(self, interval, func, args=None, kwargs=None):
+                self.interval = interval
+                self.func = func
+                self.args = args or ()
+                self.kwargs = kwargs or {}
+                self.cancelled = False
+                timers.append(self)
+
+            def start(self):
+                return None
+
+            def cancel(self):
+                self.cancelled = True
+
+            def is_alive(self):
+                return not self.cancelled
+
+        monkeypatch.setattr("extensions.exiftool.collector.threading.Timer", FakeTimer)
+
+        plugin = ExifToolCollectorPlugin()
+        plugin._touch()
+        timer = plugin._idle_timer
+        ref = weakref.ref(plugin)
+
+        del plugin
+        gc.collect()
+
+        assert ref() is None
+        assert timer is not None
+        assert timer.cancelled is True
 
     def test_touch_replaces_previous_timer(self):
         plugin = ExifToolCollectorPlugin()

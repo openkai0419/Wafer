@@ -97,7 +97,7 @@ class ComfyUiWorkflowPanelPlugin(BaseKeyValuePanelPlugin):
     NAME = "comfyui_panel"
     PREFIX = "comfyui"
     DATA_SCOPE = "meta_info"
-    DEFAULT_ENABLED = True
+    DEFAULT_ENABLED = False
     PRIORITY = 50
 
     def __init__(self) -> None:

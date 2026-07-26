@@ -1,5 +1,6 @@
 import time
 import threading
+import weakref
 
 from wafer.plugin import BaseCollectorPlugin, CollectorResult
 from wafer.utils.logs import AppLogger
@@ -68,7 +69,7 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
         self._last_used = time.monotonic()
         if self._idle_timer is not None:
             self._idle_timer.cancel()
-        t = threading.Timer(_IDLE_TIMEOUT, self._check_idle)
+        t = threading.Timer(_IDLE_TIMEOUT, _run_weak_method, args=(weakref.WeakMethod(self._check_idle),))
         t.daemon = True
         t.start()
         self._idle_timer = t
@@ -150,3 +151,9 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
             self.shutdown()
         except Exception as e:
             debug_non_recursive(f"[ExifToolCollector] Cleanup failed: {e}")
+
+
+def _run_weak_method(method_ref: weakref.WeakMethod):
+    method = method_ref()
+    if method is not None:
+        method()

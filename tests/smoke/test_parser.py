@@ -142,11 +142,7 @@ class TestSmokeParser:
         assert result is None
 
 
-_WEBUI_INFOTEXT = (
-    "masterpiece, 1girl\n"
-    "Negative prompt: lowres\n"
-    "Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 12345, Size: 512x768"
-)
+_WEBUI_INFOTEXT = "masterpiece, 1girl\nNegative prompt: lowres\nSteps: 20, Sampler: Euler a, CFG scale: 7, Seed: 12345, Size: 512x768"
 
 
 class TestSmokeWebUiParser:

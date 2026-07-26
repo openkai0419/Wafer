@@ -34,7 +34,7 @@ def parse_infotext(raw: str) -> dict[str, str]:
         line = line.strip()
         if line.startswith("Negative prompt:"):
             done_with_prompt = True
-            line = line[len("Negative prompt:"):].strip()
+            line = line[len("Negative prompt:") :].strip()
         (negative_lines if done_with_prompt else prompt_lines).append(line)
 
     prompt = "\n".join(prompt_lines).strip()

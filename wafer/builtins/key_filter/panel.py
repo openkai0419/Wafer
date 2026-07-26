@@ -11,6 +11,7 @@ from ...plugin import BasePanelPlugin, KeyFilter, MODE_BLACKLIST, MODE_WHITELIST
 from ...plugin.collector.handler import collector_resolver
 from ...plugin.parser.handler import parser_resolver
 from ...plugin.key_filter_dialog import FilterSaveConfirmDialog
+from ...core.db.recollect import Recollect
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
@@ -190,7 +191,8 @@ class KeyFilterWidget(QtWidgets.QWidget):
             if (do_delete or do_recollect) and db_names:
                 delete_keys = tab.compute_delete_keys() if do_delete else []
                 re_collect = do_recollect and tab.prefix not in parser_names
-                KeyFilter.send_delete_keys(db_names, delete_keys, tab.prefix, re_collect=re_collect)
+                if delete_keys or re_collect:
+                    Recollect.purge(db_scope=list(db_names), collector=tab.prefix, keys=delete_keys, delete=False, re_collect=re_collect)
         Notifier.info(t("Filter settings saved ({n} changed)").format(n=len(dirty)))
 
     def _on_revert(self):

@@ -828,8 +828,8 @@ class TestPluginManagerWidget:
         qtbot.addWidget(dlg)
         dlg._send_delete([("db1", "exif")], True)
         mock_node.send_reliable.assert_called_once_with(
-            "delete.collector",
-            {"collector": "exif", "re_collect": True},
+            "recollect",
+            {"mode": "purge", "collector": "exif", "keys": [], "delete": True, "re_collect": True},
             dst="indexer",
             db="db1",
         )

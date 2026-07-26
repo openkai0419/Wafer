@@ -148,6 +148,11 @@ def show_context_menu(ctx):
                 "file.paste",
                 "file.new_folder",
                 "-",
+                "Recollect/:Recollect",
+                "Recollect/file.recollect.folder.reset_prefix",
+                "Recollect/file.recollect.folder.reset_all",
+                "Recollect/file.recollect.folder.forget",
+                "-",
             ]
         )
     else:

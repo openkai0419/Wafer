@@ -187,9 +187,8 @@ class TestSaveDeleteKeys:
         monkeypatch.setattr(f"{MODULE}.FilterSaveConfirmDialog", _accept_dlg(delete=delete))
         monkeypatch.setattr(f"{MODULE}.list_setting_db_names", lambda: ["db1"])
         monkeypatch.setattr(
-            KeyFilter,
-            "send_delete_keys",
-            staticmethod(lambda db, keys, prefix, *, re_collect: sent.append(list(keys))),
+            f"{MODULE}.Recollect",
+            type("R", (), {"purge": staticmethod(lambda *, db_scope, collector, keys, delete, re_collect: sent.append(list(keys)))}),
         )
         return sent
 

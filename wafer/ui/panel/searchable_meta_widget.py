@@ -824,7 +824,9 @@ class SearchableMetaWidget(QtWidgets.QWidget):
             AppLogger.warning("[SearchKV] delete-all aborted: no setting DBs")
             return
         full_key = self._to_full(key)
-        KeyFilter.send_delete_keys(db_names, [full_key], prefix, re_collect=False)
+        from ...core.db.recollect import Recollect
+
+        Recollect.purge(db_scope=list(db_names), collector=prefix, keys=[full_key], delete=False, re_collect=False)
         KeyFilter.apply_key_states(prefix, {key: False})
         AppLogger.info(f"[SearchKV] delete-all submitted prefix={prefix} key={full_key} dbs={len(db_names)}")
 

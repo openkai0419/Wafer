@@ -863,14 +863,14 @@ class TestDatabaseManagerTabs:
         dlg._apply_data_actions([("db1", "exif", True, False), ("db1", "nai", False, True)])
         assert mock_node.send_reliable.call_count == 2
         mock_node.send_reliable.assert_any_call(
-            "delete.collector",
-            {"collector": "exif", "delete": True, "re_collect": False},
+            "recollect",
+            {"mode": "purge", "collector": "exif", "keys": [], "delete": True, "re_collect": False},
             dst="indexer",
             db="db1",
         )
         mock_node.send_reliable.assert_any_call(
-            "delete.collector",
-            {"collector": "nai", "delete": False, "re_collect": True},
+            "recollect",
+            {"mode": "purge", "collector": "nai", "keys": [], "delete": False, "re_collect": True},
             dst="indexer",
             db="db1",
         )

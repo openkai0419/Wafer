@@ -35,6 +35,11 @@ def safe_is_dir(p) -> bool:
         return False
 
 
+def containing_dir(path) -> str:
+    ap = os.path.abspath(str(path))
+    return ap if safe_is_dir(ap) else os.path.dirname(ap)
+
+
 def safe_getsize(p) -> int | None:
     try:
         return os.path.getsize(p)

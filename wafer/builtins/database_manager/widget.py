@@ -347,19 +347,13 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
             self._detail_widget.load(current.text())
 
     def _apply_data_actions(self, actions: list[tuple[str, str, bool, bool]]):
-        from ...core.commands.binding.instance_registry import InstanceRegistry
+        from ...core.db.recollect import Recollect
 
-        node = InstanceRegistry.instance().resolve_node()
-        if not node:
-            AppLogger.warning("[DatabaseManager] No IPC node available for data changes")
-            return
+        sent = 0
         for db, collector, delete, re_collect in actions:
-            node.send_reliable(
-                "delete.collector",
-                {"collector": collector, "delete": delete, "re_collect": re_collect},
-                dst="indexer",
-                db=db,
-            )
+            sent += Recollect.purge(db_scope=[db], collector=collector, delete=delete, re_collect=re_collect)
+        if not sent:
+            return
         self._data_tab.clear_checks()
         AppLogger.info(f"[DatabaseManager] Sent data changes for {len(actions)} pairs")
 

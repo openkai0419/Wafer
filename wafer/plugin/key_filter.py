@@ -110,18 +110,6 @@ class KeyFilter:
                 new_keys.discard(key)
         cls.set_keys(prefix, mode, new_keys)
 
-    @staticmethod
-    def send_delete_keys(db_names: Iterable[str], keys: Iterable[str], collector: str, *, re_collect: bool) -> None:
-        from ..core.commands.binding.instance_registry import InstanceRegistry
-
-        node = InstanceRegistry.instance().resolve_node()
-        if node is None:
-            AppLogger.warning("[MetadataFilter] No IPC node available; skipped delete/re-collect")
-            return
-        payload = {"keys": list(keys), "collector": collector, "re_collect": re_collect}
-        for db in db_names:
-            node.send_reliable("delete.keys", payload, dst="indexer", db=db)
-
     @classmethod
     def read_sort(cls) -> tuple[int, bool]:
         cfg = _config.load()

@@ -308,12 +308,8 @@ def _send_convert_scope(mark_id: str, to_scope: str, db_scope: str = "*") -> int
 
 
 def _purge_mark_from_all_dbs(mark_id: str) -> None:
-    from ...core.commands.binding.instance_registry import InstanceRegistry
+    from ...core.db.recollect import Recollect
 
-    node = InstanceRegistry.instance().resolve_node()
-    if node is None:
-        AppLogger.warning("[Mark] no IPC node for purge")
-        return
     key = MarkRegistry.key(mark_id)
-    sent = send_to_db_scope(node, "delete.keys", {"keys": [key]}, db_scope="*")
+    sent = Recollect.purge(db_scope="*", keys=[key], delete=False)
     AppLogger.info(f"[Mark] Requested purge of '{key}' across {sent} db(s)")

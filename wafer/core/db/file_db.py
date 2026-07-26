@@ -871,18 +871,57 @@ class FileDB:
         AppLogger.info(f"[DB] Deleted keys ({len(keys)}): meta={meta_deleted}, tags={tags_deleted}")
         return meta_deleted, tags_deleted
 
-    def reset_collector_status(self, collector: str) -> int:
+    def recollect(self, collector: str | None = None, sources: Sequence[str] | None = None, prefixes: Sequence[str] | None = None) -> int:
+        affected = 0
+        sql = "UPDATE collection_status SET status = 'pending', collected_at = NULL"
+        collector_clause = " AND collector = ?" if collector else ""
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             try:
-                cur.execute(
-                    "UPDATE collection_status SET status = 'pending', collected_at = NULL WHERE collector = ?",
-                    (collector,),
-                )
+                if sources:
+                    seq = list(dict.fromkeys(s for s in sources if s))
+                    for i in range(0, len(seq), 900):
+                        chunk = seq[i : i + 900]
+                        placeholders = ",".join(["?"] * len(chunk))
+                        args: list = list(chunk)
+                        if collector:
+                            args.append(collector)
+                        cur.execute(f"{sql} WHERE source IN ({placeholders}){collector_clause}", args)
+                        affected += cur.execute("SELECT changes()").fetchone()[0]
+                elif prefixes:
+                    for prefix in dict.fromkeys(p for p in prefixes if p):
+                        child = f"{escape_like(prefix if prefix.endswith('/') else prefix + '/')}%"
+                        args = [prefix, child]
+                        if collector:
+                            args.append(collector)
+                        cur.execute(f"{sql} WHERE (source = ? OR source LIKE ? ESCAPE '\\'){collector_clause}", args)
+                        affected += cur.execute("SELECT changes()").fetchone()[0]
+                elif collector:
+                    cur.execute(sql + " WHERE collector = ?", (collector,))
+                    affected = cur.execute("SELECT changes()").fetchone()[0]
+                else:
+                    cur.execute(sql)
+                    affected = cur.execute("SELECT changes()").fetchone()[0]
+            finally:
+                cur.close()
+        if sources:
+            scope = f"{len(sources)} sources"
+        elif prefixes:
+            scope = f"{len(prefixes)} folders"
+        else:
+            scope = "all sources"
+        AppLogger.info(f"[DB] Recollect reset: collector={collector or '*'}, {scope}, affected={affected}")
+        return affected
+
+    def delete_all_sources(self) -> int:
+        with self._write_lock, self.conn:
+            cur = self.conn.cursor()
+            try:
+                cur.execute("DELETE FROM sources")
                 affected = cur.execute("SELECT changes()").fetchone()[0]
             finally:
                 cur.close()
-        AppLogger.info(f"[DB] Reset collector status: collector={collector}, affected={affected}")
+        AppLogger.info(f"[DB] Deleted all sources (forget whole DB): {affected}")
         return affected
 
     def collector_data_counts(self) -> list[tuple[str, int]]:

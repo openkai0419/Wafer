@@ -9,7 +9,6 @@ from wafer.core.qt.icon_engine import themed_icon
 from wafer.ui.popups import PopupBase
 from wafer.ui.widgets.color_picker import ColorPickerDialog
 from wafer.utils.formatting import dpix
-from wafer.utils.logs import AppLogger
 from wafer.utils.notifier import Notifier
 from wafer.utils.paths import list_setting_db_names
 
@@ -306,19 +305,9 @@ class _ColorSettingsPopup(PopupBase):
 
     @staticmethod
     def _send_delete_and_recollect(db_names: list[str], *, re_collect: bool):
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.core.db.recollect import Recollect
 
-        node = InstanceRegistry.instance().resolve_node()
-        if not node:
-            AppLogger.warning("[ColorSettings] No IPC node available")
-            return
-        for db in db_names:
-            node.send_reliable(
-                "delete.collector",
-                {"collector": "color", "re_collect": re_collect},
-                dst="indexer",
-                db=db,
-            )
+        Recollect.purge(db_scope=list(db_names), collector="color", delete=True, re_collect=re_collect)
 
 
 class _ColorSaveConfirmDialog(QtWidgets.QDialog):

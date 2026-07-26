@@ -44,8 +44,7 @@ class IndexerProcess:
         self.zmq.subscribe("cleanup", lambda msg: self.cleanup() or True)
         self.zmq.subscribe("rescan", lambda msg: self.rescan() or True)
         self.zmq.subscribe("db.delete", lambda msg: self._on_delete_requested() or True)
-        self.zmq.subscribe("delete.collector", self._on_delete_collector)
-        self.zmq.subscribe("delete.keys", self._on_delete_keys)
+        self.zmq.subscribe("recollect", self._on_recollect)
         self.zmq.subscribe("keyfilter.reload", self._on_keyfilter_reload)
         self.zmq.subscribe("tags.update", self._on_tags_update)
         self.zmq.subscribe("kv.convert_scope", self._on_kv_convert_scope)
@@ -259,64 +258,97 @@ class IndexerProcess:
             )
         )
 
-    def _on_delete_collector(self, msg):
+    def _on_recollect(self, msg):
         payload = msg.payload
         if not isinstance(payload, dict):
-            AppLogger.warning(f"delete.collector: invalid payload: {type(payload)}")
+            AppLogger.warning(f"recollect: invalid payload: {type(payload)}")
             return True
-        collector = payload.get("collector", "")
-        delete = payload.get("delete", True)
-        re_collect = payload.get("re_collect", False)
-        if not collector or not self.writer or not self.scheduler:
+        if not self.writer or not self.scheduler:
             return True
-        if not delete and not re_collect:
-            return True
-        AppLogger.info(f"[Indexer] Data action collector={collector}, delete={delete}, re_collect={re_collect}")
-
-        if delete:
-            run = lambda: self.writer.delete_collector(collector, re_collect=re_collect)
+        mode = payload.get("mode", "reset")
+        if mode == "forget":
+            self._submit_forget(payload)
+        elif mode == "purge":
+            self._submit_purge(payload)
         else:
-            run = lambda: self.writer.reset_collector_status(collector)
+            self._submit_reset(payload)
+        return True
+
+    def _submit_reset(self, payload):
+        collector = payload.get("collector") or None
+        sources = payload.get("sources") or None
+        prefixes = payload.get("prefixes") or None
+        AppLogger.info(f"[Indexer] Recollect reset collector={collector or '*'}, sources={len(sources) if sources else 0}, prefixes={len(prefixes) if prefixes else 0}")
+        self.scheduler.submit(
+            Task.create(
+                "recollect_reset",
+                priority=TaskPriority.USER_REQUEST,
+                run=lambda: self.writer.recollect(collector, sources, prefixes),
+                on_complete=self._recollect_dispatch,
+            )
+        )
+
+    def _submit_forget(self, payload):
+        sources = payload.get("sources") or None
+        prefixes = payload.get("prefixes") or None
+        scope_all = bool(payload.get("all"))
+        AppLogger.info(f"[Indexer] Recollect forget sources={len(sources) if sources else 0}, prefixes={len(prefixes) if prefixes else 0}, all={scope_all}")
+
+        def _run():
+            if scope_all:
+                self.writer.delete_all_sources()
+            elif prefixes:
+                self.writer.delete_source_trees(prefixes)
+            elif sources:
+                self.writer.delete_sources(sources)
+
+        def _after():
+            if scope_all:
+                self.rescan()
+            elif prefixes and self.scanner:
+                self.scanner.request_scan(list(prefixes))
+            elif sources and self.scanner:
+                self.scanner.request_update(list(sources))
+            self._progress.send_event("update")
 
         self.scheduler.submit(
             Task.create(
-                "delete_collector_data",
+                "recollect_forget",
                 priority=TaskPriority.USER_REQUEST,
-                run=run,
-                on_complete=lambda: self._progress.send_event("update"),
+                run=_run,
+                on_complete=_after,
             )
         )
-        return True
 
-    def _on_delete_keys(self, msg):
-        payload = msg.payload
-        if not isinstance(payload, dict):
-            AppLogger.warning(f"delete.keys: invalid payload: {type(payload)}")
-            return True
-        keys = payload.get("keys", [])
-        re_collect = payload.get("re_collect", False)
-        collector = payload.get("collector", "")
-        if not self.writer or not self.scheduler:
-            return True
-        if not keys and not (re_collect and collector):
-            return True
-        AppLogger.info(f"[Indexer] Delete keys={len(keys)}, collector={collector}, re_collect={re_collect}")
+    def _submit_purge(self, payload):
+        collector = payload.get("collector") or ""
+        keys = payload.get("keys") or []
+        re_collect = bool(payload.get("re_collect", False))
+        delete = bool(payload.get("delete", True))
+        if not keys and not collector:
+            return
+        AppLogger.info(f"[Indexer] Recollect purge collector={collector}, keys={len(keys)}, delete={delete}, re_collect={re_collect}")
 
         def _run():
             if keys:
                 self.writer.delete_keys(keys)
-            if re_collect and collector:
-                self.writer.reset_collector_status(collector)
+            if delete and collector:
+                self.writer.delete_collector(collector, re_collect=re_collect)
+            elif re_collect and collector:
+                self.writer.recollect(collector)
 
         self.scheduler.submit(
             Task.create(
-                "delete_keys",
+                "recollect_purge",
                 priority=TaskPriority.USER_REQUEST,
                 run=_run,
-                on_complete=lambda: self._progress.send_event("update"),
+                on_complete=self._recollect_dispatch,
             )
         )
-        return True
+
+    def _recollect_dispatch(self):
+        self._progress.send_event("update")
+        self._request_backfill()
 
     def _on_keyfilter_reload(self, msg):
         from ...plugin.key_filter import KeyFilter

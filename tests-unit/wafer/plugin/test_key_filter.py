@@ -130,32 +130,6 @@ class TestBlockedKeys:
         assert KeyFilter.blocked_keys("exif") == []
 
 
-class TestSendDeleteKeys:
-    def test_sends_per_db(self, monkeypatch):
-        sent = []
-
-        class _Node:
-            def send_reliable(self, cmd, payload, dst, db):
-                sent.append((cmd, payload, dst, db))
-
-        monkeypatch.setattr(
-            "wafer.core.commands.binding.instance_registry.InstanceRegistry.instance",
-            classmethod(lambda cls: type("R", (), {"resolve_node": lambda self: _Node()})()),
-        )
-        KeyFilter.send_delete_keys(["db1", "db2"], ["exif.a"], "exiftool", re_collect=True)
-        assert len(sent) == 2
-        assert sent[0][0] == "delete.keys"
-        assert sent[0][1] == {"keys": ["exif.a"], "collector": "exiftool", "re_collect": True}
-        assert {s[3] for s in sent} == {"db1", "db2"}
-
-    def test_no_node_skips(self, monkeypatch):
-        monkeypatch.setattr(
-            "wafer.core.commands.binding.instance_registry.InstanceRegistry.instance",
-            classmethod(lambda cls: type("R", (), {"resolve_node": lambda self: None})()),
-        )
-        KeyFilter.send_delete_keys(["db1"], ["exif.a"], "exiftool", re_collect=False)
-
-
 class TestSort:
     def test_default_sort(self):
         assert KeyFilter.read_sort() == (1, False)

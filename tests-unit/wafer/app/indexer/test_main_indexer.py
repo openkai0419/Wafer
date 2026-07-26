@@ -35,12 +35,12 @@ class TestIndexerProcessInit:
         assert "db.delete" in topics
 
     @patch("wafer.app.indexer.main_indexer.Node")
-    def test_subscribes_to_delete_keys(self, mock_node_cls):
+    def test_subscribes_to_recollect(self, mock_node_cls):
         node = MagicMock()
         mock_node_cls.return_value = node
         IndexerProcess("test")
         topics = [call.args[0] for call in node.subscribe.call_args_list]
-        assert "delete.keys" in topics
+        assert "recollect" in topics
 
     @patch("wafer.app.indexer.main_indexer.Node")
     def test_subscribes_to_kv_convert_scope(self, mock_node_cls):
@@ -250,85 +250,14 @@ class TestPeriodicTaskConfig:
         proc.scheduler.set_idle_base_delay.assert_called_once_with(60.0)
 
 
-class TestOnDeleteKeys:
-    @patch("wafer.app.indexer.main_indexer.Node")
-    def test_returns_true_without_writer(self, mock_node_cls):
-        mock_node_cls.return_value = MagicMock()
-        proc = IndexerProcess("test")
-        proc.writer = None
-        msg = MagicMock()
-        msg.payload = {"keys": ["exif.width"], "collector": "exif", "re_collect": True}
-        assert proc._on_delete_keys(msg) is True
-
-    @patch("wafer.app.indexer.main_indexer.Node")
-    def test_returns_true_when_no_keys_no_recollect(self, mock_node_cls):
-        mock_node_cls.return_value = MagicMock()
+class TestOnRecollect:
+    def _proc(self):
         proc = IndexerProcess("test")
         proc.writer = MagicMock()
         proc.scheduler = MagicMock()
-        msg = MagicMock()
-        msg.payload = {"keys": [], "collector": "", "re_collect": False}
-        assert proc._on_delete_keys(msg) is True
-        proc.scheduler.submit.assert_not_called()
-
-    @patch("wafer.app.indexer.main_indexer.Node")
-    def test_submits_task_with_keys_and_recollect(self, mock_node_cls):
-        mock_node_cls.return_value = MagicMock()
-        proc = IndexerProcess("test")
-        proc.writer = MagicMock()
-        proc.scheduler = MagicMock()
-        msg = MagicMock()
-        msg.payload = {"keys": ["exif.width"], "collector": "exif", "re_collect": True}
-        proc._on_delete_keys(msg)
-        proc.scheduler.submit.assert_called_once()
-        task = proc.scheduler.submit.call_args[0][0]
-        assert task.name == "delete_keys"
-        assert task.priority == TaskPriority.USER_REQUEST
-        task.run()
-        proc.writer.delete_keys.assert_called_once_with(["exif.width"])
-        proc.writer.reset_collector_status.assert_called_once_with("exif")
-
-    @patch("wafer.app.indexer.main_indexer.Node")
-    def test_submits_task_with_keys_only(self, mock_node_cls):
-        mock_node_cls.return_value = MagicMock()
-        proc = IndexerProcess("test")
-        proc.writer = MagicMock()
-        proc.scheduler = MagicMock()
-        msg = MagicMock()
-        msg.payload = {"keys": ["exif.width"], "collector": "exif", "re_collect": False}
-        proc._on_delete_keys(msg)
-        task = proc.scheduler.submit.call_args[0][0]
-        task.run()
-        proc.writer.delete_keys.assert_called_once_with(["exif.width"])
-        proc.writer.reset_collector_status.assert_not_called()
-
-    @patch("wafer.app.indexer.main_indexer.Node")
-    def test_submits_task_with_recollect_only(self, mock_node_cls):
-        mock_node_cls.return_value = MagicMock()
-        proc = IndexerProcess("test")
-        proc.writer = MagicMock()
-        proc.scheduler = MagicMock()
-        msg = MagicMock()
-        msg.payload = {"keys": [], "collector": "exif", "re_collect": True}
-        proc._on_delete_keys(msg)
-        task = proc.scheduler.submit.call_args[0][0]
-        task.run()
-        proc.writer.delete_keys.assert_not_called()
-        proc.writer.reset_collector_status.assert_called_once_with("exif")
-
-    @patch("wafer.app.indexer.main_indexer.Node")
-    def test_sends_update_on_complete(self, mock_node_cls):
-        mock_node_cls.return_value = MagicMock()
-        proc = IndexerProcess("test")
-        proc.writer = MagicMock()
-        proc.scheduler = MagicMock()
+        proc.scanner = MagicMock()
         proc._progress = MagicMock()
-        msg = MagicMock()
-        msg.payload = {"keys": ["exif.width"], "collector": "exif", "re_collect": False}
-        proc._on_delete_keys(msg)
-        task = proc.scheduler.submit.call_args[0][0]
-        task.on_complete()
-        proc._progress.send_event.assert_called_with("update")
+        return proc
 
     @patch("wafer.app.indexer.main_indexer.Node")
     def test_invalid_payload_returns_true(self, mock_node_cls):
@@ -336,64 +265,117 @@ class TestOnDeleteKeys:
         proc = IndexerProcess("test")
         msg = MagicMock()
         msg.payload = "not_a_dict"
-        assert proc._on_delete_keys(msg) is True
-
-
-class TestOnDeleteCollector:
-    @patch("wafer.app.indexer.main_indexer.Node")
-    def test_returns_true_without_scheduler(self, mock_node_cls):
-        mock_node_cls.return_value = MagicMock()
-        proc = IndexerProcess("test")
-        proc.writer = MagicMock()
-        proc.scheduler = None
-        msg = MagicMock()
-        msg.payload = {"collector": "color", "re_collect": True}
-        assert proc._on_delete_collector(msg) is True
+        assert proc._on_recollect(msg) is True
 
     @patch("wafer.app.indexer.main_indexer.Node")
-    def test_submits_delete_collector_task(self, mock_node_cls):
+    def test_returns_true_without_writer(self, mock_node_cls):
         mock_node_cls.return_value = MagicMock()
         proc = IndexerProcess("test")
-        proc.writer = MagicMock()
+        proc.writer = None
         proc.scheduler = MagicMock()
-        proc._progress = MagicMock()
         msg = MagicMock()
-        msg.payload = {"collector": "color", "re_collect": True}
-        assert proc._on_delete_collector(msg) is True
-        proc.scheduler.submit.assert_called_once()
+        msg.payload = {"mode": "reset"}
+        assert proc._on_recollect(msg) is True
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_reset_with_sources(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = self._proc()
+        msg = MagicMock()
+        msg.payload = {"mode": "reset", "collector": "exif", "sources": ["/a"], "prefixes": None}
+        proc._on_recollect(msg)
         task = proc.scheduler.submit.call_args[0][0]
-        assert task.name == "delete_collector_data"
+        assert task.name == "recollect_reset"
         assert task.priority == TaskPriority.USER_REQUEST
         task.run()
-        proc.writer.delete_collector.assert_called_once_with("color", re_collect=True)
+        proc.writer.recollect.assert_called_once_with("exif", ["/a"], None)
         task.on_complete()
         proc._progress.send_event.assert_called_with("update")
 
     @patch("wafer.app.indexer.main_indexer.Node")
-    def test_recollect_only_resets_status(self, mock_node_cls):
+    def test_reset_all(self, mock_node_cls):
         mock_node_cls.return_value = MagicMock()
-        proc = IndexerProcess("test")
-        proc.writer = MagicMock()
-        proc.scheduler = MagicMock()
-        proc._progress = MagicMock()
+        proc = self._proc()
         msg = MagicMock()
-        msg.payload = {"collector": "color", "delete": False, "re_collect": True}
-        assert proc._on_delete_collector(msg) is True
+        msg.payload = {"mode": "reset"}
+        proc._on_recollect(msg)
         task = proc.scheduler.submit.call_args[0][0]
         task.run()
-        proc.writer.reset_collector_status.assert_called_once_with("color")
+        proc.writer.recollect.assert_called_once_with(None, None, None)
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_forget_sources(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = self._proc()
+        msg = MagicMock()
+        msg.payload = {"mode": "forget", "sources": ["/a", "/b"]}
+        proc._on_recollect(msg)
+        task = proc.scheduler.submit.call_args[0][0]
+        assert task.name == "recollect_forget"
+        task.run()
+        proc.writer.delete_sources.assert_called_once_with(["/a", "/b"])
+        task.on_complete()
+        proc.scanner.request_update.assert_called_once_with(["/a", "/b"])
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_forget_prefixes(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = self._proc()
+        msg = MagicMock()
+        msg.payload = {"mode": "forget", "prefixes": ["/dir"]}
+        proc._on_recollect(msg)
+        task = proc.scheduler.submit.call_args[0][0]
+        task.run()
+        proc.writer.delete_source_trees.assert_called_once_with(["/dir"])
+        task.on_complete()
+        proc.scanner.request_scan.assert_called_once_with(["/dir"])
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_forget_all(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = self._proc()
+        proc.rescan = MagicMock()
+        msg = MagicMock()
+        msg.payload = {"mode": "forget", "all": True}
+        proc._on_recollect(msg)
+        task = proc.scheduler.submit.call_args[0][0]
+        task.run()
+        proc.writer.delete_all_sources.assert_called_once_with()
+        task.on_complete()
+        proc.rescan.assert_called_once_with()
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_purge_collector(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = self._proc()
+        msg = MagicMock()
+        msg.payload = {"mode": "purge", "collector": "color", "delete": True, "re_collect": True}
+        proc._on_recollect(msg)
+        task = proc.scheduler.submit.call_args[0][0]
+        assert task.name == "recollect_purge"
+        task.run()
+        proc.writer.delete_collector.assert_called_once_with("color", re_collect=True)
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_purge_keys_only(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = self._proc()
+        msg = MagicMock()
+        msg.payload = {"mode": "purge", "collector": "exif", "keys": ["exif.w"], "delete": False, "re_collect": True}
+        proc._on_recollect(msg)
+        task = proc.scheduler.submit.call_args[0][0]
+        task.run()
+        proc.writer.delete_keys.assert_called_once_with(["exif.w"])
+        proc.writer.recollect.assert_called_once_with("exif")
         proc.writer.delete_collector.assert_not_called()
 
     @patch("wafer.app.indexer.main_indexer.Node")
-    def test_no_delete_no_recollect_is_noop(self, mock_node_cls):
+    def test_purge_noop(self, mock_node_cls):
         mock_node_cls.return_value = MagicMock()
-        proc = IndexerProcess("test")
-        proc.writer = MagicMock()
-        proc.scheduler = MagicMock()
-        proc._progress = MagicMock()
+        proc = self._proc()
         msg = MagicMock()
-        msg.payload = {"collector": "color", "delete": False, "re_collect": False}
-        assert proc._on_delete_collector(msg) is True
+        msg.payload = {"mode": "purge", "collector": "", "keys": []}
+        proc._on_recollect(msg)
         proc.scheduler.submit.assert_not_called()
 
 

@@ -235,8 +235,8 @@ class TestOnSaveReCollect:
         monkeypatch.setattr(f"{MODULE}.list_setting_db_names", lambda: ["db1"])
         monkeypatch.setattr(f"{MODULE}.parser_resolver.names", lambda: ["novelai"])
         monkeypatch.setattr(
-            f"{MODULE}.KeyFilter.send_delete_keys",
-            staticmethod(lambda db, keys, prefix, *, re_collect: sent.append((prefix, re_collect))),
+            f"{MODULE}.Recollect",
+            type("R", (), {"purge": staticmethod(lambda *, db_scope, collector, keys, delete, re_collect: sent.append((collector, re_collect)))}),
         )
 
         class _Dlg:

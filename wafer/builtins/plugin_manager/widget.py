@@ -390,19 +390,10 @@ class PluginManagerWidget(QtWidgets.QWidget):
         return collectors, parsers
 
     def _send_delete(self, pairs: list[tuple[str, str]], re_collect: bool):
-        from ...core.commands.binding.instance_registry import InstanceRegistry
+        from ...core.db.recollect import Recollect
 
-        node = InstanceRegistry.instance().resolve_node()
-        if not node:
-            AppLogger.warning("[PluginManager] No IPC node available for delete")
-            return
         for db, collector in pairs:
-            node.send_reliable(
-                "delete.collector",
-                {"collector": collector, "re_collect": re_collect},
-                dst="indexer",
-                db=db,
-            )
+            Recollect.purge(db_scope=[db], collector=collector, delete=True, re_collect=re_collect)
         AppLogger.info(f"[PluginManager] Sent delete for {len(pairs)} pairs")
 
     @staticmethod

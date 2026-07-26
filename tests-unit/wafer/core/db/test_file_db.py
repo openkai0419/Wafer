@@ -765,28 +765,70 @@ def test_delete_keys_no_match(tmp_path):
     db.close()
 
 
-def test_reset_collector_status(tmp_path):
+def test_recollect_by_collector(tmp_path):
     db = _setup_db_with_collected(tmp_path)
     meta_before = db.read_conn.execute("SELECT COUNT(*) FROM meta_info").fetchone()[0]
     tags_before = db.read_conn.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
-    affected = db.reset_collector_status("exif")
+    affected = db.recollect("exif")
     assert affected == 2
     rows = db.read_conn.execute("SELECT status, collected_at FROM collection_status WHERE collector='exif'").fetchall()
     assert len(rows) == 2
     for status, collected_at in rows:
         assert status == "pending"
         assert collected_at is None
-    meta_after = db.read_conn.execute("SELECT COUNT(*) FROM meta_info").fetchone()[0]
-    tags_after = db.read_conn.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
-    assert meta_after == meta_before
-    assert tags_after == tags_before
+    assert db.read_conn.execute("SELECT COUNT(*) FROM meta_info").fetchone()[0] == meta_before
+    assert db.read_conn.execute("SELECT COUNT(*) FROM tags").fetchone()[0] == tags_before
     db.close()
 
 
-def test_reset_collector_status_no_match(tmp_path):
+def test_recollect_by_sources(tmp_path):
+    db = _setup_db_with_collected(tmp_path, collectors=("exif", "ocr"))
+    affected = db.recollect(sources=["src0"])
+    assert affected == 2
+    rows = db.read_conn.execute("SELECT status FROM collection_status WHERE source='src0'").fetchall()
+    assert all(status == "pending" for (status,) in rows)
+    other = db.read_conn.execute("SELECT status FROM collection_status WHERE source='src1'").fetchall()
+    assert all(status == "ok" for (status,) in other)
+    db.close()
+
+
+def test_recollect_collector_and_sources(tmp_path):
+    db = _setup_db_with_collected(tmp_path, collectors=("exif", "ocr"))
+    affected = db.recollect("exif", sources=["src0"])
+    assert affected == 1
+    db.close()
+
+
+def test_recollect_by_prefixes(tmp_path):
     db = _setup_db_with_collected(tmp_path)
-    affected = db.reset_collector_status("nonexistent")
+    affected = db.recollect(prefixes=["src0"])
+    assert affected == 1
+    db.close()
+
+
+def test_recollect_all(tmp_path):
+    db = _setup_db_with_collected(tmp_path, collectors=("exif", "ocr"))
+    affected = db.recollect()
+    assert affected == 4
+    rows = db.read_conn.execute("SELECT status FROM collection_status").fetchall()
+    assert all(status == "pending" for (status,) in rows)
+    db.close()
+
+
+def test_recollect_no_match(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    affected = db.recollect("nonexistent")
     assert affected == 0
+    db.close()
+
+
+def test_delete_all_sources(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    affected = db.delete_all_sources()
+    assert affected == 2
+    assert db.read_conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 0
+    assert db.read_conn.execute("SELECT COUNT(*) FROM meta_info").fetchone()[0] == 0
+    assert db.read_conn.execute("SELECT COUNT(*) FROM collection_status").fetchone()[0] == 0
     db.close()
 
 

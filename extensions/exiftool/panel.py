@@ -6,6 +6,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 
 from wafer.plugin import BasePanelPlugin, KeyFilter
 from wafer.plugin.key_filter_dialog import FilterSaveConfirmDialog
+from wafer.core.db.recollect import Recollect
 from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
 from wafer.utils.notifier import Notifier
@@ -329,8 +330,8 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         delete_keys = [f"{_PREFIX}.{k}" for k, enabled in self._pending.items() if not enabled] if dlg.delete_data() else []
         KeyFilter.apply_key_states(_PREFIX, self._pending)
         db_names = list_setting_db_names()
-        if (dlg.delete_data() or dlg.recollect()) and db_names:
-            KeyFilter.send_delete_keys(db_names, delete_keys, _PREFIX, re_collect=dlg.recollect())
+        if (dlg.delete_data() or dlg.recollect()) and db_names and (delete_keys or dlg.recollect()):
+            Recollect.purge(db_scope=list(db_names), collector=_PREFIX, keys=delete_keys, delete=False, re_collect=dlg.recollect())
         self._pending.clear()
         self._rebuild_table()
         self._rebuild_pending_table()

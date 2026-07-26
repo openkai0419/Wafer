@@ -158,8 +158,14 @@ class DatabaseWriter:
         return result
 
     @profiler.profile
-    def reset_collector_status(self, collector: str) -> int:
-        result = self._db.reset_collector_status(collector)
+    def recollect(self, collector: str | None = None, sources=None, prefixes=None) -> int:
+        result = self._db.recollect(collector, sources, prefixes)
+        self._db.try_checkpoint("PASSIVE")
+        return result
+
+    @profiler.profile
+    def delete_all_sources(self) -> int:
+        result = self._db.delete_all_sources()
         self._db.try_checkpoint("PASSIVE")
         return result
 

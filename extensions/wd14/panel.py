@@ -652,8 +652,10 @@ class WD14SettingsWidget(QtWidgets.QWidget):
 
     @staticmethod
     def _send_delete_and_recollect(db_names: list[str], *, delete: bool, re_collect: bool):
+        from wafer.core.db.recollect import Recollect
+
         keys = list(_ALL_WD14_KEYS) if delete else []
-        KeyFilter.send_delete_keys(db_names, keys, "wd14", re_collect=re_collect)
+        Recollect.purge(db_scope=list(db_names), collector="wd14", keys=keys, delete=False, re_collect=re_collect)
 
 
 # ── Flow layout for blacklist chips ──

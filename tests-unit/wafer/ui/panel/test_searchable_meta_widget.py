@@ -483,26 +483,28 @@ def test_delete_request_disables_all_dbs_when_no_prefix(qtbot, monkeypatch):
 
 def test_delete_key_everywhere_deletes_and_disables(qtbot, monkeypatch):
     import wafer.ui.panel.searchable_meta_widget as mod
+    import wafer.core.db.recollect as recollect_mod
 
     monkeypatch.setattr(mod, "list_setting_db_names", lambda: ["db1", "db2"])
     delete_calls = []
     state_calls = []
-    monkeypatch.setattr(mod.KeyFilter, "send_delete_keys", staticmethod(lambda dbs, keys, prefix, *, re_collect: delete_calls.append((list(dbs), list(keys), prefix, re_collect))))
+    monkeypatch.setattr(recollect_mod.Recollect, "purge", staticmethod(lambda *, db_scope, collector, keys, delete, re_collect: delete_calls.append((list(db_scope), list(keys), collector, delete, re_collect))))
     monkeypatch.setattr(mod.KeyFilter, "apply_key_states", classmethod(lambda cls, prefix, states: state_calls.append((prefix, states))))
     w = SearchableMetaWidget(scope="meta_info", prefix="custom")
     qtbot.addWidget(w)
     w.set_context({"k": "v"}, {}, path="/a.png", db="db", scope="meta_info", prefix="custom")
     w._delete_key_everywhere("k")
-    assert delete_calls == [(["db1", "db2"], ["custom.k"], "custom", False)]
+    assert delete_calls == [(["db1", "db2"], ["custom.k"], "custom", False, False)]
     assert state_calls == [("custom", {"k": False})]
 
 
 def test_delete_key_everywhere_noop_without_prefix(qtbot, monkeypatch):
     import wafer.ui.panel.searchable_meta_widget as mod
+    import wafer.core.db.recollect as recollect_mod
 
     monkeypatch.setattr(mod, "list_setting_db_names", lambda: ["db1"])
     called = []
-    monkeypatch.setattr(mod.KeyFilter, "send_delete_keys", staticmethod(lambda *a, **k: called.append(a)))
+    monkeypatch.setattr(recollect_mod.Recollect, "purge", staticmethod(lambda *a, **k: called.append(k)))
     w = SearchableMetaWidget(scope="tag", prefix="")
     qtbot.addWidget(w)
     w.set_data({"k": "v"})

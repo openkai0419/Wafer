@@ -7,7 +7,6 @@ from wafer.plugin.collector.base import BaseCollector
 from wafer.core.qt.image import numpy_to_qimage
 from wafer.plugin.imageloader.handler import image_loader_resolver
 from wafer.utils.formatting import dpix
-from wafer.utils.logs import AppLogger
 from wafer.utils.notifier import Notifier
 from wafer.utils.paths import list_setting_db_names
 from wafer.core.lang.manager import t
@@ -321,20 +320,10 @@ class FlorenceSettingsWidget(QtWidgets.QWidget):
 
     @staticmethod
     def _send_delete_and_recollect(db_names: list[str], *, delete: bool, re_collect: bool):
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.core.db.recollect import Recollect
 
-        node = InstanceRegistry.instance().resolve_node()
-        if not node:
-            AppLogger.warning("[FlorenceSettings] No IPC node available")
-            return
         keys = list(_DELETE_KEYS) if delete else []
-        for db in db_names:
-            node.send_reliable(
-                "delete.keys",
-                {"keys": keys, "collector": "florence", "re_collect": re_collect},
-                dst="indexer",
-                db=db,
-            )
+        Recollect.purge(db_scope=list(db_names), collector="florence", keys=keys, delete=False, re_collect=re_collect)
 
 
 class _FlorenceSaveConfirmDialog(QtWidgets.QDialog):

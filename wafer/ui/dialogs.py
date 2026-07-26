@@ -67,7 +67,7 @@ def _set_thumb(label: QLabel, path: str, data, size: int):
 
 
 class BaseDialog(QDialog):
-    def __init__(self, message, title="Dialog", buttons=("OK", "Cancel"), icon_type=QStyle.SP_MessageBoxInformation, parent=None):
+    def __init__(self, message, title="Dialog", buttons=("OK", "Cancel"), icon_type=QStyle.SP_MessageBoxInformation, parent=None, disabled=()):
         super().__init__(parent)
         self.message = message
         self.setWindowTitle(title)
@@ -77,6 +77,7 @@ class BaseDialog(QDialog):
         self.message_label.setWordWrap(True)
         self.message_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         message_layout = QHBoxLayout()
+        message_layout.setSpacing(dpix(10))
         if icon_type is not None:
             icon = self.style().standardIcon(icon_type)
             icon_label = QLabel()
@@ -84,12 +85,17 @@ class BaseDialog(QDialog):
             message_layout.addWidget(icon_label)
         message_layout.addWidget(self.message_label)
         self.btn_layout = QHBoxLayout()
+        self.btn_layout.setSpacing(dpix(8))
         self.btn_layout.addStretch()
         for btn_text in buttons:
             btn = QPushButton(btn_text)
+            btn.setStyleSheet(f"QPushButton {{ padding: {dpix(3)}px {dpix(16)}px; }}")
             btn.clicked.connect(lambda _, text=btn_text: self._on_button(text))
+            btn.setEnabled(btn_text not in disabled)
             self.btn_layout.addWidget(btn)
         self.main_layout = QVBoxLayout()
+        self.main_layout.setContentsMargins(dpix(16), dpix(14), dpix(16), dpix(12))
+        self.main_layout.setSpacing(dpix(12))
         self.main_layout.addLayout(message_layout)
         self.content_layout = QVBoxLayout()
         self.main_layout.addLayout(self.content_layout)
@@ -119,8 +125,8 @@ class BaseDialog(QDialog):
 
 class ConfirmDialog(BaseDialog):
     @staticmethod
-    def ask(message, title="Confirm", buttons=("OK", "Cancel"), parent=None):
-        dialog = ConfirmDialog(message, title, buttons, parent=parent)
+    def ask(message, title="Confirm", buttons=("OK", "Cancel"), parent=None, disabled=()):
+        dialog = ConfirmDialog(message, title, buttons, parent=parent, disabled=disabled)
         dialog.exec()
         return dialog.result_text
 

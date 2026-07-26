@@ -95,7 +95,20 @@ def test_header_has_reload_and_add_buttons(qtbot):
     qtbot.addWidget(w)
     w.set_data(_sample_meta())
     buttons = [btn for btn in w._header.findChildren(QtWidgets.QToolButton) if not btn.isHidden()]
-    assert buttons == [w._reload_btn, w._add_btn]
+    assert buttons == [w._reload_btn, w._add_btn, w._filter_btn]
+
+
+def test_filter_button_opens_metadata_filter_panel(qtbot, monkeypatch):
+    import wafer.app.viewer.preview.meta_panel as mod
+    from wafer.core.commands.bridge import Command
+
+    calls = []
+    monkeypatch.setattr(Command, "run", staticmethod(lambda cmd_id, *a, **k: calls.append(cmd_id)))
+    w = MetaViewerWidget()
+    qtbot.addWidget(w)
+    w._filter_btn.click()
+    assert calls == ["panel.toggle_metadata_filter"]
+
 
 
 def test_global_add_dialog_embeds_scope_combo_with_legacy_wording(qtbot):

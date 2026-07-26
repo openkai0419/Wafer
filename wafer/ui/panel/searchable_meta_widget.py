@@ -10,12 +10,14 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from ...utils.formatting import dpix, display_prefixed_key
 from ...utils.logs import AppLogger
+from ...utils.paths import list_setting_db_names
 from ...core.lang.manager import t
 from ...core.color.theme import ThemeManager
 from ...core.commands.bridge import ActionKit, Menu
 from ...core.qt.dispatcher import Dispatcher, CancelSlot
 from ...core.qt.icon_engine import icon_draw, themed_icon
 from ...core.qt.thread import utility_pool
+from ...plugin import KeyFilter
 from ..dialogs import ConfirmDialog
 from .tag_edit_service import TagEditService
 
@@ -187,8 +189,7 @@ class _MetaItemDelegate(QtWidgets.QStyledItemDelegate):
         doc_val.setTextWidth(max(val_w, dpix(50)))
         doc_val.setHtml(index.data(_VAL_HTML_ROLE) or "")
 
-        key_h = QtGui.QFontMetrics(font).height()
-        h = max(key_h, int(doc_val.size().height())) + 2 * pad
+        h = max(int(doc_key.size().height()), int(doc_val.size().height())) + 2 * pad
 
         entry = (doc_key, doc_val, h, side_w)
         self._doc_cache[row] = entry
@@ -235,6 +236,8 @@ class _MetaItemDelegate(QtWidgets.QStyledItemDelegate):
 
 
 class SearchKvDetailDialog(QtWidgets.QDialog):
+    delete_requested = QtCore.Signal()
+
     def __init__(
         self,
         parent: QtWidgets.QWidget | None,
@@ -251,7 +254,6 @@ class SearchKvDetailDialog(QtWidgets.QDialog):
         self._initial_key = key
         self._initial_value = value
         self._initial_locked = locked
-        self._delete_requested = False
         self._existing_keys = set(existing_keys or set())
         self._duplicate_hint = duplicate_hint or t("Key already exists; will be auto-renamed on save.")
         if not add_mode:
@@ -289,7 +291,7 @@ class SearchKvDetailDialog(QtWidgets.QDialog):
         self.delete_btn = QtWidgets.QPushButton(t("Delete"), buttons)
         self.delete_btn.setIcon(themed_icon("cross", margin=0.12))
         self.delete_btn.setVisible(not add_mode)
-        self.delete_btn.clicked.connect(self._on_delete_clicked)
+        self.delete_btn.clicked.connect(self.delete_requested)
         self.revert_btn = QtWidgets.QPushButton(t("Revert"), buttons)
         self.revert_btn.clicked.connect(self.revert)
         self.save_btn = QtWidgets.QPushButton(t("Save"), buttons)
@@ -315,19 +317,6 @@ class SearchKvDetailDialog(QtWidgets.QDialog):
     def _connect_hint_dependencies(self):
         pass
 
-    def _on_delete_clicked(self):
-        delete_label = t("Delete")
-        result = ConfirmDialog.ask(
-            t('Delete metadata "{key}"?\nThis cannot be undone.', key=self._initial_key),
-            title=t("Delete metadata"),
-            buttons=(delete_label, t("Cancel")),
-            parent=self,
-        )
-        if result != delete_label:
-            return
-        self._delete_requested = True
-        self.accept()
-
     def _on_save_clicked(self):
         if not self.key().strip():
             self.hint_label.setText(t("Key is required."))
@@ -348,7 +337,6 @@ class SearchKvDetailDialog(QtWidgets.QDialog):
         self.key_edit.setText(self._initial_key)
         self.value_edit.setPlainText(self._initial_value)
         self.lock_check.setChecked(self._initial_locked)
-        self._delete_requested = False
 
     def key(self) -> str:
         return self.key_edit.text().strip()
@@ -358,9 +346,6 @@ class SearchKvDetailDialog(QtWidgets.QDialog):
 
     def locked(self) -> bool:
         return self.lock_check.isChecked()
-
-    def delete_requested(self) -> bool:
-        return self._delete_requested
 
 
 class ScopedSearchKvAddDialog(SearchKvDetailDialog):
@@ -656,10 +641,8 @@ class SearchableMetaWidget(QtWidgets.QWidget):
             locked=bool(self._locks.get(key, False)),
             existing_keys=self._current_displayed_keys(),
         )
+        dlg.delete_requested.connect(lambda: self._confirm_delete(key, parent=dlg, on_deleted=dlg.reject))
         if dlg.exec() != QtWidgets.QDialog.Accepted:
-            return
-        if dlg.delete_requested():
-            self._submit_delete(key)
             return
         new_key = self._dedupe_key(dlg.key(), exclude=key)
         self._submit_save(key, new_key, dlg.value(), dlg.locked())
@@ -703,7 +686,7 @@ class SearchableMetaWidget(QtWidgets.QWidget):
         if rid:
             AppLogger.info(f"[SearchKV] save submitted scope={self._context.scope} key={self._to_full(new_key)}")
 
-    def _submit_upsert(self, key: str, value: str, locked: bool) -> str | None:
+    def _submit_upsert(self, key: str, value: str, locked: bool, *, lock_only: bool = False) -> str | None:
         if not self._can_submit():
             return None
         return TagEditService.instance().submit(
@@ -712,6 +695,7 @@ class SearchableMetaWidget(QtWidgets.QWidget):
             [],
             self._context.db,
             scope=self._context.scope,
+            lock_only=lock_only,
             file_hash=self._context.file_hash if self._context.scope == "tag" else None,
             target_id=self._context.path if self._context.scope == "meta_info" else None,
         )
@@ -785,6 +769,8 @@ class SearchableMetaWidget(QtWidgets.QWidget):
     def _build_context_menu(self, row: int, key: str, display_key: str, value: str) -> QtWidgets.QMenu:
         clipboard = QtWidgets.QApplication.clipboard()
         uid = f"{id(self):x}.{row}"
+        locked = bool(self._locks.get(key, False))
+        lock_label = "Unlock" if locked else "Lock"
         spec = Menu.session(self).menu(
             [
                 ":Meta",
@@ -793,7 +779,52 @@ class SearchableMetaWidget(QtWidgets.QWidget):
                 ActionKit.Action(path=f"inline.meta_list.{uid}.copy_row", display="Copy row", func=lambda ctx: clipboard.setText(f"{display_key}: {value}")),
                 "-",
                 ActionKit.Action(path=f"inline.meta_list.{uid}.edit", display="Edit…", func=lambda ctx: self._open_edit_dialog(key)),
+                ActionKit.Action(path=f"inline.meta_list.{uid}.lock", display=lock_label, func=lambda ctx: self._toggle_lock(key)),
+                ActionKit.Action(path=f"inline.meta_list.{uid}.delete", display="Delete…", func=lambda ctx: self._confirm_delete(key)),
             ]
         )
         menu = spec.build() if spec is not None else None
         return menu if menu is not None else QtWidgets.QMenu(self)
+
+    def _toggle_lock(self, key: str):
+        if not self._can_submit():
+            AppLogger.warning(f"[SearchKV] lock aborted: missing context scope={self._context.scope}")
+            return
+        locked = bool(self._locks.get(key, False))
+        self._submit_upsert(key, self._full_value(key), not locked, lock_only=True)
+
+    def _confirm_delete(self, key: str, *, parent: QtWidgets.QWidget | None = None, on_deleted=None):
+        display_key = self._to_full(key)
+        this_only = t("Only from this file")
+        all_dbs = t("From All databases + filter")
+        cancel = t("Cancel")
+        has_prefix = bool(self._context.prefix)
+        result = ConfirmDialog.ask(
+            t('Do you want to delete key:\n"{key}"\nfrom table?', key=display_key),
+            title=t("Delete metadata"),
+            buttons=(this_only, all_dbs, cancel),
+            disabled=() if has_prefix else (all_dbs,),
+            parent=parent or self,
+        )
+        if result == this_only:
+            self._submit_delete(key)
+        elif result == all_dbs and has_prefix:
+            self._delete_key_everywhere(key)
+        else:
+            return
+        if on_deleted is not None:
+            on_deleted()
+
+    def _delete_key_everywhere(self, key: str):
+        prefix = self._context.prefix
+        if not prefix:
+            return
+        db_names = list_setting_db_names()
+        if not db_names:
+            AppLogger.warning("[SearchKV] delete-all aborted: no setting DBs")
+            return
+        full_key = self._to_full(key)
+        KeyFilter.send_delete_keys(db_names, [full_key], prefix, re_collect=False)
+        KeyFilter.apply_key_states(prefix, {key: False})
+        AppLogger.info(f"[SearchKV] delete-all submitted prefix={prefix} key={full_key} dbs={len(db_names)}")
+

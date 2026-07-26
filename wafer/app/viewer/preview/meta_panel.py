@@ -114,9 +114,23 @@ class MetaViewerWidget(QtWidgets.QWidget):
         self._add_btn.setToolTip(t("Add tag or metadata"))
         self._add_btn.clicked.connect(self._on_add_clicked)
 
+        self._filter_btn = QtWidgets.QToolButton(bar)
+        self._filter_btn.setIcon(themed_icon("gear", margin=0.1))
+        self._filter_btn.setAutoRaise(True)
+        self._filter_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self._filter_btn.setToolTip(t("Metadata filter settings"))
+        self._filter_btn.clicked.connect(self._on_filter_clicked)
+
+        lay.addWidget(self._filter_btn)
         lay.addWidget(self._reload_btn)
         lay.addWidget(self._add_btn)
         return bar
+
+    def _on_filter_clicked(self):
+        from ....core.commands.bridge import Command
+
+        Command.run("panel.toggle_metadata_filter")
+
 
     def _update_placeholder_style(self):
         p = ThemeManager.instance().palette

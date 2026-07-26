@@ -113,9 +113,11 @@ def resolve_data_path(relative_path):
 
 
 def resolve_cache_path(relative_path):
-    dirs = PlatformDirs(appname=None)
-    base_dir = Path(dirs.user_cache_dir) / APP_DATA_DIR_NAME
-    return normalize_path(_resolve_app_path(relative_path, base_dir))
+    return resolve_data_path(f"cache/{relative_path}")
+
+
+def resolve_temp_path(relative_path):
+    return resolve_data_path(f".temp/{relative_path}")
 
 
 def resolve_config_path(relative_path):

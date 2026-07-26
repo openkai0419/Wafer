@@ -50,7 +50,12 @@ class TestWorkflowDragExport:
     def test_write_temp_produces_valid_json(self, qtbot, monkeypatch, tmp_path):
         import extensions.text_generation.comfyui_panel as mod
 
-        monkeypatch.setattr(mod, "resolve_cache_path", lambda rel: str(tmp_path / rel.replace("/", "_")))
+        def fake_temp(rel):
+            path = tmp_path / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            return str(path)
+
+        monkeypatch.setattr(mod, "resolve_temp_path", fake_temp)
         widget = WorkflowDragExport()
         qtbot.addWidget(widget)
         widget.set_workflow(json.dumps(WORKFLOW), "abc")

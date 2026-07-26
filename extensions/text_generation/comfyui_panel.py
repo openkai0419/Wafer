@@ -12,10 +12,20 @@ from wafer.ui.panel.meta_viewer import CollapsibleCard
 from wafer.ui.panel.searchable_meta_widget import SearchableMetaWidget
 from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
-from wafer.utils.paths import resolve_cache_path
+from wafer.utils.paths import resolve_temp_path
 
 WORKFLOW_KEY = "workflow"
 _DRAG_HINT = "Drag here into ComfyUI to load workflow"
+_WORKFLOW_DIR = "comfyui_workflows"
+
+
+def _clear_workflow_dir() -> None:
+    directory = Path(resolve_temp_path(f"{_WORKFLOW_DIR}/"))
+    for path in directory.glob("*.json"):
+        try:
+            path.unlink()
+        except OSError as e:
+            AppLogger.warning(f"[comfyui_panel] failed to remove stale workflow {path.name}: {e}", exc=e)
 
 
 class WorkflowDragExport(QtWidgets.QFrame):
@@ -24,6 +34,7 @@ class WorkflowDragExport(QtWidgets.QFrame):
         self._workflow: str | None = None
         self._file_hash = ""
         self._press_origin: QtCore.QPoint | None = None
+        self.destroyed.connect(lambda: _clear_workflow_dir())
         self.setObjectName("comfyuiWorkflowDrag")
         self._pad = dpix(6)
         self._gap = dpix(5)
@@ -82,8 +93,9 @@ class WorkflowDragExport(QtWidgets.QFrame):
     def _write_temp(self) -> str | None:
         if not self._workflow:
             return None
+        _clear_workflow_dir()
         name = self._file_hash or "workflow"
-        target = resolve_cache_path(f"comfyui_workflows/{name}.json")
+        target = resolve_temp_path(f"{_WORKFLOW_DIR}/{name}.json")
         try:
             graph = json.loads(self._workflow)
             Path(target).write_text(json.dumps(graph, indent=2, ensure_ascii=False), encoding="utf-8")

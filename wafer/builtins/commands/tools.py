@@ -73,6 +73,18 @@ def open_database_manager(ctx):
     )
 
 
+def open_metadata_filter(ctx):
+    from ..key_filter.panel import KeyFilterWidget
+
+    _toggle_or_standalone(
+        ctx,
+        "Metadata Filter",
+        KeyFilterWidget,
+        "metadata_filter",
+        size=(dpix(600), dpix(700)),
+    )
+
+
 def open_batch_renamer(ctx):
     from ..batch_renamer.widget import BatchRenameWidget
 
@@ -140,6 +152,11 @@ class ToolCommands(ActionKit.MenuBase):
                 path="setting.database_manager",
                 display="Database Manager",
                 func=open_database_manager,
+            ),
+            ActionKit.Command(
+                path="setting.metadata_filter",
+                display="Metadata Filter",
+                func=open_metadata_filter,
             ),
             ":Tools",
             ActionKit.Command(

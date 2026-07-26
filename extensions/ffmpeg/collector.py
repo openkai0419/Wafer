@@ -54,7 +54,7 @@ class FfmpegCollectorPlugin(BaseCollectorPlugin):
         self._ffprobe_path = get_ffprobe_path()
         return self._ffprobe_path
 
-    def process(self, path: str, file_info: tuple) -> CollectorResult:
+    def process(self, path: str, file_info: tuple) -> CollectorResult | None:
         ffprobe = self._resolve_ffprobe()
         if ffprobe is None:
             return CollectorResult(source=path, status=False)
@@ -67,11 +67,14 @@ class FfmpegCollectorPlugin(BaseCollectorPlugin):
 
         try:
             meta, aspect = flatten(data)
+            if not meta:
+                AppLogger.debug(f"[ffmpeg] no metadata extracted for {path}")
+                return CollectorResult(source=path, status=False)
             return CollectorResult(
                 source=path,
                 status=True,
                 aspect=aspect,
-                meta_info=meta if meta else None,
+                meta_info=meta,
             )
         except Exception as e:
             AppLogger.debug(f"[ffmpeg] flatten failed for {path}: {e}")

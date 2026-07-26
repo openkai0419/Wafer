@@ -658,7 +658,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_tags_updated_overlay(self, payload: dict):
         if not self._is_my_db(payload.get("db", "")):
             return
-        from .preview.tag_edit_service import TagEditService
+        from ...ui.panel.tag_edit_service import TagEditService
 
         TagEditService.instance().handle_ack(payload)
         self.grid_overlay_host.reload()

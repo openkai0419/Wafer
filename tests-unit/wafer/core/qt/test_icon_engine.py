@@ -83,6 +83,7 @@ ALL_KEYS = [
     "section_tag",
     "section_meta",
     "section_root",
+    "cursor",
 ]
 
 

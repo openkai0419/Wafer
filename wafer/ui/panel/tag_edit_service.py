@@ -6,9 +6,9 @@ from dataclasses import dataclass, field
 
 from PySide6 import QtCore
 
-from ....utils.logs import AppLogger
-from ....utils.notifier import Notifier
-from ....core.lang.manager import t
+from ...utils.logs import AppLogger
+from ...utils.notifier import Notifier
+from ...core.lang.manager import t
 
 
 _DEFAULT_TIMEOUT_SEC = 10.0
@@ -189,9 +189,12 @@ class TagEditService(QtCore.QObject):
             if pending_scope != scope or target != target_id:
                 continue
             if pending.op == "delete":
-                merged_tags.pop(key, None)
-                merged_locks.pop(key, None)
-                states[key] = "deleting" if not pending.failed else "delete_failed"
+                if pending.failed:
+                    states[key] = "delete_failed"
+                else:
+                    merged_tags.pop(key, None)
+                    merged_locks.pop(key, None)
+                    states[key] = "deleting"
             elif pending.op == "rename":
                 merged_tags.pop(key, None)
                 merged_locks.pop(key, None)
@@ -209,12 +212,9 @@ class TagEditService(QtCore.QObject):
 
     def _resolve_node(self):
         try:
-            from ..ipc_bridge import ViewerIpcBridge
+            from ...core.commands.binding.instance_registry import InstanceRegistry
 
-            bridge = ViewerIpcBridge.instance()
-            if bridge is None:
-                return None
-            return bridge.node
+            return InstanceRegistry.instance().resolve_node()
         except Exception as e:
             AppLogger.warning(f"[TagEdit] resolve node failed: {e}", exc=e)
             return None

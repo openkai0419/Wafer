@@ -8,15 +8,15 @@ from typing import Any
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ....utils.formatting import dpix, display_prefixed_key
-from ....utils.logs import AppLogger
-from ....core.lang.manager import t
-from ....core.color.theme import ThemeManager
-from ....core.commands.bridge import ActionKit, Menu
-from ....core.qt.dispatcher import Dispatcher, CancelSlot
-from ....core.qt.icon_engine import icon_draw, themed_icon
-from ....core.qt.thread import utility_pool
-from ....ui.dialogs import ConfirmDialog
+from ...utils.formatting import dpix, display_prefixed_key
+from ...utils.logs import AppLogger
+from ...core.lang.manager import t
+from ...core.color.theme import ThemeManager
+from ...core.commands.bridge import ActionKit, Menu
+from ...core.qt.dispatcher import Dispatcher, CancelSlot
+from ...core.qt.icon_engine import icon_draw, themed_icon
+from ...core.qt.thread import utility_pool
+from ..dialogs import ConfirmDialog
 from .tag_edit_service import TagEditService
 
 SHORT_VALUE_LIMIT = 1000
@@ -412,6 +412,8 @@ class SearchableMetaWidget(QtWidgets.QWidget):
 
     def __init__(self, parent: QtWidgets.QWidget | None = None, *, scope: str = "tag", prefix: str = "") -> None:
         super().__init__(parent)
+        self._base_data: dict[str, str] = {}
+        self._base_locks: dict[str, bool] = {}
         self._data: dict[str, Any] = {}
         self._locks: dict[str, bool] = {}
         self._states: dict[str, str] = {}
@@ -508,8 +510,13 @@ class SearchableMetaWidget(QtWidgets.QWidget):
         self._set_data(data, locks or {})
 
     def _set_data(self, data: dict[str, Any], locks: dict[str, bool]):
-        full_data = {self._to_full(k): str(v) for k, v in dict(data).items()}
-        full_locks = {self._to_full(k): bool(v) for k, v in dict(locks).items()}
+        self._base_data = {str(k): str(v) for k, v in dict(data).items()}
+        self._base_locks = {str(k): bool(v) for k, v in dict(locks).items()}
+        self._render()
+
+    def _render(self):
+        full_data = {self._to_full(k): v for k, v in self._base_data.items()}
+        full_locks = {self._to_full(k): v for k, v in self._base_locks.items()}
         merged, merged_locks, states = TagEditService.instance().apply_overlay(self._target_id(), full_data, full_locks, scope=self._context.scope)
         short_data: dict[str, str] = {}
         short_locks: dict[str, bool] = {}
@@ -744,7 +751,7 @@ class SearchableMetaWidget(QtWidgets.QWidget):
 
     def _on_kv_overlay_changed(self, scope: str, target_id: str):
         if scope == self._context.scope and target_id == self._target_id():
-            self._set_data(self._data, self._locks)
+            self._render()
 
     def _on_kv_commit_confirmed(self, scope: str, target_id: str, applied: dict, deleted: list):
         if scope != self._context.scope or target_id != self._target_id():
@@ -754,15 +761,15 @@ class SearchableMetaWidget(QtWidgets.QWidget):
             if short is None:
                 continue
             value, locked = item
-            self._data[short] = str(value)
-            self._locks[short] = bool(locked)
+            self._base_data[short] = str(value)
+            self._base_locks[short] = bool(locked)
         for full_key in deleted or []:
             short = self._to_short(full_key)
             if short is None:
                 continue
-            self._data.pop(short, None)
-            self._locks.pop(short, None)
-        self._set_data(self._data, self._locks)
+            self._base_data.pop(short, None)
+            self._base_locks.pop(short, None)
+        self._render()
 
     def _on_context_menu(self, pos: QtCore.QPoint):
         index = self._list_view.indexAt(pos)

@@ -20,8 +20,8 @@ from ....ui.panel.meta_viewer import (
     SECTION_MARKER_TAG_PREFIX,
     SECTION_MARKER_TAG_ROOT,
 )
-from .searchable_meta_widget import ScopedSearchKvAddDialog, SearchableMetaWidget
-from .tag_edit_service import TagEditService
+from ....ui.panel.searchable_meta_widget import ScopedSearchKvAddDialog, SearchableMetaWidget
+from ....ui.panel.tag_edit_service import TagEditService
 
 _FIXED_SECTION_KEYS = ("file", "source")
 _TAG_PREFIX = "tag:"

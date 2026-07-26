@@ -121,7 +121,7 @@ class _MarkBadgeRow(QtWidgets.QWidget):
         if self._scope == SCOPE_TAG and not self._file_hash:
             AppLogger.warning("[MarkPanel] cannot edit tag mark without file hash")
             return
-        from ...app.viewer.preview.tag_edit_service import TagEditService
+        from ...ui.panel.tag_edit_service import TagEditService
 
         key = MarkRegistry.key(mark.id)
         TagEditService.instance().submit(

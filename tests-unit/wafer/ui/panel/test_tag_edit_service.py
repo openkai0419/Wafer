@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from wafer.app.viewer.preview.tag_edit_service import TagEditService, PendingEdit
+from wafer.ui.panel.tag_edit_service import TagEditService, PendingEdit
 
 
 @pytest.fixture

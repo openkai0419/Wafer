@@ -131,7 +131,6 @@ class MetaViewerWidget(QtWidgets.QWidget):
 
         Command.run("panel.toggle_metadata_filter")
 
-
     def _update_placeholder_style(self):
         p = ThemeManager.instance().palette
         fs = dpix(13)

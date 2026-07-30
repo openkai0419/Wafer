@@ -19,27 +19,59 @@ Wafer is a file viewer built on **PySide6**, **SQLite**, and **ZMQ**.
 It collects local files in the background so large file sets can be browsed, searched, and filtered quickly.
 Viewing, metadata, AI analysis, search, layouts, and archive support are added through extensions.
 
-Platform: Windows
+Supported Platform: Windows (Only for now)
 
-## Installation And Data
+## How to Use Wafer
 
-### From Zip
+1. Download the .zip from [Releases](https://github.com/openkai0419/Wafer/releases/latest), extract and run `Wafer.exe`
+2. Enable the extensions you want to use in the Plugin Manager, then restart the process
+3. Wait a few minutes for extension installation
+4. Add a folder from the top-left menu
+5. Wait for collection to finish
 
-1. Open the [Releases](https://github.com/openkai0419/Wafer/releases/latest) page
-2. Download `Wafer-vX.X.X.zip`
-3. Extract the zip to any folder (SSD recommended)
-4. Run `Wafer.exe`
+### Uninstall
 
-A bundled Python environment is included. No Python installation is required.
+Run `Uninstaller.exe` to uninstall.
 
-### With Git
+On Windows, application data such as databases, settings, logs, and caches is stored under `C:/Users/[username]/AppData/Local/Wafer` by default. You can also delete it manually.
 
-#### Requirements
+### About the Processes (Tray And Viewer)
 
-- Python 3.11+
-- Windows (currently the only tested OS)
+Wafer mainly uses two user-visible processes: `Tray` and `Viewer`.
 
-#### Setup
+| Type | Role |
+|---|---|
+| `Tray` | Resident manager for Viewer windows, databases, background work, and restarts. |
+| `Viewer` | Window for browsing and searching files. Multiple Viewer windows can be opened. |
+
+While Tray is running, file changes are detected and the database stays up to date.
+
+### About the Plugin Manager
+
+`Plugin Manager` manages extension states and collection or analysis assignments.
+
+- **Install Extensions**: Install extensions and switch them on or off, such as below:
+
+| Extension Type | What it adds | Representative extensions |
+|---|---|---|
+| Viewer / Grid | File rendering, thumbnails, and viewer behavior | `image`, `animated`, `video` |
+| Collector / Parser | Collecting metadata, or tagging with AI to make your files searchable | `exiftool`, `ffmpeg`, `color`, `wd14`, `florence` |
+| Search / Filter | Additional ways to search and narrow results, such as date ranges, regular expressions, and color distance | `additional_filters`, `color` |
+| Layout / UI | Grid layouts, custom panels, and others | `additional_layout`, extension settings panels |
+| Archive Support | Treat archive contents as logical child paths and delegate rendering to existing plugins | `zip` |
+
+- **Enable Extensions**: Choose which extensions to enable in the tab above, and choose which Database stores metadata collection in the tab below.
+
+Restart is required after changing settings.
+
+## How To Develop Wafer
+
+##### Requirements 
+
+- Python 3.11+ (builds bundle Python 3.11.9)
+- Windows
+
+##### Setup
 
 ```bash
 git clone https://github.com/openkai0419/Wafer.git
@@ -54,29 +86,9 @@ main.bat
 python main.py
 ```
 
-### Updates
+Run `cleanup.bat`, then delete the cloned repository folder to uninstall.
 
-Use the **Update** panel to download and apply the latest version, then restart.
-
-### Uninstall
-
-On Windows, application data such as databases, settings, logs, and caches is stored under `C:/Users/[username]/AppData/Local/Wafer` by default.
-
-- **Portable (zip)**: Run `Uninstaller.exe` in the application folder.
-- **From source**: Run `cleanup.bat`, then delete the cloned repository folder.
-
-## Tray And Viewer
-
-Wafer mainly uses two user-visible processes: `Tray` and `Viewer`.
-
-| Type | Role |
-|---|---|
-| `Tray` | Resident manager for Viewer windows, databases, background work, and restarts. |
-| `Viewer` | Window for browsing and searching files. Multiple Viewer windows can be opened. |
-
-While Tray is running, file changes are detected and the database stays up to date.
-
-## Code Design
+### Code Design
 
 Wafer uses a **common foundation + extensions** design.
 
@@ -85,25 +97,11 @@ Wafer uses a **common foundation + extensions** design.
 
 The foundation stays shared while format-specific features live in extensions.
 
-## Extensions
+### Extensions
 
-Extensions add more than display formats. They can extend collection, search, rendering, UI, and archive handling.
-Features can be added by placing Python files under the `extensions` folder.
-
-| Extension point | What it adds | Representative extensions |
-|---|---|---|
-| Viewer / Grid | File rendering, thumbnails, and viewer behavior | `image`, `animated`, `video` |
-| Metadata & AI Collection | EXIF, video/audio metadata, colors, tags, captions, and other searchable or displayable data | `exiftool`, `ffmpeg`, `color`, `wd14`, `florence` |
-| Search / Filter | Additional ways to search and narrow results, such as date ranges, regular expressions, and color distance | `additional_filters`, `color` |
-| Layout / UI | Grid layouts, settings panels, and supporting UI | `additional_layout`, extension settings panels |
-| Archive Support | Treat archive contents as logical child paths and delegate rendering to existing plugins | `zip` |
-
-## Plugin Manager
-
-`Plugin Manager` manages extension states and collection or analysis assignments.
-
-- **Extensions**: Install extensions and switch them on or off. Restart is required after switching them.
-- **Collectors**: Choose which Database stores metadata collection and AI analysis results.
+Extensions add more than formats. They can extend collection, search, rendering, UI, archive handling, and more.
+Features can be added by placing raw Python files under the `extensions` folder.
+Check `wafer/builtins` or the included extensions for samples.
 
 ## License
 

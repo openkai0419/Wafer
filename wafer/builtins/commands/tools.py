@@ -11,13 +11,13 @@ from ...core.lang.manager import t
 _standalone_dialogs: dict[str, QtWidgets.QDialog] = {}
 
 
-def _open_standalone(widget_factory, title: str, store_key: str, size=None):
+def _open_standalone(widget_factory, title: str, store_key: str, size=None, parent=None):
     existing = _standalone_dialogs.get(store_key)
     if existing is not None and existing.isVisible():
         existing.raise_()
         existing.activateWindow()
         return
-    dlg = QtWidgets.QDialog()
+    dlg = QtWidgets.QDialog(parent)
     dlg.setWindowTitle(title)
     dlg.setWindowFlags(dlg.windowFlags() | QtCore.Qt.Window)
     dlg.setAttribute(QtCore.Qt.WA_DeleteOnClose)
@@ -131,7 +131,7 @@ def show_readme(ctx):
         browser.load_file(readme_path)
         return browser
 
-    _open_standalone(factory, "README.md", "readme_viewer", size=(dpix(700), dpix(800)))
+    _open_standalone(factory, "README.md", "readme_viewer", size=(dpix(700), dpix(800)), parent=ctx.get_instance("MainWindow"))
 
 
 class ToolCommands(ActionKit.MenuBase):

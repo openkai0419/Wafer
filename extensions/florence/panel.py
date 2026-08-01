@@ -333,5 +333,3 @@ class FlorenceSettingsWidget(QtWidgets.QWidget):
 
         keys = list(_DELETE_KEYS) if delete else []
         Recollect.reset(db_scope=list(db_names), collector="florence", keys=keys, re_collect=re_collect)
-
-

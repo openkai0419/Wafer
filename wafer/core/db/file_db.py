@@ -913,7 +913,9 @@ class FileDB:
                 meta_deleted, tags_deleted, child_deleted = self._delete_collection_cur(cur, collector, sources, prefixes, drop_status=drop_status)
             finally:
                 cur.close()
-        AppLogger.info(f"[DB] Deleted collection data: collector={collector or '*'}, {self._scope_label(sources, prefixes)}, children={child_deleted}, meta={meta_deleted}, tags={tags_deleted}, drop_status={drop_status}")
+        AppLogger.info(
+            f"[DB] Deleted collection data: collector={collector or '*'}, {self._scope_label(sources, prefixes)}, children={child_deleted}, meta={meta_deleted}, tags={tags_deleted}, drop_status={drop_status}"
+        )
         return meta_deleted, tags_deleted, child_deleted
 
     def delete_keys(self, keys: list[str]) -> tuple[int, int]:
@@ -938,7 +940,16 @@ class FileDB:
         AppLogger.info(f"[DB] Recollect reset: collector={collector or '*'}, {self._scope_label(sources, prefixes)}, affected={affected}")
         return affected
 
-    def reset_collection(self, collector: str | None = None, sources: Sequence[str] | None = None, prefixes: Sequence[str] | None = None, keys: Sequence[str] | None = None, *, delete: bool = False, re_collect: bool = True) -> tuple[int, int, int, int]:
+    def reset_collection(
+        self,
+        collector: str | None = None,
+        sources: Sequence[str] | None = None,
+        prefixes: Sequence[str] | None = None,
+        keys: Sequence[str] | None = None,
+        *,
+        delete: bool = False,
+        re_collect: bool = True,
+    ) -> tuple[int, int, int, int]:
         sources = [s for s in sources if s] or None if sources else None
         prefixes = [p for p in prefixes if p] or None if prefixes else None
         if delete and collector is None and not sources and not prefixes:
@@ -960,7 +971,9 @@ class FileDB:
                     pending = self._mark_pending_cur(cur, collector, sources, prefixes)
             finally:
                 cur.close()
-        AppLogger.info(f"[DB] Reset collection: collector={collector or '*'}, {self._scope_label(sources, prefixes)}, keys={len(keys) if keys else 0}, delete={delete}, re_collect={re_collect}, children={child_deleted}, meta={meta_deleted}, tags={tags_deleted}, pending={pending}")
+        AppLogger.info(
+            f"[DB] Reset collection: collector={collector or '*'}, {self._scope_label(sources, prefixes)}, keys={len(keys) if keys else 0}, delete={delete}, re_collect={re_collect}, children={child_deleted}, meta={meta_deleted}, tags={tags_deleted}, pending={pending}"
+        )
         return meta_deleted, tags_deleted, child_deleted, pending
 
     def delete_all_sources(self) -> int:

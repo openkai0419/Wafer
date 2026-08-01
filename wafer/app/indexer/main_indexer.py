@@ -281,7 +281,9 @@ class IndexerProcess:
         re_collect = bool(payload.get("re_collect", True))
         if not (keys or delete or re_collect):
             return
-        AppLogger.info(f"[Indexer] Recollect reset collector={collector or '*'}, sources={len(sources) if sources else 0}, prefixes={len(prefixes) if prefixes else 0}, keys={len(keys) if keys else 0}, delete={delete}, re_collect={re_collect}")
+        AppLogger.info(
+            f"[Indexer] Recollect reset collector={collector or '*'}, sources={len(sources) if sources else 0}, prefixes={len(prefixes) if prefixes else 0}, keys={len(keys) if keys else 0}, delete={delete}, re_collect={re_collect}"
+        )
 
         def _run():
             return self.writer.reset_collection(collector, sources, prefixes, keys, delete=delete, re_collect=re_collect)

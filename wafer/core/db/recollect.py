@@ -42,7 +42,16 @@ class Recollect:
         return sent
 
     @staticmethod
-    def reset(*, db_scope=DB_SCOPE_ALL, collector: str | None = None, sources: Iterable[str] | None = None, prefixes: Iterable[str] | None = None, keys: Iterable[str] | None = None, delete: bool = False, re_collect: bool = True) -> int:
+    def reset(
+        *,
+        db_scope=DB_SCOPE_ALL,
+        collector: str | None = None,
+        sources: Iterable[str] | None = None,
+        prefixes: Iterable[str] | None = None,
+        keys: Iterable[str] | None = None,
+        delete: bool = False,
+        re_collect: bool = True,
+    ) -> int:
         payload = {
             "mode": "reset",
             "collector": collector or None,

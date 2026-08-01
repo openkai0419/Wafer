@@ -840,3 +840,28 @@ def _draw_trash(p: QPainter, r: QRectF, color: QColor):
     bar_y_bot = body_bottom - h * 0.10
     p.drawLine(QPointF(cx - w * 0.10, bar_y_top), QPointF(cx - w * 0.10, bar_y_bot))
     p.drawLine(QPointF(cx + w * 0.10, bar_y_top), QPointF(cx + w * 0.10, bar_y_bot))
+
+
+@_register("cursor", padding=0.10)
+def _draw_cursor(p: QPainter, r: QRectF, color: QColor):
+    s = min(r.width(), r.height())
+    x0, y0 = r.left(), r.top()
+    pts = [
+        (0.10, 0.02),
+        (0.10, 0.80),
+        (0.30, 0.62),
+        (0.44, 0.94),
+        (0.56, 0.88),
+        (0.42, 0.57),
+        (0.66, 0.55),
+    ]
+    path = QPainterPath()
+    for i, (fx, fy) in enumerate(pts):
+        pt = QPointF(x0 + fx * s, y0 + fy * s)
+        path.moveTo(pt) if i == 0 else path.lineTo(pt)
+    path.closeSubpath()
+    pen = QPen(color, max(1.2, s * 0.07))
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(color)
+    p.drawPath(path)

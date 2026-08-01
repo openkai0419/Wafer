@@ -19,6 +19,15 @@ class ParserResult:
         return {k: v for k, v in asdict(self).items() if v is not None}
 
 
+def required_collectors(trigger_keys: tuple[str, ...]) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+    for key in trigger_keys:
+        collector, sep, meta_key = key.partition(".")
+        if sep and collector and meta_key:
+            result.setdefault(collector, []).append(meta_key)
+    return result
+
+
 class BaseParser(BasePlugin):
     SCOPE: str = "tray"
     TRIGGER_KEYS: tuple[str, ...] = ()

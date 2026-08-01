@@ -15,6 +15,7 @@ from ...core.platform.file_operations import PastePlanItem, delete_to_trash
 from ...core.platform.folders import show_in_explorer as reveal_in_explorer, open_file as platform_open_file, make_directory
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
+from ...utils.paths import containing_dir
 from ...utils.virtual_paths import is_virtual_path
 from ...core.qt.dispatcher import Dispatcher
 from ...core.qt.thread import SimpleThreadPool
@@ -187,15 +188,8 @@ def paste_here(ctx, overwrite_mode: str = "skip"):
     path = _ctx_source(ctx)
     if not path:
         return
-    a = os.path.abspath(path)
-    d = a if os.path.isdir(a) else os.path.dirname(a)
     parent = ctx.get_instance("ContentViewerWidget") or ctx.get_instance("GridView") or ctx.get_instance("FolderTree")
-    paste_clipboard_files(d, overwrite_mode=overwrite_mode, parent=parent)
-
-
-def _get_directory_from_path(path):
-    abs_path = os.path.abspath(path)
-    return abs_path if os.path.isdir(abs_path) else os.path.dirname(abs_path)
+    paste_clipboard_files(containing_dir(path), overwrite_mode=overwrite_mode, parent=parent)
 
 
 @require(ftree="FolderTree")
@@ -203,7 +197,7 @@ def select_path(ctx, ftree):
     paths = _ctx_sources(ctx)
     if not paths:
         return
-    folders = list(dict.fromkeys(_get_directory_from_path(str(p)) for p in paths))
+    folders = list(dict.fromkeys(containing_dir(p) for p in paths))
     ftree.expand_and_select_paths(folders)
 
 
@@ -234,7 +228,7 @@ def make_new_folder_here(ctx, folder_name: str | None = None) -> str | None:
     path = _ctx_source(ctx)
     if not path:
         return None
-    parent_dir = _get_directory_from_path(path)
+    parent_dir = containing_dir(path)
     name = folder_name or get_os_new_folder_name()
     new_folder = unique_path(parent_dir, name)
     make_directory(new_folder)

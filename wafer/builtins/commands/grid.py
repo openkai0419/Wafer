@@ -7,7 +7,7 @@ from ...core.commands.bridge import ActionKit
 from ...core.commands.binding.instance_registry import InstanceRegistry
 from ...core.lang.manager import t
 from ...utils.logs import AppLogger
-from ...utils.paths import normalize_path
+from ...utils.paths import normalize_path, containing_dir
 from ...utils.formatting import dpix
 from ...core.platform.dragparser import MimeDataParser
 from ...core.platform.paste import drop_files_with_ui, get_saved_drop_operation
@@ -707,8 +707,7 @@ class GridViewDropCommands(ActionKit.DragMenuBase):
     def _directory_from_source(source: str | None) -> str | None:
         if not source:
             return None
-        abs_source = os.path.abspath(str(source))
-        return abs_source if os.path.isdir(abs_source) else os.path.dirname(abs_source)
+        return containing_dir(source)
 
     @staticmethod
     def _apply_drop_action(ctx, op: str) -> None:

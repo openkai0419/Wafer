@@ -15,31 +15,63 @@
 
 </div>
 
-Wafer は **PySide6**・**SQLite**・**ZMQ** をベースとした多機能なファイルビューアーです。
-ローカルファイルをバックグラウンドで収集・DB化し、Viewer 上で大量のファイルを高速に閲覧、検索、フィルタリングすることが可能です。
-表示、メタデータ収集、AI解析、検索、レイアウト、アーカイブ対応などを extension としてユーザーが動的に管理できる構造になっています。
+Wafer は **PySide6**・**SQLite**・**ZMQ** をベースとした多機能ファイルビューアーです。
+ローカルファイルをバックグラウンドで収集・DB化し、大量のファイルを高速に閲覧・検索・フィルタする事ができます。
+拡張機能として、UI表示、メタデータ収集、AI解析、検索、レイアウト、アーカイブの対応などを動的に管理できます。
 
-対応OS: Windows
+対応OS: Windows（現時点のみ）
 
-## インストールとデータ
+## 使い方
 
-### Zipでダウンロードする (Python環境の無い人)
+1. [Releases](https://github.com/openkai0419/Wafer/releases/latest) から .zip をダウンロード＆展開して `Wafer.exe` を実行
+2. Plugin Manager で利用したい拡張機能を有効化してプロセスを再起動
+3. 拡張機能のインストールを待つ
+4. 左上メニューからフォルダを追加
+5. ファイルの収集を待つ
 
-1. [Releases](https://github.com/openkai0419/Wafer/releases/latest) ページを開く
-2. `Wafer-vX.X.X.zip` をダウンロード
-3. 任意のフォルダに展開（SSD 推奨）
-4. `Wafer.exe` を実行
+### アンインストール
 
-Python 同梱のため、Python のインストールは不要です。
+`Uninstaller.exe` を実行する事でアンインストールが可能です。
 
-### gitから取得する (Python環境のある人)
+データベース、設定、ログ、キャッシュなどのデータを個別に削除したい場合、
+Windows ではデフォルトで `C:/Users/[ユーザー名]/AppData/Local/Wafer` 配下に配置されますので、手動で削除する事も可能です。
 
-#### 要件
+### プロセスについて (Tray と Viewer)
 
-- Python 3.11+
-- Windows（現時点唯一の開発環境）
+Wafer では `Tray` と `Viewer` の2つのプロセスが主になっています。
 
-#### セットアップ
+| 種類 | 役割 |
+|---|---|
+| `Tray` | Viewer、Database、バックグラウンド処理、再起動などを管理する常駐プロセス。 |
+| `Viewer` | ファイルを閲覧・検索するウィンドウ。複数起動可。 |
+
+Tray 起動中はファイル更新も即時検知されるため、バックグラウンドで起動しておけば常にデータベースを最新に保つことが可能です。
+
+### Plugin Manager について
+
+`Plugin Manager` では、extension の状態と、収集・解析機能の割り当てを管理します。
+
+- **Install Extensions**: extension のインストールと有効/無効の切り替え。例:
+
+| 拡張タイプ | 追加するもの | 代表的な extension |
+|---|---|---|
+| Viewer / Grid | ファイルの表示、サムネイル、ビューア操作等 | `image`, `animated`, `video` |
+| Collector / Parser | メタデータ収集やAIタグ付けでファイルを検索可能にする拡張 | `exiftool`, `ffmpeg`, `color`, `wd14`, `florence` |
+| Search / Filter | 日付範囲、正規表現、色距離など、探し方や絞り込み方法を追加 | `additional_filters`, `color` |
+| Layout / UI | グリッドレイアウト、カスタムパネルなど | `additional_layout`, extension 設定パネル |
+| Archive Support | 特定ファイルの中身を論理的な子パスとして扱い、表示を既存 plugin へ委譲する | `zip` |
+
+- **Enable Extensions**: 上のタブでインストールした拡張機能を有効にし、下のタブでメタデータの収集を有効にするデータベースを選択します。
+
+設定変更後は再起動が必要です。
+
+## 開発方法
+
+##### 要件
+
+- Python 3.11+（.exe は Python 3.11.9 を同梱）
+
+##### セットアップ
 
 ```bash
 git clone https://github.com/openkai0419/Wafer.git
@@ -52,59 +84,24 @@ setup.bat
 main.bat
 # もしくは
 python main.py
-
 ```
-### アップデート
 
-アプリ内の Update パネルから最新バージョンのダウンロードと更新が可能です。ダウンロード後は再起動が必要です。
+アンインストールは `cleanup.bat` を実行後、clone したフォルダを丸ごと削除してください。
 
-### アンインストール
-
-Windows ではデフォルトで `C:/Users/[ユーザー名]/AppData/Local/Wafer` 配下にDatabase、設定、ログ、キャッシュなどのアプリケーションデータが作成されます。
-
-- **ポータブル版（zip）**: アプリケーションフォルダ内の `Uninstaller.exe` を実行してください。
-- **ソースから**:  `cleanup.bat` でアプリケーションデータを消した後、git clone したリポジトリフォルダを削除してください。
-
-## Tray と Viewer
-
-Wafer では `Tray` と `Viewer` の2つのプロセスが主になっています。
-
-| 種類 | 役割 |
-|---|---|
-| `Tray` | 常駐管理プロセス。Viewer、Database、バックグラウンド処理、再起動など、プロセスをまたいだ管理 |
-| `Viewer` | ファイルを閲覧・検索するウィンドウ。複数起動可。 |
-
-Tray起動中はファイルの更新も即時検知されるため、Trayを起動しておく事で常にデータベースを最新の状態に保つ事が可能です。
-
-## コード設計
+### コード設計
 
 Wafer は **「共通基盤 + extension」** を基礎デザインとしています。
 
 - **`wafer/`** は共通基盤です。ファイル収集、DB、検索、描画、プロセス連携、プラグイン登録など、ファイル形式に依存しない土台を提供します。
-- **`extensions/`** はフォルダ単位の独立した拡張です。画像、動画、メタデータ抽出、AI解析、検索フィルタ、レイアウトなどの機能を追加します。
+- **`extensions/`** はフォルダ単位の独立した拡張です。画像、動画、メタデータ抽出、AI解析、検索フィルタ、レイアウトなどを追加します。
 
-基盤は共通に保ち、具体的なファイル形式や解析機能は extension 側で自由に追加できることを重視しています。
+基盤は共通に保ち、ファイル形式や解析機能は extension 側で自由に追加できます。
 
-## Extension
+### Extension
 
-Extension は表示形式を増やすだけのものではありません。収集、検索、表示、UI、アーカイブ処理など、アプリのさまざまな領域を拡張します。
-また、`extensions`フォルダ以下に適切なpythonファイルを配置することで動的に機能を追加する事ができます。
-
-| 拡張ポイント | できること | 代表的な extension |
-|---|---|---|
-| Viewer / Grid | ファイルの表示、サムネイル、ビューア操作を追加する | `image`, `animated`, `video` |
-| Metadata & AI Collection | EXIF、動画/音声情報、色、タグ、キャプションなどを収集し、検索や表示に使えるデータを増やす | `exiftool`, `ffmpeg`, `color`, `wd14`, `florence` |
-| Search / Filter | 日付範囲、正規表現、色距離など、探し方や絞り込み方法を追加する | `additional_filters`, `color` |
-| Layout / UI | グリッドレイアウト、設定パネル、補助UIなどを追加する | `additional_layout`, プラグイン設定UI等 |
-| Archive Support | 1つのアーカイブから中身を論理的な子パスとして扱い、表示を既存pluginへ委譲する | `zip` |
-
-### Plugin Manager
-
-`Plugin Manager` では、読み込まれた extension の状態と、収集・解析機能の割り当てを管理します。
-
-- **Extensions**: extension ごとインストールや、有効/無効の切り替えをここから切り替えます。切り替えた後はプロセス全体の再起動が必要です。
-- **Collectors**: メタデータ収集やAI解析などのExtensionはどのDatabaseに保存するかを選択可能です。
-
+Extension は表示形式を増やすだけではありません。収集、検索、表示、UI、アーカイブ処理など、さまざまな領域を拡張します。
+`extensions` フォルダ以下に Python ファイルを配置することで機能を追加できます。
+サンプルは `wafer/builtins` や同梱の extension を参照してください。
 
 ## ライセンス
 

@@ -325,7 +325,7 @@ def test_color_widget_write_params_migrates_legacy_percent(color_widget):
 
 def test_color_settings_popup_save_notifies_and_deletes_recollects(qapp, monkeypatch):
     class AcceptedDialog:
-        def __init__(self, parent=None):
+        def __init__(self, *args, **kwargs):
             pass
 
         def exec(self):
@@ -343,7 +343,7 @@ def test_color_settings_popup_save_notifies_and_deletes_recollects(qapp, monkeyp
     popup = color_widget_module._ColorSettingsPopup()
     popup._slots_spin.setValue(8)
     send_delete = MagicMock()
-    monkeypatch.setattr(color_widget_module, "_ColorSaveConfirmDialog", AcceptedDialog)
+    monkeypatch.setattr(color_widget_module, "FilterSaveConfirmDialog", AcceptedDialog)
     monkeypatch.setattr(color_widget_module, "list_setting_db_names", lambda: ["db1", "db2"])
     monkeypatch.setattr(color_widget_module._ColorSettingsPopup, "_send_delete_and_recollect", send_delete)
     monkeypatch.setattr(color_widget_module.Notifier, "info", MagicMock())
@@ -351,12 +351,12 @@ def test_color_settings_popup_save_notifies_and_deletes_recollects(qapp, monkeyp
     popup._on_save()
 
     fake_settings.save_palette_slots.assert_called_once_with(8)
-    send_delete.assert_called_once_with(["db1", "db2"], re_collect=True)
+    send_delete.assert_called_once_with(["db1", "db2"], delete=True, re_collect=True)
 
 
 def test_color_settings_popup_save_without_delete_only_notifies(qapp, monkeypatch):
     class AcceptedDialog:
-        def __init__(self, parent=None):
+        def __init__(self, *args, **kwargs):
             pass
 
         def exec(self):
@@ -374,7 +374,7 @@ def test_color_settings_popup_save_without_delete_only_notifies(qapp, monkeypatc
     popup = color_widget_module._ColorSettingsPopup()
     popup._slots_spin.setValue(7)
     send_delete = MagicMock()
-    monkeypatch.setattr(color_widget_module, "_ColorSaveConfirmDialog", AcceptedDialog)
+    monkeypatch.setattr(color_widget_module, "FilterSaveConfirmDialog", AcceptedDialog)
     monkeypatch.setattr(color_widget_module._ColorSettingsPopup, "_send_delete_and_recollect", send_delete)
     monkeypatch.setattr(color_widget_module.Notifier, "info", MagicMock())
 

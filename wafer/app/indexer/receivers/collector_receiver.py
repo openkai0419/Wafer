@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from ....plugin.key_filter import KeyFilter
 from ....utils.logs import AppLogger
 from ....utils.profiling import profiler
 from ._batch_utils import BATCH_SIZE, FLUSH_DELAY, ResultBuffer, try_float
@@ -10,6 +11,8 @@ from ..db_writer import DatabaseWriter
 from ..runtime.progress_aggregator import ProgressAggregator
 from ..runtime.scheduler import TaskScheduler
 from ..runtime.task import Task, TaskPriority
+
+_UNSET = object()
 
 
 def _write_batched(writer: DatabaseWriter, data: dict[str, Any]):
@@ -118,6 +121,7 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
     meta_info_entries: list[tuple] = []
     tag_entries: list[tuple] = []
     collector_status_map: dict[tuple[str, str], tuple] = {}
+    predicate_cache: dict[str, Any] = {}
     now = time.time()
 
     for r in results:
@@ -140,14 +144,18 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
 
         if ok:
             prefix = f"{collector}." if collector else ""
+            keep = predicate_cache.get(collector, _UNSET)
+            if keep is _UNSET:
+                keep = KeyFilter.predicate(collector) if collector else None
+                predicate_cache[collector] = keep
             if aspect or (path != source) or name:
                 source_extension = collector if path != source else None
                 image_entries.append((path, source, name, aspect, source_extension))
             for k, v in meta_info.items():
-                if v is not None:
+                if v is not None and (keep is None or keep(k)):
                     meta_info_entries.append((path, f"{prefix}{k}", str(v), try_float(v)))
             if file_hash:
-                tag_entries.extend((file_hash, f"{prefix}{k}", str(v), try_float(v)) for k, v in tags.items() if v is not None)
+                tag_entries.extend((file_hash, f"{prefix}{k}", str(v), try_float(v)) for k, v in tags.items() if v is not None and (keep is None or keep(k)))
 
     return {
         "image_entries": image_entries,

@@ -1,5 +1,5 @@
 from ..registry import PluginRegistry
-from .base import BaseSingletonParser
+from .base import BaseSingletonParser, required_collectors
 
 
 class ParserResolver:
@@ -33,6 +33,9 @@ class ParserResolver:
     def trigger_keys(self, name: str) -> tuple[str, ...]:
         cls = self.registry.get(name)
         return getattr(cls, "TRIGGER_KEYS", ()) if cls else ()
+
+    def required_collectors(self, name: str) -> dict[str, list[str]]:
+        return required_collectors(self.trigger_keys(name))
 
     def parsers_for_keys(self, keys: set[str]) -> list[str]:
         result = []

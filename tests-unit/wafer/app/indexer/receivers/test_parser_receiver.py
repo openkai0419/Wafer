@@ -6,6 +6,7 @@ import pytest
 from wafer.app.indexer.receivers.parser_receiver import (
     trigger_parser_pending,
     _build_source_keys,
+    _parse_batch,
 )
 from wafer.plugin.parser.handler import parser_resolver
 from wafer.plugin.parser.base import BaseParser, ParserResult
@@ -140,3 +141,60 @@ def test_build_source_keys_with_tags():
 def test_build_source_keys_empty():
     data = {"meta_info_entries": [], "tag_entries": []}
     assert _build_source_keys(data) == {}
+
+
+def test_parse_batch_blacklist_filters_meta_and_tags(monkeypatch):
+    from wafer.plugin.key_filter import KeyFilter
+
+    monkeypatch.setattr(KeyFilter, "_cache", {"sd": ("blacklist", frozenset({"prompt"}))})
+    results = [
+        {
+            "source": "s",
+            "file_hash": "h",
+            "meta_info": {"seed": "1", "prompt": "x"},
+            "tags": {"artist": "a", "prompt": "y"},
+            "status": True,
+            "parser": "sd",
+        }
+    ]
+    data = _parse_batch(results)
+    meta_keys = [e[1] for e in data["meta_info_entries"]]
+    tag_keys = [e[1] for e in data["tag_entries"]]
+    assert "sd.seed" in meta_keys
+    assert "sd.prompt" not in meta_keys
+    assert "sd.artist" in tag_keys
+    assert "sd.prompt" not in tag_keys
+
+
+def test_parse_batch_whitelist_keeps_only_selected(monkeypatch):
+    from wafer.plugin.key_filter import KeyFilter
+
+    monkeypatch.setattr(KeyFilter, "_cache", {"sd": ("whitelist", frozenset({"seed"}))})
+    results = [
+        {
+            "source": "s",
+            "meta_info": {"seed": "1", "prompt": "x"},
+            "status": True,
+            "parser": "sd",
+        }
+    ]
+    data = _parse_batch(results)
+    meta_keys = [e[1] for e in data["meta_info_entries"]]
+    assert meta_keys == ["sd.seed"]
+
+
+def test_parse_batch_unfiltered_prefix_passes_all(monkeypatch):
+    from wafer.plugin.key_filter import KeyFilter
+
+    monkeypatch.setattr(KeyFilter, "_cache", {"other": ("whitelist", frozenset())})
+    results = [
+        {
+            "source": "s",
+            "meta_info": {"a": "1", "b": "2"},
+            "status": True,
+            "parser": "sd",
+        }
+    ]
+    data = _parse_batch(results)
+    meta_keys = sorted(e[1] for e in data["meta_info_entries"])
+    assert meta_keys == ["sd.a", "sd.b"]

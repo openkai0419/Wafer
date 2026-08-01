@@ -3,6 +3,7 @@ import sys
 import subprocess
 
 from ...utils.logs import AppLogger
+from ...utils.paths import containing_dir
 from ...utils.virtual_paths import is_virtual_path
 
 _explorer_argtypes_set = False
@@ -61,8 +62,7 @@ def _open_folder_windows(path: str) -> None:
 
 def _fallback_posix(path: str) -> None:
     try:
-        target = path if os.path.isdir(path) else os.path.dirname(path)
-        subprocess.Popen(["xdg-open", target])
+        subprocess.Popen(["xdg-open", containing_dir(path)])
     except Exception as e:
         AppLogger.warning(f"xdg-open failed: {path}", exc=e)
 

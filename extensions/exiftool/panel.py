@@ -1,585 +1,37 @@
 from __future__ import annotations
 
-import os
-import sqlite3
 from pathlib import Path
-from functools import partial
 
 from PySide6 import QtWidgets, QtCore, QtGui
 
-from wafer.plugin import BasePanelPlugin
+from wafer.plugin import BasePanelPlugin, KeyFilter
+from wafer.plugin.key_filter_dialog import FilterSaveConfirmDialog
+from wafer.core.db.recollect import Recollect
 from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
 from wafer.utils.notifier import Notifier
 from wafer.core.lang.manager import t
-from wafer.utils.paths import list_setting_db_names, data_db_path
-from wafer.core.db.db_utils import apply_read_pragmas
 from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
+from wafer.core.qt.icon_engine import themed_icon
 from wafer.core.qt.image import numpy_to_qimage
 from wafer.plugin.imageloader.handler import image_loader_resolver
-from wafer.app.viewer.widgets.loading_overlay import OverlayLoadingIndicator
-from .settings import MODE_BLACKLIST, MODE_WHITELIST, SORT_NAME, SORT_COUNT, exiftool_config
-from .settings import read_sort_config, write_sort_config
+from wafer.utils.paths import list_setting_db_names
 
-_CHECK_COL = 0
-_KEY_COL = 1
-_COUNT_COL = 2
+_PREFIX = "exiftool"
 
 
 class ExifSettingsPanelPlugin(BasePanelPlugin):
     NAME = "exiftool_settings"
-    DISPLAY_NAME = "ExifTool Settings"
+    DISPLAY_NAME = "ExifTool Preview"
     DEFAULT_ENABLED = True
     CLOSABLE = True
     PRIORITY = 50
-    plugin_config = exiftool_config
 
     def create_widget(self) -> QtWidgets.QWidget:
+        from .settings import migrate_legacy_filter
+
+        migrate_legacy_filter()
         return ExifSettingsWidget()
-
-
-class ExifSettingsWidget(QtWidgets.QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._dispatcher = Dispatcher()
-        self._cancel = CancelSlot()
-
-        from .settings import read_filter_config
-
-        self._filter_mode, self._filter_keys = read_filter_config()
-        self._saved_mode = self._filter_mode
-        self._saved_keys = set(self._filter_keys)
-
-        self._mode_combo = QtWidgets.QComboBox()
-        self._mode_combo.addItem(t("Blacklist (block selected)"), MODE_BLACKLIST)
-        self._mode_combo.addItem(t("Whitelist (use selected only)"), MODE_WHITELIST)
-        self._mode_combo.setCurrentIndex(0 if self._filter_mode == MODE_BLACKLIST else 1)
-        self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
-
-        tabs = QtWidgets.QTabWidget()
-        self._key_browser = _KeyBrowserTab(self._filter_mode, self._filter_keys, self._dispatcher, self._cancel)
-        self._sample_preview = _SamplePreviewTab(self._filter_mode, self._filter_keys, self._dispatcher, self._cancel)
-        tabs.addTab(self._sample_preview, t("Sample Preview"))
-        tabs.addTab(self._key_browser, t("Key Browser"))
-
-        self._sample_preview.filter_keys_changed.connect(self._on_preview_keys_changed)
-        self._key_browser.filter_keys_changed.connect(self._on_browser_keys_changed)
-
-        bottom_layout = QtWidgets.QHBoxLayout()
-        bottom_layout.addWidget(QtWidgets.QLabel(t("Filter Mode:")))
-        bottom_layout.addWidget(self._mode_combo)
-        bottom_layout.addStretch()
-
-        save_btn = QtWidgets.QPushButton(t("Save"))
-        save_btn.clicked.connect(self._on_save)
-        bottom_layout.addWidget(save_btn)
-
-        reset_btn = QtWidgets.QPushButton(t("Revert"))
-        reset_btn.clicked.connect(self._on_reset)
-        bottom_layout.addWidget(reset_btn)
-
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(dpix(8), dpix(8), dpix(8), dpix(8))
-        layout.setSpacing(dpix(6))
-        layout.addWidget(tabs, 1)
-        layout.addLayout(bottom_layout)
-
-        self._dirty = False
-        self._debounce_timer = QtCore.QTimer(self)
-        self._debounce_timer.setSingleShot(True)
-        self._debounce_timer.setInterval(500)
-        self._debounce_timer.timeout.connect(self._refresh_key_browser)
-        self._connect_bridge()
-
-    def _connect_bridge(self):
-        from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
-
-        bridge = ViewerIpcBridge.instance()
-        if bridge:
-            bridge.db_content_updated.connect(self._on_db_updated)
-
-    def _on_db_updated(self, db: str):
-        if self.isVisible():
-            self._debounce_timer.start()
-        else:
-            self._dirty = True
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        if self._dirty:
-            self._dirty = False
-            self._refresh_key_browser()
-
-    def hideEvent(self, event):
-        super().hideEvent(event)
-        self._debounce_timer.stop()
-
-    @QtCore.Slot()
-    def _refresh_key_browser(self):
-        self._key_browser.refresh()
-
-    def _on_mode_changed(self, index: int):
-        new_mode = self._mode_combo.itemData(index)
-        if new_mode == self._filter_mode:
-            return
-        all_keys = self._key_browser.all_known_keys()
-        if all_keys:
-            self._filter_keys = all_keys - self._filter_keys
-        self._filter_mode = new_mode
-        self._key_browser.set_filter(new_mode, self._filter_keys)
-        self._sample_preview.set_filter(new_mode, self._filter_keys)
-
-    def _on_preview_keys_changed(self, new_keys: set):
-        self._filter_keys = new_keys
-        self._key_browser.set_filter_keys(new_keys)
-
-    def _on_browser_keys_changed(self, new_keys: set):
-        self._filter_keys = new_keys
-        self._sample_preview.set_filter_keys(new_keys)
-
-    def _on_save(self):
-        current_keys = self._key_browser.collect_filter_keys()
-        if self._filter_mode == self._saved_mode and current_keys == self._saved_keys:
-            return
-
-        dlg = _SaveConfirmDialog(parent=self)
-        if dlg.exec() != QtWidgets.QDialog.Accepted:
-            return
-        do_delete = dlg.delete_data()
-        do_recollect = dlg.recollect()
-
-        self._filter_keys = current_keys
-        from .settings import write_filter_config
-
-        write_filter_config(self._filter_mode, self._filter_keys)
-        self._sample_preview.set_filter_keys(self._filter_keys)
-
-        self._saved_mode = self._filter_mode
-        self._saved_keys = set(self._filter_keys)
-
-        if do_delete or do_recollect:
-            db_names = list_setting_db_names()
-            if db_names:
-                delete_keys = self._compute_delete_keys() if do_delete else []
-                self._send_delete_keys(
-                    db_names,
-                    delete_keys,
-                    "exiftool",
-                    re_collect=do_recollect,
-                )
-
-        if do_delete:
-            action = "saved + delete & recollect" if do_recollect else "saved + delete"
-        else:
-            action = "saved"
-        Notifier.info(f"ExifTool filter {action} ({self._filter_mode}, {len(self._filter_keys)} keys)")
-
-    def _on_reset(self):
-        self._filter_mode = self._saved_mode
-        self._filter_keys = set(self._saved_keys)
-
-        self._mode_combo.blockSignals(True)
-        self._mode_combo.setCurrentIndex(0 if self._filter_mode == MODE_BLACKLIST else 1)
-        self._mode_combo.blockSignals(False)
-
-        self._key_browser.set_filter(self._filter_mode, self._filter_keys)
-        self._sample_preview.set_filter(self._filter_mode, self._filter_keys)
-
-    def _compute_delete_keys(self) -> list[str]:
-        if self._filter_mode == MODE_BLACKLIST:
-            return [f"exiftool.{k}" for k in self._filter_keys]
-        all_keys = {k for k, _ in _query_all_keys_merged()}
-        return [f"exiftool.{k}" for k in (all_keys - self._filter_keys)]
-
-    @staticmethod
-    def _send_delete_keys(
-        db_names: list[str],
-        keys: list[str],
-        collector: str,
-        *,
-        re_collect: bool,
-    ):
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
-
-        node = InstanceRegistry.instance().resolve_node()
-        if not node:
-            AppLogger.warning("[ExifToolSettings] No IPC node available")
-            return
-        for db in db_names:
-            node.send_reliable(
-                "delete.keys",
-                {"keys": keys, "collector": collector, "re_collect": re_collect},
-                dst="indexer",
-                db=db,
-            )
-
-
-class _KeyBrowserTab(QtWidgets.QWidget):
-    filter_keys_changed = QtCore.Signal(set)
-
-    def __init__(
-        self,
-        filter_mode: str,
-        filter_keys: set[str],
-        dispatcher: Dispatcher,
-        cancel: CancelSlot,
-        parent=None,
-    ):
-        super().__init__(parent)
-        self._filter_mode = filter_mode
-        self._filter_keys = set(filter_keys)
-        self._dispatcher = dispatcher
-        self._cancel = cancel
-        self._sort_mode, self._sort_ascending = read_sort_config()
-
-        self._check_all_btn = QtWidgets.QPushButton(t("Check All"))
-        self._check_all_btn.clicked.connect(self._on_check_all)
-
-        top_row = QtWidgets.QHBoxLayout()
-        top_row.addWidget(self._check_all_btn)
-
-        self._search = QtWidgets.QLineEdit()
-        self._search.setPlaceholderText(t("Filter keys..."))
-        self._search.textChanged.connect(self._apply_filter)
-
-        self._tree = QtWidgets.QTreeWidget()
-        self._tree.setHeaderLabels([self._check_header(), t("Key"), t("Count")])
-        self._tree.setRootIsDecorated(True)
-        self._tree.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-        self._tree.itemClicked.connect(self._on_item_clicked)
-        self._tree.currentItemChanged.connect(self._on_current_changed)
-        h = self._tree.header()
-        h.setStretchLastSection(False)
-        h.setSectionResizeMode(_CHECK_COL, QtWidgets.QHeaderView.ResizeToContents)
-        h.setSectionResizeMode(_KEY_COL, QtWidgets.QHeaderView.Stretch)
-        h.setSectionResizeMode(_COUNT_COL, QtWidgets.QHeaderView.ResizeToContents)
-        h.setSectionsClickable(True)
-        h.sectionClicked.connect(self._on_header_sort)
-        self._pre_click_selection: list[QtWidgets.QTreeWidgetItem] = []
-        self._tree.viewport().installEventFilter(self)
-
-        self._sample_header = QtWidgets.QLabel()
-        self._sample_header.setWordWrap(True)
-        self._sample_header.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        self._sample_header.setVisible(False)
-        self._sample_table = QtWidgets.QTableWidget()
-        self._sample_table.setColumnCount(3)
-        self._sample_table.setHorizontalHeaderLabels(["DB", "File", "Value"])
-        self._sample_table.horizontalHeader().setStretchLastSection(True)
-        self._sample_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
-        self._sample_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Interactive)
-        self._sample_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self._sample_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self._sample_table.verticalHeader().setVisible(False)
-        self._sample_table.setVisible(False)
-
-        self._placeholder = QtWidgets.QLabel(t("Click a key to see sample values"))
-        self._placeholder.setAlignment(QtCore.Qt.AlignCenter)
-        self._placeholder.setStyleSheet(f"color: palette(mid); padding: {dpix(20)}px;")
-
-        sample_widget = QtWidgets.QWidget()
-        sample_layout = QtWidgets.QVBoxLayout(sample_widget)
-        sample_layout.setContentsMargins(0, 0, 0, 0)
-        sample_layout.setSpacing(dpix(2))
-        sample_layout.addWidget(self._sample_header)
-        sample_layout.addWidget(self._sample_table, 1)
-        sample_layout.addWidget(self._placeholder, 1)
-        self._sample_widget = sample_widget
-
-        tree_container = QtWidgets.QWidget()
-        tree_layout = QtWidgets.QVBoxLayout(tree_container)
-        tree_layout.setContentsMargins(0, 0, 0, 0)
-        tree_layout.setSpacing(dpix(4))
-        tree_layout.addWidget(self._search)
-        tree_layout.addWidget(self._tree, 1)
-
-        self._splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        self._splitter.addWidget(tree_container)
-        self._splitter.addWidget(sample_widget)
-        self._splitter.setStretchFactor(0, 6)
-        self._splitter.setStretchFactor(1, 4)
-
-        self._loading = OverlayLoadingIndicator(self._tree.viewport())
-
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(dpix(4))
-        layout.addLayout(top_row)
-        layout.addWidget(self._splitter, 1)
-
-        self._key_data: list[tuple[str, int]] = []
-        self._load_keys()
-
-    def eventFilter(self, obj, event):
-        if hasattr(self, "_tree") and obj is self._tree.viewport() and event.type() == QtCore.QEvent.MouseButtonPress:
-            self._pre_click_selection = list(self._tree.selectedItems())
-        return super().eventFilter(obj, event)
-
-    def _check_header(self) -> str:
-        return t("Block") if self._filter_mode == MODE_BLACKLIST else t("Use")
-
-    def _check_all_target_keys(self) -> set[str]:
-        text = self._search.text().strip().lower()
-        all_keys = self.all_known_keys()
-        if not text:
-            return all_keys
-        return {key for key in all_keys if text in key.lower()}
-
-    def _on_check_all(self):
-        target_keys = self._check_all_target_keys()
-        if not target_keys:
-            return
-        if target_keys <= self._filter_keys:
-            self._filter_keys.difference_update(target_keys)
-        else:
-            self._filter_keys.update(target_keys)
-        self._update_check_all_label()
-        self._build_tree()
-        self.filter_keys_changed.emit(set(self._filter_keys))
-
-    def _update_check_all_label(self):
-        target_keys = self._check_all_target_keys()
-        all_checked = target_keys and target_keys <= self._filter_keys
-        self._check_all_btn.setText(t("Uncheck All") if all_checked else t("Check All"))
-
-    def _on_header_sort(self, section: int):
-        if section == _CHECK_COL:
-            return
-        new_mode = SORT_NAME if section == _KEY_COL else SORT_COUNT
-        if new_mode == self._sort_mode:
-            self._sort_ascending = not self._sort_ascending
-        else:
-            self._sort_mode = new_mode
-            self._sort_ascending = new_mode == SORT_NAME
-        write_sort_config(self._sort_mode, self._sort_ascending)
-        self._build_tree()
-
-    def refresh(self):
-        self._load_keys()
-
-    def _position_loading(self):
-        m = dpix(6)
-        self._loading.move(m, m)
-
-    def _load_keys(self):
-        cancel = self._cancel.renew()
-        self._position_loading()
-        self._loading.start()
-
-        def _bg():
-            if cancel.is_cancelled():
-                return []
-            return _query_all_keys_merged()
-
-        def _done(result):
-            if cancel.is_cancelled():
-                return
-            self._loading.stop()
-            self._key_data = result
-            self._update_check_all_label()
-            self._build_tree()
-
-        self._dispatcher.post(lambda: self._dispatcher.invoke(partial(_done, _bg())))
-
-    def _sorted_entries(self, entries: list[tuple]) -> list[tuple]:
-        if self._sort_mode == SORT_COUNT:
-            return sorted(entries, key=lambda e: e[1], reverse=not self._sort_ascending)
-        return sorted(entries, key=lambda e: e[0].lower(), reverse=not self._sort_ascending)
-
-    def _build_tree(self):
-        scrollbar = self._tree.verticalScrollBar()
-        scroll_pos = scrollbar.value() if scrollbar else 0
-        selected_keys = set()
-        for item in self._tree.selectedItems():
-            key = item.data(_KEY_COL, QtCore.Qt.UserRole)
-            if key:
-                selected_keys.add(key)
-            elif item.childCount() > 0:
-                selected_keys.add(item.text(_KEY_COL))
-        self._tree.clear()
-        key_label = "Key"
-        count_label = "Count"
-        if self._sort_mode == SORT_NAME:
-            key_label += " \u25b2" if self._sort_ascending else " \u25bc"
-        else:
-            count_label += " \u25b2" if self._sort_ascending else " \u25bc"
-        self._tree.setHeaderLabels([self._check_header(), key_label, count_label])
-        db_keys = {k for k, _ in self._key_data}
-        merged = list(self._key_data)
-        for fk in sorted(self._filter_keys - db_keys):
-            merged.append((fk, 0))
-        groups: dict[str, list[tuple[str, int, str]]] = {}
-        for key, freq in merged:
-            parts = key.split("/", 1)
-            group = parts[0] + "/" if len(parts) > 1 else ""
-            leaf = parts[1] if len(parts) > 1 else parts[0]
-            groups.setdefault(group, []).append((leaf, freq, key))
-
-        ungrouped = groups.pop("", [])
-        for leaf, freq, full_key in self._sorted_entries(ungrouped):
-            item = self._make_leaf_item(leaf, freq, full_key)
-            self._tree.addTopLevelItem(item)
-
-        group_order = sorted(groups.keys())
-        if self._sort_mode == SORT_COUNT:
-            group_order = sorted(groups.keys(), key=lambda g: sum(f for _, f, _ in groups[g]), reverse=not self._sort_ascending)
-
-        for group_name in group_order:
-            entries = groups[group_name]
-            group_item = QtWidgets.QTreeWidgetItem(["", group_name, ""])
-            group_item.setFlags(group_item.flags() | QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsAutoTristate)
-            total_freq = sum(f for _, f, _ in entries)
-            group_item.setText(_COUNT_COL, f"{total_freq:,}")
-            all_in = all(fk in self._filter_keys for _, _, fk in entries)
-            all_out = all(fk not in self._filter_keys for _, _, fk in entries)
-            if all_in:
-                group_item.setCheckState(_CHECK_COL, QtCore.Qt.Checked)
-            elif all_out:
-                group_item.setCheckState(_CHECK_COL, QtCore.Qt.Unchecked)
-            else:
-                group_item.setCheckState(_CHECK_COL, QtCore.Qt.PartiallyChecked)
-            for leaf, freq, full_key in self._sorted_entries(entries):
-                child = self._make_leaf_item(leaf, freq, full_key)
-                group_item.addChild(child)
-            self._tree.addTopLevelItem(group_item)
-
-        self._tree.expandAll()
-        self._apply_filter(self._search.text())
-        self._restore_selection(selected_keys)
-        if scroll_pos:
-            self._tree.verticalScrollBar().setValue(scroll_pos)
-
-    def _restore_selection(self, selected_keys: set[str]):
-        if not selected_keys:
-            return
-        self._tree.blockSignals(True)
-        for i in range(self._tree.topLevelItemCount()):
-            top = self._tree.topLevelItem(i)
-            key = top.data(_KEY_COL, QtCore.Qt.UserRole)
-            if (key and key in selected_keys) or (not key and top.text(_KEY_COL) in selected_keys):
-                top.setSelected(True)
-            for j in range(top.childCount()):
-                child = top.child(j)
-                ckey = child.data(_KEY_COL, QtCore.Qt.UserRole)
-                if ckey and ckey in selected_keys:
-                    child.setSelected(True)
-        self._tree.blockSignals(False)
-
-    def _make_leaf_item(self, label: str, freq: int, full_key: str) -> QtWidgets.QTreeWidgetItem:
-        item = QtWidgets.QTreeWidgetItem(["", label, f"{freq:,}"])
-        item.setData(_KEY_COL, QtCore.Qt.UserRole, full_key)
-        item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-        in_keys = full_key in self._filter_keys
-        item.setCheckState(_CHECK_COL, QtCore.Qt.Checked if in_keys else QtCore.Qt.Unchecked)
-        return item
-
-    def _apply_filter(self, text: str):
-        text_lower = text.lower()
-        for i in range(self._tree.topLevelItemCount()):
-            top = self._tree.topLevelItem(i)
-            if top.childCount() == 0:
-                key = top.data(_KEY_COL, QtCore.Qt.UserRole) or top.text(_KEY_COL)
-                top.setHidden(text_lower not in key.lower())
-            else:
-                any_visible = False
-                for j in range(top.childCount()):
-                    child = top.child(j)
-                    key = child.data(_KEY_COL, QtCore.Qt.UserRole) or child.text(_KEY_COL)
-                    hidden = text_lower not in key.lower()
-                    child.setHidden(hidden)
-                    if not hidden:
-                        any_visible = True
-                top.setHidden(not any_visible)
-
-    def _sync_selected_checks(self, clicked: QtWidgets.QTreeWidgetItem):
-        pre_selection = self._pre_click_selection
-        if clicked not in pre_selection or len(pre_selection) < 2:
-            return
-        new_state = clicked.checkState(_CHECK_COL)
-        self._tree.blockSignals(True)
-        for item in pre_selection:
-            if item is clicked:
-                continue
-            key = item.data(_KEY_COL, QtCore.Qt.UserRole)
-            if key or item.childCount() > 0:
-                item.setCheckState(_CHECK_COL, new_state)
-        self._tree.blockSignals(False)
-
-    def _on_item_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int):
-        if column == _CHECK_COL:
-            self._sync_selected_checks(item)
-            self._filter_keys = self.collect_filter_keys()
-            self._update_check_all_label()
-            self.filter_keys_changed.emit(set(self._filter_keys))
-        self._show_key_preview(item)
-
-    def _on_current_changed(self, current: QtWidgets.QTreeWidgetItem, _previous: QtWidgets.QTreeWidgetItem):
-        if current is not None:
-            self._show_key_preview(current)
-
-    def _show_key_preview(self, item: QtWidgets.QTreeWidgetItem):
-        full_key = item.data(_KEY_COL, QtCore.Qt.UserRole)
-        if not full_key:
-            return
-        cancel = self._cancel.renew()
-
-        def _bg():
-            if cancel.is_cancelled():
-                return []
-            return _query_sample_values_all(f"exiftool.{full_key}")
-
-        def _done(samples: list[tuple[str, str, str]]):
-            if cancel.is_cancelled():
-                return
-            freq = 0
-            for k, f in self._key_data:
-                if k == full_key:
-                    freq = f
-                    break
-            self._sample_header.setText(f"<b>Key:</b> exiftool.{full_key} &nbsp; <b>Affected:</b> {freq:,} files")
-            self._sample_table.setRowCount(len(samples))
-            for row, (db, file_path, value) in enumerate(samples):
-                self._sample_table.setItem(row, 0, QtWidgets.QTableWidgetItem(db))
-                self._sample_table.setItem(row, 1, QtWidgets.QTableWidgetItem(os.path.basename(file_path)))
-                val_str = str(value) if value is not None else ""
-                self._sample_table.setItem(row, 2, QtWidgets.QTableWidgetItem(val_str[:300]))
-            self._placeholder.setVisible(False)
-            self._sample_header.setVisible(True)
-            self._sample_table.setVisible(True)
-
-        self._dispatcher.post(lambda: self._dispatcher.invoke(partial(_done, _bg())))
-
-    def collect_filter_keys(self) -> set[str]:
-        result: set[str] = set()
-        for i in range(self._tree.topLevelItemCount()):
-            top = self._tree.topLevelItem(i)
-            if top.childCount() == 0:
-                if top.checkState(_CHECK_COL) == QtCore.Qt.Checked:
-                    key = top.data(_KEY_COL, QtCore.Qt.UserRole)
-                    if key:
-                        result.add(key)
-            else:
-                for j in range(top.childCount()):
-                    child = top.child(j)
-                    if child.checkState(_CHECK_COL) == QtCore.Qt.Checked:
-                        key = child.data(_KEY_COL, QtCore.Qt.UserRole)
-                        if key:
-                            result.add(key)
-        return result
-
-    def all_known_keys(self) -> set[str]:
-        return {k for k, _ in self._key_data} | self._filter_keys
-
-    def set_filter(self, mode: str, keys: set[str]):
-        self._filter_mode = mode
-        self._filter_keys = set(keys)
-        self._update_check_all_label()
-        self._build_tree()
-
-    def set_filter_keys(self, keys: set[str]):
-        self._filter_keys = set(keys)
-        self._update_check_all_label()
-        self._build_tree()
 
 
 class _ContainImageLabel(QtWidgets.QLabel):
@@ -606,17 +58,14 @@ class _ContainImageLabel(QtWidgets.QLabel):
         self.setPixmap(self._source.scaled(self.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
 
 
-class _SamplePreviewTab(QtWidgets.QWidget):
-    filter_keys_changed = QtCore.Signal(set)
-
-    def __init__(self, filter_mode: str, filter_keys: set[str], dispatcher: Dispatcher, cancel: CancelSlot, parent=None):
+class ExifSettingsWidget(QtWidgets.QWidget):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self._filter_mode = filter_mode
-        self._filter_keys = set(filter_keys)
+        self._dispatcher = Dispatcher()
+        self._cancel = CancelSlot()
         self._meta: dict[str, str] = {}
+        self._pending: dict[str, bool] = {}
         self._current_path: str | None = None
-        self._dispatcher = dispatcher
-        self._cancel = cancel
         self.setAcceptDrops(True)
 
         self._drop_label = QtWidgets.QLabel(t("Drop a file here to preview ExifTool tags"))
@@ -630,7 +79,7 @@ class _SamplePreviewTab(QtWidgets.QWidget):
 
         self._table = QtWidgets.QTableWidget()
         self._table.setColumnCount(3)
-        self._table.setHorizontalHeaderLabels([self._check_header(), "Key", "Value"])
+        self._table.setHorizontalHeaderLabels([t("Use"), t("Key"), t("Value")])
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Interactive)
@@ -640,22 +89,94 @@ class _SamplePreviewTab(QtWidgets.QWidget):
         self._table.verticalHeader().setVisible(False)
         self._table.cellChanged.connect(self._on_cell_changed)
 
-        content_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        content_splitter.addWidget(self._thumb)
-        content_splitter.addWidget(self._table)
-        content_splitter.setStretchFactor(0, 0)
-        content_splitter.setStretchFactor(1, 1)
-        self._content_splitter = content_splitter
+        self._pending_group = QtWidgets.QGroupBox()
+        self._pending_group.setMinimumWidth(dpix(220))
+        self._pending_table = QtWidgets.QTableWidget()
+        self._pending_table.setColumnCount(3)
+        self._pending_table.setHorizontalHeaderLabels([t("Key"), t("State"), ""])
+        self._pending_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        self._pending_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+        self._pending_table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        self._pending_table.verticalHeader().setVisible(False)
+        self._pending_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._pending_table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        pending_layout = QtWidgets.QVBoxLayout(self._pending_group)
+        pending_layout.setContentsMargins(dpix(4), dpix(4), dpix(4), dpix(4))
+        pending_layout.addWidget(self._pending_table)
+
+        details_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        details_splitter.setChildrenCollapsible(False)
+        details_splitter.addWidget(self._thumb)
+        details_splitter.addWidget(self._table)
+        details_splitter.setStretchFactor(0, 0)
+        details_splitter.setStretchFactor(1, 1)
+        details_splitter.setSizes([dpix(220), dpix(780)])
+        self._details_splitter = details_splitter
+
+        content_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        content_splitter.setChildrenCollapsible(False)
+        content_splitter.addWidget(details_splitter)
+        content_splitter.addWidget(self._pending_group)
+        content_splitter.setStretchFactor(0, 1)
+        content_splitter.setStretchFactor(1, 0)
+        content_splitter.setSizes([dpix(520), dpix(220)])
         content_splitter.setVisible(False)
+        self._content_splitter = content_splitter
+
+        self._save_btn = QtWidgets.QPushButton(t("Save"))
+        self._save_btn.clicked.connect(self._on_save)
+        self._revert_btn = QtWidgets.QPushButton(t("Revert"))
+        self._revert_btn.clicked.connect(self._on_revert)
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.addStretch()
+        button_row.addWidget(self._save_btn)
+        button_row.addWidget(self._revert_btn)
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(dpix(8), dpix(8), dpix(8), dpix(8))
         layout.setSpacing(dpix(4))
         layout.addWidget(self._drop_label)
         layout.addWidget(content_splitter, 1)
+        layout.addLayout(button_row)
+        self._rebuild_pending_table()
+        self._update_buttons()
 
-    def _check_header(self) -> str:
-        return t("Block") if self._filter_mode == MODE_BLACKLIST else t("Use")
+    def _update_buttons(self):
+        dirty = bool(self._pending)
+        self._save_btn.setEnabled(dirty)
+        self._revert_btn.setEnabled(dirty)
+
+    def _rebuild_pending_table(self):
+        from wafer.core.color.theme import ThemeManager
+
+        accent = QtGui.QColor(ThemeManager.instance().palette.text_accent)
+        self._pending_group.setTitle(t("Edited keys ({n})").format(n=len(self._pending)))
+        self._pending_table.setRowCount(0)
+        self._pending_table.setRowCount(len(self._pending))
+        for row, key in enumerate(sorted(self._pending)):
+            enabled = self._pending[key]
+            state_item = QtWidgets.QTableWidgetItem(t("Use") if enabled else t("Block"))
+            state_item.setForeground(accent)
+            self._pending_table.setItem(row, 0, QtWidgets.QTableWidgetItem(key))
+            self._pending_table.setItem(row, 1, state_item)
+            btn = QtWidgets.QToolButton()
+            btn.setIcon(themed_icon("cross"))
+            btn.setAutoRaise(True)
+            btn.clicked.connect(lambda _=False, k=key: self._remove_pending(k))
+            self._pending_table.setCellWidget(row, 2, btn)
+
+    def _remove_pending(self, key: str):
+        if self._pending.pop(key, None) is None:
+            return
+        self._rebuild_table()
+        self._rebuild_pending_table()
+        self._update_drop_label()
+        self._update_buttons()
+
+    def _effective_enabled(self, key: str) -> bool:
+        if key in self._pending:
+            return self._pending[key]
+        return KeyFilter.is_enabled(_PREFIX, key)
 
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -726,43 +247,50 @@ class _SamplePreviewTab(QtWidgets.QWidget):
         self._update_drop_label()
 
     def _blocked_count(self) -> int:
-        if self._filter_mode == MODE_BLACKLIST:
-            return sum(1 for k in self._meta if k in self._filter_keys)
-        return sum(1 for k in self._meta if k not in self._filter_keys)
+        return sum(1 for k in self._meta if not self._effective_enabled(k))
 
     def _update_drop_label(self):
         if self._current_path:
-            self._drop_label.setText(f"Previewing: {Path(self._current_path).name} ({len(self._meta)} keys, {self._blocked_count()} blocked)")
+            edited = len(self._pending)
+            summary = f"{len(self._meta)} keys, {self._blocked_count()} blocked"
+            if edited:
+                summary += f", {edited} edited"
+            self._drop_label.setText(f"Previewing: {Path(self._current_path).name} ({summary})")
 
     def _rebuild_table(self):
         from wafer.core.color.theme import ThemeManager
 
         palette = ThemeManager.instance().palette
         muted_fg = QtGui.QColor(palette.text_muted)
+        edited_fg = QtGui.QColor(palette.text_accent)
 
         self._table.blockSignals(True)
-        self._table.setHorizontalHeaderLabels([self._check_header(), t("Key"), t("Value")])
         self._table.setRowCount(0)
         self._table.setRowCount(len(self._meta))
         for row, (key, value) in enumerate(sorted(self._meta.items())):
-            in_keys = key in self._filter_keys
-            if self._filter_mode == MODE_BLACKLIST:
-                blocked = in_keys
-            else:
-                blocked = not in_keys
+            enabled = self._effective_enabled(key)
+            edited = key in self._pending
             check_item = QtWidgets.QTableWidgetItem()
             check_item.setFlags(check_item.flags() | QtCore.Qt.ItemIsUserCheckable)
-            check_item.setCheckState(QtCore.Qt.Checked if in_keys else QtCore.Qt.Unchecked)
+            check_item.setCheckState(QtCore.Qt.Checked if enabled else QtCore.Qt.Unchecked)
             check_item.setData(QtCore.Qt.UserRole, key)
             key_item = QtWidgets.QTableWidgetItem(key)
             val_str = str(value) if value is not None else ""
             val_item = QtWidgets.QTableWidgetItem(val_str[:300])
-            if blocked:
+            if not enabled:
                 for item in (key_item, val_item):
-                    item.setForeground(muted_fg)
                     font = item.font()
                     font.setStrikeOut(True)
                     item.setFont(font)
+            if edited:
+                for item in (key_item, val_item):
+                    item.setForeground(edited_fg)
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
+            elif not enabled:
+                for item in (key_item, val_item):
+                    item.setForeground(muted_fg)
             self._table.setItem(row, 0, check_item)
             self._table.setItem(row, 1, key_item)
             self._table.setItem(row, 2, val_item)
@@ -777,105 +305,49 @@ class _SamplePreviewTab(QtWidgets.QWidget):
         key = check_item.data(QtCore.Qt.UserRole)
         if not key:
             return
-        checked = check_item.checkState() == QtCore.Qt.Checked
-        if checked:
-            self._filter_keys.add(key)
+        enabled = check_item.checkState() == QtCore.Qt.Checked
+        if enabled == KeyFilter.is_enabled(_PREFIX, key):
+            self._pending.pop(key, None)
         else:
-            self._filter_keys.discard(key)
+            self._pending[key] = enabled
         self._rebuild_table()
+        self._rebuild_pending_table()
         self._update_drop_label()
-        self.filter_keys_changed.emit(set(self._filter_keys))
+        self._update_buttons()
 
-    def set_filter(self, mode: str, keys: set[str]):
-        self._filter_mode = mode
-        self._filter_keys = set(keys)
-        if self._meta:
-            self._rebuild_table()
-            self._update_drop_label()
+    def _on_save(self):
+        if not self._pending:
+            return
+        disabling = any(not enabled for enabled in self._pending.values())
+        enabling = any(self._pending.values())
+        dlg = FilterSaveConfirmDialog(
+            [_PREFIX],
+            parent=self,
+            delete_label="Delete existing data",
+            delete_default=disabling,
+            recollect_default=enabling,
+        )
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
+            return
+        changed = len(self._pending)
+        KeyFilter.reload()
+        delete_keys = [f"{_PREFIX}.{k}" for k, enabled in self._pending.items() if not enabled] if dlg.delete_data() else []
+        KeyFilter.apply_key_states(_PREFIX, self._pending)
+        db_names = list_setting_db_names()
+        if (dlg.delete_data() or dlg.recollect()) and db_names and (delete_keys or dlg.recollect()):
+            Recollect.reset(db_scope=list(db_names), collector=_PREFIX, keys=delete_keys, re_collect=dlg.recollect())
+        self._pending.clear()
+        self._rebuild_table()
+        self._rebuild_pending_table()
+        self._update_drop_label()
+        self._update_buttons()
+        Notifier.info(t("Filter settings saved ({n} changed)").format(n=changed))
 
-    def set_filter_keys(self, keys: set[str]):
-        self._filter_keys = set(keys)
-        if self._meta:
-            self._rebuild_table()
-            self._update_drop_label()
-
-
-class _SaveConfirmDialog(QtWidgets.QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(t("Save ExifTool Filter Settings"))
-
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setSpacing(dpix(8))
-        layout.addWidget(QtWidgets.QLabel(t("Filter settings have been modified.\nThis will apply to all databases.")))
-
-        self._delete_cb = QtWidgets.QCheckBox(t("Delete existing ExifTool data"))
-        self._delete_cb.setChecked(True)
-        self._recollect_cb = QtWidgets.QCheckBox(t("Re-collect after deletion"))
-        self._recollect_cb.setChecked(True)
-        self._delete_cb.toggled.connect(self._recollect_cb.setEnabled)
-        layout.addWidget(self._delete_cb)
-        layout.addWidget(self._recollect_cb)
-
-        btn_layout = QtWidgets.QHBoxLayout()
-        btn_layout.addStretch()
-        save_btn = QtWidgets.QPushButton(t("Save"))
-        cancel_btn = QtWidgets.QPushButton(t("Cancel"))
-        save_btn.clicked.connect(self.accept)
-        cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(save_btn)
-        btn_layout.addWidget(cancel_btn)
-        layout.addLayout(btn_layout)
-
-    def delete_data(self) -> bool:
-        return self._delete_cb.isChecked()
-
-    def recollect(self) -> bool:
-        return self._delete_cb.isChecked() and self._recollect_cb.isChecked()
-
-
-def _query_all_keys_merged() -> list[tuple[str, int]]:
-    merged: dict[str, int] = {}
-    for db_name in list_setting_db_names():
-        db_path = data_db_path(db_name)
-        uri = Path(db_path).resolve().as_uri() + "?mode=ro"
-        conn = None
-        try:
-            conn = sqlite3.connect(uri, timeout=1.0, uri=True, check_same_thread=False)
-            apply_read_pragmas(conn)
-            rows = conn.execute("SELECT SUBSTR(key, 10) AS short_key, COUNT(*) AS freq FROM meta_info WHERE key LIKE 'exiftool.%' GROUP BY short_key").fetchall()
-            for row in rows:
-                merged[row[0]] = merged.get(row[0], 0) + row[1]
-        except Exception as e:
-            AppLogger.warning(f"[ExifToolSettings] Failed to query keys for {db_name}: {e}", exc=e)
-        finally:
-            if conn:
-                conn.close()
-    return sorted(merged.items(), key=lambda x: x[0])
-
-
-def _query_sample_values_all(key: str, limit: int = 10) -> list[tuple[str, str, str]]:
-    results: list[tuple[str, str, str]] = []
-    remaining = limit
-    for db_name in list_setting_db_names():
-        if remaining <= 0:
-            break
-        db_path = data_db_path(db_name)
-        uri = Path(db_path).resolve().as_uri() + "?mode=ro"
-        conn = None
-        try:
-            conn = sqlite3.connect(uri, timeout=1.0, uri=True, check_same_thread=False)
-            apply_read_pragmas(conn)
-            rows = conn.execute(
-                "SELECT path, value FROM meta_info WHERE key = ? LIMIT ?",
-                (key, remaining),
-            ).fetchall()
-            for row in rows:
-                results.append((db_name, row[0], row[1]))
-            remaining -= len(rows)
-        except Exception as e:
-            AppLogger.warning(f"[ExifToolSettings] Sample query failed for {key} in {db_name}: {e}", exc=e)
-        finally:
-            if conn:
-                conn.close()
-    return results
+    def _on_revert(self):
+        if not self._pending:
+            return
+        self._pending.clear()
+        self._rebuild_table()
+        self._rebuild_pending_table()
+        self._update_drop_label()
+        self._update_buttons()

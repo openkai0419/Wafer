@@ -6,10 +6,10 @@ from wafer.core.color.theme import ThemeManager
 from wafer.core.commands.binding.instance_registry import InstanceRegistry
 from wafer.core.lang.manager import t
 from wafer.core.qt.icon_engine import themed_icon
+from wafer.plugin.key_filter_dialog import FilterSaveConfirmDialog
 from wafer.ui.popups import PopupBase
 from wafer.ui.widgets.color_picker import ColorPickerDialog
 from wafer.utils.formatting import dpix
-from wafer.utils.logs import AppLogger
 from wafer.utils.notifier import Notifier
 from wafer.utils.paths import list_setting_db_names
 
@@ -274,7 +274,15 @@ class _ColorSettingsPopup(PopupBase):
             Notifier.info(t("No changes to save"))
             return
 
-        dlg = _ColorSaveConfirmDialog(parent=self)
+        dlg = FilterSaveConfirmDialog(
+            ["color"],
+            parent=self,
+            title="Save Color Settings",
+            intro="Settings have been modified.\nThis will apply to all databases.",
+            delete_label="Delete existing Color data",
+            delete_default=True,
+            recollect_default=True,
+        )
         if dlg.exec() != QtWidgets.QDialog.Accepted:
             return
         do_delete = dlg.delete_data()
@@ -285,7 +293,7 @@ class _ColorSettingsPopup(PopupBase):
         if do_delete or do_recollect:
             db_names = list_setting_db_names()
             if db_names:
-                self._send_delete_and_recollect(db_names, re_collect=do_recollect)
+                self._send_delete_and_recollect(db_names, delete=do_delete, re_collect=do_recollect)
 
         if do_recollect:
             message = t("Color settings saved, deletion and re-collection requested (palette slots={slots})", slots=value)
@@ -305,54 +313,10 @@ class _ColorSettingsPopup(PopupBase):
         self._slots_spin.blockSignals(False)
 
     @staticmethod
-    def _send_delete_and_recollect(db_names: list[str], *, re_collect: bool):
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+    def _send_delete_and_recollect(db_names: list[str], *, delete: bool, re_collect: bool):
+        from wafer.core.db.recollect import Recollect
 
-        node = InstanceRegistry.instance().resolve_node()
-        if not node:
-            AppLogger.warning("[ColorSettings] No IPC node available")
-            return
-        for db in db_names:
-            node.send_reliable(
-                "delete.collector",
-                {"collector": "color", "re_collect": re_collect},
-                dst="indexer",
-                db=db,
-            )
-
-
-class _ColorSaveConfirmDialog(QtWidgets.QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(t("Save Color Settings"))
-
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setSpacing(dpix(8))
-        layout.addWidget(QtWidgets.QLabel(t("Settings have been modified.\nThis will apply to all databases.")))
-
-        self._delete_cb = QtWidgets.QCheckBox(t("Delete existing Color data"))
-        self._delete_cb.setChecked(True)
-        self._recollect_cb = QtWidgets.QCheckBox(t("Re-collect after deletion"))
-        self._recollect_cb.setChecked(True)
-        self._delete_cb.toggled.connect(self._recollect_cb.setEnabled)
-        layout.addWidget(self._delete_cb)
-        layout.addWidget(self._recollect_cb)
-
-        btn_layout = QtWidgets.QHBoxLayout()
-        btn_layout.addStretch()
-        save_btn = QtWidgets.QPushButton(t("Save"))
-        cancel_btn = QtWidgets.QPushButton(t("Cancel"))
-        save_btn.clicked.connect(self.accept)
-        cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(save_btn)
-        btn_layout.addWidget(cancel_btn)
-        layout.addLayout(btn_layout)
-
-    def delete_data(self) -> bool:
-        return self._delete_cb.isChecked()
-
-    def recollect(self) -> bool:
-        return self._delete_cb.isChecked() and self._recollect_cb.isChecked()
+        Recollect.reset(db_scope=list(db_names), collector="color", delete=delete, re_collect=re_collect)
 
 
 class _ColorRow(QtWidgets.QFrame):

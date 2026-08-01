@@ -35,6 +35,11 @@ def safe_is_dir(p) -> bool:
         return False
 
 
+def containing_dir(path) -> str:
+    ap = os.path.abspath(str(path))
+    return ap if safe_is_dir(ap) else os.path.dirname(ap)
+
+
 def safe_getsize(p) -> int | None:
     try:
         return os.path.getsize(p)
@@ -113,9 +118,11 @@ def resolve_data_path(relative_path):
 
 
 def resolve_cache_path(relative_path):
-    dirs = PlatformDirs(appname=None)
-    base_dir = Path(dirs.user_cache_dir) / APP_DATA_DIR_NAME
-    return normalize_path(_resolve_app_path(relative_path, base_dir))
+    return resolve_data_path(f"cache/{relative_path}")
+
+
+def resolve_temp_path(relative_path):
+    return resolve_data_path(f".temp/{relative_path}")
 
 
 def resolve_config_path(relative_path):

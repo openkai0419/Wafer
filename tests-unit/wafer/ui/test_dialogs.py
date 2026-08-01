@@ -51,5 +51,18 @@ def test_drop_target_dialog_ok_sets_selected_path(qtbot):
     assert dialog.selected_path == "b"
 
 
+def test_confirm_dialog_disables_named_buttons(qtbot):
+    from wafer.ui.dialogs import ConfirmDialog
+
+    from PySide6 import QtWidgets
+
+    dialog = ConfirmDialog("msg", "title", ("A", "B", "C"), disabled=("B",))
+    qtbot.addWidget(dialog)
+    buttons = {b.text(): b for b in dialog.findChildren(QtWidgets.QPushButton)}
+    assert buttons["A"].isEnabled()
+    assert not buttons["B"].isEnabled()
+    assert buttons["C"].isEnabled()
+
+
 def test_compile():
     py_compile.compile("wafer/ui/dialogs.py")

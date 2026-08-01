@@ -3,12 +3,12 @@ import tempfile
 from pathlib import Path
 
 from wafer.constants import APP_DATA_DIR_NAME
-from wafer.utils.paths import normalize_path, natural_sort, resolve_cache_path, stem, list_files
+from wafer.utils.paths import normalize_path, natural_sort, resolve_cache_path, resolve_temp_path, stem, list_files, containing_dir
 
 
 class _FakePlatformDirs:
     def __init__(self, appname=None):
-        self.user_cache_dir = "/tmp/wafer-cache"
+        self.user_data_dir = "/tmp/wafer-data"
 
 
 def test_normalize_path():
@@ -22,13 +22,37 @@ def test_normalize_path_absolute():
     assert "/" in result
 
 
+def test_containing_dir_returns_dir_itself(tmp_path):
+    assert containing_dir(str(tmp_path)) == os.path.abspath(str(tmp_path))
+
+
+def test_containing_dir_returns_parent_for_file(tmp_path):
+    f = tmp_path / "a.txt"
+    f.write_text("x")
+    assert containing_dir(str(f)) == os.path.abspath(str(tmp_path))
+
+
+def test_containing_dir_uses_parent_for_nonexistent(tmp_path):
+    missing = tmp_path / "nope" / "file.txt"
+    assert containing_dir(str(missing)) == os.path.abspath(str(tmp_path / "nope"))
+
+
 def test_resolve_cache_path_uses_app_cache_dir(monkeypatch):
     import wafer.utils.paths as paths
 
     monkeypatch.setattr(paths, "PlatformDirs", _FakePlatformDirs)
     result = resolve_cache_path("updates/latest.json")
 
-    assert result.endswith(f"/wafer-cache/{APP_DATA_DIR_NAME}/updates/latest.json")
+    assert result.endswith(f"/wafer-data/{APP_DATA_DIR_NAME}/cache/updates/latest.json")
+
+
+def test_resolve_temp_path_uses_app_temp_dir(monkeypatch):
+    import wafer.utils.paths as paths
+
+    monkeypatch.setattr(paths, "PlatformDirs", _FakePlatformDirs)
+    result = resolve_temp_path("comfyui_workflows/abc.json")
+
+    assert result.endswith(f"/wafer-data/{APP_DATA_DIR_NAME}/.temp/comfyui_workflows/abc.json")
 
 
 def test_natural_sort():

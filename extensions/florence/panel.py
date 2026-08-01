@@ -4,10 +4,10 @@ from PySide6 import QtWidgets, QtCore, QtGui
 
 from wafer.plugin import BasePanelPlugin
 from wafer.plugin.collector.base import BaseCollector
+from wafer.plugin.key_filter_dialog import FilterSaveConfirmDialog
 from wafer.core.qt.image import numpy_to_qimage
 from wafer.plugin.imageloader.handler import image_loader_resolver
 from wafer.utils.formatting import dpix
-from wafer.utils.logs import AppLogger
 from wafer.utils.notifier import Notifier
 from wafer.utils.paths import list_setting_db_names
 from wafer.core.lang.manager import t
@@ -276,7 +276,15 @@ class FlorenceSettingsWidget(QtWidgets.QWidget):
         if values == self._saved_settings:
             return
 
-        dlg = _FlorenceSaveConfirmDialog(parent=self)
+        dlg = FilterSaveConfirmDialog(
+            ["florence"],
+            parent=self,
+            title="Save Florence-2 Settings",
+            intro="Settings have been modified.\nThis will apply to all databases.",
+            delete_label="Delete existing Florence data",
+            delete_default=True,
+            recollect_default=True,
+        )
         if dlg.exec() != QtWidgets.QDialog.Accepted:
             return
         do_delete = dlg.delete_data()
@@ -321,51 +329,7 @@ class FlorenceSettingsWidget(QtWidgets.QWidget):
 
     @staticmethod
     def _send_delete_and_recollect(db_names: list[str], *, delete: bool, re_collect: bool):
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.core.db.recollect import Recollect
 
-        node = InstanceRegistry.instance().resolve_node()
-        if not node:
-            AppLogger.warning("[FlorenceSettings] No IPC node available")
-            return
         keys = list(_DELETE_KEYS) if delete else []
-        for db in db_names:
-            node.send_reliable(
-                "delete.keys",
-                {"keys": keys, "collector": "florence", "re_collect": re_collect},
-                dst="indexer",
-                db=db,
-            )
-
-
-class _FlorenceSaveConfirmDialog(QtWidgets.QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(t("Save Florence-2 Settings"))
-
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setSpacing(dpix(8))
-        layout.addWidget(QtWidgets.QLabel(t("Settings have been modified.\nThis will apply to all databases.")))
-
-        self._delete_cb = QtWidgets.QCheckBox(t("Delete existing Florence data"))
-        self._delete_cb.setChecked(True)
-        self._recollect_cb = QtWidgets.QCheckBox(t("Re-collect after deletion"))
-        self._recollect_cb.setChecked(True)
-        self._delete_cb.toggled.connect(self._recollect_cb.setEnabled)
-        layout.addWidget(self._delete_cb)
-        layout.addWidget(self._recollect_cb)
-
-        btn_layout = QtWidgets.QHBoxLayout()
-        btn_layout.addStretch()
-        save_btn = QtWidgets.QPushButton(t("Save"))
-        cancel_btn = QtWidgets.QPushButton(t("Cancel"))
-        save_btn.clicked.connect(self.accept)
-        cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(save_btn)
-        btn_layout.addWidget(cancel_btn)
-        layout.addLayout(btn_layout)
-
-    def delete_data(self) -> bool:
-        return self._delete_cb.isChecked()
-
-    def recollect(self) -> bool:
-        return self._delete_cb.isChecked() and self._recollect_cb.isChecked()
+        Recollect.reset(db_scope=list(db_names), collector="florence", keys=keys, re_collect=re_collect)

@@ -102,7 +102,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._restore_from_slot(entry)
         else:
             self.reload_database(self.get_last_used_db_name())
-        self._check_first_run_plugin_panel()
+        self._check_plugin_panel_prompt()
         self._run_panel_plugin_startups()
 
     @profiler.profile
@@ -174,12 +174,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self._hide_loading()
         Notifier.error(f'Failed to load database "{name}"')
 
-    def _check_first_run_plugin_panel(self):
+    def _check_plugin_panel_prompt(self):
         import os
-        from ...plugin.settings import _ini_path
+        from ...plugin.settings import _ini_path, PluginSettings
+        from ...plugin.loader import get_plugin_dir
+        from ...plugin.installer import needs_setup
+
+        def open_panel():
+            QtCore.QTimer.singleShot(0, lambda: self._layout_manager.toggle_panel("Plugin Manager"))
 
         if not os.path.isfile(_ini_path()):
-            QtCore.QTimer.singleShot(0, lambda: self._layout_manager.toggle_panel("Plugin Manager"))
+            open_panel()
+            return
+        plugin_dir = get_plugin_dir()
+        missing = [f for f in PluginSettings().active_folders() if os.path.isdir(os.path.join(plugin_dir, f)) and needs_setup(os.path.join(plugin_dir, f))]
+        if missing:
+            AppLogger.warning(f"Enabled plugins need setup: {missing}. Opening Plugin Manager to install.")
+            open_panel()
 
     def _check_folder_callout(self, roots):
         if roots:
@@ -658,7 +669,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_tags_updated_overlay(self, payload: dict):
         if not self._is_my_db(payload.get("db", "")):
             return
-        from .preview.tag_edit_service import TagEditService
+        from ...ui.panel.tag_edit_service import TagEditService
 
         TagEditService.instance().handle_ack(payload)
         self.grid_overlay_host.reload()

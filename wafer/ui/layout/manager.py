@@ -46,12 +46,6 @@ class PanelEntry:
         return self.floating_window is not None or self.dock_widget is not None
 
 
-@dataclass
-class PanelSoloState:
-    target: str
-    collapsed: set[str]
-
-
 class LayoutManager(QtCore.QObject):
     mode_changed = QtCore.Signal(str)
 
@@ -67,7 +61,6 @@ class LayoutManager(QtCore.QObject):
         self._central_placeholder.setMaximumSize(0, 0)
         self._pending_state: dict | None = None
         self._pending_tree: LayoutTree | None = None
-        self._solo_state: PanelSoloState | None = None
         self._margin = 0
         self._window.setDockOptions(QtWidgets.QMainWindow.AnimatedDocks | QtWidgets.QMainWindow.AllowNestedDocks)
 
@@ -104,7 +97,6 @@ class LayoutManager(QtCore.QObject):
         entry = self._panels.pop(name, None)
         if entry is None:
             return
-        self._solo_state = None
         self._unregister_toggle_command(name)
         self._cleanup_entry(entry)
         self._tree.root = remove_panel(self._tree.root, name)
@@ -129,7 +121,6 @@ class LayoutManager(QtCore.QObject):
         entry = self._panels.get(name)
         if entry is None:
             return
-        self._solo_state = None
 
         if name not in self._tree.all_names():
             fs = entry.last_floating or self._next_floating_position()
@@ -151,13 +142,22 @@ class LayoutManager(QtCore.QObject):
         w = entry.widget
         effectively_hidden = name in self._tree.collapsed or w is None or w.width() <= 0 or w.height() <= 0
         if effectively_hidden:
-            self._tree.collapsed.discard(name)
-            normalize_sizes(self._tree.root, self._tree.collapsed)
-            self._apply_tree_sizes()
+            self._expand_panels({name})
         else:
-            self._sync_tree_from_current()
-            self._tree.collapsed.add(name)
-            self._apply_collapse_state()
+            self._collapse_panels({name})
+
+    def _expand_panels(self, names: set[str]):
+        self._tree.collapsed -= names
+        normalize_sizes(self._tree.root, self._tree.collapsed)
+        self._apply_tree_sizes()
+
+    def _collapse_panels(self, names: set[str]):
+        names &= set(self._tree.docked_names())
+        if not names:
+            return
+        self._sync_tree_from_current()
+        self._tree.collapsed |= names
+        self._apply_collapse_state()
 
     def solo_panel(self, name: str) -> bool:
         entry = self._panels.get(name)
@@ -169,38 +169,18 @@ class LayoutManager(QtCore.QObject):
             return False
         if name in self._tree.floating:
             return self._maximize_floating_panel(entry, name)
-        if self._solo_state and self._solo_state.target == name:
-            return self._restore_solo()
         if self._mode != MODE_LOCKED:
             self.set_mode(MODE_LOCKED)
-        return self._enter_solo(name)
-
-    def _enter_solo(self, name: str) -> bool:
         docked = set(self._tree.docked_names())
         if name not in docked:
             AppLogger.warning(f"Panel solo failed: panel is not docked '{name}'")
             return False
-        if self._solo_state is None:
-            self._sync_tree_from_current()
-            self._solo_state = PanelSoloState(name, set(self._tree.collapsed))
-            docked = set(self._tree.docked_names())
+        others = docked - {name}
+        if others and others <= self._tree.collapsed:
+            self._expand_panels(docked)
         else:
-            self._solo_state.target = name
-        self._tree.collapsed = docked - {name}
-        normalize_sizes(self._tree.root, self._tree.collapsed)
-        self._apply_tree_sizes()
-        self._apply_collapse_state()
-        return True
-
-    def _restore_solo(self) -> bool:
-        state = self._solo_state
-        if state is None:
-            return False
-        self._solo_state = None
-        self._tree.collapsed = set(state.collapsed) & set(self._tree.docked_names())
-        normalize_sizes(self._tree.root, self._tree.collapsed)
-        self._apply_tree_sizes()
-        self._apply_collapse_state()
+            self._expand_panels({name})
+            self._collapse_panels(others)
         return True
 
     def _maximize_floating_panel(self, entry: PanelEntry, name: str) -> bool:
@@ -218,10 +198,6 @@ class LayoutManager(QtCore.QObject):
         except RuntimeError as e:
             AppLogger.warning(f"Panel solo failed: floating panel is not available '{name}'", exc=e)
             return False
-
-    @property
-    def solo_target(self) -> str | None:
-        return self._solo_state.target if self._solo_state else None
 
     def panel_at_widget(self, widget: QtWidgets.QWidget | None) -> str | None:
         current = widget
@@ -295,7 +271,6 @@ class LayoutManager(QtCore.QObject):
     def restore_state(self, state: dict):
         self._pending_state = state
         self._pending_tree = None
-        self._solo_state = None
         old_mode = self._mode
 
         tree_data = state.get("tree")
@@ -867,7 +842,6 @@ class LayoutManager(QtCore.QObject):
             self._window.setCentralWidget(widget)
 
     def _on_dock_closed(self, name: str):
-        self._solo_state = None
         entry = self._panels.get(name)
         if entry and not entry.closable:
             if entry.dock_widget:
@@ -882,7 +856,6 @@ class LayoutManager(QtCore.QObject):
         self._tree.collapsed.discard(name)
 
     def _on_dock_float_changed(self, name: str, floating: bool):
-        self._solo_state = None
         if floating:
             entry = self._panels.get(name)
             if entry and entry.dock_widget:
@@ -891,7 +864,6 @@ class LayoutManager(QtCore.QObject):
             self._tree.floating.pop(name, None)
 
     def _on_floating_closed(self, name: str):
-        self._solo_state = None
         entry = self._panels.get(name)
         if not entry or not entry.floating_window:
             return

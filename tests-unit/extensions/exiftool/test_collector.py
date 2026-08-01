@@ -1,3 +1,5 @@
+import gc
+import weakref
 from unittest.mock import MagicMock, patch
 import time
 import threading
@@ -108,19 +110,7 @@ class TestExifToolCollector:
         with patch("extensions.exiftool._downloader.get_exiftool_path", return_value=None):
             result = plugin._ensure_process()
         assert result is None
-
-    def test_on_notify_stops_process(self):
-        plugin = ExifToolCollectorPlugin()
-        mock_proc = MagicMock()
-        plugin._process = mock_proc
-        mock_timer = MagicMock()
-        plugin._idle_timer = mock_timer
-        plugin.on_notify()
-        mock_proc.stop.assert_called_once()
-        assert plugin._process is None
         assert plugin._exe_path is None
-        mock_timer.cancel.assert_called_once()
-        assert plugin._idle_timer is None
 
     def test_shutdown_stops_process_and_timer_once(self):
         plugin = ExifToolCollectorPlugin()
@@ -137,66 +127,6 @@ class TestExifToolCollector:
         assert plugin._process is None
         assert plugin._idle_timer is None
 
-    def test_blacklist_filter_excludes_keys(self):
-        plugin = ExifToolCollectorPlugin()
-        mock_proc = MagicMock()
-        mock_proc.alive = True
-        mock_proc.query.return_value = {
-            "SourceFile": "test.jpg",
-            "File:ImageWidth": 4000,
-            "File:ImageHeight": 3000,
-            "IFD0:Make": "Canon",
-            "IFD0:Model": "EOS R5",
-        }
-        plugin._process = mock_proc
-        plugin._filter_mode = "blacklist"
-        plugin._filter_keys = {"IFD0:Make"}
-        result = plugin.process("test.jpg", (1000.0, 500))
-        assert result.status is True
-        assert "IFD0:Make" not in result.meta_info
-        assert "IFD0:Model" in result.meta_info
-
-    def test_whitelist_filter_keeps_only_selected(self):
-        plugin = ExifToolCollectorPlugin()
-        mock_proc = MagicMock()
-        mock_proc.alive = True
-        mock_proc.query.return_value = {
-            "SourceFile": "test.jpg",
-            "File:ImageWidth": 4000,
-            "File:ImageHeight": 3000,
-            "IFD0:Make": "Canon",
-            "IFD0:Model": "EOS R5",
-            "ExifIFD:ISO": "100",
-        }
-        plugin._process = mock_proc
-        plugin._filter_mode = "whitelist"
-        plugin._filter_keys = {"IFD0:Make"}
-        result = plugin.process("test.jpg", (1000.0, 500))
-        assert result.status is True
-        assert result.meta_info == {"IFD0:Make": "Canon"}
-
-    def test_empty_filter_keys_passes_all(self):
-        plugin = ExifToolCollectorPlugin()
-        mock_proc = MagicMock()
-        mock_proc.alive = True
-        mock_proc.query.return_value = {
-            "SourceFile": "test.jpg",
-            "File:ImageWidth": 4000,
-            "File:ImageHeight": 3000,
-            "IFD0:Make": "Canon",
-        }
-        plugin._process = mock_proc
-        plugin._filter_mode = "blacklist"
-        plugin._filter_keys = set()
-        result = plugin.process("test.jpg", (1000.0, 500))
-        assert result.status is True
-        assert "IFD0:Make" in result.meta_info
-
-    @patch("extensions.exiftool.settings.read_filter_config", return_value=("whitelist", {"IFD0:Model"}))
-    def test_on_notify_reloads_filter(self, _mock_config):
-        plugin = ExifToolCollectorPlugin()
-        assert plugin._filter_mode == "whitelist"
-        assert plugin._filter_keys == {"IFD0:Model"}
 
 
 class TestExifToolCooldown:
@@ -214,6 +144,41 @@ class TestExifToolCooldown:
         plugin._touch()
         assert plugin._last_used > 0.0
         plugin._idle_timer.cancel()
+
+    def test_touch_timer_callback_does_not_keep_plugin_alive(self, monkeypatch):
+        timers = []
+
+        class FakeTimer:
+            def __init__(self, interval, func, args=None, kwargs=None):
+                self.interval = interval
+                self.func = func
+                self.args = args or ()
+                self.kwargs = kwargs or {}
+                self.cancelled = False
+                timers.append(self)
+
+            def start(self):
+                return None
+
+            def cancel(self):
+                self.cancelled = True
+
+            def is_alive(self):
+                return not self.cancelled
+
+        monkeypatch.setattr("extensions.exiftool.collector.threading.Timer", FakeTimer)
+
+        plugin = ExifToolCollectorPlugin()
+        plugin._touch()
+        timer = plugin._idle_timer
+        ref = weakref.ref(plugin)
+
+        del plugin
+        gc.collect()
+
+        assert ref() is None
+        assert timer is not None
+        assert timer.cancelled is True
 
     def test_touch_replaces_previous_timer(self):
         plugin = ExifToolCollectorPlugin()

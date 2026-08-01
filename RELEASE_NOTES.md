@@ -2,6 +2,21 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.7.5]
+
+### Highlights
+- Text Generation now reads generation metadata from NovelAI, Stable Diffusion WebUI/Forge, and ComfyUI files.
+- ComfyUI workflows can be viewed and dragged into ComfyUI.
+- Metadata Filter lets you keep or exclude selected metadata fields for each provider.
+
+### Improvements
+- Recollect commands can refresh selected files, folders, or databases with optional data deletion.
+- Database Manager can independently delete and recollect collector or parser data.
+- Plugin Manager remembers active extensions, opens when setup is needed, and offers a restart action.
+
+### Fixes
+- Removing filtered metadata and plugin data now keeps displayed results in sync.
+
 ## [v0.7.4]
 
 ### Highlights

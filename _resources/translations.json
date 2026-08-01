@@ -1,1145 +1,443 @@
 {
-  "Continue?": {
-    "en": "Continue?"
-  },
-  "Install": {
-    "en": "Install"
-  },
-  "Install HEAVY Extension": {
-    "en": "Install HEAVY Extension"
-  },
-  "Restart Required": {
-    "en": "Restart Required"
-  },
-  "Cover": {
-    "en": "Cover"
-  },
-  "Left thumbnail fit": {
-    "en": "Left thumbnail fit"
-  },
-  "Right thumbnail fit": {
-    "en": "Right thumbnail fit"
-  },
-  "Row thumbnail opacity": {
-    "en": "Row thumbnail opacity"
-  },
-  "Select files and run Batch Renamer\nor drop files here": {
-    "en": "Select files and run Batch Renamer\nor drop files here"
-  },
-  "Selected thumbnail opacity": {
-    "en": "Selected thumbnail opacity"
-  },
-  "Quit": {
-    "en": "Quit"
-  },
-  "Quit All": {
-    "en": "Quit All"
-  },
-  "Close": {
-    "en": "Close"
-  },
-  "Close All": {
-    "en": "Close All"
-  },
-  "New Update Available: v{version}": {
-    "en": "New Update Available: v{version}"
-  },
-  "Click to toggle all databases": {
-    "en": "Click to toggle all databases"
-  },
-  "Default for New Databases": {
-    "en": "Default for New Databases"
-  },
-  "Install Recommended for general use": {
-    "en": "Install Recommended for general use"
-  },
-  "Installed": {
-    "en": "Installed"
-  },
-  "No Dependencies": {
-    "en": "No Dependencies"
-  },
-  "Open": {
-    "en": "Open"
-  },
-  "Per-Database Assignment": {
-    "en": "Per-Database Assignment"
-  },
-  "Show Log": {
-    "en": "Show Log"
-  },
-  "This extension is marked as HEAVY. This may:\n- use large amount of GPU\n- take long time to install": {
-    "en": "This extension is marked as HEAVY. This may:\n- use large amount of GPU\n- take long time to install"
-  },
-  "add folders from here": {
-    "en": "add folders from here"
-  },
-  "CAPTION": {
-    "en": "CAPTION"
-  },
-  "DETAILED_CAPTION": {
-    "en": "DETAILED_CAPTION"
-  },
-  "Device Info": {
-    "en": "Device Info"
-  },
-  "Drop a file here": {
-    "en": "Drop a file here"
-  },
-  "MORE_DETAILED_CAPTION": {
-    "en": "MORE_DETAILED_CAPTION"
-  },
-  "Max Tokens:": {
-    "en": "Max Tokens:"
-  },
-  "Model:": {
-    "en": "Model:"
-  },
-  "Num Beams:": {
-    "en": "Num Beams:"
-  },
-  "Preview": {
-    "en": "Preview"
-  },
-  "Re Preview": {
-    "en": "Re Preview"
-  },
-  "Requesting...": {
-    "en": "Requesting..."
-  },
-  "Reset Defaults": {
-    "en": "Reset Defaults"
-  },
-  "Tasks:": {
-    "en": "Tasks:"
-  },
-  "Blacklist (block selected)": {
-    "en": "Blacklist (block selected)"
-  },
-  "Block": {
-    "en": "Block"
-  },
-  "Check All": {
-    "en": "Check All"
-  },
-  "Click a key to see sample values": {
-    "en": "Click a key to see sample values"
-  },
-  "Count": {
-    "en": "Count"
-  },
-  "Drop a file here to preview ExifTool tags": {
-    "en": "Drop a file here to preview ExifTool tags"
-  },
-  "Filter Mode:": {
-    "en": "Filter Mode:"
-  },
-  "Filter keys...": {
-    "en": "Filter keys..."
-  },
-  "Key": {
-    "en": "Key"
-  },
-  "Key Browser": {
-    "en": "Key Browser"
-  },
-  "Sample Preview": {
-    "en": "Sample Preview"
-  },
-  "Whitelist (use selected only)": {
-    "en": "Whitelist (use selected only)"
-  },
-  "Add Ignore Folder": {
-    "en": "Add Ignore Folder"
-  },
-  "Add Source Folder": {
-    "en": "Add Source Folder"
-  },
-  "Collected Data": {
-    "en": "Collected Data"
-  },
-  "Collectors": {
-    "en": "Collectors"
-  },
-  "Data": {
-    "en": "Data"
-  },
-  "Databases": {
-    "en": "Databases"
-  },
-  "Delete Database": {
-    "en": "Delete Database"
-  },
-  "Delete Selected Data": {
-    "en": "Delete Selected Data"
-  },
-  "Drag to reorder · higher = preferred": {
-    "en": "Drag to reorder · higher = preferred"
-  },
-  "Ignored Folders": {
-    "en": "Ignored Folders"
-  },
-  "Loading...": {
-    "en": "Loading..."
-  },
-  "No collector or parser plugins loaded.": {
-    "en": "No collector or parser plugins loaded."
-  },
-  "Parsers": {
-    "en": "Parsers"
-  },
-  "Paths": {
-    "en": "Paths"
-  },
-  "Refresh": {
-    "en": "Refresh"
-  },
-  "Remove Selected": {
-    "en": "Remove Selected"
-  },
-  "Select a database": {
-    "en": "Select a database"
-  },
-  "Selected: 0 items": {
-    "en": "Selected: 0 items"
-  },
-  "Source Folders": {
-    "en": "Source Folders"
-  },
-  "No database": {
-    "en": "No database"
-  },
-  "This installation is managed by git. Run git pull to update.": {
-    "en": "This installation is managed by git. Run git pull to update."
-  },
-  "Use git pull instead": {
-    "en": "Use git pull instead"
-  },
-  "Check for updates": {
-    "en": "Check for updates"
-  },
-  "Check for updates on startup": {
-    "en": "Check for updates on startup"
-  },
-  "Checking for updates...": {
-    "en": "Checking for updates..."
-  },
-  "Current : {version}": {
-    "en": "Current : {version}"
-  },
-  "Download Update": {
-    "en": "Download Update"
-  },
-  "Download the update in the background": {
-    "en": "Download the update in the background"
-  },
-  "Go to Download": {
-    "en": "Go to Download"
-  },
-  "Go to download page": {
-    "en": "Go to download page"
-  },
-  "Latest : not checked": {
-    "en": "Latest : not checked"
-  },
-  "Latest : {version}": {
-    "en": "Latest : {version}"
-  },
-  "Published : -": {
-    "en": "Published : -"
-  },
-  "Published : {date}": {
-    "en": "Published : {date}"
-  },
-  "Remind Me Later": {
-    "en": "Remind Me Later"
-  },
-  "Remind me later": {
-    "en": "Remind me later"
-  },
-  "Restart Wafer to apply the downloaded update": {
-    "en": "Restart Wafer to apply the downloaded update"
-  },
-  "Restart to Update": {
-    "en": "Restart to Update"
-  },
-  "Skip automatic notification until the next version": {
-    "en": "Skip automatic notification until the next version"
-  },
-  "Skip until next version": {
-    "en": "Skip until next version"
-  },
-  "Up to Date": {
-    "en": "Up to Date"
-  },
-  "Edit metadata - {key}": {
-    "en": "Edit metadata - {key}"
-  },
-  "Key already exists; will be auto-renamed on save.": {
-    "en": "Key already exists; will be auto-renamed on save."
-  },
-  "Key:": {
-    "en": "Key:"
-  },
-  "Lock": {
-    "en": "Lock"
-  },
-  "Move to:": {
-    "en": "Move to:"
-  },
-  "Order": {
-    "en": "Order"
-  },
-  "Remove from view": {
-    "en": "Remove from view"
-  },
-  "Revert": {
-    "en": "Revert"
-  },
-  "Save": {
-    "en": "Save"
-  },
-  "Value:": {
-    "en": "Value:"
-  },
-  "key": {
-    "en": "key"
-  },
-  "(empty)": {
-    "en": "(empty)"
-  },
-  " Filter ": {
-    "en": " Filter "
-  },
-  "Add Filter": {
-    "en": "Add Filter"
-  },
-  "Add Mark": {
-    "en": "Add Mark"
-  },
-  "Add item": {
-    "en": "Add item"
-  },
-  "Add new mark...": {
-    "en": "Add new mark..."
-  },
-  "Add tag or metadata": {
-    "en": "Add tag or metadata"
-  },
-  "All": {
-    "en": "All"
-  },
-  "Always on Top": {
-    "en": "Always on Top"
-  },
-  "Append": {
-    "en": "Append"
-  },
-  "Ascending": {
-    "en": "Ascending"
-  },
-  "Auto Execute on Database Update": {
-    "en": "Auto Execute on Database Update"
-  },
-  "Auto Execute on Parameter Change": {
-    "en": "Auto Execute on Parameter Change"
-  },
-  "Auto Scroll": {
-    "en": "Auto Scroll"
-  },
-  "Check for Updates": {
-    "en": "Check for Updates"
-  },
-  "Clear": {
-    "en": "Clear"
-  },
-  "Clear All Marks": {
-    "en": "Clear All Marks"
-  },
-  "Collected": {
-    "en": "Collected"
-  },
-  "Color": {
-    "en": "Color"
-  },
-  "Created": {
-    "en": "Created"
-  },
-  "Cycle Sort By": {
-    "en": "Cycle Sort By"
-  },
-  "DB:": {
-    "en": "DB:"
-  },
-  "Database": {
-    "en": "Database"
-  },
-  "Database scope": {
-    "en": "Database scope"
-  },
-  "Datetime": {
-    "en": "Datetime"
-  },
-  "Define New Mark...": {
-    "en": "Define New Mark..."
-  },
-  "Delete": {
-    "en": "Delete"
-  },
-  "Descending": {
-    "en": "Descending"
-  },
-  "Enabled": {
-    "en": "Enabled"
-  },
-  "Enter search terms...": {
-    "en": "Enter search terms..."
-  },
-  "Filter": {
-    "en": "Filter"
-  },
-  "Full Screen": {
-    "en": "Full Screen"
-  },
-  "Include Contained/Virtual Files": {
-    "en": "Include Contained/Virtual Files"
-  },
-  "Include Subfolders": {
-    "en": "Include Subfolders"
-  },
-  "Last updated": {
-    "en": "Last updated"
-  },
-  "Level:": {
-    "en": "Level:"
-  },
-  "Mark": {
-    "en": "Mark"
-  },
-  "Mark Filter Options": {
-    "en": "Mark Filter Options"
-  },
-  "Mark filter options": {
-    "en": "Mark filter options"
-  },
-  "Mark name": {
-    "en": "Mark name"
-  },
-  "Match:": {
-    "en": "Match:"
-  },
-  "MetaInfo": {
-    "en": "MetaInfo"
-  },
-  "Modified": {
-    "en": "Modified"
-  },
-  "Name": {
-    "en": "Name"
-  },
-  "New Window": {
-    "en": "New Window"
-  },
-  "No file selected": {
-    "en": "No file selected"
-  },
-  "No metadata": {
-    "en": "No metadata"
-  },
-  "None": {
-    "en": "None"
-  },
-  "Overlay size:": {
-    "en": "Overlay size:"
-  },
-  "Overwrite": {
-    "en": "Overwrite"
-  },
-  "Panel name": {
-    "en": "Panel name"
-  },
-  "Path": {
-    "en": "Path"
-  },
-  "Prefix": {
-    "en": "Prefix"
-  },
-  "Process": {
-    "en": "Process"
-  },
-  "Query": {
-    "en": "Query"
-  },
-  "Random": {
-    "en": "Random"
-  },
-  "Recent": {
-    "en": "Recent"
-  },
-  "Regex": {
-    "en": "Regex"
-  },
-  "Reload metadata": {
-    "en": "Reload metadata"
-  },
-  "Remove Mark": {
-    "en": "Remove Mark"
-  },
-  "Remove Mark Definition": {
-    "en": "Remove Mark Definition"
-  },
-  "Remove current item": {
-    "en": "Remove current item"
-  },
-  "Remove filter": {
-    "en": "Remove filter"
-  },
-  "Rename": {
-    "en": "Rename"
-  },
-  "Rename Mark...": {
-    "en": "Rename Mark..."
-  },
-  "Replace": {
-    "en": "Replace"
-  },
-  "Reset Floating Position": {
-    "en": "Reset Floating Position"
-  },
-  "Reset Panel Layout": {
-    "en": "Reset Panel Layout"
-  },
-  "Restart": {
-    "en": "Restart"
-  },
-  "Restart All": {
-    "en": "Restart All"
-  },
-  "Restart Tray": {
-    "en": "Restart Tray"
-  },
-  "Restart Viewer": {
-    "en": "Restart Viewer"
-  },
-  "Restore": {
-    "en": "Restore"
-  },
-  "Restore Sort": {
-    "en": "Restore Sort"
-  },
-  "Restore Window pos": {
-    "en": "Restore Window pos"
-  },
-  "Right-click for row options": {
-    "en": "Right-click for row options"
-  },
-  "Save Mark Scope and Convert": {
-    "en": "Save Mark Scope and Convert"
-  },
-  "Save current": {
-    "en": "Save current"
-  },
-  "Search": {
-    "en": "Search"
-  },
-  "Search Options": {
-    "en": "Search Options"
-  },
-  "Search keys...": {
-    "en": "Search keys..."
-  },
-  "Set Mark Color...": {
-    "en": "Set Mark Color..."
-  },
-  "Set Mark Shape...": {
-    "en": "Set Mark Shape..."
-  },
-  "Show mark overlay on grid": {
-    "en": "Show mark overlay on grid"
-  },
-  "Size": {
-    "en": "Size"
-  },
-  "Solo Panel...": {
-    "en": "Solo Panel..."
-  },
-  "Solo This Panel": {
-    "en": "Solo This Panel"
-  },
-  "Sort": {
-    "en": "Sort"
-  },
-  "Sort By": {
-    "en": "Sort By"
-  },
-  "Sort Order": {
-    "en": "Sort Order"
-  },
-  "Split by:": {
-    "en": "Split by:"
-  },
-  "Status": {
-    "en": "Status"
-  },
-  "Storage scope": {
-    "en": "Storage scope"
-  },
-  "Tags": {
-    "en": "Tags"
-  },
-  "Text": {
-    "en": "Text"
-  },
-  "Text Filter Options": {
-    "en": "Text Filter Options"
-  },
-  "Toggle Mark": {
-    "en": "Toggle Mark"
-  },
-  "Toggle Sort Order": {
-    "en": "Toggle Sort Order"
-  },
-  "UI": {
-    "en": "UI"
-  },
-  "Window": {
-    "en": "Window"
-  },
-  "Add": {
-    "en": "Add"
-  },
-  "Add Database": {
-    "en": "Add Database"
-  },
-  "Add Folder": {
-    "en": "Add Folder"
-  },
-  "Animated Viewer": {
-    "en": "Animated Viewer"
-  },
-  "Apply Path Preset": {
-    "en": "Apply Path Preset"
-  },
-  "Apply Query Preset": {
-    "en": "Apply Query Preset"
-  },
-  "Apply UI Preset": {
-    "en": "Apply UI Preset"
-  },
-  "AutoScroll": {
-    "en": "AutoScroll"
-  },
-  "AutoScroll Speed Down": {
-    "en": "AutoScroll Speed Down"
-  },
-  "AutoScroll Speed Up": {
-    "en": "AutoScroll Speed Up"
-  },
-  "Autoplay": {
-    "en": "Autoplay"
-  },
-  "Autoplay on Appear": {
-    "en": "Autoplay on Appear"
-  },
-  "Autoplay on Hover": {
-    "en": "Autoplay on Hover"
-  },
-  "Autoplay on Select": {
-    "en": "Autoplay on Select"
-  },
-  "Batch Renamer": {
-    "en": "Batch Renamer"
-  },
-  "Binding": {
-    "en": "Binding"
-  },
-  "Builtin": {
-    "en": "Builtin"
-  },
-  "Cancel": {
-    "en": "Cancel"
-  },
-  "Center": {
-    "en": "Center"
-  },
-  "Child Folder": {
-    "en": "Child Folder"
-  },
-  "Clear Selection": {
-    "en": "Clear Selection"
-  },
-  "Click Select": {
-    "en": "Click Select"
-  },
-  "Confirm": {
-    "en": "Confirm"
-  },
-  "Contain/Cover": {
-    "en": "Contain/Cover"
-  },
-  "Content Viewer": {
-    "en": "Content Viewer"
-  },
-  "Copy": {
-    "en": "Copy"
-  },
-  "Copy FileName(s)": {
-    "en": "Copy FileName(s)"
-  },
-  "Copy Paths(s)": {
-    "en": "Copy Paths(s)"
-  },
-  "Copy to:": {
-    "en": "Copy to:"
-  },
-  "Copying files...": {
-    "en": "Copying files..."
-  },
-  "Core": {
-    "en": "Core"
-  },
-  "Cut": {
-    "en": "Cut"
-  },
-  "Cycle Orientation": {
-    "en": "Cycle Orientation"
-  },
-  "Database Manager": {
-    "en": "Database Manager"
-  },
-  "Delete Path Preset": {
-    "en": "Delete Path Preset"
-  },
-  "Delete Query Preset": {
-    "en": "Delete Query Preset"
-  },
-  "Delete UI Preset": {
-    "en": "Delete UI Preset"
-  },
-  "Directory": {
-    "en": "Directory"
-  },
-  "Drop to the selected FolderTree folder?\n  {path}": {
-    "en": "Drop to the selected FolderTree folder?\n  {path}"
-  },
-  "Edit": {
-    "en": "Edit"
-  },
-  "Edit Mode (might have visual issues)": {
-    "en": "Edit Mode (might have visual issues)"
-  },
-  "ExifTool Settings": {
-    "en": "ExifTool Settings"
-  },
-  "File": {
-    "en": "File"
-  },
-  "File List": {
-    "en": "File List"
-  },
-  "File View Menu": {
-    "en": "File View Menu"
-  },
-  "FileViewer": {
-    "en": "FileViewer"
-  },
-  "Fit In View": {
-    "en": "Fit In View"
-  },
-  "Fixed": {
-    "en": "Fixed"
-  },
-  "Florence-2 Settings": {
-    "en": "Florence-2 Settings"
-  },
-  "Folder Tree": {
-    "en": "Folder Tree"
-  },
-  "Folder Tree Menu": {
-    "en": "Folder Tree Menu"
-  },
-  "FolderTree": {
-    "en": "FolderTree"
-  },
-  "Grid View": {
-    "en": "Grid View"
-  },
-  "GridView": {
-    "en": "GridView"
-  },
-  "Help": {
-    "en": "Help"
-  },
-  "Ignore this folder": {
-    "en": "Ignore this folder"
-  },
-  "Image Spread": {
-    "en": "Image Spread"
-  },
-  "Image View Menu": {
-    "en": "Image View Menu"
-  },
-  "ImageView": {
-    "en": "ImageView"
-  },
-  "Justified": {
-    "en": "Justified"
-  },
-  "Justified (Optimized)": {
-    "en": "Justified (Optimized)"
-  },
-  "Key Binding Window": {
-    "en": "Key Binding Window"
-  },
-  "Layout": {
-    "en": "Layout"
-  },
-  "List Mode": {
-    "en": "List Mode"
-  },
-  "Log": {
-    "en": "Log"
-  },
-  "Loop": {
-    "en": "Loop"
-  },
-  "Manager": {
-    "en": "Manager"
-  },
-  "Masonry": {
-    "en": "Masonry"
-  },
-  "Max Playback Slots": {
-    "en": "Max Playback Slots"
-  },
-  "Menus": {
-    "en": "Menus"
-  },
-  "Meta Viewer": {
-    "en": "Meta Viewer"
-  },
-  "Mouse Binding Window": {
-    "en": "Mouse Binding Window"
-  },
-  "MultiSpan Grid": {
-    "en": "MultiSpan Grid"
-  },
-  "MultiSpan Tiling": {
-    "en": "MultiSpan Tiling"
-  },
-  "Mute": {
-    "en": "Mute"
-  },
-  "N (↙)": {
-    "en": "N (↙)"
-  },
-  "Navigate": {
-    "en": "Navigate"
-  },
-  "Navigate (Filesystem DFS)": {
-    "en": "Navigate (Filesystem DFS)"
-  },
-  "Navigate by Mouse Position": {
-    "en": "Navigate by Mouse Position"
-  },
-  "New Folder here": {
-    "en": "New Folder here"
-  },
-  "Next Database": {
-    "en": "Next Database"
-  },
-  "Next File": {
-    "en": "Next File"
-  },
-  "Next Folder": {
-    "en": "Next Folder"
-  },
-  "Next Folder (DFS)": {
-    "en": "Next Folder (DFS)"
-  },
-  "Next Frame": {
-    "en": "Next Frame"
-  },
-  "Next Row": {
-    "en": "Next Row"
-  },
-  "Open Binding Files in Explorer": {
-    "en": "Open Binding Files in Explorer"
-  },
-  "Open Contained Files as List": {
-    "en": "Open Contained Files as List"
-  },
-  "Open File": {
-    "en": "Open File"
-  },
-  "Overlay badge size": {
-    "en": "Overlay badge size"
-  },
-  "Overwrite Path Preset": {
-    "en": "Overwrite Path Preset"
-  },
-  "Overwrite Query Preset": {
-    "en": "Overwrite Query Preset"
-  },
-  "Overwrite UI Preset": {
-    "en": "Overwrite UI Preset"
-  },
-  "Panels": {
-    "en": "Panels"
-  },
-  "Parent Folder": {
-    "en": "Parent Folder"
-  },
-  "Partition (Aspect)": {
-    "en": "Partition (Aspect)"
-  },
-  "Paste here": {
-    "en": "Paste here"
-  },
-  "Pause in Background": {
-    "en": "Pause in Background"
-  },
-  "Play/Pause": {
-    "en": "Play/Pause"
-  },
-  "Plugin": {
-    "en": "Plugin"
-  },
-  "Plugin Manager": {
-    "en": "Plugin Manager"
-  },
-  "Prev Database": {
-    "en": "Prev Database"
-  },
-  "Prev File": {
-    "en": "Prev File"
-  },
-  "Prev Row": {
-    "en": "Prev Row"
-  },
-  "Preview Volume Down": {
-    "en": "Preview Volume Down"
-  },
-  "Preview Volume Up": {
-    "en": "Preview Volume Up"
-  },
-  "Previous Folder": {
-    "en": "Previous Folder"
-  },
-  "Previous Folder (DFS)": {
-    "en": "Previous Folder (DFS)"
-  },
-  "Previous Frame": {
-    "en": "Previous Frame"
-  },
-  "README.md": {
-    "en": "README.md"
-  },
-  "Range Select": {
-    "en": "Range Select"
-  },
-  "Reload Tree": {
-    "en": "Reload Tree"
-  },
-  "Remove": {
-    "en": "Remove"
-  },
-  "Remove Database": {
-    "en": "Remove Database"
-  },
-  "Rename Path Preset": {
-    "en": "Rename Path Preset"
-  },
-  "Rename Query Preset": {
-    "en": "Rename Query Preset"
-  },
-  "Rename UI Preset": {
-    "en": "Rename UI Preset"
-  },
-  "Reset Scale": {
-    "en": "Reset Scale"
-  },
-  "Reveal in Explorer": {
-    "en": "Reveal in Explorer"
-  },
-  "S (↙)": {
-    "en": "S (↙)"
-  },
-  "Save Path Preset": {
-    "en": "Save Path Preset"
-  },
-  "Save Query Preset": {
-    "en": "Save Query Preset"
-  },
-  "Save UI Preset": {
-    "en": "Save UI Preset"
-  },
-  "Scale": {
-    "en": "Scale"
-  },
-  "Scale Down": {
-    "en": "Scale Down"
-  },
-  "Scale Up": {
-    "en": "Scale Up"
-  },
-  "Scroll": {
-    "en": "Scroll"
-  },
-  "Scroll Anchor": {
-    "en": "Scroll Anchor"
-  },
-  "Scroll Down": {
-    "en": "Scroll Down"
-  },
-  "Scroll Up": {
-    "en": "Scroll Up"
-  },
-  "Scroll to GridView": {
-    "en": "Scroll to GridView"
-  },
-  "Scroll to selection on update": {
-    "en": "Scroll to selection on update"
-  },
-  "Search key or value…": {
-    "en": "Search key or value…"
-  },
-  "Seek Backward": {
-    "en": "Seek Backward"
-  },
-  "Seek Forward": {
-    "en": "Seek Forward"
-  },
-  "Select All": {
-    "en": "Select All"
-  },
-  "Select FolderTree": {
-    "en": "Select FolderTree"
-  },
-  "Selection": {
-    "en": "Selection"
-  },
-  "Set": {
-    "en": "Set"
-  },
-  "Set Database": {
-    "en": "Set Database"
-  },
-  "Set Scale": {
-    "en": "Set Scale"
-  },
-  "Set Speed": {
-    "en": "Set Speed"
-  },
-  "Setting": {
-    "en": "Setting"
-  },
-  "Settings": {
-    "en": "Settings"
-  },
-  "Shell Context Menu": {
-    "en": "Shell Context Menu"
-  },
-  "Show at ContentViewer": {
-    "en": "Show at ContentViewer"
-  },
-  "Show at Pos": {
-    "en": "Show at Pos"
-  },
-  "Show overlay badges": {
-    "en": "Show overlay badges"
-  },
-  "Slideshow": {
-    "en": "Slideshow"
-  },
-  "Solo": {
-    "en": "Solo"
-  },
-  "Speed Down": {
-    "en": "Speed Down"
-  },
-  "Speed Up": {
-    "en": "Speed Up"
-  },
-  "Sync": {
-    "en": "Sync"
-  },
-  "Toggle Fit Mode": {
-    "en": "Toggle Fit Mode"
-  },
-  "Toggle Image Spread": {
-    "en": "Toggle Image Spread"
-  },
-  "Toggle Language": {
-    "en": "Toggle Language"
-  },
-  "Toggle Select": {
-    "en": "Toggle Select"
-  },
-  "Toggle cell overlay": {
-    "en": "Toggle cell overlay"
-  },
-  "Toolbar": {
-    "en": "Toolbar"
-  },
-  "Tools": {
-    "en": "Tools"
-  },
-  "Top": {
-    "en": "Top"
-  },
-  "Update": {
-    "en": "Update"
-  },
-  "Version Info": {
-    "en": "Version Info"
-  },
-  "Video": {
-    "en": "Video"
-  },
-  "Video Grid": {
-    "en": "Video Grid"
-  },
-  "Video Viewer": {
-    "en": "Video Viewer"
-  },
-  "Viewer": {
-    "en": "Viewer"
-  },
-  "Viewer Thumbnail Default Size": {
-    "en": "Viewer Thumbnail Default Size"
-  },
-  "Volume Down": {
-    "en": "Volume Down"
-  },
-  "Volume Up": {
-    "en": "Volume Up"
-  },
-  "WD14 Tagger Settings": {
-    "en": "WD14 Tagger Settings"
-  },
-  "Wafer": {
-    "en": "Wafer"
-  },
-  "Workspace": {
-    "en": "Workspace"
-  },
-  "Z (↘)": {
-    "en": "Z (↘)"
-  },
-  "Zoom In": {
-    "en": "Zoom In"
-  },
-  "Zoom Out": {
-    "en": "Zoom Out"
-  },
-  "menus": {
-    "en": "menus"
-  },
-  "{count} file(s) processed": {
-    "en": "{count} file(s) processed"
-  },
-  "И (↘)": {
-    "en": "И (↘)"
-  }
+  "  {prefix}: parser (delete only)": {},
+  " Filter ": {},
+  "(All)": {},
+  "(None)": {},
+  "Add": {},
+  "Add Database": {},
+  "Add Filter": {},
+  "Add Folder": {},
+  "Add Ignore Folder": {},
+  "Add Mark": {},
+  "Add New": {},
+  "Add Source Folder": {},
+  "Add color...": {},
+  "Add filter after this": {},
+  "Add item": {},
+  "Add new mark...": {},
+  "Add tag or metadata": {},
+  "All": {},
+  "All Databases": {},
+  "All collector": {},
+  "All collector data": {},
+  "All databases": {},
+  "Alt +": {},
+  "Always on Top": {},
+  "Animated Viewer": {},
+  "Append": {},
+  "Apply": {},
+  "Apply Data Changes": {},
+  "Apply Path Preset": {},
+  "Apply Query Preset": {},
+  "Apply UI Preset": {},
+  "Apply changes to {count} prefix(es)?\n\n": {},
+  "Ascending": {},
+  "Auto Execute on Database Update": {},
+  "Auto Execute on Parameter Change": {},
+  "Auto Scroll": {},
+  "AutoScroll": {},
+  "AutoScroll Speed Down": {},
+  "AutoScroll Speed Up": {},
+  "Autoplay": {},
+  "Autoplay on Appear": {},
+  "Autoplay on Hover": {},
+  "Autoplay on Select": {},
+  "Background Restart Required": {},
+  "Batch Renamer": {},
+  "Binding": {},
+  "Blacklist (block selected)": {},
+  "Block": {},
+  "Builtin": {},
+  "Cancel": {},
+  "Center": {},
+  "Change color...": {},
+  "Change shape...": {},
+  "Check All": {},
+  "Check for Updates": {},
+  "Child Folder": {},
+  "Clear": {},
+  "Clear All Marks": {},
+  "Clear Selection": {},
+  "Click Select": {},
+  "Click a key to see sample values": {},
+  "Click to toggle all databases": {},
+  "Collected": {},
+  "Collected Data": {},
+  "Collector prefix": {},
+  "Collectors": {},
+  "Color": {},
+  "Color Filter Options": {},
+  "Color filter options": {},
+  "Color tolerance": {},
+  "Command": {},
+  "Confirm": {},
+  "Confirm Disable": {},
+  "Contain/Cover": {},
+  "Content Viewer": {},
+  "Convert target:": {},
+  "Copy": {},
+  "Copy FileName(s)": {},
+  "Copy Paths(s)": {},
+  "Copy key": {},
+  "Copy row": {},
+  "Copy to:": {},
+  "Copy value": {},
+  "Copying files...": {},
+  "Core": {},
+  "Count": {},
+  "Create": {},
+  "Create New": {},
+  "Created": {},
+  "Ctrl +": {},
+  "Cut": {},
+  "Cycle Orientation": {},
+  "Cycle Sort By": {},
+  "DB:": {},
+  "Data": {},
+  "Database": {},
+  "Database Manager": {},
+  "Database scope": {},
+  "Databases": {},
+  "Datetime": {},
+  "Default for New Databases": {},
+  "Define New Mark...": {},
+  "Delete": {},
+  "Delete Database": {},
+  "Delete Path Preset": {},
+  "Delete Query Preset": {},
+  "Delete UI Preset": {},
+  "Delete and Recollect": {},
+  "Delete existing Color data": {},
+  "Delete existing data before recollect": {},
+  "Delete existing filtered data": {},
+  "Delete filter": {},
+  "Delete metadata": {},
+  "Delete records": {},
+  "Delete+Recollect": {},
+  "Delete: {delete}  Recollect: {recollect}": {},
+  "Delete…": {},
+  "Descending": {},
+  "Directory": {},
+  "Do you want to delete key:\n\"{key}\"\nfrom database?": {},
+  "Do you want to delete key:\n\"{key}\"\nfrom table?": {},
+  "Drag to reorder · higher = preferred": {},
+  "Edit": {},
+  "Edit Mode (might have visual issues)": {},
+  "Edit metadata - {key}": {},
+  "Edit…": {},
+  "Enabled": {},
+  "Enter a name for the new table": {},
+  "Enter search terms...": {},
+  "Execute": {},
+  "ExifTool Preview": {},
+  "File": {},
+  "File List": {},
+  "File View Menu": {},
+  "FileViewer": {},
+  "Filter": {},
+  "Filter Menu": {},
+  "Filter Mode:": {},
+  "Filter keys...": {},
+  "Filter settings have been modified.\nThis will apply to all databases.": {},
+  "Filter settings saved ({n} changed)": {},
+  "Fit In View": {},
+  "Fixed": {},
+  "Florence-2 Settings": {},
+  "Folder Tree": {},
+  "Folder Tree Menu": {},
+  "FolderTree": {},
+  "Forget & Recollect": {},
+  "Forget & Recollect Everything": {},
+  "From All databases + filter": {},
+  "From this file": {},
+  "Full Screen": {},
+  "Grid View": {},
+  "GridView": {},
+  "Help": {},
+  "Ignore this folder": {},
+  "Ignored Folders": {},
+  "Image Spread": {},
+  "Image View Menu": {},
+  "ImageView": {},
+  "Include Contained/Virtual Files": {},
+  "Include Subfolders": {},
+  "Install Recommended for general use": {},
+  "Installed": {},
+  "Justified": {},
+  "Justified (Optimized)": {},
+  "Key": {},
+  "Key Binding Window": {},
+  "Key Bindings": {},
+  "Key already exists; will be auto-renamed on save.": {},
+  "Key:": {},
+  "Last updated": {},
+  "Layout": {},
+  "Level:": {},
+  "List Mode": {},
+  "Loading...": {},
+  "Lock": {},
+  "Log": {},
+  "Loop": {},
+  "Main Key": {},
+  "Manager": {},
+  "Mark": {},
+  "Mark Filter Options": {},
+  "Mark filter options": {},
+  "Mark name": {},
+  "Mark scope": {},
+  "Mark: {name}": {},
+  "Masonry": {},
+  "Match:": {},
+  "Max Playback Slots": {},
+  "Menus": {},
+  "Meta": {},
+  "Meta Viewer": {},
+  "MetaInfo": {},
+  "Metadata (path scoped)": {},
+  "Metadata Filter": {},
+  "Metadata Filter Manager": {},
+  "Metadata filter settings": {},
+  "Modified": {},
+  "Modifier Key": {},
+  "Mouse Actions:": {},
+  "Mouse Binding Window": {},
+  "Mouse Bindings": {},
+  "Move down": {},
+  "Move to bottom": {},
+  "Move to top": {},
+  "Move up": {},
+  "Moving files...": {},
+  "MultiSpan Grid": {},
+  "MultiSpan Tiling": {},
+  "Mute": {},
+  "N (↙)": {},
+  "Name": {},
+  "Navigate": {},
+  "Navigate (Filesystem DFS)": {},
+  "Navigate by Mouse Position": {},
+  "New Folder here": {},
+  "New Window": {},
+  "Next Database": {},
+  "Next File": {},
+  "Next Folder": {},
+  "Next Folder (DFS)": {},
+  "Next Frame": {},
+  "Next Row": {},
+  "No Dependencies": {},
+  "No changes to save": {},
+  "No collector or parser plugins loaded.": {},
+  "No file selected": {},
+  "No metadata": {},
+  "None": {},
+  "Not Now": {},
+  "Number of palette colors to collect and search": {},
+  "Only from this file": {},
+  "Open": {},
+  "Open Binding Files in Explorer": {},
+  "Open Contained Files as List": {},
+  "Open File": {},
+  "Options": {},
+  "Order": {},
+  "Overlay badge size": {},
+  "Overlay size:": {},
+  "Override": {},
+  "Overwrite": {},
+  "Overwrite Path Preset": {},
+  "Overwrite Query Preset": {},
+  "Overwrite UI Preset": {},
+  "Palette count:": {},
+  "Panel name": {},
+  "Panels": {},
+  "Parent Folder": {},
+  "Parsers": {},
+  "Partition (Aspect)": {},
+  "Paste here": {},
+  "Path": {},
+  "Paths": {},
+  "Pause in Background": {},
+  "Per-Database Assignment": {},
+  "Play/Pause": {},
+  "Please enter text...": {},
+  "Plugin": {},
+  "Plugin Manager": {},
+  "Plugin settings have been saved.\nBackground services restart is required.": {},
+  "Preferred write scope:": {},
+  "Prefix": {},
+  "Prev Database": {},
+  "Prev File": {},
+  "Prev Row": {},
+  "Preview Volume Down": {},
+  "Preview Volume Up": {},
+  "Previous Folder": {},
+  "Previous Folder (DFS)": {},
+  "Previous Frame": {},
+  "Process": {},
+  "Query": {},
+  "Quit": {},
+  "Quit All": {},
+  "README.md": {},
+  "Random": {},
+  "Range Select": {},
+  "Re-collect": {},
+  "Re-collect after deletion": {},
+  "Reassign": {},
+  "Recent": {},
+  "Recollect": {},
+  "Recollect All Collectors": {},
+  "Recollect Collector...": {},
+  "Refresh": {},
+  "Regex": {},
+  "Reload Tree": {},
+  "Reload counts": {},
+  "Reload metadata": {},
+  "Remove": {},
+  "Remove Data": {},
+  "Remove Database": {},
+  "Remove Mark": {},
+  "Remove Mark Definition": {},
+  "Remove Selected": {},
+  "Remove color": {},
+  "Remove current item": {},
+  "Remove filter": {},
+  "Remove from view": {},
+  "Remove...": {},
+  "Rename": {},
+  "Rename Mark...": {},
+  "Rename Path Preset": {},
+  "Rename Query Preset": {},
+  "Rename UI Preset": {},
+  "Rename...": {},
+  "Replace": {},
+  "Requires": {},
+  "Reset": {},
+  "Reset Floating Position": {},
+  "Reset Panel Layout": {},
+  "Reset Scale": {},
+  "Reset to Defaults": {},
+  "Restart": {},
+  "Restart All": {},
+  "Restart Required": {},
+  "Restart Tray": {},
+  "Restart Viewer": {},
+  "Restart Wafer": {},
+  "Restore": {},
+  "Restore Sort": {},
+  "Restore Window pos": {},
+  "Reveal in Explorer": {},
+  "Revert": {},
+  "Right-click for row options": {},
+  "S (↙)": {},
+  "Save": {},
+  "Save / Convert": {},
+  "Save / Convert mark": {},
+  "Save / Convert saves this mark's preferred write scope and sends a conversion request from {from_scope} to {to_scope}. Tag data is shared by file hash; metadata is stored per path. The request is asynchronous and can be run again after errors or shutdowns.": {},
+  "Save Color Settings": {},
+  "Save Mark Scope and Convert": {},
+  "Save Path Preset": {},
+  "Save Query Preset": {},
+  "Save UI Preset": {},
+  "Save current": {},
+  "Save the preferred scope and send conversion for '{key}' from {from_scope} to {to_scope}?\n\nThis does not wait for every database response. You can run it again at any time.": {},
+  "Scale": {},
+  "Scale Down": {},
+  "Scale Up": {},
+  "Scope / Convert...": {},
+  "Scroll": {},
+  "Scroll Anchor": {},
+  "Scroll Down": {},
+  "Scroll Up": {},
+  "Scroll to GridView": {},
+  "Scroll to selection on update": {},
+  "Search": {},
+  "Search Command": {},
+  "Search Options": {},
+  "Search key or value…": {},
+  "Search keys...": {},
+  "Seek Backward": {},
+  "Seek Forward": {},
+  "Select All": {},
+  "Select FolderTree": {},
+  "Select a database": {},
+  "Select folder": {},
+  "Selected Files": {},
+  "Selected Folder": {},
+  "Selection": {},
+  "Set": {},
+  "Set Database": {},
+  "Set Mark Color...": {},
+  "Set Mark Shape...": {},
+  "Set Scale": {},
+  "Set Speed": {},
+  "Setting": {},
+  "Settings": {},
+  "Settings have been modified.\nThis will apply to all databases.": {},
+  "Shell Context Menu": {},
+  "Shift +": {},
+  "Show Log": {},
+  "Show at ContentViewer": {},
+  "Show at Pos": {},
+  "Show mark overlay on grid": {},
+  "Show overlay badges": {},
+  "Size": {},
+  "Slideshow": {},
+  "Solo": {},
+  "Solo Panel...": {},
+  "Solo This Panel": {},
+  "Sort": {},
+  "Sort By": {},
+  "Sort Order": {},
+  "Source Folders": {},
+  "Specific collector": {},
+  "Speed Down": {},
+  "Speed Up": {},
+  "Split by:": {},
+  "Status": {},
+  "Storage scope": {},
+  "Sync": {},
+  "Tag (hash scoped)": {},
+  "Tags": {},
+  "Targets:": {},
+  "Text": {},
+  "Text Filter Options": {},
+  "The following plugins will be disabled:": {},
+  "This Database": {},
+  "This extension is marked as HEAVY. This may:\n- use large amount of GPU\n- take long time to install": {},
+  "Toggle Fit Mode": {},
+  "Toggle Image Spread": {},
+  "Toggle Language": {},
+  "Toggle Mark": {},
+  "Toggle Select": {},
+  "Toggle Sort Order": {},
+  "Toggle cell overlay": {},
+  "Tolerance: ": {},
+  "Toolbar": {},
+  "Tools": {},
+  "Top": {},
+  "UI": {},
+  "Unchecked items keep their data.\n(re-enable later to use again without re-collecting)": {},
+  "Unlock": {},
+  "Update": {},
+  "Value:": {},
+  "Version Info": {},
+  "Video": {},
+  "Video Grid": {},
+  "Video Viewer": {},
+  "Viewer": {},
+  "Viewer Thumbnail Default Size": {},
+  "Volume Down": {},
+  "Volume Up": {},
+  "WD14 Tagger Settings": {},
+  "Wafer": {},
+  "Whitelist (use selected only)": {},
+  "Window": {},
+  "Workspace": {},
+  "Z (↘)": {},
+  "Zoom In": {},
+  "Zoom Out": {},
+  "key": {},
+  "menus": {},
+  "{button} +": {},
+  "{count} file(s) processed": {},
+  "И (↘)": {},
+  "★ No Modifier": {}
 }

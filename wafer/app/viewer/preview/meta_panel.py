@@ -20,8 +20,8 @@ from ....ui.panel.meta_viewer import (
     SECTION_MARKER_TAG_PREFIX,
     SECTION_MARKER_TAG_ROOT,
 )
-from .searchable_meta_widget import ScopedSearchKvAddDialog, SearchableMetaWidget
-from .tag_edit_service import TagEditService
+from ....ui.panel.searchable_meta_widget import ScopedSearchKvAddDialog, SearchableMetaWidget
+from ....ui.panel.tag_edit_service import TagEditService
 
 _FIXED_SECTION_KEYS = ("file", "source")
 _TAG_PREFIX = "tag:"
@@ -114,9 +114,22 @@ class MetaViewerWidget(QtWidgets.QWidget):
         self._add_btn.setToolTip(t("Add tag or metadata"))
         self._add_btn.clicked.connect(self._on_add_clicked)
 
+        self._filter_btn = QtWidgets.QToolButton(bar)
+        self._filter_btn.setIcon(themed_icon("gear", margin=0.1))
+        self._filter_btn.setAutoRaise(True)
+        self._filter_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self._filter_btn.setToolTip(t("Metadata filter settings"))
+        self._filter_btn.clicked.connect(self._on_filter_clicked)
+
+        lay.addWidget(self._filter_btn)
         lay.addWidget(self._reload_btn)
         lay.addWidget(self._add_btn)
         return bar
+
+    def _on_filter_clicked(self):
+        from ....core.commands.bridge import Command
+
+        Command.run("panel.toggle_metadata_filter")
 
     def _update_placeholder_style(self):
         p = ThemeManager.instance().palette
@@ -437,6 +450,7 @@ class MetaViewerWidget(QtWidgets.QWidget):
         )
         card.set_content_widget(content)
         card.update_title_count(len(data) if isinstance(data, Mapping) else 0)
+        card.toggled_card.connect(self._on_section_toggled)
         return card
 
     def _build_search_kv_card(self, title: str, section_id: str, *, prefix: str, scope: str, marker_kind: str) -> CollapsibleCard:

@@ -5,6 +5,7 @@ from wafer.plugin.parser.base import (
     BaseParserPlugin,
     BaseSingletonParser,
     ParserResult,
+    required_collectors,
 )
 
 
@@ -107,3 +108,30 @@ def test_notify_to_no_node():
 
     with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
         BaseParserPlugin.notify_to("novelai")
+
+
+def test_required_collectors_single():
+    assert required_collectors(("exiftool.PNG:Comment",)) == {"exiftool": ["PNG:Comment"]}
+
+
+def test_required_collectors_groups_keys_by_collector():
+    assert required_collectors(("exiftool.PNG:Comment", "exiftool.EXIF:Make", "ffmpeg.format")) == {
+        "exiftool": ["PNG:Comment", "EXIF:Make"],
+        "ffmpeg": ["format"],
+    }
+
+
+def test_required_collectors_meta_key_with_dot():
+    assert required_collectors(("exiftool.a.b",)) == {"exiftool": ["a.b"]}
+
+
+def test_required_collectors_ignores_malformed():
+    assert required_collectors(()) == {}
+    assert required_collectors(("nodot", ".key", "collector.")) == {}
+
+
+def test_resolver_required_collectors_unknown_is_empty():
+    from wafer.plugin.parser.handler import parser_resolver
+
+    assert parser_resolver.required_collectors("does_not_exist") == {}
+

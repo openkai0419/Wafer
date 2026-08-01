@@ -116,6 +116,31 @@ def test_zip_cache_materializes_suffix_preserved(tmp_path):
     assert cache.materialize(logical) == real_path
 
 
+def test_zip_cache_default_instance_does_not_spawn_idle_sweep(tmp_path):
+    zip_path = tmp_path / "sample.zip"
+    _create_zip(zip_path, {"folder/image.png": b"data"})
+    logical = build_virtual_path(str(zip_path), "folder/image.png")
+    cache = ZipCache(tmp_path / "cache")
+
+    cache.materialize(logical)
+
+    assert cache._sweep_timer is None
+
+
+def test_zip_cache_opt_in_idle_sweep_spawns_timer(tmp_path):
+    zip_path = tmp_path / "sample.zip"
+    _create_zip(zip_path, {"folder/image.png": b"data"})
+    logical = build_virtual_path(str(zip_path), "folder/image.png")
+    cache = ZipCache(tmp_path / "cache", enable_idle_sweep=True)
+
+    cache.materialize(logical)
+
+    try:
+        assert cache._sweep_timer is not None
+    finally:
+        cache.stop_idle_sweep()
+
+
 def test_zip_resolver_materializes_and_delegates(tmp_path, monkeypatch):
     zip_path = tmp_path / "sample.zip"
     logical = build_virtual_path(str(zip_path), "folder/image.png")

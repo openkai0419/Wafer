@@ -89,6 +89,7 @@ EXPECTED_PLUGINS = {
     "text_generation": {
         ("parser", "ComfyUiParser"),
         ("parser", "NovelAiImageParser"),
+        ("parser", "WebUiImageParser"),
     },
     "additional_filters": {
         ("filter", "DateRangeFilter"),

@@ -17,9 +17,10 @@ _COL_PREFIX = 1
 _COL_META = 2
 _COL_TAGS = 3
 _COL_STATUS = 4
-_COL_CHECK = 5
-_COLUMN_COUNT = 6
-_HEADERS = [t("Database"), t("Prefix"), t("MetaInfo"), t("Tags"), t("Status"), ""]
+_COL_DELETE = 5
+_COL_RECOLLECT = 6
+_COLUMN_COUNT = 7
+_HEADERS = [t("Database"), t("Prefix"), t("MetaInfo"), t("Tags"), t("Status"), t("Delete"), t("Recollect")]
 
 
 class _NumericItem(QtWidgets.QTableWidgetItem):
@@ -133,14 +134,37 @@ class _PrefixTable(QtWidgets.QGroupBox):
         header.setSectionResizeMode(_COL_META, QtWidgets.QHeaderView.Stretch)
         header.setSectionResizeMode(_COL_TAGS, QtWidgets.QHeaderView.Stretch)
         header.setSectionResizeMode(_COL_STATUS, QtWidgets.QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(_COL_CHECK, QtWidgets.QHeaderView.ResizeToContents)
-        self.table.setColumnWidth(_COL_CHECK, dpix(30))
+        header.setSectionResizeMode(_COL_DELETE, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(_COL_RECOLLECT, QtWidgets.QHeaderView.ResizeToContents)
         self.table.setSortingEnabled(True)
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         layout.addWidget(self.table)
         self.rows: list[_DisplayRow] = []
+
+    def _add_check(self, row: int, col: int, enabled: bool = True):
+        cb = QtWidgets.QCheckBox()
+        cb.setEnabled(enabled)
+        cb.stateChanged.connect(lambda _: self.selection_changed.emit())
+        container = QtWidgets.QWidget()
+        cb_layout = QtWidgets.QHBoxLayout(container)
+        cb_layout.addWidget(cb)
+        cb_layout.setAlignment(QtCore.Qt.AlignCenter)
+        cb_layout.setContentsMargins(0, 0, 0, 0)
+        self.table.setCellWidget(row, col, container)
+
+    def _checkbox_at(self, row: int, col: int) -> QtWidgets.QCheckBox | None:
+        container = self.table.cellWidget(row, col)
+        return container.findChild(QtWidgets.QCheckBox) if container else None
+
+    def _sync_recollect_enabled(self, row: int, enabled: bool):
+        cb = self._checkbox_at(row, _COL_RECOLLECT)
+        if cb is None:
+            return
+        cb.setEnabled(enabled)
+        if not enabled and cb.isChecked():
+            cb.setChecked(False)
 
     def apply_rows(self, rows: list[_DisplayRow]):
         self.rows = rows
@@ -161,17 +185,13 @@ class _PrefixTable(QtWidgets.QGroupBox):
             self.table.setItem(i, _COL_STATUS, QtWidgets.QTableWidgetItem(status))
 
             if deletable:
-                cb = QtWidgets.QCheckBox()
-                cb.stateChanged.connect(lambda _: self.selection_changed.emit())
-                container = QtWidgets.QWidget()
-                cb_layout = QtWidgets.QHBoxLayout(container)
-                cb_layout.addWidget(cb)
-                cb_layout.setAlignment(QtCore.Qt.AlignCenter)
-                cb_layout.setContentsMargins(0, 0, 0, 0)
-                self.table.setCellWidget(i, _COL_CHECK, container)
+                self._add_check(i, _COL_DELETE)
+                self._add_check(i, _COL_RECOLLECT, enabled=status == "Active")
             else:
-                self.table.removeCellWidget(i, _COL_CHECK)
+                self.table.removeCellWidget(i, _COL_DELETE)
+                self.table.removeCellWidget(i, _COL_RECOLLECT)
         self.table.setSortingEnabled(True)
+        self.selection_changed.emit()
 
     def merge_rows(self, rows: list[_DisplayRow]):
         old_set = {(r[0], r[1]) for r in self.rows}
@@ -195,35 +215,47 @@ class _PrefixTable(QtWidgets.QGroupBox):
                 self.table.item(i, _COL_TAGS).setText(f"{new[1]:,}")
             if old[2] != new[2]:
                 self.table.item(i, _COL_STATUS).setText(new[2])
+                self._sync_recollect_enabled(i, new[2] == "Active")
         self.rows = rows
 
-    def checked_count(self) -> int:
-        count = 0
+    def count_checked(self) -> tuple[int, int]:
+        delete_n = recollect_n = 0
         for i in range(self.table.rowCount()):
-            container = self.table.cellWidget(i, _COL_CHECK)
-            if container:
-                cb = container.findChild(QtWidgets.QCheckBox)
-                if cb and cb.isChecked():
-                    count += 1
-        return count
+            del_cb = self._checkbox_at(i, _COL_DELETE)
+            rec_cb = self._checkbox_at(i, _COL_RECOLLECT)
+            if del_cb and del_cb.isChecked():
+                delete_n += 1
+            if rec_cb and rec_cb.isChecked():
+                recollect_n += 1
+        return delete_n, recollect_n
 
-    def get_checked(self) -> list[tuple[str, str]]:
-        selected = []
+    def get_actions(self) -> list[tuple[str, str, bool, bool]]:
+        actions = []
         for i in range(self.table.rowCount()):
-            container = self.table.cellWidget(i, _COL_CHECK)
-            if not container:
+            del_cb = self._checkbox_at(i, _COL_DELETE)
+            rec_cb = self._checkbox_at(i, _COL_RECOLLECT)
+            delete = bool(del_cb and del_cb.isChecked())
+            recollect = bool(rec_cb and rec_cb.isChecked())
+            if not (delete or recollect):
                 continue
-            cb = container.findChild(QtWidgets.QCheckBox)
-            if cb and cb.isChecked():
-                db = self.table.item(i, _COL_DB).text()
-                prefix = self.table.item(i, _COL_PREFIX).text()
-                if prefix:
-                    selected.append((db, prefix))
-        return selected
+            db = self.table.item(i, _COL_DB).text()
+            prefix = self.table.item(i, _COL_PREFIX).text()
+            if prefix:
+                actions.append((db, prefix, delete, recollect))
+        return actions
+
+    def clear_checks(self):
+        for i in range(self.table.rowCount()):
+            for cb in (self._checkbox_at(i, _COL_DELETE), self._checkbox_at(i, _COL_RECOLLECT)):
+                if cb and cb.isChecked():
+                    cb.blockSignals(True)
+                    cb.setChecked(False)
+                    cb.blockSignals(False)
+        self.selection_changed.emit()
 
 
 class DataTab(QtWidgets.QWidget):
-    delete_requested = QtCore.Signal(list, bool)
+    apply_requested = QtCore.Signal(list)
 
     def __init__(self, dispatcher: Dispatcher, parent=None):
         super().__init__(parent)
@@ -251,10 +283,10 @@ class DataTab(QtWidgets.QWidget):
         layout.addLayout(header_row)
 
         self._collector_table = _PrefixTable(t("Collectors"))
-        self._collector_table.selection_changed.connect(self._update_selected_count)
+        self._collector_table.selection_changed.connect(self._update_summary)
 
         self._parser_table = _PrefixTable(t("Parsers"))
-        self._parser_table.selection_changed.connect(self._update_selected_count)
+        self._parser_table.selection_changed.connect(self._update_summary)
 
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         self.splitter.addWidget(self._collector_table)
@@ -264,14 +296,21 @@ class DataTab(QtWidgets.QWidget):
         self.splitter.setChildrenCollapsible(False)
         layout.addWidget(self.splitter, 1)
 
-        self._selected_label = QtWidgets.QLabel(t("Selected: 0 items"))
-        layout.addWidget(self._selected_label)
+        self._summary_label = QtWidgets.QLabel()
+        layout.addWidget(self._summary_label)
 
-        self._delete_btn = QtWidgets.QPushButton(t("Delete Selected Data"))
-        self._delete_btn.setObjectName("delete_btn")
-        self._delete_btn.setFixedWidth(dpix(180))
-        self._delete_btn.clicked.connect(self._on_delete)
-        layout.addWidget(self._delete_btn)
+        self._save_btn = QtWidgets.QPushButton(t("Apply"))
+        self._save_btn.setObjectName("save_btn")
+        self._revert_btn = QtWidgets.QPushButton(t("Revert"))
+        self._revert_btn.setObjectName("cancel_btn")
+        self._save_btn.clicked.connect(self._on_save)
+        self._revert_btn.clicked.connect(self._on_revert)
+
+        btn_layout = QtWidgets.QHBoxLayout()
+        btn_layout.addStretch()
+        btn_layout.addWidget(self._save_btn)
+        btn_layout.addWidget(self._revert_btn)
+        layout.addLayout(btn_layout)
 
         self._dirty = False
         self._debounce_timer = QtCore.QTimer(self)
@@ -279,6 +318,7 @@ class DataTab(QtWidgets.QWidget):
         self._debounce_timer.setInterval(500)
         self._debounce_timer.timeout.connect(self._on_debounced_update)
         self._connect_bridge()
+        self._update_summary()
 
         self._load_async(priority=5)
 
@@ -342,18 +382,29 @@ class DataTab(QtWidgets.QWidget):
         self._collector_table.apply_rows(c_rows)
         self._parser_table.apply_rows(d_rows)
 
-    def _update_selected_count(self):
-        count = self._collector_table.checked_count() + self._parser_table.checked_count()
-        self._selected_label.setText(t("Selected: {count} items", count=count))
+    def _update_summary(self):
+        c_del, c_rec = self._collector_table.count_checked()
+        p_del, p_rec = self._parser_table.count_checked()
+        delete_n = c_del + p_del
+        recollect_n = c_rec + p_rec
+        self._summary_label.setText(t("Delete: {delete}  Recollect: {recollect}", delete=delete_n, recollect=recollect_n))
+        self._save_btn.setEnabled(delete_n > 0 or recollect_n > 0)
 
-    def _on_delete(self):
-        selected = self._collector_table.get_checked() + self._parser_table.get_checked()
-        if not selected:
+    def _on_save(self):
+        actions = self._collector_table.get_actions() + self._parser_table.get_actions()
+        if not actions:
             return
-        dlg = _DeleteConfirmDialog(selected, parent=self)
+        dlg = _ApplyConfirmDialog(actions, parent=self)
         if dlg.exec() != QtWidgets.QDialog.Accepted:
             return
-        self.delete_requested.emit(selected, dlg.recollect())
+        self.apply_requested.emit(actions)
+
+    def _on_revert(self):
+        self.clear_checks()
+
+    def clear_checks(self):
+        self._collector_table.clear_checks()
+        self._parser_table.clear_checks()
 
     def refresh(self):
         self._poll_cancel.cancel()
@@ -378,32 +429,31 @@ class DataTab(QtWidgets.QWidget):
         self._parser_table.merge_rows(d_rows)
 
 
-class _DeleteConfirmDialog(QtWidgets.QDialog):
-    def __init__(self, selected: list[tuple[str, str]], parent=None):
+class _ApplyConfirmDialog(QtWidgets.QDialog):
+    def __init__(self, actions: list[tuple[str, str, bool, bool]], parent=None):
         super().__init__(parent)
-        self.setWindowTitle(t("Delete Collected Data"))
+        self.setWindowTitle(t("Apply Data Changes"))
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(dpix(8))
 
-        msg = t("Delete data for {count} prefix(es)?\n\n", count=len(selected))
-        for db, prefix in selected:
-            msg += f"  {prefix} on {db}\n"
+        msg = t("Apply changes to {count} prefix(es)?\n\n", count=len(actions))
+        for db, prefix, delete, recollect in actions:
+            if delete and recollect:
+                action = t("Delete+Recollect")
+            elif delete:
+                action = t("Delete")
+            else:
+                action = t("Recollect")
+            msg += f"  {prefix} on {db}: {action}\n"
         layout.addWidget(QtWidgets.QLabel(msg))
-
-        self._recollect_cb = QtWidgets.QCheckBox(t("Re-collect after deletion"))
-        self._recollect_cb.setChecked(True)
-        layout.addWidget(self._recollect_cb)
 
         btn_layout = QtWidgets.QHBoxLayout()
         btn_layout.addStretch()
-        delete_btn = QtWidgets.QPushButton(t("Delete"))
+        apply_btn = QtWidgets.QPushButton(t("Apply"))
         cancel_btn = QtWidgets.QPushButton(t("Cancel"))
-        delete_btn.clicked.connect(self.accept)
+        apply_btn.clicked.connect(self.accept)
         cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(delete_btn)
+        btn_layout.addWidget(apply_btn)
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
-
-    def recollect(self) -> bool:
-        return self._recollect_cb.isChecked()

@@ -53,29 +53,17 @@ class TranslationManager:
     def set_locale(self, locale):
         self.current_locale = locale
 
-    def dump_missing_keys(self, output_path=None, languages=None):
-        if languages is None:
-            languages = sorted({self.current_locale, "en"})
-
+    def dump_missing_keys(self, output_path=None):
         output_path = output_path or self.json_path
         existing = read_json_file(output_path, {})
-        for v in existing.values():
-            if isinstance(v, dict):
-                languages = sorted(set(languages) | set(v.keys()))
 
-        out = {}
-        for k in sorted(self.missing_keys):
-            out[k] = {lang: (k if lang == "en" else "") for lang in languages}
-
-        for k, v in existing.items():
-            if k in out and isinstance(v, dict):
-                out[k].update(v)
-            else:
-                out[k] = v
+        keys = sorted(set(self.missing_keys) | set(existing))
+        if not keys:
+            return
+        out = {k: existing.get(k, {}) for k in keys}
 
         write_json_file(output_path, out, indent=2, ensure_ascii=False)
-        msg = f"Missing keys written to: {output_path}"
-        AppLogger.info(msg)
+        AppLogger.info(f"Missing keys written to: {output_path}")
 
 
 init_translator(get_resource_path() / "translations.json")

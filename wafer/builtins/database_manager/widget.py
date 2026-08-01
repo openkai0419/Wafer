@@ -20,10 +20,6 @@ from ...core.qt.thread import utility_pool
 from ...plugin.panel.base import BasePanelPlugin
 
 
-def _hex_rgb(hex_color: str) -> str:
-    return f"{int(hex_color[1:3], 16)},{int(hex_color[3:5], 16)},{int(hex_color[5:7], 16)}"
-
-
 def _build_stylesheet() -> str:
     p = ThemeManager.instance().palette
     r = dpix(4)
@@ -77,18 +73,6 @@ def _build_stylesheet() -> str:
             font-weight: bold;
         }}
         QPushButton#delete_db_btn:hover {{
-            background: {p.error};
-            color: {p.accent_text};
-        }}
-        QPushButton#delete_btn {{
-            background: rgba({_hex_rgb(p.error)}, 0.1);
-            color: {p.error};
-            border: 1px solid rgba({_hex_rgb(p.error)}, 0.3);
-            border-radius: {r}px;
-            padding: {dpix(4)}px {dpix(12)}px;
-            font-weight: bold;
-        }}
-        QPushButton#delete_btn:hover {{
             background: {p.error};
             color: {p.accent_text};
         }}
@@ -189,7 +173,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         from .data_tab import DataTab
 
         self._data_tab = DataTab(self._dispatcher)
-        self._data_tab.delete_requested.connect(self._send_delete)
+        self._data_tab.apply_requested.connect(self._apply_data_actions)
 
         self._tabs = QtWidgets.QTabWidget()
         self._tabs.addTab(self._scrollable(paths_container), t("Paths"))
@@ -362,21 +346,16 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         if current:
             self._detail_widget.load(current.text())
 
-    def _send_delete(self, pairs: list[tuple[str, str]], re_collect: bool):
-        from ...core.commands.binding.instance_registry import InstanceRegistry
+    def _apply_data_actions(self, actions: list[tuple[str, str, bool, bool]]):
+        from ...core.db.recollect import Recollect
 
-        node = InstanceRegistry.instance().resolve_node()
-        if not node:
-            AppLogger.warning("[DatabaseManager] No IPC node available for delete")
+        sent = 0
+        for db, collector, delete, re_collect in actions:
+            sent += Recollect.reset(db_scope=[db], collector=collector, delete=delete, re_collect=re_collect)
+        if not sent:
             return
-        for db, collector in pairs:
-            node.send_reliable(
-                "delete.collector",
-                {"collector": collector, "re_collect": re_collect},
-                dst="indexer",
-                db=db,
-            )
-        AppLogger.info(f"[DatabaseManager] Sent delete for {len(pairs)} pairs")
+        self._data_tab.clear_checks()
+        AppLogger.info(f"[DatabaseManager] Sent data changes for {len(actions)} pairs")
 
     @staticmethod
     def _scrollable(widget: QtWidgets.QWidget) -> QtWidgets.QScrollArea:

@@ -11,7 +11,7 @@ import time
 from pathlib import Path, PurePosixPath
 
 from wafer.utils.logs import AppLogger
-from wafer.utils.paths import normalize_path, resolve_data_path
+from wafer.utils.paths import normalize_path, resolve_cache_path
 from wafer.utils.virtual_paths import child_path, display_name, source_path
 
 from . import settings as cache_settings
@@ -25,9 +25,10 @@ def _is_sharing_violation(e: OSError) -> bool:
 
 
 class ZipCache:
-    def __init__(self, root: str | os.PathLike | None = None):
-        self.root = Path(root or resolve_data_path("cache/zip/"))
+    def __init__(self, root: str | os.PathLike | None = None, *, enable_idle_sweep: bool = False):
+        self.root = Path(root or resolve_cache_path("zip/"))
         self.root.mkdir(parents=True, exist_ok=True)
+        self._enable_idle_sweep = enable_idle_sweep
         self._lock = threading.RLock()
         self._sweep_timer: threading.Timer | None = None
         self._sweep_lock = threading.Lock()
@@ -81,6 +82,8 @@ class ZipCache:
             AppLogger.debug(f"[zip_cache] touch failed: {path} ({e})")
 
     def start_idle_sweep(self, interval_seconds: float | None = None) -> None:
+        if not self._enable_idle_sweep:
+            return
         if interval_seconds is None:
             interval_seconds = cache_settings.SWEEP_INTERVAL_SECONDS
         with self._sweep_lock:
@@ -185,4 +188,4 @@ class ZipCache:
         return (stem or "entry")[:80]
 
 
-zip_cache = ZipCache()
+zip_cache = ZipCache(enable_idle_sweep=True)

@@ -11,13 +11,13 @@ from ...core.lang.manager import t
 _standalone_dialogs: dict[str, QtWidgets.QDialog] = {}
 
 
-def _open_standalone(widget_factory, title: str, store_key: str, size=None):
+def _open_standalone(widget_factory, title: str, store_key: str, size=None, parent=None):
     existing = _standalone_dialogs.get(store_key)
     if existing is not None and existing.isVisible():
         existing.raise_()
         existing.activateWindow()
         return
-    dlg = QtWidgets.QDialog()
+    dlg = QtWidgets.QDialog(parent)
     dlg.setWindowTitle(title)
     dlg.setWindowFlags(dlg.windowFlags() | QtCore.Qt.Window)
     dlg.setAttribute(QtCore.Qt.WA_DeleteOnClose)
@@ -73,6 +73,18 @@ def open_database_manager(ctx):
     )
 
 
+def open_metadata_filter(ctx):
+    from ..key_filter.panel import KeyFilterWidget
+
+    _toggle_or_standalone(
+        ctx,
+        "Metadata Filter",
+        KeyFilterWidget,
+        "metadata_filter",
+        size=(dpix(600), dpix(700)),
+    )
+
+
 def open_batch_renamer(ctx):
     from ..batch_renamer.widget import BatchRenameWidget
 
@@ -119,7 +131,7 @@ def show_readme(ctx):
         browser.load_file(readme_path)
         return browser
 
-    _open_standalone(factory, "README.md", "readme_viewer", size=(dpix(700), dpix(800)))
+    _open_standalone(factory, "README.md", "readme_viewer", size=(dpix(700), dpix(800)), parent=ctx.get_instance("MainWindow"))
 
 
 class ToolCommands(ActionKit.MenuBase):
@@ -140,6 +152,11 @@ class ToolCommands(ActionKit.MenuBase):
                 path="setting.database_manager",
                 display="Database Manager",
                 func=open_database_manager,
+            ),
+            ActionKit.Command(
+                path="setting.metadata_filter",
+                display="Metadata Filter",
+                func=open_metadata_filter,
             ),
             ":Tools",
             ActionKit.Command(

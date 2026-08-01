@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.7.5]
+### Added
+- Text Generation now parses NovelAI, Stable Diffusion WebUI/Forge, and ComfyUI generation metadata.
+- ComfyUI workflows can be viewed and dragged into ComfyUI.
+- Metadata Filter lets you allow or block metadata fields for each provider.
+- Recollect actions can refresh selected files, folders, or databases.
+
+### Changed
+- Database Manager now separates deleting collected data from recollecting it.
+- Enabling a parser now prompts to enable its required collectors.
+- Plugin Manager remembers active extensions, opens when setup is needed, and offers a restart action.
+
+### Fixed
+- Removing filtered metadata and plugin data now refreshes displayed results.
+
 ## [v0.7.4]
 ### Added
 - Portable builds can download updates in the Update panel, follow progress, and apply them after restart.

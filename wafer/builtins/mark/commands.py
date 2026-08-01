@@ -39,7 +39,7 @@ def _resolve_id(name: str) -> str | None:
 
 @require(w="MainWindow")
 def _send_batch(ctx, paths, upserts, deletes, *, w, scope: str):
-    from ...app.viewer.preview.tag_edit_service import TagEditService
+    from ...ui.panel.tag_edit_service import TagEditService
 
     db = w.database_name or ""
     if not db:

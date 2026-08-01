@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock
 
 from PySide6 import QtCore, QtGui, QtWidgets
-from wafer.app.viewer.preview.searchable_meta_widget import (
+from wafer.ui.panel.searchable_meta_widget import (
     SearchKvDetailDialog,
     SearchableMetaWidget,
     build_value_html,
@@ -11,7 +11,7 @@ from wafer.app.viewer.preview.searchable_meta_widget import (
     SNIPPET_BUDGET,
     SAFETY_CHAR_LIMIT,
 )
-from wafer.app.viewer.preview.tag_edit_service import TagEditService
+from wafer.ui.panel.tag_edit_service import TagEditService
 
 
 @pytest.fixture(autouse=True)
@@ -148,11 +148,11 @@ def test_build_value_html_snippet_budget_distribution():
 
 def test_build_value_html_remaining_shown():
     parts = []
-    for i in range(20):
+    for i in range(30):
         parts.append("a" * 200 + f"HIT{i}" + "b" * 200)
     text = "z".join(parts)
     result = build_value_html(text, "hit")
-    assert "+", "more" in result
+    assert "more found" in result
 
 
 def test_highlight_html_no_query():
@@ -284,11 +284,12 @@ def test_double_click_opens_edit_dialog(qtbot, monkeypatch):
     class _Dialog:
         def __init__(self, parent, **kwargs):
             captured.update(kwargs)
+            self.delete_requested = MagicMock()
 
         def exec(self):
             return QtWidgets.QDialog.Rejected
 
-    import wafer.app.viewer.preview.searchable_meta_widget as mod
+    import wafer.ui.panel.searchable_meta_widget as mod
 
     monkeypatch.setattr(mod, "SearchKvDetailDialog", _Dialog)
     index = w._model.index(0, 0)
@@ -374,36 +375,20 @@ def test_detail_dialog_hides_delete_in_add_mode(qtbot):
     assert dlg.delete_btn.isHidden()
 
 
-def test_detail_dialog_delete_requires_confirmation(qtbot, monkeypatch):
-    import wafer.app.viewer.preview.searchable_meta_widget as mod
-
-    calls = []
-    monkeypatch.setattr(mod.ConfirmDialog, "ask", staticmethod(lambda *args, **kwargs: calls.append((args, kwargs)) or "Cancel"))
+def test_detail_dialog_delete_emits_signal_without_closing(qtbot):
     dlg = SearchKvDetailDialog(None, title="Edit", key="rating", value="v")
     qtbot.addWidget(dlg)
 
-    dlg._on_delete_clicked()
+    emitted = []
+    dlg.delete_requested.connect(lambda: emitted.append(True))
+    dlg.delete_btn.click()
 
-    assert calls
-    assert dlg.delete_requested() is False
+    assert emitted == [True]
     assert dlg.result() == QtWidgets.QDialog.DialogCode.Rejected
 
 
-def test_detail_dialog_delete_accepts_after_confirmation(qtbot, monkeypatch):
-    import wafer.app.viewer.preview.searchable_meta_widget as mod
-
-    monkeypatch.setattr(mod.ConfirmDialog, "ask", staticmethod(lambda *args, **kwargs: "Delete"))
-    dlg = SearchKvDetailDialog(None, title="Edit", key="rating", value="v")
-    qtbot.addWidget(dlg)
-
-    dlg._on_delete_clicked()
-
-    assert dlg.delete_requested() is True
-    assert dlg.result() == QtWidgets.QDialog.DialogCode.Accepted
-
-
 def test_lock_icon_draws_only_locked_rows(qtbot, monkeypatch):
-    import wafer.app.viewer.preview.searchable_meta_widget as mod
+    import wafer.ui.panel.searchable_meta_widget as mod
 
     w = SearchableMetaWidget()
     qtbot.addWidget(w)
@@ -420,3 +405,108 @@ def test_lock_icon_draws_only_locked_rows(qtbot, monkeypatch):
     assert calls[0][3] == QtGui.QColor(mod.ThemeManager.instance().palette.warning)
 
 
+def test_context_menu_lock_label_reflects_state(qtbot):
+    w = SearchableMetaWidget()
+    qtbot.addWidget(w)
+    w.set_data({"a": "1", "b": "2"}, {"a": True, "b": False})
+    assert _find_menu_action(w._build_context_menu(0, "a", "a", "1"), "Unlock") is not None
+    assert _find_menu_action(w._build_context_menu(1, "b", "b", "2"), "Lock") is not None
+    assert _find_menu_action(w._build_context_menu(0, "a", "a", "1"), "Delete…") is not None
+
+
+def test_toggle_lock_submits_inverted_lock(qtbot, monkeypatch):
+    svc = TagEditService.instance()
+    node = MagicMock()
+    monkeypatch.setattr(svc, "_resolve_node", lambda: node)
+    w = SearchableMetaWidget(scope="meta_info", prefix="custom")
+    qtbot.addWidget(w)
+    w.set_context({"k": "v"}, {"k": False}, path="/a.png", db="db", scope="meta_info", prefix="custom")
+    w._toggle_lock("k")
+    payload = node.send_reliable.call_args[0][1]
+    assert payload["upserts"] == [{"key": "custom.k", "value": "v", "locked": True}]
+    assert payload["lock_only"] is True
+
+
+def test_delete_request_this_only(qtbot, monkeypatch):
+    import wafer.ui.panel.searchable_meta_widget as mod
+
+    monkeypatch.setattr(mod.ConfirmDialog, "ask", staticmethod(lambda *a, **k: k["buttons"][0]))
+    w = SearchableMetaWidget(scope="meta_info", prefix="custom")
+    qtbot.addWidget(w)
+    w.set_context({"k": "v"}, {}, path="/a.png", db="db", scope="meta_info", prefix="custom")
+    single = MagicMock()
+    everywhere = MagicMock()
+    monkeypatch.setattr(w, "_submit_delete", single)
+    monkeypatch.setattr(w, "_delete_key_everywhere", everywhere)
+    w._confirm_delete("k")
+    single.assert_called_once_with("k")
+    everywhere.assert_not_called()
+
+
+def test_delete_request_all_dbs(qtbot, monkeypatch):
+    import wafer.ui.panel.searchable_meta_widget as mod
+
+    captured = {}
+
+    def fake_ask(*a, **k):
+        captured["disabled"] = k.get("disabled")
+        return k["buttons"][1]
+
+    monkeypatch.setattr(mod.ConfirmDialog, "ask", staticmethod(fake_ask))
+    w = SearchableMetaWidget(scope="meta_info", prefix="custom")
+    qtbot.addWidget(w)
+    w.set_context({"k": "v"}, {}, path="/a.png", db="db", scope="meta_info", prefix="custom")
+    everywhere = MagicMock()
+    monkeypatch.setattr(w, "_delete_key_everywhere", everywhere)
+    w._confirm_delete("k")
+    everywhere.assert_called_once_with("k")
+    assert captured["disabled"] == ()
+
+
+def test_delete_request_disables_all_dbs_when_no_prefix(qtbot, monkeypatch):
+    import wafer.ui.panel.searchable_meta_widget as mod
+
+    captured = {}
+
+    def fake_ask(*a, **k):
+        captured["disabled"] = k.get("disabled")
+        captured["buttons"] = k["buttons"]
+        return k["buttons"][2]
+
+    monkeypatch.setattr(mod.ConfirmDialog, "ask", staticmethod(fake_ask))
+    w = SearchableMetaWidget(scope="tag", prefix="")
+    qtbot.addWidget(w)
+    w.set_data({"k": "v"})
+    w._confirm_delete("k")
+    assert captured["disabled"] == (captured["buttons"][1],)
+
+
+def test_delete_key_everywhere_deletes_and_disables(qtbot, monkeypatch):
+    import wafer.ui.panel.searchable_meta_widget as mod
+    import wafer.core.db.recollect as recollect_mod
+
+    monkeypatch.setattr(mod, "list_setting_db_names", lambda: ["db1", "db2"])
+    delete_calls = []
+    state_calls = []
+    monkeypatch.setattr(recollect_mod.Recollect, "reset", staticmethod(lambda *, db_scope, collector=None, keys=None, delete=False, re_collect=True, **k: delete_calls.append((list(db_scope), list(keys), collector, delete, re_collect))))
+    monkeypatch.setattr(mod.KeyFilter, "apply_key_states", classmethod(lambda cls, prefix, states: state_calls.append((prefix, states))))
+    w = SearchableMetaWidget(scope="meta_info", prefix="custom")
+    qtbot.addWidget(w)
+    w.set_context({"k": "v"}, {}, path="/a.png", db="db", scope="meta_info", prefix="custom")
+    w._delete_key_everywhere("k")
+    assert delete_calls == [(["db1", "db2"], ["custom.k"], "custom", False, False)]
+    assert state_calls == [("custom", {"k": False})]
+
+
+def test_delete_key_everywhere_noop_without_prefix(qtbot, monkeypatch):
+    import wafer.ui.panel.searchable_meta_widget as mod
+    import wafer.core.db.recollect as recollect_mod
+
+    monkeypatch.setattr(mod, "list_setting_db_names", lambda: ["db1"])
+    called = []
+    monkeypatch.setattr(recollect_mod.Recollect, "reset", staticmethod(lambda *a, **k: called.append(k)))
+    w = SearchableMetaWidget(scope="tag", prefix="")
+    qtbot.addWidget(w)
+    w.set_data({"k": "v"})
+    w._delete_key_everywhere("k")
+    assert called == []

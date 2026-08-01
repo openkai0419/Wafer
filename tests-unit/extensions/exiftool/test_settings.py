@@ -1,72 +1,46 @@
 import pytest
 
-from extensions.exiftool.settings import (
-    exiftool_config,
-    read_filter_config,
-    write_filter_config,
-    read_sort_config,
-    write_sort_config,
-    MODE_BLACKLIST,
-    MODE_WHITELIST,
-    SORT_NAME,
-    SORT_COUNT,
-)
+from extensions.exiftool.settings import exiftool_config, migrate_legacy_filter, MODE_BLACKLIST, MODE_WHITELIST
+from wafer.plugin.key_filter import KeyFilter
 
 
 @pytest.fixture(autouse=True)
 def _isolate_ini(tmp_path, monkeypatch):
     ini = tmp_path / "viewer_plugins.ini"
     monkeypatch.setattr("wafer.plugin.config._ini_path", lambda: str(ini))
+    monkeypatch.setattr(KeyFilter, "_broadcast_reload", staticmethod(lambda: None))
     exiftool_config._cache = {}
+    KeyFilter._cache = None
+    yield
+    KeyFilter._cache = None
 
 
-class TestFilterConfig:
-    def test_returns_default_when_no_file(self):
-        mode, keys = read_filter_config()
+class TestMigration:
+    def test_no_legacy_config_marks_migrated(self):
+        migrate_legacy_filter()
+        assert exiftool_config.load().get("migrated") is True
+        assert KeyFilter.get("exiftool") == (MODE_BLACKLIST, frozenset())
+
+    def test_migrates_blacklist_keys(self):
+        exiftool_config.save(filter_mode=MODE_BLACKLIST, filter_keys=["IFD0:Make", "File:FileType"])
+        exiftool_config._cache = {}
+        migrate_legacy_filter()
+        mode, keys = KeyFilter.get("exiftool")
         assert mode == MODE_BLACKLIST
-        assert keys == set()
+        assert keys == frozenset({"IFD0:Make", "File:FileType"})
 
-    def test_roundtrip_blacklist(self):
-        write_filter_config(MODE_BLACKLIST, {"IFD0:Make", "File:FileType"})
-        mode, keys = read_filter_config()
-        assert mode == MODE_BLACKLIST
-        assert keys == {"IFD0:Make", "File:FileType"}
-
-    def test_roundtrip_whitelist(self):
-        write_filter_config(MODE_WHITELIST, {"IFD0:Make", "IFD0:Model"})
-        mode, keys = read_filter_config()
+    def test_migrates_whitelist_keys(self):
+        exiftool_config.save(filter_mode=MODE_WHITELIST, filter_keys=["IFD0:Model"])
+        exiftool_config._cache = {}
+        migrate_legacy_filter()
+        mode, keys = KeyFilter.get("exiftool")
         assert mode == MODE_WHITELIST
-        assert keys == {"IFD0:Make", "IFD0:Model"}
+        assert keys == frozenset({"IFD0:Model"})
 
-    def test_invalid_mode_falls_back_to_blacklist(self):
-        exiftool_config.save(filter_mode="bogus", filter_keys=["X"])
+    def test_migration_runs_once(self):
+        exiftool_config.save(filter_mode=MODE_BLACKLIST, filter_keys=["A"])
         exiftool_config._cache = {}
-        mode, keys = read_filter_config()
-        assert mode == MODE_BLACKLIST
-        assert keys == {"X"}
-
-
-class TestSortConfig:
-    def test_default_sort_config(self):
-        mode, ascending = read_sort_config()
-        assert mode == SORT_COUNT
-        assert ascending is False
-
-    def test_roundtrip_name_ascending(self):
-        write_sort_config(SORT_NAME, True)
-        mode, ascending = read_sort_config()
-        assert mode == SORT_NAME
-        assert ascending is True
-
-    def test_roundtrip_count_descending(self):
-        write_sort_config(SORT_COUNT, False)
-        mode, ascending = read_sort_config()
-        assert mode == SORT_COUNT
-        assert ascending is False
-
-    def test_invalid_sort_mode_falls_back_to_count(self):
-        exiftool_config.save(sort_mode=99, sort_ascending=True)
-        exiftool_config._cache = {}
-        mode, ascending = read_sort_config()
-        assert mode == SORT_COUNT
-        assert ascending is True
+        migrate_legacy_filter()
+        KeyFilter.set_keys("exiftool", MODE_BLACKLIST, {"B"})
+        migrate_legacy_filter()
+        assert KeyFilter.get("exiftool")[1] == frozenset({"B"})

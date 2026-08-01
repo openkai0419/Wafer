@@ -187,10 +187,7 @@ class MainWindow(QtWidgets.QMainWindow):
             open_panel()
             return
         plugin_dir = get_plugin_dir()
-        missing = [
-            f for f in PluginSettings().active_folders()
-            if os.path.isdir(os.path.join(plugin_dir, f)) and needs_setup(os.path.join(plugin_dir, f))
-        ]
+        missing = [f for f in PluginSettings().active_folders() if os.path.isdir(os.path.join(plugin_dir, f)) and needs_setup(os.path.join(plugin_dir, f))]
         if missing:
             AppLogger.warning(f"Enabled plugins need setup: {missing}. Opening Plugin Manager to install.")
             open_panel()

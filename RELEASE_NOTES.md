@@ -12,6 +12,7 @@ User-facing highlights for each Wafer release. These notes are shown in the Upda
 ### Improvements
 - Recollect commands can refresh selected files, folders, or databases with optional data deletion.
 - Database Manager can independently delete and recollect collector or parser data.
+- Plugin Manager remembers active extensions, opens when setup is needed, and offers a restart action.
 
 ### Fixes
 - Removing filtered metadata and plugin data now keeps displayed results in sync.

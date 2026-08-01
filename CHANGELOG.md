@@ -14,6 +14,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ### Changed
 - Database Manager now separates deleting collected data from recollecting it.
 - Enabling a parser now prompts to enable its required collectors.
+- Plugin Manager remembers active extensions, opens when setup is needed, and offers a restart action.
 
 ### Fixed
 - Removing filtered metadata and plugin data now refreshes displayed results.

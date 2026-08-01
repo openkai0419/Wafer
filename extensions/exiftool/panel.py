@@ -318,10 +318,14 @@ class ExifSettingsWidget(QtWidgets.QWidget):
     def _on_save(self):
         if not self._pending:
             return
+        disabling = any(not enabled for enabled in self._pending.values())
+        enabling = any(self._pending.values())
         dlg = FilterSaveConfirmDialog(
             [_PREFIX],
             parent=self,
             delete_label="Delete existing data",
+            delete_default=disabling,
+            recollect_default=enabling,
         )
         if dlg.exec() != QtWidgets.QDialog.Accepted:
             return
@@ -331,7 +335,7 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         KeyFilter.apply_key_states(_PREFIX, self._pending)
         db_names = list_setting_db_names()
         if (dlg.delete_data() or dlg.recollect()) and db_names and (delete_keys or dlg.recollect()):
-            Recollect.purge(db_scope=list(db_names), collector=_PREFIX, keys=delete_keys, delete=False, re_collect=dlg.recollect())
+            Recollect.reset(db_scope=list(db_names), collector=_PREFIX, keys=delete_keys, re_collect=dlg.recollect())
         self._pending.clear()
         self._rebuild_table()
         self._rebuild_pending_table()

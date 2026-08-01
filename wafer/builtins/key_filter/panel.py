@@ -179,20 +179,28 @@ class KeyFilterWidget(QtWidgets.QWidget):
         dirty = [tab for tab in self._prefix_tabs.values() if tab.is_dirty()]
         if not dirty:
             return
-        dlg = FilterSaveConfirmDialog([tab.prefix for tab in dirty], parent=self)
+        parser_names = set(parser_resolver.names())
+        deltas = {tab.prefix: tab.blocked_delta() for tab in dirty}
+        delete_default = any(blocked for blocked, _ in deltas.values())
+        recollect_default = any(unblocked for prefix, (_, unblocked) in deltas.items() if prefix not in parser_names)
+        dlg = FilterSaveConfirmDialog(
+            [tab.prefix for tab in dirty],
+            parent=self,
+            delete_default=delete_default,
+            recollect_default=recollect_default,
+        )
         if dlg.exec() != QtWidgets.QDialog.Accepted:
             return
         do_delete = dlg.delete_data()
         do_recollect = dlg.recollect()
         db_names = list_setting_db_names()
-        parser_names = set(parser_resolver.names())
         for tab in dirty:
             tab.apply()
             if (do_delete or do_recollect) and db_names:
                 delete_keys = tab.compute_delete_keys() if do_delete else []
                 re_collect = do_recollect and tab.prefix not in parser_names
                 if delete_keys or re_collect:
-                    Recollect.purge(db_scope=list(db_names), collector=tab.prefix, keys=delete_keys, delete=False, re_collect=re_collect)
+                    Recollect.reset(db_scope=list(db_names), collector=tab.prefix, keys=delete_keys, re_collect=re_collect)
         Notifier.info(t("Filter settings saved ({n} changed)").format(n=len(dirty)))
 
     def _on_revert(self):
@@ -346,6 +354,12 @@ class _FilterTab(QtWidgets.QWidget):
             mode=self._filter_mode,
             keys=self._filter_keys,
         )
+
+    def blocked_delta(self) -> tuple[bool, bool]:
+        known = [k for k, _ in self._key_data]
+        now = set(KeyFilter.blocked_keys(self.prefix, known, mode=self._filter_mode, keys=self._filter_keys))
+        before = set(KeyFilter.blocked_keys(self.prefix, known, mode=self._saved_mode, keys=self._saved_keys))
+        return bool(now - before), bool(before - now)
 
     def ensure_loaded(self):
         if not self._loaded:

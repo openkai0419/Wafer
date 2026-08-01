@@ -393,7 +393,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
         from ...core.db.recollect import Recollect
 
         for db, collector in pairs:
-            Recollect.purge(db_scope=[db], collector=collector, delete=True, re_collect=re_collect)
+            Recollect.reset(db_scope=[db], collector=collector, delete=True, re_collect=re_collect)
         AppLogger.info(f"[PluginManager] Sent delete for {len(pairs)} pairs")
 
     @staticmethod

@@ -12,13 +12,15 @@ class Recollect:
     a list of names, or ``"*"`` for all databases).
 
     Modes:
-      - ``reset``: mark collection_status as pending so collectors re-run
-        (optionally scoped by ``collector`` and/or ``sources``).
+      - ``reset``: re-collect a target. Optionally scoped by ``collector``,
+        ``sources`` and/or ``prefixes``. ``keys`` deletes specific keys first,
+        ``delete=True`` deletes the target's collected data first, and
+        ``re_collect`` (default ``True``) marks it pending afterwards; set
+        ``re_collect=False`` to only delete (e.g. disabling/uninstalling a
+        collector or editing key filters). ``delete`` requires a ``collector``
+        or a ``sources``/``prefixes`` scope; a whole-DB wipe must use ``forget``.
       - ``forget``: delete sources (files / folder subtrees / whole DB) and
         re-scan them, re-collecting from scratch.
-      - ``purge``: delete a collector's data and/or specific keys, optionally
-        re-collecting afterwards (used when disabling/uninstalling collectors
-        or editing key filters).
     """
 
     @staticmethod
@@ -40,12 +42,15 @@ class Recollect:
         return sent
 
     @staticmethod
-    def reset(*, db_scope=DB_SCOPE_ALL, collector: str | None = None, sources: Iterable[str] | None = None, prefixes: Iterable[str] | None = None) -> int:
+    def reset(*, db_scope=DB_SCOPE_ALL, collector: str | None = None, sources: Iterable[str] | None = None, prefixes: Iterable[str] | None = None, keys: Iterable[str] | None = None, delete: bool = False, re_collect: bool = True) -> int:
         payload = {
             "mode": "reset",
             "collector": collector or None,
             "sources": list(sources) if sources else None,
             "prefixes": list(prefixes) if prefixes else None,
+            "keys": list(keys) if keys else None,
+            "delete": bool(delete),
+            "re_collect": bool(re_collect),
         }
         return Recollect._send(payload, db_scope)
 
@@ -56,16 +61,5 @@ class Recollect:
             "sources": list(sources) if sources else None,
             "prefixes": list(prefixes) if prefixes else None,
             "all": bool(all),
-        }
-        return Recollect._send(payload, db_scope)
-
-    @staticmethod
-    def purge(*, db_scope=DB_SCOPE_ALL, collector: str | None = None, keys: Iterable[str] | None = None, delete: bool = True, re_collect: bool = False) -> int:
-        payload = {
-            "mode": "purge",
-            "collector": collector or "",
-            "keys": list(keys) if keys else [],
-            "delete": bool(delete),
-            "re_collect": bool(re_collect),
         }
         return Recollect._send(payload, db_scope)

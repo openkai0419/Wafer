@@ -311,5 +311,5 @@ def _purge_mark_from_all_dbs(mark_id: str) -> None:
     from ...core.db.recollect import Recollect
 
     key = MarkRegistry.key(mark_id)
-    sent = Recollect.purge(db_scope="*", keys=[key], delete=False)
+    sent = Recollect.reset(db_scope="*", keys=[key], re_collect=False)
     AppLogger.info(f"[Mark] Requested purge of '{key}' across {sent} db(s)")

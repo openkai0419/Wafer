@@ -864,13 +864,13 @@ class TestDatabaseManagerTabs:
         assert mock_node.send_reliable.call_count == 2
         mock_node.send_reliable.assert_any_call(
             "recollect",
-            {"mode": "purge", "collector": "exif", "keys": [], "delete": True, "re_collect": False},
+            {"mode": "reset", "collector": "exif", "sources": None, "prefixes": None, "keys": None, "delete": True, "re_collect": False},
             dst="indexer",
             db="db1",
         )
         mock_node.send_reliable.assert_any_call(
             "recollect",
-            {"mode": "purge", "collector": "nai", "keys": [], "delete": False, "re_collect": True},
+            {"mode": "reset", "collector": "nai", "sources": None, "prefixes": None, "keys": None, "delete": False, "re_collect": True},
             dst="indexer",
             db="db1",
         )

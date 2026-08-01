@@ -146,20 +146,8 @@ class DatabaseWriter:
         self._db.delete_orphan_records()
 
     @profiler.profile
-    def delete_collector(self, collector: str, *, re_collect: bool = False):
-        result = self._db.delete_collector_data(collector, re_collect=re_collect)
-        self._db.try_checkpoint("PASSIVE")
-        return result
-
-    @profiler.profile
-    def delete_keys(self, keys: list[str]) -> tuple[int, int]:
-        result = self._db.delete_keys(keys)
-        self._db.try_checkpoint("PASSIVE")
-        return result
-
-    @profiler.profile
-    def recollect(self, collector: str | None = None, sources=None, prefixes=None) -> int:
-        result = self._db.recollect(collector, sources, prefixes)
+    def reset_collection(self, collector: str | None = None, sources=None, prefixes=None, keys=None, *, delete: bool = False, re_collect: bool = True) -> tuple[int, int, int, int]:
+        result = self._db.reset_collection(collector, sources, prefixes, keys, delete=delete, re_collect=re_collect)
         self._db.try_checkpoint("PASSIVE")
         return result
 

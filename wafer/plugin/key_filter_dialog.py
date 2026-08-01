@@ -31,6 +31,8 @@ class FilterSaveConfirmDialog(QtWidgets.QDialog):
         title: str = "Metadata Filter Manager",
         intro: str = "Filter settings have been modified.\nThis will apply to all databases.",
         delete_label: str = "Delete existing filtered data",
+        delete_default: bool = True,
+        recollect_default: bool = False,
     ):
         super().__init__(parent)
         self.setWindowTitle(t(title))
@@ -49,11 +51,9 @@ class FilterSaveConfirmDialog(QtWidgets.QDialog):
         has_collector = any(collector_resolver.registry.get(p) is not None for p in prefixes)
 
         self._delete_cb = QtWidgets.QCheckBox(t(delete_label))
-        self._delete_cb.setChecked(True)
-        self._recollect_cb = QtWidgets.QCheckBox(t("Re-collect after deletion"))
-        self._recollect_cb.setChecked(False)
-        self._recollect_cb.setEnabled(has_collector)
-        self._delete_cb.toggled.connect(lambda on: self._recollect_cb.setEnabled(on and has_collector))
+        self._delete_cb.setChecked(delete_default)
+        self._recollect_cb = QtWidgets.QCheckBox(t("Re-collect"))
+        self._recollect_cb.setChecked(recollect_default and has_collector)
         layout.addWidget(self._delete_cb)
         layout.addWidget(self._recollect_cb)
 
@@ -71,4 +71,4 @@ class FilterSaveConfirmDialog(QtWidgets.QDialog):
         return self._delete_cb.isChecked()
 
     def recollect(self) -> bool:
-        return self._delete_cb.isChecked() and self._recollect_cb.isChecked()
+        return self._recollect_cb.isChecked()

@@ -488,7 +488,7 @@ def test_delete_key_everywhere_deletes_and_disables(qtbot, monkeypatch):
     monkeypatch.setattr(mod, "list_setting_db_names", lambda: ["db1", "db2"])
     delete_calls = []
     state_calls = []
-    monkeypatch.setattr(recollect_mod.Recollect, "purge", staticmethod(lambda *, db_scope, collector, keys, delete, re_collect: delete_calls.append((list(db_scope), list(keys), collector, delete, re_collect))))
+    monkeypatch.setattr(recollect_mod.Recollect, "reset", staticmethod(lambda *, db_scope, collector=None, keys=None, delete=False, re_collect=True, **k: delete_calls.append((list(db_scope), list(keys), collector, delete, re_collect))))
     monkeypatch.setattr(mod.KeyFilter, "apply_key_states", classmethod(lambda cls, prefix, states: state_calls.append((prefix, states))))
     w = SearchableMetaWidget(scope="meta_info", prefix="custom")
     qtbot.addWidget(w)
@@ -504,7 +504,7 @@ def test_delete_key_everywhere_noop_without_prefix(qtbot, monkeypatch):
 
     monkeypatch.setattr(mod, "list_setting_db_names", lambda: ["db1"])
     called = []
-    monkeypatch.setattr(recollect_mod.Recollect, "purge", staticmethod(lambda *a, **k: called.append(k)))
+    monkeypatch.setattr(recollect_mod.Recollect, "reset", staticmethod(lambda *a, **k: called.append(k)))
     w = SearchableMetaWidget(scope="tag", prefix="")
     qtbot.addWidget(w)
     w.set_data({"k": "v"})

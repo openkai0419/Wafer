@@ -188,7 +188,7 @@ class TestSaveDeleteKeys:
         monkeypatch.setattr(f"{MODULE}.list_setting_db_names", lambda: ["db1"])
         monkeypatch.setattr(
             f"{MODULE}.Recollect",
-            type("R", (), {"purge": staticmethod(lambda *, db_scope, collector, keys, delete, re_collect: sent.append(list(keys)))}),
+            type("R", (), {"reset": staticmethod(lambda *, db_scope, collector=None, keys=None, delete=False, re_collect=True, **k: sent.append(list(keys)))}),
         )
         return sent
 

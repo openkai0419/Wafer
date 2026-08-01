@@ -268,8 +268,6 @@ class IndexerProcess:
         mode = payload.get("mode", "reset")
         if mode == "forget":
             self._submit_forget(payload)
-        elif mode == "purge":
-            self._submit_purge(payload)
         else:
             self._submit_reset(payload)
         return True
@@ -278,12 +276,21 @@ class IndexerProcess:
         collector = payload.get("collector") or None
         sources = payload.get("sources") or None
         prefixes = payload.get("prefixes") or None
-        AppLogger.info(f"[Indexer] Recollect reset collector={collector or '*'}, sources={len(sources) if sources else 0}, prefixes={len(prefixes) if prefixes else 0}")
+        keys = payload.get("keys") or None
+        delete = bool(payload.get("delete", False))
+        re_collect = bool(payload.get("re_collect", True))
+        if not (keys or delete or re_collect):
+            return
+        AppLogger.info(f"[Indexer] Recollect reset collector={collector or '*'}, sources={len(sources) if sources else 0}, prefixes={len(prefixes) if prefixes else 0}, keys={len(keys) if keys else 0}, delete={delete}, re_collect={re_collect}")
+
+        def _run():
+            return self.writer.reset_collection(collector, sources, prefixes, keys, delete=delete, re_collect=re_collect)
+
         self.scheduler.submit(
             Task.create(
                 "recollect_reset",
                 priority=TaskPriority.USER_REQUEST,
-                run=lambda: self.writer.recollect(collector, sources, prefixes),
+                run=_run,
                 on_complete=self._recollect_dispatch,
             )
         )
@@ -317,32 +324,6 @@ class IndexerProcess:
                 priority=TaskPriority.USER_REQUEST,
                 run=_run,
                 on_complete=_after,
-            )
-        )
-
-    def _submit_purge(self, payload):
-        collector = payload.get("collector") or ""
-        keys = payload.get("keys") or []
-        re_collect = bool(payload.get("re_collect", False))
-        delete = bool(payload.get("delete", True))
-        if not keys and not collector:
-            return
-        AppLogger.info(f"[Indexer] Recollect purge collector={collector}, keys={len(keys)}, delete={delete}, re_collect={re_collect}")
-
-        def _run():
-            if keys:
-                self.writer.delete_keys(keys)
-            if delete and collector:
-                self.writer.delete_collector(collector, re_collect=re_collect)
-            elif re_collect and collector:
-                self.writer.recollect(collector)
-
-        self.scheduler.submit(
-            Task.create(
-                "recollect_purge",
-                priority=TaskPriority.USER_REQUEST,
-                run=_run,
-                on_complete=self._recollect_dispatch,
             )
         )
 

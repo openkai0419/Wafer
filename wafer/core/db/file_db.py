@@ -822,96 +822,146 @@ class FileDB:
         else:
             AppLogger.info("DATABASE CLEANUP END")
 
-    def delete_collector_data(self, collector: str, *, re_collect: bool = False):
-        meta_deleted = 0
-        tags_deleted = 0
-        cs_affected = 0
-        child_deleted = 0
-        escaped = collector.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        pattern = f"{escaped}.%"
+    @staticmethod
+    def _source_scopes(sources: Sequence[str] | None, prefixes: Sequence[str] | None):
+        if sources:
+            seq = list(dict.fromkeys(s for s in sources if s))
+            for i in range(0, len(seq), 900):
+                chunk = seq[i : i + 900]
+                placeholders = ",".join(["?"] * len(chunk))
+                yield f"source IN ({placeholders})", list(chunk)
+        elif prefixes:
+            for prefix in dict.fromkeys(p for p in prefixes if p):
+                child = f"{escape_like(prefix if prefix.endswith('/') else prefix + '/')}%"
+                yield "(source = ? OR source LIKE ? ESCAPE '\\')", [prefix, child]
+
+    def _delete_keys_cur(self, cur, keys: list[str]) -> tuple[int, int]:
+        meta_deleted = tags_deleted = 0
+        for i in range(0, len(keys), 900):
+            chunk = keys[i : i + 900]
+            placeholders = ",".join(["?"] * len(chunk))
+            cur.execute(f"DELETE FROM meta_info WHERE key IN ({placeholders}) AND locked = 0", chunk)
+            meta_deleted += cur.execute("SELECT changes()").fetchone()[0]
+            cur.execute(f"DELETE FROM tags WHERE key IN ({placeholders}) AND locked = 0", chunk)
+            tags_deleted += cur.execute("SELECT changes()").fetchone()[0]
+        return meta_deleted, tags_deleted
+
+    def _delete_collection_cur(self, cur, collector: str | None, sources: Sequence[str] | None, prefixes: Sequence[str] | None, *, drop_status: bool) -> tuple[int, int, int]:
+        key_clause, key_arg = "", []
+        if collector:
+            escaped = collector.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            key_clause, key_arg = " AND key LIKE ? ESCAPE '\\'", [f"{escaped}.%"]
+        child_clause = "source_extension = ?" if collector else "source_extension IS NOT NULL"
+        child_arg = [collector] if collector else []
+        cs_clause = " AND collector = ?" if collector else ""
+        cs_arg = [collector] if collector else []
+        meta_deleted = tags_deleted = child_deleted = 0
+        scopes = list(self._source_scopes(sources, prefixes))
+        if scopes:
+            for source_filter, filter_args in scopes:
+                cur.execute(f"DELETE FROM meta_info WHERE locked = 0{key_clause} AND path IN (SELECT path FROM files WHERE {source_filter})", key_arg + filter_args)
+                meta_deleted += cur.execute("SELECT changes()").fetchone()[0]
+                cur.execute(f"DELETE FROM tags WHERE locked = 0{key_clause} AND file_hash IN (SELECT file_hash FROM sources WHERE {source_filter})", key_arg + filter_args)
+                tags_deleted += cur.execute("SELECT changes()").fetchone()[0]
+                cur.execute(f"DELETE FROM files WHERE {child_clause} AND source IN (SELECT source FROM sources WHERE {source_filter})", child_arg + filter_args)
+                child_deleted += cur.execute("SELECT changes()").fetchone()[0]
+                if drop_status:
+                    cur.execute(f"DELETE FROM collection_status WHERE ({source_filter}){cs_clause}", filter_args + cs_arg)
+        else:
+            cur.execute(f"DELETE FROM meta_info WHERE locked = 0{key_clause}", key_arg)
+            meta_deleted = cur.execute("SELECT changes()").fetchone()[0]
+            cur.execute(f"DELETE FROM tags WHERE locked = 0{key_clause}", key_arg)
+            tags_deleted = cur.execute("SELECT changes()").fetchone()[0]
+            cur.execute(f"DELETE FROM files WHERE {child_clause}", child_arg)
+            child_deleted = cur.execute("SELECT changes()").fetchone()[0]
+            if drop_status:
+                cur.execute(f"DELETE FROM collection_status WHERE 1{cs_clause}", cs_arg)
+        return meta_deleted, tags_deleted, child_deleted
+
+    def _mark_pending_cur(self, cur, collector: str | None, sources: Sequence[str] | None, prefixes: Sequence[str] | None) -> int:
+        sql = "UPDATE collection_status SET status = 'pending', collected_at = NULL"
+        collector_clause = " AND collector = ?" if collector else ""
+        affected = 0
+        scopes = list(self._source_scopes(sources, prefixes))
+        if scopes:
+            for source_filter, filter_args in scopes:
+                args = list(filter_args) + ([collector] if collector else [])
+                cur.execute(f"{sql} WHERE ({source_filter}){collector_clause}", args)
+                affected += cur.execute("SELECT changes()").fetchone()[0]
+        elif collector:
+            cur.execute(sql + " WHERE collector = ?", (collector,))
+            affected = cur.execute("SELECT changes()").fetchone()[0]
+        else:
+            cur.execute(sql)
+            affected = cur.execute("SELECT changes()").fetchone()[0]
+        return affected
+
+    @staticmethod
+    def _scope_label(sources: Sequence[str] | None, prefixes: Sequence[str] | None) -> str:
+        if sources:
+            return f"{len(sources)} sources"
+        if prefixes:
+            return f"{len(prefixes)} folders"
+        return "all sources"
+
+    def delete_collection_data(self, collector: str | None = None, sources: Sequence[str] | None = None, prefixes: Sequence[str] | None = None, *, drop_status: bool = False) -> tuple[int, int, int]:
+        sources = [s for s in sources if s] or None if sources else None
+        prefixes = [p for p in prefixes if p] or None if prefixes else None
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             try:
-                cur.execute("DELETE FROM files WHERE source_extension = ?", (collector,))
-                child_deleted = cur.execute("SELECT changes()").fetchone()[0]
-                cur.execute("DELETE FROM meta_info WHERE key LIKE ? ESCAPE '\\' AND locked = 0", (pattern,))
-                meta_deleted = cur.execute("SELECT changes()").fetchone()[0]
-                cur.execute("DELETE FROM tags WHERE key LIKE ? ESCAPE '\\' AND locked = 0", (pattern,))
-                tags_deleted = cur.execute("SELECT changes()").fetchone()[0]
-                if re_collect:
-                    cur.execute(
-                        "UPDATE collection_status SET status = 'pending', collected_at = NULL WHERE collector = ?",
-                        (collector,),
-                    )
-                else:
-                    cur.execute("DELETE FROM collection_status WHERE collector = ?", (collector,))
-                cs_affected = cur.execute("SELECT changes()").fetchone()[0]
+                meta_deleted, tags_deleted, child_deleted = self._delete_collection_cur(cur, collector, sources, prefixes, drop_status=drop_status)
             finally:
                 cur.close()
-        AppLogger.info(f"[DB] Deleted collector={collector}: children={child_deleted}, meta={meta_deleted}, tags={tags_deleted}, cs={cs_affected}")
-        return meta_deleted, tags_deleted, cs_affected
+        AppLogger.info(f"[DB] Deleted collection data: collector={collector or '*'}, {self._scope_label(sources, prefixes)}, children={child_deleted}, meta={meta_deleted}, tags={tags_deleted}, drop_status={drop_status}")
+        return meta_deleted, tags_deleted, child_deleted
 
     def delete_keys(self, keys: list[str]) -> tuple[int, int]:
         if not keys:
             return 0, 0
-        meta_deleted = 0
-        tags_deleted = 0
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             try:
-                for i in range(0, len(keys), 900):
-                    chunk = keys[i : i + 900]
-                    placeholders = ",".join(["?"] * len(chunk))
-                    cur.execute(f"DELETE FROM meta_info WHERE key IN ({placeholders}) AND locked = 0", chunk)
-                    meta_deleted += cur.execute("SELECT changes()").fetchone()[0]
-                    cur.execute(f"DELETE FROM tags WHERE key IN ({placeholders}) AND locked = 0", chunk)
-                    tags_deleted += cur.execute("SELECT changes()").fetchone()[0]
+                meta_deleted, tags_deleted = self._delete_keys_cur(cur, keys)
             finally:
                 cur.close()
         AppLogger.info(f"[DB] Deleted keys ({len(keys)}): meta={meta_deleted}, tags={tags_deleted}")
         return meta_deleted, tags_deleted
 
     def recollect(self, collector: str | None = None, sources: Sequence[str] | None = None, prefixes: Sequence[str] | None = None) -> int:
-        affected = 0
-        sql = "UPDATE collection_status SET status = 'pending', collected_at = NULL"
-        collector_clause = " AND collector = ?" if collector else ""
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             try:
-                if sources:
-                    seq = list(dict.fromkeys(s for s in sources if s))
-                    for i in range(0, len(seq), 900):
-                        chunk = seq[i : i + 900]
-                        placeholders = ",".join(["?"] * len(chunk))
-                        args: list = list(chunk)
-                        if collector:
-                            args.append(collector)
-                        cur.execute(f"{sql} WHERE source IN ({placeholders}){collector_clause}", args)
-                        affected += cur.execute("SELECT changes()").fetchone()[0]
-                elif prefixes:
-                    for prefix in dict.fromkeys(p for p in prefixes if p):
-                        child = f"{escape_like(prefix if prefix.endswith('/') else prefix + '/')}%"
-                        args = [prefix, child]
-                        if collector:
-                            args.append(collector)
-                        cur.execute(f"{sql} WHERE (source = ? OR source LIKE ? ESCAPE '\\'){collector_clause}", args)
-                        affected += cur.execute("SELECT changes()").fetchone()[0]
-                elif collector:
-                    cur.execute(sql + " WHERE collector = ?", (collector,))
-                    affected = cur.execute("SELECT changes()").fetchone()[0]
-                else:
-                    cur.execute(sql)
-                    affected = cur.execute("SELECT changes()").fetchone()[0]
+                affected = self._mark_pending_cur(cur, collector, sources, prefixes)
             finally:
                 cur.close()
-        if sources:
-            scope = f"{len(sources)} sources"
-        elif prefixes:
-            scope = f"{len(prefixes)} folders"
-        else:
-            scope = "all sources"
-        AppLogger.info(f"[DB] Recollect reset: collector={collector or '*'}, {scope}, affected={affected}")
+        AppLogger.info(f"[DB] Recollect reset: collector={collector or '*'}, {self._scope_label(sources, prefixes)}, affected={affected}")
         return affected
+
+    def reset_collection(self, collector: str | None = None, sources: Sequence[str] | None = None, prefixes: Sequence[str] | None = None, keys: Sequence[str] | None = None, *, delete: bool = False, re_collect: bool = True) -> tuple[int, int, int, int]:
+        sources = [s for s in sources if s] or None if sources else None
+        prefixes = [p for p in prefixes if p] or None if prefixes else None
+        if delete and collector is None and not sources and not prefixes:
+            AppLogger.warning("[DB] reset_collection: refusing whole-DB delete without a collector or source scope; use forget to wipe a database. Deleting skipped.")
+            delete = False
+        meta_deleted = tags_deleted = child_deleted = pending = 0
+        with self._write_lock, self.conn:
+            cur = self.conn.cursor()
+            try:
+                if keys:
+                    km, kt = self._delete_keys_cur(cur, list(keys))
+                    meta_deleted += km
+                    tags_deleted += kt
+                if delete:
+                    dm, dt, child_deleted = self._delete_collection_cur(cur, collector, sources, prefixes, drop_status=not re_collect)
+                    meta_deleted += dm
+                    tags_deleted += dt
+                if re_collect:
+                    pending = self._mark_pending_cur(cur, collector, sources, prefixes)
+            finally:
+                cur.close()
+        AppLogger.info(f"[DB] Reset collection: collector={collector or '*'}, {self._scope_label(sources, prefixes)}, keys={len(keys) if keys else 0}, delete={delete}, re_collect={re_collect}, children={child_deleted}, meta={meta_deleted}, tags={tags_deleted}, pending={pending}")
+        return meta_deleted, tags_deleted, child_deleted, pending
 
     def delete_all_sources(self) -> int:
         with self._write_lock, self.conn:

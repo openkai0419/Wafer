@@ -639,12 +639,11 @@ def _setup_db_with_collected(tmp_path, collectors=("exif",)):
     return db
 
 
-def test_delete_collector_data_deletes_meta_and_tags(tmp_path):
+def test_delete_collection_data_drop_status_removes_collection_status(tmp_path):
     db = _setup_db_with_collected(tmp_path)
-    meta_del, tags_del, cs_del = db.delete_collector_data("exif")
+    meta_del, tags_del, _ = db.delete_collection_data("exif", drop_status=True)
     assert meta_del == 3
     assert tags_del == 2
-    assert cs_del == 2
     remaining_meta = db.read_conn.execute("SELECT key FROM meta_info").fetchall()
     assert [r[0] for r in remaining_meta] == ["basic.name"]
     remaining_tags = db.read_conn.execute("SELECT key FROM tags").fetchall()
@@ -654,21 +653,15 @@ def test_delete_collector_data_deletes_meta_and_tags(tmp_path):
     db.close()
 
 
-def test_delete_collector_data_re_collect(tmp_path):
+def test_delete_collection_data_keeps_collection_status(tmp_path):
     db = _setup_db_with_collected(tmp_path)
-    meta_del, tags_del, cs_affected = db.delete_collector_data("exif", re_collect=True)
-    assert meta_del == 3
-    assert tags_del == 2
-    assert cs_affected == 2
-    rows = db.read_conn.execute("SELECT status, collected_at FROM collection_status WHERE collector='exif'").fetchall()
-    assert len(rows) == 2
-    for status, collected_at in rows:
-        assert status == "pending"
-        assert collected_at is None
+    db.delete_collection_data("exif")
+    cs = db.read_conn.execute("SELECT COUNT(*) FROM collection_status WHERE collector='exif'").fetchone()[0]
+    assert cs == 2
     db.close()
 
 
-def test_delete_collector_data_deletes_source_extension_children(tmp_path):
+def test_delete_collection_data_deletes_source_extension_children(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
     db.initialize_database()
@@ -686,44 +679,52 @@ def test_delete_collector_data_deletes_source_extension_children(tmp_path):
         [],
         [(source, "zip", "ok", 2.0)],
     )
-    db.delete_collector_data("zip")
+    db.delete_collection_data("zip", drop_status=True)
     paths = [row[0] for row in db.read_conn.execute("SELECT path FROM files ORDER BY path").fetchall()]
     assert paths == [source]
     assert db.read_conn.execute("SELECT COUNT(*) FROM meta_info WHERE path = ?", (child,)).fetchone()[0] == 0
+    assert db.read_conn.execute("SELECT COUNT(*) FROM collection_status WHERE collector = 'zip'").fetchone()[0] == 0
     db.close()
 
 
-def test_delete_collector_data_re_collect_deletes_source_extension_children(tmp_path):
-    db = FileDB(tmp_path / "test.db")
-    db.start()
-    db.initialize_database()
-    source = "archive.zip"
-    child = build_virtual_path(source, "folder/image.png")
-    db.upsert_batches(
-        [(source, "hash_zip", 100, 1.0)],
-        [(source, source, 1.0)],
-        [],
-        [],
-    )
-    db.upsert_collection_results(
-        [(child, source, "image.png", 1.0, "zip")],
-        [],
-        [],
-        [(source, "zip", "ok", 2.0)],
-    )
-    db.delete_collector_data("zip", re_collect=True)
-    assert db.read_conn.execute("SELECT COUNT(*) FROM files WHERE path = ?", (child,)).fetchone()[0] == 0
-    status = db.read_conn.execute("SELECT status FROM collection_status WHERE source = ? AND collector = 'zip'", (source,)).fetchone()[0]
-    assert status == "pending"
-    db.close()
-
-
-def test_delete_collector_data_no_match(tmp_path):
+def test_delete_collection_data_no_match(tmp_path):
     db = _setup_db_with_collected(tmp_path)
-    meta_del, tags_del, cs_del = db.delete_collector_data("nonexistent")
+    meta_del, tags_del, child_del = db.delete_collection_data("nonexistent", drop_status=True)
     assert meta_del == 0
     assert tags_del == 0
-    assert cs_del == 0
+    assert child_del == 0
+    db.close()
+
+
+def test_delete_collection_data_scoped_by_source_and_collector(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    meta_del, tags_del, child_del = db.delete_collection_data("exif", sources=["src0"])
+    assert (meta_del, tags_del, child_del) == (2, 1, 0)
+    keys = sorted(r[0] for r in db.read_conn.execute("SELECT key FROM meta_info").fetchall())
+    assert keys == ["basic.name", "exif.width"]
+    tags = sorted(r[0] for r in db.read_conn.execute("SELECT key FROM tags").fetchall())
+    assert tags == ["ai.style", "exif.camera"]
+    db.close()
+
+
+def test_delete_collection_data_all_collectors_scoped_by_source(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    meta_del, tags_del, child_del = db.delete_collection_data(None, sources=["src0"])
+    assert (meta_del, tags_del, child_del) == (3, 2, 0)
+    keys = sorted(r[0] for r in db.read_conn.execute("SELECT key FROM meta_info").fetchall())
+    assert keys == ["exif.width"]
+    tags = [r[0] for r in db.read_conn.execute("SELECT key FROM tags").fetchall()]
+    assert tags == ["exif.camera"]
+    db.close()
+
+
+def test_delete_collection_data_whole_db_by_collector(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    meta_del, tags_del, child_del = db.delete_collection_data("exif")
+    assert (meta_del, tags_del, child_del) == (3, 2, 0)
+    assert [r[0] for r in db.read_conn.execute("SELECT key FROM meta_info").fetchall()] == ["basic.name"]
+    cs = db.read_conn.execute("SELECT COUNT(*) FROM collection_status WHERE collector='exif'").fetchone()[0]
+    assert cs == 2
     db.close()
 
 
@@ -819,6 +820,106 @@ def test_recollect_no_match(tmp_path):
     db = _setup_db_with_collected(tmp_path)
     affected = db.recollect("nonexistent")
     assert affected == 0
+    db.close()
+
+
+def test_reset_collection_delete_and_recollect_atomic(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    meta_del, tags_del, child_del, pending = db.reset_collection("exif", delete=True, re_collect=True)
+    assert meta_del == 3
+    assert tags_del == 2
+    assert child_del == 0
+    assert pending == 2
+    assert [r[0] for r in db.read_conn.execute("SELECT key FROM meta_info").fetchall()] == ["basic.name"]
+    rows = db.read_conn.execute("SELECT status, collected_at FROM collection_status WHERE collector='exif'").fetchall()
+    assert len(rows) == 2
+    for status, collected_at in rows:
+        assert status == "pending"
+        assert collected_at is None
+    db.close()
+
+
+def test_reset_collection_delete_only_drops_status(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    meta_del, tags_del, _, pending = db.reset_collection("exif", delete=True, re_collect=False)
+    assert meta_del == 3
+    assert tags_del == 2
+    assert pending == 0
+    assert db.read_conn.execute("SELECT COUNT(*) FROM collection_status WHERE collector='exif'").fetchone()[0] == 0
+    db.close()
+
+
+def test_reset_collection_keys_delete_recollect_combined(tmp_path):
+    db = _setup_db_with_collected(tmp_path, collectors=("exif", "ocr"))
+    meta_del, tags_del, _, pending = db.reset_collection("exif", keys=["basic.name"], delete=True, re_collect=True)
+    assert ("basic.name",) not in db.read_conn.execute("SELECT key FROM meta_info").fetchall()
+    assert meta_del == 4
+    assert tags_del == 2
+    assert pending == 2
+    ocr = db.read_conn.execute("SELECT status FROM collection_status WHERE collector='ocr'").fetchall()
+    assert all(status == "ok" for (status,) in ocr)
+    db.close()
+
+
+def test_reset_collection_recollect_only_keeps_data(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    meta_before = db.read_conn.execute("SELECT COUNT(*) FROM meta_info").fetchone()[0]
+    _, _, _, pending = db.reset_collection("exif", delete=False, re_collect=True)
+    assert pending == 2
+    assert db.read_conn.execute("SELECT COUNT(*) FROM meta_info").fetchone()[0] == meta_before
+    db.close()
+
+
+def test_reset_collection_refuses_whole_db_delete_without_scope(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    meta_before = db.read_conn.execute("SELECT COUNT(*) FROM meta_info").fetchone()[0]
+    meta_del, tags_del, child_del, pending = db.reset_collection(None, delete=True, re_collect=False)
+    assert (meta_del, tags_del, child_del) == (0, 0, 0)
+    assert db.read_conn.execute("SELECT COUNT(*) FROM meta_info").fetchone()[0] == meta_before
+    db.close()
+
+
+def test_reset_collection_all_collectors_delete_scoped_by_source(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    meta_del, tags_del, _, _ = db.reset_collection(None, sources=["src0"], delete=True, re_collect=False)
+    assert meta_del > 0
+    db.close()
+
+
+def test_reset_collection_refuses_whole_db_delete_with_empty_scope_values(tmp_path):
+    db = _setup_db_with_collected(tmp_path)
+    meta_before = db.read_conn.execute("SELECT COUNT(*) FROM meta_info").fetchone()[0]
+    meta_del, tags_del, child_del, pending = db.reset_collection(None, sources=[""], delete=True, re_collect=False)
+    assert (meta_del, tags_del, child_del) == (0, 0, 0)
+    assert db.read_conn.execute("SELECT COUNT(*) FROM meta_info").fetchone()[0] == meta_before
+    db.close()
+
+
+def _setup_prefix_db(tmp_path):
+    db = FileDB(tmp_path / "prefix.db")
+    db.start()
+    db.initialize_database()
+    sources = ["d_r", "d_r/child", "d_r/child/deep", "dXr", "d_r%weird"]
+    srcs = [(s, f"h{i}", 100, 1.0) for i, s in enumerate(sources)]
+    imgs = [(f"{s}/img.jpg", s, 1.0) for s in sources]
+    metas = [(f"{s}/img.jpg", "exif.width", "10", 10.0) for s in sources]
+    db.upsert_batches(srcs, imgs, metas, [])
+    db.insert_pending_collection(sources, ["exif"])
+    db.mark_dispatched(sources, "exif")
+    db.conn.execute("UPDATE collection_status SET status='ok', collected_at=1.0")
+    db.conn.commit()
+    return db, sources
+
+
+def test_reset_collection_prefix_scoped_delete_with_special_chars(tmp_path):
+    db, sources = _setup_prefix_db(tmp_path)
+    db.reset_collection("exif", prefixes=["d_r"], delete=True, re_collect=True)
+    pending = {s for (s,) in db.read_conn.execute("SELECT source FROM collection_status WHERE status='pending'").fetchall()}
+    assert pending == {"d_r", "d_r/child", "d_r/child/deep"}
+    remaining_meta = {r[0] for r in db.read_conn.execute("SELECT path FROM meta_info").fetchall()}
+    assert remaining_meta == {"dXr/img.jpg", "d_r%weird/img.jpg"}
+    ok = {s for (s,) in db.read_conn.execute("SELECT source FROM collection_status WHERE status='ok'").fetchall()}
+    assert ok == {"dXr", "d_r%weird"}
     db.close()
 
 

@@ -216,6 +216,9 @@ class _FakeTab:
     def compute_delete_keys(self):
         return [f"{self.prefix}.k"]
 
+    def blocked_delta(self):
+        return True, True
+
     def mark_stale(self):
         self.stale = True
 
@@ -236,7 +239,7 @@ class TestOnSaveReCollect:
         monkeypatch.setattr(f"{MODULE}.parser_resolver.names", lambda: ["novelai"])
         monkeypatch.setattr(
             f"{MODULE}.Recollect",
-            type("R", (), {"purge": staticmethod(lambda *, db_scope, collector, keys, delete, re_collect: sent.append((collector, re_collect)))}),
+            type("R", (), {"reset": staticmethod(lambda *, db_scope, collector=None, keys=None, delete=False, re_collect=True, **k: sent.append((collector, re_collect)))}),
         )
 
         class _Dlg:

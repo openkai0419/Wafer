@@ -288,7 +288,7 @@ class TestOnRecollect:
         assert task.name == "recollect_reset"
         assert task.priority == TaskPriority.USER_REQUEST
         task.run()
-        proc.writer.recollect.assert_called_once_with("exif", ["/a"], None)
+        proc.writer.reset_collection.assert_called_once_with("exif", ["/a"], None, None, delete=False, re_collect=True)
         task.on_complete()
         proc._progress.send_event.assert_called_with("update")
 
@@ -301,7 +301,18 @@ class TestOnRecollect:
         proc._on_recollect(msg)
         task = proc.scheduler.submit.call_args[0][0]
         task.run()
-        proc.writer.recollect.assert_called_once_with(None, None, None)
+        proc.writer.reset_collection.assert_called_once_with(None, None, None, None, delete=False, re_collect=True)
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_reset_with_delete(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = self._proc()
+        msg = MagicMock()
+        msg.payload = {"mode": "reset", "collector": "exif", "sources": ["/a"], "delete": True}
+        proc._on_recollect(msg)
+        task = proc.scheduler.submit.call_args[0][0]
+        task.run()
+        proc.writer.reset_collection.assert_called_once_with("exif", ["/a"], None, None, delete=True, re_collect=True)
 
     @patch("wafer.app.indexer.main_indexer.Node")
     def test_forget_sources(self, mock_node_cls):
@@ -345,36 +356,45 @@ class TestOnRecollect:
         proc.rescan.assert_called_once_with()
 
     @patch("wafer.app.indexer.main_indexer.Node")
-    def test_purge_collector(self, mock_node_cls):
+    def test_reset_delete_collector(self, mock_node_cls):
         mock_node_cls.return_value = MagicMock()
         proc = self._proc()
         msg = MagicMock()
-        msg.payload = {"mode": "purge", "collector": "color", "delete": True, "re_collect": True}
+        msg.payload = {"mode": "reset", "collector": "color", "delete": True, "re_collect": True}
         proc._on_recollect(msg)
         task = proc.scheduler.submit.call_args[0][0]
-        assert task.name == "recollect_purge"
+        assert task.name == "recollect_reset"
         task.run()
-        proc.writer.delete_collector.assert_called_once_with("color", re_collect=True)
+        proc.writer.reset_collection.assert_called_once_with("color", None, None, None, delete=True, re_collect=True)
 
     @patch("wafer.app.indexer.main_indexer.Node")
-    def test_purge_keys_only(self, mock_node_cls):
+    def test_reset_delete_no_recollect(self, mock_node_cls):
         mock_node_cls.return_value = MagicMock()
         proc = self._proc()
         msg = MagicMock()
-        msg.payload = {"mode": "purge", "collector": "exif", "keys": ["exif.w"], "delete": False, "re_collect": True}
+        msg.payload = {"mode": "reset", "collector": "color", "delete": True, "re_collect": False}
         proc._on_recollect(msg)
         task = proc.scheduler.submit.call_args[0][0]
         task.run()
-        proc.writer.delete_keys.assert_called_once_with(["exif.w"])
-        proc.writer.recollect.assert_called_once_with("exif")
-        proc.writer.delete_collector.assert_not_called()
+        proc.writer.reset_collection.assert_called_once_with("color", None, None, None, delete=True, re_collect=False)
 
     @patch("wafer.app.indexer.main_indexer.Node")
-    def test_purge_noop(self, mock_node_cls):
+    def test_reset_keys_only(self, mock_node_cls):
         mock_node_cls.return_value = MagicMock()
         proc = self._proc()
         msg = MagicMock()
-        msg.payload = {"mode": "purge", "collector": "", "keys": []}
+        msg.payload = {"mode": "reset", "collector": "exif", "keys": ["exif.w"], "delete": False, "re_collect": True}
+        proc._on_recollect(msg)
+        task = proc.scheduler.submit.call_args[0][0]
+        task.run()
+        proc.writer.reset_collection.assert_called_once_with("exif", None, None, ["exif.w"], delete=False, re_collect=True)
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_reset_noop(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = self._proc()
+        msg = MagicMock()
+        msg.payload = {"mode": "reset", "collector": "", "keys": [], "delete": False, "re_collect": False}
         proc._on_recollect(msg)
         proc.scheduler.submit.assert_not_called()
 

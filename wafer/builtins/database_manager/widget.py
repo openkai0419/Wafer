@@ -351,7 +351,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
 
         sent = 0
         for db, collector, delete, re_collect in actions:
-            sent += Recollect.purge(db_scope=[db], collector=collector, delete=delete, re_collect=re_collect)
+            sent += Recollect.reset(db_scope=[db], collector=collector, delete=delete, re_collect=re_collect)
         if not sent:
             return
         self._data_tab.clear_checks()

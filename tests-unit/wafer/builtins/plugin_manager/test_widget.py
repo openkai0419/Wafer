@@ -829,7 +829,7 @@ class TestPluginManagerWidget:
         dlg._send_delete([("db1", "exif")], True)
         mock_node.send_reliable.assert_called_once_with(
             "recollect",
-            {"mode": "purge", "collector": "exif", "keys": [], "delete": True, "re_collect": True},
+            {"mode": "reset", "collector": "exif", "sources": None, "prefixes": None, "keys": None, "delete": True, "re_collect": True},
             dst="indexer",
             db="db1",
         )

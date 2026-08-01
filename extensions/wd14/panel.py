@@ -586,12 +586,17 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         do_delete = False
         do_recollect = False
         if has_changes:
+            non_bl_changed = {k: v for k, v in values.items() if k != "tag_blacklist"} != {k: v for k, v in self._saved_settings.items() if k != "tag_blacklist"}
+            added = set(self._blacklist) - set(self._saved_blacklist)
+            removed = set(self._saved_blacklist) - set(self._blacklist)
             dlg = FilterSaveConfirmDialog(
                 ["wd14"],
                 parent=self,
                 title="Save WD14 Settings",
                 intro="Settings have been modified.\nThis will apply to all databases.",
                 delete_label="Delete existing WD14 data",
+                delete_default=non_bl_changed or bool(added),
+                recollect_default=non_bl_changed or bool(removed),
             )
             if dlg.exec() != QtWidgets.QDialog.Accepted:
                 return
@@ -655,7 +660,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         from wafer.core.db.recollect import Recollect
 
         keys = list(_ALL_WD14_KEYS) if delete else []
-        Recollect.purge(db_scope=list(db_names), collector="wd14", keys=keys, delete=False, re_collect=re_collect)
+        Recollect.reset(db_scope=list(db_names), collector="wd14", keys=keys, re_collect=re_collect)
 
 
 # ── Flow layout for blacklist chips ──

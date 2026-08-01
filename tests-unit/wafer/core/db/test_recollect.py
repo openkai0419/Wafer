@@ -15,7 +15,18 @@ def test_reset_payload(monkeypatch):
     Recollect.reset(db_scope=["db1"], collector="exif", sources=["/a.png"])
     node.send_reliable.assert_called_once_with(
         "recollect",
-        {"mode": "reset", "collector": "exif", "sources": ["/a.png"], "prefixes": None},
+        {"mode": "reset", "collector": "exif", "sources": ["/a.png"], "prefixes": None, "keys": None, "delete": False, "re_collect": True},
+        dst="indexer",
+        db="db1",
+    )
+
+
+def test_reset_delete_payload(monkeypatch):
+    node = _node(monkeypatch)
+    Recollect.reset(db_scope=["db1"], collector="color", keys=["k"], delete=True, re_collect=False)
+    node.send_reliable.assert_called_once_with(
+        "recollect",
+        {"mode": "reset", "collector": "color", "sources": None, "prefixes": None, "keys": ["k"], "delete": True, "re_collect": False},
         dst="indexer",
         db="db1",
     )
@@ -38,17 +49,6 @@ def test_forget_all_payload(monkeypatch):
     node.send_reliable.assert_called_once_with(
         "recollect",
         {"mode": "forget", "sources": None, "prefixes": None, "all": True},
-        dst="indexer",
-        db="db1",
-    )
-
-
-def test_purge_payload(monkeypatch):
-    node = _node(monkeypatch)
-    Recollect.purge(db_scope=["db1"], collector="color", keys=["k"], delete=False, re_collect=True)
-    node.send_reliable.assert_called_once_with(
-        "recollect",
-        {"mode": "purge", "collector": "color", "keys": ["k"], "delete": False, "re_collect": True},
         dst="indexer",
         db="db1",
     )

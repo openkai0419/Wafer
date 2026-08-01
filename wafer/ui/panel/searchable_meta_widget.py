@@ -826,6 +826,6 @@ class SearchableMetaWidget(QtWidgets.QWidget):
         full_key = self._to_full(key)
         from ...core.db.recollect import Recollect
 
-        Recollect.purge(db_scope=list(db_names), collector=prefix, keys=[full_key], delete=False, re_collect=False)
+        Recollect.reset(db_scope=list(db_names), collector=prefix, keys=[full_key], re_collect=False)
         KeyFilter.apply_key_states(prefix, {key: False})
         AppLogger.info(f"[SearchKV] delete-all submitted prefix={prefix} key={full_key} dbs={len(db_names)}")

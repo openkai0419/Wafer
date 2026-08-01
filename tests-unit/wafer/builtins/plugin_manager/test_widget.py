@@ -2,7 +2,7 @@ import os
 import sys
 import pytest
 from unittest.mock import MagicMock, patch
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 from wafer.plugin.registry import BasePlugin, PluginBase
 from wafer.plugin.badges import ExtensionBadge
@@ -777,6 +777,21 @@ class TestOrderTab:
 
 
 class TestPluginManagerWidget:
+    def test_restart_button_runs_restart_all(self, qtbot, monkeypatch):
+        monkeypatch.setattr(
+            "wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir",
+            lambda: "/nonexistent",
+        )
+        from wafer.builtins.plugin_manager.widget import PluginManagerWidget
+
+        run = MagicMock()
+        monkeypatch.setattr("wafer.builtins.plugin_manager.widget.Command.run", run)
+        widget = PluginManagerWidget()
+        qtbot.addWidget(widget)
+
+        qtbot.mouseClick(widget._restart_btn, QtCore.Qt.LeftButton)
+        run.assert_called_once_with("win.restart_all")
+
     def test_has_plugin_changes_detects_enabled_diff(self, qtbot, monkeypatch):
         monkeypatch.setattr(
             "wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir",

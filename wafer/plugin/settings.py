@@ -75,6 +75,13 @@ class PluginSettings:
     def set_enabled(self, names: set[str]):
         _write_ini_value("plugins/enabled", sorted(names))
 
+    def active_folders(self) -> list[str]:
+        val = _read_ini_value("plugins/active_folders")
+        return [str(f) for f in val] if isinstance(val, list) else []
+
+    def set_active_folders(self, folders):
+        _write_ini_value("plugins/active_folders", sorted(set(folders)))
+
     def is_plugin_enabled(
         self,
         qualified_name: str,

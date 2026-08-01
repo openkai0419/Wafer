@@ -45,6 +45,27 @@ class TestPluginSettingsEnabledNames:
         assert ps.enabled_names() == {"video"}
 
 
+class TestPluginSettingsActiveFolders:
+    def test_empty_when_no_file(self):
+        assert PluginSettings().active_folders() == []
+
+    def test_roundtrip_sorted_deduped(self):
+        ps = PluginSettings()
+        ps.set_active_folders(["video", "image", "image"])
+        assert ps.active_folders() == ["image", "video"]
+
+    def test_overwrite(self):
+        ps = PluginSettings()
+        ps.set_active_folders(["image"])
+        ps.set_active_folders(["exif"])
+        assert ps.active_folders() == ["exif"]
+
+    def test_empty_roundtrip(self):
+        ps = PluginSettings()
+        ps.set_active_folders([])
+        assert ps.active_folders() == []
+
+
 class TestPluginSettingsEnabledOverrides:
     def test_empty_when_no_file(self):
         ps = PluginSettings()

@@ -127,3 +127,28 @@ class TestExtensionCardMdFiles:
         QtCore.QCoreApplication.processEvents()
 
         apply_loaded.assert_not_called()
+
+
+class TestActiveFolderNames:
+    def test_filters_folders_without_enabled_plugins(self):
+        from types import SimpleNamespace
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
+
+        cards = {
+            "on_ext": SimpleNamespace(folder_name="on_ext", get_enabled_names=lambda: {"viewer:A"}),
+            "off_ext": SimpleNamespace(folder_name="off_ext", get_enabled_names=lambda: set()),
+        }
+        fake = SimpleNamespace(_cards=cards)
+        assert ExtensionsTab.active_folder_names(fake) == ["on_ext"]
+
+    def test_sorted(self):
+        from types import SimpleNamespace
+        from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
+
+        cards = {
+            "zeta": SimpleNamespace(folder_name="zeta", get_enabled_names=lambda: {"viewer:Z"}),
+            "alpha": SimpleNamespace(folder_name="alpha", get_enabled_names=lambda: {"viewer:A"}),
+        }
+        fake = SimpleNamespace(_cards=cards)
+        assert ExtensionsTab.active_folder_names(fake) == ["alpha", "zeta"]
+

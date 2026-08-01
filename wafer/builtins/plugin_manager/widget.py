@@ -34,12 +34,14 @@ def _build_stylesheet() -> str:
         QPushButton#save_btn:hover {{
             background: {p.bg_hover};
         }}
+        QPushButton#restart_btn,
         QPushButton#cancel_btn {{
             background: {p.bg_secondary};
             border: 1px solid {p.border_default};
             border-radius: {r}px;
             padding: {dpix(5)}px {dpix(20)}px;
         }}
+        QPushButton#restart_btn:hover,
         QPushButton#cancel_btn:hover {{
             background: {p.bg_hover};
         }}
@@ -231,10 +233,13 @@ class PluginManagerWidget(QtWidgets.QWidget):
         self._ext_tab.setMinimumHeight(dpix(220))
         self._tabs.setMinimumHeight(dpix(120))
 
+        self._restart_btn = QtWidgets.QPushButton(t("Restart"))
+        self._restart_btn.setObjectName("restart_btn")
         save_btn = QtWidgets.QPushButton(t("Save"))
         save_btn.setObjectName("save_btn")
         revert_btn = QtWidgets.QPushButton(t("Revert"))
         revert_btn.setObjectName("cancel_btn")
+        self._restart_btn.clicked.connect(lambda: Command.run("win.restart_all"))
         save_btn.clicked.connect(self._on_save)
         revert_btn.clicked.connect(self._on_revert)
 
@@ -243,6 +248,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
         self._restart_label.hide()
 
         btn_layout = QtWidgets.QHBoxLayout()
+        btn_layout.addWidget(self._restart_btn)
         btn_layout.addWidget(self._restart_label)
         btn_layout.addStretch()
         btn_layout.addWidget(save_btn)
@@ -317,6 +323,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
         self._settings.merge_restart_scope(scope)
         if has_changes:
             self._settings.set_enabled_overrides(enabled_overrides)
+            self._settings.set_active_folders(self._ext_tab.active_folder_names())
             for key, order in orders.items():
                 self._settings.set_priority_order(key, order)
             AppLogger.info(f"[PluginManager] Saved: enabled_overrides={enabled_overrides}, orders={orders}")

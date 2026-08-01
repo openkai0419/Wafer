@@ -600,6 +600,9 @@ class ExtensionsTab(QtWidgets.QWidget):
             result.update(card.get_enabled_overrides())
         return result
 
+    def active_folder_names(self) -> list[str]:
+        return sorted(card.folder_name for card in self._cards.values() if card.get_enabled_names())
+
     def iter_plugin_states(self):
         for card in self._cards.values():
             yield from card.iter_plugin_states()

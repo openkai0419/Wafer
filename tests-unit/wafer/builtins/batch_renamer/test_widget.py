@@ -721,7 +721,6 @@ class TestRenameStaysOpen:
         qtbot.addWidget(dlg)
 
         dlg._columns.append(RenameColumn(FixedSource()))
-        dlg._sort_indicator = ("segment", 0, True)
 
         mock_execute.return_value = [_ok_result(tmp_files[0], tmp_files[0].parent / "x.jpg")]
 
@@ -731,12 +730,11 @@ class TestRenameStaysOpen:
         assert len(dlg._columns) == 1
         assert isinstance(dlg._columns[0].source, NameSource)
         assert isinstance(dlg._ext_column.source, ExtSource)
-        assert dlg._sort_indicator == BatchRenameWidget.DEFAULT_SORT_INDICATOR
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
     @patch("wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui")
-    def test_default_name_sort_reapplies_after_rename(self, mock_execute, mock_init, qtbot, tmp_files):
+    def test_order_preserved_after_rename(self, mock_execute, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
@@ -750,9 +748,8 @@ class TestRenameStaysOpen:
         rename_map = {str(tmp_files[0]): str(new_a)}
         dlg._do_rename(rename_map)
 
-        qtbot.waitUntil(lambda: [p.name for p in dlg._paths] == ["b.jpg", "c.jpg", "z.jpg"], timeout=5000)
-        assert [r.segments[0] for r in dlg._results] == ["b", "c", "z"]
-        assert dlg._sort_indicator == BatchRenameWidget.DEFAULT_SORT_INDICATOR
+        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["z", "b", "c"], timeout=5000)
+        assert [p.name for p in dlg._paths] == ["z.jpg", "b.jpg", "c.jpg"]
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
@@ -1665,65 +1662,28 @@ def _make_segment(path: Path):
     )
 
 
-class TestSortIndicator:
-    def test_preview_model_sort_indicator(self):
+class TestSort:
+    def test_preview_header_has_no_indicator(self):
         from wafer.builtins.batch_renamer.table import PreviewModel
 
         model = PreviewModel()
         assert model.headerData(0, Qt.Horizontal) == "Original"
         assert model.headerData(1, Qt.Horizontal) == "Result"
-        model.set_sort_indicator(0)
-        assert model.headerData(0, Qt.Horizontal) == "Original \u25b2"
-        assert model.headerData(1, Qt.Horizontal) == "Result"
-        model.set_sort_indicator(1)
-        assert model.headerData(0, Qt.Horizontal) == "Original"
-        assert model.headerData(1, Qt.Horizontal) == "Result \u25b2"
-        model.set_sort_indicator(-1)
-        assert model.headerData(0, Qt.Horizontal) == "Original"
-        assert model.headerData(1, Qt.Horizontal) == "Result"
+        assert "\u25b2" not in model.headerData(0, Qt.Horizontal)
 
-    def test_segment_model_sort_indicator(self):
+    def test_segment_header_has_no_indicator(self):
         from wafer.builtins.batch_renamer.table import SegmentModel
 
         model = SegmentModel()
         name_col = RenameColumn(NameSource())
         ext_col = RenameColumn(ExtSource())
         model.configure([name_col], ext_col, "+", ".ext")
-        assert "\u25b2" not in model.headerData(0, Qt.Horizontal)
-        assert "\u25bc" not in model.headerData(0, Qt.Horizontal)
-        model.set_sort_indicator(0, True)
-        assert "\u25b2" in model.headerData(0, Qt.Horizontal)
-        model.set_sort_indicator(0, False)
-        assert "\u25bc" in model.headerData(0, Qt.Horizontal)
-        model.set_sort_indicator(-1)
-        assert "\u25b2" not in model.headerData(0, Qt.Horizontal)
-        assert "\u25bc" not in model.headerData(0, Qt.Horizontal)
-
-    def test_segment_model_configure_clears_sort(self):
-        from wafer.builtins.batch_renamer.table import SegmentModel
-
-        model = SegmentModel()
-        name_col = RenameColumn(NameSource())
-        ext_col = RenameColumn(ExtSource())
-        model.configure([name_col], ext_col, "+", ".ext")
-        model.set_sort_indicator(0, True)
-        assert "\u25b2" in model.headerData(0, Qt.Horizontal)
-        model.configure([name_col], ext_col, "+", ".ext")
-        assert "\u25b2" not in model.headerData(0, Qt.Horizontal)
-
-    def test_segment_ext_header_no_arrow(self):
-        from wafer.builtins.batch_renamer.table import SegmentModel
-
-        model = SegmentModel()
-        name_col = RenameColumn(NameSource())
-        ext_col = RenameColumn(ExtSource())
-        model.configure([name_col], ext_col, "+", ".ext")
-        ext_header = model.headerData(2, Qt.Horizontal)
-        assert "\u25bc" not in ext_header
-        assert "\u25b2" not in ext_header
+        header = model.headerData(0, Qt.Horizontal)
+        assert "\u25b2" not in header
+        assert "\u25bc" not in header
 
     @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_set_files_applies_default_name_segment_sort(self, mock_init, qtbot, tmp_path):
+    def test_set_files_preserves_input_order(self, mock_init, qtbot, tmp_path):
         files = []
         for name in ["b2.jpg", "a10.jpg", "a2.jpg"]:
             path = tmp_path / name
@@ -1732,13 +1692,12 @@ class TestSortIndicator:
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(files)
-        assert [p.name for p in dlg._paths] == ["a2.jpg", "a10.jpg", "b2.jpg"]
+        assert [p.name for p in dlg._paths] == ["b2.jpg", "a10.jpg", "a2.jpg"]
         assert dlg._initial_paths == dlg._paths
-        assert dlg._sort_indicator == BatchRenameWidget.DEFAULT_SORT_INDICATOR
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_add_files_keeps_default_name_segment_order(self, mock_init, qtbot, tmp_path):
+    def test_add_files_appends_at_end(self, mock_init, qtbot, tmp_path):
         initial = []
         for name in ["c.jpg", "a.jpg"]:
             path = tmp_path / name
@@ -1750,127 +1709,98 @@ class TestSortIndicator:
         qtbot.addWidget(dlg)
         dlg.set_files(initial)
         dlg.add_files([added])
-        assert [p.name for p in dlg._paths] == ["a.jpg", "b.jpg", "c.jpg"]
+        assert [p.name for p in dlg._paths] == ["c.jpg", "a.jpg", "b.jpg"]
         assert dlg._initial_paths == dlg._paths
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_default_name_sort_drives_sequential_indices(self, mock_init, qtbot, tmp_path):
-        files = []
-        for name in ["b2.jpg", "a10.jpg", "a2.jpg"]:
-            path = tmp_path / name
-            path.write_bytes(b"x")
-            files.append(path)
-        dlg = BatchRenameWidget()
-        qtbot.addWidget(dlg)
-        dlg.set_files(files)
-        dlg._columns = [RenameColumn(SequentialSource(start=1, step=1, padding=1))]
-        dlg._rebuild()
-        qtbot.waitUntil(lambda: [r.new_name for r in dlg._results] == ["1.jpg", "2.jpg", "3.jpg"], timeout=5000)
-        assert [p.name for p in dlg._paths] == ["a2.jpg", "a10.jpg", "b2.jpg"]
-        assert dlg._initial_paths == dlg._paths
-        dlg.close()
-
-    @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_dialog_sort_indicator_on_preview_sort(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameWidget()
-        qtbot.addWidget(dlg)
-        dlg.set_files(tmp_files)
-        qtbot.addWidget(dlg)
-        dlg._results = [RenameResult(original=p.name, segments=[p.stem, p.suffix], new_name=p.name) for p in tmp_files]
-        dlg._on_preview_sort(0)
-        assert dlg._sort_indicator == ("preview", 0, True)
-        dlg._on_preview_sort(1)
-        assert dlg._sort_indicator == ("preview", 1, True)
-        dlg.close()
-
-    @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_dialog_sort_indicator_on_segment_sort(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameWidget()
-        qtbot.addWidget(dlg)
-        dlg.set_files(tmp_files)
-        qtbot.addWidget(dlg)
-        dlg._results = [RenameResult(original=p.name, segments=[p.stem, p.suffix], new_name=p.name) for p in tmp_files]
-        dlg._sort_by_segment(0, True)
-        assert dlg._sort_indicator == ("segment", 0, True)
-        dlg._sort_by_segment(0, False)
-        assert dlg._sort_indicator == ("segment", 0, False)
-        dlg.close()
-
-    @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_refresh_without_prepare_preserves_sort(self, mock_init, qtbot, tmp_files):
-        dlg = BatchRenameWidget()
-        qtbot.addWidget(dlg)
-        dlg.set_files(tmp_files)
-        qtbot.addWidget(dlg)
-        dlg._sort_indicator = ("preview", 0, True)
-        dlg._refresh()
-        assert dlg._sort_indicator == ("preview", 0, True)
-        dlg.close()
-
-    @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_segment_sort_reapplies_after_cell_edit_ascending(self, mock_init, qtbot, tmp_files):
+    def test_apply_sort_preview_ascending(self, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
-        for path, value in zip(tmp_files, ["m_new", "z_new", "x_new"]):
-            dlg._columns[0].overrides[str(path)] = value
-        dlg._refresh(auto_size=False)
-        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["m_new", "x_new", "z_new"], timeout=5000)
-        dlg._sort_by_segment(0, True)
-        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["m_new", "x_new", "z_new"], timeout=5000)
-        dlg._seg_model.setData(dlg._seg_model.index(2, 0), "a_new", Qt.EditRole)
-        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["a_new", "m_new", "x_new"], timeout=5000)
-        assert dlg._paths[0] == tmp_files[1]
+        dlg._paths = list(reversed(dlg._paths))
+        dlg._keys = list(reversed(dlg._keys))
+        dlg._results = list(reversed(dlg._results))
+        dlg._apply_sort("preview", 0, True)
+        qtbot.waitUntil(lambda: [p.name for p in dlg._paths] == ["a.jpg", "b.jpg", "c.jpg"], timeout=5000)
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_segment_sort_reapplies_after_cell_edit_descending(self, mock_init, qtbot, tmp_files):
+    def test_apply_sort_segment_descending(self, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
-        for path, value in zip(tmp_files, ["m_new", "a_new", "x_new"]):
-            dlg._columns[0].overrides[str(path)] = value
+        dlg._apply_sort("segment", 0, False)
+        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["c", "b", "a"], timeout=5000)
+        assert [p.name for p in dlg._paths] == ["c.jpg", "b.jpg", "a.jpg"]
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_refresh_preserves_manual_order(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        dlg._paths = list(reversed(dlg._paths))
+        dlg._keys = list(reversed(dlg._keys))
+        dlg._results = list(reversed(dlg._results))
         dlg._refresh(auto_size=False)
-        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["a_new", "m_new", "x_new"], timeout=5000)
-        dlg._sort_by_segment(0, False)
-        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["x_new", "m_new", "a_new"], timeout=5000)
-        dlg._seg_model.setData(dlg._seg_model.index(2, 0), "z_new", Qt.EditRole)
-        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["z_new", "x_new", "m_new"], timeout=5000)
-        assert dlg._paths[0] == tmp_files[1]
+        qtbot.waitUntil(lambda: [p.name for p in dlg._paths] == ["c.jpg", "b.jpg", "a.jpg"], timeout=5000)
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_segment_sort_section_follows_column_move(self, mock_init, qtbot, tmp_files):
+    def test_reorder_rows_moves_selection(self, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
-        dlg._columns.append(RenameColumn(FixedSource("fixed")))
-        dlg._sort_indicator = ("segment", 1, False)
-        with patch.object(dlg, "_rebuild"):
-            dlg._move_column(1, -1)
-        assert dlg._sort_indicator == ("segment", 0, False)
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        dlg._reorder_rows([0], 3)
+        qtbot.waitUntil(lambda: [p.name for p in dlg._paths] == ["b.jpg", "c.jpg", "a.jpg"], timeout=5000)
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_segment_sort_section_updates_on_column_remove(self, mock_init, qtbot, tmp_files):
+    def test_reorder_rows_multi_selection(self, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
-        dlg._columns.extend([RenameColumn(FixedSource("fixed")), RenameColumn(SequentialSource())])
-        dlg._sort_indicator = ("segment", 2, True)
-        with patch.object(dlg, "_rebuild"):
-            dlg._remove_column(1)
-        assert dlg._sort_indicator == ("segment", 1, True)
-        with patch.object(dlg, "_rebuild"):
-            dlg._remove_column(1)
-        assert dlg._sort_indicator is None
+        qtbot.addWidget(dlg)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        dlg._reorder_rows([0, 1], 3)
+        qtbot.waitUntil(lambda: [p.name for p in dlg._paths] == ["c.jpg", "a.jpg", "b.jpg"], timeout=5000)
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_sort_menu_items_for_preview(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        idx = dlg._preview_model.index(0, 1)
+        items = dlg._sort_menu_items(dlg._preview, idx)
+        assert len(items) == 3
+        assert items[0] == "-"
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_sort_menu_items_skip_add_column(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        idx = dlg._seg_model.index(0, dlg._add_section)
+        assert dlg._sort_menu_items(dlg._seg_table, idx) == []
         dlg.close()
 
 

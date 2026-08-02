@@ -27,7 +27,6 @@ def _section_label(text, p):
 
 class ColumnSettingsPopup(PopupBase):
     changed = Signal()
-    sort_requested = Signal(bool)
     move_requested = Signal(int)
     remove_requested = Signal()
     resequence_requested = Signal()
@@ -78,15 +77,6 @@ class ColumnSettingsPopup(PopupBase):
                 mr.addWidget(btn)
             lay.addLayout(mr)
 
-            lay.addWidget(_section_label("Sort by this column", p))
-            sort_row = QtWidgets.QHBoxLayout()
-            sort_row.setSpacing(dpix(4))
-            for label, asc in [("▲ Ascending", True), ("▼ Descending", False)]:
-                btn = QtWidgets.QPushButton(label)
-                btn.setStyleSheet(style_action(p))
-                btn.clicked.connect(lambda _, a=asc: self.sort_requested.emit(a))
-                sort_row.addWidget(btn)
-            lay.addLayout(sort_row)
 
         en_cb = QtWidgets.QCheckBox("Include in filename")
         en_cb.setChecked(column.enabled)

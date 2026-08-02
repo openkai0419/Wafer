@@ -110,7 +110,6 @@ def _fill_fs_timestamps(paths, keys, metadata):
 class BatchRenameWidget(QtWidgets.QWidget):
     _ADD_COL_LABEL = "+"
     THUMB_CACHE_LIMIT = 200
-    DEFAULT_SORT_INDICATOR = ("segment", 0, True)
     THUMB_FIT_COVER = "cover"
     THUMB_FIT_CONTAIN = "contain"
     THUMB_FIT_MODES = {THUMB_FIT_COVER, THUMB_FIT_CONTAIN}
@@ -150,8 +149,8 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._pending_apply_callback = None
         self._pending_update_scheduled = False
         self._selected_row = -1
+        self._pending_select_rows: list[int] | None = None
         self._thumb_cache: collections.OrderedDict[str, QtGui.QPixmap] = collections.OrderedDict()
-        self._sort_indicator: tuple[str, int, bool] | None = None
         self._row_thumb_fit_mode = self.THUMB_FIT_COVER
         self._sel_thumb_fit_mode = self.THUMB_FIT_COVER
 
@@ -240,16 +239,14 @@ class BatchRenameWidget(QtWidgets.QWidget):
     def set_files(self, paths: list[Path], keys: list[str] | None = None, db_path: Any = None):
         self._cancel_all_pending()
         self._db_path = db_path
-        sorted_paths, sorted_keys = self._sort_input_by_name(list(paths), list(keys) if keys else [str(p).replace("\\", "/") for p in paths])
-        self._paths = sorted_paths
-        self._keys = sorted_keys
+        self._paths = list(paths)
+        self._keys = list(keys) if keys else [str(p).replace("\\", "/") for p in paths]
         self._initial_keys = list(self._keys)
         self._initial_paths = list(self._paths)
         self._metadata = {}
         self._thumb_cache.clear()
         self._thumb_visible.clear()
         self._reset_columns()
-        self._sort_indicator = self.DEFAULT_SORT_INDICATOR
         self._title.setText(self._title_text())
         self._stack.setCurrentWidget(self._rename_page)
         self._rebuild()
@@ -270,8 +267,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
             new_keys = [str(p).replace("\\", "/") for p in new_paths]
         self._paths.extend(new_paths)
         self._keys.extend(new_keys)
-        if self._sort_indicator == self.DEFAULT_SORT_INDICATOR:
-            self._paths, self._keys = self._sort_input_by_name(self._paths, self._keys)
         self._initial_paths = list(self._paths)
         self._initial_keys = list(self._keys)
         self._title.setText(self._title_text())
@@ -367,7 +362,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
         ph.setFixedHeight(dpix(22))
         ph.setSectionsClickable(True)
         ph.setHighlightSections(False)
-        ph.sectionClicked.connect(self._on_preview_sort)
         ph.setStyleSheet(self._header_stylesheet(p.bg_secondary, p.text_muted))
         self._preview.setStyleSheet(f"QTableView {{ background: {p.bg_primary}; border: none; color: {p.text_primary}; }}QTableView::item {{ padding: 0 {dpix(4)}px; border: none; }}")
         self._preview.setItemDelegate(PreviewDelegate(p.border_subtle, self._preview))
@@ -435,6 +429,8 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._seg_table.customContextMenuRequested.connect(self._on_row_context)
         self._preview.setContextMenuPolicy(Qt.CustomContextMenu)
         self._preview.customContextMenuRequested.connect(self._on_row_context_preview)
+        self._preview.rows_reordered.connect(self._reorder_rows)
+        self._seg_table.rows_reordered.connect(self._reorder_rows)
 
     def _init_bottom_bar(self, root):
         p = self._p
@@ -561,12 +557,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
             self._set_thumb_fit_mode("row", state["row_thumb_fit_mode"])
         if "sel_thumb_fit_mode" in state:
             self._set_thumb_fit_mode("sel", state["sel_thumb_fit_mode"])
-
-    @staticmethod
-    def _sort_input_by_name(paths: list[Path], keys: list[str]) -> tuple[list[Path], list[str]]:
-        pairs = list(zip(paths, keys))
-        pairs.sort(key=lambda item: natural_key(item[0].stem))
-        return [p for p, _ in pairs], [k for _, k in pairs]
 
     def _start_async_init(self):
         cancel = CancelToken()
@@ -741,6 +731,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
             max(0, self._preview_model.columnCount() - 1),
         )
         selection_model.select(selection, QtCore.QItemSelectionModel.ClearAndSelect)
+        selection_model.setCurrentIndex(self._preview_model.index(rows[-1], 0), QtCore.QItemSelectionModel.NoUpdate)
 
     def _select_segment_rows(self, rows):
         selection_model = self._seg_table.selectionModel()
@@ -751,6 +742,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
             return
         selection = self._build_row_selection(self._seg_model, rows, 0, 0)
         selection_model.select(selection, QtCore.QItemSelectionModel.ClearAndSelect)
+        selection_model.setCurrentIndex(self._seg_model.index(rows[-1], 0), QtCore.QItemSelectionModel.NoUpdate)
 
     @staticmethod
     def _ensure_index_selected(table, index):
@@ -991,7 +983,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
         keys = list(self._keys)
         initial_keys = list(self._initial_keys)
         results_snapshot = list(self._results)
-        sort_indicator = self._sort_indicator
 
         def task():
             nonlocal paths, keys
@@ -1010,7 +1001,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
                     keys=keys,
                     initial_keys=initial_keys,
                 )
-                paths, keys, results = self._sort_preview_rows(paths, keys, results, sort_indicator)
                 if cancel.is_cancelled():
                     return
                 conflicts = sum(1 for r in results if r.conflict)
@@ -1035,26 +1025,16 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._dispatcher.post(task, cancel=cancel)
 
     @staticmethod
-    def _sort_preview_rows(paths, keys, results, sort_indicator):
-        if not sort_indicator or not results:
-            return paths, keys, results
-        kind, section, ascending = sort_indicator
-        pairs = list(zip(paths, keys, results))
-        if not pairs:
-            return paths, keys, results
+    def _sort_key_fn(kind, section):
         if kind == "preview":
             if section == 0:
-                key_fn = lambda item: natural_key(item[2].original)
-            elif section == 1:
-                key_fn = lambda item: natural_key(item[2].new_name)
-            else:
-                return paths, keys, results
-        elif kind == "segment" and section >= 0:
-            key_fn = lambda item: natural_key(item[2].segments[section] if section < len(item[2].segments) else "")
-        else:
-            return paths, keys, results
-        pairs.sort(key=key_fn, reverse=not ascending)
-        return [p for p, _, _ in pairs], [k for _, k, _ in pairs], [r for _, _, r in pairs]
+                return lambda r: natural_key(r.original)
+            if section == 1:
+                return lambda r: natural_key(r.new_name)
+            return None
+        if kind == "segment" and section >= 0:
+            return lambda r: natural_key(r.segments[section] if section < len(r.segments) else "")
+        return None
 
     def _on_refresh_done(self, results, paths, keys, stats, auto_size=True):
         if self._defer_update_if_editing(
@@ -1075,22 +1055,15 @@ class BatchRenameWidget(QtWidgets.QWidget):
             if auto_size:
                 self._auto_size_segments()
             self._apply_status(*stats)
-            self._apply_sort_indicator()
             self._update_visible_thumbnails()
         finally:
             self._refreshing = False
-
-    def _apply_sort_indicator(self):
-        si = self._sort_indicator
-        if si and si[0] == "preview":
-            self._preview_model.set_sort_indicator(si[1])
-            self._seg_model.set_sort_indicator(-1)
-        elif si and si[0] == "segment":
-            self._preview_model.set_sort_indicator(-1)
-            self._seg_model.set_sort_indicator(si[1], si[2])
-        else:
-            self._preview_model.set_sort_indicator(-1)
-            self._seg_model.set_sort_indicator(-1)
+        if self._pending_select_rows is not None:
+            rows = [r for r in self._pending_select_rows if 0 <= r < len(self._paths)]
+            self._pending_select_rows = None
+            if rows:
+                self._select_preview_rows(rows)
+                self._select_segment_rows(rows)
 
     def _auto_size_segments(self):
         fm = QtGui.QFontMetrics(self._mono)
@@ -1134,16 +1107,41 @@ class BatchRenameWidget(QtWidgets.QWidget):
             self._status.setCursor(Qt.ArrowCursor)
         self._rename_btn.setEnabled(not issues and bool(self._results))
 
-    def _on_preview_sort(self, section):
-        if not self._results:
+    def _reorder_rows(self, source_rows, target):
+        if self._is_segment_editing():
             return
-        self._sort_indicator = ("preview", section, True)
+        n = len(self._paths)
+        src = sorted({r for r in source_rows if 0 <= r < n})
+        if not src:
+            return
+        insert_at = target - sum(1 for r in src if r < target)
+        triples = list(zip(self._paths, self._keys, self._results))
+        src_set = set(src)
+        moving = [triples[r] for r in src]
+        rest = [item for i, item in enumerate(triples) if i not in src_set]
+        new = rest[:insert_at] + moving + rest[insert_at:]
+        if new == triples:
+            return
+        self._paths = [p for p, _, _ in new]
+        self._keys = [k for _, k, _ in new]
+        self._results = [r for _, _, r in new]
+        self._pending_select_rows = list(range(insert_at, insert_at + len(moving)))
         self._refresh(auto_size=False)
 
-    def _sort_by_segment(self, section, ascending):
+    def _apply_sort(self, kind, section, ascending):
         if not self._results:
             return
-        self._sort_indicator = ("segment", section, ascending)
+        key_fn = self._sort_key_fn(kind, section)
+        if key_fn is None:
+            return
+        triples = sorted(
+            zip(self._paths, self._keys, self._results),
+            key=lambda item: key_fn(item[2]),
+            reverse=not ascending,
+        )
+        self._paths = [p for p, _, _ in triples]
+        self._keys = [k for _, k, _ in triples]
+        self._results = [r for _, _, r in triples]
         self._refresh(auto_size=False)
 
     def _on_seg_header_click(self, section):
@@ -1178,12 +1176,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
         )
         popup.changed.connect(self._deferred_refresh)
         if not is_ext:
-            popup.sort_requested.connect(
-                lambda asc, s=section: (
-                    self._close_popup(),
-                    self._sort_by_segment(s, asc),
-                )
-            )
             popup.move_requested.connect(lambda d, s=section: QtCore.QTimer.singleShot(0, lambda: self._move_column(s, d)))
             popup.remove_requested.connect(lambda s=section: QtCore.QTimer.singleShot(0, lambda: self._remove_column(s)))
             popup.resequence_requested.connect(
@@ -1257,39 +1249,17 @@ class BatchRenameWidget(QtWidgets.QWidget):
     def _remove_column(self, idx):
         if len(self._columns) <= 1 or not (0 <= idx < len(self._columns)):
             return
-        self._on_column_removed(idx)
         self._columns.pop(idx)
         self._rebuild()
 
     def _move_column(self, idx, direction):
         new_idx = idx + direction
         if 0 <= new_idx < len(self._columns):
-            self._on_columns_swapped(idx, new_idx)
             self._columns[idx], self._columns[new_idx] = (
                 self._columns[new_idx],
                 self._columns[idx],
             )
             self._rebuild()
-
-    def _on_column_removed(self, idx):
-        si = self._sort_indicator
-        if not si or si[0] != "segment":
-            return
-        kind, section, ascending = si
-        if section == idx:
-            self._sort_indicator = None
-        elif section > idx:
-            self._sort_indicator = (kind, section - 1, ascending)
-
-    def _on_columns_swapped(self, idx, new_idx):
-        si = self._sort_indicator
-        if not si or si[0] != "segment":
-            return
-        kind, section, ascending = si
-        if section == idx:
-            self._sort_indicator = (kind, new_idx, ascending)
-        elif section == new_idx:
-            self._sort_indicator = (kind, idx, ascending)
 
     def _resequence(self):
         self._initial_paths = list(self._paths)
@@ -1406,6 +1376,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
                     func=lambda ctx: self._restore_cell_overrides(self._selected_override_cells()),
                 )
             )
+        items.extend(self._sort_menu_items(table, clicked_index))
         items.extend(
             [
                 "-",
@@ -1420,6 +1391,39 @@ class BatchRenameWidget(QtWidgets.QWidget):
             ]
         )
         Menu.session(self, seed_ctx=seed, pos=gpos).menu(items).exec()
+
+    def _sort_target(self, table, clicked_index):
+        if clicked_index is None or not clicked_index.isValid():
+            return None
+        col = clicked_index.column()
+        if table is self._preview:
+            if col in (0, 1):
+                return "preview", col, PreviewModel.HEADERS[col]
+            return None
+        if table is self._seg_table and col < len(self._columns):
+            return "segment", col, self._columns[col].source.DISPLAY
+        return None
+
+    def _sort_menu_items(self, table, clicked_index):
+        target = self._sort_target(table, clicked_index)
+        if target is None or not self._results:
+            return []
+        kind, section, label = target
+        return [
+            "-",
+            ActionKit.Action(
+                path="inline.renamer.sort_asc",
+                display=t('Sort by "{column}" ascending', column=label),
+                translate=False,
+                func=lambda ctx, k=kind, s=section: self._apply_sort(k, s, True),
+            ),
+            ActionKit.Action(
+                path="inline.renamer.sort_desc",
+                display=t('Sort by "{column}" descending', column=label),
+                translate=False,
+                func=lambda ctx, k=kind, s=section: self._apply_sort(k, s, False),
+            ),
+        ]
 
     def _execute(self):
         if self._is_segment_editing():
@@ -1545,7 +1549,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._title.setText(self._title_text())
         self._status.setText(f"Renamed {len(succeeded)} file(s)")
         self._reset_columns(preserve_ext=True)
-        self._sort_indicator = self.DEFAULT_SORT_INDICATOR
         self._rebuild()
 
     def _reset_columns(self, preserve_ext=False):
@@ -1560,7 +1563,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
                 ext_src._apply(ext_defaults)
         self._columns = [RenameColumn(name_src)]
         self._ext_column = RenameColumn(ext_src)
-        self._sort_indicator = None
 
     def get_rename_map(self) -> dict[str, str]:
         return {str(p): str(p.parent / r.new_name) for p, r in zip(self._paths, self._results) if p.name != r.new_name}

@@ -421,6 +421,18 @@ class TestPluginStateIntegration:
         plugin.restore_ui_state({"row_opacity": 50})
         assert plugin.save_ui_state() == {"row_opacity": 50}
 
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_plugin_restore_reapplies_to_live_widget(self, mock_init, qtbot):
+        plugin = BatchRenamerPlugin()
+        widget = plugin.create_widget()
+        qtbot.addWidget(widget)
+        assert widget._thumb_resolution == 512
+        plugin.restore_ui_state({"thumb_resolution": 256, "row_opacity": 40, "outer_dir": "TB"})
+        assert widget._thumb_resolution == 256
+        assert widget._row_opacity_slider.value() == 40
+        assert widget._split.direction == "TB"
+        widget.close()
+
     def test_plugin_restore_legacy_thumb_fit_mode(self, qtbot):
         plugin = BatchRenamerPlugin()
         plugin.restore_ui_state({"thumb_fit_mode": "contain"})
@@ -862,7 +874,7 @@ class TestProgressiveThumbnailLoading:
         qtbot.addWidget(dlg)
         key = str(tmp_files[0])
         img = QtGui.QImage(10, 10, QtGui.QImage.Format_RGB32)
-        dlg._on_thumbnail_loaded(key, img)
+        dlg._on_thumbnail_loaded(0, key, img)
         assert key in dlg._thumb_cache
         assert not dlg._thumb_cache[key].isNull()
         dlg.close()
@@ -874,7 +886,7 @@ class TestProgressiveThumbnailLoading:
         dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
         key = str(tmp_files[0])
-        dlg._on_thumbnail_loaded(key, None)
+        dlg._on_thumbnail_loaded(0, key, None)
         assert key in dlg._thumb_cache
         assert dlg._thumb_cache[key].isNull()
         dlg.close()
@@ -888,7 +900,7 @@ class TestProgressiveThumbnailLoading:
         excluded_key = str(tmp_files[1])
         dlg._exclude_rows([1])
         img = QtGui.QImage(10, 10, QtGui.QImage.Format_RGB32)
-        dlg._on_thumbnail_loaded(excluded_key, img)
+        dlg._on_thumbnail_loaded(-1, excluded_key, img)
         assert excluded_key in dlg._thumb_cache
         assert len(dlg._paths) == 2
         dlg.close()
@@ -930,7 +942,7 @@ class TestSegTableSelectionSync:
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
         index = dlg._seg_model.index(2, 0)
         dlg._seg_table.selectionModel().select(index, QtCore.QItemSelectionModel.ClearAndSelect)
-        preview_rows = {item.row() for item in dlg._preview.selectionModel().selectedIndexes()}
+        preview_rows = {item.row() for item in dlg._orig_view.selectionModel().selectedIndexes()}
         assert preview_rows == {2}
         dlg.close()
 
@@ -943,7 +955,7 @@ class TestSegTableSelectionSync:
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
         index = dlg._preview_model.index(0, 1)
-        dlg._preview.selectionModel().select(index, QtCore.QItemSelectionModel.ClearAndSelect)
+        dlg._result_view.selectionModel().select(index, QtCore.QItemSelectionModel.ClearAndSelect)
         seg_rows = {item.row() for item in dlg._seg_table.selectionModel().selectedIndexes()}
         assert seg_rows == {0}
         dlg.close()
@@ -1024,9 +1036,40 @@ class TestOpacitySlider:
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
         qtbot.addWidget(dlg)
-        widgets = [dlg._bottom_bar.itemAt(i).widget() for i in range(dlg._bottom_bar.count()) if dlg._bottom_bar.itemAt(i).widget() is not None]
+        grid = dlg._thumb_settings_content.layout()
+        widgets = [grid.itemAt(i).widget() for i in range(grid.count()) if grid.itemAt(i).widget() is not None]
         assert widgets.index(dlg._row_thumb_fit_btn) < widgets.index(dlg._row_opacity_slider)
         assert widgets.index(dlg._sel_thumb_fit_btn) < widgets.index(dlg._sel_opacity_slider)
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_controls_moved_out_of_bottom_bar(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        bar_widgets = [dlg._bottom_bar.itemAt(i).widget() for i in range(dlg._bottom_bar.count()) if dlg._bottom_bar.itemAt(i).widget() is not None]
+        assert dlg._thumb_settings_btn in bar_widgets
+        assert dlg._row_opacity_slider not in bar_widgets
+        assert dlg._sel_opacity_slider not in bar_widgets
+        assert dlg._row_thumb_fit_btn not in bar_widgets
+        assert dlg._sel_thumb_fit_btn not in bar_widgets
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_gear_button_opens_and_closes_popup(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg.show()
+        assert dlg._thumb_settings_popup is None
+        dlg._toggle_thumb_settings_popup()
+        assert dlg._thumb_settings_popup is not None
+        assert dlg._thumb_settings_popup.isVisible()
+        assert dlg._thumb_settings_popup.content_widget() is dlg._thumb_settings_content
+        dlg._toggle_thumb_settings_popup()
+        assert not dlg._thumb_settings_popup.isVisible()
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
@@ -1103,6 +1146,149 @@ class TestOpacitySlider:
         state = dlg._serialise_columns()
         assert state["row_thumb_fit_mode"] == "contain"
         assert state["sel_thumb_fit_mode"] == "cover"
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_preview_row_height_slider_defaults(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        assert dlg._preview_row_height_slider.value() == 0
+        assert dlg._preview_row_height_slider.minimum() == 0
+        assert dlg._preview_row_height_slider.maximum() == 200
+        dlg.close()
+
+    def test_preview_row_height_ratio_square_and_scaled(self, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg.resize(dpix(600), dpix(500))
+        dlg.show()
+        qtbot.waitExposed(dlg)
+        w = dlg._orig_view.viewport().width()
+        seg_h = dlg._seg_table.verticalHeader().defaultSectionSize()
+        dlg._preview_row_height_slider.setValue(100)
+        assert dlg._orig_view.verticalHeader().defaultSectionSize() == max(dpix(20), w)
+        dlg._preview_row_height_slider.setValue(50)
+        assert dlg._orig_view.verticalHeader().defaultSectionSize() == max(dpix(20), round(w * 0.5))
+        dlg._preview_row_height_slider.setValue(200)
+        assert dlg._orig_view.verticalHeader().defaultSectionSize() == max(dpix(20), round(w * 2.0))
+        assert dlg._seg_table.verticalHeader().defaultSectionSize() == seg_h
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_preview_row_ratio_serialised(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._preview_row_height_slider.setValue(60)
+        state = dlg._serialise_columns()
+        assert state["preview_row_ratio"] == 60
+        dlg.close()
+
+    def test_preview_row_ratio_restored(self, qtbot):
+        plugin = BatchRenamerPlugin()
+        plugin.restore_ui_state({"preview_row_ratio": 70})
+        widget = plugin.create_widget()
+        qtbot.addWidget(widget)
+        assert widget._preview_row_height_slider.value() == 70
+        widget.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_preview_views_stretch_single_column(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        assert dlg._orig_view.isColumnHidden(1)
+        assert dlg._result_view.isColumnHidden(0)
+        for view in (dlg._orig_view, dlg._result_view):
+            assert view.horizontalHeader().sectionResizeMode(0) == QtWidgets.QHeaderView.Stretch
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_split_is_vertical_and_contains_frames(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        assert dlg._split.orientation() == Qt.Vertical
+        assert dlg._split.indexOf(dlg._preview_frame) == 0
+        assert dlg._split.indexOf(dlg._seg_frame) == 1
+        assert dlg._bottom_bar.indexOf(dlg._rename_btn) >= 0
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_split_directions_serialised(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._set_split_direction("outer", "RL")
+        dlg._set_split_direction("inner", "BT")
+        state = dlg._serialise_columns()
+        assert state["outer_dir"] == "RL"
+        assert state["inner_dir"] == "BT"
+        assert isinstance(state["outer_sizes"], list)
+        assert isinstance(state["inner_sizes"], list)
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_set_split_direction_changes_orientation(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        dlg._set_split_direction("outer", "LR")
+        assert dlg._split.orientation() == Qt.Horizontal
+        dlg._set_split_direction("inner", "TB")
+        assert dlg._inner_split.orientation() == Qt.Vertical
+        dlg.close()
+
+    def test_scroll_anchor_skips_when_visible(self, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.waitUntil(lambda: dlg._preview_model.rowCount() == 3, timeout=5000)
+        dlg.resize(dpix(600), dpix(500))
+        dlg.show()
+        qtbot.waitExposed(dlg)
+        before = dlg._orig_view.verticalScrollBar().value()
+        dlg._scroll_anchor_into_view(0)
+        assert dlg._orig_view.verticalScrollBar().value() == before
+        dlg.close()
+
+    def test_split_sizes_restored(self, qtbot):
+        plugin = BatchRenamerPlugin()
+        plugin.restore_ui_state({"outer_dir": "TB", "outer_sizes": [dpix(300), dpix(100)]})
+        widget = plugin.create_widget()
+        qtbot.addWidget(widget)
+        widget._stack.setCurrentWidget(widget._rename_page)
+        widget.resize(dpix(600), dpix(500))
+        widget.show()
+        qtbot.waitExposed(widget)
+        assert widget._split.sizes()[0] > widget._split.sizes()[1]
+        widget.close()
+
+    def test_selection_anchor_prefers_current_index(self, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.waitUntil(lambda: dlg._preview_model.rowCount() == 3, timeout=5000)
+        dlg._select_preview_rows([0, 1, 2], anchor=1)
+        assert dlg._selection_anchor_row(dlg._orig_view) == 1
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_scroll_mode_per_item(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        qtbot.addWidget(dlg)
+        assert dlg._orig_view.verticalScrollMode() == QtWidgets.QAbstractItemView.ScrollPerPixel
+        assert dlg._seg_table.verticalScrollMode() == QtWidgets.QAbstractItemView.ScrollPerItem
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
@@ -1425,6 +1611,103 @@ class TestSegmentEditingNavigation:
             assert dlg._seg_table.currentIndex().column() == fixed_col
         finally:
             dlg.close()
+
+
+class TestScrollSync:
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_preview_wheel_offsets_without_moving_seg(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        row_h = dlg._orig_view.verticalHeader().defaultSectionSize() or 1
+        for view in (dlg._orig_view, dlg._result_view):
+            view.verticalScrollBar().setRange(0, 1000)
+        seg_before = dlg._seg_table.verticalScrollBar().value()
+        dlg._orig_view.verticalScrollBar().setValue(row_h * 2)
+        assert dlg._seg_table.verticalScrollBar().value() == seg_before
+        assert dlg._result_view.verticalScrollBar().value() == row_h * 2
+        assert dlg._display_offset == row_h * 2 - seg_before * row_h
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_seg_scroll_applies_offset_when_enabled(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        row_h = dlg._orig_view.verticalHeader().defaultSectionSize() or 1
+        for view in (dlg._orig_view, dlg._result_view):
+            view.verticalScrollBar().setRange(0, 1000)
+        dlg._display_offset = 5
+        dlg._sync_from_seg(1)
+        expected = min(1 * row_h + 5, dlg._orig_view.verticalScrollBar().maximum())
+        assert dlg._orig_view.verticalScrollBar().value() == expected
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_sync_disabled_keeps_preview_independent(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg._scroll_sync_check.setChecked(False)
+        before = dlg._orig_view.verticalScrollBar().value()
+        dlg._sync_from_seg(2)
+        assert dlg._orig_view.verticalScrollBar().value() == before
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_sync_disabled_selection_does_not_scroll(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg._orig_view.verticalScrollBar().setRange(0, 1000)
+        dlg._scroll_sync_check.setChecked(False)
+        before = dlg._orig_view.verticalScrollBar().value()
+        dlg._scroll_anchor_into_view(2)
+        assert dlg._orig_view.verticalScrollBar().value() == before
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_scroll_sync_serialised_and_restored(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg._scroll_sync_check.setChecked(False)
+        assert dlg._serialise_columns()["scroll_sync_enabled"] is False
+        dlg.close()
+        plugin = BatchRenamerPlugin()
+        plugin.restore_ui_state({"scroll_sync_enabled": False})
+        widget = plugin.create_widget()
+        qtbot.addWidget(widget)
+        assert widget._scroll_sync_enabled is False
+        widget.close()
+
+
+class TestThumbnailResolution:
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_resolution_change_clears_cache(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg._thumb_cache[str(tmp_files[0])] = QtGui.QPixmap()
+        dlg._thumb_res_slider.setValue(BatchRenameWidget.THUMB_RESOLUTIONS.index(1024))
+        assert dlg._thumb_resolution == 1024
+        assert len(dlg._thumb_cache) == 0
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_resolution_serialised_and_restored(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg._thumb_res_slider.setValue(BatchRenameWidget.THUMB_RESOLUTIONS.index(2048))
+        assert dlg._serialise_columns()["thumb_resolution"] == 2048
+        dlg.close()
+        plugin = BatchRenamerPlugin()
+        plugin.restore_ui_state({"thumb_resolution": 256})
+        widget = plugin.create_widget()
+        qtbot.addWidget(widget)
+        assert widget._thumb_resolution == 256
+        widget.close()
 
 
 class TestSegmentEditingDeferredUpdate:
@@ -1781,6 +2064,40 @@ class TestSort:
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_reorder_rows_clears_thumb_requests(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        token = MagicMock()
+        dlg._thumb_tokens[0] = token
+        dlg._thumb_visible.add(0)
+        dlg._reorder_rows([0], 3)
+        qtbot.waitUntil(lambda: [p.name for p in dlg._paths] == ["b.jpg", "c.jpg", "a.jpg"], timeout=5000)
+        token.cancel.assert_called_once()
+        assert dlg._thumb_tokens == {}
+        assert dlg._thumb_visible == set()
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_apply_sort_clears_thumb_requests(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        token = MagicMock()
+        dlg._thumb_tokens[0] = token
+        dlg._thumb_visible.add(0)
+        dlg._apply_sort("segment", 0, False)
+        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["c", "b", "a"], timeout=5000)
+        token.cancel.assert_called_once()
+        assert dlg._thumb_tokens == {}
+        assert dlg._thumb_visible == set()
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
     def test_sort_menu_items_for_preview(self, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
@@ -1788,7 +2105,7 @@ class TestSort:
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
         idx = dlg._preview_model.index(0, 1)
-        items = dlg._sort_menu_items(dlg._preview, idx)
+        items = dlg._sort_menu_items(dlg._result_view, idx)
         assert len(items) == 3
         assert items[0] == "-"
 
@@ -1825,7 +2142,7 @@ class TestThumbCacheLRU:
         dlg.THUMB_CACHE_LIMIT = 5
         img = QtGui.QImage(4, 4, QtGui.QImage.Format_RGB32)
         for i in range(10):
-            dlg._on_thumbnail_loaded(f"key_{i}", img)
+            dlg._on_thumbnail_loaded(-1, f"key_{i}", img)
         assert len(dlg._thumb_cache) == 5
         assert "key_0" not in dlg._thumb_cache
         assert "key_9" in dlg._thumb_cache
@@ -1840,7 +2157,7 @@ class TestThumbCacheLRU:
         dlg.THUMB_CACHE_LIMIT = 3
         img = QtGui.QImage(4, 4, QtGui.QImage.Format_RGB32)
         for p in tmp_files:
-            dlg._on_thumbnail_loaded(str(p), img)
+            dlg._on_thumbnail_loaded(-1, str(p), img)
         assert len(dlg._thumb_cache) == 3
         dlg.thumb_for_row(0)
         first_key = str(tmp_files[0])

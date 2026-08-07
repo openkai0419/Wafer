@@ -865,3 +865,47 @@ def _draw_cursor(p: QPainter, r: QRectF, color: QColor):
     p.setPen(pen)
     p.setBrush(color)
     p.drawPath(path)
+
+
+def _draw_split_layout(p: QPainter, r: QRectF, color: QColor, vertical: bool, first_low: bool):
+    lw = max(1.4, min(r.width(), r.height()) * 0.09)
+    pen = QPen(color, lw)
+    pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    m = lw / 2
+    box = r.adjusted(m, m, -m, -m)
+    radius = min(box.width(), box.height()) * 0.12
+    p.drawRoundedRect(box, radius, radius)
+    gap = lw * 0.9
+    if vertical:
+        mid = box.center().y()
+        p.drawLine(QPointF(box.left(), mid), QPointF(box.right(), mid))
+        first = QRectF(box.left() + gap, (mid + gap) if first_low else (box.top() + gap), box.width() - gap * 2, box.height() / 2 - gap * 1.5)
+    else:
+        mid = box.center().x()
+        p.drawLine(QPointF(mid, box.top()), QPointF(mid, box.bottom()))
+        first = QRectF((mid + gap) if first_low else (box.left() + gap), box.top() + gap, box.width() / 2 - gap * 1.5, box.height() - gap * 2)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    p.drawRoundedRect(first, radius * 0.6, radius * 0.6)
+
+
+@_register("layout_tb", padding=0.12)
+def _draw_layout_tb(p: QPainter, r: QRectF, color: QColor):
+    _draw_split_layout(p, r, color, vertical=True, first_low=False)
+
+
+@_register("layout_bt", padding=0.12)
+def _draw_layout_bt(p: QPainter, r: QRectF, color: QColor):
+    _draw_split_layout(p, r, color, vertical=True, first_low=True)
+
+
+@_register("layout_lr", padding=0.12)
+def _draw_layout_lr(p: QPainter, r: QRectF, color: QColor):
+    _draw_split_layout(p, r, color, vertical=False, first_low=False)
+
+
+@_register("layout_rl", padding=0.12)
+def _draw_layout_rl(p: QPainter, r: QRectF, color: QColor):
+    _draw_split_layout(p, r, color, vertical=False, first_low=True)

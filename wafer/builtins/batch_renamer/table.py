@@ -269,9 +269,10 @@ class SyncedView(QtWidgets.QTableView):
     editing_finished = QtCore.Signal()
     rows_reordered = QtCore.Signal(list, int)
 
-    def __init__(self, forward_target=None, parent=None, vertical_tab_navigation=False):
+    def __init__(self, forward_target=None, parent=None, vertical_tab_navigation=False, row_wheel=False):
         super().__init__(parent)
         self._fwd = forward_target
+        self._row_wheel = row_wheel
         self._vertical_tab_navigation = vertical_tab_navigation
         self._reorder_rows: list[int] = []
         self._reorder_active = False
@@ -453,6 +454,12 @@ class SyncedView(QtWidgets.QTableView):
         if self._fwd:
             sb = self._fwd.verticalScrollBar()
             row_h = self._fwd.verticalHeader().defaultSectionSize() or 1
+            steps = event.angleDelta().y() // 120
+            sb.setValue(sb.value() - steps * row_h)
+            event.accept()
+        elif self._row_wheel:
+            sb = self.verticalScrollBar()
+            row_h = self.verticalHeader().defaultSectionSize() or 1
             steps = event.angleDelta().y() // 120
             sb.setValue(sb.value() - steps * row_h)
             event.accept()

@@ -13,16 +13,22 @@ class ThumbnailOverlay(QtWidgets.QWidget):
     FIT_COVER = "cover"
     FIT_CONTAIN = "contain"
     FIT_MODES = {FIT_COVER, FIT_CONTAIN}
+    ROLE_ROW = "row"
+    ROLE_SEL = "sel"
 
     def __init__(
         self,
         dialog: BatchRenameWidget,
         table: QtWidgets.QTableView,
+        role: str,
+        column: int,
         parent=None,
     ):
         super().__init__(parent)
         self._dlg = dialog
         self._tbl = table
+        self._role = role
+        self._column = column
         self._row_opacity = 0.2
         self._sel_opacity = 0.2
         self._row_fit_mode = self.FIT_COVER
@@ -62,40 +68,43 @@ class ThumbnailOverlay(QtWidgets.QWidget):
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
+        if self._role == self.ROLE_ROW:
+            self._paint_rows(painter)
+        else:
+            self._paint_selected(painter)
+        painter.end()
+
+    def _paint_rows(self, painter):
         tbl = self._tbl
-        header = tbl.horizontalHeader()
+        model = tbl.model()
+        if model is None:
+            return
         vp = tbl.viewport()
-        vp_h = vp.height()
-
-        col0_x = header.sectionPosition(0) - header.offset()
-        col0_w = header.sectionSize(0)
-        col1_x = header.sectionPosition(1) - header.offset()
-        col1_w = header.sectionSize(1)
-
         first = tbl.indexAt(vp.rect().topLeft()).row()
         last = tbl.indexAt(vp.rect().bottomLeft()).row()
         if first < 0:
             first = 0
         if last < 0:
-            last = tbl.model().rowCount() - 1
-
+            last = model.rowCount() - 1
         painter.setOpacity(self._row_opacity)
         for row in range(first, last + 1):
             pix = self._dlg.thumb_for_row(row)
             if not pix or pix.isNull():
                 continue
-            rect = tbl.visualRect(tbl.model().index(row, 0))
-            cell = QtCore.QRect(col0_x, rect.y(), col0_w, rect.height())
+            rect = tbl.visualRect(model.index(row, self._column))
+            cell = QtCore.QRect(0, rect.y(), vp.width(), rect.height())
             self._draw_fit(painter, pix, cell, self._row_fit_mode)
 
+    def _paint_selected(self, painter):
         sel = self._dlg.selected_row
         pix = self._dlg.thumb_for_row(sel) if sel >= 0 else None
-        if pix and not pix.isNull():
-            painter.setOpacity(self._sel_opacity)
-            full = QtCore.QRect(col1_x, 0, col1_w, vp_h)
-            self._draw_fit(painter, pix, full, self._sel_fit_mode)
+        if not pix or pix.isNull():
+            return
+        vp = self._tbl.viewport()
+        painter.setOpacity(self._sel_opacity)
+        full = QtCore.QRect(0, 0, vp.width(), vp.height())
+        self._draw_fit(painter, pix, full, self._sel_fit_mode)
 
-        painter.end()
 
     @staticmethod
     def _scaled_rect(pix: QtGui.QPixmap, rect: QtCore.QRect, fit_mode: str):

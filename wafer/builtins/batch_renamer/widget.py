@@ -17,11 +17,13 @@ from ...core.qt.dispatcher import Dispatcher, CancelToken
 from ...core.qt.rate_limit import qt_throttle
 from ...core.qt.thread import utility_pool
 from ...ui.geometry import screen_geometry_for
+from ...ui.popups import PopupBase
 from ...utils.formatting import dpix, natural_key
 from ...utils.logs import AppLogger
 from ...utils.paths import safe_is_file
 from .engine import RenameColumn, RenameEngine, RenameResult
 from .overlay import ThumbnailOverlay
+from .layout import OrientedSplitter, DIRECTIONS, DIRECTION_ICONS
 from .popup import ColumnSettingsPopup
 from .table import (
     PreviewModel,
@@ -113,6 +115,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
     THUMB_FIT_COVER = "cover"
     THUMB_FIT_CONTAIN = "contain"
     THUMB_FIT_MODES = {THUMB_FIT_COVER, THUMB_FIT_CONTAIN}
+    THUMB_RESOLUTIONS = (256, 512, 1024, 2048, 4096)
     _saved_state: dict[str, Any] = {}
     _instance_ref: BatchRenameWidget | None = None
 
@@ -153,7 +156,12 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._thumb_cache: collections.OrderedDict[str, QtGui.QPixmap] = collections.OrderedDict()
         self._row_thumb_fit_mode = self.THUMB_FIT_COVER
         self._sel_thumb_fit_mode = self.THUMB_FIT_COVER
-
+        self._thumb_resolution = 512
+        self._scroll_sync_enabled = True
+        self._display_offset = 0
+        self._thumb_settings_popup: PopupBase | None = None
+        self._outer_dir = "TB"
+        self._inner_dir = "LR"
         p = ThemeManager.instance().palette
         self._p = p
 
@@ -182,8 +190,15 @@ class BatchRenameWidget(QtWidgets.QWidget):
         title.setStyleSheet(f"color: {p.text_primary}; font-size: {dpix(13)}px; font-weight: bold;")
         rename_lay.addWidget(title)
 
-        self._init_preview_table(rename_lay)
-        self._init_segment_table(rename_lay)
+        self._init_segment_table()
+        self._init_preview_table()
+
+        self._split = OrientedSplitter(self._inner_split, self._seg_frame, self._outer_dir, parent=self._rename_page)
+        self._split.setStretchFactor(0, 1)
+        self._split.setStretchFactor(1, 1)
+        rename_lay.addWidget(self._split, stretch=1)
+
+        self._connect_view_sync()
         self._init_bottom_bar(rename_lay)
 
         self._stack.addWidget(self._rename_page)
@@ -325,55 +340,71 @@ class BatchRenameWidget(QtWidgets.QWidget):
             f"QHeaderView::section:hover {{ background: {p.bg_hover}; }}"
         )
 
-    def _init_preview_table(self, root):
+    def _init_preview_table(self):
         p = self._p
         row_h = dpix(20)
 
-        preview_frame = QtWidgets.QFrame()
-        preview_frame.setStyleSheet(self._frame_stylesheet())
-        pf_lay = QtWidgets.QVBoxLayout(preview_frame)
-        pf_lay.setContentsMargins(0, 0, 0, 0)
-        pf_lay.setSpacing(0)
-
-        self._seg_table = SyncedView(parent=self, vertical_tab_navigation=True)
-        self._preview = SyncedView(forward_target=self._seg_table, parent=self)
-
         self._preview_model = PreviewModel(self)
-        self._seg_model = SegmentModel(self)
         colors = ColorSet(p, self._mono)
         self._preview_model.set_colors(colors)
         self._seg_model.set_colors(colors)
-        self._preview.setModel(self._preview_model)
-        self._seg_table.setModel(self._seg_model)
 
-        self._preview.setFont(self._mono)
-        self._preview.setShowGrid(False)
-        self._preview.verticalHeader().setVisible(False)
-        self._preview.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-        self._preview.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
-        self._preview.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self._preview.setFocusPolicy(Qt.StrongFocus)
-        self._preview.verticalHeader().setDefaultSectionSize(row_h)
-        self._preview.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._preview.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._orig_view = self._build_preview_view(visible_column=0, header_bg=p.bg_secondary)
+        self._result_view = self._build_preview_view(visible_column=1, header_bg=p.bg_secondary)
+        self._preview_views = (self._orig_view, self._result_view)
+        self._view_column = {self._orig_view: 0, self._result_view: 1}
+        for view in self._preview_views:
+            view.verticalHeader().setDefaultSectionSize(row_h)
 
-        ph = self._preview.horizontalHeader()
-        ph.setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
-        ph.setFixedHeight(dpix(22))
-        ph.setSectionsClickable(True)
-        ph.setHighlightSections(False)
-        ph.setStyleSheet(self._header_stylesheet(p.bg_secondary, p.text_muted))
-        self._preview.setStyleSheet(f"QTableView {{ background: {p.bg_primary}; border: none; color: {p.text_primary}; }}QTableView::item {{ padding: 0 {dpix(4)}px; border: none; }}")
-        self._preview.setItemDelegate(PreviewDelegate(p.border_subtle, self._preview))
-        self._preview.selectionModel().selectionChanged.connect(self._on_preview_selection)
-        pf_lay.addWidget(self._preview)
-        self._preview_frame = preview_frame
-        root.addWidget(preview_frame, stretch=1)
+        self._orig_frame = self._wrap_in_frame(self._orig_view)
+        self._result_frame = self._wrap_in_frame(self._result_view)
+        self._inner_split = OrientedSplitter(self._orig_frame, self._result_frame, self._inner_dir, parent=self._rename_page)
+        self._preview_frame = self._inner_split
 
-        self._overlay = ThumbnailOverlay(self, self._preview, parent=self._preview.viewport())
-        self._preview.viewport().installEventFilter(self)
+        self._orig_overlay = ThumbnailOverlay(self, self._orig_view, ThumbnailOverlay.ROLE_ROW, 0, parent=self._orig_view.viewport())
+        self._result_overlay = ThumbnailOverlay(self, self._result_view, ThumbnailOverlay.ROLE_SEL, 1, parent=self._result_view.viewport())
+        self._overlays = (self._orig_overlay, self._result_overlay)
+        self._overlay = self._orig_overlay
+        for view in self._preview_views:
+            view.viewport().installEventFilter(self)
 
-    def _init_segment_table(self, root):
+    def _wrap_in_frame(self, view):
+        frame = QtWidgets.QFrame()
+        frame.setStyleSheet(self._frame_stylesheet())
+        lay = QtWidgets.QVBoxLayout(frame)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addWidget(view)
+        return frame
+
+    def _build_preview_view(self, visible_column, header_bg):
+        p = self._p
+        view = SyncedView(row_wheel=True, parent=self)
+        view.setModel(self._preview_model)
+        view.setColumnHidden(0 if visible_column == 1 else 1, True)
+        view.setFont(self._mono)
+        view.setShowGrid(False)
+        view.verticalHeader().setVisible(False)
+        view.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        view.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        view.setFocusPolicy(Qt.StrongFocus)
+        view.setAutoScroll(False)
+        view.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        header = view.horizontalHeader()
+        header.setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        header.setFixedHeight(dpix(22))
+        header.setSectionsClickable(True)
+        header.setHighlightSections(False)
+        header.setStyleSheet(self._header_stylesheet(header_bg, p.text_muted))
+        view.setStyleSheet(f"QTableView {{ background: {p.bg_primary}; border: none; color: {p.text_primary}; }}QTableView::item {{ padding: 0 {dpix(4)}px; border: none; }}")
+        view.setItemDelegate(PreviewDelegate(p.border_subtle, view))
+        return view
+
+    def _init_segment_table(self):
         p = self._p
         row_h = dpix(20)
 
@@ -383,6 +414,10 @@ class BatchRenameWidget(QtWidgets.QWidget):
         sf_lay.setContentsMargins(0, 0, 0, 0)
         sf_lay.setSpacing(0)
 
+        self._seg_table = SyncedView(parent=self, vertical_tab_navigation=True)
+        self._seg_model = SegmentModel(self)
+        self._seg_table.setModel(self._seg_model)
+
         self._seg_table.setFont(self._mono)
         self._seg_table.setShowGrid(True)
         self._seg_table.verticalHeader().setVisible(False)
@@ -390,7 +425,9 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._seg_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
         self._seg_table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked | QtWidgets.QAbstractItemView.EditKeyPressed)
         self._seg_table.setFocusPolicy(Qt.ClickFocus)
+        self._seg_table.setAutoScroll(False)
         self._seg_table.verticalHeader().setDefaultSectionSize(row_h)
+        self._seg_table.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerItem)
         self._seg_table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._seg_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
@@ -417,76 +454,58 @@ class BatchRenameWidget(QtWidgets.QWidget):
         )
         self._seg_frame = seg_frame
         sf_lay.addWidget(self._seg_table)
-        root.addWidget(seg_frame, stretch=1)
 
+    def _connect_view_sync(self):
+        for view in self._preview_views:
+            view.verticalScrollBar().valueChanged.connect(lambda _v, src=view: self._sync_preview_scroll(src))
+            view.selectionModel().selectionChanged.connect(lambda _s, _d, src=view: self._on_view_selection(src))
+            view.setContextMenuPolicy(Qt.CustomContextMenu)
+            view.customContextMenuRequested.connect(lambda pos, src=view: self._on_row_context_preview(src, pos))
+            view.rows_reordered.connect(self._reorder_rows)
         self._seg_table.verticalScrollBar().valueChanged.connect(self._sync_from_seg)
-        self._preview.verticalScrollBar().valueChanged.connect(self._sync_from_preview)
         self._seg_model.dataChanged.connect(self._on_seg_data_changed)
         self._seg_table.doubleClicked.connect(self._on_seg_dblclick)
         self._seg_table.selectionModel().selectionChanged.connect(self._on_seg_selection)
         self._seg_table.editing_finished.connect(self._schedule_pending_update)
         self._seg_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self._seg_table.customContextMenuRequested.connect(self._on_row_context)
-        self._preview.setContextMenuPolicy(Qt.CustomContextMenu)
-        self._preview.customContextMenuRequested.connect(self._on_row_context_preview)
-        self._preview.rows_reordered.connect(self._reorder_rows)
         self._seg_table.rows_reordered.connect(self._reorder_rows)
 
     def _init_bottom_bar(self, root):
         p = self._p
 
-        spacing_size = 4
         bar = QtWidgets.QHBoxLayout()
         self._bottom_bar = bar
         bar.setContentsMargins(0, dpix(2), 0, 0)
+
+        self._thumb_settings_content = self._build_thumb_settings_content()
+
+        gear_btn = QtWidgets.QToolButton()
+        gear_btn.setIcon(themed_icon("gear_small"))
+        gear_btn.setIconSize(QtCore.QSize(dpix(16), dpix(16)))
+        gear_btn.setCursor(Qt.PointingHandCursor)
+        gear_btn.setToolTip(t("Thumbnail settings"))
+        gear_btn.setStyleSheet(
+            f"QToolButton {{ background: {p.bg_secondary}; color: {p.text_primary}; "
+            f"border: 1px solid {p.border_default}; border-radius: {dpix(2)}px; "
+            f"padding: {dpix(3)}px; }}"
+            f"QToolButton:hover {{ background: {p.bg_hover}; }}"
+        )
+        gear_btn.clicked.connect(self._toggle_thumb_settings_popup)
+        self._thumb_settings_btn = gear_btn
+        bar.addWidget(gear_btn)
+        bar.addSpacing(dpix(4))
 
         self._status = QtWidgets.QLabel()
         self._status.setStyleSheet(f"color: {p.text_muted}; font-size: {dpix(11)}px;")
         self._status.installEventFilter(self)
         bar.addWidget(self._status)
-        bar.addSpacing(dpix(spacing_size))
 
-        slider_ss = (
-            f"QSlider::groove:horizontal {{ background: {p.bg_hover}; "
-            f"height: {dpix(4)}px; border-radius: {dpix(2)}px; }}"
-            f"QSlider::handle:horizontal {{ background: {p.text_muted}; "
-            f"width: {dpix(10)}px; margin: -{dpix(3)}px 0; "
-            f"border-radius: {dpix(5)}px; }}"
-        )
-
-        row_fit_btn = self._create_thumb_fit_button("row")
-        self._row_thumb_fit_btn = row_fit_btn
-        self._apply_thumb_fit_button("row")
-        bar.addWidget(row_fit_btn)
-
-        row_slider = QtWidgets.QSlider(Qt.Horizontal)
-        row_slider.setRange(0, 100)
-        row_slider.setValue(20)
-        row_slider.setMinimumWidth(dpix(40))
-        row_slider.setToolTip(t("Row thumbnail opacity"))
-        row_slider.setStyleSheet(slider_ss)
-        row_slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-        row_slider.valueChanged.connect(self._on_row_opacity_changed)
-        self._row_opacity_slider = row_slider
-        bar.addWidget(row_slider)
-        bar.addSpacing(dpix(spacing_size))
-
-        sel_fit_btn = self._create_thumb_fit_button("sel")
-        self._sel_thumb_fit_btn = sel_fit_btn
-        self._apply_thumb_fit_button("sel")
-        bar.addWidget(sel_fit_btn)
-
-        sel_slider = QtWidgets.QSlider(Qt.Horizontal)
-        sel_slider.setRange(0, 100)
-        sel_slider.setValue(20)
-        sel_slider.setMinimumWidth(dpix(40))
-        sel_slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-        sel_slider.setToolTip(t("Selected thumbnail opacity"))
-        sel_slider.setStyleSheet(slider_ss)
-        sel_slider.valueChanged.connect(self._on_sel_opacity_changed)
-        self._sel_opacity_slider = sel_slider
-        bar.addWidget(sel_slider)
-        bar.addSpacing(dpix(4))
+        bar.addSpacing(dpix(8))
+        reorder_hint = QtWidgets.QLabel(t("Middle-drag to reorder"))
+        reorder_hint.setStyleSheet(f"color: {p.text_muted}; font-size: {dpix(10)}px;")
+        bar.addWidget(reorder_hint)
+        bar.addStretch(1)
 
         self._rename_btn = QtWidgets.QPushButton(t("Rename"))
         self._rename_btn.setStyleSheet(
@@ -500,6 +519,159 @@ class BatchRenameWidget(QtWidgets.QWidget):
         bar.addWidget(self._rename_btn)
 
         root.addLayout(bar)
+
+    def _build_thumb_settings_content(self):
+        p = self._p
+
+        slider_ss = (
+            f"QSlider::groove:horizontal {{ background: {p.bg_hover}; "
+            f"height: {dpix(4)}px; border-radius: {dpix(2)}px; }}"
+            f"QSlider::handle:horizontal {{ background: {p.text_muted}; "
+            f"width: {dpix(10)}px; margin: -{dpix(3)}px 0; "
+            f"border-radius: {dpix(5)}px; }}"
+        )
+
+        def make_slider(tooltip, on_changed, value=20, minimum=0, maximum=100):
+            slider = QtWidgets.QSlider(Qt.Horizontal)
+            slider.setRange(minimum, maximum)
+            slider.setValue(value)
+            slider.setMinimumWidth(dpix(120))
+            slider.setToolTip(t(tooltip))
+            slider.setStyleSheet(slider_ss)
+            slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+            slider.valueChanged.connect(on_changed)
+            return slider
+
+        content = QtWidgets.QWidget()
+        grid = QtWidgets.QGridLayout(content)
+        grid.setContentsMargins(dpix(8), dpix(6), dpix(8), dpix(6))
+        grid.setHorizontalSpacing(dpix(6))
+        grid.setVerticalSpacing(dpix(6))
+
+        def label(text):
+            lbl = QtWidgets.QLabel(t(text))
+            lbl.setStyleSheet(f"color: {p.text_muted}; font-size: {dpix(11)}px;")
+            return lbl
+
+        self._row_thumb_fit_btn = self._create_thumb_fit_button("row")
+        self._apply_thumb_fit_button("row")
+        self._row_opacity_slider = make_slider("Row thumbnail opacity", self._on_row_opacity_changed)
+        grid.addWidget(label("Original"), 0, 0)
+        grid.addWidget(self._row_thumb_fit_btn, 0, 1)
+        grid.addWidget(self._row_opacity_slider, 0, 2)
+
+        self._sel_thumb_fit_btn = self._create_thumb_fit_button("sel")
+        self._apply_thumb_fit_button("sel")
+        self._sel_opacity_slider = make_slider("Selected thumbnail opacity", self._on_sel_opacity_changed)
+        grid.addWidget(label("Result"), 1, 0)
+        grid.addWidget(self._sel_thumb_fit_btn, 1, 1)
+        grid.addWidget(self._sel_opacity_slider, 1, 2)
+
+        self._preview_row_height_slider = make_slider(
+            "Preview row height",
+            self._on_preview_row_height_changed,
+            value=0,
+            minimum=0,
+            maximum=200,
+        )
+        grid.addWidget(label("Preview row height"), 2, 0)
+        grid.addWidget(self._preview_row_height_slider, 2, 2)
+
+        grid.addWidget(label("Panel layout"), 3, 0)
+        grid.addWidget(self._create_direction_selector("outer"), 3, 2)
+        grid.addWidget(label("Preview layout"), 4, 0)
+        grid.addWidget(self._create_direction_selector("inner"), 4, 2)
+
+        self._scroll_sync_check = QtWidgets.QCheckBox()
+        self._scroll_sync_check.setChecked(self._scroll_sync_enabled)
+        self._scroll_sync_check.setCursor(Qt.PointingHandCursor)
+        self._scroll_sync_check.setStyleSheet(f"QCheckBox {{ color: {p.text_muted}; font-size: {dpix(11)}px; }}")
+        self._scroll_sync_check.toggled.connect(self._on_scroll_sync_toggled)
+        grid.addWidget(label("Sync scroll with editor"), 5, 0)
+        grid.addWidget(self._scroll_sync_check, 5, 2)
+
+        self._thumb_res_slider = make_slider(
+            "Thumbnail load resolution",
+            self._on_thumb_resolution_changed,
+            value=self.THUMB_RESOLUTIONS.index(self._thumb_resolution),
+            minimum=0,
+            maximum=len(self.THUMB_RESOLUTIONS) - 1,
+        )
+        self._thumb_res_slider.setSingleStep(1)
+        self._thumb_res_slider.setPageStep(1)
+        self._thumb_res_value = label(f"{self._thumb_resolution}px")
+        res_holder = QtWidgets.QWidget()
+        res_row = QtWidgets.QHBoxLayout(res_holder)
+        res_row.setContentsMargins(0, 0, 0, 0)
+        res_row.setSpacing(dpix(6))
+        res_row.addWidget(self._thumb_res_slider, 1)
+        res_row.addWidget(self._thumb_res_value)
+        grid.addWidget(label("Thumbnail resolution"), 6, 0)
+        grid.addWidget(res_holder, 6, 2)
+
+        return content
+
+    def _create_direction_selector(self, scope: str):
+        p = self._p
+        holder = QtWidgets.QWidget()
+        row = QtWidgets.QHBoxLayout(holder)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(dpix(4))
+        group = QtWidgets.QButtonGroup(holder)
+        group.setExclusive(True)
+        buttons = {}
+        current = self._outer_dir if scope == "outer" else self._inner_dir
+        for token in DIRECTIONS:
+            button = QtWidgets.QToolButton()
+            button.setCheckable(True)
+            button.setIconSize(QtCore.QSize(dpix(16), dpix(16)))
+            button.setIcon(themed_icon(DIRECTION_ICONS[token], margin=0.0))
+            button.setCursor(Qt.PointingHandCursor)
+            button.setChecked(token == current)
+            button.setStyleSheet(
+                f"QToolButton {{ background: {p.bg_secondary}; "
+                f"border: 1px solid {p.border_default}; border-radius: {dpix(2)}px; "
+                f"padding: {dpix(3)}px; }}"
+                f"QToolButton:hover {{ background: {p.bg_hover}; }}"
+                f"QToolButton:checked {{ background: {p.bg_hover}; border-color: {p.text_accent}; }}"
+            )
+            button.clicked.connect(lambda _c, s=scope, tk=token: self._set_split_direction(s, tk))
+            group.addButton(button)
+            row.addWidget(button)
+            buttons[token] = button
+        row.addStretch(1)
+        setattr(self, f"_{scope}_dir_buttons", buttons)
+        return holder
+
+    def _set_split_direction(self, scope: str, token: str):
+        splitter = self._split if scope == "outer" else self._inner_split
+        splitter.set_direction(token)
+        if scope == "outer":
+            self._outer_dir = splitter.direction
+        else:
+            self._inner_dir = splitter.direction
+        buttons = getattr(self, f"_{scope}_dir_buttons", None)
+        if buttons:
+            active = self._outer_dir if scope == "outer" else self._inner_dir
+            for tk, button in buttons.items():
+                old = button.blockSignals(True)
+                button.setChecked(tk == active)
+                button.blockSignals(old)
+        self._refresh_overlays()
+
+    def _toggle_thumb_settings_popup(self):
+        popup = self._thumb_settings_popup
+        if popup is not None and popup.isVisible():
+            popup.close()
+            return
+        if popup is None:
+            popup = PopupBase(self)
+            p = self._p
+            popup.setStyleSheet(f"PopupBase {{ background: {p.bg_elevated}; border: 1px solid {p.border_default}; border-radius: {dpix(6)}px; }}")
+            QtWidgets.QVBoxLayout(popup).setContentsMargins(0, 0, 0, 0)
+            popup.set_content_widget(self._thumb_settings_content)
+            self._thumb_settings_popup = popup
+        popup.show_below(self._thumb_settings_btn, align=Qt.AlignRight)
 
     def _create_thumb_fit_button(self, side: str):
         p = self._p
@@ -534,6 +706,13 @@ class BatchRenameWidget(QtWidgets.QWidget):
             "sel_opacity": self._sel_opacity_slider.value(),
             "row_thumb_fit_mode": self._row_thumb_fit_mode,
             "sel_thumb_fit_mode": self._sel_thumb_fit_mode,
+            "preview_row_ratio": self._preview_row_height_slider.value(),
+            "scroll_sync_enabled": self._scroll_sync_enabled,
+            "thumb_resolution": self._thumb_resolution,
+            "outer_dir": self._split.direction,
+            "outer_sizes": self._split.ordered_sizes(),
+            "inner_dir": self._inner_split.direction,
+            "inner_sizes": self._inner_split.ordered_sizes(),
         }
 
     def _restore_source_defaults(self):
@@ -557,6 +736,21 @@ class BatchRenameWidget(QtWidgets.QWidget):
             self._set_thumb_fit_mode("row", state["row_thumb_fit_mode"])
         if "sel_thumb_fit_mode" in state:
             self._set_thumb_fit_mode("sel", state["sel_thumb_fit_mode"])
+        if "preview_row_ratio" in state:
+            self._preview_row_height_slider.setValue(state["preview_row_ratio"])
+        if "scroll_sync_enabled" in state:
+            self._scroll_sync_check.setChecked(bool(state["scroll_sync_enabled"]))
+        if "thumb_resolution" in state and state["thumb_resolution"] in self.THUMB_RESOLUTIONS:
+            self._thumb_res_slider.setValue(self.THUMB_RESOLUTIONS.index(state["thumb_resolution"]))
+        if state.get("outer_dir"):
+            self._set_split_direction("outer", state["outer_dir"])
+        if state.get("inner_dir"):
+            self._set_split_direction("inner", state["inner_dir"])
+        if state.get("outer_sizes"):
+            self._split.apply_ordered_sizes(state["outer_sizes"])
+        if state.get("inner_sizes"):
+            self._inner_split.apply_ordered_sizes(state["inner_sizes"])
+        self._apply_preview_row_height()
 
     def _start_async_init(self):
         cancel = CancelToken()
@@ -583,9 +777,9 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._refresh()
 
     def _visible_row_range(self):
-        vp = self._preview.viewport()
-        first = self._preview.indexAt(vp.rect().topLeft()).row()
-        last = self._preview.indexAt(vp.rect().bottomLeft()).row()
+        vp = self._orig_view.viewport()
+        first = self._orig_view.indexAt(vp.rect().topLeft()).row()
+        last = self._orig_view.indexAt(vp.rect().bottomLeft()).row()
         if first < 0:
             first = 0
         total = len(self._paths)
@@ -599,7 +793,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
     @qt_throttle(50, 150)
     def _update_visible_thumbnails(self):
         try:
-            self._preview.viewport()
+            self._orig_view.viewport()
         except RuntimeError:
             return
         if not self._results:
@@ -618,15 +812,28 @@ class BatchRenameWidget(QtWidgets.QWidget):
         visible = self._visible_row_range()
         center = (visible.start + visible.stop) // 2
         entering_need_load.sort(key=lambda r: abs(r - center))
+        self._request_thumbs(entering_need_load)
+
+    def _reset_thumb_requests(self):
+        for token in self._thumb_tokens.values():
+            token.cancel()
+        self._thumb_tokens.clear()
+        self._thumb_visible = set()
+
+    def _request_thumbs(self, rows):
         rows_tokens = []
-        for r in entering_need_load:
+        for r in rows:
+            if not (0 <= r < len(self._paths)):
+                continue
             old = self._thumb_tokens.pop(r, None)
             if old:
                 old.cancel()
             token = CancelToken()
             self._thumb_tokens[r] = token
             rows_tokens.append((r, self._paths[r], token))
-        thumb_size = QtCore.QSize(dpix(512), dpix(512))
+        if not rows_tokens:
+            return
+        thumb_size = QtCore.QSize(dpix(self._thumb_resolution), dpix(self._thumb_resolution))
 
         def task():
             from ...plugin.grid.handler import load_thumbnail
@@ -643,15 +850,21 @@ class BatchRenameWidget(QtWidgets.QWidget):
                     img = None
                 if tok.is_cancelled():
                     continue
-                self._dispatcher.invoke(lambda k=key, im=img, t=tok: t.is_cancelled() or self._on_thumbnail_loaded(k, im))
+                self._dispatcher.invoke(lambda r=_r, k=key, im=img, t=tok: t.is_cancelled() or self._on_thumbnail_loaded(r, k, im))
 
         self._dispatcher.post(task)
 
-    def _on_thumbnail_loaded(self, key, img):
+    def _on_thumbnail_loaded(self, row, key, img):
+        if 0 <= row < len(self._paths) and str(self._paths[row]) == key:
+            self._thumb_tokens.pop(row, None)
         self._thumb_cache[key] = QtGui.QPixmap.fromImage(img) if img and not img.isNull() else QtGui.QPixmap()
         while len(self._thumb_cache) > self.THUMB_CACHE_LIMIT:
             self._thumb_cache.popitem(last=False)
-        self._overlay.update()
+        self._refresh_overlays()
+
+    def _refresh_overlays(self):
+        for overlay in self._overlays:
+            overlay.update()
 
     def hideEvent(self, event):
         self._cancel_all_pending()
@@ -693,13 +906,13 @@ class BatchRenameWidget(QtWidgets.QWidget):
         return cells
 
     def _selection_anchor_row(self, table, selected=None):
+        current = table.currentIndex()
+        if current.isValid() and 0 <= current.row() < len(self._paths):
+            return current.row()
         if selected is not None:
             indexes = [index for index in selected.indexes() if index.isValid()]
             if indexes:
                 return indexes[-1].row()
-        current = table.currentIndex()
-        if current.isValid() and 0 <= current.row() < len(self._paths):
-            return current.row()
         rows = self._selected_rows(table)
         return rows[-1] if rows else -1
 
@@ -717,23 +930,26 @@ class BatchRenameWidget(QtWidgets.QWidget):
                 selection.select(start, end)
         return selection
 
-    def _select_preview_rows(self, rows):
-        selection_model = self._preview.selectionModel()
+    def _select_view_rows(self, view, rows, anchor=None):
+        selection_model = view.selectionModel()
         if selection_model is None:
             return
         if not rows:
             selection_model.clearSelection()
             return
-        selection = self._build_row_selection(
-            self._preview_model,
-            rows,
-            0,
-            max(0, self._preview_model.columnCount() - 1),
-        )
+        column = self._view_column.get(view, 0)
+        selection = self._build_row_selection(self._preview_model, rows, column)
+        current_row = anchor if anchor is not None and anchor >= 0 else rows[-1]
         selection_model.select(selection, QtCore.QItemSelectionModel.ClearAndSelect)
-        selection_model.setCurrentIndex(self._preview_model.index(rows[-1], 0), QtCore.QItemSelectionModel.NoUpdate)
+        selection_model.setCurrentIndex(self._preview_model.index(current_row, column), QtCore.QItemSelectionModel.NoUpdate)
 
-    def _select_segment_rows(self, rows):
+    def _select_preview_rows(self, rows, anchor=None, exclude=None):
+        for view in self._preview_views:
+            if view is exclude:
+                continue
+            self._select_view_rows(view, rows, anchor)
+
+    def _select_segment_rows(self, rows, anchor=None):
         selection_model = self._seg_table.selectionModel()
         if selection_model is None:
             return
@@ -741,8 +957,25 @@ class BatchRenameWidget(QtWidgets.QWidget):
             selection_model.clearSelection()
             return
         selection = self._build_row_selection(self._seg_model, rows, 0, 0)
+        current_row = anchor if anchor is not None and anchor >= 0 else rows[-1]
         selection_model.select(selection, QtCore.QItemSelectionModel.ClearAndSelect)
-        selection_model.setCurrentIndex(self._seg_model.index(rows[-1], 0), QtCore.QItemSelectionModel.NoUpdate)
+        selection_model.setCurrentIndex(self._seg_model.index(current_row, 0), QtCore.QItemSelectionModel.NoUpdate)
+
+    def _scroll_anchor_into_view(self, anchor):
+        if not self._scroll_sync_enabled:
+            return
+        if anchor is None or anchor < 0 or anchor >= len(self._paths):
+            return
+        bar = self._orig_view.verticalScrollBar()
+        row_h = self._orig_view.verticalHeader().defaultSectionSize() or 1
+        vp_h = self._orig_view.viewport().height()
+        top = anchor * row_h
+        bottom = top + row_h
+        view_top = bar.value()
+        if top >= view_top and bottom <= view_top + vp_h:
+            return
+        target = top if top < view_top else bottom - vp_h
+        bar.setValue(max(0, min(target, bar.maximum())))
 
     @staticmethod
     def _ensure_index_selected(table, index):
@@ -763,49 +996,72 @@ class BatchRenameWidget(QtWidgets.QWidget):
             pix = self._thumb_cache.get(key)
             if pix is not None:
                 self._thumb_cache.move_to_end(key)
+            elif row not in self._thumb_tokens:
+                self._request_thumbs([row])
             return pix
         return None
 
-    def _on_preview_selection(self, selected=None, _deselected=None):
+    def _on_view_selection(self, source):
         if self._syncing_selection:
             return
         self._syncing_selection = True
         try:
-            rows = self._selected_rows(self._preview)
-            self._selected_row = self._selection_anchor_row(self._preview, selected) if rows else -1
-            self._select_segment_rows(rows)
+            rows = self._selected_rows(source)
+            self._selected_row = self._selection_anchor_row(source) if rows else -1
+            self._select_preview_rows(rows, self._selected_row, exclude=source)
+            self._select_segment_rows(rows, self._selected_row)
         finally:
             self._syncing_selection = False
-            self._overlay.update()
+            self._scroll_anchor_into_view(self._selected_row)
+            self._refresh_overlays()
 
     def eventFilter(self, obj, event):
-        if obj is self._preview.viewport():
-            if event.type() in (QtCore.QEvent.Resize, QtCore.QEvent.Paint):
-                self._overlay.setGeometry(self._preview.viewport().rect())
-                self._overlay.raise_()
-                if event.type() == QtCore.QEvent.Resize:
-                    self._overlay.update()
-                    self._update_visible_thumbnails()
+        for view in self._preview_views:
+            if obj is view.viewport():
+                if event.type() in (QtCore.QEvent.Resize, QtCore.QEvent.Paint):
+                    overlay = self._orig_overlay if view is self._orig_view else self._result_overlay
+                    overlay.setGeometry(view.viewport().rect())
+                    overlay.raise_()
+                    if event.type() == QtCore.QEvent.Resize:
+                        overlay.update()
+                        self._apply_preview_row_height()
+                        self._update_visible_thumbnails()
+                break
         if obj is self._status and event.type() == QtCore.QEvent.MouseButtonPress:
             self._scroll_to_next_issue()
             return True
         return super().eventFilter(obj, event)
 
-    def _sync_from_preview(self, val):
-        if not self._syncing:
-            self._syncing = True
-            self._seg_table.verticalScrollBar().setValue(val)
+    def _sync_preview_scroll(self, source):
+        if self._syncing:
+            return
+        self._syncing = True
+        try:
+            val = source.verticalScrollBar().value()
+            for view in self._preview_views:
+                if view is not source:
+                    view.verticalScrollBar().setValue(val)
+            row_h = source.verticalHeader().defaultSectionSize() or 1
+            self._display_offset = val - self._seg_table.verticalScrollBar().value() * row_h
+        finally:
             self._syncing = False
-            self._overlay.update()
-            self._update_visible_thumbnails()
+        self._refresh_overlays()
+        self._update_visible_thumbnails()
 
     def _sync_from_seg(self, val):
-        if not self._syncing:
-            self._syncing = True
-            self._preview.verticalScrollBar().setValue(val)
+        if self._syncing or not self._scroll_sync_enabled:
+            return
+        self._syncing = True
+        try:
+            row_h = self._orig_view.verticalHeader().defaultSectionSize() or 1
+            target = val * row_h + self._display_offset
+            for view in self._preview_views:
+                bar = view.verticalScrollBar()
+                bar.setValue(max(bar.minimum(), min(target, bar.maximum())))
+        finally:
             self._syncing = False
-            self._overlay.update()
-            self._update_visible_thumbnails()
+        self._refresh_overlays()
+        self._update_visible_thumbnails()
 
     def _on_seg_selection(self, selected=None, _deselected=None):
         if self._syncing_selection:
@@ -814,10 +1070,11 @@ class BatchRenameWidget(QtWidgets.QWidget):
         try:
             rows = self._selected_rows(self._seg_table)
             self._selected_row = self._selection_anchor_row(self._seg_table, selected) if rows else -1
-            self._select_preview_rows(rows)
+            self._select_preview_rows(rows, self._selected_row)
         finally:
             self._syncing_selection = False
-            self._overlay.update()
+            self._scroll_anchor_into_view(self._selected_row)
+            self._refresh_overlays()
 
     def _scroll_to_next_issue(self):
         if not self._results:
@@ -832,23 +1089,62 @@ class BatchRenameWidget(QtWidgets.QWidget):
             self._selected_row = target
             self._select_preview_rows([target])
             self._select_segment_rows([target])
-            preview_index = self._preview_model.index(target, 0)
-            if preview_index.isValid():
-                self._preview.setCurrentIndex(preview_index)
-                self._preview.scrollTo(preview_index, QtWidgets.QAbstractItemView.EnsureVisible)
+            for view in self._preview_views:
+                column = self._view_column.get(view, 0)
+                index = self._preview_model.index(target, column)
+                if index.isValid():
+                    view.setCurrentIndex(index)
+                    view.scrollTo(index, QtWidgets.QAbstractItemView.EnsureVisible)
             seg_index = self._seg_model.index(target, 0)
             if seg_index.isValid():
                 self._seg_table.setCurrentIndex(seg_index)
                 self._seg_table.scrollTo(seg_index, QtWidgets.QAbstractItemView.EnsureVisible)
         finally:
             self._syncing_selection = False
-            self._overlay.update()
+            self._refresh_overlays()
 
     def _on_row_opacity_changed(self, value):
-        self._overlay.set_row_opacity(value / 100.0)
+        for overlay in self._overlays:
+            overlay.set_row_opacity(value / 100.0)
 
     def _on_sel_opacity_changed(self, value):
-        self._overlay.set_sel_opacity(value / 100.0)
+        for overlay in self._overlays:
+            overlay.set_sel_opacity(value / 100.0)
+
+    def _on_preview_row_height_changed(self, value):
+        self._apply_preview_row_height()
+
+    def _on_scroll_sync_toggled(self, checked):
+        self._scroll_sync_enabled = checked
+        if checked:
+            row_h = self._orig_view.verticalHeader().defaultSectionSize() or 1
+            val = self._orig_view.verticalScrollBar().value()
+            self._display_offset = val - self._seg_table.verticalScrollBar().value() * row_h
+
+    def _on_thumb_resolution_changed(self, index):
+        index = max(0, min(index, len(self.THUMB_RESOLUTIONS) - 1))
+        res = self.THUMB_RESOLUTIONS[index]
+        if res == self._thumb_resolution:
+            return
+        self._thumb_resolution = res
+        self._thumb_res_value.setText(f"{res}px")
+        for token in self._thumb_tokens.values():
+            token.cancel()
+        self._thumb_tokens.clear()
+        self._thumb_cache.clear()
+        self._thumb_visible.clear()
+        self._update_visible_thumbnails()
+        self._refresh_overlays()
+
+    def _apply_preview_row_height(self):
+        col_w = self._orig_view.viewport().width()
+        ratio = self._preview_row_height_slider.value() / 100.0
+        height = max(dpix(20), round(col_w * ratio))
+        for view in self._preview_views:
+            view.verticalHeader().setDefaultSectionSize(height)
+            view.updateGeometries()
+        self._refresh_overlays()
+        self._update_visible_thumbnails()
 
     def _normalise_thumb_fit_mode(self, fit_mode):
         return fit_mode if fit_mode in self.THUMB_FIT_MODES else self.THUMB_FIT_COVER
@@ -857,10 +1153,12 @@ class BatchRenameWidget(QtWidgets.QWidget):
         normalised = self._normalise_thumb_fit_mode(fit_mode)
         if side == "row":
             self._row_thumb_fit_mode = normalised
-            self._overlay.set_row_fit_mode(normalised)
+            for overlay in self._overlays:
+                overlay.set_row_fit_mode(normalised)
         elif side == "sel":
             self._sel_thumb_fit_mode = normalised
-            self._overlay.set_sel_fit_mode(normalised)
+            for overlay in self._overlays:
+                overlay.set_sel_fit_mode(normalised)
         self._apply_thumb_fit_button(side)
 
     def _apply_thumb_fit_button(self, side):
@@ -1058,6 +1356,8 @@ class BatchRenameWidget(QtWidgets.QWidget):
             self._update_visible_thumbnails()
         finally:
             self._refreshing = False
+        for view in self._preview_views:
+            view.updateGeometries()
         if self._pending_select_rows is not None:
             rows = [r for r in self._pending_select_rows if 0 <= r < len(self._paths)]
             self._pending_select_rows = None
@@ -1126,6 +1426,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._keys = [k for _, k, _ in new]
         self._results = [r for _, _, r in new]
         self._pending_select_rows = list(range(insert_at, insert_at + len(moving)))
+        self._reset_thumb_requests()
         self._refresh(auto_size=False)
 
     def _apply_sort(self, kind, section, ascending):
@@ -1142,6 +1443,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._paths = [p for p, _, _ in triples]
         self._keys = [k for _, k, _ in triples]
         self._results = [r for _, _, r in triples]
+        self._reset_thumb_requests()
         self._refresh(auto_size=False)
 
     def _on_seg_header_click(self, section):
@@ -1178,6 +1480,12 @@ class BatchRenameWidget(QtWidgets.QWidget):
         if not is_ext:
             popup.move_requested.connect(lambda d, s=section: QtCore.QTimer.singleShot(0, lambda: self._move_column(s, d)))
             popup.remove_requested.connect(lambda s=section: QtCore.QTimer.singleShot(0, lambda: self._remove_column(s)))
+            popup.sort_requested.connect(
+                lambda asc, s=section: (
+                    self._close_popup(),
+                    self._apply_sort("segment", s, asc),
+                )
+            )
             popup.resequence_requested.connect(
                 lambda: (
                     self._close_popup(),
@@ -1329,12 +1637,12 @@ class BatchRenameWidget(QtWidgets.QWidget):
             clicked_index=index,
         )
 
-    def _on_row_context_preview(self, pos):
-        index = self._preview.indexAt(pos)
+    def _on_row_context_preview(self, view, pos):
+        index = view.indexAt(pos)
         if not index.isValid():
             return
-        self._ensure_index_selected(self._preview, index)
-        self._show_row_menu(self._preview, self._preview.viewport().mapToGlobal(pos), clicked_index=index)
+        self._ensure_index_selected(view, index)
+        self._show_row_menu(view, view.viewport().mapToGlobal(pos), clicked_index=index)
 
     def _show_row_menu(self, table, gpos, clicked_index=None):
         rows = self._selected_rows(table)
@@ -1395,12 +1703,11 @@ class BatchRenameWidget(QtWidgets.QWidget):
     def _sort_target(self, table, clicked_index):
         if clicked_index is None or not clicked_index.isValid():
             return None
-        col = clicked_index.column()
-        if table is self._preview:
-            if col in (0, 1):
-                return "preview", col, PreviewModel.HEADERS[col]
-            return None
-        if table is self._seg_table and col < len(self._columns):
+        if table in self._view_column:
+            col = self._view_column[table]
+            return "preview", col, PreviewModel.HEADERS[col]
+        if table is self._seg_table and clicked_index.column() < len(self._columns):
+            col = clicked_index.column()
             return "segment", col, self._columns[col].source.DISPLAY
         return None
 
@@ -1585,6 +1892,13 @@ class BatchRenamerPlugin(BasePanelPlugin):
 
     def restore_ui_state(self, state):
         BatchRenameWidget._saved_state = state
+        inst = BatchRenameWidget._instance_ref
+        if inst is not None:
+            try:
+                inst._restore_source_defaults()
+                inst._restore_ui_from_state()
+            except RuntimeError as e:
+                AppLogger.warning("[BatchRenamer] restore_state failed", exc=e)
 
     def create_widget(self):
         widget = BatchRenameWidget()

@@ -2,6 +2,19 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.7.6]
+
+### Highlights
+- Batch Rename now shows original files and renamed results in separate synchronized previews.
+
+### Improvements
+- Batch Rename previews can be rearranged, resized, and tuned for thumbnail quality, fit, and scrolling.
+- Use middle-drag to reorder files and sort any Batch Rename column from its context menu.
+- Standalone tools can now be minimized and maximized.
+
+### Fixes
+- Video playback releases its video output while its window is minimized.
+
 ## [v0.7.5]
 
 ### Highlights

@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.7.6]
+### Added
+- Batch Rename now shows original files and renamed results in separate synchronized previews.
+
+### Changed
+- Batch Rename supports configurable layouts, preview sizes, thumbnail rendering, scrolling, sorting, and middle-drag reordering.
+- Standalone tools now provide minimize and maximize window controls.
+
+### Fixed
+- Minimized video viewer windows release their video output.
+
 ## [v0.7.5]
 ### Added
 - Text Generation now parses NovelAI, Stable Diffusion WebUI/Forge, and ComfyUI generation metadata.

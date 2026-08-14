@@ -6,6 +6,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
 from ...utils.formatting import dpix
+from ...core.color.theme import ThemeManager
 
 if TYPE_CHECKING:
     from .engine import RenameResult, RenameColumn
@@ -27,7 +28,6 @@ class PreviewModel(QtCore.QAbstractTableModel):
         super().__init__(parent)
         self._results: list[RenameResult] = []
         self._colors: ColorSet | None = None
-        self._sort_section: int = -1
 
     def set_colors(self, colors: ColorSet):
         self._colors = colors
@@ -43,17 +43,10 @@ class PreviewModel(QtCore.QAbstractTableModel):
     def columnCount(self, parent=QtCore.QModelIndex()):
         return 0 if parent.isValid() else 2
 
-    def set_sort_indicator(self, section: int):
-        self._sort_section = section
-        self.headerDataChanged.emit(Qt.Horizontal, 0, 1)
-
     def headerData(self, section, orientation, role=Qt.DisplayRole):
         if orientation == Qt.Horizontal and role == Qt.DisplayRole:
             if section < 2:
-                label = self.HEADERS[section]
-                if self._sort_section == section:
-                    label += " \u25b2"
-                return label
+                return self.HEADERS[section]
             return ""
         return None
 
@@ -103,8 +96,6 @@ class SegmentModel(QtCore.QAbstractTableModel):
         self._ext_section = 1
         self._colors: ColorSet | None = None
         self._paths: list = []
-        self._sort_section: int = -1
-        self._sort_ascending: bool = True
 
     def set_colors(self, colors: ColorSet):
         self._colors = colors
@@ -121,8 +112,6 @@ class SegmentModel(QtCore.QAbstractTableModel):
         self._ext_column = ext_column
         self._add_section = len(columns)
         self._ext_section = len(columns) + 1
-        self._sort_section = -1
-        self._sort_ascending = True
         self._build_headers(add_label, ext_label)
         self.endResetModel()
 
@@ -132,25 +121,12 @@ class SegmentModel(QtCore.QAbstractTableModel):
         if not ext_label and self._ext_column:
             ext_label = self._ext_column.source.DISPLAY
         headers = []
-        for i, col in enumerate(self._columns):
+        for col in self._columns:
             prefix = "" if col.enabled else "\u25cc "
-            indicator = ""
-            if self._sort_section == i:
-                indicator = " \u25b2" if self._sort_ascending else " \u25bc"
-            headers.append(f"{prefix}{col.source.DISPLAY}{indicator}")
+            headers.append(f"{prefix}{col.source.DISPLAY}")
         headers.append(add_label)
         headers.append(ext_label)
         self._headers = headers
-
-    def set_sort_indicator(self, section: int, ascending: bool = True):
-        self._sort_section = section
-        self._sort_ascending = ascending
-        self._build_headers()
-        self.headerDataChanged.emit(
-            Qt.Horizontal,
-            0,
-            len(self._headers) - 1,
-        )
 
     def refresh(self, results: list[RenameResult], paths: list | None = None):
         self.beginResetModel()
@@ -291,11 +267,21 @@ class PreviewDelegate(QtWidgets.QStyledItemDelegate):
 
 class SyncedView(QtWidgets.QTableView):
     editing_finished = QtCore.Signal()
+    rows_reordered = QtCore.Signal(list, int)
 
-    def __init__(self, forward_target=None, parent=None, vertical_tab_navigation=False):
+    def __init__(self, forward_target=None, parent=None, vertical_tab_navigation=False, row_wheel=False):
         super().__init__(parent)
         self._fwd = forward_target
+        self._row_wheel = row_wheel
         self._vertical_tab_navigation = vertical_tab_navigation
+        self._reorder_rows: list[int] = []
+        self._reorder_active = False
+        self._reorder_press_pos = QtCore.QPoint()
+        self._drop_line = QtWidgets.QFrame(self.viewport())
+        self._drop_line.setFrameShape(QtWidgets.QFrame.HLine)
+        self._drop_line.setFixedHeight(dpix(2))
+        self._drop_line.setStyleSheet(f"background: {ThemeManager.instance().palette.accent}; border: none;")
+        self._drop_line.hide()
 
     def set_forward_target(self, target):
         self._fwd = target
@@ -395,6 +381,16 @@ class SyncedView(QtWidgets.QTableView):
         super().keyPressEvent(event)
 
     def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.MiddleButton:
+            row = self.rowAt(event.position().toPoint().y())
+            if row >= 0:
+                sm = self.selectionModel()
+                selected = {i.row() for i in sm.selectedIndexes()} if sm else set()
+                self._reorder_rows = sorted(selected) if row in selected else [row]
+                self._reorder_press_pos = event.position().toPoint()
+                self._reorder_active = False
+                event.accept()
+                return
         if event.button() == QtCore.Qt.RightButton:
             idx = self.indexAt(event.position().toPoint())
             selection_model = self.selectionModel()
@@ -402,10 +398,68 @@ class SyncedView(QtWidgets.QTableView):
                 return
         super().mousePressEvent(event)
 
+    def mouseMoveEvent(self, event):
+        if self._reorder_rows and event.buttons() & QtCore.Qt.MiddleButton:
+            if not self._reorder_active:
+                if (event.position().toPoint() - self._reorder_press_pos).manhattanLength() < QtWidgets.QApplication.startDragDistance():
+                    return
+                self._reorder_active = True
+                self.setCursor(QtCore.Qt.ClosedHandCursor)
+            self._update_drop_line(event.position().toPoint().y())
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == QtCore.Qt.MiddleButton and self._reorder_rows:
+            rows = self._reorder_rows
+            active = self._reorder_active
+            self._reorder_rows = []
+            self._reorder_active = False
+            self._drop_line.hide()
+            self.unsetCursor()
+            if active:
+                target = self._drop_target(event.position().toPoint().y())
+                self.rows_reordered.emit(rows, target)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def _drop_target(self, y):
+        model = self.model()
+        total = model.rowCount() if model is not None else 0
+        row = self.rowAt(y)
+        if row < 0:
+            return total
+        rect = self.visualRect(model.index(row, 0))
+        return row + 1 if y > rect.center().y() else row
+
+    def _update_drop_line(self, y):
+        model = self.model()
+        if model is None:
+            return
+        target = self._drop_target(y)
+        total = model.rowCount()
+        if target >= total:
+            rect = self.visualRect(model.index(total - 1, 0))
+            line_y = rect.bottom()
+        else:
+            rect = self.visualRect(model.index(target, 0))
+            line_y = rect.top()
+        self._drop_line.setGeometry(0, line_y - dpix(1), self.viewport().width(), dpix(2))
+        self._drop_line.show()
+        self._drop_line.raise_()
+
     def wheelEvent(self, event):
         if self._fwd:
             sb = self._fwd.verticalScrollBar()
             row_h = self._fwd.verticalHeader().defaultSectionSize() or 1
+            steps = event.angleDelta().y() // 120
+            sb.setValue(sb.value() - steps * row_h)
+            event.accept()
+        elif self._row_wheel:
+            sb = self.verticalScrollBar()
+            row_h = self.verticalHeader().defaultSectionSize() or 1
             steps = event.angleDelta().y() // 120
             sb.setValue(sb.value() - steps * row_h)
             event.accept()

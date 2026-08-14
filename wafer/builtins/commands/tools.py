@@ -19,7 +19,7 @@ def _open_standalone(widget_factory, title: str, store_key: str, size=None, pare
         return
     dlg = QtWidgets.QDialog(parent)
     dlg.setWindowTitle(title)
-    dlg.setWindowFlags(dlg.windowFlags() | QtCore.Qt.Window)
+    dlg.setWindowFlags(dlg.windowFlags() | QtCore.Qt.Window | QtCore.Qt.WindowMinimizeButtonHint | QtCore.Qt.WindowMaximizeButtonHint)
     dlg.setAttribute(QtCore.Qt.WA_DeleteOnClose)
     if size:
         dlg.resize(*size)

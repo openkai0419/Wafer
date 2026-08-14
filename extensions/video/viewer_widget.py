@@ -264,6 +264,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self.looping = True
         self.pause_in_background = False
         self._paused_by_background = False
+        self._video_suspended = False
         self._seek_dragging = False
         self._controls_visible = False
         self._autoplay_advance = None
@@ -360,6 +361,8 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         if self._player:
             self._player.play(path)
             self._player.pause = False
+            if self.window().isMinimized():
+                self._suspend_video()
         self._pos_timer.start()
         self._update_play_button()
 
@@ -598,6 +601,24 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
     def hideEvent(self, event):
         super().hideEvent(event)
         self._hide_controls()
+        if self.window().isMinimized():
+            self._suspend_video()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._resume_video()
+
+    def _suspend_video(self):
+        if self._player and not self._video_suspended:
+            self._video_suspended = True
+            self._player.vid = "no"
+            AppLogger.debug("Video output suspended while window minimized")
+
+    def _resume_video(self):
+        if self._player and self._video_suspended:
+            self._video_suspended = False
+            self._player.vid = "auto"
+            AppLogger.debug("Video output resumed after window restore")
 
     def _on_app_state_changed(self, state):
         if not self._player:

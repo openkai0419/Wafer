@@ -79,4 +79,3 @@ class OrientedSplitter(QtWidgets.QSplitter):
         if self._pending_sizes and sum(self.sizes()) > 0:
             self.setSizes(self._pending_sizes)
             self._pending_sizes = None
-

@@ -105,7 +105,6 @@ class ThumbnailOverlay(QtWidgets.QWidget):
         full = QtCore.QRect(0, 0, vp.width(), vp.height())
         self._draw_fit(painter, pix, full, self._sel_fit_mode)
 
-
     @staticmethod
     def _scaled_rect(pix: QtGui.QPixmap, rect: QtCore.QRect, fit_mode: str):
         pw, ph = pix.width(), pix.height()

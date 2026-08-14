@@ -714,3 +714,77 @@ class TestAutoplayObserver:
         assert len(called) == 0
         assert w._autoplay_advance is not None
         w.cleanup()
+
+
+class TestVideoViewerWidgetBackgroundSuspend:
+    def _make_widget(self, qtbot, mock_mpv, minimized=False):
+        from extensions.video.viewer_widget import VideoViewerWidget
+
+        w = VideoViewerWidget()
+        w.window = lambda: type("W", (), {"isMinimized": staticmethod(lambda: minimized)})()
+        mock_player = MagicMock()
+        mock_player.pause = False
+        mock_mpv.MPV.return_value = mock_player
+        return w, mock_player
+
+    def test_suspend_disables_video_track(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        w.load(_context("/test.mp4"))
+        w._suspend_video()
+        assert w._video_suspended is True
+        assert player.vid == "no"
+        w.cleanup()
+
+    def test_resume_reenables_video_track(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        w.load(_context("/test.mp4"))
+        w._suspend_video()
+        w._resume_video()
+        assert w._video_suspended is False
+        assert player.vid == "auto"
+        w.cleanup()
+
+    def test_resume_without_suspend_is_noop(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        w.load(_context("/test.mp4"))
+        w._resume_video()
+        assert w._video_suspended is False
+        w.cleanup()
+
+    def test_hideevent_suspends_when_minimized(self, qtbot, _patch_mpv_viewer):
+        from PySide6.QtGui import QHideEvent
+
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer, minimized=True)
+        w.load(_context("/test.mp4"))
+        w.hideEvent(QHideEvent())
+        assert w._video_suspended is True
+        assert player.vid == "no"
+        w.cleanup()
+
+    def test_hideevent_ignores_non_minimized(self, qtbot, _patch_mpv_viewer):
+        from PySide6.QtGui import QHideEvent
+
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer, minimized=False)
+        w.load(_context("/test.mp4"))
+        w.hideEvent(QHideEvent())
+        assert w._video_suspended is False
+        w.cleanup()
+
+    def test_showevent_resumes_after_minimized_suspend(self, qtbot, _patch_mpv_viewer):
+        from PySide6.QtGui import QHideEvent, QShowEvent
+
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer, minimized=True)
+        w.load(_context("/test.mp4"))
+        w.hideEvent(QHideEvent())
+        w.showEvent(QShowEvent())
+        assert w._video_suspended is False
+        assert player.vid == "auto"
+        w.cleanup()
+
+    def test_load_while_minimized_suspends(self, qtbot, _patch_mpv_viewer):
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer, minimized=True)
+        w.load(_context("/test.mp4"))
+        assert w._video_suspended is True
+        assert player.vid == "no"
+        w.cleanup()
+

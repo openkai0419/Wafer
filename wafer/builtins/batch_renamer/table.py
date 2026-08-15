@@ -7,18 +7,10 @@ from PySide6.QtCore import Qt
 
 from ...utils.formatting import dpix
 from ...core.color.theme import ThemeManager
+from ...core.commands.binding.common import TEXT_ENTRY_TYPES as INLINE_EDITOR_TYPES
 
 if TYPE_CHECKING:
     from .engine import RenameResult, RenameColumn
-
-
-INLINE_EDITOR_TYPES = (
-    QtWidgets.QLineEdit,
-    QtWidgets.QPlainTextEdit,
-    QtWidgets.QTextEdit,
-    QtWidgets.QComboBox,
-    QtWidgets.QAbstractSpinBox,
-)
 
 
 class PreviewModel(QtCore.QAbstractTableModel):

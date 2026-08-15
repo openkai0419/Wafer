@@ -11,6 +11,7 @@ from ....utils.logs import AppLogger
 from ....core.qt.dispatcher import Dispatcher, CancelToken
 from ....core.qt.thread import utility_pool
 from ....core.commands.bridge import UI, Context
+from ....core.commands.binding.common import TEXT_ENTRY_TYPES as INLINE_EDITOR_TYPES
 from ....core.platform.dragparser import MimeDataParser
 from ....core.platform.file_operations import PastePlanItem
 from ....core.platform.path_utils import unique_path
@@ -89,13 +90,7 @@ SUPPORTED_DROP_ACTIONS = (QtCore.Qt.MoveAction, QtCore.Qt.CopyAction)
 EXPAND_RECURSIVE_BATCH_SIZE = 64
 EXPAND_RECURSIVE_QUEUE_LIMIT = 512
 EXPAND_RECURSIVE_DRAIN_MS = 6.0
-INLINE_EDITOR_TYPES = (
-    QtWidgets.QLineEdit,
-    QtWidgets.QPlainTextEdit,
-    QtWidgets.QTextEdit,
-    QtWidgets.QComboBox,
-    QtWidgets.QAbstractSpinBox,
-)
+
 
 
 class RecursiveExpandJob:

@@ -1089,3 +1089,111 @@ class TestScrollRestoreOnUpdate:
         type(gv)._debounce_recalc_layout.__wrapped__(gv)
         assert gv._restore_scroll_path is not None
         gv._recalc_layout.assert_called_once()
+
+
+class TestGridActive:
+    @pytest.fixture(autouse=True)
+    def _import(self, qtbot):
+        from wafer.app.viewer.grid.grid_view import GridView
+
+        self.GridView = GridView
+
+    def _make_layout(self, n, item_h=100, width=800):
+        from wafer.plugin.layout.calc import LayoutData
+
+        rects = [QtCore.QRectF(0, i * item_h, width, item_h) for i in range(n)]
+        return LayoutData(rects, n * item_h, True)
+
+    def _prepare(self, gv, qtbot, n=20):
+        qtbot.addWidget(gv)
+        gv._pipeline.schedule_render = MagicMock()
+        gv._pipeline.request_layout = MagicMock()
+        gv.resize(800, 600)
+        gv.show()
+        QtWidgets.QApplication.processEvents()
+        paths = [f"/img/{i}.png" for i in range(n)]
+        gv.items.set_items(paths, ["s"] * n, [1.0] * n)
+        gv._on_layout_ready(self._make_layout(n))
+        QtWidgets.QApplication.processEvents()
+        return paths
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_deactivate_releases_all_visible_cells(self, mock_resolver, qtbot):
+        gv = self.GridView(MagicMock())
+        self._prepare(gv, qtbot, 20)
+        assert gv.visible_indices
+        gv.set_grid_active(False)
+        assert gv._active is False
+        assert gv.visible_indices == set()
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_reactivate_restores_visible_cells(self, mock_resolver, qtbot):
+        gv = self.GridView(MagicMock())
+        self._prepare(gv, qtbot, 20)
+        gv.set_grid_active(False)
+        assert gv.visible_indices == set()
+        gv.set_grid_active(True)
+        QtWidgets.QApplication.processEvents()
+        assert gv._active is True
+        assert gv.visible_indices
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_update_visible_items_empties_when_inactive(self, mock_resolver, qtbot):
+        gv = self.GridView(MagicMock())
+        self._prepare(gv, qtbot, 20)
+        gv._active = False
+        gv._update_visible_items()
+        assert gv.visible_indices == set()
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_same_state_is_noop(self, mock_resolver, qtbot):
+        gv = self.GridView(MagicMock())
+        self._prepare(gv, qtbot, 20)
+        gv._update_visible_items = MagicMock()
+        gv.set_grid_active(True)
+        gv._update_visible_items.assert_not_called()
+
+    def test_deactivate_suspends_and_reactivate_resumes_autoscroll(self):
+        gv = MagicMock()
+        gv._active = True
+        gv._autoscroll_resume = False
+        gv.is_scrolling.return_value = True
+        gv._auto_scroll_anim = MagicMock()
+        gv.widgets = {}
+        gv._additional_widgets = {}
+        self.GridView.set_grid_active(gv, False)
+        assert gv._active is False
+        assert gv._autoscroll_resume is True
+        gv._auto_scroll_anim.stop.assert_called_once()
+        gv.is_scrolling.return_value = False
+        self.GridView.set_grid_active(gv, True)
+        assert gv._active is True
+        assert gv._autoscroll_resume is False
+        gv._start_auto_scroll_from_current.assert_called_once()
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_collapse_via_splitter_deactivates(self, mock_resolver, qtbot):
+        gv = self.GridView(MagicMock())
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        splitter.setChildrenCollapsible(True)
+        splitter.addWidget(gv)
+        splitter.addWidget(QtWidgets.QWidget())
+        gv.setMinimumSize(0, 0)
+        qtbot.addWidget(splitter)
+        gv._pipeline.schedule_render = MagicMock()
+        gv._pipeline.request_layout = MagicMock()
+        splitter.resize(1000, 600)
+        splitter.show()
+        qtbot.waitExposed(splitter)
+        paths = [f"/img/{i}.png" for i in range(20)]
+        gv.items.set_items(paths, ["s"] * 20, [1.0] * 20)
+        gv._on_layout_ready(self._make_layout(20))
+        qtbot.waitUntil(lambda: gv._visibility.is_visible() and gv._active is True and bool(gv.visible_indices))
+
+        splitter.setSizes([0, 1000])
+        qtbot.waitUntil(lambda: gv._active is False)
+        assert gv.visible_indices == set()
+
+        splitter.setSizes([500, 500])
+        qtbot.waitUntil(lambda: gv._active is True and bool(gv.visible_indices))
+

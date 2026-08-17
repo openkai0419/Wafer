@@ -22,6 +22,8 @@ _initialized = False
 _role = ""
 _suppress_dialog = False
 
+LOG_SINK_ROLES = ("viewer", "webui")
+
 
 def set_suppress_dialog(value: bool):
     global _suppress_dialog
@@ -186,18 +188,14 @@ class AppLogger:
         node = AppLogger._node
         if node is None or not node.is_registered:
             return
-        try:
-            node.send(
-                "dev.log",
-                {
-                    "level": level,
-                    "text": text,
-                },
-                dst="viewer",
-                priority=2,
-            )
-        except Exception:
-            pass  # IPC forward is best-effort; logging here risks recursion
+        payload = {"level": level, "text": text}
+        for dst in LOG_SINK_ROLES:
+            if dst == AppLogger._role:
+                continue
+            try:
+                node.send("dev.log", payload, dst=dst, priority=2)
+            except Exception:
+                pass  # IPC forward is best-effort; logging here risks recursion
 
     @staticmethod
     def _format_with_exc(text: str, exc: BaseException | None) -> str:

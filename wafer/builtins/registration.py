@@ -53,6 +53,7 @@ def _import_builtin_modules():
         setting as _cmd_setting,
         tray,
         window as _cmd_window,
+        backend as _cmd_backend,
     )
     from .database_manager import data_tab, widget as _dm_widget
     from .plugin_manager import (
@@ -100,6 +101,7 @@ def _import_builtin_modules():
         _cmd_setting,
         tray,
         _cmd_window,
+        _cmd_backend,
         _dm_widget,
         collectors_tab,
         data_tab,

@@ -43,7 +43,7 @@ def test_resolve_cache_path_uses_app_cache_dir(monkeypatch):
     monkeypatch.setattr(paths, "PlatformDirs", _FakePlatformDirs)
     result = resolve_cache_path("updates/latest.json")
 
-    assert result.endswith(f"/wafer-data/{APP_DATA_DIR_NAME}/cache/updates/latest.json")
+    assert result.endswith(f"/wafer-data/{APP_DATA_DIR_NAME}/.cache/updates/latest.json")
 
 
 def test_resolve_temp_path_uses_app_temp_dir(monkeypatch):

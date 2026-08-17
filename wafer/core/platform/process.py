@@ -4,6 +4,8 @@ import sys
 import psutil
 from ...utils.logs import AppLogger
 
+MAIN_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "main.py")
+
 
 def _windows_no_window_flags(extra=0):
     if sys.platform != "win32":
@@ -85,7 +87,7 @@ class ProcessMatcher:
 
 
 class AppProcess:
-    WORKER_FLAGS = frozenset({"--tray", "--indexer", "--collector", "--parser"})
+    WORKER_FLAGS = frozenset({"--tray", "--indexer", "--collector", "--parser", "--webui"})
 
     @classmethod
     def get_by_args_exact(cls, *args):
@@ -100,9 +102,11 @@ class AppProcess:
         return ProcessMatcher(cls.base_command() + list(args)).start_if_not_running(**popen_kwargs)
 
     @classmethod
-    def terminate_cmd(cls, *args, compare="subset", wait=False, timeout=5, kill_timeout=3, recursive=False):
+    def terminate_cmd(cls, *args, compare="subset", wait=False, timeout=5, kill_timeout=3, recursive=False, exclude_self=False):
         matcher = ProcessMatcher(cls.base_command() + list(args))
         procs = matcher.find_by_args_subset() if compare == "subset" else matcher.find_by_args_exact()
+        if exclude_self:
+            procs = [p for p in procs if p.pid != os.getpid()]
         AppLogger.info(f"terminate_cmd: {len(procs)} processes found (wait={wait})")
         if recursive:
             cls.terminate_tree(procs, timeout=timeout, kill_timeout=kill_timeout)
@@ -198,18 +202,24 @@ class AppProcess:
         cls.terminate_and_wait(procs, timeout=timeout, kill_timeout=kill_timeout)
         return len(procs)
 
+    @classmethod
+    def ensure_tray(cls):
+        if cls.get_by_args_subset("--tray"):
+            return False
+        cls.new_main("--tray")
+        return True
+
     @staticmethod
     def _in_venv():
         return sys.prefix != getattr(sys, "base_prefix", sys.prefix)
 
     @staticmethod
     def base_command():
-        main_path = os.path.abspath(sys.argv[0])
         exe = sys.executable
         base_exe = getattr(sys, "_base_executable", None)
         if base_exe and AppProcess._in_venv() and os.path.normcase(base_exe) != os.path.normcase(exe):
             exe = base_exe
-        return [exe, main_path]
+        return [exe, MAIN_SCRIPT]
 
     @staticmethod
     def new_main(*args, extra_env=None, **popen_kwargs):

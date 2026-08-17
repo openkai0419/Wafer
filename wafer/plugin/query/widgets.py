@@ -12,6 +12,22 @@ from ...ui.popups import PopupBase
 _STATE_NAMESPACE = "filters/active_keys"
 
 
+class KeyStore(QtCore.QObject):
+    updated = QtCore.Signal(list)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._data: list[tuple[str, int]] = []
+
+    @property
+    def data(self) -> list[tuple[str, int]]:
+        return self._data
+
+    def set_data(self, results: list[tuple[str, int]]):
+        self._data = results
+        self.updated.emit(results)
+
+
 def _split_prefix(key: str) -> tuple[str, str]:
     dot = key.find(".")
     if dot > 0:

@@ -7,6 +7,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from ..plugin.panel.base import BasePanelPlugin
 from ..utils.formatting import dpix
+from ..utils.logs import AppLogger
 from ..core.lang.manager import t
 from ..core.color.theme import ThemeManager
 
@@ -192,7 +193,7 @@ class LogPanel(QtWidgets.QWidget):
             current.scroll_to_bottom()
 
     def append_log(self, level: str, text: str, src: str = "", db: str = ""):
-        src = src or f"viewer-{os.getpid()}"
+        src = src or f"{AppLogger._role or 'app'}-{os.getpid()}"
         entry = {
             "time": datetime.now().strftime("%H:%M:%S.%f")[:-3],
             "level": level,
@@ -264,8 +265,6 @@ class LogPanelPlugin(BasePanelPlugin):
     SOURCE = "Builtin"
 
     def create_widget(self):
-        from ..utils.logs import AppLogger
-
         panel = LogPanel()
         AppLogger.on_debug.connect(lambda t: panel._log_signal.emit("debug", t))
         AppLogger.on_info.connect(lambda t: panel._log_signal.emit("info", t))

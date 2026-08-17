@@ -1,0 +1,173 @@
+:root {
+  --bg: #1e1e1e;
+  --bg2: #252526;
+  --border: #3c3c3c;
+  --fg: #ddd;
+  --accent: #4a9eff;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Segoe UI", sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+}
+
+#app { display: flex; height: 100vh; }
+
+#sidebar {
+  width: 240px;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+#sidebar.collapsed { display: none; }
+
+#sidebar-resizer {
+  width: 6px;
+  cursor: pointer;
+  background: var(--border);
+  flex-shrink: 0;
+}
+#sidebar-resizer:hover { background: var(--accent); }
+#sidebar-resizer.hidden { display: none; }
+
+#sidebar-toggle {
+  position: absolute;
+  top: 8px;
+  left: 4px;
+  z-index: 10;
+  width: 22px;
+  height: 28px;
+  padding: 0;
+}
+#sidebar-toggle.hidden { display: none; }
+
+#db-select { margin: 8px; flex-shrink: 0; }
+
+select, input, button {
+  background: #333;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+button { cursor: pointer; }
+button:hover { border-color: var(--accent); }
+
+#folder-tree { flex: 1; overflow: auto; padding-bottom: 8px; }
+.folder-node { padding: 3px 6px; cursor: pointer; white-space: nowrap; display: flex; gap: 4px; }
+.folder-node:hover { background: #2f2f2f; }
+.folder-node.selected { background: #37373d; color: var(--accent); }
+.expander { width: 14px; text-align: center; color: #888; }
+.children.hidden { display: none; }
+
+#main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+#toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+}
+
+#search-input { flex: 1; max-width: 480px; }
+#status { color: #999; margin-left: auto; }
+
+#grid-scroll { flex: 1; overflow-y: auto; position: relative; }
+#grid-canvas { position: relative; }
+
+.cell {
+  position: absolute;
+  background: #2a2a2a;
+  overflow: hidden;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cell:hover { outline: 2px solid var(--accent); }
+.placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  color: #999;
+  word-break: break-all;
+  text-align: center;
+}
+.placeholder.video { color: var(--accent); }
+
+#meta-panel {
+  width: 320px;
+  flex-shrink: 0;
+  background: var(--bg2);
+  border-left: 1px solid var(--border);
+  overflow: auto;
+  padding: 8px;
+  z-index: 101;
+}
+#meta-panel.hidden { display: none; }
+#meta-content h3 { margin: 12px 0 4px; font-size: 13px; color: var(--accent); }
+#meta-content dl { margin: 0; }
+#meta-content dt { color: #999; font-size: 11px; margin-top: 6px; }
+#meta-content dd { margin: 0; word-break: break-all; white-space: pre-wrap; }
+
+#viewer {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.92);
+  z-index: 100;
+  display: flex;
+}
+#viewer.hidden { display: none; }
+#viewer-main { position: relative; flex: 1; min-width: 0; }
+#viewer-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#viewer-stage img, #viewer-stage video { max-width: 100%; max-height: 92vh; object-fit: contain; }
+#viewer-stage a { color: var(--accent); font-size: 16px; }
+#viewer-caption {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #ccc;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 4px 12px;
+  border-radius: 4px;
+  max-width: 90vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#viewer button {
+  position: absolute;
+  background: rgba(40, 40, 40, 0.8);
+  border: none;
+  color: var(--fg);
+  font-size: 20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+#viewer-close { top: 12px; right: 12px; }
+#viewer-info { top: 12px; right: 64px; }
+#viewer-prev { left: 12px; top: 50%; transform: translateY(-50%); }
+#viewer-next { right: 12px; top: 50%; transform: translateY(-50%); }

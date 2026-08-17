@@ -1,5 +1,4 @@
 import os
-import sys
 from pathlib import Path
 from natsort import natsorted, ns
 from platformdirs import PlatformDirs
@@ -74,15 +73,7 @@ def list_setting_db_names():
 
 
 def get_resource_path():
-    p = get_app_root_dir() / "_resources"
-    if not p.is_dir():
-        cwd_p = Path.cwd() / "_resources"
-        if cwd_p.is_dir():
-            from .logs import AppLogger
-
-            AppLogger.warning(f"_resources not found at {p}, falling back to cwd: {cwd_p}")
-            return cwd_p
-    return p
+    return get_app_root_dir() / "_resources"
 
 
 def stem(path):
@@ -90,11 +81,7 @@ def stem(path):
 
 
 def get_app_root_dir():
-    main_module = sys.modules.get("__main__")
-    if hasattr(main_module, "__file__"):
-        return Path(main_module.__file__).resolve().parent
-    else:
-        return Path.cwd()
+    return Path(__file__).resolve().parent.parent.parent
 
 
 def get_launcher_path():
@@ -118,7 +105,7 @@ def resolve_data_path(relative_path):
 
 
 def resolve_cache_path(relative_path):
-    return resolve_data_path(f"cache/{relative_path}")
+    return resolve_data_path(f".cache/{relative_path}")
 
 
 def resolve_temp_path(relative_path):

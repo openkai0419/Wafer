@@ -483,6 +483,15 @@ class WorkspaceStore:
 
         self._locked_update(_u)
 
+    def get_restore_webui(self) -> bool:
+        return bool(self._load_raw().get("restore_webui", False))
+
+    def set_restore_webui(self, value: bool) -> None:
+        def _u(raw):
+            raw["restore_webui"] = bool(value)
+
+        self._locked_update(_u)
+
     def reserve_next_window_slot(self, seed: dict[str, Any] | None = None) -> tuple[str, WindowSlot, bool]:
         def _u(raw):
             slots = raw.setdefault("slots", {})

@@ -149,7 +149,8 @@ def test_app_process_base_command():
     cmd = AppProcess.base_command()
     assert len(cmd) == 2
     assert os.path.isfile(cmd[0])
-    assert cmd[1] == os.path.abspath(sys.argv[0])
+    assert os.path.basename(cmd[1]) == "main.py"
+    assert os.path.isfile(cmd[1])
 
 
 def test_base_command_prefers_base_executable_in_venv(monkeypatch):

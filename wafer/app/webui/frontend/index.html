@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wafer WebUI</title>
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <select id="db-select"></select>
+    <div id="folder-tree"></div>
+  </aside>
+  <div id="sidebar-resizer" title="collapse sidebar"></div>
+  <button id="sidebar-toggle" title="show sidebar">›</button>
+  <main id="main">
+    <header id="toolbar">
+      <input id="search-input" type="search" placeholder="search... (Enter)">
+      <select id="sort-select"></select>
+      <button id="order-toggle" title="sort order">↑</button>
+      <span id="status"></span>
+    </header>
+    <div id="grid-scroll">
+      <div id="grid-canvas"></div>
+    </div>
+  </main>
+</div>
+<div id="viewer" class="hidden">
+  <div id="viewer-main">
+    <div id="viewer-stage"></div>
+    <div id="viewer-caption"></div>
+    <button id="viewer-prev">‹</button>
+    <button id="viewer-next">›</button>
+    <button id="viewer-info">i</button>
+    <button id="viewer-close">×</button>
+  </div>
+  <aside id="meta-panel" class="hidden">
+    <div id="meta-content"></div>
+  </aside>
+</div>
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

@@ -394,7 +394,9 @@ class Program
     static int LaunchApp(string appRoot, string[] args)
     {
         string runtime = Path.Combine(appRoot, "python", "wafer-pythonw.exe");
+        string exeName = Path.GetFileNameWithoutExtension(Assembly.GetExecutingAssembly().Location);
         string script = Path.Combine(appRoot, "main.py");
+        bool isWeb = exeName.IndexOf("Web", StringComparison.OrdinalIgnoreCase) >= 0;
         if (!File.Exists(runtime))
         {
             Console.Error.WriteLine("Runtime not found: " + runtime);
@@ -403,6 +405,10 @@ class Program
         }
         List<string> launchArgs = new List<string>();
         launchArgs.Add(script);
+        if (isWeb)
+        {
+            launchArgs.Add("--webui");
+        }
         launchArgs.AddRange(args);
         if (StartProcess(runtime, launchArgs.ToArray(), appRoot))
             return 0;

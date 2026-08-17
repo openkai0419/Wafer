@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -51,8 +52,14 @@ def test_runtime_packages_cover_root_requirements():
 def test_create_launchers_builds_windowed_launcher_and_uninstaller(tmp_path, monkeypatch):
     commands = []
 
+    def fake_run(cmd, check):
+        commands.append(cmd)
+        for part in cmd:
+            if str(part).startswith("/out:"):
+                Path(str(part)[5:]).write_bytes(b"exe")
+
     monkeypatch.setattr(build, "find_csc", lambda: "csc.exe")
-    monkeypatch.setattr(build.subprocess, "run", lambda cmd, check: commands.append(cmd))
+    monkeypatch.setattr(build.subprocess, "run", fake_run)
 
     build.create_launchers(tmp_path, "0.0.0")
 
@@ -64,6 +71,7 @@ def test_create_launchers_builds_windowed_launcher_and_uninstaller(tmp_path, mon
     assert "Wafer.exe" in command_text
     assert "Uninstaller.exe" in command_text
     assert "WaferConsole" not in command_text
+    assert (tmp_path / "Wafer-Web.exe").read_bytes() == (tmp_path / "Wafer.exe").read_bytes()
 
 
 def test_generate_third_party_notices_raises_on_subprocess_error(tmp_path, monkeypatch):

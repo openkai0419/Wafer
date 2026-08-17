@@ -92,7 +92,6 @@ EXPAND_RECURSIVE_QUEUE_LIMIT = 512
 EXPAND_RECURSIVE_DRAIN_MS = 6.0
 
 
-
 class RecursiveExpandJob:
     __slots__ = ("condition", "pending", "root_path", "scanned", "scheduled", "token")
 

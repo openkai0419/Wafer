@@ -121,6 +121,14 @@ class TestSlotLifecycle:
         store.set_restore_slot_ids([sid, "nonexistent"])
         assert store.get_restore_slot_ids() == [sid]
 
+    def test_restore_webui_roundtrip(self, tmp_path):
+        store = WorkspaceStore(path=str(tmp_path / "ws.json"))
+        assert store.get_restore_webui() is False
+        store.set_restore_webui(True)
+        assert store.get_restore_webui() is True
+        store.set_restore_webui(False)
+        assert store.get_restore_webui() is False
+
     def test_acquire_with_seed_populates_content(self, tmp_path):
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
         seed = {"ui": {"geo": "g"}, "path": {"database_name": "db"}, "query": {"sort_by": "name"}}

@@ -432,45 +432,66 @@ class TestDatabaseDetailWidget:
 
 
 class TestDatabaseManagerCommands:
-    def test_toggle_or_standalone_with_mainwindow(self):
-        from wafer.builtins.commands.tools import _toggle_or_standalone
+    def _swap_instance(self, name, value):
+        from wafer.core.commands.binding.instance_registry import InstanceRegistry
 
-        mock_ctx = MagicMock()
+        registry = InstanceRegistry.instance()
+        previous = list(registry._by_name.get(name, []))
+        if value is None:
+            registry._by_name.pop(name, None)
+        else:
+            registry._by_name[name] = [value]
+
+        def restore():
+            if previous:
+                registry._by_name[name] = previous
+            else:
+                registry._by_name.pop(name, None)
+
+        return restore
+
+    def test_open_panel_with_mainwindow(self):
+        from wafer.builtins.commands.panel import open_panel
+
         mock_w = MagicMock()
-        mock_ctx.get_instance = lambda name: mock_w if name == "MainWindow" else None
-        _toggle_or_standalone(mock_ctx, "Database Manager", lambda: None, "test")
+        mock_w._layout_manager.panel_names.return_value = ["Database Manager"]
+        restore = self._swap_instance("MainWindow", mock_w)
+        try:
+            open_panel(name="Database Manager")
+        finally:
+            restore()
         mock_w._layout_manager.toggle_panel.assert_called_once_with("Database Manager")
 
-    def test_toggle_or_standalone_without_mainwindow(self, qtbot, monkeypatch):
-        from PySide6 import QtCore
-        from wafer.builtins.commands.tools import _toggle_or_standalone, _standalone_dialogs
+    def test_open_panel_standalone_without_mainwindow(self, monkeypatch):
+        from wafer.builtins.commands.panel import open_panel
+        from wafer.builtins.database_manager.widget import DatabaseManagerPlugin
+        from wafer.plugin.panel.handler import panel_registry
 
-        class _FakeStore:
-            def __init__(self, *a, **kw):
-                pass
+        captured = {}
 
-            def save(self, *a, **kw):
-                pass
+        def fake_open(factory, title, key, size=None, parent=None):
+            captured.update(title=title, key=key, size=size)
+            return object()
 
-            def restore(self, *a, **kw):
-                pass
-
-        monkeypatch.setattr(
-            "wafer.builtins.commands.tools.DialogLayoutStore",
-            _FakeStore,
-        )
-        mock_ctx = MagicMock()
-        mock_ctx.get_instance = lambda name: None
-        widget = QtWidgets.QWidget()
-        _toggle_or_standalone(mock_ctx, "Test Panel", lambda: widget, "test_toggle")
-        assert "test_toggle" in _standalone_dialogs
-        dlg = _standalone_dialogs["test_toggle"]
-        dlg.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
-        qtbot.addWidget(dlg)
+        monkeypatch.setattr("wafer.ui.layout.standalone.open_standalone", fake_open)
+        had = panel_registry.get(DatabaseManagerPlugin.NAME) is not None
+        if not had:
+            panel_registry.register(DatabaseManagerPlugin)
+        restore = self._swap_instance("MainWindow", None)
+        try:
+            open_panel(name="Database Manager")
+        finally:
+            restore()
+            if not had:
+                panel_registry._plugins.pop(DatabaseManagerPlugin.NAME, None)
+                panel_registry._instances.pop(DatabaseManagerPlugin.NAME, None)
+        assert captured["key"] == "database_manager"
+        assert captured["title"] == "Database Manager"
 
     def test_open_standalone_reuses_existing(self, qtbot, monkeypatch):
         from PySide6 import QtCore
-        from wafer.builtins.commands.tools import _open_standalone, _standalone_dialogs
+        from wafer.ui.layout import standalone
+        from wafer.ui.layout.standalone import open_standalone, _standalone_dialogs
 
         class _FakeStore:
             def __init__(self, *a, **kw):
@@ -482,19 +503,16 @@ class TestDatabaseManagerCommands:
             def restore(self, *a, **kw):
                 pass
 
-        monkeypatch.setattr(
-            "wafer.builtins.commands.tools.DialogLayoutStore",
-            _FakeStore,
-        )
+        monkeypatch.setattr(standalone, "DialogLayoutStore", _FakeStore)
         _standalone_dialogs.clear()
         w1 = QtWidgets.QWidget()
-        _open_standalone(lambda: w1, "Title", "reuse_key")
+        open_standalone(lambda: w1, "Title", "reuse_key")
         dlg1 = _standalone_dialogs.get("reuse_key")
         assert dlg1 is not None
         dlg1.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
         qtbot.addWidget(dlg1)
 
-        _open_standalone(lambda: QtWidgets.QWidget(), "Title", "reuse_key")
+        open_standalone(lambda: QtWidgets.QWidget(), "Title", "reuse_key")
         assert _standalone_dialogs["reuse_key"] is dlg1
 
 

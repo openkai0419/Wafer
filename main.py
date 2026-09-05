@@ -80,6 +80,11 @@ def _wait_install_then_load_plugins(app):
     load_plugins()
 
 
+def _ensure_tray_unless_pending():
+    if not installer_queue.has_pending_queue(get_plugin_dir()):
+        AppProcess.ensure_tray()
+
+
 def _enable_shared_opengl_contexts():
     from PySide6 import QtCore
 
@@ -199,7 +204,7 @@ def _entry_webui(args):
         host, port = WebUISettings().resolve_bind(args.host, args.port)
         with SafeProcessLock(f'{APP_DATA_DIR_NAME}_webui'):
             if not args.no_tray:
-                AppProcess.ensure_tray()
+                _ensure_tray_unless_pending()
             from wafer.app.webui.entry import run_headless, run_ui
             if args.no_ui:
                 from wafer.plugin.loader import load_plugins
@@ -237,8 +242,7 @@ def main():
         app = _create_app()
         if os.environ.pop('WAFER_REPLACE_TRAY', None):
             AppProcess.terminate_cmd('--tray', wait=True)
-        if not installer_queue.has_pending_queue(get_plugin_dir()):
-            AppProcess.ensure_tray()
+        _ensure_tray_unless_pending()
         _wait_install_then_load_plugins(app)
         from wafer.core.workspace import WorkspaceStore
         store = WorkspaceStore.instance()

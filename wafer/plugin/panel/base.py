@@ -15,6 +15,8 @@ class BasePanelPlugin(PluginBase, ABC):
     DISPLAY_NAME: str = ""
     CLOSABLE: bool = True
     SOURCE: str = "Plugin"
+    STANDALONE_AVAILABLE: bool = False
+    STANDALONE_SIZE: tuple[int, int] | None = None
 
     plugin_config: ClassVar[PluginConfig | None] = None
 

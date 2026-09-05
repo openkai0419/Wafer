@@ -37,6 +37,8 @@ class KeyFilterPanelPlugin(BasePanelPlugin):
     DEFAULT_ENABLED = True
     CLOSABLE = True
     PRIORITY = 40
+    STANDALONE_AVAILABLE = True
+    STANDALONE_SIZE = (600, 700)
 
     def create_widget(self) -> QtWidgets.QWidget:
         return KeyFilterWidget()

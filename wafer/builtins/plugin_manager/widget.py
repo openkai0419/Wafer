@@ -450,6 +450,8 @@ class PluginManagerPlugin(BasePanelPlugin):
     CLOSABLE = True
     PRIORITY = 0
     SOURCE = "Builtin"
+    STANDALONE_AVAILABLE = True
+    STANDALONE_SIZE = (550, 1000)
 
     def create_widget(self):
         return PluginManagerWidget()

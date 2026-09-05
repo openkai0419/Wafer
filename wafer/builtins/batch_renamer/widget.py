@@ -1880,6 +1880,8 @@ class BatchRenamerPlugin(BasePanelPlugin):
     DISPLAY_NAME = "Batch Renamer"
     PRIORITY = 0
     SOURCE = "Builtin"
+    STANDALONE_AVAILABLE = True
+    STANDALONE_SIZE = (600, 800)
 
     def save_ui_state(self):
         inst = BatchRenameWidget._instance_ref

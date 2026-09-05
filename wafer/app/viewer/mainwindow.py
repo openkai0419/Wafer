@@ -98,11 +98,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.start_ipc_listener()
         self._update_title()
         self.workspace_toolbar_widget.refresh()
-        if existed and entry:
-            self._restore_from_slot(entry)
-        else:
-            self.reload_database(self.get_last_used_db_name())
-        self._check_plugin_panel_prompt()
+        from ..startup import StartupTasks
+
+        def start(prompt):
+            if existed and entry:
+                self._restore_from_slot(entry, on_complete=prompt)
+            else:
+                self.reload_database(self.get_last_used_db_name(), on_complete=prompt)
+
+        StartupTasks().run(on_ready=start)
         self._run_panel_plugin_startups()
 
     @profiler.profile
@@ -173,24 +177,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._db_reload_cancel = None
         self._hide_loading()
         Notifier.error(f'Failed to load database "{name}"')
-
-    def _check_plugin_panel_prompt(self):
-        import os
-        from ...plugin.settings import _ini_path, PluginSettings
-        from ...plugin.loader import get_plugin_dir
-        from ...plugin.installer import needs_setup
-
-        def open_panel():
-            QtCore.QTimer.singleShot(0, lambda: self._layout_manager.toggle_panel("Plugin Manager"))
-
-        if not os.path.isfile(_ini_path()):
-            open_panel()
-            return
-        plugin_dir = get_plugin_dir()
-        missing = [f for f in PluginSettings().active_folders() if os.path.isdir(os.path.join(plugin_dir, f)) and needs_setup(os.path.join(plugin_dir, f))]
-        if missing:
-            AppLogger.warning(f"Enabled plugins need setup: {missing}. Opening Plugin Manager to install.")
-            open_panel()
 
     def _check_folder_callout(self, roots):
         if roots:
@@ -737,10 +723,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.grid_view.set_paths(paths, sources, aspects, keep_scroll=keep_scroll)
         self.file_list_provider.on_search_results(paths, sources)
 
-    def _restore_from_slot(self, entry: WindowSlot, skip_window_state=False):
+    def _restore_from_slot(self, entry: WindowSlot, skip_window_state=False, on_complete=None):
         def after_path():
             self.query_coord.restore(entry.query)
             self.ui_coord.restore(entry.ui, skip_window_state=skip_window_state)
+            if on_complete:
+                on_complete()
 
         self.path_coord.restore(entry.path, on_complete=after_path)
 

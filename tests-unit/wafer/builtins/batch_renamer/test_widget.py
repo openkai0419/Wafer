@@ -2799,41 +2799,61 @@ class TestDropFiles:
 
 
 class TestStandaloneLaunch:
-    def test_open_batch_renamer_toggles_panel_with_mainwindow(self):
-        from wafer.builtins.commands.tools import open_batch_renamer
+    def _swap_instance(self, name, value):
+        from wafer.core.commands.binding.instance_registry import InstanceRegistry
 
-        mock_ctx = MagicMock()
+        registry = InstanceRegistry.instance()
+        previous = list(registry._by_name.get(name, []))
+        if value is None:
+            registry._by_name.pop(name, None)
+        else:
+            registry._by_name[name] = [value]
+
+        def restore():
+            if previous:
+                registry._by_name[name] = previous
+            else:
+                registry._by_name.pop(name, None)
+
+        return restore
+
+    def test_open_panel_toggles_panel_with_mainwindow(self):
+        from wafer.builtins.commands.panel import open_panel
+
         mock_w = MagicMock()
-        mock_ctx.get_instance = lambda name: mock_w if name == "MainWindow" else None
-        open_batch_renamer(mock_ctx)
+        mock_w._layout_manager.panel_names.return_value = ["Batch Renamer"]
+        restore = self._swap_instance("MainWindow", mock_w)
+        try:
+            open_panel(name="Batch Renamer")
+        finally:
+            restore()
         mock_w._layout_manager.toggle_panel.assert_called_once_with("Batch Renamer")
 
-    def test_open_batch_renamer_standalone_without_mainwindow(self, qtbot, monkeypatch):
-        from wafer.builtins.commands.tools import open_batch_renamer, _standalone_dialogs
+    def test_open_panel_standalone_without_mainwindow(self, monkeypatch):
+        from wafer.builtins.commands.panel import open_panel
+        from wafer.builtins.batch_renamer.widget import BatchRenamerPlugin
+        from wafer.plugin.panel.handler import panel_registry
 
-        class _FakeStore:
-            def __init__(self, *a, **kw):
-                pass
+        captured = {}
 
-            def save(self, *a, **kw):
-                pass
+        def fake_open(factory, title, key, size=None, parent=None):
+            captured.update(title=title, key=key)
+            return object()
 
-            def restore(self, *a, **kw):
-                pass
-
-        monkeypatch.setattr(
-            "wafer.builtins.commands.tools.DialogLayoutStore",
-            _FakeStore,
-        )
-        _standalone_dialogs.pop("batch_renamer", None)
-        mock_ctx = MagicMock()
-        mock_ctx.get_instance = lambda name: None
-        with patch.object(BatchRenameWidget, "_start_async_init"):
-            open_batch_renamer(mock_ctx)
-        assert "batch_renamer" in _standalone_dialogs
-        dlg = _standalone_dialogs["batch_renamer"]
-        dlg.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
-        qtbot.addWidget(dlg)
+        monkeypatch.setattr("wafer.ui.layout.standalone.open_standalone", fake_open)
+        had = panel_registry.get(BatchRenamerPlugin.NAME) is not None
+        if not had:
+            panel_registry.register(BatchRenamerPlugin)
+        restore = self._swap_instance("MainWindow", None)
+        try:
+            open_panel(name="Batch Renamer")
+        finally:
+            restore()
+            if not had:
+                panel_registry._plugins.pop(BatchRenamerPlugin.NAME, None)
+                panel_registry._instances.pop(BatchRenamerPlugin.NAME, None)
+        assert captured["key"] == "batch_renamer"
+        assert captured["title"] == "Batch Renamer"
 
     def test_command_registered_with_star_scope(self):
         from wafer.builtins.commands.tools import ToolCommands

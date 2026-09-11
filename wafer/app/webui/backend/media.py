@@ -116,9 +116,7 @@ async def get_thumb(request: web.Request):
     cache = thumb_cache()
     executor = request.app[MEDIA_EXECUTOR]
     produce = functools.partial(build_thumbnail, logical, size)
-    cache_path = await asyncio.get_running_loop().run_in_executor(
-        executor, functools.partial(cache.get_or_create, key, produce, ".webp")
-    )
+    cache_path = await asyncio.get_running_loop().run_in_executor(executor, functools.partial(cache.get_or_create, key, produce, ".webp"))
     if cache_path is None:
         raise web.HTTPUnprocessableEntity(reason="thumbnail generation failed")
     return web.FileResponse(str(cache_path), headers={"Content-Type": "image/webp", "Cache-Control": "max-age=86400"})

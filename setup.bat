@@ -5,6 +5,7 @@ set ERRFLAG=0
 py -3.11 -m venv .venv
 call .venv\Scripts\activate.bat
 pip install -r requirements-dev.txt || set ERRFLAG=1
+playwright install chromium || set ERRFLAG=1
 
 if %ERRFLAG%==1 (
     echo.

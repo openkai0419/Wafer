@@ -12,13 +12,12 @@
     <select id="db-select"></select>
     <div id="folder-tree"></div>
   </aside>
-  <div id="sidebar-resizer" title="collapse sidebar"></div>
-  <button id="sidebar-toggle" title="show sidebar">›</button>
   <main id="main">
     <header id="toolbar">
+      <button id="sidebar-toggle" title="toggle sidebar" aria-label="toggle sidebar"></button>
       <input id="search-input" type="search" placeholder="search... (Enter)">
       <select id="sort-select"></select>
-      <button id="order-toggle" title="sort order">↑</button>
+      <button id="order-toggle" title="sort order" aria-label="sort order"></button>
       <span id="status"></span>
     </header>
     <div id="grid-scroll">
@@ -30,10 +29,12 @@
   <div id="viewer-main">
     <div id="viewer-stage"></div>
     <div id="viewer-caption"></div>
-    <button id="viewer-prev">‹</button>
-    <button id="viewer-next">›</button>
-    <button id="viewer-info">i</button>
-    <button id="viewer-close">×</button>
+    <button id="viewer-prev" title="previous" aria-label="previous"></button>
+    <button id="viewer-next" title="next" aria-label="next"></button>
+    <button id="viewer-menu" title="menu" aria-label="menu"></button>
+    <button id="viewer-info" title="info" aria-label="info"></button>
+    <button id="viewer-close" title="close" aria-label="close"></button>
+    <div id="viewer-menu-popup" class="hidden"></div>
   </div>
   <aside id="meta-panel" class="hidden">
     <div id="meta-content"></div>

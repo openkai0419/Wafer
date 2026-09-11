@@ -1,5 +1,6 @@
 import { getJson } from './api.js';
 import { load, save } from './store.js';
+import { setIcon } from './icons.js';
 
 export class FolderTree {
   constructor(el, onSelect) {
@@ -47,6 +48,7 @@ export class FolderTree {
     const expand = async (open) => {
       const nowOpen = open === undefined ? children.classList.contains('hidden') : open;
       children.classList.toggle('hidden', !nowOpen);
+      node.querySelector('.expander').classList.toggle('open', nowOpen);
       nowOpen ? this.expanded.add(path) : this.expanded.delete(path);
       save('expanded', [...this.expanded]);
       if (nowOpen && children.childElementCount === 0) {
@@ -75,7 +77,7 @@ export class FolderTree {
     node.style.paddingLeft = `${depth * 14 + 4}px`;
     const expander = document.createElement('span');
     expander.className = 'expander';
-    expander.textContent = path === null ? ' ' : '▸';
+    if (path !== null) setIcon(expander, 'chevron-right');
     const name = document.createElement('span');
     name.textContent = label;
     node.append(expander, name);

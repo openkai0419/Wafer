@@ -26,23 +26,29 @@ LAYERS: dict[str, dict] = {
         "label": "Layer 2: Smoke / Integration",
         "maxfail": 10,
     },
+    "webui": {
+        "paths": ["tests/webui/"],
+        "label": "Layer 3: WebUI E2E (Playwright)",
+        "maxfail": 10,
+        "timeout": 900,
+    },
     "benchmark": {
         "paths": ["tests/benchmark/"],
-        "label": "Layer 3: Benchmark",
+        "label": "Layer 4: Benchmark",
         "maxfail": 5,
         "extra_args": ["-m", "benchmark", "--timeout=0"],
         "timeout": 3600,
     },
     "setup": {
         "paths": ["tests/smoke/test_extension_install.py", "tests/smoke/test_extension_verify.py"],
-        "label": "Layer 4: Extension Setup",
+        "label": "Layer 5: Extension Setup",
         "maxfail": 5,
         "extra_args": ["-m", "setup", "--run-setup"],
         "timeout": 7800,
     },
 }
 
-DEFAULT_LAYERS = ["unit", "smoke"]
+DEFAULT_LAYERS = ["unit", "smoke", "webui"]
 
 _TRACEBACK_SEP = re.compile(r"^_{10,}$")
 _TRACEBACK_HEAD = re.compile(r"^Traceback \(most recent call last\):")

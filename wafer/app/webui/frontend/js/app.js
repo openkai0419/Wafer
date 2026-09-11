@@ -5,6 +5,7 @@ import { MetaPanel } from './meta.js';
 import { Viewer } from './viewer.js';
 import { connectEvents } from './ws.js';
 import { load, save } from './store.js';
+import { setIcon } from './icons.js';
 
 const state = {
   db: load('db', ''),
@@ -104,7 +105,7 @@ async function init() {
   }
   if (!sorts.sorts.includes(state.sort)) state.sort = sorts.sorts[0] || 'name';
   sortSelect.value = state.sort;
-  orderToggle.textContent = state.ascending ? '↑' : '↓';
+  setOrderIcon();
   searchInput.value = state.keywords;
   const dbs = await fetchDbs();
   for (const name of dbs) {
@@ -131,7 +132,7 @@ sortSelect.addEventListener('change', () => {
 orderToggle.addEventListener('click', () => {
   state.ascending = !state.ascending;
   save('ascending', state.ascending);
-  orderToggle.textContent = state.ascending ? '↑' : '↓';
+  setOrderIcon();
   runQuery();
 });
 searchInput.addEventListener('keydown', (e) => {
@@ -142,23 +143,26 @@ searchInput.addEventListener('keydown', (e) => {
   }
 });
 
+function setOrderIcon() {
+  setIcon(orderToggle, state.ascending ? 'chevron-up' : 'chevron-down');
+  orderToggle.setAttribute('aria-label', state.ascending ? 'sort ascending' : 'sort descending');
+}
+
 setupSidebar();
 
 function setupSidebar() {
   const sidebar = document.getElementById('sidebar');
-  const resizer = document.getElementById('sidebar-resizer');
   const toggle = document.getElementById('sidebar-toggle');
 
   const setCollapsed = (collapsed) => {
     sidebar.classList.toggle('collapsed', collapsed);
-    resizer.classList.toggle('hidden', collapsed);
-    toggle.classList.toggle('hidden', !collapsed);
+    setIcon(toggle, collapsed ? 'chevron-right' : 'chevron-left');
+    toggle.setAttribute('aria-label', collapsed ? 'show sidebar' : 'hide sidebar');
     save('sidebarCollapsed', collapsed);
   };
 
   setCollapsed(load('sidebarCollapsed', false));
-  resizer.addEventListener('click', () => setCollapsed(true));
-  toggle.addEventListener('click', () => setCollapsed(false));
+  toggle.addEventListener('click', () => setCollapsed(sidebar.classList.contains('collapsed') === false));
 }
 
 let refreshTimer = null;

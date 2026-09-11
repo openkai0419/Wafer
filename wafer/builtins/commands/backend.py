@@ -41,7 +41,7 @@ def open_settings(ctx=None):
     port_spin.setRange(1, 65535)
     port_spin.setValue(settings.port())
 
-    note = QtWidgets.QLabel("\"All interfaces\" exposes the WebUI to your network. Securing access is your responsibility.\nChanges apply after restarting the WebUI.")
+    note = QtWidgets.QLabel('"All interfaces" exposes the WebUI to your network. Securing access is your responsibility.\nChanges apply after restarting the WebUI.')
     note.setWordWrap(True)
 
     buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Cancel)

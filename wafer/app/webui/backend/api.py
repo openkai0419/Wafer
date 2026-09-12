@@ -169,6 +169,20 @@ async def get_folders(request: web.Request):
     return web.json_response({"folders": list_subfolders(parent, ignored)})
 
 
+@routes.get("/api/keys")
+async def get_keys(request: web.Request):
+    db = request.query.get("db", "")
+    if not db:
+        raise web.HTTPBadRequest(reason="db is required")
+    service_hub = request.app[QUERY_SERVICE]
+    try:
+        service = service_hub.db(db)
+    except KeyError:
+        raise web.HTTPNotFound(reason=f"unknown db: {db}") from None
+    keys = await service.run(service_hub.composer.list_all_keys, service.engine, [], True)
+    return web.json_response({"keys": [[key, count] for key, count in keys]})
+
+
 @routes.get("/api/filters")
 async def get_filters(request: web.Request):
     filters = [{"name": cls.NAME, "display_name": cls.DISPLAY_NAME or cls.NAME} for cls in filter_registry.list_all() if not cls.INTERNAL_FILTER]

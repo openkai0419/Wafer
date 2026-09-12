@@ -4,21 +4,31 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Wafer WebUI</title>
+<link rel="icon" href="/favicon.ico">
 <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
 <div id="app">
   <aside id="sidebar">
-    <select id="db-select"></select>
+    <div id="sidebar-header">
+      <button id="settings-btn" title="settings" aria-label="settings"></button>
+      <select id="db-select"></select>
+    </div>
     <div id="folder-tree"></div>
   </aside>
   <main id="main">
     <header id="toolbar">
       <button id="sidebar-toggle" title="toggle sidebar" aria-label="toggle sidebar"></button>
+      <button id="key-picker" title="search keys" aria-label="search keys"></button>
       <input id="search-input" type="search" placeholder="search... (Enter)">
       <select id="sort-select"></select>
       <button id="order-toggle" title="sort order" aria-label="sort order"></button>
       <span id="status"></span>
+      <div id="key-popup" class="hidden">
+        <div id="key-selected"></div>
+        <input id="key-search" type="search" placeholder="filter keys...">
+        <div id="key-catalog"></div>
+      </div>
     </header>
     <div id="grid-scroll">
       <div id="grid-canvas"></div>
@@ -39,6 +49,14 @@
   <aside id="meta-panel" class="hidden">
     <div id="meta-content"></div>
   </aside>
+</div>
+<div id="settings-modal" class="hidden">
+  <div id="settings-panel">
+    <div id="settings-title">Settings</div>
+    <label class="settings-row">thumbnail size (px)
+      <select id="thumb-size"></select>
+    </label>
+  </div>
 </div>
 <script type="module" src="/js/app.js"></script>
 </body>

@@ -1,6 +1,6 @@
-import { getItems, thumbUrl } from './api.js';
+import { getItems, thumbUrl, THUMB_SIZE_DEFAULT } from './api.js';
+import { load } from './store.js';
 
-const ROW_HEIGHT = 220;
 const GAP = 4;
 const PAGE = 200;
 const OVERSCAN = 600;
@@ -40,15 +40,16 @@ export class Grid {
     if (!this.aspects) return;
     const width = this.scroll.clientWidth - GAP;
     if (width <= 0) return;
+    const rowHeight = load('thumbSize', THUMB_SIZE_DEFAULT);
     this.rows = [];
     let start = 0, sum = 0, y = GAP;
     for (let i = 0; i < this.total; i++) {
       const a = Math.min(Math.max(this.aspects[i] || 1, 0.2), 5);
       sum += a;
-      const rowWidth = sum * ROW_HEIGHT + (i - start) * GAP;
+      const rowWidth = sum * rowHeight + (i - start) * GAP;
       if (rowWidth >= width || i === this.total - 1) {
-        const scale = rowWidth >= width ? (width - (i - start) * GAP) / (sum * ROW_HEIGHT) : 1;
-        const h = Math.round(ROW_HEIGHT * Math.min(scale, 1.5));
+        const scale = rowWidth >= width ? (width - (i - start) * GAP) / (sum * rowHeight) : 1;
+        const h = Math.round(rowHeight * Math.min(scale, 1.5));
         this.rows.push({ start, end: i, y, h });
         y += h + GAP;
         start = i + 1;

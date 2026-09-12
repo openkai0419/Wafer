@@ -1,3 +1,5 @@
+import { load } from './store.js';
+
 export async function getJson(path, params) {
   const url = params ? `${path}?${new URLSearchParams(params)}` : path;
   const res = await fetch(url);
@@ -29,6 +31,12 @@ export function fileUrl(db, path) {
   return `/api/file?${new URLSearchParams({ db, path })}`;
 }
 
-export function thumbUrl(db, path, size = 256) {
+export const THUMB_SIZE_DEFAULT = 256;
+
+export function thumbUrl(db, path, size = load('thumbSize', THUMB_SIZE_DEFAULT)) {
   return `/api/thumb?${new URLSearchParams({ db, path, size })}`;
+}
+
+export function getKeys(db) {
+  return getJson('/api/keys', { db });
 }

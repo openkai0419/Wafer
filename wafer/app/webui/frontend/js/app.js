@@ -1,6 +1,7 @@
-import { getAspects, getJson, postQuery } from './api.js';
+import { getAspects, getJson, postQuery, THUMB_SIZE_DEFAULT } from './api.js';
 import { FolderTree } from './foldertree.js';
 import { Grid } from './grid.js';
+import { KeyPicker } from './keypicker.js';
 import { MetaPanel } from './meta.js';
 import { Viewer } from './viewer.js';
 import { connectEvents } from './ws.js';
@@ -11,6 +12,7 @@ const state = {
   db: load('db', ''),
   folder: load('folder', null),
   keywords: load('keywords', ''),
+  keys: load('searchKeys', []),
   sort: load('sort', 'name'),
   ascending: load('ascending', true),
   queryId: '',
@@ -32,6 +34,7 @@ const viewer = new Viewer(
     const item = grid.item(viewer.index);
     if (item) meta.isOpen ? meta.hide() : meta.show(state.db, item);
   },
+  (item) => selectFolderOf(item),
 );
 const grid = new Grid(
   document.getElementById('grid-scroll'),
@@ -43,14 +46,27 @@ const tree = new FolderTree(document.getElementById('folder-tree'), (path) => {
   save('folder', path);
   runQuery();
 });
+const keyPicker = new KeyPicker(document.getElementById('key-picker'), document.getElementById('key-popup'), (keys) => {
+  state.keys = keys;
+  runQuery();
+});
+
+async function selectFolderOf(item) {
+  const source = (item.source || item.path).replace(/\\/g, '/');
+  const dir = source.slice(0, source.lastIndexOf('/'));
+  viewer.close();
+  if (!dir || !(await tree.reveal(dir))) status.textContent = 'folder not in tree';
+}
 
 function buildFilters() {
   const filters = [];
   if (state.folder) {
     filters.push({ name: 'directory', params: { directories: [state.folder], include_subfolders: true } });
   }
-  if (state.keywords) {
-    filters.push({ name: 'text', params: { keywords: state.keywords, keyword_separator: ' ', require_keys: false } });
+  if (state.keywords || state.keys.length) {
+    const params = { keywords: state.keywords, keyword_separator: ' ', require_keys: !state.keywords };
+    if (state.keys.length) params.keys = state.keys;
+    filters.push({ name: 'text', params });
   }
   return filters;
 }
@@ -78,6 +94,7 @@ async function runQuery() {
 async function switchDb(db, restoreFolder = false) {
   state.db = db;
   save('db', db);
+  keyPicker.setDb(db);
   if (!restoreFolder) {
     state.folder = null;
     save('folder', null);
@@ -149,6 +166,7 @@ function setOrderIcon() {
 }
 
 setupSidebar();
+setupSettings();
 
 function setupSidebar() {
   const sidebar = document.getElementById('sidebar');
@@ -165,9 +183,35 @@ function setupSidebar() {
   toggle.addEventListener('click', () => setCollapsed(sidebar.classList.contains('collapsed') === false));
 }
 
+function setupSettings() {
+  const button = document.getElementById('settings-btn');
+  const modal = document.getElementById('settings-modal');
+  const thumbSelect = document.getElementById('thumb-size');
+  setIcon(button, 'menu');
+  for (const px of [128, 192, 256, 384, 512, 768, 1024]) {
+    const opt = document.createElement('option');
+    opt.value = String(px);
+    opt.textContent = String(px);
+    thumbSelect.appendChild(opt);
+  }
+  thumbSelect.value = String(load('thumbSize', THUMB_SIZE_DEFAULT));
+  thumbSelect.addEventListener('change', () => {
+    save('thumbSize', Number(thumbSelect.value));
+    grid.relayout();
+  });
+  button.addEventListener('click', () => modal.classList.remove('hidden'));
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.classList.add('hidden');
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') modal.classList.add('hidden');
+  });
+}
+
 let refreshTimer = null;
 connectEvents((event) => {
   if (event.topic === 'update' && event.db === state.db) {
+    keyPicker.invalidate();
     clearTimeout(refreshTimer);
     refreshTimer = setTimeout(runQuery, 1500);
   } else if (event.topic === 'db.created' || event.topic === 'db.deleted') {

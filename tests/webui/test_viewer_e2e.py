@@ -62,3 +62,19 @@ def test_slideshow_advances_viewer(ready_page):
     interval.press("Tab")
     page.get_by_role("button", name="start slideshow").click()
     page.wait_for_function("document.querySelector('#viewer-caption').textContent.startsWith('2/')")
+
+
+def test_viewer_select_folder(ready_page):
+    page = ready_page
+    page.fill("#search-input", "c_cat")
+    page.press("#search-input", "Enter")
+    page.wait_for_function("document.querySelector('#status').textContent.startsWith('1 ')")
+    page.wait_for_selector("#grid-canvas .cell[title='c_cat.png']")
+    page.click("#grid-canvas .cell[title='c_cat.png']")
+    page.wait_for_selector("#viewer:not(.hidden)")
+    page.click("#viewer-menu")
+    page.get_by_role("button", name="select folder").click()
+    page.wait_for_selector("#viewer", state="hidden")
+    page.wait_for_selector(".folder-node.selected")
+    assert page.inner_text(".folder-node.selected") == "sub"
+    page.wait_for_function("document.querySelector('#status').textContent.startsWith('1 ')")

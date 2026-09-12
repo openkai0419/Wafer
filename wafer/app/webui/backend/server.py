@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from aiohttp import web
 
 from wafer.utils.logs import AppLogger
+from wafer.utils.paths import get_resource_path
 
 from . import api, events, media
 from .events import EVENT_HUB, EventHub
@@ -55,6 +56,10 @@ async def index(request: web.Request):
     return web.FileResponse(FRONTEND_DIR / "index.html")
 
 
+async def favicon(request: web.Request):
+    return web.FileResponse(get_resource_path() / "icon.ico")
+
+
 async def on_startup(app: web.Application):
     if app[WITH_EVENTS]:
         app[EVENT_HUB].start_node()
@@ -76,6 +81,7 @@ def create_app(with_events: bool = True, on_app_shutdown=None, on_dev_log=None, 
     app[MEDIA_EXECUTOR] = ThreadPoolExecutor(max_workers=4, thread_name_prefix="webmedia")
     app[EVENT_HUB] = EventHub(on_app_shutdown=on_app_shutdown, on_dev_log=on_dev_log)
     app.router.add_get("/", index)
+    app.router.add_get("/favicon.ico", favicon)
     app.add_routes(api.routes)
     app.add_routes(media.routes)
     app.add_routes(events.routes)

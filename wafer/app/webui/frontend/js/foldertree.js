@@ -25,17 +25,20 @@ export class FolderTree {
     }
     const data = await getJson('/api/folders', { db });
     for (const path of data.folders) this.el.appendChild(this.makeBranch(path, 0));
-    if (restorePath != null) await this.restore(restorePath);
+    if (restorePath != null) await this.reveal(restorePath);
   }
 
-  async restore(path) {
+  async reveal(path) {
     const parts = path.split('/');
     for (let i = 1; i < parts.length; i++) {
       const branch = this.branches.get(parts.slice(0, i).join('/'));
       if (branch) await branch.expand(true);
     }
     const target = this.branches.get(path);
-    if (target) this.select(target.node, path);
+    if (!target) return false;
+    this.select(target.node, path);
+    target.node.scrollIntoView({ block: 'nearest' });
+    return true;
   }
 
   makeBranch(path, depth) {

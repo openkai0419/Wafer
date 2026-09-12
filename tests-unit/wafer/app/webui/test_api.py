@@ -16,6 +16,13 @@ def test_dbs(client):
     assert jbody(body)["dbs"] == [DB]
 
 
+def test_favicon(client):
+    resp, body = client.get("/favicon.ico")
+    assert resp.status == 200
+    assert resp.content_type in ("image/vnd.microsoft.icon", "image/x-icon")
+    assert len(body) > 0
+
+
 def test_query_all(client):
     resp, body = client.post("/api/query", json={"db": DB})
     assert resp.status == 200
@@ -42,6 +49,11 @@ def test_query_invalid_json(client):
 def test_query_text_filter(client, query):
     qid, total = query(DB, filters=[{"name": "text", "params": {"keys": ["prompt"], "keywords": "cat"}}])
     assert total == 2
+
+
+def test_query_keys_only(client, query):
+    qid, total = query(DB, filters=[{"name": "text", "params": {"keys": ["prompt"], "keywords": "", "require_keys": True}}])
+    assert total == 4
 
 
 def test_query_directory_filter(client, dataset, query):
@@ -121,6 +133,28 @@ def test_filters_exclude_internal(client):
     assert "directory" in names
     assert "contained_files" not in names
     assert "source_children" not in names
+
+
+def test_keys(client):
+    resp, body = client.get("/api/keys", params={"db": DB})
+    assert resp.status == 200
+    keys = jbody(body)["keys"]
+    assert all(isinstance(k, str) and isinstance(n, int) for k, n in keys)
+    names = [k for k, _ in keys]
+    assert "prompt" in names
+    assert "path" in names
+    freqs = [n for _, n in keys]
+    assert freqs == sorted(freqs, reverse=True)
+
+
+def test_keys_unknown_db(client):
+    resp, _ = client.get("/api/keys", params={"db": "nope"})
+    assert resp.status == 404
+
+
+def test_keys_missing_db(client):
+    resp, _ = client.get("/api/keys")
+    assert resp.status == 400
 
 
 def test_sorts(client):

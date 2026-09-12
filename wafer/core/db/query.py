@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -282,7 +283,20 @@ def _kv_sort_join(meta_key: str, conn: sqlite3.Connection | None = None):
 class FileSearchEngine:
     def __init__(self, db_path):
         self.db_path = str(db_path)
-        self.conn = None
+        self._local = threading.local()
+        self._connections = []
+        self._lock = threading.Lock()
+
+    @property
+    def conn(self):
+        return getattr(self._local, "conn", None)
+
+    @conn.setter
+    def conn(self, value):
+        self._local.conn = value
+        if value is not None:
+            with self._lock:
+                self._connections.append(value)
 
     @profiler.profile
     def _connect_if_needed(self):
@@ -291,7 +305,7 @@ class FileSearchEngine:
         try:
             if not os.path.exists(self.db_path):
                 return False
-            conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True, check_same_thread=True)
+            conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True, check_same_thread=False)
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
             required = ("meta_info", "tags", "files", "files_full")
@@ -309,12 +323,14 @@ class FileSearchEngine:
             return False
 
     def close(self):
-        if self.conn is not None:
+        with self._lock:
+            conns, self._connections = self._connections, []
+        for conn in conns:
             try:
-                self.conn.close()
+                conn.close()
             except sqlite3.Error as e:
                 AppLogger.warning(f"FileSearchEngine close failed: {e}", exc=e)
-            self.conn = None
+        self._local = threading.local()
 
     def _normalize_path(self, path):
         if is_virtual_path(path):

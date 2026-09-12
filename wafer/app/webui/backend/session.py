@@ -50,7 +50,7 @@ class DbService:
     def __init__(self, name: str):
         self.name = name
         self.engine = FileSearchEngine(data_db_path(name))
-        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"webdb-{name}")
+        self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix=f"webdb-{name}")
 
     async def run(self, fn, *args):
         return await asyncio.get_running_loop().run_in_executor(self.executor, fn, *args)
@@ -65,8 +65,8 @@ class DbService:
         return rows[0]["path"], rows[0]["source"]
 
     def close(self):
-        self.executor.submit(self.engine.close).result()
         self.executor.shutdown(wait=True, cancel_futures=True)
+        self.engine.close()
 
 
 class QueryService:

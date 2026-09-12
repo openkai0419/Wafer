@@ -5,12 +5,14 @@ import { setIcon } from './icons.js';
 const MIN_SLIDESHOW_INTERVAL = 0.5;
 
 export class Viewer {
-  constructor(onIndexChange, onInfo) {
+  constructor(onIndexChange, onInfo, onSelectFolder) {
     this.el = document.getElementById('viewer');
     this.stage = document.getElementById('viewer-stage');
     this.caption = document.getElementById('viewer-caption');
     this.onIndexChange = onIndexChange;
+    this.onSelectFolder = onSelectFolder;
     this.index = -1;
+    this.item = null;
     this.total = 0;
     this.db = '';
     this.queryId = '';
@@ -54,6 +56,14 @@ export class Viewer {
       if (e.target !== button && !this.menu.contains(e.target)) this.menu.classList.add('hidden');
     });
 
+    const selectFolder = document.createElement('button');
+    selectFolder.className = 'menu-item';
+    selectFolder.textContent = 'select folder';
+    selectFolder.addEventListener('click', () => {
+      this.menu.classList.add('hidden');
+      if (this.item) this.onSelectFolder(this.item);
+    });
+
     this.slideshowToggle = document.createElement('button');
     this.slideshowToggle.className = 'menu-item';
     this.slideshowToggle.addEventListener('click', () => this.toggleSlideshow());
@@ -79,7 +89,7 @@ export class Viewer {
     input.addEventListener('change', apply);
     intervalRow.appendChild(input);
 
-    this.menu.append(this.slideshowToggle, intervalRow);
+    this.menu.append(selectFolder, this.slideshowToggle, intervalRow);
     this.updateMenu();
   }
 
@@ -147,6 +157,7 @@ export class Viewer {
       item = data.items[0];
     }
     if (!item || this.index !== index) return;
+    this.item = item;
     this.caption.textContent = `${index + 1}/${this.total}  ${item.name}`;
     const url = fileUrl(this.db, item.path);
     if (item.kind === 'image') {
@@ -185,6 +196,7 @@ export class Viewer {
     this.el.classList.add('hidden');
     this.stage.replaceChildren();
     this.index = -1;
+    this.item = null;
   }
 
   get isOpen() {

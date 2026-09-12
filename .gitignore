@@ -5,6 +5,7 @@ venv/
 .log/
 .ruff_cache/
 .temp/
+.superpowers/
 .packages/
 .pending/
 .pip_staging/

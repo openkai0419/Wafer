@@ -17,9 +17,12 @@ body {
   font-family: "Segoe UI", sans-serif;
   font-size: 13px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
 }
 
-#app { display: flex; height: 100vh; }
+#app { display: flex; flex: 1; min-height: 0; }
 
 #sidebar {
   width: 240px;

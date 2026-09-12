@@ -41,7 +41,7 @@ class QueryClient {
 
 ### `frontend/js/viewer.js`
 - 同様に `this.client` を保持。`open()` 内の `getItems` 直呼びを `this.client.items(index, 1)` に置き換え。
-- **バグ修正の核**: 取得処理を try/catch し、失敗時は `this.caption.textContent` にエラーを表示して安全に終了する（現状は無捕捉のPromise rejectionで無反応）。indexやstageは変更せず、次の正常な操作に備える。
+- **バグ修正の核**: 取得処理を try/catch し、失敗時は `this.caption.textContent` にエラーを表示して安全に終了する（現状は無捕捉のPromise rejectionで無反応）。`stage`（表示中の画像/動画）はそのまま残し、`index`は新しい値のまま維持する（次のNext/Prevで別のindexから再試行できるようにするため）。
 
 ### `frontend/js/ws.js`
 - `connectEvents(onEvent, onStatusChange)` に拡張。`onopen` で `onStatusChange('open')`、`onclose` で `onStatusChange('closed')` を呼ぶ。再接続バックオフのロジック自体は変更しない。

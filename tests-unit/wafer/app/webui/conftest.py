@@ -19,7 +19,7 @@ def app(dataset, monkeypatch, tmp_path):
     monkeypatch.setattr("wafer.app.webui.backend.api.setting_db_path", lambda name: str(root / "dirs" / f"{name}.db"))
     thumbs = tmp_path / "thumbs"
     thumbs.mkdir()
-    monkeypatch.setattr("wafer.app.webui.backend.media.thumb_cache_dir", lambda: str(thumbs))
+    monkeypatch.setattr("wafer.web.media.thumb_cache_dir", lambda: str(thumbs))
     from wafer.app.webui.backend.media import MEDIA_EXECUTOR
     from wafer.app.webui.backend.server import create_app
     from wafer.app.webui.backend.session import QUERY_SERVICE

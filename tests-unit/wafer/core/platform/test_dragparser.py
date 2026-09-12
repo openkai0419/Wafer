@@ -55,6 +55,18 @@ def test_mimedata_parser_prefers_local_urls_over_filegroupdescriptor(qtbot, tmp_
     assert str(items[0].source) == normalize_path(str(src))
 
 
+def test_mimedata_parser_ignores_invalid_filegroupdescriptor(monkeypatch):
+    monkeypatch.setattr("wafer.core.platform.dragparser.platform.system", lambda: "Windows")
+    mime = QtCore.QMimeData()
+    fmt = 'application/x-qt-windows-mime;value="FileGroupDescriptorW"'
+    mime.setData(fmt, QtCore.QByteArray())
+
+    parser = MimeDataParser()
+
+    assert parser.can_accept(mime) is True
+    assert parser.parse(mime) == []
+
+
 def test_file_saver_copies_and_moves_files_and_dirs(tmp_path):
     saver = FileSaver()
 

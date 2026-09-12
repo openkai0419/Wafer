@@ -35,9 +35,10 @@ def webui_base_url(tmp_path_factory):
     from extensions.image.loader import ImageFileLoader
     from extensions.zip.resolver import ZipImageLoader
     from wafer.app.webui.backend import api as backend_api
-    from wafer.app.webui.backend import media, session
+    from wafer.app.webui.backend import session
     from wafer.app.webui.backend.server import allowed_hosts_for, create_app
     from wafer.plugin.imageloader.handler import image_loader_resolver
+    from wafer.web import media
 
     root = tmp_path_factory.mktemp("webui_e2e")
     build_webui_dataset(root)

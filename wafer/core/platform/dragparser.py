@@ -5,6 +5,7 @@ import re
 from PySide6.QtCore import QMimeData
 from PySide6.QtGui import QImage
 
+from ...utils.logs import AppLogger
 from ...utils.paths import normalize_path, safe_exists, safe_getsize
 from .path_utils import is_http_url, sanitize_filename
 
@@ -71,7 +72,10 @@ class MimeDataParser:
         if platform.system() == "Windows" and not has_local_url:
             fmt = next((f for f in mime.formats() if f.startswith("application/x-qt-windows-mime") and "FileGroupDescriptor" in f), None)
             if fmt:
-                items.extend(self._parse_windows_clipboard(mime, fmt))
+                try:
+                    items.extend(self._parse_windows_clipboard(mime, fmt))
+                except ValueError as e:
+                    AppLogger.warning("Invalid Windows virtual-file drop data", exc=e)
                 if items:
                     return items
         if mime.hasImage():

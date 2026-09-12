@@ -23,6 +23,8 @@ tests/test_summary.txt
 .vscode/
 .sample/
 code.bat
+.claude/
+CLAUDE.md
 
 
 # Build artifacts

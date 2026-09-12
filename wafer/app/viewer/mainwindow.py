@@ -150,7 +150,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._dispatcher.invoke(lambda: self._apply_db_reload(sdb, roots, excluded, cancel, on_complete))
             except Exception as e:
                 AppLogger.error(f"Failed to load database: {name}", exc=e)
-                self._dispatcher.invoke(lambda _e=e: self._on_db_reload_failed(name, _e))
+                self._dispatcher.invoke(lambda _e=e: self._on_db_reload_failed(name, _e, on_complete))
 
         self._dispatcher.post(task, priority=8, cancel=cancel)
 
@@ -173,10 +173,12 @@ class MainWindow(QtWidgets.QMainWindow):
             QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
         self._check_folder_callout(roots)
 
-    def _on_db_reload_failed(self, name, exc):
+    def _on_db_reload_failed(self, name, exc, on_complete=None):
         self._db_reload_cancel = None
         self._hide_loading()
         Notifier.error(f'Failed to load database "{name}"')
+        if on_complete:
+            on_complete()
 
     def _check_folder_callout(self, roots):
         if roots:

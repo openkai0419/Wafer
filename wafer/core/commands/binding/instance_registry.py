@@ -116,6 +116,9 @@ class InstanceRegistry:
         xs = self.get_all(name)
         return xs[0] if xs else None
 
+    def get_host_window(self) -> Any:
+        return self.get_one("MainWindow") or self.get_one("WebUIWindow")
+
     def resolve_node(self):
         for name in ("MainWindow", "Tray"):
             inst = self.get_one(name)

@@ -32,6 +32,7 @@ export class KeyPicker {
     if (db === this.db) return;
     this.db = db;
     this.catalog = null;
+    this.loading = false;
   }
 
   invalidate() {
@@ -43,16 +44,18 @@ export class KeyPicker {
     this.renderSelected();
     this.searchEl.focus();
     if (this.catalog === null && !this.loading) {
+      const requestedDb = this.db;
       this.loading = true;
       this.catalogEl.textContent = 'loading...';
       try {
-        const data = await getKeys(this.db);
+        const data = await getKeys(requestedDb);
+        if (requestedDb !== this.db) return;
         this.catalog = data.keys;
       } catch (e) {
-        this.catalogEl.textContent = `error: ${e.message}`;
+        if (requestedDb === this.db) this.catalogEl.textContent = `error: ${e.message}`;
         return;
       } finally {
-        this.loading = false;
+        if (requestedDb === this.db) this.loading = false;
       }
     }
     this.renderCatalog();

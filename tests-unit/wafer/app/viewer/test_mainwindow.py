@@ -123,6 +123,30 @@ class TestOnDbContentUpdated:
         assert not hasattr(MainWindow, "_on_tags_updated_research")
 
 
+class TestOnDbReloadFailed:
+    def _make_win(self):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            win._db_reload_cancel = MagicMock()
+            win._hide_loading = MagicMock()
+            return win
+
+    def test_runs_on_complete_after_failure(self):
+        win = self._make_win()
+        prompt = MagicMock()
+        with patch("wafer.app.viewer.mainwindow.Notifier"):
+            win._on_db_reload_failed("db", RuntimeError("boom"), prompt)
+        prompt.assert_called_once_with()
+
+    def test_no_on_complete_is_safe(self):
+        win = self._make_win()
+        with patch("wafer.app.viewer.mainwindow.Notifier"):
+            win._on_db_reload_failed("db", RuntimeError("boom"))
+        assert win._db_reload_cancel is None
+
+
 class TestReloadFolderList:
     def _make_win(self):
         with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):

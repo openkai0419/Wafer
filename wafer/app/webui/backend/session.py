@@ -56,13 +56,10 @@ class DbService:
         return await asyncio.get_running_loop().run_in_executor(self.executor, fn, *args)
 
     def lookup_file(self, path: str) -> tuple[str, str] | None:
-        engine = self.engine
-        if not engine._connect_if_needed():
+        record = self.engine.get_file_record(path)
+        if not record:
             return None
-        rows = engine.fetch("SELECT path, source FROM files WHERE path = ?", [engine._normalize_path(path)])
-        if not rows:
-            return None
-        return rows[0]["path"], rows[0]["source"]
+        return record["path"], record["source"]
 
     def close(self):
         self.executor.shutdown(wait=True, cancel_futures=True)

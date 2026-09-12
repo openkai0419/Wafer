@@ -131,7 +131,7 @@ class TestWebUI:
         monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_scope", lambda self: None)
         monkeypatch.setattr(window_commands.installer_queue, "has_pending_queue", lambda _dir: False)
         monkeypatch.setattr(window_commands, "get_plugin_dir", lambda: "/ext")
-        monkeypatch.setattr(window_commands.AppProcess, "get_by_args_subset", staticmethod(lambda *a: []))
+        monkeypatch.setattr(window_commands.AppProcess, "get_by_args_subset", staticmethod(lambda *a: [object()] if a and a[0] == "--webui" else []))
 
         calls = []
         monkeypatch.setattr(window_commands.AppProcess, "force_close_all", staticmethod(lambda: calls.append("force")))
@@ -143,6 +143,23 @@ class TestWebUI:
         store.set_restore_webui.assert_called_once_with(True)
         assert calls == ["force", ("new_main", ())]
         webui.close.assert_called_once_with()
+
+    def test_restore_webui_from_viewer_when_webui_runs_separately(self, monkeypatch):
+        store = MagicMock()
+        store.get_active_slot_ids.return_value = ["s1"]
+        monkeypatch.setattr(window_commands, "WorkspaceStore", MagicMock(instance=staticmethod(lambda: store)))
+        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_scope", lambda self: None)
+        monkeypatch.setattr(window_commands.installer_queue, "has_pending_queue", lambda _dir: True)
+        monkeypatch.setattr(window_commands, "get_plugin_dir", lambda: "/ext")
+        monkeypatch.setattr(window_commands, "Notifier", MagicMock())
+        monkeypatch.setattr(window_commands.AppProcess, "get_by_args_subset", staticmethod(lambda *a: [object()] if a and a[0] == "--webui" else []))
+        monkeypatch.setattr(window_commands.AppProcess, "force_close_all", staticmethod(lambda: None))
+        monkeypatch.setattr(window_commands.AppProcess, "new_main", staticmethod(lambda *a: None))
+
+        win = MagicMock()
+        window_commands.restart_all(_Ctx(MainWindow=win))
+
+        store.set_restore_webui.assert_called_once_with(True)
 
     def test_open_webui_opens_browser_when_running(self, monkeypatch):
         monkeypatch.setattr(window_commands.AppProcess, "get_by_args_subset", staticmethod(lambda *a: [object()]))

@@ -505,7 +505,7 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
 
     def _restart_to_apply(self) -> None:
         reg = InstanceRegistry.instance()
-        host = reg.get_one("MainWindow") or reg.get_one("WebUIWindow")
+        host = reg.get_host_window()
         if host is None:
             AppLogger.warning("[Updater] Restart was requested but no host window is available")
             return

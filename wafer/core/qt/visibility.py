@@ -1,4 +1,6 @@
-from PySide6.QtCore import QEvent, QObject, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, Signal
+
+from .rate_limit import qt_debounce
 
 
 class WidgetVisibilityWatcher(QObject):
@@ -10,9 +12,6 @@ class WidgetVisibilityWatcher(QObject):
         super().__init__(widget)
         self._widget = widget
         self._visible = not widget.visibleRegion().isEmpty()
-        self._timer = QTimer(self)
-        self._timer.setSingleShot(True)
-        self._timer.timeout.connect(self._evaluate)
         widget.installEventFilter(self)
 
     def is_visible(self):
@@ -20,9 +19,10 @@ class WidgetVisibilityWatcher(QObject):
 
     def eventFilter(self, obj, event):
         if obj is self._widget and event.type() in self._TRIGGERS:
-            self._timer.start(0)
+            self._evaluate()
         return False
 
+    @qt_debounce(0)
     def _evaluate(self):
         visible = not self._widget.visibleRegion().isEmpty()
         if visible != self._visible:

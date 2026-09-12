@@ -49,8 +49,8 @@ class DiskCache:
             if tmp and os.path.exists(tmp):
                 try:
                     os.remove(tmp)
-                except OSError:
-                    pass
+                except OSError as e:
+                    AppLogger.warning(f"[disk_cache] temp cleanup failed: {tmp} ({e})")
         _touch(target)
         self._maybe_sweep()
         return target
@@ -67,7 +67,10 @@ class DiskCache:
         cutoff = time.time() - self.idle_seconds if self.idle_seconds is not None else None
         removed = 0
         entries: list[tuple[float, int, Path]] = []
-        for dirpath, _dirs, filenames in os.walk(self.root, onerror=lambda _e: None):
+        def _on_walk_error(e: OSError) -> None:
+            AppLogger.warning(f"[disk_cache] walk error under {self.root}: {e}")
+
+        for dirpath, _dirs, filenames in os.walk(self.root, onerror=_on_walk_error):
             base = Path(dirpath)
             for name in filenames:
                 if name.endswith(".tmp"):
@@ -75,7 +78,8 @@ class DiskCache:
                 path = base / name
                 try:
                     st = path.stat()
-                except OSError:
+                except OSError as e:
+                    AppLogger.warning(f"[disk_cache] stat failed: {path} ({e})")
                     continue
                 if cutoff is not None and st.st_mtime < cutoff:
                     removed += _unlink(path)
@@ -99,8 +103,8 @@ def _touch(path: Path) -> None:
     try:
         now = time.time()
         os.utime(path, (now, now))
-    except OSError:
-        pass
+    except OSError as e:
+        AppLogger.warning(f"[disk_cache] touch failed: {path} ({e})")
 
 
 def _unlink(path: Path) -> int:
@@ -110,5 +114,5 @@ def _unlink(path: Path) -> int:
     except FileNotFoundError:
         return 1
     except OSError as e:
-        AppLogger.debug(f"[disk_cache] unlink failed: {path} ({e})")
+        AppLogger.warning(f"[disk_cache] unlink failed: {path} ({e})")
         return 0

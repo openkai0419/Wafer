@@ -17,7 +17,8 @@ export class Grid {
     this.items = new Map();
     this.pending = new Set();
     this.cells = new Map();
-    this.scroll.addEventListener('scroll', () => this.render());
+    this._renderScheduled = false;
+    this.scroll.addEventListener('scroll', () => this.scheduleRender());
     new ResizeObserver(() => this.relayout()).observe(this.scroll);
     this.canvas.addEventListener('click', (e) => {
       const cell = e.target.closest('.cell');
@@ -66,6 +67,15 @@ export class Grid {
     const top = this.scroll.scrollTop - OVERSCAN;
     const bottom = this.scroll.scrollTop + this.scroll.clientHeight + OVERSCAN;
     return this.rows.filter((r) => r.y + r.h >= top && r.y <= bottom);
+  }
+
+  scheduleRender() {
+    if (this._renderScheduled) return;
+    this._renderScheduled = true;
+    requestAnimationFrame(() => {
+      this._renderScheduled = false;
+      this.render();
+    });
   }
 
   render() {

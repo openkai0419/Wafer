@@ -55,6 +55,6 @@ class TestWidgetVisibilityWatcher:
         events = []
         watcher.changed.connect(events.append)
         widget.resize(220, 220)
-        qtbot.waitUntil(lambda: not watcher._timer.isActive())
+        qtbot.wait(50)
         assert events == []
         assert watcher.is_visible() is True

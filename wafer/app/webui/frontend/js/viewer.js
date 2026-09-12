@@ -159,8 +159,13 @@ export class Viewer {
         this.caption.textContent = `error: ${e.message}`;
         return;
       }
+      if (!item) {
+        if (this.index !== index) return;
+        this.caption.textContent = 'error: item not found';
+        return;
+      }
     }
-    if (!item || this.index !== index) return;
+    if (this.index !== index) return;
     this.item = item;
     this.caption.textContent = `${index + 1}/${this.total}  ${item.name}`;
     const url = fileUrl(this.client.db, item.path);

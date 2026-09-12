@@ -14,10 +14,10 @@ export function connectEvents(onEvent, onStatusChange) {
     };
     ws.onopen = () => {
       retry = 1000;
-      if (onStatusChange) onStatusChange('open');
+      onStatusChange('open');
     };
     ws.onclose = () => {
-      if (onStatusChange) onStatusChange('closed');
+      onStatusChange('closed');
       setTimeout(connect, retry);
       retry = Math.min(retry * 2, 30000);
     };

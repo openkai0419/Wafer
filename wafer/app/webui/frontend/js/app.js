@@ -82,7 +82,7 @@ async function runQuery() {
     const aspects = await client.aspects();
     if (token !== queryToken) return;
     grid.setQuery(client, aspects);
-    viewer.setQuery(client, result.total);
+    viewer.setQuery(client, client.total);
     status.textContent = `${result.total} files`;
   } catch (e) {
     if (token === queryToken) status.textContent = `error: ${e.message}`;
@@ -219,8 +219,8 @@ connectEvents(
       location.reload();
     }
   },
-  (status) => {
-    connBanner.classList.toggle('hidden', status !== 'closed');
+  (connState) => {
+    connBanner.classList.toggle('hidden', connState !== 'closed');
   },
 );
 

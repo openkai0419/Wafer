@@ -78,3 +78,14 @@ def test_viewer_select_folder(ready_page):
     page.wait_for_selector(".folder-node.selected")
     assert page.inner_text(".folder-node.selected") == "sub"
     page.wait_for_function("document.querySelector('#status').textContent.startsWith('1 ')")
+
+
+def test_viewer_next_survives_backend_session_loss(ready_page, webui_query_service):
+    page = ready_page
+    _open_first(page)
+    page.wait_for_function("document.querySelector('#viewer-caption').textContent.startsWith('1/')")
+
+    webui_query_service._sessions.clear()
+
+    page.click("#viewer-next")
+    page.wait_for_function("document.querySelector('#viewer-caption').textContent.startsWith('2/')")

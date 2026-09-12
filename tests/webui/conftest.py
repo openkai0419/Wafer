@@ -11,6 +11,10 @@ pytest.importorskip("playwright.sync_api")
 from aiohttp import web
 
 from test_support.webui_dataset import DB_NAME, build_webui_dataset
+from wafer.app.webui.backend.session import QUERY_SERVICE
+
+
+_webui_state: dict = {}
 
 
 def _free_port() -> int:
@@ -65,6 +69,7 @@ def webui_base_url(tmp_path_factory):
 
         async def serve():
             app = create_app(with_events=False, allowed_hosts=allowed_hosts_for(host, port))
+            _webui_state["query_service"] = app[QUERY_SERVICE]
             runner = web.AppRunner(app)
             await runner.setup()
             await web.TCPSite(runner, host, port).start()
@@ -87,6 +92,11 @@ def webui_base_url(tmp_path_factory):
     state["loop"].call_soon_threadsafe(state["stop"].set)
     thread.join(timeout=10)
     mp.undo()
+
+
+@pytest.fixture(scope="session")
+def webui_query_service(webui_base_url):
+    return _webui_state["query_service"]
 
 
 @pytest.fixture

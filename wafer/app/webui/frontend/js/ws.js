@@ -1,4 +1,4 @@
-export function connectEvents(onEvent) {
+export function connectEvents(onEvent, onStatusChange) {
   let ws = null;
   let retry = 1000;
 
@@ -14,8 +14,10 @@ export function connectEvents(onEvent) {
     };
     ws.onopen = () => {
       retry = 1000;
+      if (onStatusChange) onStatusChange('open');
     };
     ws.onclose = () => {
+      if (onStatusChange) onStatusChange('closed');
       setTimeout(connect, retry);
       retry = Math.min(retry * 2, 30000);
     };

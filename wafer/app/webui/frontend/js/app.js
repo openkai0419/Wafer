@@ -1,4 +1,5 @@
-import { getAspects, getJson, postQuery, THUMB_SIZE_DEFAULT } from './api.js';
+import { getJson, THUMB_SIZE_DEFAULT } from './api.js';
+import { QueryClient } from './query.js';
 import { FolderTree } from './foldertree.js';
 import { Grid } from './grid.js';
 import { KeyPicker } from './keypicker.js';
@@ -15,8 +16,6 @@ const state = {
   keys: load('searchKeys', []),
   sort: load('sort', 'name'),
   ascending: load('ascending', true),
-  queryId: '',
-  total: 0,
 };
 
 const status = document.getElementById('status');
@@ -77,14 +76,13 @@ async function runQuery() {
   const token = ++queryToken;
   status.textContent = 'searching...';
   try {
-    const result = await postQuery(state.db, buildFilters(), state.sort, state.ascending);
+    const client = new QueryClient();
+    const result = await client.run(state.db, buildFilters(), state.sort, state.ascending);
     if (token !== queryToken) return;
-    const aspects = await getAspects(result.query_id);
+    const aspects = await client.aspects();
     if (token !== queryToken) return;
-    state.queryId = result.query_id;
-    state.total = result.total;
-    grid.setQuery(state.db, result.query_id, aspects);
-    viewer.setQuery(state.db, result.query_id, result.total);
+    grid.setQuery(client, aspects);
+    viewer.setQuery(client, result.total);
     status.textContent = `${result.total} files`;
   } catch (e) {
     if (token === queryToken) status.textContent = `error: ${e.message}`;
@@ -208,15 +206,22 @@ function setupSettings() {
   });
 }
 
+const connBanner = document.getElementById('conn-banner');
+
 let refreshTimer = null;
-connectEvents((event) => {
-  if (event.topic === 'update' && event.db === state.db) {
-    keyPicker.invalidate();
-    clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(runQuery, 1500);
-  } else if (event.topic === 'db.created' || event.topic === 'db.deleted') {
-    location.reload();
-  }
-});
+connectEvents(
+  (event) => {
+    if (event.topic === 'update' && event.db === state.db) {
+      keyPicker.invalidate();
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(runQuery, 1500);
+    } else if (event.topic === 'db.created' || event.topic === 'db.deleted') {
+      location.reload();
+    }
+  },
+  (status) => {
+    connBanner.classList.toggle('hidden', status !== 'closed');
+  },
+);
 
 init();

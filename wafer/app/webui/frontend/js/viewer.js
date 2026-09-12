@@ -1,4 +1,4 @@
-import { fileUrl, getItems } from './api.js';
+import { fileUrl } from './api.js';
 import { load, save } from './store.js';
 import { setIcon } from './icons.js';
 
@@ -14,8 +14,7 @@ export class Viewer {
     this.index = -1;
     this.item = null;
     this.total = 0;
-    this.db = '';
-    this.queryId = '';
+    this.client = null;
     this.slideshow = false;
     this.interval = load('slideshowInterval', 3);
     this.timer = null;
@@ -139,9 +138,8 @@ export class Viewer {
     this.open(next);
   }
 
-  setQuery(db, queryId, total) {
-    this.db = db;
-    this.queryId = queryId;
+  setQuery(client, total) {
+    this.client = client;
     this.total = total;
     this.close();
   }
@@ -153,13 +151,19 @@ export class Viewer {
     this.index = index;
     this.el.classList.remove('hidden');
     if (!item) {
-      const data = await getItems(this.queryId, index, 1);
-      item = data.items[0];
+      try {
+        const data = await this.client.items(index, 1);
+        item = data.items[0];
+      } catch (e) {
+        if (this.index !== index) return;
+        this.caption.textContent = `error: ${e.message}`;
+        return;
+      }
     }
     if (!item || this.index !== index) return;
     this.item = item;
     this.caption.textContent = `${index + 1}/${this.total}  ${item.name}`;
-    const url = fileUrl(this.db, item.path);
+    const url = fileUrl(this.client.db, item.path);
     if (item.kind === 'image') {
       const img = document.createElement('img');
       img.src = url;

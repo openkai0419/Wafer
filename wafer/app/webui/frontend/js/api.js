@@ -1,9 +1,16 @@
 import { load } from './store.js';
 
+export class ApiError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.status = status;
+  }
+}
+
 export async function getJson(path, params) {
   const url = params ? `${path}?${new URLSearchParams(params)}` : path;
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`${path}: ${res.status}`);
+  if (!res.ok) throw new ApiError(`${path}: ${res.status}`, res.status);
   return res.json();
 }
 
@@ -13,13 +20,13 @@ export async function postQuery(db, filters, sort, ascending) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ db, filters, sort, ascending }),
   });
-  if (!res.ok) throw new Error(`query: ${res.status}`);
+  if (!res.ok) throw new ApiError(`query: ${res.status}`, res.status);
   return res.json();
 }
 
 export async function getAspects(queryId) {
   const res = await fetch(`/api/query/${queryId}/aspects`);
-  if (!res.ok) throw new Error(`aspects: ${res.status}`);
+  if (!res.ok) throw new ApiError(`aspects: ${res.status}`, res.status);
   return new Float32Array(await res.arrayBuffer());
 }
 

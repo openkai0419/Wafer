@@ -1,4 +1,4 @@
-import { getItems, thumbUrl, THUMB_SIZE_DEFAULT } from './api.js';
+import { thumbUrl, THUMB_SIZE_DEFAULT } from './api.js';
 import { load } from './store.js';
 
 const GAP = 4;
@@ -10,8 +10,7 @@ export class Grid {
     this.scroll = scrollEl;
     this.canvas = canvasEl;
     this.onOpen = onOpen;
-    this.db = '';
-    this.queryId = '';
+    this.client = null;
     this.total = 0;
     this.rows = [];
     this.items = new Map();
@@ -26,9 +25,8 @@ export class Grid {
     });
   }
 
-  setQuery(db, queryId, aspects) {
-    this.db = db;
-    this.queryId = queryId;
+  setQuery(client, aspects) {
+    this.client = client;
     this.aspects = aspects;
     this.total = aspects.length;
     this.items.clear();
@@ -120,12 +118,12 @@ export class Grid {
 
   fillCell(cell, i) {
     const item = this.items.get(i);
-    if (!item || cell.dataset.filled === this.queryId + i) return;
-    cell.dataset.filled = this.queryId + i;
+    if (!item || cell.dataset.filled === `${this.client.id}:${i}`) return;
+    cell.dataset.filled = `${this.client.id}:${i}`;
     cell.title = item.name;
     const img = document.createElement('img');
     img.loading = 'lazy';
-    img.src = thumbUrl(this.db, item.path);
+    img.src = thumbUrl(this.client.db, item.path);
     img.onerror = () => {
       const label = document.createElement('div');
       label.className = `placeholder ${item.kind}`;
@@ -143,10 +141,10 @@ export class Grid {
     for (const page of pages) {
       if (this.pending.has(page)) continue;
       this.pending.add(page);
-      const queryId = this.queryId;
+      const client = this.client;
       try {
-        const data = await getItems(queryId, page * PAGE, PAGE);
-        if (queryId !== this.queryId) continue;
+        const data = await client.items(page * PAGE, PAGE);
+        if (client !== this.client) continue;
         for (const item of data.items) this.items.set(item.i, item);
         this.render();
       } catch (e) {

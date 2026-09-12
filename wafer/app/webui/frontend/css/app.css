@@ -291,3 +291,17 @@ button:hover { border-color: var(--accent); }
 }
 #settings-title { font-size: 14px; color: var(--accent); }
 .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+#conn-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: #b23b3b;
+  color: #fff;
+  text-align: center;
+  padding: 4px;
+  font-size: 12px;
+}
+#conn-banner.hidden { display: none; }

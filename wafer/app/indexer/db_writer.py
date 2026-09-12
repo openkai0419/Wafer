@@ -138,6 +138,10 @@ class DatabaseWriter:
         self._db.mark_dispatched(sources, collector)
 
     @profiler.profile
+    def mark_collected(self, sources, collector):
+        self._db.mark_collected(sources, collector)
+
+    @profiler.profile
     def reset_stale(self, collectors=None):
         self._db.reset_stale_dispatched(collectors)
 

@@ -3,6 +3,7 @@ import os
 import shutil
 import sqlite3
 import threading
+import time
 from pathlib import Path
 from collections.abc import Sequence
 
@@ -754,6 +755,24 @@ class FileDB:
                         """UPDATE collection_status SET status = 'dispatched'
                         WHERE source = ? AND collector = ? AND status = 'pending' """,
                         [(s, collector) for s in chunk],
+                    )
+            finally:
+                cur.close()
+
+    @profiler.profile
+    def mark_collected(self, sources, collector):
+        if not sources:
+            return
+        now = time.time()
+        with self._write_lock, self.conn:
+            cur = self.conn.cursor()
+            try:
+                for i in range(0, len(sources), 900):
+                    chunk = sources[i : i + 900]
+                    cur.executemany(
+                        """UPDATE collection_status SET status = 'ok', collected_at = ?
+                        WHERE source = ? AND collector = ? AND status IN ('pending', 'dispatched') """,
+                        [(now, s, collector) for s in chunk],
                     )
             finally:
                 cur.close()

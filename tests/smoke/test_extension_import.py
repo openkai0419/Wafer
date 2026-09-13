@@ -106,6 +106,10 @@ EXPECTED_PLUGINS = {
         ("filter", "ColorFilter"),
         ("key_value_panel", "ColorTagPanelPlugin"),
     },
+    "duplicate": {
+        ("parser", "FullHashParser"),
+        ("parser", "DuplicateParser"),
+    },
     "zip": {
         ("collector", "ZipCollectorPlugin"),
         ("viewer", "ZipViewerPlugin"),

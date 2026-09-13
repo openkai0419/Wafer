@@ -32,13 +32,22 @@ def test_parser_result_to_dict():
     assert d["status"] is True
     assert d["meta_info"] == {"k": "v"}
     assert "tags" not in d
-    assert "delete_keys" not in d
+    assert "delete_meta_keys" not in d
+    assert "delete_tag_keys" not in d
 
 
-def test_parser_result_with_delete_keys():
-    r = ParserResult(source="/a.png", status=True, delete_keys=["exif.parameters"])
+def test_parser_result_with_delete_meta_keys():
+    r = ParserResult(source="/a.png", status=True, delete_meta_keys=["exif.parameters"])
     d = r.to_dict()
-    assert d["delete_keys"] == ["exif.parameters"]
+    assert d["delete_meta_keys"] == ["exif.parameters"]
+    assert "delete_tag_keys" not in d
+
+
+def test_parser_result_with_delete_tag_keys():
+    r = ParserResult(source="/a.png", status=True, delete_tag_keys=["duplicate.has_duplicate"])
+    d = r.to_dict()
+    assert d["delete_tag_keys"] == ["duplicate.has_duplicate"]
+    assert "delete_meta_keys" not in d
 
 
 def test_parser_result_fail():
@@ -76,3 +85,38 @@ def test_inheritance():
     assert issubclass(BaseParserPlugin, BaseParser)
     assert issubclass(BaseSingletonParser, BaseParser)
     assert not issubclass(BaseParserPlugin, BaseSingletonParser)
+
+
+def test_parser_result_with_update_hash():
+    r = ParserResult(source="/a.png", status=True, update_hash="full")
+    d = r.to_dict()
+    assert d["update_hash"] == "full"
+    assert "update_hash" not in ParserResult(source="/a.png", status=True).to_dict()
+
+
+def test_query_db_without_db_name_raises():
+    parser = DummyParser()
+    assert parser.db_name == ""
+    with pytest.raises(RuntimeError):
+        parser.query_db("SELECT 1")
+
+
+def test_query_db_reads_assigned_database(tmp_path, monkeypatch):
+    from wafer.core.db.file_db import FileDB
+    import wafer.utils.paths as paths
+
+    db_path = tmp_path / "querydb.db"
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+    db.upsert_batches([("src1", "hash1", 100, 1.0)], [("src1", "src1", 1.0)], [], [])
+    db.close()
+    monkeypatch.setattr(paths, "data_db_path", lambda name: str(db_path))
+
+    parser = DummyParser()
+    parser.db_name = "querydb"
+    try:
+        assert parser.query_db("SELECT COUNT(*) FROM sources WHERE file_hash = ?", ("hash1",)) == [(1,)]
+    finally:
+        parser.shutdown()
+    assert parser._reader is None

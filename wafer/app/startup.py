@@ -3,6 +3,7 @@ class StartupTasks:
         self._headless = headless
 
     def run(self, on_ready=None) -> None:
+        self._verify_resources()
         if self._headless:
             self._log_update_check()
             return
@@ -13,6 +14,15 @@ class StartupTasks:
             from PySide6 import QtCore
 
             QtCore.QTimer.singleShot(0, self.prompt_plugin_setup)
+
+    @staticmethod
+    def _verify_resources() -> None:
+        from ..utils.logs import AppLogger
+        from ..utils.paths import get_resource_path
+
+        resources = get_resource_path()
+        if not resources.is_dir():
+            AppLogger.error(f"Resource directory is missing: {resources}. Translations, key bindings and icons will fail to load. Reinstall or run from the application root.")
 
     def _schedule_update_check(self) -> None:
         from ..builtins.updater.startup import schedule_startup_update_check

@@ -7,11 +7,13 @@ import time
 from pathlib import Path
 from collections.abc import Sequence
 
-from ...core.db.db_utils import apply_read_pragmas, build_basic_entries, connect_with_retry
+from ...core.db.db_utils import build_basic_entries, open_readonly
+from ...core.db.file_db import SOURCE_TRIGGER_KEYS
 from ...utils.logs import AppLogger
 from ...utils.paths import normalize_path
 from ...utils.profiling import profiler
 from .db_writer import DatabaseWriter
+from .receivers.parser_receiver import trigger_parser_pending
 from .watch.path_scope import contains_path_prefix, normalize_prefixes
 from .runtime.progress_aggregator import ProgressAggregator
 from .runtime.scheduler import TaskScheduler
@@ -45,14 +47,7 @@ class DirectoryScanner:
         self._current_token = CancelToken()
 
     def start(self):
-        uri = self._db_path.resolve().as_uri()
-        self._read_conn = connect_with_retry(
-            f"{uri}?mode=ro",
-            timeout=1.0,
-            uri=True,
-            check_same_thread=False,
-        )
-        apply_read_pragmas(self._read_conn)
+        self._read_conn = open_readonly(self._db_path)
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
@@ -234,7 +229,21 @@ class DirectoryScanner:
                 )
             )
         self._submit_pending_by_extension(paths)
+        self._submit_pending_by_source_keys(paths)
         AppLogger.info(f"[Scanner] Registered {len(paths)} files")
+
+    def _submit_pending_by_source_keys(self, paths: list[str]):
+        keys = {key for _, trigger_keys in self._parsers for key in trigger_keys if key in SOURCE_TRIGGER_KEYS}
+        if not keys:
+            return
+        source_keys = {path: keys for path in paths}
+        self._scheduler.submit(
+            Task.create(
+                "trigger_parsers",
+                priority=TaskPriority.SCAN,
+                run=lambda sk=source_keys: trigger_parser_pending(sk, self._writer),
+            )
+        )
 
     def _submit_pending_by_extension(self, paths: list[str]):
         if not self._collectors:

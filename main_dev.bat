@@ -1,6 +1,7 @@
 @echo off
 setlocal
-set "WAFER_DEV=1"
+rem set "WAFER_DEV=1"
+set "WAFER_MEMWATCH=trace"
 pushd "%~dp0"
 call main.bat %*
 set "EXITCODE=%ERRORLEVEL%"

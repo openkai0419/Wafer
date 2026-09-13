@@ -15,6 +15,7 @@ class TestResolveBadge:
         assert resolve_badge("exiftool") is None
         assert resolve_badge("ffmpeg") is None
         assert resolve_badge("zip") is None
+        assert resolve_badge("duplicate") is None
         assert resolve_badge("text_generation") is None
         assert resolve_badge("additional_filters") is None
         assert resolve_badge("additional_layout") is None
@@ -51,6 +52,6 @@ class TestBadgeSortKey:
 
 class TestKnownExtensions:
     def test_all_known_entries_present(self):
-        expected = {"image", "video", "animated", "color", "exiftool", "ffmpeg", "text_generation",
+        expected = {"image", "video", "animated", "color", "duplicate", "exiftool", "ffmpeg", "text_generation",
                     "additional_filters", "additional_layout", "wd14", "florence", "zip"}
         assert set(KNOWN_EXTENSIONS.keys()) == expected

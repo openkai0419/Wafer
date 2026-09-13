@@ -82,4 +82,4 @@ class WebUiImageParser(BaseSingletonParser):
         meta_info = parse_infotext(raw)
         if not meta_info:
             return ParserResult(source=path, status=False)
-        return ParserResult(source=path, status=True, meta_info=meta_info, delete_keys=[key])
+        return ParserResult(source=path, status=True, meta_info=meta_info, delete_meta_keys=[key])

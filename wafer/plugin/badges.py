@@ -12,6 +12,7 @@ KNOWN_EXTENSIONS: dict[str, ExtensionBadge | None] = {
     "video": ExtensionBadge.PREFERRED,
     "animated": ExtensionBadge.PREFERRED,
     "color": None,
+    "duplicate": None,
     "exiftool": None,
     "ffmpeg": None,
     "zip": None,

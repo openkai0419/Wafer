@@ -108,6 +108,9 @@ def _entry_viewer(app=None, slot_id=None):
     from wafer.app.viewer.mainwindow import MainWindow
     if constants.DEV_MODE:
         profiler.start()
+    if constants.MEMWATCH:
+        from wafer.utils.profiling import memwatch
+        memwatch.start(trace=constants.MEMWATCH_TRACE)
     if app is None:
         app = _create_app()
     window = MainWindow(get_icon(), slot_id=slot_id)

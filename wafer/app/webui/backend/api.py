@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import sqlite3
 from array import array
 
 from aiohttp import web
 
+from wafer.core.db.db_utils import open_readonly
 from wafer.plugin.query.handler import filter_registry, sort_registry
 from wafer.utils.logs import AppLogger
 from wafer.utils.paths import normalize_path, safe_is_dir, setting_db_path
@@ -113,7 +115,7 @@ def read_setting_folders(db_name: str) -> tuple[list[str], list[str]]:
     if not os.path.isfile(db_file):
         return [], []
     try:
-        con = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True)
+        con = open_readonly(db_file)
         try:
             roots = [r[0] for r in con.execute("SELECT path FROM parent_folders ORDER BY path")]
             ignored = [r[0] for r in con.execute("SELECT path FROM ignore_folders ORDER BY path")]
@@ -157,7 +159,8 @@ async def get_folders(request: web.Request):
         raise web.HTTPBadRequest(reason="db is required")
     if db not in request.app[QUERY_SERVICE].list_dbs():
         raise web.HTTPNotFound(reason=f"unknown db: {db}")
-    roots, ignored = read_setting_folders(db)
+    loop = asyncio.get_running_loop()
+    roots, ignored = await loop.run_in_executor(None, read_setting_folders, db)
     parent = request.query.get("path", "")
     if not parent:
         return web.json_response({"folders": roots})
@@ -166,7 +169,8 @@ async def get_folders(request: web.Request):
         raise web.HTTPForbidden(reason="path is outside of indexed folders")
     if not safe_is_dir(parent):
         raise web.HTTPNotFound(reason="folder not found")
-    return web.json_response({"folders": list_subfolders(parent, ignored)})
+    folders = await loop.run_in_executor(None, list_subfolders, parent, ignored)
+    return web.json_response({"folders": folders})
 
 
 @routes.get("/api/keys")

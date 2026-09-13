@@ -82,7 +82,7 @@ class TestParserResultsParsedCorrectly:
         assert len(parsed["collector_status"]) == 1
         assert parsed["collector_status"][0][2] == "fail"
 
-    def test_parser_delete_keys_captured(self):
+    def test_parser_delete_meta_keys_captured(self):
         results = [
             {
                 "source": "/test/img.png",
@@ -90,12 +90,29 @@ class TestParserResultsParsedCorrectly:
                 "status": True,
                 "parser": "novelai",
                 "meta_info": {"prompt": "a cat"},
-                "delete_keys": ["exif.Comment", "exif.Description"],
+                "delete_meta_keys": ["exif.Comment", "exif.Description"],
             }
         ]
         parsed = _parse_parser_batch(results)
         assert len(parsed["delete_entries"]) == 1
         assert parsed["delete_entries"][0][2] == ["exif.Comment", "exif.Description"]
+        assert parsed["delete_entries"][0][3] == []
+
+    def test_parser_delete_tag_keys_captured(self):
+        results = [
+            {
+                "source": "/test/img.png",
+                "path": "/test/img.png",
+                "status": True,
+                "parser": "duplicate",
+                "file_hash": "hash1",
+                "delete_tag_keys": ["duplicate.has_duplicate"],
+            }
+        ]
+        parsed = _parse_parser_batch(results)
+        assert len(parsed["delete_entries"]) == 1
+        assert parsed["delete_entries"][0][2] == []
+        assert parsed["delete_entries"][0][3] == ["duplicate.has_duplicate"]
 
 
 class TestParserToDBPipeline:

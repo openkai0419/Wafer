@@ -1,11 +1,10 @@
 import py_compile
-from unittest.mock import MagicMock, call
+from unittest.mock import ANY, MagicMock, call, patch
 
 import pytest
 
 from wafer.app.indexer.receivers.parser_receiver import (
     trigger_parser_pending,
-    _build_source_keys,
     _parse_batch,
 )
 from wafer.plugin.parser.handler import parser_resolver
@@ -108,39 +107,38 @@ def test_trigger_no_dispatch_when_no_match():
     dispatch.assert_not_called()
 
 
-def test_build_source_keys_meta_info():
-    data = {
-        "meta_info_entries": [
-            ("/a.png", "exif.Comment", "val", None),
-            ("/a.png", "exif.Width", "100", 100.0),
-            ("/b.png", "exif.Height", "200", 200.0),
-        ],
-        "tag_entries": [],
-    }
-    result = _build_source_keys(data)
-    assert result == {
+def test_parse_batch_source_keys_from_meta_info():
+    results = [
+        {"source": "/a.png", "parser": "exif", "status": True, "meta_info": {"Comment": "val", "Width": "100"}},
+        {"source": "/b.png", "parser": "exif", "status": True, "meta_info": {"Height": "200"}},
+    ]
+    parsed = _parse_batch(results)
+    assert parsed["source_keys"] == {
         "/a.png": {"exif.Comment", "exif.Width"},
         "/b.png": {"exif.Height"},
     }
 
 
-def test_build_source_keys_with_tags():
-    data = {
-        "meta_info_entries": [
-            ("/a.png", "exif.Comment", "val", None),
-        ],
-        "tag_entries": [
-            ("hash1", "wd14.general", "tags", None),
-        ],
-    }
-    result = _build_source_keys(data)
-    assert result["/a.png"] == {"exif.Comment"}
-    assert result["hash1"] == {"wd14.general"}
+def test_parse_batch_source_keys_of_tags_use_source_not_file_hash():
+    results = [
+        {"source": "/a.png", "parser": "wd14", "status": True, "file_hash": "hash1", "tags": {"general": "cat"}},
+    ]
+    parsed = _parse_batch(results)
+    assert parsed["tag_entries"] == [("hash1", "wd14.general", "cat", None)]
+    assert parsed["source_keys"] == {"/a.png": {"wd14.general"}}
 
 
-def test_build_source_keys_empty():
-    data = {"meta_info_entries": [], "tag_entries": []}
-    assert _build_source_keys(data) == {}
+def test_parse_batch_source_keys_use_source_for_virtual_path():
+    results = [
+        {"source": "/a.zip", "path": "/a.zip::img.png", "parser": "exif", "status": True, "meta_info": {"Comment": "v"}},
+    ]
+    parsed = _parse_batch(results)
+    assert parsed["meta_info_entries"][0][0] == "/a.zip::img.png"
+    assert parsed["source_keys"] == {"/a.zip": {"exif.Comment"}}
+
+
+def test_parse_batch_source_keys_empty():
+    assert _parse_batch([])["source_keys"] == {}
 
 
 def test_parse_batch_blacklist_filters_meta_and_tags(monkeypatch):
@@ -181,6 +179,47 @@ def test_parse_batch_whitelist_keeps_only_selected(monkeypatch):
     data = _parse_batch(results)
     meta_keys = [e[1] for e in data["meta_info_entries"]]
     assert meta_keys == ["sd.seed"]
+
+
+def test_parse_batch_collects_update_hash():
+    results = [
+        {"source": "/a.png", "update_hash": "full1", "status": True, "parser": "full_hash"},
+        {"source": "/b.png", "status": True, "parser": "full_hash"},
+        {"source": "/c.png", "update_hash": "full3", "status": False, "parser": "full_hash"},
+    ]
+    data = _parse_batch(results)
+    assert data["hash_updates"] == [("/a.png", "full1")]
+
+
+def test_merge_parsed_merges_hash_updates():
+    from wafer.app.indexer.receivers.parser_receiver import _merge_parsed
+
+    first = _parse_batch([{"source": "/a.png", "update_hash": "full1", "status": True, "parser": "p"}])
+    second = _parse_batch([{"source": "/b.png", "update_hash": "full2", "status": True, "parser": "p"}])
+    merged = _merge_parsed([first, second])
+    assert merged["hash_updates"] == [("/a.png", "full1"), ("/b.png", "full2")]
+
+
+def test_flush_applies_hash_updates_before_writing_and_retriggers():
+    from wafer.app.indexer.receivers.parser_receiver import ParserReceiver
+
+    writer = MagicMock()
+    writer.update_source_hashes.return_value = ["/a.png"]
+    receiver = ParserReceiver(MagicMock(), writer, MagicMock())
+    receiver._buffer.append(
+        _parse_batch([{"source": "/a.png", "update_hash": "full1", "status": True, "parser": "_test_det_a"}]),
+        1,
+    )
+    with patch("wafer.app.indexer.receivers.parser_receiver.FLUSH_DELAY", 0), patch(
+        "wafer.app.indexer.receivers.parser_receiver.trigger_parser_pending"
+    ) as trigger:
+        receiver._flush()
+
+    writer.update_source_hashes.assert_called_once_with([("/a.png", "full1")])
+    assert writer.mock_calls.index(call.update_source_hashes([("/a.png", "full1")])) < writer.mock_calls.index(
+        call.upsert_parser_results([], [], [("/a.png", "_test_det_a", "ok", ANY)], [])
+    )
+    assert trigger.call_args[0][0] == {"/a.png": {"file_hash"}}
 
 
 def test_parse_batch_unfiltered_prefix_passes_all(monkeypatch):

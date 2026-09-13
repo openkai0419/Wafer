@@ -108,6 +108,8 @@ class WebServer:
         self.app: web.Application | None = None
         self.loop: asyncio.AbstractEventLoop | None = None
         self._stop_event: asyncio.Event | None = None
+        self._stop_requested = False
+        self._state_lock = threading.Lock()
         self._thread: threading.Thread | None = None
 
     @property
@@ -144,7 +146,11 @@ class WebServer:
             loop.close()
 
     async def _serve(self):
-        self._stop_event = asyncio.Event()
+        with self._state_lock:
+            if self._stop_requested:
+                AppLogger.info("WebUI server was stopped before it started serving.")
+                return
+            stop_event = self._stop_event = asyncio.Event()
         self.app = create_app(
             on_app_shutdown=self.on_app_shutdown,
             on_dev_log=self.on_dev_log,
@@ -159,15 +165,20 @@ class WebServer:
             AppLogger.warning(f"WebUI is exposed to the network on {self.host}. Access control is your responsibility (firewall/VPN/reverse proxy).")
         if self.on_started is not None:
             self.on_started()
-        await self._stop_event.wait()
+        await stop_event.wait()
         await runner.cleanup()
 
     def stop(self, timeout: float = 10.0):
-        loop, stop_event, thread = self.loop, self._stop_event, self._thread
+        with self._state_lock:
+            self._stop_requested = True
+            loop, stop_event = self.loop, self._stop_event
         if loop is not None and stop_event is not None and not loop.is_closed():
             loop.call_soon_threadsafe(stop_event.set)
+        thread = self._thread
         if thread is not None:
             thread.join(timeout=timeout)
+            if thread.is_alive():
+                AppLogger.error(f"WebUI server thread did not stop within {timeout}s.")
 
 
 def run_server(host: str, port: int, on_started=None):

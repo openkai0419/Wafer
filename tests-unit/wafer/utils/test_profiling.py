@@ -2,7 +2,7 @@ import py_compile
 
 import pytest
 
-from wafer.utils.profiling import profiler
+from wafer.utils.profiling import MemoryWatchdog, profiler
 
 
 @pytest.fixture(autouse=True)
@@ -60,3 +60,42 @@ def test_wrap_queued_records_wait(monkeypatch):
     assert info["total_time"] == 3.5
     assert info["self_time"] == 3.5
     assert info["count"] == 1
+
+
+class _FakeMemInfo:
+    def __init__(self, rss):
+        self.rss = rss
+
+
+class _FakeProc:
+    def __init__(self, values):
+        self._values = iter(values)
+        self._last = 0
+
+    def memory_info(self):
+        try:
+            self._last = next(self._values)
+        except StopIteration:
+            pass
+        return _FakeMemInfo(self._last)
+
+
+def test_memwatch_report_logs_rss_and_delta(monkeypatch):
+    mw = MemoryWatchdog(interval=10)
+    mw._proc = _FakeProc([100 * 1024 * 1024, 130 * 1024 * 1024])
+    mw._last_rss = mw._peak_rss = mw._proc.memory_info().rss
+    logs = []
+    monkeypatch.setattr("wafer.utils.profiling.AppLogger.info", lambda text: logs.append(text))
+
+    mw.report()
+
+    assert any("RSS=130.0MB" in line and "delta=+30.0MB/10s" in line for line in logs)
+
+
+def test_memwatch_set_enabled_toggle():
+    mw = MemoryWatchdog()
+    assert mw.enabled is False
+    mw.set_enabled(True)
+    assert mw.enabled is True
+    mw.set_enabled(False)
+    assert mw.enabled is False

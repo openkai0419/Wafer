@@ -108,5 +108,5 @@ class ComfyUiParser(BaseSingletonParser):
 
         if not meta_info:
             return ParserResult(source=path, status=False)
-        delete_keys = list(dict.fromkeys(used))
-        return ParserResult(source=path, status=True, meta_info=meta_info, delete_keys=delete_keys)
+        delete_meta_keys = list(dict.fromkeys(used))
+        return ParserResult(source=path, status=True, meta_info=meta_info, delete_meta_keys=delete_meta_keys)

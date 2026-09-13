@@ -6,7 +6,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 
 from ...core.db.file_db import FileDB
-from ...utils.hashes import fast_signature_hash
+from ...utils.hashes import HASH_FAILED, fast_signature_hash
 from ...utils.logs import AppLogger
 from ...utils.paths import normalize_path
 from ...utils.profiling import profiler
@@ -31,13 +31,23 @@ class DatabaseWriter:
 
     @profiler.profile
     def delete_sources(self, paths: Sequence[str]):
-        self._db.delete_sources_by_paths(paths)
+        impacted = self._db.delete_sources_by_paths(paths)
         self._db.try_checkpoint("PASSIVE")
+        self._retrigger_hash_group(impacted)
 
     @profiler.profile
     def delete_source_trees(self, paths: Sequence[str]):
-        self._db.delete_sources_by_path_prefixes(paths)
+        impacted = self._db.delete_sources_by_path_prefixes(paths)
         self._db.try_checkpoint("PASSIVE")
+        self._retrigger_hash_group(impacted)
+
+    def _retrigger_hash_group(self, sources: Sequence[str]):
+        if not sources:
+            return
+        from .receivers.parser_receiver import trigger_parser_pending
+
+        trigger_parser_pending({source: {"file_hash"} for source in sources}, self)
+        AppLogger.info(f"[DB] Re-triggered file_hash parsers for {len(sources)} sources sharing a deleted hash")
 
     @profiler.profile
     def rename_paths(self, pairs: Sequence[tuple[str, str]]) -> list[str]:
@@ -57,7 +67,7 @@ class DatabaseWriter:
 
         old_by_signature: dict[tuple[str, int | None], list[str]] = defaultdict(list)
         for path, (file_hash, size) in old_signatures.items():
-            if file_hash and file_hash != "f":
+            if file_hash and file_hash != HASH_FAILED:
                 old_by_signature[(file_hash, size)].append(path)
 
         new_by_signature: dict[tuple[str, int | None], list[str]] = defaultdict(list)
@@ -69,7 +79,7 @@ class DatabaseWriter:
             if not os.path.isfile(path):
                 continue
             file_hash = fast_signature_hash(path, stat_result.st_size, 256)
-            if file_hash and file_hash != "f":
+            if file_hash and file_hash != HASH_FAILED:
                 new_by_signature[(file_hash, stat_result.st_size)].append(path)
 
         pairs = self._pair_sources_by_signature(old_by_signature, new_by_signature)
@@ -112,6 +122,13 @@ class DatabaseWriter:
     def upsert_sources(self, source_entries, image_entries, meta_info_entries=()):
         self._db.upsert_basic_sources(source_entries, image_entries, meta_info_entries)
         self._db.try_checkpoint("PASSIVE")
+
+    @profiler.profile
+    def update_source_hashes(self, hash_updates: Sequence[tuple[str, str]]) -> list[str]:
+        impacted = self._db.update_source_hashes(hash_updates)
+        if impacted:
+            self._db.try_checkpoint("PASSIVE")
+        return impacted
 
     @profiler.profile
     def upsert_results(self, image_entries, meta_info_entries, tag_entries, collector_status_entries, *, cleanup: bool = True):

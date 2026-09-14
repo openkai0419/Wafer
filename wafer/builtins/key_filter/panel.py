@@ -272,6 +272,7 @@ class _FilterTab(QtWidgets.QWidget):
         self._sample_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Interactive)
         self._sample_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self._sample_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._sample_table.setWordWrap(False)
         self._sample_table.verticalHeader().setVisible(False)
         self._sample_table.setVisible(False)
 

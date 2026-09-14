@@ -75,8 +75,7 @@ def test_viewer_select_folder(ready_page):
     page.click("#viewer-menu")
     page.get_by_role("button", name="select folder").click()
     page.wait_for_selector("#viewer", state="hidden")
-    page.wait_for_selector(".folder-node.selected")
-    assert page.inner_text(".folder-node.selected") == "sub"
+    page.wait_for_function("document.querySelector('.folder-node.selected')?.textContent.trim() === 'sub'")
     page.wait_for_function("document.querySelector('#status').textContent.startsWith('1 ')")
 
 

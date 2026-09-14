@@ -67,6 +67,7 @@ class DiskCache:
         cutoff = time.time() - self.idle_seconds if self.idle_seconds is not None else None
         removed = 0
         entries: list[tuple[float, int, Path]] = []
+
         def _on_walk_error(e: OSError) -> None:
             AppLogger.warning(f"[disk_cache] walk error under {self.root}: {e}")
 

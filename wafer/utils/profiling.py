@@ -225,10 +225,7 @@ class MemoryWatchdog:
         self._peak_rss = max(self._peak_rss, rss)
         mb = 1024 * 1024
         role = AppLogger._role or "root"
-        AppLogger.info(
-            f"[MemWatch] {role}(pid={os.getpid()}) RSS={rss / mb:.1f}MB "
-            f"delta={delta / mb:+.1f}MB/{self.interval}s peak={self._peak_rss / mb:.1f}MB"
-        )
+        AppLogger.info(f"[MemWatch] {role}(pid={os.getpid()}) RSS={rss / mb:.1f}MB delta={delta / mb:+.1f}MB/{self.interval}s peak={self._peak_rss / mb:.1f}MB")
         if self.trace:
             self.report_tracemalloc()
 

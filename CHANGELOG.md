@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.7.7]
+### Added
+- WebUI: browser-based access to Wafer with a grid, folder tree, search, and viewer, plus a headless mode and its own management window.
+- `duplicate` extension: Full Hash and Duplicate parsers tag files that share identical content hashes.
+- Disk-backed cache for media (thumbnails/transcodes) served through the WebUI.
+
+### Changed
+- Grid views stop rendering and prefetching while hidden or collapsed, reducing background work.
+- Database Manager and Batch Renamer can be opened as standalone windows outside the main Viewer.
+- Startup update checks and plugin setup prompts now run through a shared flow used by both Viewer and WebUI.
+- Full Hash replaces the scan-time partial file signature with a full content hash, carrying existing tags to the new hash.
+
+### Fixed
+- The WebUI reconnects and recovers viewer navigation after a lost backend connection, showing a status banner.
+- Dropping malformed clipboard data no longer crashes the app.
+- Debounced and throttled UI callbacks no longer run against already-closed widgets.
+- Keyboard shortcuts no longer trigger while a text field has focus.
+
 ## [v0.7.6]
 ### Added
 - Batch Rename now shows original files and renamed results in separate synchronized previews.

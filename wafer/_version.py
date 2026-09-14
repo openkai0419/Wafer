@@ -6,7 +6,7 @@ import sys
 
 from . import _dev
 
-FALLBACK_VERSION = "0.7.7.dev1+g0d802f3"
+FALLBACK_VERSION = "0.7.3.dev1+g1d36add"
 
 _NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 

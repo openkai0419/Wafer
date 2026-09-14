@@ -74,7 +74,7 @@ def _bootstrap_plugins_for_tray():
 
 
 def _wait_install_then_load_plugins(app):
-    from wafer.ui.install_waiter import wait_for_install_complete
+    from wafer.qt.ui.install_waiter import wait_for_install_complete
 
     wait_for_install_complete(icon=get_icon(), app=app)
     load_plugins()
@@ -93,7 +93,7 @@ def _enable_shared_opengl_contexts():
 
 def _create_app():
     from PySide6 import QtWidgets
-    from wafer.core.qt.tooltip import install_instant_tooltips
+    from wafer.qt.common.tooltip import install_instant_tooltips
 
     _enable_shared_opengl_contexts()
     app = QtWidgets.QApplication(sys.argv)

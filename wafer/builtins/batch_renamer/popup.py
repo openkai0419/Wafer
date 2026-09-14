@@ -13,9 +13,9 @@ from ...plugin.rename.base import (
     style_spinbox,
 )
 from ...utils.formatting import dpix
-from ...core.color.theme import ThemeManager
+from ...qt.theme import ThemeManager
 from ...core.lang.manager import t
-from ...ui.popups import PopupBase
+from ...qt.ui.popups import PopupBase
 from .engine import RenameColumn
 
 

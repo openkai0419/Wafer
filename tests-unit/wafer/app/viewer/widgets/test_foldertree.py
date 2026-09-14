@@ -784,7 +784,7 @@ def test_cancel_pending_expands(qtbot):
     try:
         tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
         qtbot.addWidget(tree)
-        from wafer.core.qt.dispatcher import CancelToken
+        from wafer.qt.common.dispatcher import CancelToken
 
         token = CancelToken()
         tree.model_._pending_expands["dummy"] = token

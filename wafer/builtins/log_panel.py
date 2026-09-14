@@ -9,7 +9,7 @@ from ..plugin.panel.base import BasePanelPlugin
 from ..utils.formatting import dpix
 from ..utils.logs import AppLogger
 from ..core.lang.manager import t
-from ..core.color.theme import ThemeManager
+from ..qt.theme import ThemeManager
 
 MAX_LOG_LINES = 2000
 

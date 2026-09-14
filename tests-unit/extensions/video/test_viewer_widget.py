@@ -483,7 +483,7 @@ class TestVideoViewerWidgetDefaultState:
 class TestThemeIntegration:
     def test_control_bar_uses_palette_bg(self, qtbot):
         from extensions.video.viewer_widget import VideoControlBar
-        from wafer.core.color.theme import ThemeManager
+        from wafer.qt.theme import ThemeManager
 
         bar = VideoControlBar()
         palette = ThemeManager.instance().palette
@@ -498,7 +498,7 @@ class TestThemeIntegration:
 
     def test_apply_theme_updates_stylesheet(self, qtbot):
         from extensions.video.viewer_widget import VideoControlBar
-        from wafer.core.color.theme_palette import DARK, LIGHT
+        from wafer.qt.palette import DARK, LIGHT
 
         bar = VideoControlBar()
         bar.apply_theme(LIGHT)
@@ -511,7 +511,7 @@ class TestThemeIntegration:
 
     def test_volume_popup_theme_applied(self, qtbot):
         from extensions.video.viewer_widget import VolumePopup
-        from wafer.core.color.theme_palette import LIGHT
+        from wafer.qt.palette import LIGHT
 
         popup = VolumePopup()
         popup.apply_theme(LIGHT)
@@ -521,8 +521,8 @@ class TestThemeIntegration:
 
     def test_theme_change_propagates_to_control_bar(self, qtbot):
         from extensions.video.viewer_widget import VideoViewerWidget
-        from wafer.core.color.theme import ThemeManager
-        from wafer.core.color.theme_palette import LIGHT, DARK
+        from wafer.qt.theme import ThemeManager
+        from wafer.qt.palette import LIGHT, DARK
 
         w = VideoViewerWidget()
         tm = ThemeManager.instance()

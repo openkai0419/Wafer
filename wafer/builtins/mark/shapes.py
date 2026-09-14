@@ -6,7 +6,7 @@ import math
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QTransform
 
-from ...core.qt.badge_engine import register_badge_shape
+from ...qt.common.badge_engine import register_badge_shape
 
 
 DEFAULT_SHAPE_KEY = "circle"

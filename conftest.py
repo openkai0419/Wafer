@@ -71,7 +71,7 @@ def _record_cleanup_error(label: str, exc: BaseException) -> None:
 def _close_qt_widgets_after_test():
     yield
     try:
-        from wafer.core.qt.thread import grid_thumb_pool, grid_render_pool, utility_pool
+        from wafer.qt.common.thread import grid_thumb_pool, grid_render_pool, utility_pool
 
         _drain_pool(grid_thumb_pool.pool)
         _drain_pool(grid_render_pool.pool)
@@ -127,7 +127,7 @@ def _cleanup_background_resources():
     except Exception as e:
         _record_cleanup_error("terminate child processes", e)
     try:
-        from wafer.core.qt.thread import grid_thumb_pool, grid_render_pool, utility_pool
+        from wafer.qt.common.thread import grid_thumb_pool, grid_render_pool, utility_pool
 
         _drain_pool(grid_thumb_pool.pool)
         _drain_pool(grid_render_pool.pool)

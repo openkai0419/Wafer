@@ -10,7 +10,7 @@ from wafer.builtins.commands.panel import _find_standalone_panel, open_panel
 from wafer.builtins.updater import stage
 from wafer.builtins.updater.widget import PANEL_DISPLAY_NAME, UpdateNotifierWidget
 from wafer.core.commands.binding.instance_registry import InstanceRegistry
-from wafer.ui.layout import standalone
+from wafer.qt.ui.layout import standalone
 
 
 def _process_until(predicate, timeout_ms=3000):

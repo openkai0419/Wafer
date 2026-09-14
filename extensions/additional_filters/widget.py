@@ -4,9 +4,9 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.utils.formatting import dpix, display_prefixed_key
 from wafer.core.lang.manager import t
-from wafer.core.qt.icon_engine import themed_icon
-from wafer.core.color.theme import ThemeManager
-from wafer.ui.popups import PopupBase
+from wafer.qt.common.icon_engine import themed_icon
+from wafer.qt.theme import ThemeManager
+from wafer.qt.ui.popups import PopupBase
 
 from .filter import is_date_key
 

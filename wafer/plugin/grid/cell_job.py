@@ -2,7 +2,7 @@ from collections.abc import Callable
 
 from PySide6 import QtCore
 
-from ...core.qt.dispatcher import Dispatcher, CancelToken
+from ...qt.common.dispatcher import Dispatcher, CancelToken
 
 
 class CellJob:

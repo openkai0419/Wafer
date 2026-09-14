@@ -17,7 +17,7 @@ from ..plugin.rename.base import (
 )
 from ..utils.formatting import dpix
 from ..core.lang.manager import t
-from ..core.color.theme import ThemeManager
+from ..qt.theme import ThemeManager
 
 
 class NameSource(BaseRenameSourcePlugin):

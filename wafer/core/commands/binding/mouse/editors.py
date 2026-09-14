@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from PySide6 import QtCore, QtGui, QtWidgets
 from .....utils.formatting import dpix
-from .....core.lang.manager import t
+from ....lang.manager import t
 from .types import MouseActionKey, ClickType, MouseButton, ModifierKey
 from ...command.maker import MenuMaker
 from ...command.menu_builder import MenuBuilder
@@ -45,7 +45,7 @@ class MouseBindingEditor(BindingEditorBase):
         self.scroll = QtWidgets.QScrollArea(self.splitter)
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        from wafer.core.color.theme import ThemeManager
+        from wafer.qt.theme import ThemeManager
 
         _p = ThemeManager.instance().palette
         self.scroll.setStyleSheet(f"QScrollArea{{border:none;}} QScrollArea> QWidget{{background:{_p.bg_primary};}}")

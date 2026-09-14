@@ -6,8 +6,8 @@ import time
 
 import psutil
 
-from ..utils.logs import AppLogger
-from ..utils.paths import resolve_data_path
+from .logs import AppLogger
+from .paths import resolve_data_path
 
 _FILE_LOCK_TIMEOUT = 5.0
 _FILE_LOCK_RETRY = 0.02

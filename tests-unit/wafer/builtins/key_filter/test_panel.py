@@ -2,7 +2,7 @@ import pytest
 
 from PySide6 import QtWidgets
 
-from wafer.core.qt.dispatcher import Dispatcher
+from wafer.qt.common.dispatcher import Dispatcher
 from wafer.plugin.key_filter import KeyFilter, MODE_BLACKLIST, MODE_WHITELIST
 
 MODULE = "wafer.builtins.key_filter.panel"

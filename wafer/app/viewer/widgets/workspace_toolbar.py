@@ -5,16 +5,16 @@ from pathlib import PurePath
 
 from PySide6 import QtCore, QtWidgets
 
-from ....core.color.theme import ThemeManager
+from ....qt.theme import ThemeManager
 from ....core.commands.bridge import Command
 from ....core.lang.manager import t
-from ....core.qt.icon_engine import themed_icon
-from ....core.qt.dispatcher import Dispatcher
-from ....core.qt.thread import utility_pool
+from ....qt.common.icon_engine import themed_icon
+from ....qt.common.dispatcher import Dispatcher
+from ....qt.common.thread import utility_pool
 from ....core.workspace import WindowSlot, WorkspaceStore
-from ....ui.dialogs import ConfirmDialog
-from ....ui.widgets.eliding import ElidingLabel
-from ....ui.popups import PopupBase
+from ....qt.ui.dialogs import ConfirmDialog
+from ....qt.ui.widgets.eliding import ElidingLabel
+from ....qt.ui.popups import PopupBase
 from ....utils.formatting import dpix
 from ....utils.logs import AppLogger
 

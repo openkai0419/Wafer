@@ -10,7 +10,7 @@ from ...core.workspace import (
     UIPreset,
     WorkspaceStore,
 )
-from ...ui.dialogs import InputDialog
+from ...qt.ui.dialogs import InputDialog
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
 

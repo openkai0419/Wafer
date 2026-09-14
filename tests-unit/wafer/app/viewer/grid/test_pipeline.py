@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from PySide6 import QtCore, QtWidgets
-from wafer.core.qt.dispatcher import Dispatcher, CancelToken
+from wafer.qt.common.dispatcher import Dispatcher, CancelToken
 from wafer.app.viewer.grid.pipeline import GridPipeline
 from wafer.core.files.render_target import RenderPlan
 from wafer.plugin.layout.calc import LayoutData
@@ -23,7 +23,7 @@ def qapp():
 
 @pytest.fixture()
 def dispatcher(qapp):
-    from wafer.core.qt.thread import SimpleThreadPool
+    from wafer.qt.common.thread import SimpleThreadPool
 
     pool = SimpleThreadPool("test_pipeline")
     d = Dispatcher(pool=pool)

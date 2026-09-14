@@ -6,9 +6,9 @@ from ...utils.profiling import profiler
 from ...utils.logs import AppLogger
 from ...core.db.query import FileSearchEngine
 from ...plugin.query.composer import SearchComposer
-from ...core.qt.rate_limit import qt_debounce
-from ...core.qt.dispatcher import Dispatcher, CancelToken
-from ...core.qt.thread import utility_pool
+from ...qt.common.rate_limit import qt_debounce
+from ...qt.common.dispatcher import Dispatcher, CancelToken
+from ...qt.common.thread import utility_pool
 from ...plugin.query.handler import sort_registry
 from ...builtins.filters import TextFilter, DirectoryFilter, ContainedFilesFilter
 from ...builtins.sorts import NaturalPathSort

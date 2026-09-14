@@ -4,10 +4,10 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from ...utils.formatting import dpix, display_prefixed_key
 from ...core.lang.manager import t
-from ...core.qt.icon_engine import themed_icon
-from ...core.color.theme import ThemeManager
+from ...qt.common.icon_engine import themed_icon
+from ...qt.theme import ThemeManager
 from ...core.state import StateStore
-from ...ui.popups import PopupBase
+from ...qt.ui.popups import PopupBase
 
 _STATE_NAMESPACE = "filters/active_keys"
 

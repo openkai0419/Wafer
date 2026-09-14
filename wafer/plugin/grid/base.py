@@ -10,7 +10,7 @@ _error_image_cache = None
 def _get_error_image(size):
     global _error_image_cache
     if _error_image_cache is None:
-        from ...core.qt.pixmap import PixmapFactory
+        from ...qt.common.pixmap import PixmapFactory
 
         _error_image_cache = PixmapFactory.create_error_placeholder().toImage()
     return _error_image_cache.scaled(

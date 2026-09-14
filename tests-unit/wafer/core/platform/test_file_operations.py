@@ -28,7 +28,7 @@ def test_file_executor_overwrite_same_path_is_noop(tmp_path):
 
 
 def test_build_drop_plans_rejects_virtual_destination(tmp_path):
-    from wafer.core.platform.dragparser import ParsedItem
+    from wafer.qt.transfer.dragparser import ParsedItem
     from wafer.core.platform.file_operations import build_drop_plans
 
     src = tmp_path / "source.txt"

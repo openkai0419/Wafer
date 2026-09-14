@@ -6,15 +6,15 @@ from PySide6 import QtWidgets, QtCore, QtGui
 
 from wafer.plugin import BasePanelPlugin, KeyFilter
 from wafer.plugin.key_filter_dialog import FilterSaveConfirmDialog
-from wafer.core.qt.icon_engine import themed_icon
-from wafer.core.qt.image import numpy_to_qimage
+from wafer.qt.common.icon_engine import themed_icon
+from wafer.qt.common.image import numpy_to_qimage
 from wafer.plugin.imageloader.handler import image_loader_resolver
 from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
 from wafer.utils.notifier import Notifier
 from wafer.utils.paths import list_setting_db_names
 from wafer.core.lang.manager import t
-from wafer.core.qt.dispatcher import Dispatcher
+from wafer.qt.common.dispatcher import Dispatcher
 from .settings import parse_blacklist, wd14_config
 
 _DST = "collector-wd14"
@@ -97,7 +97,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         self._hsplitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self._hsplitter.splitterMoved.connect(lambda *_: self._update_thumb())
 
-        from wafer.core.color.theme import ThemeManager
+        from wafer.qt.theme import ThemeManager
 
         muted = ThemeManager.instance().palette.text_muted
 

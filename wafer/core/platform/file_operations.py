@@ -15,7 +15,7 @@ from ...utils.virtual_paths import is_virtual_path
 from .path_utils import check_copy_conflict, is_http_url, unique_path
 
 if TYPE_CHECKING:
-    from .dragparser import ParsedItem
+    from ...qt.transfer.dragparser import ParsedItem
 
 
 ProgressCallback = Callable[[int], None]

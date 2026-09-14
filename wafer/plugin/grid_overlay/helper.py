@@ -6,8 +6,8 @@ from collections.abc import Iterable
 from PySide6 import QtCore
 
 from ...core.db.query import FileSearchEngine
-from ...core.qt.dispatcher import Dispatcher
-from ...core.qt.thread import utility_pool
+from ...qt.common.dispatcher import Dispatcher
+from ...qt.common.thread import utility_pool
 from ...utils.logs import AppLogger
 
 

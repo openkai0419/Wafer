@@ -18,8 +18,8 @@ from ...utils.notifier import Notifier
 from ...core.lang.manager import t
 from ...utils.paths import list_setting_db_names, data_db_path
 from ...core.db.db_utils import apply_read_pragmas
-from ...core.qt.dispatcher import Dispatcher, CancelSlot
-from ...core.qt.icon_engine import themed_icon
+from ...qt.common.dispatcher import Dispatcher, CancelSlot
+from ...qt.common.icon_engine import themed_icon
 from ...app.viewer.widgets.loading_overlay import OverlayLoadingIndicator
 
 _CHECK_COL = 0

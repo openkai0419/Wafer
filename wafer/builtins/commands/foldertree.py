@@ -6,7 +6,7 @@ from ...core.commands.bridge import ActionKit, Menu
 from ...core.lang.manager import t
 from ...utils.paths import normalize_path
 from ...utils.logs import AppLogger
-from ...ui.dialogs import ConfirmDialog
+from ...qt.ui.dialogs import ConfirmDialog
 
 
 def _ctx_tree(ctx):

@@ -9,10 +9,10 @@ from ...core.lang.manager import t
 from ...utils.logs import AppLogger
 from ...utils.paths import normalize_path, containing_dir
 from ...utils.formatting import dpix
-from ...core.platform.dragparser import MimeDataParser
-from ...core.platform.paste import drop_files_with_ui, get_saved_drop_operation
-from ...core.qt.pixmap import PixmapFactory
-from ...ui.dialogs import ConfirmDialog, DropTargetDialog
+from ...qt.transfer.dragparser import MimeDataParser
+from ...qt.transfer.paste import drop_files_with_ui, get_saved_drop_operation
+from ...qt.common.pixmap import PixmapFactory
+from ...qt.ui.dialogs import ConfirmDialog, DropTargetDialog
 
 INTERNAL_MIME_TYPE = b"application/x-gridview-internal" + f"{os.getpid()}".encode()
 

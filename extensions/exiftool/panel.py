@@ -11,9 +11,9 @@ from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
 from wafer.utils.notifier import Notifier
 from wafer.core.lang.manager import t
-from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
-from wafer.core.qt.icon_engine import themed_icon
-from wafer.core.qt.image import numpy_to_qimage
+from wafer.qt.common.dispatcher import Dispatcher, CancelSlot
+from wafer.qt.common.icon_engine import themed_icon
+from wafer.qt.common.image import numpy_to_qimage
 from wafer.plugin.imageloader.handler import image_loader_resolver
 from wafer.utils.paths import list_setting_db_names
 
@@ -147,7 +147,7 @@ class ExifSettingsWidget(QtWidgets.QWidget):
         self._revert_btn.setEnabled(dirty)
 
     def _rebuild_pending_table(self):
-        from wafer.core.color.theme import ThemeManager
+        from wafer.qt.theme import ThemeManager
 
         accent = QtGui.QColor(ThemeManager.instance().palette.text_accent)
         self._pending_group.setTitle(t("Edited keys ({n})").format(n=len(self._pending)))
@@ -258,7 +258,7 @@ class ExifSettingsWidget(QtWidgets.QWidget):
             self._drop_label.setText(f"Previewing: {Path(self._current_path).name} ({summary})")
 
     def _rebuild_table(self):
-        from wafer.core.color.theme import ThemeManager
+        from wafer.qt.theme import ThemeManager
 
         palette = ThemeManager.instance().palette
         muted_fg = QtGui.QColor(palette.text_muted)

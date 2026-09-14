@@ -24,7 +24,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.resolve_install_state",
             lambda folder: InstallState.INSTALLED,
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         monkeypatch.setattr(
@@ -59,7 +59,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.PluginLoader.discover_extension",
             staticmethod(lambda folder: [("grid", FakePlugin)]),
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
@@ -81,7 +81,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.resolve_install_state",
             lambda folder: InstallState.NOT_INSTALLED,
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
@@ -122,7 +122,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.PluginLoader.discover_extension",
             staticmethod(lambda folder: [("grid", EnabledPlugin), ("grid", DisabledPlugin)]),
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
@@ -156,7 +156,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.PluginLoader.discover_extension",
             staticmethod(lambda folder: [("viewer", FP)]),
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
@@ -199,7 +199,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.PluginLoader.discover_extension",
             staticmethod(lambda folder: [("grid", EnabledPlugin), ("grid", DisabledPlugin)]),
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
 
         tab = ExtensionsTab({}, Dispatcher())
@@ -243,7 +243,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.PluginLoader.discover_extension",
             staticmethod(lambda folder: [("viewer", ViewerP), ("grid", GridP)]),
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
@@ -271,7 +271,7 @@ class TestExtensionsTab:
             lambda folder: InstallState.NOT_INSTALLED,
         )
 
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
@@ -306,7 +306,7 @@ class TestExtensionsTab:
             staticmethod(lambda folder: [("grid", NoPostPlugin)]),
         )
 
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
@@ -331,7 +331,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.resolve_install_state",
             lambda folder: InstallState.NOT_INSTALLED,
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         from wafer.plugin import installer_queue
 
@@ -354,7 +354,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.resolve_install_state",
             lambda folder: InstallState.NOT_INSTALLED,
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
 
         tab = ExtensionsTab(set(), Dispatcher())
@@ -391,7 +391,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.resolve_install_state",
             lambda folder: InstallState.NOT_INSTALLED,
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         from wafer.plugin import installer_queue
 
@@ -526,8 +526,8 @@ class TestPluginRowPanelButton:
 class TestExtensionCardMdFiles:
     @pytest.fixture()
     def dispatcher(self):
-        from wafer.core.qt.dispatcher import Dispatcher
-        from wafer.core.qt.thread import SimpleThreadPool
+        from wafer.qt.common.dispatcher import Dispatcher
+        from wafer.qt.common.thread import SimpleThreadPool
 
         pool = SimpleThreadPool("test")
         return Dispatcher(pool)
@@ -1239,7 +1239,7 @@ class TestDataTab:
             "wafer.builtins.database_manager.data_tab.list_setting_db_names",
             lambda: [],
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.database_manager.data_tab import DataTab
@@ -1289,7 +1289,7 @@ class TestDataTab:
             lambda prefix: ("Collector", prefix) if prefix == "exif" else ("", ""),
         )
 
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.database_manager.data_tab import DataTab

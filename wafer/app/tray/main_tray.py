@@ -4,7 +4,7 @@ from ...utils.logs import AppLogger
 from ...constants import APP_NAME
 from ...core.commands.bridge import Command, Context, Menu, UI
 
-from ...core.qt.rate_limit import qt_debounce
+from ...qt.common.rate_limit import qt_debounce
 from ...core.ipc.broker import Broker
 from ...core.ipc.node import Node
 from ...core.platform.process import AppProcess

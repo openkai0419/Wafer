@@ -11,14 +11,14 @@ from ....core.db.query import FileSearchEngine
 from ....core.files.render_target import RenderPlan
 from ....plugin.viewer.handler import viewer_resolver
 from ....plugin.viewer.base import MultiWidgetViewerPlugin as _MultiWidgetViewerPlugin, ViewerContext, WidgetViewerPlugin as _WidgetViewerPlugin
-from ....core.qt.dispatcher import Dispatcher, CancelSlot
-from ....core.qt.thread import utility_pool
+from ....qt.common.dispatcher import Dispatcher, CancelSlot
+from ....qt.common.thread import utility_pool
 from ....core.state import StateStore
 from .file_model import FileViewModel
 from .file_list_provider import FileListProvider
 from .content_viewer import ContentViewerWidget
 from .meta_panel import MetaViewerWidget
-from ....core.color.theme import ThemeManager
+from ....qt.theme import ThemeManager
 from ....utils.logs import AppLogger
 from ....utils.profiling import profiler
 

@@ -266,7 +266,7 @@ def test_cancel_prevents_result():
 
 
 def test_cancel_token_stops_calculation():
-    from wafer.core.qt.dispatcher import CancelToken
+    from wafer.qt.common.dispatcher import CancelToken
 
     token = CancelToken()
     calc = MultiSpanCalculator([1.0] * 100, 100, 5, 500, 500, 0)
@@ -278,7 +278,7 @@ def test_cancel_token_stops_calculation():
 
 def test_cancel_token_mid_calculation():
     import threading
-    from wafer.core.qt.dispatcher import CancelToken
+    from wafer.qt.common.dispatcher import CancelToken
 
     token = CancelToken()
     calc = MultiSpanCalculator([1.0] * 50000, 100, 5, 500, 500, 0)

@@ -3,7 +3,7 @@ from __future__ import annotations
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
 
-from ...ui.layout.splitter import HANDLE_WIDTH, GripHandle
+from ...qt.ui.layout.splitter import HANDLE_WIDTH, GripHandle
 from ...utils.formatting import dpix
 
 DIRECTIONS = ("TB", "BT", "LR", "RL")

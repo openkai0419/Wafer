@@ -9,15 +9,15 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
 from ..rename_sources import ExtSource, NameSource
-from ...core.color.theme import ThemeManager
-from ...core.qt.icon_engine import themed_icon
+from ...qt.theme import ThemeManager
+from ...qt.common.icon_engine import themed_icon
 from ...core.platform.file_operations import PastePlanItem
-from ...core.platform.paste import execute_paste_plans_with_ui
-from ...core.qt.dispatcher import Dispatcher, CancelToken
-from ...core.qt.rate_limit import qt_throttle
-from ...core.qt.thread import utility_pool
-from ...ui.geometry import screen_geometry_for
-from ...ui.popups import PopupBase
+from ...qt.transfer.paste import execute_paste_plans_with_ui
+from ...qt.common.dispatcher import Dispatcher, CancelToken
+from ...qt.common.rate_limit import qt_throttle
+from ...qt.common.thread import utility_pool
+from ...qt.ui.geometry import screen_geometry_for
+from ...qt.ui.popups import PopupBase
 from ...utils.formatting import dpix, natural_key
 from ...utils.logs import AppLogger
 from ...utils.paths import safe_is_file

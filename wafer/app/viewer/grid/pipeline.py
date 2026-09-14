@@ -4,7 +4,7 @@ from PySide6 import QtCore, QtGui
 
 from ....utils.logs import AppLogger
 from ....utils.virtual_paths import is_virtual_path
-from ....core.qt.dispatcher import Dispatcher, CancelToken, CancelSlot
+from ....qt.common.dispatcher import Dispatcher, CancelToken, CancelSlot
 from ....core.files.render_target import RenderPlan
 from ....plugin.grid.handler import grid_resolver
 from ....plugin.grid.base import (

@@ -8,9 +8,9 @@ from ...core.commands.bridge import ActionKit, Menu
 from ...core.db.dispatch import send_to_db_scope
 from ...core.db.key_value import SCOPE_META_INFO, SCOPE_TAG, normalize_data_scope, other_data_scope
 from ...core.lang.manager import t
-from ...core.qt.badge_engine import badge_shape_keys, badge_shape_pixmap, normalize_badge_shape_key
-from ...core.qt.icon_engine import themed_icon
-from ...ui.widgets.color_picker import ColorPickerDialog
+from ...qt.common.badge_engine import badge_shape_keys, badge_shape_pixmap, normalize_badge_shape_key
+from ...qt.common.icon_engine import themed_icon
+from ...qt.ui.widgets.color_picker import ColorPickerDialog
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier

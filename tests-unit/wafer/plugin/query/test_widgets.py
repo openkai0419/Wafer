@@ -2,7 +2,7 @@ import pytest
 from PySide6 import QtGui, QtWidgets
 
 from wafer.builtins.filters import TextFilter
-from wafer.core.color.theme import ThemeManager
+from wafer.qt.theme import ThemeManager
 from wafer.core.state import StateStore
 from wafer.plugin.query.widgets import CheckableCombo, _CATALOG_KEY_ROLE, _KeySelectorPopup
 

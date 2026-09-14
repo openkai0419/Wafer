@@ -111,7 +111,7 @@ class TestTrayStartup:
 
     @patch("main.sys.exit", side_effect=SystemExit)
     @patch("wafer.app.tray.main_tray.TrayApp")
-    @patch("wafer.core.qt.tooltip.install_instant_tooltips")
+    @patch("wafer.qt.common.tooltip.install_instant_tooltips")
     @patch("PySide6.QtWidgets.QApplication")
     @patch("main.get_icon")
     @patch("main.list_setting_db_names", return_value=[])

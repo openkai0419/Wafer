@@ -154,7 +154,7 @@ def test_make_new_folder_here_with_file_path(tmp_path):
 def test_rename_file_success(tmp_path, monkeypatch):
     f = tmp_path / "old.txt"
     f.write_text("hi", encoding="utf-8")
-    from wafer.ui import dialogs as _dlg_mod
+    from wafer.qt.ui import dialogs as _dlg_mod
 
     monkeypatch.setattr(
         _dlg_mod.InputDialog,
@@ -169,7 +169,7 @@ def test_rename_file_success(tmp_path, monkeypatch):
 def test_rename_file_cancel(tmp_path, monkeypatch):
     f = tmp_path / "old.txt"
     f.write_text("hi", encoding="utf-8")
-    from wafer.ui import dialogs as _dlg_mod
+    from wafer.qt.ui import dialogs as _dlg_mod
 
     monkeypatch.setattr(
         _dlg_mod.InputDialog,
@@ -183,7 +183,7 @@ def test_rename_file_cancel(tmp_path, monkeypatch):
 def test_rename_file_same_name(tmp_path, monkeypatch):
     f = tmp_path / "old.txt"
     f.write_text("hi", encoding="utf-8")
-    from wafer.ui import dialogs as _dlg_mod
+    from wafer.qt.ui import dialogs as _dlg_mod
 
     monkeypatch.setattr(
         _dlg_mod.InputDialog,
@@ -198,7 +198,7 @@ def test_rename_file_conflict(tmp_path, monkeypatch):
     f = tmp_path / "old.txt"
     f.write_text("hi", encoding="utf-8")
     (tmp_path / "taken.txt").write_text("x", encoding="utf-8")
-    from wafer.ui import dialogs as _dlg_mod
+    from wafer.qt.ui import dialogs as _dlg_mod
 
     monkeypatch.setattr(
         _dlg_mod.InputDialog,
@@ -219,7 +219,7 @@ def test_rename_file_conflict(tmp_path, monkeypatch):
 def test_rename_file_invalid_name(tmp_path, monkeypatch):
     f = tmp_path / "old.txt"
     f.write_text("hi", encoding="utf-8")
-    from wafer.ui import dialogs as _dlg_mod
+    from wafer.qt.ui import dialogs as _dlg_mod
 
     monkeypatch.setattr(
         _dlg_mod.InputDialog,

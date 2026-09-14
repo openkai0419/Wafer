@@ -24,7 +24,7 @@ from wafer.builtins.rename_sources import (
     SequentialSource,
 )
 from wafer.builtins.batch_renamer.widget import BatchRenamerPlugin
-from wafer.core.qt.dispatcher import CancelToken
+from wafer.qt.common.dispatcher import CancelToken
 from wafer.core.db.file_db import FileDB
 from wafer.utils.formatting import dpix
 
@@ -2840,7 +2840,7 @@ class TestStandaloneLaunch:
             captured.update(title=title, key=key)
             return object()
 
-        monkeypatch.setattr("wafer.ui.layout.standalone.open_standalone", fake_open)
+        monkeypatch.setattr("wafer.qt.ui.layout.standalone.open_standalone", fake_open)
         had = panel_registry.get(BatchRenamerPlugin.NAME) is not None
         if not had:
             panel_registry.register(BatchRenamerPlugin)

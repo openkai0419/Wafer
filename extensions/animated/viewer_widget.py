@@ -1,8 +1,8 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.core.commands.bridge import ActionKit, UI
-from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
-from wafer.core.qt.thread import utility_pool
+from wafer.qt.common.dispatcher import Dispatcher, CancelSlot
+from wafer.qt.common.thread import utility_pool
 from wafer.plugin import viewer_context_values
 from ._common import decode_frames, get_viewer_driver, _viewer_cache
 

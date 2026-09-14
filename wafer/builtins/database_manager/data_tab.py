@@ -4,11 +4,11 @@ from pathlib import Path
 from PySide6 import QtWidgets, QtCore
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
-from ...core.qt.icon_engine import themed_icon
+from ...qt.common.icon_engine import themed_icon
 from ...utils.paths import list_setting_db_names, data_db_path, setting_db_path
 from ...core.db.setting_db import SettingDB
 from ...core.db.db_utils import apply_read_pragmas
-from ...core.qt.dispatcher import Dispatcher, CancelSlot
+from ...qt.common.dispatcher import Dispatcher, CancelSlot
 from ...core.lang.manager import t
 
 

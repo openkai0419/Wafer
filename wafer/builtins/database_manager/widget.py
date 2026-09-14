@@ -9,14 +9,14 @@ from ...utils.paths import (
     setting_db_path,
     data_db_path,
 )
-from ...core.color.theme import ThemeManager
+from ...qt.theme import ThemeManager
 from ...core.lang.manager import t
 from ...core.db.setting_db import SettingDB
 from ...core.platform.process import AppProcess
-from ...ui.dialogs import ConfirmDialog, InputDialog
-from ...core.qt.dispatcher import Dispatcher
-from ...core.qt.icon_engine import themed_icon
-from ...core.qt.thread import utility_pool
+from ...qt.ui.dialogs import ConfirmDialog, InputDialog
+from ...qt.common.dispatcher import Dispatcher
+from ...qt.common.icon_engine import themed_icon
+from ...qt.common.thread import utility_pool
 from ...plugin.panel.base import BasePanelPlugin
 
 

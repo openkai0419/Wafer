@@ -1,7 +1,7 @@
 from unittest.mock import patch
 from wafer.app.viewer.search import SearchService, _DEFAULTS
 from wafer.plugin.query.handler import sort_registry
-from wafer.core.qt.dispatcher import CancelToken
+from wafer.qt.common.dispatcher import CancelToken
 from wafer.builtins.filters import TextFilter, DirectoryFilter, ContainedFilesFilter
 
 

@@ -5,13 +5,13 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from wafer.plugin import BasePanelPlugin
 from wafer.plugin.collector.base import BaseCollector
 from wafer.plugin.key_filter_dialog import FilterSaveConfirmDialog
-from wafer.core.qt.image import numpy_to_qimage
+from wafer.qt.common.image import numpy_to_qimage
 from wafer.plugin.imageloader.handler import image_loader_resolver
 from wafer.utils.formatting import dpix
 from wafer.utils.notifier import Notifier
 from wafer.utils.paths import list_setting_db_names
 from wafer.core.lang.manager import t
-from wafer.core.qt.dispatcher import Dispatcher
+from wafer.qt.common.dispatcher import Dispatcher
 from .settings import TAG_MAP, florence_config
 
 _DST = "collector-florence"

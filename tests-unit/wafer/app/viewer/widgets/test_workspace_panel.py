@@ -63,7 +63,7 @@ class TestPresetItem:
         from unittest.mock import patch
 
         from wafer.app.viewer.widgets import workspace_toolbar
-        from wafer.core.qt.icon_engine import themed_icon
+        from wafer.qt.common.icon_engine import themed_icon
 
         keys = []
         with patch.object(workspace_toolbar, "themed_icon", side_effect=lambda key, *a, **kw: keys.append(key) or themed_icon(key, *a, **kw)):
@@ -297,7 +297,7 @@ class TestWorkspaceToolbarWidget:
         from unittest.mock import patch
 
         from wafer.app.viewer.widgets import workspace_toolbar
-        from wafer.core.qt.icon_engine import themed_icon
+        from wafer.qt.common.icon_engine import themed_icon
         from wafer.core.workspace import WindowSlot
 
         keys = []
@@ -310,7 +310,7 @@ class TestWorkspaceToolbarWidget:
         from unittest.mock import patch
 
         from wafer.app.viewer.widgets import workspace_toolbar
-        from wafer.core.qt.icon_engine import themed_icon
+        from wafer.qt.common.icon_engine import themed_icon
         from wafer.core.workspace import WindowSlot
 
         keys = []
@@ -328,7 +328,7 @@ class TestWorkspaceToolbarWidget:
         from unittest.mock import patch
 
         from wafer.app.viewer.widgets import workspace_toolbar
-        from wafer.core.qt.icon_engine import themed_icon
+        from wafer.qt.common.icon_engine import themed_icon
         from wafer.core.workspace import WindowSlot
 
         keys = []

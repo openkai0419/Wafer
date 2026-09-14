@@ -24,7 +24,7 @@ class TestNovelAiImageParser:
             "steps": "20",
             "cfg": "7.5",
         }
-        assert result.delete_keys == ["exiftool.PNG:Comment"]
+        assert result.delete_meta_keys == ["exiftool.PNG:Comment"]
 
     def test_nested_value_flattened_recursively(self):
         data = {"model": {"name": "v3", "details": {"hash": "abc", "samplers": ["k_euler"]}}}

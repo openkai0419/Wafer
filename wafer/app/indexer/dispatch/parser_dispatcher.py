@@ -4,7 +4,7 @@ import os
 import threading
 from pathlib import Path
 
-from ....core.db.db_utils import apply_read_pragmas, connect_with_retry
+from ....core.db.db_utils import open_readonly
 from ....utils.logs import AppLogger
 from ....utils.profiling import profiler
 from ....core.platform.process import AppProcess
@@ -55,14 +55,7 @@ class ParserDispatcher:
 
     def start(self, node):
         self._node = node
-        uri = self._db_path.resolve().as_uri()
-        self._read_conn = connect_with_retry(
-            f"{uri}?mode=ro",
-            timeout=1.0,
-            uri=True,
-            check_same_thread=False,
-        )
-        apply_read_pragmas(self._read_conn)
+        self._read_conn = open_readonly(self._db_path)
         self._reset_stale()
         self._start_parser_processes()
         self._thread = threading.Thread(target=self._dispatch_loop, daemon=True)
@@ -182,6 +175,21 @@ class ParserDispatcher:
             paths = [row[0] for row in rows]
             file_info = {row[0]: (row[1], row[2], row[3]) for row in rows}
             metadata = self._writer.db.get_trigger_metadata(paths, trigger_keys) if trigger_keys else {}
+            if trigger_keys:
+                untriggered = [p for p in paths if p not in metadata]
+                if untriggered:
+                    self._scheduler.submit(
+                        Task.create(
+                            "mark_collected_parser",
+                            priority=TaskPriority.DISPATCH,
+                            run=lambda ps=untriggered, sn=status_name: self._writer.mark_collected(ps, sn),
+                        )
+                    )
+                    paths = [p for p in paths if p in metadata]
+                    file_info = {p: file_info[p] for p in paths}
+                    AppLogger.info(f"[ParserDispatcher] Skipped {len(untriggered)} paths without trigger keys for parser-{parser_name}")
+            if not paths:
+                continue
             with self._dispatched_lock:
                 self._dispatched_paths.setdefault(parser_name, set()).update(paths)
             self._scheduler.submit(

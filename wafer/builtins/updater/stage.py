@@ -239,28 +239,33 @@ def process_apply_results() -> None:
         discard_staged(root)
 
 
-def restart_into_launcher(main_window) -> bool:
+def restart_into_launcher(host) -> bool:
     launcher = get_launcher_path()
     if launcher is None or not staged_version():
         return False
     from ...core.platform.process import AppProcess
+    from ...core.workspace import WorkspaceStore
+    from ...core.commands.binding.instance_registry import InstanceRegistry
 
-    node = getattr(main_window, "_node", None)
+    store = WorkspaceStore.instance()
+    node = getattr(host, "_node", None)
+    slot_id = getattr(host, "slot_id", None)
     others = []
     if node:
-        store = main_window._workspace_store
         active_ids = store.get_active_slot_ids()
         if active_ids:
             store.set_restore_slot_ids(active_ids)
         others = AppProcess.list_viewers()
         for sid in active_ids:
-            if sid != main_window.slot_id:
+            if sid != slot_id:
                 node.send("slot.shutdown", sid, dst="viewer")
+    if InstanceRegistry.instance().get_one("WebUIWindow"):
+        store.set_restore_webui(True)
 
     AppLogger.info("[Updater] Restarting through launcher to apply staged update")
     AppProcess.terminate_cmd("--tray", wait=True)
     AppProcess.wait_procs_then_kill(others)
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
     subprocess.Popen([str(launcher)], cwd=str(get_app_root_dir()), close_fds=True, creationflags=flags)
-    main_window.close()
+    host.close()
     return True

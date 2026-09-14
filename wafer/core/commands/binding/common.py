@@ -16,6 +16,19 @@ class WidgetRef:
         return self.name
 
 
+TEXT_ENTRY_TYPES = (
+    QtWidgets.QLineEdit,
+    QtWidgets.QPlainTextEdit,
+    QtWidgets.QTextEdit,
+    QtWidgets.QComboBox,
+    QtWidgets.QAbstractSpinBox,
+)
+
+
+def is_text_entry_focused() -> bool:
+    return isinstance(QtWidgets.QApplication.focusWidget(), TEXT_ENTRY_TYPES)
+
+
 def resolve_scope_by_focus() -> tuple[str | None, QtWidgets.QWidget | None]:
     w = QtWidgets.QApplication.focusWidget()
     if not w:

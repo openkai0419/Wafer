@@ -39,11 +39,14 @@ def _merge_parsed(entries: list[dict[str, Any]]) -> dict[str, Any]:
     image_entries: list[tuple] = []
     meta_info_entries: list[tuple] = []
     tag_entries: list[tuple] = []
+    source_keys: dict[str, set[str]] = {}
     collector_status_map: dict[tuple[str, str], tuple] = {}
     for e in entries:
         image_entries.extend(e["image_entries"])
         meta_info_entries.extend(e["meta_info_entries"])
         tag_entries.extend(e["tag_entries"])
+        for source, keys in e["source_keys"].items():
+            source_keys.setdefault(source, set()).update(keys)
         for cs in e["collector_status"]:
             cs_key = (cs[0], cs[1])
             prev = collector_status_map.get(cs_key)
@@ -53,6 +56,7 @@ def _merge_parsed(entries: list[dict[str, Any]]) -> dict[str, Any]:
         "image_entries": image_entries,
         "meta_info_entries": meta_info_entries,
         "tag_entries": tag_entries,
+        "source_keys": source_keys,
         "collector_status": list(collector_status_map.values()),
     }
 
@@ -108,10 +112,9 @@ class CollectorReceiver:
         self._progress.send_event("update")
         AppLogger.info(f"[Receiver] Flushed {count} results")
         if self._parser_writer:
-            from .parser_receiver import trigger_parser_pending, _build_source_keys
+            from .parser_receiver import trigger_parser_pending
 
-            source_keys = _build_source_keys(data)
-            trigger_parser_pending(source_keys, self._parser_writer, self._parser_request_dispatch)
+            trigger_parser_pending(data["source_keys"], self._parser_writer, self._parser_request_dispatch)
         if self._buffer.has_pending():
             self._schedule_flush()
 
@@ -120,6 +123,7 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
     image_entries: list[tuple] = []
     meta_info_entries: list[tuple] = []
     tag_entries: list[tuple] = []
+    source_keys: dict[str, set[str]] = {}
     collector_status_map: dict[tuple[str, str], tuple] = {}
     predicate_cache: dict[str, Any] = {}
     now = time.time()
@@ -151,15 +155,23 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
             if aspect or (path != source) or name:
                 source_extension = collector if path != source else None
                 image_entries.append((path, source, name, aspect, source_extension))
+            changed_keys = source_keys.setdefault(source, set()) if source else set()
             for k, v in meta_info.items():
                 if v is not None and (keep is None or keep(k)):
-                    meta_info_entries.append((path, f"{prefix}{k}", str(v), try_float(v)))
+                    key = f"{prefix}{k}"
+                    meta_info_entries.append((path, key, str(v), try_float(v)))
+                    changed_keys.add(key)
             if file_hash:
-                tag_entries.extend((file_hash, f"{prefix}{k}", str(v), try_float(v)) for k, v in tags.items() if v is not None and (keep is None or keep(k)))
+                for k, v in tags.items():
+                    if v is not None and (keep is None or keep(k)):
+                        key = f"{prefix}{k}"
+                        tag_entries.append((file_hash, key, str(v), try_float(v)))
+                        changed_keys.add(key)
 
     return {
         "image_entries": image_entries,
         "meta_info_entries": meta_info_entries,
         "tag_entries": tag_entries,
+        "source_keys": source_keys,
         "collector_status": list(collector_status_map.values()),
     }

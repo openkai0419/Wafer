@@ -1,7 +1,6 @@
 import datetime
 import math
 import re
-from PySide6 import QtGui
 
 
 _NUM_SPLIT = re.compile(r"([0-9]+)").split
@@ -17,6 +16,8 @@ _cached_dpi: float | None = None
 def dpix(px, base_dpi=96):
     global _cached_dpi
     if _cached_dpi is None:
+        from PySide6 import QtGui
+
         screen = QtGui.QGuiApplication.primaryScreen()
         if screen is None:
             return px
@@ -29,6 +30,8 @@ def split_last(lst):
 
 
 def is_dark_theme():
+    from PySide6 import QtGui
+
     palette = QtGui.QGuiApplication.palette()
     bg_color = palette.color(QtGui.QPalette.Window)
     return bg_color.value() < 128

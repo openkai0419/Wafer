@@ -1,5 +1,6 @@
 import time
 from functools import wraps
+from shiboken6 import isValid
 from PySide6.QtCore import QObject, QTimer, Slot
 
 
@@ -31,6 +32,8 @@ class QtDebounceManager(QObject):
         timer.deleteLater()
         if entry:
             cb, args, kwargs = entry
+            if args and isinstance(args[0], QObject) and not isValid(args[0]):
+                return
             cb(*args, **kwargs)
 
     def cancel(self, key):
@@ -86,8 +89,10 @@ class QtThrottleManager(QObject):
             @Slot()
             def on_idle():
                 a, kw = pending
-                callback(*a, **kw)
                 self._states.pop(key, None)
+                if a and isinstance(a[0], QObject) and not isValid(a[0]):
+                    return
+                callback(*a, **kw)
 
             idle_timer.timeout.connect(on_idle)
             idle_timer.start(idle_ms)

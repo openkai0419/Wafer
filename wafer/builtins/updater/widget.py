@@ -504,10 +504,12 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
         self._update_action_buttons()
 
     def _restart_to_apply(self) -> None:
-        main_window = InstanceRegistry.instance().get_one("MainWindow")
-        if main_window is None:
+        reg = InstanceRegistry.instance()
+        host = reg.get_host_window()
+        if host is None:
+            AppLogger.warning("[Updater] Restart was requested but no host window is available")
             return
-        if not stage.restart_into_launcher(main_window):
+        if not stage.restart_into_launcher(host):
             AppLogger.warning("[Updater] Restart was requested but no staged update is available")
             self._update_action_buttons()
 
@@ -544,8 +546,11 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
     def _close_panel(self) -> None:
         main_window = InstanceRegistry.instance().get_one("MainWindow")
         manager = getattr(main_window, "_layout_manager", None) if main_window else None
-        if manager and manager.is_panel_visible(PANEL_DISPLAY_NAME):
-            manager.toggle_panel(PANEL_DISPLAY_NAME)
+        if manager:
+            if manager.is_panel_visible(PANEL_DISPLAY_NAME):
+                manager.toggle_panel(PANEL_DISPLAY_NAME)
+            return
+        self.window().close()
 
 
 class UpdateNotifierPlugin(BasePanelPlugin):
@@ -553,11 +558,8 @@ class UpdateNotifierPlugin(BasePanelPlugin):
     DISPLAY_NAME = PANEL_DISPLAY_NAME
     PRIORITY = 32
     SOURCE = "Builtin"
-
-    def startup(self) -> None:
-        from .startup import schedule_startup_update_check
-
-        schedule_startup_update_check()
+    STANDALONE_AVAILABLE = True
+    STANDALONE_SIZE = (550, 700)
 
     def create_widget(self):
         return UpdateNotifierWidget()

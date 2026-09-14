@@ -80,6 +80,11 @@ def _wait_install_then_load_plugins(app):
     load_plugins()
 
 
+def _ensure_tray_unless_pending():
+    if not installer_queue.has_pending_queue(get_plugin_dir()):
+        AppProcess.ensure_tray()
+
+
 def _enable_shared_opengl_contexts():
     from PySide6 import QtCore
 
@@ -103,6 +108,9 @@ def _entry_viewer(app=None, slot_id=None):
     from wafer.app.viewer.mainwindow import MainWindow
     if constants.DEV_MODE:
         profiler.start()
+    if constants.MEMWATCH:
+        from wafer.utils.profiling import memwatch
+        memwatch.start(trace=constants.MEMWATCH_TRACE)
     if app is None:
         app = _create_app()
     window = MainWindow(get_icon(), slot_id=slot_id)
@@ -189,40 +197,76 @@ def _entry_parser(name, plugin, parent_pid=None):
     except FileExistsError:
         AppLogger.info(f"Parser '{plugin}' for '{name}' is already running.")
 
+def _entry_webui(args):
+    try:
+        setproctitle.setproctitle(f'{APP_NAME}-webui')
+        AppLogger.set_role('webui')
+        if os.environ.pop('WAFER_REPLACE_WEBUI', None):
+            AppProcess.terminate_cmd('--webui', wait=True, exclude_self=True)
+        from wafer.app.webui.settings import WebUISettings
+        host, port = WebUISettings().resolve_bind(args.host, args.port)
+        with SafeProcessLock(f'{APP_DATA_DIR_NAME}_webui'):
+            if not args.no_tray:
+                _ensure_tray_unless_pending()
+            from wafer.app.webui.entry import run_headless, run_ui
+            if args.no_ui:
+                from wafer.plugin.loader import load_plugins
+                load_plugins()
+                run_headless(host, port, open_browser=not args.no_browser)
+            else:
+                app = _create_app()
+                _wait_install_then_load_plugins(app)
+                from wafer.plugin.loader import get_command_registry
+                get_command_registry().activate('webui')
+                run_ui(app, host, port, open_browser=not args.no_browser)
+    except FileExistsError:
+        AppLogger.info('WebUI is already running.')
+
 def main():
     parser = argparse.ArgumentParser(description='Script with three run modes')
     parser.add_argument('--version', action='version', version=f'Wafer {__version__}')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--tray', action='store_true', help='run tray process (background manager)')
     group.add_argument('--viewer', action='store_true', help='run new viewer')
+    group.add_argument('--webui', action='store_true', help='run WebUI server')
     group.add_argument('--indexer', nargs='?', const=True, help='run indexer for each settings. make new with optional string')
     group.add_argument('--collector', nargs='?', const=True, help='run collector process')
     group.add_argument('--parser', nargs='?', const=True, help='run parser process')
     parser.add_argument('--plugin', type=str, default='image', help='collector/parser plugin name')
     parser.add_argument('--parent-pid', type=int, default=None)
     parser.add_argument('--slot', type=str, default=None, help='window slot ID for viewer')
+    parser.add_argument('--host', default=None, help='webui bind host (overrides webui_settings.ini)')
+    parser.add_argument('--port', type=int, default=None, help='webui bind port (overrides webui_settings.ini)')
+    parser.add_argument('--no-browser', action='store_true', help='webui: do not open the browser on start')
+    parser.add_argument('--no-ui', action='store_true', help='webui: run headless without management window')
+    parser.add_argument('--no-tray', action='store_true', help='webui: do not spawn the tray process')
     args = parser.parse_args()
-    if not any([args.tray, args.viewer, args.indexer, args.collector, args.parser]):
+    if not any([args.tray, args.viewer, args.webui, args.indexer, args.collector, args.parser]):
         app = _create_app()
         if os.environ.pop('WAFER_REPLACE_TRAY', None):
             AppProcess.terminate_cmd('--tray', wait=True)
-        if not installer_queue.has_pending_queue(get_plugin_dir()):
-            AppProcess.new_main('--tray')
+        _ensure_tray_unless_pending()
         _wait_install_then_load_plugins(app)
         from wafer.core.workspace import WorkspaceStore
-        restore_ids = WorkspaceStore.instance().get_restore_slot_ids()
+        store = WorkspaceStore.instance()
+        restore_ids = store.get_restore_slot_ids()
         for sid in restore_ids[1:]:
             AppProcess.new_main('--viewer', '--slot', sid)
+        if store.get_restore_webui():
+            store.set_restore_webui(False)
+            AppProcess.new_main('--webui', '--no-browser')
         _entry_viewer(app, slot_id=restore_ids[0] if restore_ids else None)
         return
     if args.tray:
         _entry_tray()
+    elif args.webui:
+        _entry_webui(args)
     elif args.indexer:
         if isinstance(args.indexer, str):
             load_plugins()
             _entry_indexer(args.indexer, parent_pid=args.parent_pid)
         else:
-            AppProcess.new_main('--tray')
+            AppProcess.ensure_tray()
     elif args.collector:
         if isinstance(args.collector, str):
             load_plugins()

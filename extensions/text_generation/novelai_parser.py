@@ -30,4 +30,4 @@ class NovelAiImageParser(BaseSingletonParser):
             AppLogger.debug(f"NovelAiImageParser JSON was not dict: {raw}")
             return ParserResult(source=path, status=False)
         meta_info = stringify_meta_info(parsed)
-        return ParserResult(source=path, status=True, meta_info=meta_info, delete_keys=[key])
+        return ParserResult(source=path, status=True, meta_info=meta_info, delete_meta_keys=[key])

@@ -62,11 +62,16 @@ def _merge_parsed(entries: list[dict[str, Any]]) -> dict[str, Any]:
     meta_info_entries: list[tuple] = []
     tag_entries: list[tuple] = []
     delete_entries: list[tuple] = []
+    hash_updates: list[tuple[str, str]] = []
+    source_keys: dict[str, set[str]] = {}
     collector_status_map: dict[tuple[str, str], tuple] = {}
     for e in entries:
         meta_info_entries.extend(e["meta_info_entries"])
         tag_entries.extend(e["tag_entries"])
         delete_entries.extend(e["delete_entries"])
+        hash_updates.extend(e["hash_updates"])
+        for source, keys in e["source_keys"].items():
+            source_keys.setdefault(source, set()).update(keys)
         for cs in e["collector_status"]:
             cs_key = (cs[0], cs[1])
             prev = collector_status_map.get(cs_key)
@@ -76,6 +81,8 @@ def _merge_parsed(entries: list[dict[str, Any]]) -> dict[str, Any]:
         "meta_info_entries": meta_info_entries,
         "tag_entries": tag_entries,
         "delete_entries": delete_entries,
+        "hash_updates": hash_updates,
+        "source_keys": source_keys,
         "collector_status": list(collector_status_map.values()),
     }
 
@@ -124,31 +131,27 @@ class ParserReceiver:
         data, count = self._buffer.drain()
         if not data:
             return
+        impacted_sources = self._writer.update_source_hashes(data["hash_updates"])
         _write_batched(self._writer, data)
         self._progress.increment(count, 0)
         self._progress.send_event("update")
         AppLogger.info(f"[ParserReceiver] Flushed {count} results")
 
-        source_keys = _build_source_keys(data)
+        source_keys = data["source_keys"]
+        for source in impacted_sources:
+            source_keys.setdefault(source, set()).add("file_hash")
         trigger_parser_pending(source_keys, self._writer, self._request_dispatch)
 
         if self._buffer.has_pending():
             self._schedule_flush()
 
 
-def _build_source_keys(data: dict[str, Any]) -> dict[str, set[str]]:
-    source_keys: dict[str, set[str]] = {}
-    for entry in data["meta_info_entries"]:
-        source_keys.setdefault(entry[0], set()).add(entry[1])
-    for entry in data.get("tag_entries", ()):
-        source_keys.setdefault(entry[0], set()).add(entry[1])
-    return source_keys
-
-
 def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
     meta_info_entries: list[tuple] = []
     tag_entries: list[tuple] = []
     delete_entries: list[tuple] = []
+    hash_updates: list[tuple[str, str]] = []
+    source_keys: dict[str, set[str]] = {}
     collector_status_map: dict[tuple[str, str], tuple] = {}
     predicate_cache: dict[str, Any] = {}
     now = time.time()
@@ -157,9 +160,11 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
         source = r.get("source")
         path = r.get("path", source)
         file_hash = r.get("file_hash")
+        update_hash = r.get("update_hash")
         meta_info = r.get("meta_info", {})
         tags = r.get("tags", {})
-        delete_keys = r.get("delete_keys")
+        delete_meta_keys = r.get("delete_meta_keys")
+        delete_tag_keys = r.get("delete_tag_keys")
         status = r.get("status")
         parser = r.get("parser", "")
 
@@ -171,22 +176,33 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
             collector_status_map[cs_key] = (source, parser, s_status, now)
 
         if ok:
+            if update_hash and source:
+                hash_updates.append((source, update_hash))
             prefix = f"{parser}." if parser else ""
             keep = predicate_cache.get(parser, _UNSET)
             if keep is _UNSET:
                 keep = KeyFilter.predicate(parser) if parser else None
                 predicate_cache[parser] = keep
+            changed_keys = source_keys.setdefault(source, set()) if source else set()
             for k, v in meta_info.items():
                 if v is not None and (keep is None or keep(k)):
-                    meta_info_entries.append((path, f"{prefix}{k}", str(v), try_float(v)))
+                    key = f"{prefix}{k}"
+                    meta_info_entries.append((path, key, str(v), try_float(v)))
+                    changed_keys.add(key)
             if file_hash:
-                tag_entries.extend((file_hash, f"{prefix}{k}", str(v), try_float(v)) for k, v in tags.items() if v is not None and (keep is None or keep(k)))
-            if delete_keys:
-                delete_entries.append((path, file_hash, delete_keys))
+                for k, v in tags.items():
+                    if v is not None and (keep is None or keep(k)):
+                        key = f"{prefix}{k}"
+                        tag_entries.append((file_hash, key, str(v), try_float(v)))
+                        changed_keys.add(key)
+            if delete_meta_keys or delete_tag_keys:
+                delete_entries.append((path, file_hash, delete_meta_keys or [], delete_tag_keys or []))
 
     return {
         "meta_info_entries": meta_info_entries,
         "tag_entries": tag_entries,
         "delete_entries": delete_entries,
+        "hash_updates": hash_updates,
+        "source_keys": source_keys,
         "collector_status": list(collector_status_map.values()),
     }

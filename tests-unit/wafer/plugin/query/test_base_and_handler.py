@@ -2,7 +2,8 @@ import pytest
 
 from PySide6 import QtWidgets
 
-from wafer.plugin.query.base import BaseFilterPlugin, BaseSortPlugin, KeyStore
+from wafer.plugin.query.base import BaseFilterPlugin, BaseSortPlugin
+from wafer.plugin.query.widgets import KeyStore
 from wafer.plugin.query.handler import SortRegistry, filter_registry, sort_registry
 from wafer.plugin.query.widgets import _KeySelectorPopup
 from wafer.plugin.registry import PluginRegistry

@@ -5,6 +5,7 @@ venv/
 .log/
 .ruff_cache/
 .temp/
+.superpowers/
 .packages/
 .pending/
 .pip_staging/
@@ -23,6 +24,8 @@ tests/test_summary.txt
 .vscode/
 .sample/
 code.bat
+.claude/
+CLAUDE.md
 
 
 # Build artifacts

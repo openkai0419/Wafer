@@ -45,6 +45,13 @@ def connect_with_retry(path, timeout=3.0, retries=3, delay=1.0, **kwargs):
     raise last_exception
 
 
+def open_readonly(db_path: str | Path) -> sqlite3.Connection:
+    uri = Path(db_path).resolve().as_uri()
+    conn = connect_with_retry(f"{uri}?mode=ro", timeout=1.0, uri=True, check_same_thread=False)
+    apply_read_pragmas(conn)
+    return conn
+
+
 @profiler.profile
 def delete_database_files(dbname, retries=10, delay=1.0, force=False):
     base = os.path.abspath(dbname)

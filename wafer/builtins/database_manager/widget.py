@@ -561,6 +561,8 @@ class DatabaseManagerPlugin(BasePanelPlugin):
     CLOSABLE = True
     PRIORITY = 0
     SOURCE = "Builtin"
+    STANDALONE_AVAILABLE = True
+    STANDALONE_SIZE = (500, 700)
 
     def __init__(self):
         self._widget_ref: DatabaseManagerWidget | None = None

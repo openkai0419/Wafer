@@ -12,7 +12,7 @@ from ....core.qt.icon_engine import themed_icon
 from ....core.qt.thread import utility_pool
 from ....core.commands.bridge import ActionKit, Menu
 from ....plugin.query.handler import filter_registry, sort_registry
-from ....plugin.query.base import KeyStore
+from ....plugin.query.widgets import KeyStore
 from ....builtins.filters import TextFilter, DirectoryFilter, ContainedFilesFilter
 
 

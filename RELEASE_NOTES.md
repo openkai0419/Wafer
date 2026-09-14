@@ -2,6 +2,20 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.7.7]
+
+### Highlights
+- Wafer can now be accessed from a browser through a new WebUI.
+- A new Duplicate extension tags files that share identical content.
+
+### Improvements
+- WebUI can run headless and be restricted to local access or shared on your network.
+- Database Manager and Batch Renamer can now be opened as standalone windows.
+
+### Fixes
+- The WebUI reconnects and recovers viewer navigation after a lost connection, showing a status banner.
+- Dropping malformed clipboard data no longer crashes the app.
+
 ## [v0.7.6]
 
 ### Highlights

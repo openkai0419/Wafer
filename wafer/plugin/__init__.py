@@ -1,28 +1,59 @@
-from .viewer.base import MultiWidgetViewerPlugin, ViewerContext, WidgetViewerPlugin, viewer_context_values
-from .grid.base import BaseGridPlugin, WidgetGridPlugin
-from .grid_overlay.base import (
-    BaseBadgeOverlayPlugin,
-    BaseCellOverlayPlugin,
-    BaseOverlayPlugin,
-    GridOverlayCell,
-    GridOverlayContext,
-    OverlayBadge,
-)
-from .grid_overlay.helper import OverlayHelper
-from .collector.base import BaseCollectorPlugin, BaseSingletonCollector, CollectorResult
-from .parser.base import BaseParserPlugin, BaseSingletonParser, ParserResult
-from .query.base import BaseFilterPlugin, BaseSortPlugin
-from .layout.base import BaseLayoutPlugin
-from .panel.base import BasePanelPlugin
-from .config import PluginConfig
-from .key_filter import KeyFilter, MODE_BLACKLIST, MODE_WHITELIST
-from .key_value_panel.base import BaseKeyValuePanelPlugin
-from .rename.base import BaseRenameSourcePlugin, SegmentInfo
-from .imageloader.base import BaseImageLoader
-from ..core.commands.bridge import ActionKit
-from ..core.commands.command.require import require, require_v
+from importlib import import_module
 
-CommandMeta = ActionKit.Command
-CommandParam = ActionKit.Param
-MenuGroup = ActionKit.MenuBase
-DragMenuGroup = ActionKit.DragMenuBase
+_EXPORTS = {
+    "MultiWidgetViewerPlugin": (".viewer.base", None),
+    "ViewerContext": (".viewer.base", None),
+    "WidgetViewerPlugin": (".viewer.base", None),
+    "viewer_context_values": (".viewer.base", None),
+    "BaseGridPlugin": (".grid.base", None),
+    "WidgetGridPlugin": (".grid.base", None),
+    "BaseBadgeOverlayPlugin": (".grid_overlay.base", None),
+    "BaseCellOverlayPlugin": (".grid_overlay.base", None),
+    "BaseOverlayPlugin": (".grid_overlay.base", None),
+    "GridOverlayCell": (".grid_overlay.base", None),
+    "GridOverlayContext": (".grid_overlay.base", None),
+    "OverlayBadge": (".grid_overlay.base", None),
+    "OverlayHelper": (".grid_overlay.helper", None),
+    "BaseCollectorPlugin": (".collector.base", None),
+    "BaseSingletonCollector": (".collector.base", None),
+    "CollectorResult": (".collector.base", None),
+    "BaseParserPlugin": (".parser.base", None),
+    "BaseSingletonParser": (".parser.base", None),
+    "ParserResult": (".parser.base", None),
+    "BaseFilterPlugin": (".query.base", None),
+    "BaseSortPlugin": (".query.base", None),
+    "BaseLayoutPlugin": (".layout.base", None),
+    "BasePanelPlugin": (".panel.base", None),
+    "PluginConfig": (".config", None),
+    "KeyFilter": (".key_filter", None),
+    "MODE_BLACKLIST": (".key_filter", None),
+    "MODE_WHITELIST": (".key_filter", None),
+    "BaseKeyValuePanelPlugin": (".key_value_panel.base", None),
+    "BaseRenameSourcePlugin": (".rename.base", None),
+    "SegmentInfo": (".rename.base", None),
+    "BaseImageLoader": (".imageloader.base", None),
+    "ActionKit": ("..core.commands.bridge", None),
+    "require": ("..core.commands.command.require", None),
+    "require_v": ("..core.commands.command.require", None),
+    "CommandMeta": ("..core.commands.bridge", "ActionKit.Command"),
+    "CommandParam": ("..core.commands.bridge", "ActionKit.Param"),
+    "MenuGroup": ("..core.commands.bridge", "ActionKit.MenuBase"),
+    "DragMenuGroup": ("..core.commands.bridge", "ActionKit.DragMenuBase"),
+}
+
+
+def __getattr__(name):
+    entry = _EXPORTS.get(name)
+    if entry is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_path, attr_path = entry
+    module = import_module(module_path, __name__)
+    value = module
+    for part in (attr_path or name).split("."):
+        value = getattr(value, part)
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(_EXPORTS)

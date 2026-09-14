@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 from collections import defaultdict
@@ -173,3 +174,76 @@ class MainThreadWatchdog:
 
 
 watchdog = MainThreadWatchdog()
+
+
+class MemoryWatchdog:
+    def __init__(self, interval=30):
+        self.interval = interval
+        self.enabled = False
+        self.trace = False
+        self._stop_event = threading.Event()
+        self._thread = None
+        self._proc = None
+        self._last_rss = 0
+        self._peak_rss = 0
+
+    def set_enabled(self, value, *, trace=False):
+        self.enabled = value
+        self.trace = trace
+
+    def start(self, *, trace=False):
+        self.enabled = True
+        self.trace = trace
+        if self.trace:
+            import tracemalloc
+
+            if not tracemalloc.is_tracing():
+                tracemalloc.start(25)
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._report_loop, name="mem-watchdog", daemon=True)
+        self._thread.start()
+        AppLogger.info(f"[MemWatch] started (interval={self.interval}s, trace={self.trace})")
+
+    def _report_loop(self):
+        import psutil
+
+        self._proc = psutil.Process()
+        self._last_rss = self._peak_rss = self._proc.memory_info().rss
+        while not self._stop_event.wait(self.interval):
+            if self.enabled:
+                try:
+                    self.report()
+                except Exception as e:
+                    AppLogger.warning(f"[MemWatch] report failed: {e}", exc=e)
+
+    def report(self):
+        rss = self._proc.memory_info().rss
+        delta = rss - self._last_rss
+        self._last_rss = rss
+        self._peak_rss = max(self._peak_rss, rss)
+        mb = 1024 * 1024
+        role = AppLogger._role or "root"
+        AppLogger.info(f"[MemWatch] {role}(pid={os.getpid()}) RSS={rss / mb:.1f}MB delta={delta / mb:+.1f}MB/{self.interval}s peak={self._peak_rss / mb:.1f}MB")
+        if self.trace:
+            self.report_tracemalloc()
+
+    def report_tracemalloc(self):
+        import tracemalloc
+
+        stats = tracemalloc.take_snapshot().statistics("lineno")[:8]
+        AppLogger.info("[MemWatch] top allocations by size:")
+        for stat in stats:
+            AppLogger.info(f"  {stat}")
+
+    def stop(self):
+        self._stop_event.set()
+        self.enabled = False
+        if self._thread is not None:
+            self._thread.join(timeout=3)
+            self._thread = None
+        AppLogger.info("[MemWatch] stopped")
+
+
+memwatch = MemoryWatchdog()

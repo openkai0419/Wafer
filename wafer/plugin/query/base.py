@@ -3,28 +3,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from PySide6 import QtCore
-
 from ..registry import PluginBase
 
 if TYPE_CHECKING:
     from PySide6 import QtWidgets
 
-
-class KeyStore(QtCore.QObject):
-    updated = QtCore.Signal(list)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._data: list[tuple[str, int]] = []
-
-    @property
-    def data(self) -> list[tuple[str, int]]:
-        return self._data
-
-    def set_data(self, results: list[tuple[str, int]]):
-        self._data = results
-        self.updated.emit(results)
+    from .widgets import KeyStore
 
 
 class BaseFilterPlugin(PluginBase, ABC):

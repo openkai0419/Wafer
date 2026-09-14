@@ -4,6 +4,9 @@ from blake3 import blake3
 
 from .logs import AppLogger
 
+HASH_EMPTY = "z"
+HASH_FAILED = "f"
+
 
 def fast_signature_hash(path: str, size=None, part_bytes=256) -> str:
     try:
@@ -11,7 +14,7 @@ def fast_signature_hash(path: str, size=None, part_bytes=256) -> str:
             st = os.stat(path)
             size = st.st_size
         if size == 0:
-            return "z"
+            return HASH_EMPTY
         offsets = [0, max(0, size // 2 - part_bytes // 2), max(0, size - part_bytes)]
         h = blake3()
         with open(path, "rb", buffering=1024 * 1024) as f:
@@ -27,7 +30,7 @@ def fast_signature_hash(path: str, size=None, part_bytes=256) -> str:
         return h.hexdigest(16)
     except (OSError, ValueError) as e:
         AppLogger.warning(f"fast_signature_hash failed: {path}", exc=e)
-        return "f"
+        return HASH_FAILED
 
 
 def full_hash(path: str, threads: int | None = None) -> str:
@@ -42,7 +45,7 @@ def full_hash(path: str, threads: int | None = None) -> str:
         return hasher.hexdigest()
     except (OSError, ValueError) as e:
         AppLogger.warning(f"full_hash failed: {path}", exc=e)
-        return "f"
+        return HASH_FAILED
 
 
 def sha256_file(path: str, chunk_size: int = 8 * 1024 * 1024) -> str:

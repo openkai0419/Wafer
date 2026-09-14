@@ -1073,7 +1073,7 @@ def test_delete_meta_and_tags_by_keys(tmp_path):
     db = _setup_db_for_parser(tmp_path)
     db.delete_meta_and_tags_by_keys(
         [
-            ("src1", "hash1", ["exif.parameters", "wd14.general"]),
+            ("src1", "hash1", ["exif.parameters"], ["wd14.general"]),
         ]
     )
     cur = db.get_reader_cursor()
@@ -1092,7 +1092,7 @@ def test_delete_meta_and_tags_by_keys_no_hash(tmp_path):
     db = _setup_db_for_parser(tmp_path)
     db.delete_meta_and_tags_by_keys(
         [
-            ("src1", None, ["exif.parameters"]),
+            ("src1", None, ["exif.parameters"], ["wd14.general"]),
         ]
     )
     cur = db.get_reader_cursor()

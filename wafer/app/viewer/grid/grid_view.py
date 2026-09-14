@@ -1,8 +1,10 @@
 import math
 from PySide6 import QtCore, QtGui, QtWidgets
 from ....utils.formatting import dpix
+from ....utils.logs import AppLogger
 from ....utils.profiling import profiler
 from ....core.qt.rate_limit import qt_debounce, qt_throttle
+from ....core.qt.visibility import WidgetVisibilityWatcher
 from ....core.qt.dispatcher import Dispatcher
 from ....core.app_settings import app_settings
 from ....plugin.grid.handler import grid_resolver, WidgetNotifier
@@ -191,6 +193,11 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self._scroll_target = 0
         self._setup_primary_scroll()
 
+        self._active = True
+        self._autoscroll_resume = False
+        self._visibility = WidgetVisibilityWatcher(self)
+        self._visibility.changed.connect(self.set_grid_active)
+
     def eventFilter(self, obj, event):
         if obj is self.viewport():
             t = event.type()
@@ -300,6 +307,24 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
 
     def is_scrolling(self):
         return self._auto_scroll_anim.state() == QtCore.QAbstractAnimation.Running
+
+    def set_grid_active(self, active):
+        active = bool(active)
+        if active == self._active:
+            return
+        self._active = active
+        if active:
+            self._update_visible_items()
+            if self._autoscroll_resume:
+                self._autoscroll_resume = False
+                self._start_auto_scroll_from_current()
+        else:
+            self._autoscroll_resume = self.is_scrolling()
+            if self._autoscroll_resume:
+                self._auto_scroll_anim.stop()
+            released = len(self.widgets) + len(self._additional_widgets)
+            self._update_visible_items()
+            AppLogger.info(f"Grid collapsed: released {released} cells")
 
     def _on_auto_scroll_user_interaction(self):
         if self.is_scrolling():
@@ -755,10 +780,14 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     def _update_visible_items(self):
         if not self.rects:
             return
-        view_rect = self._scene_view_rect()
-        visible_range = self._calculate_visible_indices(view_rect)
-        expanded_range = self._expand_prefetch_range(visible_range)
-        new_visible = set(expanded_range)
+        if self._active:
+            view_rect = self._scene_view_rect()
+            visible_range = self._calculate_visible_indices(view_rect)
+            expanded_range = self._expand_prefetch_range(visible_range)
+            new_visible = set(expanded_range)
+        else:
+            visible_range = range(0, 0)
+            new_visible = set()
         newly_added = new_visible - self.visible_indices
         no_longer_visible = self.visible_indices - new_visible
         vp = self.viewport()

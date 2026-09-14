@@ -13,9 +13,10 @@ class TestDirectLaunchSlotRestore:
         mock_create.return_value = mock_app
         store = MagicMock()
         store.get_restore_slot_ids.return_value = []
+        store.get_restore_webui.return_value = False
 
         with patch("main.argparse.ArgumentParser.parse_args") as mock_args:
-            mock_args.return_value = MagicMock(tray=False, viewer=False, indexer=None, collector=None, parser=None, dev=False, slot=None)
+            mock_args.return_value = MagicMock(tray=False, viewer=False, webui=False, indexer=None, collector=None, parser=None, dev=False, slot=None)
             with patch("wafer.core.workspace.WorkspaceStore.instance", return_value=store):
                 from main import main
 
@@ -33,9 +34,10 @@ class TestDirectLaunchSlotRestore:
         mock_create.return_value = mock_app
         store = MagicMock()
         store.get_restore_slot_ids.return_value = ["s1"]
+        store.get_restore_webui.return_value = False
 
         with patch("main.argparse.ArgumentParser.parse_args") as mock_args:
-            mock_args.return_value = MagicMock(tray=False, viewer=False, indexer=None, collector=None, parser=None, dev=False, slot=None)
+            mock_args.return_value = MagicMock(tray=False, viewer=False, webui=False, indexer=None, collector=None, parser=None, dev=False, slot=None)
             with patch("wafer.core.workspace.WorkspaceStore.instance", return_value=store):
                 from main import main
 
@@ -54,9 +56,10 @@ class TestDirectLaunchSlotRestore:
         mock_create.return_value = mock_app
         store = MagicMock()
         store.get_restore_slot_ids.return_value = ["s1", "s2", "Work"]
+        store.get_restore_webui.return_value = False
 
         with patch("main.argparse.ArgumentParser.parse_args") as mock_args:
-            mock_args.return_value = MagicMock(tray=False, viewer=False, indexer=None, collector=None, parser=None, dev=False, slot=None)
+            mock_args.return_value = MagicMock(tray=False, viewer=False, webui=False, indexer=None, collector=None, parser=None, dev=False, slot=None)
             with patch("wafer.core.workspace.WorkspaceStore.instance", return_value=store):
                 from main import main
 
@@ -75,6 +78,7 @@ class TestTrayStartup:
             mock_args.return_value = MagicMock(
                 tray=True,
                 viewer=False,
+                webui=False,
                 indexer=None,
                 collector=None,
                 parser=None,

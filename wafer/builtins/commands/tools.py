@@ -1,100 +1,12 @@
 import os
+from functools import partial
 from PySide6 import QtWidgets, QtCore, QtGui
 from ...core.commands.bridge import ActionKit
-from ...ui.window import DialogLayoutStore
 from ...utils.formatting import dpix
 from ...utils.paths import get_resource_path, get_app_root_dir
 from ..._version import __version__
 from ...core.lang.manager import t
-
-
-_standalone_dialogs: dict[str, QtWidgets.QDialog] = {}
-
-
-def _open_standalone(widget_factory, title: str, store_key: str, size=None, parent=None):
-    existing = _standalone_dialogs.get(store_key)
-    if existing is not None and existing.isVisible():
-        existing.raise_()
-        existing.activateWindow()
-        return
-    dlg = QtWidgets.QDialog(parent)
-    dlg.setWindowTitle(title)
-    dlg.setWindowFlags(dlg.windowFlags() | QtCore.Qt.Window | QtCore.Qt.WindowMinimizeButtonHint | QtCore.Qt.WindowMaximizeButtonHint)
-    dlg.setAttribute(QtCore.Qt.WA_DeleteOnClose)
-    if size:
-        dlg.resize(*size)
-    else:
-        dlg.resize(dpix(550), dpix(700))
-    layout = QtWidgets.QVBoxLayout(dlg)
-    layout.setContentsMargins(0, 0, 0, 0)
-    layout.addWidget(widget_factory())
-    store = DialogLayoutStore(store_key)
-    store.restore(dlg)
-    _standalone_dialogs[store_key] = dlg
-
-    def _on_close(event):
-        store.save(dlg)
-        _standalone_dialogs.pop(store_key, None)
-        QtWidgets.QDialog.closeEvent(dlg, event)
-
-    dlg.closeEvent = _on_close
-    dlg.show()
-
-
-def _toggle_or_standalone(ctx, panel_display_name: str, widget_factory, store_key: str, size=None):
-    w = ctx.get_instance("MainWindow")
-    if w:
-        w._layout_manager.toggle_panel(panel_display_name)
-        return
-    _open_standalone(widget_factory, panel_display_name, store_key, size)
-
-
-def open_plugin_manager(ctx):
-    from ..plugin_manager.widget import PluginManagerWidget
-
-    _toggle_or_standalone(
-        ctx,
-        "Plugin Manager",
-        PluginManagerWidget,
-        "plugin_manager",
-        size=(dpix(550), dpix(1000)),
-    )
-
-
-def open_database_manager(ctx):
-    from ..database_manager.widget import DatabaseManagerWidget
-
-    _toggle_or_standalone(
-        ctx,
-        "Database Manager",
-        DatabaseManagerWidget,
-        "database_manager",
-        size=(dpix(500), dpix(700)),
-    )
-
-
-def open_metadata_filter(ctx):
-    from ..key_filter.panel import KeyFilterWidget
-
-    _toggle_or_standalone(
-        ctx,
-        "Metadata Filter",
-        KeyFilterWidget,
-        "metadata_filter",
-        size=(dpix(600), dpix(700)),
-    )
-
-
-def open_batch_renamer(ctx):
-    from ..batch_renamer.widget import BatchRenameWidget
-
-    _toggle_or_standalone(
-        ctx,
-        "Batch Renamer",
-        BatchRenameWidget,
-        "batch_renamer",
-        size=(dpix(600), dpix(800)),
-    )
+from .panel import open_panel
 
 
 def show_about(ctx):
@@ -121,6 +33,7 @@ def show_about(ctx):
 
 def show_readme(ctx):
     from ...utils.markdown_browser import MarkdownBrowser
+    from ...ui.layout.standalone import open_standalone
 
     readme_path = os.path.join(str(get_app_root_dir()), "README.md")
     if not os.path.isfile(readme_path):
@@ -131,7 +44,7 @@ def show_readme(ctx):
         browser.load_file(readme_path)
         return browser
 
-    _open_standalone(factory, "README.md", "readme_viewer", size=(dpix(700), dpix(800)), parent=ctx.get_instance("MainWindow"))
+    open_standalone(factory, "README.md", "readme_viewer", size=(dpix(700), dpix(800)), parent=ctx.get_instance("MainWindow"))
 
 
 class ToolCommands(ActionKit.MenuBase):
@@ -146,23 +59,23 @@ class ToolCommands(ActionKit.MenuBase):
             ActionKit.Command(
                 path="setting.plugin_manager",
                 display="Plugin Manager",
-                func=open_plugin_manager,
+                func=partial(open_panel, name="Plugin Manager"),
             ),
             ActionKit.Command(
                 path="setting.database_manager",
                 display="Database Manager",
-                func=open_database_manager,
+                func=partial(open_panel, name="Database Manager"),
             ),
             ActionKit.Command(
                 path="setting.metadata_filter",
                 display="Metadata Filter",
-                func=open_metadata_filter,
+                func=partial(open_panel, name="Metadata Filter"),
             ),
             ":Tools",
             ActionKit.Command(
                 path="setting.batch_renamer",
                 display="Batch Renamer",
-                func=open_batch_renamer,
+                func=partial(open_panel, name="Batch Renamer"),
             ),
         ]
 

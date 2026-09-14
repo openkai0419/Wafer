@@ -120,6 +120,7 @@ def test_result_buffer_append_drain():
         "image_entries": [("p", "s", 1.0)],
         "meta_info_entries": [],
         "tag_entries": [],
+        "source_keys": {},
         "collector_status": [("s", "exif", "ok", 0.0)],
     }
     assert buf.append(parsed, 1) is True
@@ -143,6 +144,7 @@ def test_result_buffer_has_pending():
         "image_entries": [],
         "meta_info_entries": [],
         "tag_entries": [],
+        "source_keys": {},
         "collector_status": [("s", "c", "ok", 0.0)],
     }
     buf.append(parsed, 1)
@@ -160,12 +162,14 @@ def test_merge_parsed_ok_overrides_fail():
             "image_entries": [],
             "meta_info_entries": [],
             "tag_entries": [],
+            "source_keys": {},
             "collector_status": [("src", "exif", "fail", 1.0)],
         },
         {
             "image_entries": [],
             "meta_info_entries": [],
             "tag_entries": [],
+            "source_keys": {},
             "collector_status": [("src", "exif", "ok", 2.0)],
         },
     ]

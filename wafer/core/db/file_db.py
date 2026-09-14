@@ -3,6 +3,7 @@ import os
 import shutil
 import sqlite3
 import threading
+import time
 from pathlib import Path
 from collections.abc import Sequence
 
@@ -107,6 +108,20 @@ _INDEXES_SQL = """
     CREATE INDEX IF NOT EXISTS idx_sources_size ON sources(size);
     CREATE INDEX IF NOT EXISTS idx_cs_collector_status ON collection_status(collector, status);
 """
+
+SOURCE_TRIGGER_KEYS = ("file_hash", "size", "modified", "created", "collected")
+
+
+def _split_trigger_keys(trigger_keys: Sequence[str]) -> tuple[list[str], list[str]]:
+    source_columns = [key for key in SOURCE_TRIGGER_KEYS if key in trigger_keys]
+    return source_columns, [key for key in trigger_keys if key not in SOURCE_TRIGGER_KEYS]
+
+
+def _chunked(values: Sequence, size: int = 900):
+    values = list(values)
+    for i in range(0, len(values), size):
+        yield values[i : i + size]
+
 
 _SQL_UPSERT_SOURCES = """INSERT INTO sources (source, file_hash, size, modified, created, collected)
     VALUES (?, ?, ?, ?, ?, ?)
@@ -398,39 +413,64 @@ class FileDB:
             AppLogger.warning(f"Failed to load previous data from DB: {e}", exc=e)
         return result
 
+    @staticmethod
+    def _hashes_of_sources(cur, sources: Sequence[str]) -> set[str]:
+        hashes: set[str] = set()
+        for chunk in _chunked(sources):
+            placeholders = ",".join(["?"] * len(chunk))
+            rows = cur.execute(f"SELECT file_hash FROM sources WHERE source IN ({placeholders})", chunk).fetchall()
+            hashes.update(file_hash for (file_hash,) in rows if file_hash)
+        return hashes
+
+    @staticmethod
+    def _sources_sharing_hashes(cur, hashes) -> list[str]:
+        sources: list[str] = []
+        for chunk in _chunked(sorted(hashes)):
+            placeholders = ",".join(["?"] * len(chunk))
+            rows = cur.execute(f"SELECT source FROM sources WHERE file_hash IN ({placeholders})", chunk).fetchall()
+            sources.extend(source for (source,) in rows)
+        return sources
+
     @profiler.profile
-    def delete_sources_by_paths(self, paths: Sequence[str]):
+    def delete_sources_by_paths(self, paths: Sequence[str]) -> list[str]:
         if not paths:
-            return
-        with self._write_lock:
-            cur = self.get_writer_cursor()
+            return []
+        with self._write_lock, self.conn:
+            cur = self.conn.cursor()
             try:
+                hashes = self._hashes_of_sources(cur, paths)
                 cur.executemany("DELETE FROM sources WHERE source = ?", [(p,) for p in paths])
-                self.conn.commit()
+                return self._sources_sharing_hashes(cur, hashes)
             finally:
                 cur.close()
 
     @profiler.profile
-    def delete_sources_by_path_prefixes(self, paths: Sequence[str]):
+    def delete_sources_by_path_prefixes(self, paths: Sequence[str]) -> list[str]:
         prefixes = tuple(dict.fromkeys(p for p in paths if p))
         if not prefixes:
-            return
+            return []
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             try:
+                hashes = self._hashes_of_sources(cur, prefixes)
                 existing = set()
-                for i in range(0, len(prefixes), 900):
-                    chunk = prefixes[i : i + 900]
+                for chunk in _chunked(prefixes):
                     placeholders = ",".join(["?"] * len(chunk))
                     rows = cur.execute(f"SELECT source FROM sources WHERE source IN ({placeholders})", chunk).fetchall()
                     existing.update(row[0] for row in rows)
                     cur.executemany("DELETE FROM sources WHERE source = ?", [(path,) for path in chunk])
                 for prefix in (path for path in prefixes if path not in existing):
                     child_pattern = f"{escape_like(prefix if prefix.endswith('/') else prefix + '/')}%"
+                    rows = cur.execute(
+                        "SELECT file_hash FROM sources WHERE source = ? OR source LIKE ? ESCAPE '\\'",
+                        (prefix, child_pattern),
+                    ).fetchall()
+                    hashes.update(file_hash for (file_hash,) in rows if file_hash)
                     cur.execute(
                         "DELETE FROM sources WHERE source = ? OR source LIKE ? ESCAPE '\\'",
                         (prefix, child_pattern),
                     )
+                return self._sources_sharing_hashes(cur, hashes)
             finally:
                 cur.close()
 
@@ -511,25 +551,24 @@ class FileDB:
             )
 
     @staticmethod
-    def _migrate_tags_on_hash_change(cur, source_entries):
+    def _migrate_tags_on_hash_change(cur, source_entries) -> list[tuple[str, str, str]]:
         if not source_entries:
-            return
+            return []
         new_hash_by_path = {e[0]: e[1] for e in source_entries if e[0] and e[1]}
         if not new_hash_by_path:
-            return
+            return []
         paths = list(new_hash_by_path.keys())
         old_hash_by_path: dict[str, str] = {}
-        for i in range(0, len(paths), 900):
-            chunk = paths[i : i + 900]
+        for chunk in _chunked(paths):
             ph = ",".join(["?"] * len(chunk))
             rows = cur.execute(f"SELECT source, file_hash FROM sources WHERE source IN ({ph})", chunk).fetchall()
             for src, fh in rows:
                 if fh:
                     old_hash_by_path[src] = fh
-        migrations = [(new_hash_by_path[p], old) for p, old in old_hash_by_path.items() if new_hash_by_path[p] != old]
+        migrations = [(p, new_hash_by_path[p], old) for p, old in old_hash_by_path.items() if new_hash_by_path[p] != old]
         if not migrations:
-            return
-        for new_hash, old_hash in migrations:
+            return []
+        for _, new_hash, old_hash in migrations:
             cur.execute(
                 """INSERT INTO tags (file_hash, key, value, value_num, locked)
                 SELECT ?, key, value, value_num, locked FROM tags WHERE file_hash = ?
@@ -537,6 +576,7 @@ class FileDB:
                 (new_hash, old_hash),
             )
         AppLogger.info(f"[DB] Migrated tags for {len(migrations)} sources with content change")
+        return migrations
 
     @staticmethod
     def _normalize_file_entries(image_entries):
@@ -588,6 +628,29 @@ class FileDB:
                     cur.executemany(_SQL_UPSERT_TAGS, tag_entries)
             finally:
                 cur.close()
+
+    @profiler.profile
+    def update_source_hashes(self, hash_updates: Sequence[tuple[str, str]]) -> list[str]:
+        entries = [(source, file_hash) for source, file_hash in hash_updates or () if source and file_hash]
+        if not entries:
+            return []
+        with self._write_lock, self.conn:
+            cur = self.conn.cursor()
+            try:
+                self._ensure_hash_indexes(cur, entries)
+                migrations = self._migrate_tags_on_hash_change(cur, entries)
+                if not migrations:
+                    return []
+                cur.executemany(
+                    "UPDATE sources SET file_hash = ? WHERE source = ?",
+                    [(new_hash, path) for path, new_hash, _ in migrations],
+                )
+                affected_hashes = {new for _, new, _ in migrations} | {old for _, _, old in migrations}
+                impacted = self._sources_sharing_hashes(cur, affected_hashes)
+            finally:
+                cur.close()
+        AppLogger.info(f"[DB] Updated file_hash for {len(migrations)} sources, {len(impacted)} impacted")
+        return impacted
 
     @profiler.profile
     def upsert_basic_sources(self, source_entries, image_entries, meta_info_entries=()):
@@ -754,6 +817,24 @@ class FileDB:
                         """UPDATE collection_status SET status = 'dispatched'
                         WHERE source = ? AND collector = ? AND status = 'pending' """,
                         [(s, collector) for s in chunk],
+                    )
+            finally:
+                cur.close()
+
+    @profiler.profile
+    def mark_collected(self, sources, collector):
+        if not sources:
+            return
+        now = time.time()
+        with self._write_lock, self.conn:
+            cur = self.conn.cursor()
+            try:
+                for i in range(0, len(sources), 900):
+                    chunk = sources[i : i + 900]
+                    cur.executemany(
+                        """UPDATE collection_status SET status = 'ok', collected_at = ?
+                        WHERE source = ? AND collector = ? AND status IN ('pending', 'dispatched') """,
+                        [(now, s, collector) for s in chunk],
                     )
             finally:
                 cur.close()
@@ -1021,24 +1102,24 @@ class FileDB:
         finally:
             cur.close()
 
-    def delete_meta_and_tags_by_keys(self, delete_entries: list[tuple[str, str | None, list[str]]]):
+    def delete_meta_and_tags_by_keys(self, delete_entries: list[tuple[str, str | None, list[str], list[str]]]):
         if not delete_entries:
             return
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             try:
-                for path, file_hash, keys in delete_entries:
-                    if not keys:
-                        continue
-                    placeholders = ",".join(["?"] * len(keys))
-                    cur.execute(
-                        f"DELETE FROM meta_info WHERE path = ? AND key IN ({placeholders}) AND locked = 0",
-                        [path] + keys,
-                    )
-                    if file_hash:
+                for path, file_hash, meta_keys, tag_keys in delete_entries:
+                    if meta_keys:
+                        placeholders = ",".join(["?"] * len(meta_keys))
+                        cur.execute(
+                            f"DELETE FROM meta_info WHERE path = ? AND key IN ({placeholders}) AND locked = 0",
+                            [path] + list(meta_keys),
+                        )
+                    if file_hash and tag_keys:
+                        placeholders = ",".join(["?"] * len(tag_keys))
                         cur.execute(
                             f"DELETE FROM tags WHERE file_hash = ? AND key IN ({placeholders}) AND locked = 0",
-                            [file_hash] + keys,
+                            [file_hash] + list(tag_keys),
                         )
             finally:
                 cur.close()
@@ -1256,58 +1337,81 @@ class FileDB:
     def find_sources_with_trigger_keys(self, trigger_keys: tuple[str, ...], parser_status_name: str) -> list[str]:
         if not trigger_keys:
             return []
+        source_columns, meta_keys = _split_trigger_keys(trigger_keys)
+        found: list[str] = []
         cur = self.get_reader_cursor()
         try:
-            placeholders = ",".join(["?"] * len(trigger_keys))
-            cur.execute(
-                f"""SELECT DISTINCT mi.path FROM meta_info mi
-                WHERE mi.key IN ({placeholders})
-                AND mi.path NOT IN (
-                    SELECT cs.source FROM collection_status cs
-                    WHERE cs.collector = ?
+            if meta_keys:
+                placeholders = ",".join(["?"] * len(meta_keys))
+                cur.execute(
+                    f"""SELECT DISTINCT mi.path FROM meta_info mi
+                    WHERE mi.key IN ({placeholders})
+                    AND mi.path NOT IN (
+                        SELECT cs.source FROM collection_status cs
+                        WHERE cs.collector = ?
+                    )
+                    UNION
+                    SELECT DISTINCT i.path FROM tags t
+                    JOIN sources s ON s.file_hash = t.file_hash
+                    JOIN files i ON i.source = s.source
+                    WHERE t.key IN ({placeholders})
+                    AND i.path NOT IN (
+                        SELECT cs.source FROM collection_status cs
+                        WHERE cs.collector = ?
+                    )""",
+                    meta_keys + [parser_status_name] + meta_keys + [parser_status_name],
                 )
-                UNION
-                SELECT DISTINCT i.path FROM tags t
-                JOIN sources s ON s.file_hash = t.file_hash
-                JOIN files i ON i.source = s.source
-                WHERE t.key IN ({placeholders})
-                AND i.path NOT IN (
-                    SELECT cs.source FROM collection_status cs
-                    WHERE cs.collector = ?
-                )""",
-                list(trigger_keys) + [parser_status_name] + list(trigger_keys) + [parser_status_name],
-            )
-            return [row[0] for row in cur.fetchall()]
+                found.extend(row[0] for row in cur.fetchall())
+            if source_columns:
+                cur.execute(
+                    """SELECT s.source FROM sources s
+                    WHERE s.source NOT IN (
+                        SELECT cs.source FROM collection_status cs
+                        WHERE cs.collector = ?
+                    )""",
+                    (parser_status_name,),
+                )
+                found.extend(row[0] for row in cur.fetchall())
         finally:
             cur.close()
+        return list(dict.fromkeys(found))
 
     def get_trigger_metadata(self, sources: list[str], trigger_keys: tuple[str, ...]) -> dict[str, dict[str, str]]:
         if not sources or not trigger_keys:
             return {}
+        source_columns, meta_keys = _split_trigger_keys(trigger_keys)
         result: dict[str, dict[str, str]] = {}
-        key_ph = ",".join(["?"] * len(trigger_keys))
+        key_ph = ",".join(["?"] * len(meta_keys))
+        column_sql = ", ".join(f"s.{column}" for column in source_columns)
         cur = self.get_reader_cursor()
         try:
             chunk_size = 900
-            key_list = list(trigger_keys)
             for i in range(0, len(sources), chunk_size):
                 chunk = sources[i : i + chunk_size]
                 src_ph = ",".join(["?"] * len(chunk))
-                cur.execute(
-                    f"SELECT path, key, value FROM meta_info WHERE path IN ({src_ph}) AND key IN ({key_ph})",
-                    chunk + key_list,
-                )
-                for path, key, value in cur.fetchall():
-                    result.setdefault(path, {})[key] = value
-                cur.execute(
-                    f"""SELECT i.path, t.key, t.value FROM tags t
-                    JOIN sources s ON s.file_hash = t.file_hash
-                    JOIN files i ON i.source = s.source
-                    WHERE i.path IN ({src_ph}) AND t.key IN ({key_ph})""",
-                    chunk + key_list,
-                )
-                for path, key, value in cur.fetchall():
-                    result.setdefault(path, {})[key] = value
+                if meta_keys:
+                    cur.execute(
+                        f"SELECT path, key, value FROM meta_info WHERE path IN ({src_ph}) AND key IN ({key_ph})",
+                        chunk + meta_keys,
+                    )
+                    for path, key, value in cur.fetchall():
+                        result.setdefault(path, {})[key] = value
+                    cur.execute(
+                        f"""SELECT i.path, t.key, t.value FROM tags t
+                        JOIN sources s ON s.file_hash = t.file_hash
+                        JOIN files i ON i.source = s.source
+                        WHERE i.path IN ({src_ph}) AND t.key IN ({key_ph})""",
+                        chunk + meta_keys,
+                    )
+                    for path, key, value in cur.fetchall():
+                        result.setdefault(path, {})[key] = value
+                if source_columns:
+                    cur.execute(f"SELECT s.source, {column_sql} FROM sources s WHERE s.source IN ({src_ph})", chunk)
+                    for row in cur.fetchall():
+                        values = result.setdefault(row[0], {})
+                        for index, column in enumerate(source_columns, start=1):
+                            if row[index] is not None:
+                                values[column] = str(row[index])
         finally:
             cur.close()
         return result

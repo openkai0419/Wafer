@@ -40,7 +40,7 @@ class TestComfyUiParser:
         assert "KSampler#0/model" not in result.meta_info
         assert result.meta_info["CheckpointLoaderSimple#0/ckpt_name"] == "v3.safetensors"
         assert result.meta_info["workflow"] == json.dumps(WORKFLOW)
-        assert set(result.delete_keys) == {"exiftool.PNG:Prompt", "exiftool.PNG:Workflow"}
+        assert set(result.delete_meta_keys) == {"exiftool.PNG:Prompt", "exiftool.PNG:Workflow"}
 
     def test_webp_prefix_stripped(self):
         metadata = {

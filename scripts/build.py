@@ -49,8 +49,15 @@ NOTICE_ONLY_RUNTIME_PACKAGES = frozenset(
     {
         "PySide6-Addons",
         "PySide6-Essentials",
+        "aiohappyeyeballs",
+        "aiosignal",
+        "attrs",
         "backports.zstd",
         "brotli",
+        "frozenlist",
+        "multidict",
+        "propcache",
+        "yarl",
         "certifi",
         "charset-normalizer",
         "idna",
@@ -208,7 +215,7 @@ def setup_python(python_dir: Path):
 
     print("  Installing runtime dependencies...")
     subprocess.run(
-        [python_exe, "-m", "pip", "install", "-r", str(ROOT / "requirements.txt"), "--quiet", "--disable-pip-version-check", "--no-cache-dir", "--no-warn-script-location"],
+        [python_exe, "-m", "pip", "install", "-r", str(REQUIREMENTS_FILE), "--quiet", "--disable-pip-version-check", "--no-cache-dir", "--no-warn-script-location"],
         check=True,
     )
     print("  Python environment ready")
@@ -277,6 +284,8 @@ def create_launchers(dist_dir: Path, version: str):
         cmd.append(str(cs_path))
         subprocess.run(cmd, check=True)
         print(f"  Built {exe_name}")
+    shutil.copy2(dist_dir / "Wafer.exe", dist_dir / "Wafer-Web.exe")
+    print("  Built Wafer-Web.exe")
 
 
 def generate_third_party_notices(dist_dir: Path):

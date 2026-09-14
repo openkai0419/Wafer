@@ -1,3 +1,4 @@
+aiohttp>=3.10,<4
 blake3==1.0.8
 comtypes==1.4.16
 markdown>=3.7

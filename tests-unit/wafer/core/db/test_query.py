@@ -217,6 +217,45 @@ class TestSearchQueryDataclass:
         assert hash(q1) != hash(q2)
 
 
+class TestFileSearchEngineThreadLocal:
+    def test_concurrent_threads_use_separate_connections(self, populated_db):
+        import threading
+
+        engine = FileSearchEngine(populated_db)
+        conns = []
+        counts = []
+        lock = threading.Lock()
+
+        def worker():
+            paths, _, _ = engine.search(SearchQuery(keys=["dpi"]))
+            with lock:
+                conns.append(id(engine.conn))
+                counts.append(len(paths))
+
+        threads = [threading.Thread(target=worker) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert counts == [200, 200, 200, 200]
+        assert len(set(conns)) == 4
+        assert len(engine._connections) == 4
+        engine.close()
+        assert engine._connections == []
+
+    def test_close_from_other_thread(self, populated_db):
+        import threading
+
+        engine = FileSearchEngine(populated_db)
+        t = threading.Thread(target=lambda: engine.search(SearchQuery(keys=["dpi"])))
+        t.start()
+        t.join()
+        assert len(engine._connections) == 1
+        engine.close()
+        assert engine.conn is None
+
+
 class TestFileSearchEngineGet:
     def test_get_by_meta_key(self, populated_db):
         engine = FileSearchEngine(populated_db)

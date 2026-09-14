@@ -4,7 +4,7 @@ import os
 import threading
 from pathlib import Path
 
-from ....core.db.db_utils import apply_read_pragmas, connect_with_retry
+from ....core.db.db_utils import open_readonly
 from ....utils.logs import AppLogger
 from ....utils.profiling import profiler
 from ....core.platform.process import AppProcess
@@ -55,14 +55,7 @@ class CollectorDispatcher:
 
     def start(self, node):
         self._node = node
-        uri = self._db_path.resolve().as_uri()
-        self._read_conn = connect_with_retry(
-            f"{uri}?mode=ro",
-            timeout=1.0,
-            uri=True,
-            check_same_thread=False,
-        )
-        apply_read_pragmas(self._read_conn)
+        self._read_conn = open_readonly(self._db_path)
         self._reset_stale()
         self._start_collector_processes()
         self._thread = threading.Thread(target=self._dispatch_loop, daemon=True)

@@ -95,12 +95,14 @@ class TestAppLogger:
         node = MagicMock()
         AppLogger.set_node(node, role="test")
         AppLogger.warning("hello")
-        node.send.assert_called_once()
-        args = node.send.call_args
+        assert node.send.call_count == 2
+        args = node.send.call_args_list[0]
         assert args[0][0] == "dev.log"
         payload = args[0][1]
         assert payload["level"] == "warning"
         assert payload["text"] == "hello"
+        dsts = {c.kwargs["dst"] for c in node.send.call_args_list}
+        assert dsts == {"viewer", "webui"}
 
     def test_set_node_none_no_forward(self):
         AppLogger.set_node(None)
@@ -113,9 +115,16 @@ class TestAppLogger:
         AppLogger.info("i")
         AppLogger.warning("w")
         AppLogger.error("e")
-        assert node.send.call_count == 4
-        levels = [c[0][1]["level"] for c in node.send.call_args_list]
+        assert node.send.call_count == 8
+        levels = [c[0][1]["level"] for c in node.send.call_args_list[::2]]
         assert levels == ["debug", "info", "warning", "error"]
+
+    def test_forward_skips_own_sink_role(self):
+        node = MagicMock()
+        AppLogger.set_node(node, role="viewer")
+        AppLogger.info("from viewer")
+        assert node.send.call_count == 1
+        assert node.send.call_args.kwargs["dst"] == "webui"
 
     def test_forward_exception_suppressed(self):
         node = MagicMock()
@@ -152,8 +161,8 @@ class TestAppLogger:
         node.is_registered = True
         AppLogger.set_node(node, role="test")
         AppLogger.info("should forward")
-        node.send.assert_called_once()
-        assert node.send.call_args[0][0] == "dev.log"
+        assert node.send.call_count == 2
+        assert node.send.call_args_list[0][0][0] == "dev.log"
 
     def test_debug_non_recursive_uses_active_logger(self):
         from wafer.utils.logs import debug_non_recursive

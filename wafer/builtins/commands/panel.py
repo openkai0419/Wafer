@@ -45,6 +45,43 @@ def _notify_solo_failed(name: str = ""):
         Notifier.warning(t("Panel solo failed"))
 
 
+def _find_standalone_panel(name: str):
+    from ...plugin.panel.handler import panel_registry
+
+    lowered = name.lower()
+    for cls in panel_registry.list_all():
+        display = (getattr(cls, "DISPLAY_NAME", "") or cls.NAME).lower()
+        if display == lowered and getattr(cls, "STANDALONE_AVAILABLE", False):
+            return cls
+    return None
+
+
+def open_panel(ctx=None, name: str = "", *, toggle: bool = True):
+    registry = InstanceRegistry.instance()
+    w = registry.get_one("MainWindow")
+    if w:
+        mgr = getattr(w, "_layout_manager", None)
+        target = _resolve_panel_name(name, mgr) if mgr else None
+        if target is None:
+            AppLogger.warning(f"Open panel failed: unknown panel '{name}'")
+            return None
+        mgr.toggle_panel(target) if toggle else mgr.ensure_panel_visible(target)
+        return mgr.panel_widget(target)
+    cls = _find_standalone_panel(name)
+    if cls is None:
+        AppLogger.warning(f"Open panel failed: '{name}' is not standalone-available")
+        return None
+    from ...plugin.panel.handler import panel_registry
+    from ...ui.layout.standalone import open_standalone
+    from ...utils.formatting import dpix
+
+    plugin = panel_registry.instance(cls.NAME)
+    store_key = name.lower().replace(" ", "_")
+    size = tuple(dpix(v) for v in cls.STANDALONE_SIZE) if cls.STANDALONE_SIZE else None
+    parent = registry.get_one("WebUIWindow")
+    return open_standalone(plugin.create_widget, name, store_key, size, parent)
+
+
 @require(w="MainWindow")
 def reset_panel_layout(ctx, *, w):
     w.reset_panel_layout_to_default()

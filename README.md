@@ -46,6 +46,10 @@ Wafer mainly uses two user-visible processes: `Tray` and `Viewer`.
 
 While Tray is running, file changes are detected and the database stays up to date.
 
+### About WebUI
+
+Run `Wafer-Web.exe` (or `python main.py --webui`) to access Wafer from a browser instead of the desktop Viewer. It can run headless and be restricted to local access or shared on your network from its Settings.
+
 ### About the Plugin Manager
 
 `Plugin Manager` manages extension states and collection or analysis assignments.
@@ -55,7 +59,7 @@ While Tray is running, file changes are detected and the database stays up to da
 | Extension Type | What it adds | Representative extensions |
 |---|---|---|
 | Viewer / Grid | File rendering, thumbnails, and viewer behavior | `image`, `animated`, `video` |
-| Collector / Parser | Collecting metadata, or tagging with AI to make your files searchable | `exiftool`, `ffmpeg`, `color`, `wd14`, `florence` |
+| Collector / Parser | Collecting metadata, or tagging with AI to make your files searchable | `exiftool`, `ffmpeg`, `color`, `wd14`, `florence`, `duplicate` |
 | Search / Filter | Additional ways to search and narrow results, such as date ranges, regular expressions, and color distance | `additional_filters`, `color` |
 | Layout / UI | Grid layouts, custom panels, and others | `additional_layout`, extension settings panels |
 | Archive Support | Treat archive contents as logical child paths and delegate rendering to existing plugins | `zip` |

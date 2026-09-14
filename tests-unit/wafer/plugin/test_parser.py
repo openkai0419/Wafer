@@ -54,7 +54,8 @@ def test_parser_result_to_dict():
     d = r.to_dict()
     assert d == {"source": "img.png", "status": True, "meta_info": {"k": "v"}}
     assert "tags" not in d
-    assert "delete_keys" not in d
+    assert "delete_meta_keys" not in d
+    assert "delete_tag_keys" not in d
 
 
 def test_on_notify_default_is_noop():

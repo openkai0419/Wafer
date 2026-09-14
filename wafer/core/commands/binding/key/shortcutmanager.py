@@ -10,6 +10,7 @@ from ...command.core import CommandRegistry
 from ...command.context import CommandContext
 from ...command.payload import CommandPayload
 from .....utils.helpers import invoke_int, widget_prop_bool
+from ..common import is_text_entry_focused
 from .sequence import KeySequence
 from .runtime import KeyNameResolver
 from .runtime import KeyListenerRegistry
@@ -192,6 +193,7 @@ class ShortcutManager(QtCore.QObject):
             wid = self._resolve_target_widget_id_focus()
         if wid is None:
             return False
+        suppress_commands = wid not in self._consume_key_listener_ids and is_text_entry_focused()
         if et == QtCore.QEvent.KeyPress:
             e = cast(QtGui.QKeyEvent, event)
             if e.isAutoRepeat():
@@ -207,6 +209,8 @@ class ShortcutManager(QtCore.QObject):
             self._key_listeners.emit_press(wid, k)
             if wid in self._consume_key_listener_ids:
                 return True
+            if suppress_commands:
+                return False
             payload = self._state.payload_for_press(
                 sc=int(sc),
                 key=int(k),
@@ -233,7 +237,7 @@ class ShortcutManager(QtCore.QObject):
                 return False
             if sc:
                 payload_sc = self._state.payload_for_physical_release(sc=int(sc), physical_map=self._sc_keymap.get(wid))
-                if payload_sc is not None:
+                if payload_sc is not None and not suppress_commands:
                     self._exec(wid, payload_sc, e)
             rk = k
             if sc:
@@ -242,7 +246,7 @@ class ShortcutManager(QtCore.QObject):
             if wid in self._consume_key_listener_ids:
                 return True
             payload = self._state.payload_for_logical_release(key=int(rk), logical_map=self._keymap.get(wid))
-            if payload is not None:
+            if payload is not None and not suppress_commands:
                 self._exec(wid, payload, e)
             return False
         if et in (QtCore.QEvent.FocusOut, QtCore.QEvent.Hide, QtCore.QEvent.WindowDeactivate):

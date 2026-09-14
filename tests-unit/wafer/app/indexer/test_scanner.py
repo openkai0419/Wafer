@@ -359,3 +359,54 @@ def test_backfill_parsers_no_parsers(tmp_path):
     scanner._do_backfill()
     assert not scheduler.submit.called
     scanner.stop()
+
+
+def test_submit_pending_by_source_keys_triggers_parsers(tmp_path):
+    from unittest.mock import patch
+
+    scanner, scheduler, writer, _ = _make_scanner(tmp_path)
+    scanner.set_parsers([("full_hash", ("file_hash",)), ("nai", ("exif.comment",))])
+    scanner._submit_pending_by_source_keys(["/a.jpg", "/b.jpg"])
+
+    tasks = [c[0][0] for c in scheduler.submit.call_args_list if c[0][0].name == "trigger_parsers"]
+    assert len(tasks) == 1
+    with patch("wafer.app.indexer.scanner.trigger_parser_pending") as trigger:
+        tasks[0].run()
+    assert trigger.call_args[0][0] == {"/a.jpg": {"file_hash"}, "/b.jpg": {"file_hash"}}
+
+
+def test_submit_pending_by_source_keys_ignores_meta_only_parsers(tmp_path):
+    scanner, scheduler, *_ = _make_scanner(tmp_path)
+    scanner.set_parsers([("nai", ("exif.comment",))])
+    scanner._submit_pending_by_source_keys(["/a.jpg"])
+    assert not scheduler.submit.called
+
+
+def test_submit_pending_by_source_keys_without_parsers(tmp_path):
+    scanner, scheduler, *_ = _make_scanner(tmp_path)
+    scanner._submit_pending_by_source_keys(["/a.jpg"])
+    assert not scheduler.submit.called
+
+
+def test_backfill_parsers_covers_source_key_parsers(tmp_path):
+    from wafer.core.db.file_db import FileDB
+
+    db_path = tmp_path / "test.db"
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+    db.upsert_batches([("/a.jpg", "h1", 100, 1.0)], [("/a.jpg", "/a.jpg", 1.0)], [], [])
+
+    scheduler = MagicMock()
+    writer = MagicMock()
+    writer.db = db
+    scanner = DirectoryScanner(db_path, scheduler, writer, MagicMock(), [])
+    scanner.set_parsers([("full_hash", ("file_hash",))])
+    scanner.start()
+    scanner._do_backfill()
+    pending = [c[0][0] for c in scheduler.submit.call_args_list if c[0][0].name == "insert_pending"]
+    assert pending
+    pending[0].run()
+    writer.insert_pending.assert_called_once_with(["/a.jpg"], ["full_hash"])
+    scanner.stop()
+    db.close()

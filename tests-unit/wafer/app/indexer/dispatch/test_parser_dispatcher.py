@@ -49,3 +49,55 @@ def test_terminate_parsers_skips_fallback_when_graceful_stop_succeeds(tmp_path):
 
     dispatcher._node.send.assert_called_once()
     terminate_cmd.assert_not_called()
+
+
+def _dispatcher_for_pending(tmp_path):
+    scheduler = MagicMock()
+    scheduler.submit = lambda task: task.run()
+    writer = MagicMock()
+    progress = MagicMock()
+    db_path = tmp_path / "test.db"
+    dispatcher = ParserDispatcher("testdb", db_path, scheduler, writer, progress, parsers=["sample"])
+    dispatcher._node = MagicMock()
+    return dispatcher, writer
+
+
+def test_dispatch_pending_marks_untriggered_collected_and_skips_send(tmp_path):
+    dispatcher, writer = _dispatcher_for_pending(tmp_path)
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [
+        ("/a.png", 1.0, 10, "h1"),
+        ("/b.png", 1.0, 20, "h2"),
+    ]
+    dispatcher._read_conn = MagicMock()
+    dispatcher._read_conn.cursor.return_value = cursor
+    writer.db.get_trigger_metadata.return_value = {"/a.png": {"exiftool.PNG:Comment": "{}"}}
+
+    with patch("wafer.app.indexer.dispatch.parser_dispatcher.parser_resolver") as pr:
+        pr.status_name.return_value = "novelai"
+        pr.batch_size.return_value = 300
+        pr.trigger_keys.return_value = ("exiftool.PNG:Comment",)
+        dispatcher._dispatch_pending()
+
+    writer.mark_collected.assert_called_once_with(["/b.png"], "novelai")
+    sent = dispatcher._node.send.call_args
+    assert sent.kwargs["dst"] == "parser-sample"
+    assert sent.args[1]["paths"] == ["/a.png"]
+
+
+def test_dispatch_pending_skips_send_when_all_untriggered(tmp_path):
+    dispatcher, writer = _dispatcher_for_pending(tmp_path)
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [("/a.png", 1.0, 10, "h1")]
+    dispatcher._read_conn = MagicMock()
+    dispatcher._read_conn.cursor.return_value = cursor
+    writer.db.get_trigger_metadata.return_value = {}
+
+    with patch("wafer.app.indexer.dispatch.parser_dispatcher.parser_resolver") as pr:
+        pr.status_name.return_value = "novelai"
+        pr.batch_size.return_value = 300
+        pr.trigger_keys.return_value = ("exiftool.PNG:Comment",)
+        dispatcher._dispatch_pending()
+
+    writer.mark_collected.assert_called_once_with(["/a.png"], "novelai")
+    dispatcher._node.send.assert_not_called()

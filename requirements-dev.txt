@@ -2,7 +2,8 @@
 pip-audit==2.10.0
 pip-licenses==5.5.5
 pyright==1.1.408
-pytest==9.0.3
+pytest==8.4.2
+pytest-playwright==0.7.1
 pytest-qt==4.5.0
 pytest-timeout==2.4.0
 ruff==0.15.10

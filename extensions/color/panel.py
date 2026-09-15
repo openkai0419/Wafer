@@ -5,8 +5,8 @@ from PySide6 import QtCore, QtWidgets
 from wafer.qt.commands.bridge import ActionKit, Menu
 from wafer.qt.theme import ThemeManager
 from wafer.plugin import BaseKeyValuePanelPlugin
-from wafer.qt.ui.panel.meta_viewer import CollapsibleCard
-from wafer.qt.ui.widgets import FlowLayout
+from wafer.qt.meta.viewer import CollapsibleCard
+from wafer.qt.widgets import FlowLayout
 from wafer.utils.formatting import dpix
 
 from ._color import packed_to_hex

@@ -4,10 +4,10 @@ from unittest.mock import MagicMock
 import pytest
 from PySide6 import QtWidgets
 from wafer.app.viewer.preview.meta_panel import MetaViewerWidget, _FIXED_SECTION_KEYS
-from wafer.qt.ui.panel.searchable_meta_widget import ScopedSearchKvAddDialog, SearchableMetaWidget
-from wafer.qt.ui.panel.tag_edit_service import TagEditService
-from wafer.qt.ui.panel.meta_viewer import CollapsibleCard, MetaRowWidget
-from wafer.qt.ui.panel.meta_viewer import SECTION_MARKER_META_PREFIX, SECTION_MARKER_META_ROOT, SECTION_MARKER_TAG_PREFIX, SECTION_MARKER_TAG_ROOT
+from wafer.qt.meta.searchable import ScopedSearchKvAddDialog, SearchableMetaWidget
+from wafer.qt.meta.tag_edit_service import TagEditService
+from wafer.qt.meta.viewer import CollapsibleCard, MetaRowWidget
+from wafer.qt.meta.viewer import SECTION_MARKER_META_PREFIX, SECTION_MARKER_META_ROOT, SECTION_MARKER_TAG_PREFIX, SECTION_MARKER_TAG_ROOT
 
 
 @pytest.fixture(autouse=True)

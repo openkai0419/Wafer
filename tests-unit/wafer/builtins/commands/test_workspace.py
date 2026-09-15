@@ -230,7 +230,7 @@ class TestWorkspaceCommands:
         tb.show_recent_popup.assert_called_once_with()
 
     def test_workspace_menu_uses_popup_commands_instead_of_panel_toggle(self):
-        from wafer.qt.ui.layout.manager import LayoutManager
+        from wafer.qt.layout.manager import LayoutManager
 
         items = workspace_commands.WorkspaceCommands.commands()
         paths = [item.path for item in items if hasattr(item, "path")]

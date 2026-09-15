@@ -6,8 +6,8 @@ from ...core.lang.manager import t
 from ...core.db.key_value import SCOPE_META_INFO, SCOPE_TAG
 from ...qt.common.icon_engine import themed_icon
 from ...plugin import BaseKeyValuePanelPlugin
-from ...qt.ui.panel.meta_viewer import CollapsibleCard
-from ...qt.ui.widgets import FlowLayout
+from ...qt.meta.viewer import CollapsibleCard
+from ...qt.widgets import FlowLayout
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
 from . import dialogs
@@ -121,7 +121,7 @@ class _MarkBadgeRow(QtWidgets.QWidget):
         if self._scope == SCOPE_TAG and not self._file_hash:
             AppLogger.warning("[MarkPanel] cannot edit tag mark without file hash")
             return
-        from ...qt.ui.panel.tag_edit_service import TagEditService
+        from ...qt.meta.tag_edit_service import TagEditService
 
         key = MarkRegistry.key(mark.id)
         TagEditService.instance().submit(

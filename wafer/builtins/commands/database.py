@@ -4,7 +4,7 @@ from ...core.lang.manager import t
 from ...utils.paths import list_setting_db_names
 from ...utils.logs import AppLogger
 from ...core.platform.process import AppProcess
-from ...qt.ui.dialogs import ConfirmDialog, InputDialog
+from ...qt.widgets.dialogs import ConfirmDialog, InputDialog
 
 
 @require(w="MainWindow")

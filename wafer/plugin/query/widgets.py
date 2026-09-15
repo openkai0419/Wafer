@@ -7,7 +7,7 @@ from ...core.lang.manager import t
 from ...qt.common.icon_engine import themed_icon
 from ...qt.theme import ThemeManager
 from ...core.state import StateStore
-from ...qt.ui.popups import PopupBase
+from ...qt.widgets.popup import PopupBase
 
 _STATE_NAMESPACE = "filters/active_keys"
 

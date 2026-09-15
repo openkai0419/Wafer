@@ -4,13 +4,13 @@ from pathlib import Path
 from PySide6 import QtWidgets, QtCore, QtGui
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
-from ...qt.ui.widgets.markdown_browser import MarkdownBrowser, render_to_html
+from ...qt.widgets.markdown_browser import MarkdownBrowser, render_to_html
 from ...qt.theme import ThemeManager
 from ...core.lang.manager import t
 from ...qt.common.color_utils import mix_colors
 from ...plugin.loader import get_plugin_dir, PluginLoader, qualify_plugin_name
 from ...plugin.settings import PluginSettings
-from ...qt.ui.widgets.eliding import ElidingLabel
+from ...qt.widgets.eliding import ElidingLabel
 from ...plugin.kinds import PLUGIN_KIND_COLLECTOR, PLUGIN_KIND_PANEL, PLUGIN_KIND_PARSER, plugin_kind_color, plugin_kind_label
 from ...plugin.installer import (
     InstallState,

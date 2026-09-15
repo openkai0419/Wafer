@@ -2840,7 +2840,7 @@ class TestStandaloneLaunch:
             captured.update(title=title, key=key)
             return object()
 
-        monkeypatch.setattr("wafer.qt.ui.layout.standalone.open_standalone", fake_open)
+        monkeypatch.setattr("wafer.qt.layout.standalone.open_standalone", fake_open)
         had = panel_registry.get(BatchRenamerPlugin.NAME) is not None
         if not had:
             panel_registry.register(BatchRenamerPlugin)

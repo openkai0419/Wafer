@@ -473,7 +473,7 @@ class TestDatabaseManagerCommands:
             captured.update(title=title, key=key, size=size)
             return object()
 
-        monkeypatch.setattr("wafer.qt.ui.layout.standalone.open_standalone", fake_open)
+        monkeypatch.setattr("wafer.qt.layout.standalone.open_standalone", fake_open)
         had = panel_registry.get(DatabaseManagerPlugin.NAME) is not None
         if not had:
             panel_registry.register(DatabaseManagerPlugin)
@@ -490,8 +490,8 @@ class TestDatabaseManagerCommands:
 
     def test_open_standalone_reuses_existing(self, qtbot, monkeypatch):
         from PySide6 import QtCore
-        from wafer.qt.ui.layout import standalone
-        from wafer.qt.ui.layout.standalone import open_standalone, _standalone_dialogs
+        from wafer.qt.layout import standalone
+        from wafer.qt.layout.standalone import open_standalone, _standalone_dialogs
 
         class _FakeStore:
             def __init__(self, *a, **kw):
@@ -1004,7 +1004,7 @@ class TestDialogLayoutStore:
             "wafer.utils.paths.resolve_data_path",
             lambda name: tmp_path / name,
         )
-        from wafer.qt.ui.window import DialogLayoutStore
+        from wafer.qt.common.window_state import DialogLayoutStore
 
         store = DialogLayoutStore("test_dialog")
 
@@ -1026,7 +1026,7 @@ class TestDialogLayoutStore:
             "wafer.utils.paths.resolve_data_path",
             lambda name: tmp_path / name,
         )
-        from wafer.qt.ui.window import DialogLayoutStore
+        from wafer.qt.common.window_state import DialogLayoutStore
 
         store = DialogLayoutStore("test_splitter")
 

@@ -12,7 +12,7 @@ from ....core.db.key_value import DATA_SCOPES, SCOPE_ALL, normalize_data_scope
 from ....qt.theme import ThemeManager
 from ....qt.common.icon_engine import themed_icon
 from ....core.lang.manager import t
-from ....qt.ui.panel.meta_viewer import (
+from ....qt.meta.viewer import (
     CollapsibleCard,
     MetaRowWidget,
     SECTION_MARKER_META_PREFIX,
@@ -20,8 +20,8 @@ from ....qt.ui.panel.meta_viewer import (
     SECTION_MARKER_TAG_PREFIX,
     SECTION_MARKER_TAG_ROOT,
 )
-from ....qt.ui.panel.searchable_meta_widget import ScopedSearchKvAddDialog, SearchableMetaWidget
-from ....qt.ui.panel.tag_edit_service import TagEditService
+from ....qt.meta.searchable import ScopedSearchKvAddDialog, SearchableMetaWidget
+from ....qt.meta.tag_edit_service import TagEditService
 
 _FIXED_SECTION_KEYS = ("file", "source")
 _TAG_PREFIX = "tag:"

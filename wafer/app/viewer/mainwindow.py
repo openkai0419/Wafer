@@ -34,9 +34,9 @@ from ..lifecycle import CloseReason
 from .search import SearchService
 from ...core.workspace import WorkspaceStore, WindowSlot
 from ...qt.commands.bridge import UI, Command, Menu
-from ...qt.ui.layout.manager import LayoutManager
+from ...qt.layout.manager import LayoutManager
 from ...core.state import StateStore
-from ...qt.ui.window import WindowStateController
+from ...qt.common.window_state import WindowStateController
 from ...qt.common.dispatcher import Dispatcher, CancelToken
 from ...qt.common.thread import utility_pool
 from ...core.platform.taskbar import apply_window_identity
@@ -411,7 +411,7 @@ class MainWindow(QtWidgets.QMainWindow):
         return count
 
     def _on_layout_mode_changed(self, mode):
-        from ...qt.ui.layout.manager import MODE_EDIT
+        from ...qt.layout.manager import MODE_EDIT
 
         is_edit = mode == MODE_EDIT
         self._layout_edit_btn.blockSignals(True)
@@ -657,7 +657,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_tags_updated_overlay(self, payload: dict):
         if not self._is_my_db(payload.get("db", "")):
             return
-        from ...qt.ui.panel.tag_edit_service import TagEditService
+        from ...qt.meta.tag_edit_service import TagEditService
 
         TagEditService.instance().handle_ack(payload)
         self.grid_overlay_host.reload()

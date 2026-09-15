@@ -4,7 +4,7 @@ from PySide6 import QtWidgets
 
 from wafer.builtins.commands.panel import PanelCommands, reset_floating_position, reset_panel_layout, solo_current_panel, solo_panel
 from wafer.plugin.panel.base import BasePanelPlugin
-from wafer.qt.ui.layout.manager import LayoutManager
+from wafer.qt.layout.manager import LayoutManager
 
 
 class _BuiltinPanel(BasePanelPlugin):

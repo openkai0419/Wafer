@@ -57,7 +57,7 @@ def resolve_drop_operation_with_ui(op: DropOperation, *, parent: object | None =
         return op
     if op != "ask":
         raise ValueError(f"Invalid op: {op}")
-    from ..ui.dialogs import DropOperationDialog
+    from ..widgets.dialogs import DropOperationDialog
 
     default = get_saved_drop_operation()
     selected = DropOperationDialog.ask(message or t("Choose drop operation."), default=default, parent=parent)
@@ -279,7 +279,7 @@ def _resolve_conflicts_with_ui(
     if overwrite_mode not in ("ask", "overwrite", "skip", "rename"):
         raise ValueError(f"Invalid overwrite_mode: {overwrite_mode}")
 
-    from ..ui.file_conflict_resolver import resolve_paste_plans_with_ui
+    from .conflict_resolver import resolve_paste_plans_with_ui
 
     return resolve_paste_plans_with_ui(
         plans=plans,

@@ -32,8 +32,8 @@ def show_about(ctx):
 
 
 def show_readme(ctx):
-    from ...qt.ui.widgets.markdown_browser import MarkdownBrowser
-    from ...qt.ui.layout.standalone import open_standalone
+    from ...qt.widgets.markdown_browser import MarkdownBrowser
+    from ...qt.layout.standalone import open_standalone
 
     readme_path = os.path.join(str(get_app_root_dir()), "README.md")
     if not os.path.isfile(readme_path):

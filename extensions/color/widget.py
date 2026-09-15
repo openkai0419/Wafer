@@ -7,8 +7,8 @@ from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 from wafer.core.lang.manager import t
 from wafer.qt.common.icon_engine import themed_icon
 from wafer.plugin.key_filter_dialog import FilterSaveConfirmDialog
-from wafer.qt.ui.popups import PopupBase
-from wafer.qt.ui.widgets.color_picker import ColorPickerDialog
+from wafer.qt.widgets.popup import PopupBase
+from wafer.qt.widgets.color_picker import ColorPickerDialog
 from wafer.utils.formatting import dpix
 from wafer.utils.notifier import Notifier
 from wafer.utils.paths import list_setting_db_names

@@ -60,7 +60,7 @@ def test_resolve_drop_operation_with_ui_fixed_operation():
 
 def test_resolve_drop_operation_with_ui_ask_saves_selection(monkeypatch):
     from wafer.qt.transfer import paste
-    from wafer.qt.ui.dialogs import DropOperationDialog
+    from wafer.qt.widgets.dialogs import DropOperationDialog
 
 
     saved = {}

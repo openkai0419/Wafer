@@ -7,8 +7,8 @@ from extensions.text_generation.comfyui_panel import (
     WorkflowDragExport,
 )
 from wafer.plugin import BaseKeyValuePanelPlugin
-from wafer.qt.ui.panel.meta_viewer import CollapsibleCard
-from wafer.qt.ui.panel.searchable_meta_widget import SearchableMetaWidget
+from wafer.qt.meta.viewer import CollapsibleCard
+from wafer.qt.meta.searchable import SearchableMetaWidget
 
 WORKFLOW = {"nodes": [{"id": 3, "type": "KSampler"}], "links": []}
 

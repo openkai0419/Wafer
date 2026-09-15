@@ -8,8 +8,8 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from wafer.qt.theme import ThemeManager
 from wafer.qt.common.icon_engine import icon_draw
 from wafer.plugin import BaseKeyValuePanelPlugin
-from wafer.qt.ui.panel.meta_viewer import CollapsibleCard
-from wafer.qt.ui.panel.searchable_meta_widget import SearchableMetaWidget
+from wafer.qt.meta.viewer import CollapsibleCard
+from wafer.qt.meta.searchable import SearchableMetaWidget
 from wafer.utils.formatting import dpix
 from wafer.utils.logs import AppLogger
 from wafer.utils.paths import resolve_temp_path

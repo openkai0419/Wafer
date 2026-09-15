@@ -2,7 +2,7 @@ from ...qt.commands.bridge import ActionKit
 from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...qt.commands.command.require import require
 from ...core.lang.manager import t
-from ...qt.ui.layout.manager import LayoutManager, MODE_EDIT
+from ...qt.layout.manager import LayoutManager, MODE_EDIT
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier
 
@@ -72,7 +72,7 @@ def open_panel(ctx=None, name: str = "", *, toggle: bool = True):
         AppLogger.warning(f"Open panel failed: '{name}' is not standalone-available")
         return None
     from ...plugin.panel.handler import panel_registry
-    from ...qt.ui.layout.standalone import open_standalone
+    from ...qt.layout.standalone import open_standalone
     from ...utils.formatting import dpix
 
     plugin = panel_registry.instance(cls.NAME)

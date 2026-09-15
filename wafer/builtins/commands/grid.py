@@ -12,7 +12,7 @@ from ...utils.formatting import dpix
 from ...qt.transfer.dragparser import MimeDataParser
 from ...qt.transfer.paste import drop_files_with_ui, get_saved_drop_operation
 from ...qt.common.pixmap import PixmapFactory
-from ...qt.ui.dialogs import ConfirmDialog, DropTargetDialog
+from ...qt.widgets.dialogs import ConfirmDialog, DropTargetDialog
 
 INTERNAL_MIME_TYPE = b"application/x-gridview-internal" + f"{os.getpid()}".encode()
 

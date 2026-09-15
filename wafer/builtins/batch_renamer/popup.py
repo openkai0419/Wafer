@@ -15,7 +15,7 @@ from ...plugin.rename.base import (
 from ...utils.formatting import dpix
 from ...qt.theme import ThemeManager
 from ...core.lang.manager import t
-from ...qt.ui.popups import PopupBase
+from ...qt.widgets.popup import PopupBase
 from .engine import RenameColumn
 
 

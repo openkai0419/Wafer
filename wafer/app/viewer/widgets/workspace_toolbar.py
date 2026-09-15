@@ -12,9 +12,9 @@ from ....qt.common.icon_engine import themed_icon
 from ....qt.common.dispatcher import Dispatcher
 from ....qt.common.thread import utility_pool
 from ....core.workspace import WindowSlot, WorkspaceStore
-from ....qt.ui.dialogs import ConfirmDialog
-from ....qt.ui.widgets.eliding import ElidingLabel
-from ....qt.ui.popups import PopupBase
+from ....qt.widgets.dialogs import ConfirmDialog
+from ....qt.widgets.eliding import ElidingLabel
+from ....qt.widgets.popup import PopupBase
 from ....utils.formatting import dpix
 from ....utils.logs import AppLogger
 

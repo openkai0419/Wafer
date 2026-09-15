@@ -13,7 +13,7 @@ from ...qt.theme import ThemeManager
 from ...core.lang.manager import t
 from ...core.db.setting_db import SettingDB
 from ...core.platform.process import AppProcess
-from ...qt.ui.dialogs import ConfirmDialog, InputDialog
+from ...qt.widgets.dialogs import ConfirmDialog, InputDialog
 from ...qt.common.dispatcher import Dispatcher
 from ...qt.common.icon_engine import themed_icon
 from ...qt.common.thread import utility_pool

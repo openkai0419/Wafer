@@ -10,7 +10,7 @@ from ...core.db.key_value import SCOPE_META_INFO, SCOPE_TAG, normalize_data_scop
 from ...core.lang.manager import t
 from ...qt.common.badge_engine import badge_shape_keys, badge_shape_pixmap, normalize_badge_shape_key
 from ...qt.common.icon_engine import themed_icon
-from ...qt.ui.widgets.color_picker import ColorPickerDialog
+from ...qt.widgets.color_picker import ColorPickerDialog
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger
 from ...utils.notifier import Notifier

@@ -10,9 +10,7 @@ def _release(tag="v0.6.19", *, html_url="https://github.com/openkai0419/Wafer/re
         "html_url": html_url,
         "published_at": "2026-05-01T00:00:00Z",
         "body": "release body",
-        "assets": assets if assets is not None else [
-            {"name": "Wafer-v0.6.19.zip", "browser_download_url": "https://github.com/openkai0419/Wafer/releases/download/v0.6.19/Wafer.zip"}
-        ],
+        "assets": assets if assets is not None else [{"name": "Wafer-v0.6.19.zip", "browser_download_url": "https://github.com/openkai0419/Wafer/releases/download/v0.6.19/Wafer.zip"}],
     }
 
 
@@ -99,10 +97,12 @@ def test_build_update_info_strips_release_body():
 
 
 def test_build_update_info_marks_in_app_update_supported_when_manifest_present():
-    release = _release(assets=[
-        {"name": "Wafer-v0.6.19.zip", "browser_download_url": "https://github.com/openkai0419/Wafer/releases/download/v0.6.19/Wafer.zip"},
-        {"name": "manifest.json", "browser_download_url": "https://github.com/openkai0419/Wafer/releases/download/v0.6.19/manifest.json"},
-    ])
+    release = _release(
+        assets=[
+            {"name": "Wafer-v0.6.19.zip", "browser_download_url": "https://github.com/openkai0419/Wafer/releases/download/v0.6.19/Wafer.zip"},
+            {"name": "manifest.json", "browser_download_url": "https://github.com/openkai0419/Wafer/releases/download/v0.6.19/manifest.json"},
+        ]
+    )
 
     info = service.build_update_info(release, "", current_version="0.6.18")
 
@@ -110,9 +110,11 @@ def test_build_update_info_marks_in_app_update_supported_when_manifest_present()
 
 
 def test_build_update_info_marks_in_app_update_unsupported_without_manifest():
-    release = _release(assets=[
-        {"name": "Wafer-v0.6.19.zip", "browser_download_url": "https://github.com/openkai0419/Wafer/releases/download/v0.6.19/Wafer.zip"},
-    ])
+    release = _release(
+        assets=[
+            {"name": "Wafer-v0.6.19.zip", "browser_download_url": "https://github.com/openkai0419/Wafer/releases/download/v0.6.19/Wafer.zip"},
+        ]
+    )
 
     info = service.build_update_info(release, "", current_version="0.6.18")
 

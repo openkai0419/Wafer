@@ -1,6 +1,6 @@
 from wafer.plugin.registry import DISPATCH_LEAF, DISPATCH_OWNER, FilePluginRegistry
 from wafer.plugin.grid.base import BaseGridPlugin
-from wafer.utils.virtual_paths import build_virtual_path
+from wafer.core.common.virtual_paths import build_virtual_path
 
 
 class _ZipOwner(BaseGridPlugin):

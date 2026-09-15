@@ -194,7 +194,7 @@ class TestRestartIntoLauncher:
         assert closed == [True]
 
     def test_mainwindow_host_shuts_down_other_slots(self, qtbot, monkeypatch):
-        from wafer.core.workspace import WorkspaceStore
+        from wafer.core.store.workspace import WorkspaceStore
 
         popen_calls, _ = self._install_stubs(monkeypatch)
         monkeypatch.setattr(WorkspaceStore, "get_active_slot_ids", lambda self: ["s1", "s2"])

@@ -20,9 +20,7 @@ def test_terminate_parsers_requests_shutdown_before_fallback(tmp_path):
     dispatcher = ParserDispatcher("testdb", db_path, scheduler, writer, progress, parsers=["sample"])
     dispatcher._node = MagicMock()
 
-    with patch.object(dispatcher, "_wait_parser_stopped", return_value=False), patch(
-        "wafer.app.indexer.dispatch.parser_dispatcher.AppProcess.terminate_cmd"
-    ) as terminate_cmd:
+    with patch.object(dispatcher, "_wait_parser_stopped", return_value=False), patch("wafer.app.indexer.dispatch.parser_dispatcher.AppProcess.terminate_cmd") as terminate_cmd:
         dispatcher._terminate_parsers()
 
     dispatcher._node.send.assert_called_once_with(
@@ -42,9 +40,7 @@ def test_terminate_parsers_skips_fallback_when_graceful_stop_succeeds(tmp_path):
     dispatcher = ParserDispatcher("testdb", db_path, scheduler, writer, progress, parsers=["sample"])
     dispatcher._node = MagicMock()
 
-    with patch.object(dispatcher, "_wait_parser_stopped", return_value=True), patch(
-        "wafer.app.indexer.dispatch.parser_dispatcher.AppProcess.terminate_cmd"
-    ) as terminate_cmd:
+    with patch.object(dispatcher, "_wait_parser_stopped", return_value=True), patch("wafer.app.indexer.dispatch.parser_dispatcher.AppProcess.terminate_cmd") as terminate_cmd:
         dispatcher._terminate_parsers()
 
     dispatcher._node.send.assert_called_once()

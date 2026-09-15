@@ -2,7 +2,7 @@ from ...qt.commands.bridge import ActionKit, Command as BridgeCommand
 from ...qt.commands.command.require import require
 from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...app.viewer.preview.file_list_provider import ListMode
-from ...utils.notifier import Notifier
+from ...qt.common.notifier import Notifier
 
 
 GROUP_LIST_MODE = "fv_list_mode"

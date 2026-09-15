@@ -1,6 +1,6 @@
 from PySide6 import QtCore, QtWidgets
 
-from ....utils.formatting import dpix
+from ....qt.common.dpi import dpix
 from ....qt.theme import ThemeManager
 from ....core.lang.manager import t
 from ....plugin.viewer.handler import viewer_resolver

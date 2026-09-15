@@ -23,7 +23,7 @@ def clean_registry():
 
 class TestMenuBuilderSkipsMissing:
     def test_build_into_skips_unknown_command(self, qtbot, clean_registry):
-        from wafer.utils.logs import AppLogger
+        from wafer.core.logs import AppLogger
         from wafer.qt.commands.command.menu_builder import CommandMenuBuilder
 
         meta = CommandMeta(id="known_cmd", display="Known", func=lambda ctx: None)

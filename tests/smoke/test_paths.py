@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from wafer.utils.paths import (
+from wafer.core.common.paths import (
     normalize_path,
     safe_exists,
     safe_is_file,

@@ -13,10 +13,10 @@ from ...qt.transfer.paste import paste_clipboard_files, execute_paste_plans_with
 from ...core.platform.path_utils import unique_path, get_os_new_folder_name, validate_filename
 from ...core.platform.file_operations import PastePlanItem, delete_to_trash
 from ...core.platform.folders import show_in_explorer as reveal_in_explorer, open_file as platform_open_file, make_directory
-from ...utils.logs import AppLogger
-from ...utils.notifier import Notifier
-from ...utils.paths import containing_dir
-from ...utils.virtual_paths import is_virtual_path
+from ...core.logs import AppLogger
+from ...qt.common.notifier import Notifier
+from ...core.common.paths import containing_dir
+from ...core.common.virtual_paths import is_virtual_path
 from ...qt.common.dispatcher import Dispatcher
 from ...qt.common.thread import SimpleThreadPool
 

@@ -7,8 +7,8 @@ import threading
 import psutil
 
 from wafer.core.platform.process import AppProcess
-from wafer.utils.logs import AppLogger
-from wafer.utils.logs import debug_non_recursive
+from wafer.core.logs import AppLogger
+from wafer.core.logs import debug_non_recursive
 
 _QUERY_TIMEOUT = 30
 

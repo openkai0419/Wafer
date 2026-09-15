@@ -7,8 +7,8 @@ from ...core.db.dispatch import send_to_db_scope
 from ...core.db.key_value import normalize_data_scope
 from ...core.lang.manager import t
 from ...plugin import CommandMeta, CommandParam, MenuGroup, require
-from ...utils.logs import AppLogger
-from ...utils.notifier import Notifier
+from ...core.logs import AppLogger
+from ...qt.common.notifier import Notifier
 from . import dialogs
 from .registry import MarkRegistry
 

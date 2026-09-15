@@ -3,11 +3,11 @@ import webbrowser
 from ...qt.commands.bridge import ActionKit
 from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...core.platform.process import AppProcess
-from ...core.workspace import WorkspaceStore
+from ...core.store.workspace import WorkspaceStore
 from ...plugin import installer_queue
 from ...plugin.loader import get_plugin_dir
-from ...utils.logs import AppLogger
-from ...utils.notifier import Notifier
+from ...core.logs import AppLogger
+from ...qt.common.notifier import Notifier
 from .workspace import new_window
 
 

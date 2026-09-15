@@ -2,8 +2,8 @@ import os
 from functools import partial
 from PySide6 import QtWidgets, QtCore, QtGui
 from ...qt.commands.bridge import ActionKit
-from ...utils.formatting import dpix
-from ...utils.paths import get_resource_path, get_app_root_dir
+from ...qt.common.dpi import dpix
+from ...core.common.paths import get_resource_path, get_app_root_dir
 from ..._version import __version__
 from ...core.lang.manager import t
 from .panel import open_panel

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from .dispatch import DB_SCOPE_ALL, send_to_db_scope
-from ...utils.logs import AppLogger
+from ..logs import AppLogger
 
 
 class Recollect:

@@ -1,7 +1,7 @@
 import pytest
 from PySide6 import QtCore, QtGui, QtWidgets
 from wafer.qt.meta.viewer import MetaRowWidget, CollapsibleCard
-from wafer.utils.formatting import dpix
+from wafer.qt.common.dpi import dpix
 
 
 def test_meta_row_widget_has_key_role_style(qtbot):

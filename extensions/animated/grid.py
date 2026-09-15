@@ -2,7 +2,7 @@ from PySide6 import QtCore, QtGui
 
 from wafer.plugin import WidgetGridPlugin
 from wafer.qt.common.dispatcher import Dispatcher
-from wafer.utils.profiling import profiler
+from wafer.core.profiling import profiler
 from ._common import is_animated, decode_frames, _grid_cache
 from .widget import AnimatedCellWidget
 

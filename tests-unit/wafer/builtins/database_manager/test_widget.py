@@ -1001,7 +1001,7 @@ class TestDialogLayoutStore:
         from PySide6 import QtWidgets
 
         monkeypatch.setattr(
-            "wafer.utils.paths.resolve_data_path",
+            "wafer.core.common.paths.resolve_data_path",
             lambda name: tmp_path / name,
         )
         from wafer.qt.common.window_state import DialogLayoutStore
@@ -1023,7 +1023,7 @@ class TestDialogLayoutStore:
         from PySide6 import QtWidgets, QtCore
 
         monkeypatch.setattr(
-            "wafer.utils.paths.resolve_data_path",
+            "wafer.core.common.paths.resolve_data_path",
             lambda name: tmp_path / name,
         )
         from wafer.qt.common.window_state import DialogLayoutStore

@@ -317,7 +317,6 @@ class TestExtensionsTab:
         card = tab._cards["ext1"]
         assert card._status_btn.text() == "No Dependencies"
 
-
     def test_install_enqueues_and_marks_restart_required(self, qtbot, tmp_path, monkeypatch):
         ext_dir = tmp_path / "extensions"
         (ext_dir / "ext1").mkdir(parents=True)
@@ -431,7 +430,7 @@ class TestPluginRowPanelButton:
     def test_kind_badges_use_short_labels_and_fixed_width(self, qtbot):
         from wafer.builtins.plugin_manager.extensions_tab import _PLUGIN_KIND_BADGE_WIDTH, _PluginRow
         from wafer.plugin.kinds import PLUGIN_KIND_IMAGE_LOADER, PLUGIN_KIND_KEY_VALUE_PANEL, PLUGIN_KIND_PARSER
-        from wafer.utils.formatting import dpix
+        from wafer.qt.common.dpi import dpix
 
         class FakePlugin(BasePlugin):
             NAME = "test_plugin"
@@ -883,6 +882,7 @@ class TestPluginManagerWidget:
             lambda: str(tmp_path),
         )
         from wafer.plugin.installer import RestartScope
+
         monkeypatch.setattr(
             "wafer.builtins.plugin_manager.widget.PluginSettings.needs_restart",
             lambda self, d: RestartScope.VIEWER,
@@ -900,6 +900,7 @@ class TestPluginManagerWidget:
             lambda: str(tmp_path),
         )
         from wafer.plugin.installer import RestartScope
+
         monkeypatch.setattr(
             "wafer.builtins.plugin_manager.widget.PluginSettings.needs_restart",
             lambda self, d: RestartScope.TRAY,
@@ -917,6 +918,7 @@ class TestPluginManagerWidget:
             lambda: str(tmp_path),
         )
         from wafer.plugin.installer import RestartScope
+
         monkeypatch.setattr(
             "wafer.builtins.plugin_manager.widget.PluginSettings.needs_restart",
             lambda self, d: RestartScope.ALL,
@@ -1302,5 +1304,3 @@ class TestDataTab:
         assert tab._collector_table.table.item(0, 2).text() == "1"
         assert tab._collector_table.table.item(0, 3).text() == "0"
         assert tab._collector_table.table.item(0, 4).text() == "Active"
-
-

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets
 
-from ...utils.formatting import dpix
+from ..common.dpi import dpix
 from ..common.geometry import constrain_to_screens
 from .tree import FloatingState
 

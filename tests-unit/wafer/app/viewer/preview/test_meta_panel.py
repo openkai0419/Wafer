@@ -110,7 +110,6 @@ def test_filter_button_opens_metadata_filter_panel(qtbot, monkeypatch):
     assert calls == ["panel.toggle_metadata_filter"]
 
 
-
 def test_global_add_dialog_embeds_scope_combo_with_legacy_wording(qtbot):
     dlg = ScopedSearchKvAddDialog(
         None,
@@ -519,7 +518,7 @@ def test_key_value_plugin_card_pool_survives_rebuild_and_settings_change(qtbot):
 
 
 def test_key_value_panel_state_targets_scoped_instances(qtbot):
-    from wafer.core.state import StateStore
+    from wafer.core.store.state import StateStore
     from wafer.plugin.key_value_panel.base import BaseKeyValuePanelPlugin
     from wafer.plugin.key_value_panel.handler import key_value_panel_registry
 
@@ -577,9 +576,7 @@ def test_key_value_panel_state_targets_scoped_instances(qtbot):
         assert tag_plugin.state == {"value": "tag"}
         assert meta_plugin.state == {"value": "meta"}
         tag_plugin.state = {"value": "tag2"}
-        assert w._save_key_value_panel_state(StatefulPanel.NAME) == {
-            "scopes": {"tag": {"value": "tag2"}, "meta_info": {"value": "meta"}}
-        }
+        assert w._save_key_value_panel_state(StatefulPanel.NAME) == {"scopes": {"tag": {"value": "tag2"}, "meta_info": {"value": "meta"}}}
     finally:
         key_value_panel_registry._plugins = original_plugins
         key_value_panel_registry._instances = original_instances
@@ -587,7 +584,7 @@ def test_key_value_panel_state_targets_scoped_instances(qtbot):
 
 
 def test_key_value_panel_prefix_order_respects_registry_order(qtbot):
-    from wafer.core.state import StateStore
+    from wafer.core.store.state import StateStore
     from wafer.plugin.key_value_panel.base import BaseKeyValuePanelPlugin
     from wafer.plugin.key_value_panel.handler import key_value_panel_registry
 

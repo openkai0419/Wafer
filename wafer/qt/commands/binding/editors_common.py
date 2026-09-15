@@ -4,8 +4,8 @@ from typing import Any, Generic, TypeVar
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ....utils.logs import AppLogger
-from ....utils.formatting import dpix
+from ....core.logs import AppLogger
+from ...common.dpi import dpix
 
 from ..command.payload import CommandPayload, format_payload_display
 from ..command.maker import MenuMaker

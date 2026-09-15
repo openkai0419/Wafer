@@ -1,8 +1,8 @@
 import json
 import os
 from configparser import ConfigParser
-from ..utils.paths import resolve_data_path
-from ..utils.helpers import try_json_loads
+from ..core.common.paths import resolve_data_path
+from ..core.common.helpers import try_json_loads
 from .config import ini_lock
 from .installer import RestartScope
 from . import installer_queue

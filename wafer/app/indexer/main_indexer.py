@@ -1,8 +1,8 @@
 import os
 
-from ...utils.paths import data_db_path, setting_db_path
-from ...utils.profiling import profiler
-from ...utils.logs import AppLogger
+from ...core.common.paths import data_db_path, setting_db_path
+from ...core.profiling import profiler
+from ...core.logs import AppLogger
 from ...core.db.db_utils import remove_orphan_databases, delete_database_files
 from ...core.db.setting_db import SettingDB
 from ...plugin.collector.handler import collector_resolver

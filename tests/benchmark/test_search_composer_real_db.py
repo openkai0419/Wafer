@@ -13,7 +13,7 @@ from wafer.builtins.sorts import ModifiedSort, NaturalNameSort, NaturalPathSort,
 from wafer.core.db.query import FileSearchEngine
 from wafer.plugin.query.base import BaseSortPlugin
 from wafer.plugin.query.composer import SearchComposer
-from wafer.utils.paths import resolve_data_path
+from wafer.core.common.paths import resolve_data_path
 
 pytestmark = pytest.mark.benchmark
 

@@ -1,4 +1,4 @@
-from wafer.core.state import StateStore
+from wafer.core.store.state import StateStore
 
 
 class TestStateStoreSmoke:

@@ -515,6 +515,7 @@ class TestShowOptionsForRequiredAutoPersist:
                 return 0
 
         from wafer.qt.commands.command import option_dialog as od
+
         monkeypatch.setattr(od, "CommandOptionsDialog", FakeDialog)
         cmd_class = CommandRegistry.instance().get_command("t.clear")
         Command._show_options_for_required("t.clear", cmd_class, None)
@@ -545,6 +546,7 @@ class TestShowOptionsForRequiredAutoPersist:
                 return 1
 
         from wafer.qt.commands.command import option_dialog as od
+
         monkeypatch.setattr(od, "CommandOptionsDialog", FakeDialog)
 
         cmd_class = CommandRegistry.instance().get_command("t.persist")

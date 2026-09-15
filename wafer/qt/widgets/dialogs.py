@@ -2,8 +2,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QButtonGroup, QCheckBox, QComboBox, QDialog, QFileIconProvider, QHBoxLayout, QLabel, QLineEdit, QPushButton, QRadioButton, QSizePolicy, QStyle, QVBoxLayout
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtCore import QFileInfo
-from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
+from ..common.dpi import dpix
+from ...core.logs import AppLogger
 from ..common.image import pil_to_qimage
 from ...core.platform.thumbnails import FileThumbnailer
 from ..common.dispatcher import Dispatcher

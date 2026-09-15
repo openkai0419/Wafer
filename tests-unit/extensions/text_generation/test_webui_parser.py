@@ -7,7 +7,7 @@ SAMPLE = (
     "masterpiece, 1girl, blue eyes\n"
     "Negative prompt: lowres, bad anatomy\n"
     "Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 12345, Size: 512x768, "
-    'Model hash: abc123, Model: some_model, Clip skip: 2, Version: f1.0.0'
+    "Model hash: abc123, Model: some_model, Clip skip: 2, Version: f1.0.0"
 )
 
 
@@ -41,11 +41,7 @@ class TestWebUiImageParser:
         assert result.delete_meta_keys == ["exiftool.PNG:Parameters"]
 
     def test_multiline_prompt(self):
-        raw = (
-            "line one\nline two\n"
-            "Negative prompt: neg one\nneg two\n"
-            "Steps: 10, Sampler: DPM++ 2M, CFG scale: 5"
-        )
+        raw = "line one\nline two\nNegative prompt: neg one\nneg two\nSteps: 10, Sampler: DPM++ 2M, CFG scale: 5"
         meta = parse_infotext(raw)
         assert meta["prompt"] == "line one\nline two"
         assert meta["negative_prompt"] == "neg one\nneg two"
@@ -64,7 +60,7 @@ class TestWebUiImageParser:
 
     def test_embedded_json_value_expanded(self):
         hashes = {"model": "abc", "lora:x": "def"}
-        raw = f'p\nSteps: 20, Sampler: Euler, CFG scale: 7, Hashes: {json.dumps(json.dumps(hashes))}'
+        raw = f"p\nSteps: 20, Sampler: Euler, CFG scale: 7, Hashes: {json.dumps(json.dumps(hashes))}"
         meta = parse_infotext(raw)
         assert meta["Hashes/model"] == "abc"
         assert meta["Hashes/lora:x"] == "def"

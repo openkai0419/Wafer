@@ -1,8 +1,8 @@
 from ...qt.commands.bridge import ActionKit
 from ...qt.commands.command.require import require
 from ...core.lang.manager import t
-from ...utils.paths import list_setting_db_names
-from ...utils.logs import AppLogger
+from ...core.common.paths import list_setting_db_names
+from ...core.logs import AppLogger
 from ...core.platform.process import AppProcess
 from ...qt.widgets.dialogs import ConfirmDialog, InputDialog
 

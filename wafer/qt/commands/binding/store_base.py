@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
-from ....utils.logs import AppLogger
-from ....utils.json_io import read_json_file, write_json_file
+from ....core.logs import AppLogger
+from ....core.common.json_io import read_json_file, write_json_file
 
 from ..command.payload import CommandPayload, normalize_scoped_payloads
 

@@ -63,7 +63,7 @@ def test_collectors_for_path_non_image():
 def test_exif_plugin_process_success(tmp_path):
     from PIL import Image
     import os
-    from wafer.utils.paths import normalize_path
+    from wafer.core.common.paths import normalize_path
 
     img_path = tmp_path / "test.png"
     Image.new("RGB", (100, 200)).save(str(img_path))
@@ -317,7 +317,7 @@ def test_collector_result_to_dict_with_meta():
 def test_process_success_to_dict(tmp_path):
     from PIL import Image
     import os
-    from wafer.utils.paths import normalize_path
+    from wafer.core.common.paths import normalize_path
 
     img_path = tmp_path / "keys.png"
     Image.new("RGB", (50, 50)).save(str(img_path))

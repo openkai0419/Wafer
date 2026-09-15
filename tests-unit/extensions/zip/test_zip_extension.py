@@ -13,8 +13,8 @@ from extensions.zip.collector import ZipCollectorPlugin
 from extensions.zip.resolver import ZipImageLoader
 from wafer.core.files.render_target import RenderPlan, ResolveContext, SURFACE_IMAGE
 from wafer.plugin.imageloader.base import BaseImageLoader
-from wafer.utils.formatting import natural_key
-from wafer.utils.virtual_paths import build_virtual_path, child_path
+from wafer.core.common.formatting import natural_key
+from wafer.core.common.virtual_paths import build_virtual_path, child_path
 
 
 def _create_zip(path, entries):

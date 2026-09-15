@@ -7,8 +7,8 @@ from PySide6.QtWidgets import QWidget, QApplication
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from collections import OrderedDict
 from wafer.qt.common.rate_limit import qt_debounce_manager
-from wafer.utils.logs import AppLogger
-from wafer.utils.profiling import profiler
+from wafer.core.logs import AppLogger
+from wafer.core.profiling import profiler
 
 DEFAULT_VOLUME = 20
 GL_COLOR_BUFFER_BIT = 0x00004000

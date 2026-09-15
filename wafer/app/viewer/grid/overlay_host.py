@@ -5,7 +5,7 @@ from collections.abc import Callable
 from PySide6 import QtCore, QtGui
 
 from ....qt.common.badge_engine import draw_overflow_badge
-from ....core.state import StateStore
+from ....core.store.state import StateStore
 from ....plugin.grid_overlay.base import (
     BaseBadgeOverlayPlugin,
     BaseCellOverlayPlugin,
@@ -16,8 +16,8 @@ from ....plugin.grid_overlay.base import (
 )
 from ....plugin.grid_overlay.handler import grid_overlay_registry
 from ....plugin.grid_overlay.helper import OverlayHelper
-from ....utils.formatting import dpix
-from ....utils.logs import AppLogger
+from ....qt.common.dpi import dpix
+from ....core.logs import AppLogger
 
 
 _STATE_NAMESPACE = "grid/overlay"

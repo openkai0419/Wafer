@@ -78,7 +78,7 @@ def test_sync_folders_is_atomic(tmp_path):
     db._sync_folders("parent_folders", ["C:/keep", "C:/new"])
 
     folders = db.get_all_parent_folders()
-    from wafer.utils.paths import normalize_path
+    from wafer.core.common.paths import normalize_path
 
     norm = {normalize_path(f) for f in folders}
     assert normalize_path("C:/keep") in norm

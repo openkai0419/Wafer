@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from PySide6 import QtCore, QtGui, QtWidgets
-from .....utils.formatting import dpix
+from ....common.dpi import dpix
 from .....core.lang.manager import t
 from .types import MouseActionKey, ClickType, MouseButton, ModifierKey
 from ...command.maker import MenuMaker
@@ -10,7 +10,7 @@ from ...command.menu_builder import MenuBuilder
 from .store import MouseBindingStore
 from ...command.payload import CommandPayload
 from ..common import WidgetRef
-from .....utils.logs import AppLogger
+from .....core.logs import AppLogger
 from ..editors_common import BindingEditorBase, ScopedPayloadSectionBase, clear_layout
 
 

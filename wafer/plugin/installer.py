@@ -12,8 +12,8 @@ from enum import Enum, Flag, auto
 from pathlib import Path
 from collections.abc import Iterable
 
-from ..utils.hashes import sha256_file
-from ..utils.logs import AppLogger
+from ..core.common.hashes import sha256_file
+from ..core.logs import AppLogger
 
 
 class RestartScope(Flag):

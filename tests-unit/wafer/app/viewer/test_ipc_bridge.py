@@ -24,6 +24,7 @@ def mock_node():
 def bridge(qtbot, mock_node):
     with patch("wafer.app.viewer.ipc_bridge.AppLogger"):
         from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
+
         b = ViewerIpcBridge(mock_node)
         yield b
         ViewerIpcBridge._instance = None
@@ -33,10 +34,20 @@ class TestSubscription:
     def test_subscribes_all_topics(self, mock_node, bridge):
         topics = {call.args[0] for call in mock_node.subscribe.call_args_list}
         expected = {
-            "update", "folderchanged", "progress", "maximum",
-            "show_toggle", "slot.close",
-            "slot.restart", "slot.shutdown", "app.shutdown", "db.created", "db.deleted", "dev.log",
-            "tags.updated", "settings.changed",
+            "update",
+            "folderchanged",
+            "progress",
+            "maximum",
+            "show_toggle",
+            "slot.close",
+            "slot.restart",
+            "slot.shutdown",
+            "app.shutdown",
+            "db.created",
+            "db.deleted",
+            "dev.log",
+            "tags.updated",
+            "settings.changed",
         }
         assert topics == expected
 
@@ -44,12 +55,14 @@ class TestSubscription:
 class TestStart:
     def test_start_sets_instance_and_starts_node(self, mock_node, bridge):
         from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
+
         bridge.start()
         assert ViewerIpcBridge.instance() is bridge
         mock_node.start.assert_called_once()
 
     def test_stop_clears_instance(self, mock_node, bridge):
         from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
+
         bridge.start()
         bridge.stop()
         assert ViewerIpcBridge.instance() is None

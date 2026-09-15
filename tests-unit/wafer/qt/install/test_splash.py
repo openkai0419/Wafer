@@ -3,7 +3,7 @@ import py_compile
 import pytest
 from PySide6 import QtWidgets, QtCore
 
-from wafer.utils.formatting import dpix
+from wafer.qt.common.dpi import dpix
 from wafer.qt.install.splash import InstallSplash
 
 
@@ -74,6 +74,7 @@ def test_append_log_noop_when_disabled(app):
 
 def test_window_icon_set(app):
     from PySide6 import QtGui
+
     pix = QtGui.QPixmap(16, 16)
     pix.fill(QtGui.QColor("red"))
     icon = QtGui.QIcon(pix)

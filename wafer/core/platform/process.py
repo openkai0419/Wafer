@@ -2,7 +2,7 @@ import os
 import subprocess
 import sys
 import psutil
-from ...utils.logs import AppLogger
+from ..logs import AppLogger
 
 MAIN_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "main.py")
 

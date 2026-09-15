@@ -219,7 +219,6 @@ def test_disallowed_host_rejected():
         asyncio.new_event_loop().run_until_complete(run())
 
 
-
 def test_query_body_not_object_rejected(client):
     resp, _ = client.post("/api/query", json=["not", "an", "object"])
     assert resp.status == 400
@@ -238,4 +237,3 @@ def test_query_filter_name_not_string_rejected(client):
 def test_folders_unknown_db(client):
     resp, _ = client.get("/api/folders", params={"db": "nope"})
     assert resp.status == 404
-

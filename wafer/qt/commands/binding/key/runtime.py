@@ -4,7 +4,7 @@ from typing import Any
 from collections.abc import Callable
 from collections import deque
 from PySide6 import QtCore, QtGui
-from .....utils.logs import AppLogger
+from .....core.logs import AppLogger
 
 KeySpec = int | str
 

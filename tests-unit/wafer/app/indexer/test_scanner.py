@@ -2,7 +2,7 @@ import py_compile
 from unittest.mock import MagicMock
 
 from wafer.app.indexer.scanner import DirectoryScanner, _CHUNK, _get_stat
-from wafer.utils.paths import normalize_path
+from wafer.core.common.paths import normalize_path
 
 
 def test_compile():

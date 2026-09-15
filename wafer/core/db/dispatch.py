@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from ...utils.logs import AppLogger
-from ...utils.paths import list_data_db_names
+from ..logs import AppLogger
+from ..common.paths import list_data_db_names
 
 
 DB_SCOPE_ALL = "*"

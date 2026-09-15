@@ -1,8 +1,8 @@
 from PIL import Image
 
 from ..plugin.imageloader.base import BaseImageLoader
-from ..utils.logs import AppLogger
-from ..utils.profiling import profiler
+from ..core.logs import AppLogger
+from ..core.profiling import profiler
 
 
 class SystemImageLoader(BaseImageLoader):

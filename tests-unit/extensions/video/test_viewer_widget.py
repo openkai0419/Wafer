@@ -92,6 +92,7 @@ class TestVideoViewerWidgetLoad:
 
     def test_load_uses_render_path_and_context_uses_logical_path(self, qtbot, _patch_mpv_viewer):
         from extensions.video.viewer_widget import VideoViewerWidget
+
         w = VideoViewerWidget()
         mock_player = MagicMock()
         _patch_mpv_viewer.MPV.return_value = mock_player
@@ -787,4 +788,3 @@ class TestVideoViewerWidgetBackgroundSuspend:
         assert w._video_suspended is True
         assert player.vid == "no"
         w.cleanup()
-

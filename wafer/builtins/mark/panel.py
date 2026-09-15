@@ -8,8 +8,8 @@ from ...qt.common.icon_engine import themed_icon
 from ...plugin import BaseKeyValuePanelPlugin
 from ...qt.meta.viewer import CollapsibleCard
 from ...qt.widgets import FlowLayout
-from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
+from ...qt.common.dpi import dpix
+from ...core.logs import AppLogger
 from . import dialogs
 from .registry import MarkRegistry
 

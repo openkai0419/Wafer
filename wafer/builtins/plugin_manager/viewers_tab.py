@@ -1,5 +1,5 @@
 from PySide6 import QtWidgets, QtCore
-from ...utils.formatting import dpix
+from ...qt.common.dpi import dpix
 from ...core.lang.manager import t
 from ...plugin.kinds import ORDERABLE_PLUGIN_KIND_KEYS, PLUGIN_KIND_COMMAND, PRIORITY_PLUGIN_KIND_KEYS, plugin_kind_label
 

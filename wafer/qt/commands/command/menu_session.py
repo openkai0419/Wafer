@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6 import QtGui, QtWidgets
 
-from ....utils.logs import AppLogger
+from ....core.logs import AppLogger
 
 
 class MenuSession:

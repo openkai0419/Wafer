@@ -9,8 +9,8 @@ from PIL import Image
 
 from wafer.core.db.file_db import FileDB
 from wafer.core.db.setting_db import SettingDB
-from wafer.utils.paths import normalize_path
-from wafer.utils.virtual_paths import build_virtual_path
+from wafer.core.common.paths import normalize_path
+from wafer.core.common.virtual_paths import build_virtual_path
 
 DB_NAME = "testdb"
 

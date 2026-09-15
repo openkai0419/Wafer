@@ -1,6 +1,6 @@
 from ...core.files.render_target import RenderPlan, ResolveContext, SURFACE_VIEWER
-from ...utils.logs import AppLogger
-from ...utils.profiling import profiler
+from ...core.logs import AppLogger
+from ...core.profiling import profiler
 from ..registry import FilePluginRegistry
 from .base import MultiWidgetViewerPlugin, WidgetViewerPlugin
 

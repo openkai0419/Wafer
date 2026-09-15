@@ -2,10 +2,10 @@ import sqlite3
 from pathlib import Path
 
 from PySide6 import QtWidgets, QtCore
-from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
+from ...qt.common.dpi import dpix
+from ...core.logs import AppLogger
 from ...qt.common.icon_engine import themed_icon
-from ...utils.paths import list_setting_db_names, data_db_path, setting_db_path
+from ...core.common.paths import list_setting_db_names, data_db_path, setting_db_path
 from ...core.db.setting_db import SettingDB
 from ...core.db.db_utils import apply_read_pragmas
 from ...qt.common.dispatcher import Dispatcher, CancelSlot

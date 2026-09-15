@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6 import QtGui
 
-from ..utils.signal import Signal
+from ..core.common.signal import Signal
 from .palette import DARK, LIGHT, ThemePalette
 
 

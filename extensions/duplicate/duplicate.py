@@ -1,5 +1,5 @@
 from wafer.plugin import BaseParserPlugin, ParserResult
-from wafer.utils.hashes import HASH_FAILED
+from wafer.core.common.hashes import HASH_FAILED
 
 TAG = "has_duplicate"
 

@@ -5,7 +5,7 @@ from collections.abc import Callable
 from PySide6 import QtCore, QtWidgets
 
 from ..common.window_state import DialogLayoutStore
-from ...utils.formatting import dpix
+from ..common.dpi import dpix
 
 
 _standalone_dialogs: dict[str, QtWidgets.QDialog] = {}

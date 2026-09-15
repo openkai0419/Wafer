@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from wafer.utils.json_io import read_json_file, write_json_file
+from wafer.core.common.json_io import read_json_file, write_json_file
 
 
 class TestReadJsonFile:

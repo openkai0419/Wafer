@@ -4,7 +4,7 @@ import inspect
 import os
 import sys
 
-from ..utils.logs import AppLogger
+from ..core.logs import AppLogger
 from .installer import _PACKAGES_DIR, needs_setup
 from .registry import RegistryBase, CommandGroupRegistry
 from .viewer.base import WidgetViewerPlugin

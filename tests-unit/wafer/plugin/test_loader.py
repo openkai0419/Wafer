@@ -91,11 +91,7 @@ class TestGridOverlayPluginLoading:
         overlay_dir.mkdir(parents=True)
         (overlay_dir / "__init__.py").write_text("")
         (overlay_dir / "overlay.py").write_text(
-            "from wafer.plugin import BaseBadgeOverlayPlugin\n"
-            "class StubOverlayPlugin(BaseBadgeOverlayPlugin):\n"
-            '    NAME = "stub_overlay"\n'
-            "    PRIORITY = 10\n"
-            "    DEFAULT_ENABLED = True\n"
+            'from wafer.plugin import BaseBadgeOverlayPlugin\nclass StubOverlayPlugin(BaseBadgeOverlayPlugin):\n    NAME = "stub_overlay"\n    PRIORITY = 10\n    DEFAULT_ENABLED = True\n'
         )
 
         registries = _make_registries()

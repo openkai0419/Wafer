@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from collections.abc import Iterable
 
-from ...utils.paths import normalize_path
+from ...core.common.paths import normalize_path
 from ...core.platform.file_operations import (
     MergeConflictItem,
     PasteCancelledError,

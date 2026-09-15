@@ -5,10 +5,10 @@ from dataclasses import dataclass
 
 from PySide6 import QtCore, QtGui
 
-from ...core.app_settings import app_settings
+from ...core.store.settings import app_settings
 from ...core.db.key_value import SCOPE_META_INFO, SCOPE_TAG, normalize_data_scope
 from ...qt.common.badge_engine import badge_shape_pixmap, normalize_badge_shape_key
-from ...utils.logs import AppLogger
+from ...core.logs import AppLogger
 from .shapes import DEFAULT_SHAPE_KEY
 
 

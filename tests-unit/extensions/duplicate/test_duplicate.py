@@ -8,7 +8,7 @@ TAG_KEY = f"{DuplicateParser.NAME}.{TAG}"
 
 @pytest.fixture
 def parser(tmp_path, monkeypatch):
-    import wafer.utils.paths as paths
+    import wafer.core.common.paths as paths
 
     db_path = tmp_path / "dup.db"
     db = FileDB(db_path)
@@ -66,7 +66,7 @@ def test_fails_without_file_hash(parser):
 
 
 def test_fails_on_failed_hash_sentinel(parser):
-    from wafer.utils.hashes import HASH_FAILED
+    from wafer.core.common.hashes import HASH_FAILED
 
     _add_source(parser.db, "/a.png", HASH_FAILED)
     _add_source(parser.db, "/b.png", HASH_FAILED)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets
 
-from ...utils.formatting import dpix
+from ..common.dpi import dpix
 from ...core.lang.manager import t
 
 

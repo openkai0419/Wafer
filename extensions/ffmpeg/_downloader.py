@@ -3,7 +3,7 @@ import re
 import shutil
 import tempfile
 
-from wafer.utils.downloader import (
+from wafer.core.common.downloader import (
     safe_download,
     fetch_text,
     extract_7z_members,
@@ -31,7 +31,7 @@ _MANUAL_HINT = "Download ffmpeg essentials from https://www.gyan.dev/ffmpeg/buil
 
 def _log(msg, *, level="info", exc=None):
     try:
-        from wafer.utils.logs import AppLogger
+        from wafer.core.logs import AppLogger
 
         fn = getattr(AppLogger, level, AppLogger.info)
         if exc and level in ("error", "warning"):

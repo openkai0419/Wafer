@@ -5,7 +5,7 @@ import pytest
 from PIL import Image
 
 from wafer.core.ipc.broker import Broker
-from wafer.utils.paths import normalize_path
+from wafer.core.common.paths import normalize_path
 from wafer.plugin.collector.handler import collector_resolver
 
 

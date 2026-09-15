@@ -2,7 +2,7 @@ import threading
 
 import psutil
 
-from ...utils.logs import AppLogger
+from ..logs import AppLogger
 
 _DEFAULT_INTERVAL = 2.0
 

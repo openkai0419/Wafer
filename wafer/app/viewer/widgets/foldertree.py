@@ -5,9 +5,9 @@ from collections import deque
 from pathlib import Path
 from natsort import natsorted
 from PySide6 import QtCore, QtGui, QtWidgets
-from ....utils.paths import normalize_path
-from ....utils.profiling import profiler
-from ....utils.logs import AppLogger
+from ....core.common.paths import normalize_path
+from ....core.profiling import profiler
+from ....core.logs import AppLogger
 from ....qt.common.dispatcher import Dispatcher, CancelToken
 from ....qt.common.thread import utility_pool
 from ....qt.commands.bridge import UI, Context

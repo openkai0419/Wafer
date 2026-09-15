@@ -1,6 +1,6 @@
 from PySide6 import QtWidgets, QtCore, QtGui
-from ...utils.formatting import dpix
-from ...utils.paths import list_setting_db_names, setting_db_path
+from ...qt.common.dpi import dpix
+from ...core.common.paths import list_setting_db_names, setting_db_path
 from ...core.db.setting_db import SettingDB
 from ...core.lang.manager import t
 from ...qt.theme import ThemeManager

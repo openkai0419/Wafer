@@ -1,6 +1,6 @@
 from PySide6 import QtGui, QtWidgets
 
-import wafer.utils.recent_colors as recent_colors
+import wafer.qt.widgets.recent_colors as recent_colors
 
 
 def _ensure_app():

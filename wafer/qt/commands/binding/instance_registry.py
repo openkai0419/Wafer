@@ -5,7 +5,7 @@ import weakref
 
 from PySide6 import QtCore
 
-from ....utils.logs import AppLogger
+from ....core.logs import AppLogger
 
 try:
     from shiboken6 import isValid as _shiboken_isValid

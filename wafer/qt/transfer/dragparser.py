@@ -5,8 +5,8 @@ import re
 from PySide6.QtCore import QMimeData
 from PySide6.QtGui import QImage
 
-from ...utils.logs import AppLogger
-from ...utils.paths import normalize_path, safe_exists, safe_getsize
+from ...core.logs import AppLogger
+from ...core.common.paths import normalize_path, safe_exists, safe_getsize
 from ...core.platform.path_utils import is_http_url, sanitize_filename
 
 

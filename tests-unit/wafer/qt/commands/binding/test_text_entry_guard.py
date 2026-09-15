@@ -85,4 +85,3 @@ class TestEventFilterTextEntryGuard:
         monkeypatch.setattr(sm_mod, "is_text_entry_focused", lambda: True)
         manager.eventFilter(widget, QtGui.QKeyEvent(QtCore.QEvent.KeyRelease, QtCore.Qt.Key_A, QtCore.Qt.NoModifier))
         assert int(QtCore.Qt.Key_A) not in manager._state._logical.pressed
-

@@ -4,8 +4,8 @@ from PySide6 import QtCore, QtWidgets
 
 from ...qt.commands.bridge import ActionKit, Menu
 from ...core.lang.manager import t
-from ...utils.paths import normalize_path
-from ...utils.logs import AppLogger
+from ...core.common.paths import normalize_path
+from ...core.logs import AppLogger
 from ...qt.widgets.dialogs import ConfirmDialog
 
 

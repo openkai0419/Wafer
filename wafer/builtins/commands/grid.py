@@ -6,9 +6,9 @@ from PySide6 import QtCore, QtGui
 from ...qt.commands.bridge import ActionKit
 from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...core.lang.manager import t
-from ...utils.logs import AppLogger
-from ...utils.paths import normalize_path, containing_dir
-from ...utils.formatting import dpix
+from ...core.logs import AppLogger
+from ...core.common.paths import normalize_path, containing_dir
+from ...qt.common.dpi import dpix
 from ...qt.transfer.dragparser import MimeDataParser
 from ...qt.transfer.paste import drop_files_with_ui, get_saved_drop_operation
 from ...qt.common.pixmap import PixmapFactory

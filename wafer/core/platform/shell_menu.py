@@ -6,7 +6,7 @@ import sys
 from ctypes import HRESULT, POINTER, Structure, byref, c_char_p, c_int, c_uint, c_void_p, c_wchar_p, windll
 from pathlib import Path
 
-from ...utils.logs import AppLogger
+from ..logs import AppLogger
 
 GWL_WNDPROC = -4
 COINIT_APARTMENTTHREADED = 2

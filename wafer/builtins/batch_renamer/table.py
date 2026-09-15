@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
-from ...utils.formatting import dpix
+from ...qt.common.dpi import dpix
 from ...qt.theme import ThemeManager
 from ...qt.commands.binding.common import TEXT_ENTRY_TYPES as INLINE_EDITOR_TYPES
 

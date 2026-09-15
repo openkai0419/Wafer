@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from PySide6 import QtCore, QtWidgets
 
-from ...utils.logs import AppLogger
+from ...core.logs import AppLogger
 from ..common.geometry import constrain_to_screens
 from .dock import (
     FloatingWindow,

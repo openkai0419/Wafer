@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from collections.abc import Callable
 
-from ...utils.logs import AppLogger
+from ..logs import AppLogger
 
 
 class DiskCache:

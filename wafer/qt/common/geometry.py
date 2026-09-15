@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets
 
-from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
+from .dpi import dpix
+from ...core.logs import AppLogger
 
 
 MIN_VISIBLE_TITLE_PX = 256

@@ -8,8 +8,8 @@ from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
 )
-from wafer.utils.formatting import dpix
-from wafer.utils.logs import AppLogger
+from wafer.qt.common.dpi import dpix
+from wafer.core.logs import AppLogger
 from wafer.qt.commands.bridge import ActionKit, UI
 from wafer.qt.theme import ThemeManager
 from wafer.qt.common.icon_engine import icon_draw

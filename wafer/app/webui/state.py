@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ...utils.logs import AppLogger
-from ...utils.paths import resolve_temp_path
+from ...core.logs import AppLogger
+from ...core.common.paths import resolve_temp_path
 
 
 def _state_path():

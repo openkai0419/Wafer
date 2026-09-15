@@ -2,7 +2,7 @@ import re
 
 from PySide6 import QtWidgets, QtCore, QtGui
 
-from ...utils.formatting import dpix
+from ..common.dpi import dpix
 from ..theme import ThemeManager
 
 _ERROR_PAT = re.compile(r"^\s*error", re.IGNORECASE)

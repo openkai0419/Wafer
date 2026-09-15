@@ -6,8 +6,8 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 import shiboken6
 from ..theme import ThemeManager
-from ...utils.paths import get_resource_path
-from ...utils.logs import AppLogger
+from ...core.common.paths import get_resource_path
+from ...core.logs import AppLogger
 
 _MD_EXTENSIONS = ["tables", "fenced_code", "md_in_html", "sane_lists"]
 _MD_TAB_LENGTH = 2

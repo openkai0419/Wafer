@@ -11,7 +11,7 @@ from wafer.app.viewer.widgets.foldertree import (
     _has_subfolders_bg,
     _collect_segments_for_paths,
 )
-from wafer.utils.paths import normalize_path
+from wafer.core.common.paths import normalize_path
 
 
 def create_fs_tree(base):

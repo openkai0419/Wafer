@@ -9,7 +9,7 @@ from PySide6.QtCore import Qt, Signal
 
 from ..registry import PluginBase
 from ...qt.commands.bridge import ActionKit, Menu
-from ...utils.formatting import dpix
+from ...qt.common.dpi import dpix
 
 
 @dataclass

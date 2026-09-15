@@ -3,7 +3,7 @@ import io
 import pytest
 
 import extensions.exiftool._downloader as dl
-from wafer.utils import downloader as common
+from wafer.core.common import downloader as common
 
 
 _CHECKSUMS_BODY = (
@@ -30,8 +30,7 @@ class _Resp:
 
 
 def _patch(monkeypatch, payload: bytes):
-    monkeypatch.setattr(common.urllib.request, "urlopen",
-                        lambda req, timeout=None: _Resp(payload))
+    monkeypatch.setattr(common.urllib.request, "urlopen", lambda req, timeout=None: _Resp(payload))
 
 
 class TestFetchExpectedSha256:

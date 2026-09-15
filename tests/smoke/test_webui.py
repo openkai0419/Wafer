@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from wafer.constants import APP_DATA_DIR_NAME
-from wafer.utils.process_lock import SafeProcessLock
+from wafer.core.platform.process_lock import SafeProcessLock
 
 ROOT = Path(__file__).resolve().parents[2]
 

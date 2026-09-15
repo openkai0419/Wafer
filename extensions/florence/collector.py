@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from wafer.plugin import BaseSingletonCollector, CollectorResult
 from wafer.plugin.imageloader.handler import image_loader_resolver
-from wafer.utils.logs import AppLogger
+from wafer.core.logs import AppLogger
 
 if TYPE_CHECKING:
     from ._inference import FlorenceInference

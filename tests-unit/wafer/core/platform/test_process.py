@@ -35,16 +35,12 @@ def test_same_executable_cross_interpreter_rejected():
     # interpreter, so matching is strict: distinct interpreters do NOT match.
     venv_pythonw = r"F:\proj\.venv\Scripts\pythonw.exe"
     base_pythonw = r"C:\Python311\pythonw.exe"
-    assert not ProcessMatcher._same_executable(
-        venv_pythonw, ProcessMatcher._normalize_path(base_pythonw)
-    )
+    assert not ProcessMatcher._same_executable(venv_pythonw, ProcessMatcher._normalize_path(base_pythonw))
 
 
 def test_same_executable_portable_identical_exe():
     portable = r"C:\App\python\wafer-pythonw.exe"
-    assert ProcessMatcher._same_executable(
-        portable, ProcessMatcher._normalize_path(portable)
-    )
+    assert ProcessMatcher._same_executable(portable, ProcessMatcher._normalize_path(portable))
 
 
 def test_find_by_args_subset_self():
@@ -124,7 +120,8 @@ def test_list_viewers_captures_relative_root_and_excludes_workers(monkeypatch):
     tray = _FakeProc(201, [exe, abs_script, "--tray"])
     indexer = _FakeProc(202, [exe, abs_script, "--indexer", "lib"])
     monkeypatch.setattr(
-        psutil, "process_iter",
+        psutil,
+        "process_iter",
         lambda attrs=None: [root_viewer, child_viewer, tray, indexer],
     )
     pids = sorted(p.pid for p in AppProcess.list_viewers(exclude_self=False))
@@ -138,7 +135,8 @@ def test_list_app_captures_relative_root_viewer(monkeypatch):
     root_viewer = _FakeProc(101, [exe, "main.py"])
     tray = _FakeProc(201, [exe, abs_script, "--tray"])
     monkeypatch.setattr(
-        psutil, "process_iter",
+        psutil,
+        "process_iter",
         lambda attrs=None: [root_viewer, tray],
     )
     pids = sorted(p.pid for p in AppProcess.list_app(exclude_self=False))
@@ -283,12 +281,7 @@ def test_app_process_terminate_tree_kills_descendants():
     import subprocess
     import time
 
-    code = (
-        "import subprocess, sys, time; "
-        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
-        "print(child.pid, flush=True); "
-        "time.sleep(60)"
-    )
+    code = "import subprocess, sys, time; child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); print(child.pid, flush=True); time.sleep(60)"
     proc = subprocess.Popen(
         [sys.executable, "-c", code],
         stdout=subprocess.PIPE,
@@ -371,5 +364,3 @@ def test_list_viewers_excludes_workers(monkeypatch):
     monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: iter(fakes))
     pids = sorted(p.pid for p in AppProcess.list_viewers(exclude_self=False))
     assert pids == [101, 102]
-
-

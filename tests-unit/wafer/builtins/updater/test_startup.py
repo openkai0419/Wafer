@@ -1,7 +1,7 @@
 from wafer.builtins.updater import startup
 from wafer.builtins.updater.service import UpdateCheckResult, UpdateInfo
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
-from wafer.core.workspace import WorkspaceStore
+from wafer.core.store.workspace import WorkspaceStore
 
 
 class _Dispatcher:

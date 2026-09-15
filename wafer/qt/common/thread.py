@@ -6,8 +6,8 @@ from collections.abc import Callable
 
 import psutil
 from PySide6 import QtCore
-from ...utils.profiling import profiler
-from ...utils.logs import AppLogger
+from ...core.profiling import profiler
+from ...core.logs import AppLogger
 
 
 class SimpleThreadPool:

@@ -5,9 +5,9 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from ..theme import ThemeManager
 from ...core.lang.manager import t
-from ...utils import recent_colors
-from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
+from . import recent_colors
+from ..common.dpi import dpix
+from ...core.logs import AppLogger
 
 
 def _qcolor(value) -> QtGui.QColor:

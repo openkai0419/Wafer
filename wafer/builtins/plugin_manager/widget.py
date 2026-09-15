@@ -1,7 +1,7 @@
 from PySide6 import QtWidgets, QtCore
-from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
-from ...utils.notifier import Notifier
+from ...qt.common.dpi import dpix
+from ...core.logs import AppLogger
+from ...qt.common.notifier import Notifier
 from ...plugin.settings import PluginSettings
 from ...plugin.installer import RestartScope, restart_scope_from_plugins
 from ...plugin import installer_queue

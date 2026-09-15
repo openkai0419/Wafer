@@ -23,7 +23,7 @@ from wafer.builtins.sorts import (
     CollectedSort,
     RandomSort,
 )
-from wafer.utils.formatting import natural_key
+from wafer.core.common.formatting import natural_key
 
 
 class TestBaseFilterPlugin:

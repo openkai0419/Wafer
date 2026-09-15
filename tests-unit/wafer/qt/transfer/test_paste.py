@@ -3,7 +3,7 @@ from __future__ import annotations
 import py_compile
 from pathlib import Path
 
-from wafer.utils.virtual_paths import build_virtual_path
+from wafer.core.common.virtual_paths import build_virtual_path
 
 
 def test_compile():
@@ -61,7 +61,6 @@ def test_resolve_drop_operation_with_ui_fixed_operation():
 def test_resolve_drop_operation_with_ui_ask_saves_selection(monkeypatch):
     from wafer.qt.transfer import paste
     from wafer.qt.widgets.dialogs import DropOperationDialog
-
 
     saved = {}
     monkeypatch.setattr(paste.app_settings, "get", lambda key, default=None, value_type=None: "copy")
@@ -139,10 +138,7 @@ def test_execute_paste_plans_with_ui_preserves_result_order_with_virtual_plan(mo
     def fake_execute_paste_items(plans, decisions, parent, op):
         called["execute_indices"] = [plan.index for plan in plans]
         called["op"] = op
-        return [
-            OperationResult(action="copy", src=str(plan.src), dst=str(plan.dst_default), status="ok")
-            for plan in plans
-        ]
+        return [OperationResult(action="copy", src=str(plan.src), dst=str(plan.dst_default), status="ok") for plan in plans]
 
     monkeypatch.setattr(paste, "_resolve_conflicts_with_ui", fake_resolve_conflicts_with_ui)
     monkeypatch.setattr(paste, "_execute_paste_items", fake_execute_paste_items)

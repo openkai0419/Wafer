@@ -1,8 +1,8 @@
 import os
 from pathlib import Path
 
-from wafer.utils.downloader import lib_needs_download, write_lib_version
-from wafer.utils.logs import AppLogger
+from wafer.core.common.downloader import lib_needs_download, write_lib_version
+from wafer.core.logs import AppLogger
 
 KNOWN_MODELS = {
     "wd-swinv2-tagger-v3": "SmilingWolf/wd-swinv2-tagger-v3",

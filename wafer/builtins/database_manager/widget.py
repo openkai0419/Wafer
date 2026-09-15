@@ -1,10 +1,10 @@
 import os
 
 from PySide6 import QtWidgets, QtCore, QtGui
-from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
-from ...utils.notifier import Notifier
-from ...utils.paths import (
+from ...qt.common.dpi import dpix
+from ...core.logs import AppLogger
+from ...qt.common.notifier import Notifier
+from ...core.common.paths import (
     list_setting_db_names,
     setting_db_path,
     data_db_path,

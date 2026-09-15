@@ -35,8 +35,10 @@ def _isolate(tmp_path, monkeypatch):
 
 def _make_tab(qtbot, monkeypatch, prefix="exif"):
     from unittest.mock import patch
+
     with patch(f"{MODULE}._query_prefix_keys", return_value=list(KEY_ROWS)):
         from wafer.builtins.key_filter.panel import _FilterTab
+
         tab = _FilterTab(prefix, _SyncDispatcher())
         qtbot.addWidget(tab)
         tab.ensure_loaded()
@@ -129,6 +131,7 @@ class TestFilterChangeSubscription:
         monkeypatch.setattr(f"{MODULE}.KeyFilterWidget._build_tabs", lambda self: None)
         monkeypatch.setattr(f"{MODULE}.KeyFilterWidget._connect_bridge", lambda self: None)
         from wafer.builtins.key_filter.panel import KeyFilterWidget
+
         widget = KeyFilterWidget()
         widget._dispatcher = _SyncDispatcher()
         qtbot.addWidget(widget)
@@ -136,6 +139,7 @@ class TestFilterChangeSubscription:
 
     def test_show_subscribes_hide_unsubscribes(self, qtbot, monkeypatch):
         from PySide6 import QtGui
+
         widget = self._make_widget(qtbot, monkeypatch)
         widget.showEvent(QtGui.QShowEvent())
         assert widget._filter_callback in KeyFilter._subscribers
@@ -159,10 +163,12 @@ class TestFilterChangeSubscription:
 class TestPluginMeta:
     def test_source_is_builtin(self):
         from wafer.builtins.key_filter.panel import KeyFilterPanelPlugin
+
         assert KeyFilterPanelPlugin.SOURCE == "Builtin"
 
     def test_display_name(self):
         from wafer.builtins.key_filter.panel import KeyFilterPanelPlugin
+
         assert KeyFilterPanelPlugin.DISPLAY_NAME == "Metadata Filter"
 
 
@@ -172,6 +178,7 @@ class TestBuildTabs:
         monkeypatch.setattr(f"{MODULE}.KeyFilterWidget._connect_bridge", lambda self: None)
         monkeypatch.setattr(f"{MODULE}._query_prefix_keys", lambda prefix: [])
         from wafer.builtins.key_filter.panel import KeyFilterWidget
+
         widget = KeyFilterWidget()
         widget._dispatcher = _SyncDispatcher()
         qtbot.addWidget(widget)
@@ -228,6 +235,7 @@ class TestOnSaveReCollect:
         monkeypatch.setattr(f"{MODULE}.KeyFilterWidget._build_tabs", lambda self: None)
         monkeypatch.setattr(f"{MODULE}.KeyFilterWidget._connect_bridge", lambda self: None)
         from wafer.builtins.key_filter.panel import KeyFilterWidget
+
         widget = KeyFilterWidget()
         widget._dispatcher = _SyncDispatcher()
         qtbot.addWidget(widget)
@@ -272,6 +280,7 @@ class TestReactiveReflection:
         monkeypatch.setattr(f"{MODULE}.collector_resolver.names", lambda: [])
         monkeypatch.setattr(f"{MODULE}.parser_resolver.names", lambda: [])
         from wafer.builtins.key_filter.panel import KeyFilterWidget
+
         widget = KeyFilterWidget()
         widget._dispatcher = _SyncDispatcher()
         qtbot.addWidget(widget)
@@ -287,6 +296,7 @@ class TestReactiveReflection:
 
     def test_show_flushes_dirty(self, qtbot, monkeypatch):
         from PySide6 import QtGui
+
         widget = self._make_widget(qtbot, monkeypatch)
         reloaded = []
         monkeypatch.setattr(widget, "_reload", lambda: reloaded.append(True))
@@ -316,10 +326,10 @@ class TestReactiveReflection:
         assert tab._stale is False
 
 
-
 class TestQuerySampleValues:
     def _prep(self, monkeypatch):
         import sqlite3
+
         conn = sqlite3.connect(":memory:")
         conn.execute("CREATE TABLE meta_info (path TEXT, key TEXT, value TEXT)")
         conn.execute("CREATE TABLE tags (file_hash TEXT, key TEXT, value TEXT)")
@@ -332,6 +342,7 @@ class TestQuerySampleValues:
 
     def test_returns_meta_and_tags(self, monkeypatch):
         from wafer.builtins.key_filter.panel import _query_sample_values
+
         self._prep(monkeypatch)
         rows = _query_sample_values("exif.Make")
         values = {r[2] for r in rows}
@@ -339,6 +350,7 @@ class TestQuerySampleValues:
 
     def test_respects_limit(self, monkeypatch):
         from wafer.builtins.key_filter.panel import _query_sample_values
+
         self._prep(monkeypatch)
         rows = _query_sample_values("exif.Make", limit=1)
         assert len(rows) == 1
@@ -346,6 +358,7 @@ class TestQuerySampleValues:
     def test_orders_by_value_length_desc(self, monkeypatch):
         import sqlite3
         from wafer.builtins.key_filter.panel import _query_sample_values
+
         conn = sqlite3.connect(":memory:")
         conn.execute("CREATE TABLE meta_info (path TEXT, key TEXT, value TEXT)")
         conn.execute("CREATE TABLE tags (file_hash TEXT, key TEXT, value TEXT)")
@@ -360,6 +373,7 @@ class TestQuerySampleValues:
     def test_fills_remaining_with_empty(self, monkeypatch, tmp_path):
         import sqlite3
         from wafer.builtins.key_filter.panel import _query_sample_values
+
         db_file = tmp_path / "sample.db"
         setup = sqlite3.connect(db_file)
         setup.execute("CREATE TABLE meta_info (path TEXT, key TEXT, value TEXT)")
@@ -375,4 +389,3 @@ class TestQuerySampleValues:
         assert rows[0][2] == "meaningful"
         assert len(rows) == 3
         assert all(v in (None, "") for v in [r[2] for r in rows[1:]])
-

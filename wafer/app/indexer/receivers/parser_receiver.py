@@ -3,8 +3,8 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from ....utils.logs import AppLogger
-from ....utils.profiling import profiler
+from ....core.logs import AppLogger
+from ....core.profiling import profiler
 from ....plugin.parser.handler import parser_resolver
 from ....plugin.key_filter import KeyFilter
 from ._batch_utils import BATCH_SIZE, FLUSH_DELAY, ResultBuffer, try_float

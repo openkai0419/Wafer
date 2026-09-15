@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from wafer.utils.formatting import dpix
+from wafer.qt.common.dpi import dpix
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -1196,4 +1196,3 @@ class TestGridActive:
 
         splitter.setSizes([500, 500])
         qtbot.waitUntil(lambda: gv._active is True and bool(gv.visible_indices))
-

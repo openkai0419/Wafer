@@ -7,7 +7,7 @@ from weakref import WeakSet
 from PySide6 import QtCore
 from .key.store import KeyBindingStore
 from .key.sequence import KeySequence
-from ....utils.logs import AppLogger
+from ....core.logs import AppLogger
 from .store_base import resolve_for_widget
 
 

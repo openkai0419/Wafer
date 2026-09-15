@@ -416,7 +416,7 @@ class TestReconnection:
 
 class TestProfileTracking:
     def _make_broker(self, tmp_path, slot_ids=()):
-        from wafer.core.workspace import WorkspaceStore, WindowSlot
+        from wafer.core.store.workspace import WorkspaceStore, WindowSlot
 
         store_path = str(tmp_path / "workspace.json")
         store = WorkspaceStore(path=store_path)
@@ -617,7 +617,7 @@ class TestBrokerLostTimeout:
 
 class TestProfileReRegister:
     def _make_broker(self, tmp_path, slot_ids=()):
-        from wafer.core.workspace import WorkspaceStore, WindowSlot
+        from wafer.core.store.workspace import WorkspaceStore, WindowSlot
 
         store_path = str(tmp_path / "workspace.json")
         store = WorkspaceStore(path=store_path)

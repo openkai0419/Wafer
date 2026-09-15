@@ -9,8 +9,8 @@ from aiohttp import web
 
 from wafer.core.db.db_utils import open_readonly
 from wafer.plugin.query.handler import filter_registry, sort_registry
-from wafer.utils.logs import AppLogger
-from wafer.utils.paths import normalize_path, safe_is_dir, setting_db_path
+from wafer.core.logs import AppLogger
+from wafer.core.common.paths import normalize_path, safe_is_dir, setting_db_path
 from wafer.web.media import classify
 
 from .session import QUERY_SERVICE

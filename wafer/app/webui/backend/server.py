@@ -8,8 +8,8 @@ from urllib.parse import urlparse
 
 from aiohttp import web
 
-from wafer.utils.logs import AppLogger
-from wafer.utils.paths import get_resource_path
+from wafer.core.logs import AppLogger
+from wafer.core.common.paths import get_resource_path
 
 from . import api, events, media
 from .events import EVENT_HUB, EventHub

@@ -1,7 +1,7 @@
 from PySide6 import QtWidgets
 from PySide6.QtCore import QSize
 from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QSpacerItem, QWidget
-from ....utils.formatting import dpix
+from ....qt.common.dpi import dpix
 from ....qt.common.icon_engine import themed_icon
 from ....qt.theme import ThemeManager
 

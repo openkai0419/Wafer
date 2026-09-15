@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ...utils.formatting import dpix, display_prefixed_key
+from ...core.common.formatting import display_prefixed_key
+from ...qt.common.dpi import dpix
 from ...core.lang.manager import t
 from ...qt.common.icon_engine import themed_icon
 from ...qt.theme import ThemeManager
-from ...core.state import StateStore
+from ...core.store.state import StateStore
 from ...qt.widgets.popup import PopupBase
 
 _STATE_NAMESPACE = "filters/active_keys"

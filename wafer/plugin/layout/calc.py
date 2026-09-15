@@ -1,7 +1,7 @@
 import bisect
 from typing import TYPE_CHECKING
 from PySide6 import QtCore
-from ...utils.profiling import profiler
+from ...core.profiling import profiler
 
 if TYPE_CHECKING:
     pass

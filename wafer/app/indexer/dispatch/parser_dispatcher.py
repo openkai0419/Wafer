@@ -5,8 +5,8 @@ import threading
 from pathlib import Path
 
 from ....core.db.db_utils import open_readonly
-from ....utils.logs import AppLogger
-from ....utils.profiling import profiler
+from ....core.logs import AppLogger
+from ....core.profiling import profiler
 from ....core.platform.process import AppProcess
 from ....plugin.parser.handler import parser_resolver
 from ..db_writer import DatabaseWriter

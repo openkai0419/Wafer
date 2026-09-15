@@ -5,9 +5,9 @@ from typing import Any
 
 from PySide6 import QtCore, QtWidgets
 
-from ....utils.formatting import dpix
-from ....utils.logs import AppLogger
-from ....core.state import StateStore
+from ....qt.common.dpi import dpix
+from ....core.logs import AppLogger
+from ....core.store.state import StateStore
 from ....core.db.key_value import DATA_SCOPES, SCOPE_ALL, normalize_data_scope
 from ....qt.theme import ThemeManager
 from ....qt.common.icon_engine import themed_icon

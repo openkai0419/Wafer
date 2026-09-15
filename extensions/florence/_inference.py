@@ -6,7 +6,7 @@ import torch
 from PIL import Image
 from transformers import AutoModelForCausalLM, AutoProcessor
 
-from wafer.utils.logs import AppLogger
+from wafer.core.logs import AppLogger
 
 
 class FlorenceInference:

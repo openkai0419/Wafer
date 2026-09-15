@@ -4,8 +4,8 @@ from pathlib import Path
 
 from PIL import Image
 
-from wafer.utils.paths import normalize_path
-from wafer.utils.hashes import fast_signature_hash
+from wafer.core.common.paths import normalize_path
+from wafer.core.common.hashes import fast_signature_hash
 from wafer.core.db.file_db import FileDB
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.plugin.collector.base import CollectorResult

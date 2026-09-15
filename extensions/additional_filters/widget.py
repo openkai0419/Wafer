@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from wafer.utils.formatting import dpix, display_prefixed_key
+from wafer.core.common.formatting import display_prefixed_key
+from wafer.qt.common.dpi import dpix
 from wafer.core.lang.manager import t
 from wafer.qt.common.icon_engine import themed_icon
 from wafer.qt.theme import ThemeManager

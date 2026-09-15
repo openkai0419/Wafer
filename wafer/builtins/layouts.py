@@ -1,7 +1,7 @@
 from PySide6 import QtCore
 from ..plugin.layout import BaseLayoutPlugin, BaseLayoutCalculator, SCROLLBAR_INT_MAX
-from ..utils.profiling import profiler
-from ..utils.logs import AppLogger
+from ..core.profiling import profiler
+from ..core.logs import AppLogger
 
 
 class JustifiedLayoutCalculator(BaseLayoutCalculator):

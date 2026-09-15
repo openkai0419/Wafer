@@ -4,10 +4,10 @@ from collections.abc import Callable
 from types import SimpleNamespace
 from PySide6 import QtCore, QtGui, QtWidgets
 from ....core.lang.manager import t
-from ....utils.profiling import profiler
+from ....core.profiling import profiler
 from .core import COMMAND_MENU_MARKER, CommandMeta, CommandRegistry, MenuAction, call_with_matching_args
 from .context import CommandContext
-from ....utils.logs import AppLogger
+from ....core.logs import AppLogger
 from .payload import CommandPayload
 from .state import ActionGroupStateManager, CommandOptionStore
 from .menu import split_menu_path, is_sep_token, sep_path, is_section_token, section_parts

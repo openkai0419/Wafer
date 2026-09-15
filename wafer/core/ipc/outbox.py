@@ -9,8 +9,8 @@ from typing import Any, NamedTuple
 import msgpack
 import psutil
 
-from ...utils.paths import resolve_data_path
-from ...utils.logs import AppLogger
+from ..common.paths import resolve_data_path
+from ..logs import AppLogger
 
 _OUTBOX_DIR = resolve_data_path(".outbox/")
 

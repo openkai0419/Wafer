@@ -59,7 +59,7 @@ class BaseParser(BasePlugin):
 
     def _open_reader(self) -> tuple[sqlite3.Connection, threading.Lock]:
         from ...core.db.db_utils import open_readonly
-        from ...utils.paths import data_db_path
+        from ...core.common.paths import data_db_path
 
         if not self.db_name:
             raise RuntimeError(f"{self.NAME}: query_db() needs a per-indexer parser (BaseParserPlugin)")

@@ -1,5 +1,5 @@
 from wafer.plugin import WidgetGridPlugin
-from wafer.utils.profiling import profiler
+from wafer.core.profiling import profiler
 from .widget import MpvCellWidget, DEFAULT_VOLUME
 
 POST_INSTALL_VERSION = "1"

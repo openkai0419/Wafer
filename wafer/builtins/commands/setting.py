@@ -2,10 +2,10 @@ from PySide6 import QtWidgets
 
 from ...qt.commands.bridge import ActionKit, UI
 from ...plugin.grid.handler import grid_resolver, VIEWER_THUMBNAIL_DEFAULT_SIZE
-from ...utils.paths import resolve_data_path
+from ...core.common.paths import resolve_data_path
 from ...core.platform.folders import show_in_explorer
-from ...core.app_settings import app_settings
-from ...utils.notifier import Notifier
+from ...core.store.settings import app_settings
+from ...qt.common.notifier import Notifier
 from ...core.lang.manager import t
 
 _SETTING_KEY = "viewer/thumbnail_default_size"

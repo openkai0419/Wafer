@@ -2,8 +2,8 @@ import os
 from enum import Enum
 from pathlib import Path
 from PySide6 import QtWidgets, QtCore, QtGui
-from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
+from ...qt.common.dpi import dpix
+from ...core.logs import AppLogger
 from ...qt.widgets.markdown_browser import MarkdownBrowser, render_to_html
 from ...qt.theme import ThemeManager
 from ...core.lang.manager import t

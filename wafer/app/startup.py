@@ -17,8 +17,8 @@ class StartupTasks:
 
     @staticmethod
     def _verify_resources() -> None:
-        from ..utils.logs import AppLogger
-        from ..utils.paths import get_resource_path
+        from ..core.logs import AppLogger
+        from ..core.common.paths import get_resource_path
 
         resources = get_resource_path()
         if not resources.is_dir():

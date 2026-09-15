@@ -1,10 +1,10 @@
 from __future__ import annotations
 from typing import Any
-from ....utils.profiling import profiler
+from ....core.profiling import profiler
 from ..command.core import CommandRegistry
 from ..command.context import CommandContext
 from ..command.payload import CommandPayload
-from ....utils.logs import AppLogger
+from ....core.logs import AppLogger
 from .mouse.types import MouseActionKey, ClickType
 from .mouse.manager import MouseEventManager, MouseEventDispatcher
 from .key.shortcutmanager import ShortcutManager
@@ -106,7 +106,7 @@ class CommandBindingMixin:
         if not isinstance(cmd, CommandPayload):
             raise TypeError("Command payload must be CommandPayload")
         if not self._registry.has_command(str(cmd.id)):
-            from ....utils.notifier import Notifier
+            from ...common.notifier import Notifier
 
             AppLogger.warning(f"Command not found: {cmd.id}")
             Notifier.warning(f"Command not found: {cmd.id}")

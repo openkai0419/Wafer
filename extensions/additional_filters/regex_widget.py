@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets
 
-from wafer.utils.formatting import dpix
+from wafer.qt.common.dpi import dpix
 from wafer.core.lang.manager import t
 from wafer.plugin.query.widgets import CheckableCombo
 

@@ -1,4 +1,4 @@
-﻿import py_compile
+import py_compile
 
 from PySide6 import QtCore, QtWidgets
 
@@ -144,9 +144,7 @@ class TestColumn:
         qtbot.addWidget(col)
         col.populate([("p1", "A", "")])
         col.populate([("p2", "B", ""), ("p3", "C", "")])
-        ids = {col._list_layout.itemAt(i).widget().preset_id
-               for i in range(col._list_layout.count())
-               if isinstance(col._list_layout.itemAt(i).widget(), _PresetItem)}
+        ids = {col._list_layout.itemAt(i).widget().preset_id for i in range(col._list_layout.count()) if isinstance(col._list_layout.itemAt(i).widget(), _PresetItem)}
         assert ids == {"p2", "p3"}
 
     def test_populate_empty_shows_placeholder(self, qtbot):
@@ -298,7 +296,7 @@ class TestWorkspaceToolbarWidget:
 
         from wafer.app.viewer.widgets import workspace_toolbar
         from wafer.qt.common.icon_engine import themed_icon
-        from wafer.core.workspace import WindowSlot
+        from wafer.core.store.workspace import WindowSlot
 
         keys = []
         with patch.object(workspace_toolbar, "themed_icon", side_effect=lambda key, *a, **kw: keys.append(key) or themed_icon(key, *a, **kw)):
@@ -311,7 +309,7 @@ class TestWorkspaceToolbarWidget:
 
         from wafer.app.viewer.widgets import workspace_toolbar
         from wafer.qt.common.icon_engine import themed_icon
-        from wafer.core.workspace import WindowSlot
+        from wafer.core.store.workspace import WindowSlot
 
         keys = []
         with patch.object(workspace_toolbar, "themed_icon", side_effect=lambda key, *a, **kw: keys.append(key) or themed_icon(key, *a, **kw)):
@@ -329,7 +327,7 @@ class TestWorkspaceToolbarWidget:
 
         from wafer.app.viewer.widgets import workspace_toolbar
         from wafer.qt.common.icon_engine import themed_icon
-        from wafer.core.workspace import WindowSlot
+        from wafer.core.store.workspace import WindowSlot
 
         keys = []
         with patch.object(workspace_toolbar, "themed_icon", side_effect=lambda key, *a, **kw: keys.append(key) or themed_icon(key, *a, **kw)):
@@ -344,7 +342,7 @@ class TestWorkspaceToolbarWidget:
 
     def test_recent_current_slot_has_marker_and_enabled_restore(self, qtbot):
         from wafer.app.viewer.widgets import workspace_toolbar
-        from wafer.core.workspace import WindowSlot
+        from wafer.core.store.workspace import WindowSlot
 
         item = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s1", path={"database_name": "db"}), is_current=True)
         qtbot.addWidget(item)
@@ -354,7 +352,7 @@ class TestWorkspaceToolbarWidget:
 
     def test_recent_slot_name_is_displayed_over_summary(self, qtbot):
         from wafer.app.viewer.widgets import workspace_toolbar
-        from wafer.core.workspace import WindowSlot
+        from wafer.core.store.workspace import WindowSlot
 
         item = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s1", name="Work", path={"database_name": "db"}))
         qtbot.addWidget(item)
@@ -364,7 +362,7 @@ class TestWorkspaceToolbarWidget:
     def test_popup_size_is_compact(self, qtbot):
         from wafer.app.viewer.widgets.workspace_toolbar import _SectionPopup
 
-        from wafer.utils.formatting import dpix
+        from wafer.qt.common.dpi import dpix
 
         popup = _SectionPopup("ui")
         qtbot.addWidget(popup)
@@ -373,22 +371,24 @@ class TestWorkspaceToolbarWidget:
 
     def test_recent_content_height_follows_item_count(self, qtbot):
         from wafer.app.viewer.widgets.workspace_toolbar import _RecentSectionContent
-        from wafer.core.workspace import WindowSlot
+        from wafer.core.store.workspace import WindowSlot
 
         recent = _RecentSectionContent()
         qtbot.addWidget(recent)
         recent.populate([])
         empty_height = recent.content_height_hint().height()
-        recent.populate([
-            WindowSlot(slot_id="s1", path={"database_name": "db"}),
-            WindowSlot(slot_id="s2", path={"database_name": "db"}),
-            WindowSlot(slot_id="s3", path={"database_name": "db"}),
-        ])
+        recent.populate(
+            [
+                WindowSlot(slot_id="s1", path={"database_name": "db"}),
+                WindowSlot(slot_id="s2", path={"database_name": "db"}),
+                WindowSlot(slot_id="s3", path={"database_name": "db"}),
+            ]
+        )
         assert recent.content_height_hint().height() > empty_height
 
     def test_recent_content_propagates_delete_request(self, qtbot):
         from wafer.app.viewer.widgets.workspace_toolbar import _RecentSectionContent, _RecentSlotItem
-        from wafer.core.workspace import WindowSlot
+        from wafer.core.store.workspace import WindowSlot
 
         recent = _RecentSectionContent()
         qtbot.addWidget(recent)
@@ -401,7 +401,7 @@ class TestWorkspaceToolbarWidget:
 
     def test_recent_content_propagates_rename_request(self, qtbot):
         from wafer.app.viewer.widgets.workspace_toolbar import _RecentSectionContent, _RecentSlotItem
-        from wafer.core.workspace import WindowSlot
+        from wafer.core.store.workspace import WindowSlot
 
         recent = _RecentSectionContent()
         qtbot.addWidget(recent)
@@ -414,21 +414,24 @@ class TestWorkspaceToolbarWidget:
 
     def test_recent_content_marks_current_slot(self, qtbot):
         from wafer.app.viewer.widgets.workspace_toolbar import _RecentSectionContent, _RecentSlotItem
-        from wafer.core.workspace import WindowSlot
+        from wafer.core.store.workspace import WindowSlot
 
         recent = _RecentSectionContent()
         qtbot.addWidget(recent)
-        recent.populate([
-            WindowSlot(slot_id="s1", path={"database_name": "db"}),
-            WindowSlot(slot_id="s2", path={"database_name": "db"}),
-        ], current_slot_id="s2")
+        recent.populate(
+            [
+                WindowSlot(slot_id="s1", path={"database_name": "db"}),
+                WindowSlot(slot_id="s2", path={"database_name": "db"}),
+            ],
+            current_slot_id="s2",
+        )
         items = {item.slot.slot_id: item for item in recent.findChildren(_RecentSlotItem)}
         assert items["s1"].is_current is False
         assert items["s2"].is_current is True
 
     def test_recent_long_title_does_not_expand_content_width(self, qtbot):
         from wafer.app.viewer.widgets.workspace_toolbar import _RecentSectionContent
-        from wafer.core.workspace import WindowSlot
+        from wafer.core.store.workspace import WindowSlot
 
         recent = _RecentSectionContent()
         qtbot.addWidget(recent)
@@ -472,15 +475,17 @@ class TestWorkspaceToolbarWidget:
         from unittest.mock import MagicMock, patch
 
         from wafer.app.viewer.widgets import workspace_toolbar as workspace_widget
-        from wafer.core.workspace import WindowSlot
+        from wafer.core.store.workspace import WindowSlot
 
         store = MagicMock()
         store.snapshot.return_value = ([], [], [])
         store.list_recent_slots.return_value = []
         store.get_slot.return_value = WindowSlot(slot_id="s1", path={"database_name": "db"})
-        with patch.object(workspace_widget.WorkspaceStore, "instance", return_value=store), \
-             patch.object(workspace_widget.ConfirmDialog, "ask", return_value="Delete") as ask, \
-             patch.object(workspace_widget.Command, "invoke") as invoke:
+        with (
+            patch.object(workspace_widget.WorkspaceStore, "instance", return_value=store),
+            patch.object(workspace_widget.ConfirmDialog, "ask", return_value="Delete") as ask,
+            patch.object(workspace_widget.Command, "invoke") as invoke,
+        ):
             panel = workspace_widget.WorkspaceToolbarWidget()
             qtbot.addWidget(panel)
             panel._on_delete_slot("s1")
@@ -496,8 +501,7 @@ class TestWorkspaceToolbarWidget:
         store = MagicMock()
         store.snapshot.return_value = ([], [], [])
         store.list_recent_slots.return_value = []
-        with patch.object(workspace_widget.WorkspaceStore, "instance", return_value=store), \
-             patch.object(workspace_widget.Command, "invoke") as invoke:
+        with patch.object(workspace_widget.WorkspaceStore, "instance", return_value=store), patch.object(workspace_widget.Command, "invoke") as invoke:
             panel = workspace_widget.WorkspaceToolbarWidget()
             qtbot.addWidget(panel)
             panel._on_rename_slot("s1")
@@ -512,8 +516,7 @@ class TestWorkspaceToolbarWidget:
         store = MagicMock()
         store.snapshot.return_value = ([], [], [])
         store.list_recent_slots.return_value = []
-        with patch.object(workspace_widget.WorkspaceStore, "instance", return_value=store), \
-             patch.object(workspace_widget.Command, "invoke") as invoke:
+        with patch.object(workspace_widget.WorkspaceStore, "instance", return_value=store), patch.object(workspace_widget.Command, "invoke") as invoke:
             panel = workspace_widget.WorkspaceToolbarWidget()
             panel.slot_id = "s1"
             qtbot.addWidget(panel)
@@ -657,4 +660,3 @@ class TestRefreshMtimeCache:
             store.get_store_mtime.return_value = 200.0
             panel.refresh()
             qtbot.waitUntil(lambda: store.snapshot.call_count >= 2, timeout=2000)
-

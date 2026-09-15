@@ -6,7 +6,7 @@ import json
 from aiohttp import WSMsgType, web
 
 from wafer.core.ipc.node import Node
-from wafer.utils.logs import AppLogger
+from wafer.core.logs import AppLogger
 
 RELAY_TOPICS = ("update", "folderchanged", "progress", "maximum", "db.created", "db.deleted", "tags.updated")
 

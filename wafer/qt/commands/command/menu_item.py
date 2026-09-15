@@ -1,9 +1,9 @@
 from __future__ import annotations
 from collections.abc import Callable
 from PySide6 import QtCore, QtGui, QtWidgets
-from ....utils.formatting import dpix
-from ....utils.profiling import profiler
-from ....utils.logs import AppLogger
+from ...common.dpi import dpix
+from ....core.profiling import profiler
+from ....core.logs import AppLogger
 
 
 class CommandMenuRow(QtWidgets.QWidget):

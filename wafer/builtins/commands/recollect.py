@@ -6,9 +6,9 @@ from ...core.db.recollect import Recollect
 from ...plugin.collector.handler import collector_resolver
 from ...plugin.parser.handler import parser_resolver
 from ...qt.widgets.dialogs import ConfirmDialog
-from ...utils.notifier import Notifier
-from ...utils.paths import containing_dir, normalize_path
-from ...utils.virtual_paths import is_virtual_path
+from ...qt.common.notifier import Notifier
+from ...core.common.paths import containing_dir, normalize_path
+from ...core.common.virtual_paths import is_virtual_path
 from .file import _ctx_sources
 
 

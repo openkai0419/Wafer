@@ -3,8 +3,8 @@ from collections.abc import Callable
 
 from PySide6 import QtCore
 
-from ...utils.logs import AppLogger
-from ...utils.profiling import profiler
+from ...core.logs import AppLogger
+from ...core.profiling import profiler
 
 
 class CancelToken:

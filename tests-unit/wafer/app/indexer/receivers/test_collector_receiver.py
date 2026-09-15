@@ -14,7 +14,7 @@ from wafer.app.indexer.receivers._batch_utils import (
     ResultBuffer,
     try_float,
 )
-from wafer.utils.virtual_paths import build_virtual_path
+from wafer.core.common.virtual_paths import build_virtual_path
 
 
 class _StubMsg:

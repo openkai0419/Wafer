@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from ...core.app_settings import app_settings
+from ...core.store.settings import app_settings
 
 
 AUTO_CHECK_ENABLED_KEY = "update/auto_check_enabled"

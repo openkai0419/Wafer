@@ -17,7 +17,7 @@ class TestDirectLaunchSlotRestore:
 
         with patch("main.argparse.ArgumentParser.parse_args") as mock_args:
             mock_args.return_value = MagicMock(tray=False, viewer=False, webui=False, indexer=None, collector=None, parser=None, dev=False, slot=None)
-            with patch("wafer.core.workspace.WorkspaceStore.instance", return_value=store):
+            with patch("wafer.core.store.workspace.WorkspaceStore.instance", return_value=store):
                 from main import main
 
                 main()
@@ -38,7 +38,7 @@ class TestDirectLaunchSlotRestore:
 
         with patch("main.argparse.ArgumentParser.parse_args") as mock_args:
             mock_args.return_value = MagicMock(tray=False, viewer=False, webui=False, indexer=None, collector=None, parser=None, dev=False, slot=None)
-            with patch("wafer.core.workspace.WorkspaceStore.instance", return_value=store):
+            with patch("wafer.core.store.workspace.WorkspaceStore.instance", return_value=store):
                 from main import main
 
                 main()
@@ -60,7 +60,7 @@ class TestDirectLaunchSlotRestore:
 
         with patch("main.argparse.ArgumentParser.parse_args") as mock_args:
             mock_args.return_value = MagicMock(tray=False, viewer=False, webui=False, indexer=None, collector=None, parser=None, dev=False, slot=None)
-            with patch("wafer.core.workspace.WorkspaceStore.instance", return_value=store):
+            with patch("wafer.core.store.workspace.WorkspaceStore.instance", return_value=store):
                 from main import main
 
                 main()

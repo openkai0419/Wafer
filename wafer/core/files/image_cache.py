@@ -1,8 +1,8 @@
 from collections import OrderedDict
 import threading
 
-from ...utils.decorators import singleton
-from ...utils.profiling import profiler
+from ..common.decorators import singleton
+from ..profiling import profiler
 
 
 def fullsize_key(path: str):

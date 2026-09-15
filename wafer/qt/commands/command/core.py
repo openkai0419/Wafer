@@ -3,8 +3,8 @@ from typing import Any
 from collections.abc import Callable, Sequence, Mapping
 import inspect
 from dataclasses import dataclass, field
-from ....utils.profiling import profiler
-from ....utils.logs import AppLogger
+from ....core.profiling import profiler
+from ....core.logs import AppLogger
 
 COMMAND_MENU_MARKER = "__CommandMenuBuilder_Menu__"
 

@@ -1,9 +1,9 @@
 from PySide6 import QtCore, QtWidgets
-from ...utils.paths import data_db_path, setting_db_path, list_setting_db_names
-from ...utils.formatting import dpix
-from ...utils.profiling import profiler
-from ...utils.logs import AppLogger
-from ...utils.notifier import Notifier
+from ...core.common.paths import data_db_path, setting_db_path, list_setting_db_names
+from ...qt.common.dpi import dpix
+from ...core.profiling import profiler
+from ...core.logs import AppLogger
+from ...qt.common.notifier import Notifier
 from ...constants import APP_NAME, DEFAULT_DB_NAME
 from ...core.db.setting_db import SettingDB
 from wafer.core.lang.manager import t
@@ -18,7 +18,7 @@ from .preview.file_viewer import FileViewerController
 from .preview.file_list_provider import FileListProvider
 from .preview.content_viewer import ContentViewerWidget
 from .preview.meta_panel import MetaViewerWidget
-from ...core.app_settings import app_settings
+from ...core.store.settings import app_settings
 from .widgets.button_bar import IconButtonBar, IconButtonConfig
 from .widgets.foldertree import LazyFolderTreeView
 from .widgets.loading_overlay import OverlayLoadingIndicator
@@ -32,10 +32,10 @@ from .widgets.workspace_toolbar import WorkspaceToolbarWidget
 from ...builtins.commands.menu import AppMenuRegistrar
 from ..lifecycle import CloseReason
 from .search import SearchService
-from ...core.workspace import WorkspaceStore, WindowSlot
+from ...core.store.workspace import WorkspaceStore, WindowSlot
 from ...qt.commands.bridge import UI, Command, Menu
 from ...qt.layout.manager import LayoutManager
-from ...core.state import StateStore
+from ...core.store.state import StateStore
 from ...qt.common.window_state import WindowStateController
 from ...qt.common.dispatcher import Dispatcher, CancelToken
 from ...qt.common.thread import utility_pool
@@ -391,7 +391,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _load_default_layout(self):
         import json
-        from ...utils.paths import get_resource_path
+        from ...core.common.paths import get_resource_path
 
         layout_path = get_resource_path() / "panel_layout" / "default.json"
         if layout_path.exists():

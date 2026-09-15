@@ -135,4 +135,3 @@ def test_resolver_required_collectors_unknown_is_empty():
     from wafer.plugin.parser.handler import parser_resolver
 
     assert parser_resolver.required_collectors("does_not_exist") == {}
-

@@ -709,8 +709,13 @@ class TestAppearAfterRender:
 
         plugin = _TrackPlugin()
         pipeline = GridPipeline(
-            dispatcher, dispatcher, dispatcher, cache,
-            lambda i: widgets.get(i), lambda i, n: None, appear_fn,
+            dispatcher,
+            dispatcher,
+            dispatcher,
+            cache,
+            lambda i: widgets.get(i),
+            lambda i, n: None,
+            appear_fn,
         )
 
         widget = MagicMock()
@@ -744,8 +749,13 @@ class TestAppearAfterRender:
 
         plugin = _TrackPlugin2()
         pipeline = GridPipeline(
-            dispatcher, dispatcher, dispatcher, cache,
-            lambda i: widgets.get(i), lambda i, n: None, appear_fn,
+            dispatcher,
+            dispatcher,
+            dispatcher,
+            cache,
+            lambda i: widgets.get(i),
+            lambda i, n: None,
+            appear_fn,
         )
 
         widget = MagicMock()

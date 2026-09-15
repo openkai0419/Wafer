@@ -207,7 +207,6 @@ def test_search_index_none_before_async_build(qtbot):
     assert w._search_index is None or isinstance(w._search_index, dict)
 
 
-
 def test_search_index_built_after_async(qtbot):
     w = SearchableMetaWidget()
     qtbot.addWidget(w)
@@ -218,7 +217,6 @@ def test_search_index_built_after_async(qtbot):
     assert w._search_index["height"] == "200"
 
 
-
 def test_filter_uses_index_when_available(qtbot):
     w = SearchableMetaWidget()
     qtbot.addWidget(w)
@@ -226,7 +224,6 @@ def test_filter_uses_index_when_available(qtbot):
     qtbot.waitUntil(lambda: w._search_index is not None, timeout=5000)
     w._apply_filter("canon")
     assert w._filtered_keys == ["model"]
-
 
 
 def test_filter_works_without_index(qtbot):
@@ -246,7 +243,6 @@ def test_set_data_cancels_previous_index_build(qtbot):
     qtbot.waitUntil(lambda: w._search_index is not None, timeout=5000)
     assert "new" in w._search_index
     assert "old" not in w._search_index
-
 
 
 def test_debounce_attribute_exists(qtbot):
@@ -488,7 +484,11 @@ def test_delete_key_everywhere_deletes_and_disables(qtbot, monkeypatch):
     monkeypatch.setattr(mod, "list_setting_db_names", lambda: ["db1", "db2"])
     delete_calls = []
     state_calls = []
-    monkeypatch.setattr(recollect_mod.Recollect, "reset", staticmethod(lambda *, db_scope, collector=None, keys=None, delete=False, re_collect=True, **k: delete_calls.append((list(db_scope), list(keys), collector, delete, re_collect))))
+    monkeypatch.setattr(
+        recollect_mod.Recollect,
+        "reset",
+        staticmethod(lambda *, db_scope, collector=None, keys=None, delete=False, re_collect=True, **k: delete_calls.append((list(db_scope), list(keys), collector, delete, re_collect))),
+    )
     monkeypatch.setattr(mod.KeyFilter, "apply_key_states", classmethod(lambda cls, prefix, states: state_calls.append((prefix, states))))
     w = SearchableMetaWidget(scope="meta_info", prefix="custom")
     qtbot.addWidget(w)

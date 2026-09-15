@@ -7,8 +7,8 @@ from PySide6 import QtCore, QtWidgets
 from ...builtins.log_panel import LogPanelPlugin
 from ...qt.commands.bridge import Command, Context, Menu, UI
 from ...core.lang.manager import t
-from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
+from ...qt.common.dpi import dpix
+from ...core.logs import AppLogger
 
 
 class WebUIWindow(QtWidgets.QWidget):

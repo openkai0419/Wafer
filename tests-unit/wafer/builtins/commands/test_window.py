@@ -20,8 +20,7 @@ class TestCloseAll:
 
     def test_sends_quit_all_to_tray_when_tray_process_exists(self):
         win = MagicMock()
-        with patch.object(window_commands.AppProcess, "get_by_args_subset", return_value=[object()]) as sub, \
-                patch.object(window_commands.AppProcess, "force_close_all") as force:
+        with patch.object(window_commands.AppProcess, "get_by_args_subset", return_value=[object()]) as sub, patch.object(window_commands.AppProcess, "force_close_all") as force:
             window_commands.close_all(_Ctx(MainWindow=win))
 
         sub.assert_called_once_with("--tray")
@@ -31,8 +30,7 @@ class TestCloseAll:
 
     def test_force_closes_when_tray_process_missing(self):
         win = MagicMock()
-        with patch.object(window_commands.AppProcess, "get_by_args_subset", return_value=[]), \
-                patch.object(window_commands.AppProcess, "force_close_all") as force:
+        with patch.object(window_commands.AppProcess, "get_by_args_subset", return_value=[]), patch.object(window_commands.AppProcess, "force_close_all") as force:
             window_commands.close_all(_Ctx(MainWindow=win))
 
         force.assert_called_once_with()
@@ -180,4 +178,3 @@ class TestWebUI:
         window_commands.open_webui()
 
         assert spawned == [("--webui",)]
-

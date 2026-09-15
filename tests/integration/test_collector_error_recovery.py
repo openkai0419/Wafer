@@ -2,7 +2,7 @@ import os
 
 from PIL import Image
 
-from wafer.utils.paths import normalize_path
+from wafer.core.common.paths import normalize_path
 from wafer.core.db.file_db import FileDB
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.plugin.collector.base import CollectorResult, BaseCollectorPlugin

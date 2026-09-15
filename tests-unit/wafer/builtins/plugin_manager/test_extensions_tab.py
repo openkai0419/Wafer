@@ -101,6 +101,7 @@ class TestExtensionCardMdFiles:
         card._toggle_md(md_path, toggle, browser)
 
         from PySide6.QtCore import QThread
+
         QThread.msleep(200)
         QtCore.QCoreApplication.processEvents()
         assert browser.rendered_html() == first_html
@@ -151,4 +152,3 @@ class TestActiveFolderNames:
         }
         fake = SimpleNamespace(_cards=cards)
         assert ExtensionsTab.active_folder_names(fake) == ["alpha", "zeta"]
-

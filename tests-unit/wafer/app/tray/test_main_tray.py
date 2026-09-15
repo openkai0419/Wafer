@@ -14,7 +14,7 @@ class _Store:
 
 def _patch_store(monkeypatch):
     store = _Store()
-    monkeypatch.setattr("wafer.core.workspace.WorkspaceStore.instance", classmethod(lambda cls: store))
+    monkeypatch.setattr("wafer.core.store.workspace.WorkspaceStore.instance", classmethod(lambda cls: store))
     return store
 
 

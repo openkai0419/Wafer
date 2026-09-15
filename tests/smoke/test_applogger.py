@@ -1,4 +1,4 @@
-from wafer.utils.logs import AppLogger
+from wafer.core.logs import AppLogger
 
 
 class TestAppLoggerSignalEmission:

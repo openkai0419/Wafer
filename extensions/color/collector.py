@@ -6,7 +6,7 @@ from PIL import Image
 
 from wafer.plugin import BaseCollectorPlugin, CollectorResult
 from wafer.plugin.imageloader.handler import image_loader_resolver
-from wafer.utils.logs import AppLogger
+from wafer.core.logs import AppLogger
 
 from ._color import PALETTE_SLOTS, palette_tags, rgb_to_packed
 from .settings import color_config, palette_slots

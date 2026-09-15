@@ -12,7 +12,7 @@ from ...plugin.rename.base import (
     style_toggle,
     style_spinbox,
 )
-from ...utils.formatting import dpix
+from ...qt.common.dpi import dpix
 from ...qt.theme import ThemeManager
 from ...core.lang.manager import t
 from ...qt.widgets.popup import PopupBase

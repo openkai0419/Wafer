@@ -9,10 +9,10 @@ from wafer.plugin.key_filter_dialog import FilterSaveConfirmDialog
 from wafer.qt.common.icon_engine import themed_icon
 from wafer.qt.common.image import numpy_to_qimage
 from wafer.plugin.imageloader.handler import image_loader_resolver
-from wafer.utils.formatting import dpix
-from wafer.utils.logs import AppLogger
-from wafer.utils.notifier import Notifier
-from wafer.utils.paths import list_setting_db_names
+from wafer.qt.common.dpi import dpix
+from wafer.core.logs import AppLogger
+from wafer.qt.common.notifier import Notifier
+from wafer.core.common.paths import list_setting_db_names
 from wafer.core.lang.manager import t
 from wafer.qt.common.dispatcher import Dispatcher
 from .settings import parse_blacklist, wd14_config

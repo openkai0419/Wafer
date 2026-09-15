@@ -2,8 +2,8 @@ import random
 
 from PySide6 import QtCore
 from wafer.plugin.layout import BaseLayoutCalculator, SCROLLBAR_INT_MAX
-from wafer.utils.profiling import profiler
-from wafer.utils.logs import AppLogger
+from wafer.core.profiling import profiler
+from wafer.core.logs import AppLogger
 
 
 def _recursive_partition(rects, cancelled, sorted_ar, ar_prefix, inv_prefix, start, count, x, y, w, h, spacing, split_point_fn, ratio_fn):

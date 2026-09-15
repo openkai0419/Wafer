@@ -10,9 +10,9 @@ import threading
 import time
 from pathlib import Path, PurePosixPath
 
-from wafer.utils.logs import AppLogger
-from wafer.utils.paths import normalize_path, resolve_cache_path
-from wafer.utils.virtual_paths import child_path, display_name, source_path
+from wafer.core.logs import AppLogger
+from wafer.core.common.paths import normalize_path, resolve_cache_path
+from wafer.core.common.virtual_paths import child_path, display_name, source_path
 
 from . import settings as cache_settings
 from .archive import ZipMemberRecord, display_member_path, get_archive_index, open_zip_member_record

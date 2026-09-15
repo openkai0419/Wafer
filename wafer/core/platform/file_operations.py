@@ -9,9 +9,9 @@ from collections.abc import Callable
 
 import requests
 
-from ...utils.logs import AppLogger
-from ...utils.paths import safe_exists, safe_is_dir
-from ...utils.virtual_paths import is_virtual_path
+from ..logs import AppLogger
+from ..common.paths import safe_exists, safe_is_dir
+from ..common.virtual_paths import is_virtual_path
 from .path_utils import check_copy_conflict, is_http_url, unique_path
 
 if TYPE_CHECKING:
@@ -519,7 +519,7 @@ class FileSaver:
 
 
 def delete_to_trash(paths: list[str | Path]) -> list[OperationResult]:
-    from ...utils.virtual_paths import is_virtual_path
+    from ..common.virtual_paths import is_virtual_path
 
     physical = [p for p in paths if p and not is_virtual_path(str(p))]
     rejected = len(paths) - len(physical)

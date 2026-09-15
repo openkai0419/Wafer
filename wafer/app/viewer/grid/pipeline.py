@@ -2,8 +2,8 @@ from collections.abc import Callable
 
 from PySide6 import QtCore, QtGui
 
-from ....utils.logs import AppLogger
-from ....utils.virtual_paths import is_virtual_path
+from ....core.logs import AppLogger
+from ....core.common.virtual_paths import is_virtual_path
 from ....qt.common.dispatcher import Dispatcher, CancelToken, CancelSlot
 from ....core.files.render_target import RenderPlan
 from ....plugin.grid.handler import grid_resolver

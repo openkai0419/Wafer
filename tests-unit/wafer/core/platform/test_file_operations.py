@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from wafer.utils.virtual_paths import build_virtual_path
+from wafer.core.common.virtual_paths import build_virtual_path
 
 
 def test_file_executor_overwrite_same_path_is_noop(tmp_path):
@@ -165,9 +165,7 @@ def test_delete_to_trash_send2trash_fallback(tmp_path, monkeypatch):
     f.write_text("x", encoding="utf-8")
     import types
 
-    fake = types.SimpleNamespace(
-        send2trash=lambda *_a, **_k: (_ for _ in ()).throw(OSError("boom"))
-    )
+    fake = types.SimpleNamespace(send2trash=lambda *_a, **_k: (_ for _ in ()).throw(OSError("boom")))
     monkeypatch.setitem(__import__("sys").modules, "send2trash", fake)
     results = delete_to_trash([str(f)])
     assert results[0].status == "ok"
@@ -182,9 +180,7 @@ def test_delete_to_trash_folder_fallback_fails(tmp_path, monkeypatch):
     (d / "child.txt").write_text("x", encoding="utf-8")
     import types
 
-    fake = types.SimpleNamespace(
-        send2trash=lambda *_a, **_k: (_ for _ in ()).throw(OSError("boom"))
-    )
+    fake = types.SimpleNamespace(send2trash=lambda *_a, **_k: (_ for _ in ()).throw(OSError("boom")))
     monkeypatch.setitem(__import__("sys").modules, "send2trash", fake)
     results = delete_to_trash([str(d)])
     assert results[0].status == "error"

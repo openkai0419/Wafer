@@ -1,6 +1,6 @@
 import os
 
-from ..utils.logs import AppLogger
+from ..core.logs import AppLogger
 from .settings import _ini_path, PluginSettings
 from .loader import get_plugin_dir
 from .installer import needs_setup

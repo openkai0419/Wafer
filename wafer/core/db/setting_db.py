@@ -1,10 +1,10 @@
 import contextlib
 import json
 import sqlite3
-from ...utils.paths import normalize_path
-from ...utils.helpers import try_json_loads
-from ...utils.profiling import profiler
-from ...utils.logs import AppLogger
+from ..common.paths import normalize_path
+from ..common.helpers import try_json_loads
+from ..profiling import profiler
+from ..logs import AppLogger
 from .db_utils import connect_with_retry
 
 _VALID_FOLDER_TABLES = frozenset({"parent_folders", "ignore_folders"})

@@ -1,7 +1,7 @@
 from PySide6 import QtCore, QtGui
-from ...utils.paths import get_resource_path
-from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
+from ...core.common.paths import get_resource_path
+from .dpi import dpix
+from ...core.logs import AppLogger
 from ..theme import ThemeManager
 
 

@@ -9,9 +9,9 @@ import requests
 
 from ..._version import __version__
 from ... import _dev
-from ...utils.json_io import read_json_file, write_json_file
-from ...utils.logs import AppLogger
-from ...utils.paths import get_app_root_dir, resolve_cache_path
+from ...core.common.json_io import read_json_file, write_json_file
+from ...core.logs import AppLogger
+from ...core.common.paths import get_app_root_dir, resolve_cache_path
 from .versioning import is_newer_version, normalize_version, parse_version
 
 

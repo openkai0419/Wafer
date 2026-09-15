@@ -4,8 +4,8 @@ import sys
 from PySide6.QtCore import QMimeData, QUrl
 from PySide6.QtGui import QGuiApplication
 
-from ...utils.logs import AppLogger
-from ...utils.virtual_paths import is_virtual_path
+from ...core.logs import AppLogger
+from ...core.common.virtual_paths import is_virtual_path
 
 
 class ClipboardFileTransfer:

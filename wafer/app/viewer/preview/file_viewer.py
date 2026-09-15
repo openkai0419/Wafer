@@ -5,22 +5,22 @@ from dataclasses import dataclass
 from PySide6 import QtCore
 from natsort import natsorted
 
-from ....utils.formatting import format_aspect, format_size_detail, format_timestamp
-from ....utils.paths import db_name_from_path
+from ....core.common.formatting import format_aspect, format_size_detail, format_timestamp
+from ....core.common.paths import db_name_from_path
 from ....core.db.query import FileSearchEngine
 from ....core.files.render_target import RenderPlan
 from ....plugin.viewer.handler import viewer_resolver
 from ....plugin.viewer.base import MultiWidgetViewerPlugin as _MultiWidgetViewerPlugin, ViewerContext, WidgetViewerPlugin as _WidgetViewerPlugin
 from ....qt.common.dispatcher import Dispatcher, CancelSlot
 from ....qt.common.thread import utility_pool
-from ....core.state import StateStore
+from ....core.store.state import StateStore
 from .file_model import FileViewModel
 from .file_list_provider import FileListProvider
 from .content_viewer import ContentViewerWidget
 from .meta_panel import MetaViewerWidget
 from ....qt.theme import ThemeManager
-from ....utils.logs import AppLogger
-from ....utils.profiling import profiler
+from ....core.logs import AppLogger
+from ....core.profiling import profiler
 
 _STANDARD_SOURCE_KEYS = ("source", "size", "created", "modified", "collected", "file_hash")
 _STANDARD_FILE_KEYS = ("name", "path", "aspect_ratio", "source_extension")

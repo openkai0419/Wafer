@@ -7,10 +7,10 @@ import time
 from pathlib import Path
 from collections.abc import Sequence
 
-from ...utils.paths import data_db_path, list_data_db_names, list_setting_db_names
-from ...utils.hashes import fast_signature_hash
-from ...utils.profiling import profiler
-from ...utils.logs import AppLogger
+from ..common.paths import data_db_path, list_data_db_names, list_setting_db_names
+from ..common.hashes import fast_signature_hash
+from ..profiling import profiler
+from ..logs import AppLogger
 
 
 def apply_write_pragmas(conn: sqlite3.Connection):

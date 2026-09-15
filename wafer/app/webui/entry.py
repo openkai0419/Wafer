@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 import webbrowser
 
-from ...utils.logs import AppLogger
+from ...core.logs import AppLogger
 from .settings import browse_url
 from .state import write_state
 

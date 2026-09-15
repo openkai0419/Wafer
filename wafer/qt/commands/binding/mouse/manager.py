@@ -2,7 +2,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from ...command.core import CommandRegistry
 from ...command.context import CommandContext
-from .....utils.logs import AppLogger
+from .....core.logs import AppLogger
 from .types import ClickType, MouseButton, ModifierKey, MouseActionKey
 from .drag import DragContext, CommandDragContext, ExternalDropDynamicContext
 
@@ -158,7 +158,7 @@ class MouseEventManager:
                     ctx = CommandDragContext(base_id, self._registry, widget, args)
                     cmd_class = self._registry.get_command(base_id)
                     if cmd_class is None:
-                        from .....utils.notifier import Notifier
+                        from ....common.notifier import Notifier
 
                         AppLogger.warning(f"Command not found: {base_id}")
                         Notifier.warning(f"Command not found: {base_id}")
@@ -488,7 +488,7 @@ class MouseEventDispatcher(QtCore.QObject):
                     registry = CommandRegistry.instance()
                     cmd_class = registry.get_command(base_id)
                     if cmd_class is None:
-                        from .....utils.notifier import Notifier
+                        from ....common.notifier import Notifier
 
                         AppLogger.warning(f"Command not found: {base_id}")
                         Notifier.warning(f"Command not found: {base_id}")

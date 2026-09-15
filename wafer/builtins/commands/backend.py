@@ -5,7 +5,7 @@ from PySide6 import QtWidgets
 from ...app.webui.settings import HOST_ALL, HOST_LOCAL, WebUISettings
 from ...qt.commands.bridge import ActionKit, Command
 from ...core.platform.process import AppProcess
-from ...utils.notifier import Notifier
+from ...qt.common.notifier import Notifier
 
 
 def _window(ctx):

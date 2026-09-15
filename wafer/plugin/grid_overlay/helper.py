@@ -8,7 +8,7 @@ from PySide6 import QtCore
 from ...core.db.query import FileSearchEngine
 from ...qt.common.dispatcher import Dispatcher
 from ...qt.common.thread import utility_pool
-from ...utils.logs import AppLogger
+from ...core.logs import AppLogger
 
 
 class OverlayHelper(QtCore.QObject):

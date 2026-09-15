@@ -1,6 +1,6 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 from ....core.files.image_cache import MemoryLimitedImageCache, fullsize_key
-from ....utils.profiling import profiler
+from ....core.profiling import profiler
 
 __all__ = (
     "AdditionalWidgetPool",

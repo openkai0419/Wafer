@@ -587,6 +587,7 @@ def test_flush_renders_widget_plugin():
     call_order = []
     rendered = {}
     with patch("wafer.app.viewer.preview.file_viewer.viewer_resolver") as mock_resolver:
+
         def render(contexts, plugin_name=None):
             rendered["contexts"] = contexts
             rendered["plugin_name"] = plugin_name
@@ -640,6 +641,7 @@ def test_on_path_changed_widget_sets_target():
     class _SyncDispatcher:
         def post(self, task, cancel=None, priority=None):
             task()
+
         def invoke(self, callback):
             callback()
 

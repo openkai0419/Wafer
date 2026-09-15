@@ -2,9 +2,9 @@ from __future__ import annotations
 import inspect
 from typing import Any
 from collections.abc import Callable, Sequence
-from ....utils.profiling import profiler
+from ....core.profiling import profiler
 from .core import register_command_defs, CommandMeta
-from ....utils.logs import AppLogger
+from ....core.logs import AppLogger
 from ....plugin.registry import PluginBase
 
 MENU_SEPARATOR = "-"

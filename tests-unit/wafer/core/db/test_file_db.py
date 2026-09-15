@@ -1,4 +1,4 @@
-﻿import py_compile
+import py_compile
 import sqlite3
 import threading
 
@@ -16,7 +16,7 @@ from wafer.core.db.file_db import (
     _SQL_UPSERT_TAGS,
     _SQL_UPSERT_COLLECTION_STATUS,
 )
-from wafer.utils.virtual_paths import build_virtual_path
+from wafer.core.common.virtual_paths import build_virtual_path
 
 
 def test_compile():

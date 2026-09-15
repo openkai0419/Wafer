@@ -115,9 +115,7 @@ class TestMarkdownBrowser:
     def test_javascript_disabled(self, qtbot):
         browser = MarkdownBrowser()
         qtbot.addWidget(browser)
-        js_enabled = browser._page.settings().testAttribute(
-            QWebEngineSettings.WebAttribute.JavascriptEnabled
-        )
+        js_enabled = browser._page.settings().testAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled)
         assert js_enabled is False
 
     def test_allowed_dir_set_on_first_load(self, qtbot, tmp_path):
@@ -142,6 +140,7 @@ class TestMarkdownBrowser:
         assert browser._allowed_dir == sub
         from PySide6.QtCore import QUrl
         from PySide6.QtWebEngineCore import QWebEnginePage
+
         accepted = browser._page.acceptNavigationRequest(
             QUrl.fromLocalFile(str(outside)),
             QWebEnginePage.NavigationType.NavigationTypeLinkClicked,

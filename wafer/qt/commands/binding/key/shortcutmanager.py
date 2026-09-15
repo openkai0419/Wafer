@@ -4,12 +4,12 @@ from typing import Any, cast
 from collections.abc import Callable, Iterable
 from weakref import WeakValueDictionary
 from PySide6 import QtCore, QtGui, QtWidgets
-from .....utils.profiling import profiler
-from .....utils.logs import AppLogger
+from .....core.profiling import profiler
+from .....core.logs import AppLogger
 from ...command.core import CommandRegistry
 from ...command.context import CommandContext
 from ...command.payload import CommandPayload
-from .....utils.helpers import invoke_int, widget_prop_bool
+from .....core.common.helpers import invoke_int, widget_prop_bool
 from ..common import is_text_entry_focused
 from .sequence import KeySequence
 from .runtime import KeyNameResolver

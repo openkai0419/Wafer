@@ -1,4 +1,4 @@
-from wafer.utils.notifier import Notifier
+from wafer.qt.common.notifier import Notifier
 
 
 class TestNotifierSignalEmission:

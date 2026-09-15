@@ -1,5 +1,5 @@
 from wafer.core.platform.folders import first_entry, first_file, make_directory
-from wafer.utils.virtual_paths import build_virtual_path
+from wafer.core.common.virtual_paths import build_virtual_path
 
 
 def test_first_file_returns_none_for_missing(tmp_path):

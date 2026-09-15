@@ -1,5 +1,5 @@
 from PySide6 import QtCore, QtGui, QtWidgets
-from ....utils.formatting import dpix
+from ....qt.common.dpi import dpix
 
 
 class OverlayLoadingIndicator(QtWidgets.QWidget):

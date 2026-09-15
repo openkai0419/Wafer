@@ -26,7 +26,7 @@ from wafer.builtins.rename_sources import (
 from wafer.builtins.batch_renamer.widget import BatchRenamerPlugin
 from wafer.qt.common.dispatcher import CancelToken
 from wafer.core.db.file_db import FileDB
-from wafer.utils.formatting import dpix
+from wafer.qt.common.dpi import dpix
 
 
 @pytest.fixture(autouse=True)
@@ -1573,9 +1573,7 @@ class TestSegmentEditingNavigation:
             qtbot.keyClick(editor, Qt.Key_Tab)
 
             qtbot.waitUntil(
-                lambda: dlg._seg_table.currentIndex().row() == 1
-                and dlg._seg_table.currentIndex().column() == fixed_col
-                and dlg._seg_table.is_editing(),
+                lambda: dlg._seg_table.currentIndex().row() == 1 and dlg._seg_table.currentIndex().column() == fixed_col and dlg._seg_table.is_editing(),
                 timeout=3000,
             )
         finally:
@@ -1590,9 +1588,7 @@ class TestSegmentEditingNavigation:
             dlg._seg_table.closeEditor(editor, QtWidgets.QAbstractItemDelegate.EditPreviousItem)
 
             qtbot.waitUntil(
-                lambda: dlg._seg_table.currentIndex().row() == 0
-                and dlg._seg_table.currentIndex().column() == fixed_col
-                and dlg._seg_table.is_editing(),
+                lambda: dlg._seg_table.currentIndex().row() == 0 and dlg._seg_table.currentIndex().column() == fixed_col and dlg._seg_table.is_editing(),
                 timeout=3000,
             )
         finally:

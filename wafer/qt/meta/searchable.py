@@ -8,9 +8,10 @@ from typing import Any
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ...utils.formatting import dpix, display_prefixed_key
-from ...utils.logs import AppLogger
-from ...utils.paths import list_setting_db_names
+from ...core.common.formatting import display_prefixed_key
+from ..common.dpi import dpix
+from ...core.logs import AppLogger
+from ...core.common.paths import list_setting_db_names
 from ...core.lang.manager import t
 from ..theme import ThemeManager
 from ..commands.bridge import ActionKit, Menu

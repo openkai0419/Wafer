@@ -5,8 +5,8 @@ from collections.abc import Callable
 
 from PySide6 import QtCore
 
-from ...core.state import StateStore
-from ...utils.logs import AppLogger
+from ...core.store.state import StateStore
+from ...core.logs import AppLogger
 
 if TYPE_CHECKING:
     from .mainwindow import MainWindow

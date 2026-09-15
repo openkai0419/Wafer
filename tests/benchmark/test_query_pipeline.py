@@ -14,7 +14,7 @@ from wafer.core.db.file_db import _TABLES, _VIEWS, _INDEXES_SQL
 from wafer.core.db.db_utils import apply_read_pragmas
 from wafer.core.db.query import FileSearchEngine
 from wafer.plugin.query.composer import SearchComposer
-from wafer.utils.paths import resolve_data_path
+from wafer.core.common.paths import resolve_data_path
 
 pytestmark = pytest.mark.benchmark
 
@@ -449,7 +449,7 @@ class TestGeneratedDB:
 
     def test_12_full_fetch_sort_name_python(self, gen_db):
         conn, n, _ = gen_db
-        from wafer.utils.formatting import natural_key
+        from wafer.core.common.formatting import natural_key
 
         path_q = SQL_ALL_PATHS
         sql = SQL_FETCH_SORT_NAME_COL.format(path_query=path_q)
@@ -543,7 +543,7 @@ class TestGeneratedDB:
         print(f"  Step3 + SQL sort mod:     {_fmt(avg3, mn3, mx3, rows3)}")
 
         sql4 = SQL_FETCH_SORT_NAME_COL.format(path_query=path_q)
-        from wafer.utils.formatting import natural_key
+        from wafer.core.common.formatting import natural_key
 
         def run_py_sort():
             rows = list(cur.execute(sql4, (kw, kw, "name", "name")).fetchall())
@@ -684,7 +684,7 @@ class TestRealDB:
 
     def test_06_full_fetch_sort_name_python(self, real_db):
         conn, n, name = real_db
-        from wafer.utils.formatting import natural_key
+        from wafer.core.common.formatting import natural_key
 
         path_q = SQL_ALL_PATHS
         sql = SQL_FETCH_SORT_NAME_COL.format(path_query=path_q)
@@ -727,7 +727,7 @@ class TestRealDB:
         print(f"  Step3 + SQL sort mod:     {_fmt(avg3, mn3, mx3, rows3)}")
 
         sql4 = SQL_FETCH_SORT_NAME_COL.format(path_query=path_q)
-        from wafer.utils.formatting import natural_key
+        from wafer.core.common.formatting import natural_key
 
         def run_py_sort():
             rows = list(cur.execute(sql4, (kw, kw, "name", "name")).fetchall())
@@ -908,7 +908,7 @@ class TestAlternativeApproaches:
         if n != GENERATED_SIZES[-1]:
             pytest.skip("only largest")
 
-        from wafer.utils.formatting import natural_key
+        from wafer.core.common.formatting import natural_key
 
         path_q = SQL_ALL_PATHS
 

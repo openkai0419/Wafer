@@ -4,7 +4,7 @@ from PySide6 import QtCore
 
 from wafer.qt.transfer.dragparser import MimeDataParser, ParsedItem
 from wafer.core.platform.file_operations import FileSaver
-from wafer.utils.virtual_paths import build_virtual_path
+from wafer.core.common.virtual_paths import build_virtual_path
 
 
 def test_compile():
@@ -34,7 +34,7 @@ def test_mimedata_parser_parse_collects_all_local_urls(tmp_path):
 def test_mimedata_parser_prefers_local_urls_over_filegroupdescriptor(qtbot, tmp_path):
     from PySide6 import QtCore
 
-    from wafer.utils.paths import normalize_path
+    from wafer.core.common.paths import normalize_path
     from wafer.qt.transfer.dragparser import MimeDataParser
 
     src = tmp_path / "a.txt"

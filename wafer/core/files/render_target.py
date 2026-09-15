@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Generic, TypeVar
 
-from ...utils.virtual_paths import source_path
+from ..common.virtual_paths import source_path
 
 
 SURFACE_VIEWER = "viewer"

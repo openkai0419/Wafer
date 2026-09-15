@@ -1,7 +1,7 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.qt.common.dispatcher import CancelSlot
-from wafer.utils.profiling import profiler
+from wafer.core.profiling import profiler
 from ._common import FrameCache, AnimationDriver, get_driver, _grid_cache
 
 _DISPOSE_INTERVAL = 16

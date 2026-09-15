@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore
 
-from ...utils.logs import AppLogger
+from ...core.logs import AppLogger
 from ...core.ipc.node import Node
 
 

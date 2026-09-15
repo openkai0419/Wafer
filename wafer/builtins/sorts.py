@@ -3,7 +3,7 @@ from __future__ import annotations
 from random import shuffle
 
 from ..plugin.query.base import BaseSortPlugin
-from ..utils.formatting import natural_key
+from ..core.common.formatting import natural_key
 
 
 class NoSort(BaseSortPlugin):

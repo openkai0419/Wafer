@@ -4,7 +4,7 @@ from wafer.app.viewer.preview.file_list_provider import FileListProvider, ListMo
 from wafer.app.viewer.preview.file_model import FileViewModel
 from wafer.app.viewer.grid.items import GridItemModel
 from wafer.builtins.filters import SourceChildrenFilter
-from wafer.utils.virtual_paths import build_virtual_path
+from wafer.core.common.virtual_paths import build_virtual_path
 
 
 @pytest.fixture

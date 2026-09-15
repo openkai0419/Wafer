@@ -1,8 +1,8 @@
 from PySide6 import QtCore, QtGui
 
 from ...core.files.render_target import RenderPlan, ResolveContext, SURFACE_GRID
-from ...utils.logs import AppLogger
-from ...utils.profiling import profiler
+from ...core.logs import AppLogger
+from ...core.profiling import profiler
 from ..registry import FilePluginRegistry
 from ..imageloader.base import BaseImageLoader
 from .base import BaseGridPlugin, WidgetGridPlugin

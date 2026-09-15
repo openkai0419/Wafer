@@ -1,8 +1,8 @@
 import os
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
-from ....utils.logs import AppLogger
-from ....utils.signal import Signal
+from ....core.logs import AppLogger
+from ....core.common.signal import Signal
 
 
 class SettingWatcher(FileSystemEventHandler):

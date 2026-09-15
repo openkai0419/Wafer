@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets
 
-from ....utils.formatting import dpix
-from ....utils.profiling import profiler
+from ....qt.common.dpi import dpix
+from ....core.profiling import profiler
 from ....core.db.query import FileSearchEngine
 from ....plugin.query.composer import SearchComposer
 from ....core.lang.manager import t

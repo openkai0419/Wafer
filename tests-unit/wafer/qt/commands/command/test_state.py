@@ -164,10 +164,12 @@ class TestActionGroupStateManager:
         mgr = ActionGroupStateManager.instance()
         mgr.register_member("grp", "cmd.a")
         mgr.register_member("grp", "cmd.b")
-        registry = _FakeRegistry({
-            "cmd.a": {"resolver": lambda: False},
-            "cmd.b": {"resolver": lambda: True},
-        })
+        registry = _FakeRegistry(
+            {
+                "cmd.a": {"resolver": lambda: False},
+                "cmd.b": {"resolver": lambda: True},
+            }
+        )
         assert mgr.find_current("grp", registry) == "cmd.b"
 
     def test_find_current_returns_first_truthy(self):
@@ -175,11 +177,13 @@ class TestActionGroupStateManager:
         mgr.register_member("grp", "cmd.a")
         mgr.register_member("grp", "cmd.b")
         mgr.register_member("grp", "cmd.c")
-        registry = _FakeRegistry({
-            "cmd.a": {"resolver": lambda: False},
-            "cmd.b": {"resolver": lambda: True},
-            "cmd.c": {"resolver": lambda: True},
-        })
+        registry = _FakeRegistry(
+            {
+                "cmd.a": {"resolver": lambda: False},
+                "cmd.b": {"resolver": lambda: True},
+                "cmd.c": {"resolver": lambda: True},
+            }
+        )
         assert mgr.find_current("grp", registry) == "cmd.b"
 
     def test_find_current_no_default_no_resolver_match(self):
@@ -196,10 +200,12 @@ class TestActionGroupStateManager:
         def broken():
             raise RuntimeError("resolver failed")
 
-        registry = _FakeRegistry({
-            "cmd.a": {"resolver": broken},
-            "cmd.b": {"resolver": lambda: True},
-        })
+        registry = _FakeRegistry(
+            {
+                "cmd.a": {"resolver": broken},
+                "cmd.b": {"resolver": lambda: True},
+            }
+        )
         assert mgr.find_current("grp", registry) == "cmd.b"
 
     def test_find_current_empty_group(self):

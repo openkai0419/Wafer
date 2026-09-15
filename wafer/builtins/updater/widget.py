@@ -10,8 +10,8 @@ from ...qt.common.dispatcher import Dispatcher
 from ...qt.common.icon_engine import themed_icon
 from ...qt.common.thread import utility_pool
 from ...plugin.panel.base import BasePanelPlugin
-from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
+from ...qt.common.dpi import dpix
+from ...core.logs import AppLogger
 from ...qt.widgets.markdown_browser import MarkdownBrowser
 from . import stage, state
 from .service import UpdateCheckResult, UpdateInfo, check_for_updates, validate_external_url

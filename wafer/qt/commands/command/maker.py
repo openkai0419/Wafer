@@ -6,7 +6,7 @@ from collections.abc import Iterable
 
 from .core import CommandMeta, CommandRegistry, MenuAction, register_command_defs
 from .menu import MenuHub, MENU_SEPARATOR, MENU_SECTION_PREFIX, is_section_token, is_sep_token, split_menu_path, normalize_command_meta
-from ....utils.logs import AppLogger
+from ....core.logs import AppLogger
 
 
 @dataclass(frozen=True)

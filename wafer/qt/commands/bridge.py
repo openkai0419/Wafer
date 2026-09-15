@@ -10,7 +10,7 @@ from .binding.presets import get_key_preset, get_mouse_preset, set_presets
 from .command.core import CommandRegistry
 from .command.menu_session import MenuSession
 from .command.state import CommandOptionStore
-from ...utils.logs import AppLogger
+from ...core.logs import AppLogger
 
 
 class ActionKit:
@@ -211,7 +211,7 @@ class Command:
     @staticmethod
     def run(command_id: str, args: dict | None = None, extras: dict | None = None):
         from .command.core import validate_command_args
-        from ...utils.notifier import Notifier
+        from ..common.notifier import Notifier
 
         reg = Command._registry()
         cmd_class = reg.get_command(str(command_id))
@@ -226,7 +226,7 @@ class Command:
 
     @staticmethod
     def invoke(command_id: str, extras: dict | None = None, *, ctx=None, parent=None, **kwargs):
-        from ...utils.notifier import Notifier
+        from ..common.notifier import Notifier
 
         reg = Command._registry()
         cmd_class = reg.get_command(str(command_id))

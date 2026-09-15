@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from wafer.builtins.commands import workspace as workspace_commands
-from wafer.core.workspace import BarSpec, QueryPreset, UIPreset, WindowSlot
+from wafer.core.store.workspace import BarSpec, QueryPreset, UIPreset, WindowSlot
 
 
 class _Ctx:
@@ -188,8 +188,7 @@ class TestWorkspaceCommands:
         store = MagicMock()
         store.reserve_next_window_slot.return_value = ("slot1", WindowSlot(slot_id="slot1"), True)
 
-        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store), \
-                patch.object(workspace_commands.AppProcess, "new_main") as new_main:
+        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store), patch.object(workspace_commands.AppProcess, "new_main") as new_main:
             workspace_commands.new_window(_Ctx())
 
         store.reserve_next_window_slot.assert_called_once_with()
@@ -199,8 +198,7 @@ class TestWorkspaceCommands:
         store = MagicMock()
         store.reserve_next_window_slot.side_effect = TimeoutError("locked")
 
-        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store), \
-                patch.object(workspace_commands.AppProcess, "new_main") as new_main:
+        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store), patch.object(workspace_commands.AppProcess, "new_main") as new_main:
             workspace_commands.new_window(_Ctx())
 
         new_main.assert_called_once_with("--viewer")
@@ -209,8 +207,7 @@ class TestWorkspaceCommands:
         store = MagicMock()
         store.reserve_next_window_slot.return_value = ("slot1", WindowSlot(slot_id="slot1"), True)
 
-        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store), \
-                patch.object(workspace_commands.AppProcess, "new_main", side_effect=RuntimeError("spawn failed")):
+        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store), patch.object(workspace_commands.AppProcess, "new_main", side_effect=RuntimeError("spawn failed")):
             with pytest.raises(RuntimeError, match="spawn failed"):
                 workspace_commands.new_window(_Ctx())
 

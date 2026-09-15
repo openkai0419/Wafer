@@ -11,9 +11,9 @@ from ...core.lang.manager import t
 from ...qt.common.badge_engine import badge_shape_keys, badge_shape_pixmap, normalize_badge_shape_key
 from ...qt.common.icon_engine import themed_icon
 from ...qt.widgets.color_picker import ColorPickerDialog
-from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
-from ...utils.notifier import Notifier
+from ...qt.common.dpi import dpix
+from ...core.logs import AppLogger
+from ...qt.common.notifier import Notifier
 from .registry import MarkRegistry
 from .shapes import DEFAULT_SHAPE_KEY
 

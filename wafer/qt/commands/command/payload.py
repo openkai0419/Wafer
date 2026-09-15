@@ -67,7 +67,7 @@ def format_payload_display(data: Any) -> str:
         try:
             return str(data)
         except Exception as e:
-            from ....utils.logs import AppLogger
+            from ....core.logs import AppLogger
 
             AppLogger.warning("format_payload_display str() failed", exc=e)
             return ""
@@ -82,7 +82,7 @@ def format_payload_display(data: Any) -> str:
         try:
             name = str(meta.display or cid)
         except Exception as e:
-            from ....utils.logs import AppLogger
+            from ....core.logs import AppLogger
 
             AppLogger.warning("format_payload_display meta.display failed", exc=e)
             name = cid

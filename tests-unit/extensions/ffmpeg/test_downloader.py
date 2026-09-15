@@ -52,7 +52,6 @@ class TestEnsureFfmpeg:
     def test_download_failure_raises(self):
         import extensions.ffmpeg._downloader as dl
 
-        with patch.object(dl, "_fetch_expected_sha256", return_value="a" * 64), \
-             patch.object(dl, "safe_download", side_effect=ConnectionError("offline")):
+        with patch.object(dl, "_fetch_expected_sha256", return_value="a" * 64), patch.object(dl, "safe_download", side_effect=ConnectionError("offline")):
             with pytest.raises(RuntimeError, match="Failed to acquire ffmpeg"):
                 dl.ensure_ffmpeg()

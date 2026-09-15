@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from PySide6 import QtCore
 
-from ....utils.virtual_paths import source_path
-from ....utils.profiling import profiler
+from ....core.common.virtual_paths import source_path
+from ....core.profiling import profiler
 
 
 class FileViewModel(QtCore.QObject):

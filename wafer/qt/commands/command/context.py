@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from collections.abc import Mapping
 
-from ....utils.logs import AppLogger
+from ....core.logs import AppLogger
 
 
 def _zero_point() -> Any:

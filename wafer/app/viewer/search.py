@@ -2,8 +2,8 @@ from datetime import datetime, timedelta
 
 from PySide6 import QtCore
 
-from ...utils.profiling import profiler
-from ...utils.logs import AppLogger
+from ...core.profiling import profiler
+from ...core.logs import AppLogger
 from ...core.db.query import FileSearchEngine
 from ...plugin.query.composer import SearchComposer
 from ...qt.common.rate_limit import qt_debounce

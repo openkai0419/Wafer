@@ -296,7 +296,7 @@ class TestWindowStateControllerComplex:
 class TestDialogLayoutStore:
     def test_restore_repositions_offscreen_dialog(self, qtbot, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "wafer.utils.paths.resolve_data_path",
+            "wafer.core.common.paths.resolve_data_path",
             lambda name: tmp_path / name,
         )
 

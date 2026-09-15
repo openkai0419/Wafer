@@ -3,11 +3,11 @@ from __future__ import annotations
 from PySide6 import QtWidgets
 
 from ...qt.commands.bridge import ActionKit
-from ...utils.logs import AppLogger
+from ...core.logs import AppLogger
 from ...constants import DEV_MODE
 from ...core.platform.process import AppProcess
 from ...core.ipc.message import Message
-from ...core.workspace import WorkspaceStore
+from ...core.store.workspace import WorkspaceStore
 
 
 def _tray_send(ctx, topic: str, payload=None):

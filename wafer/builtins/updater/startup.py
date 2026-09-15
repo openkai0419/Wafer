@@ -7,8 +7,8 @@ from ..._version import __version__
 from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...qt.common.dispatcher import Dispatcher
 from ...qt.common.thread import utility_pool
-from ...core.workspace import WorkspaceStore
-from ...utils.logs import AppLogger
+from ...core.store.workspace import WorkspaceStore
+from ...core.logs import AppLogger
 from . import stage, state
 from .service import check_for_updates, should_notify_update
 from .widget import PANEL_DISPLAY_NAME

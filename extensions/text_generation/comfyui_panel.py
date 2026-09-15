@@ -10,9 +10,9 @@ from wafer.qt.common.icon_engine import icon_draw
 from wafer.plugin import BaseKeyValuePanelPlugin
 from wafer.qt.meta.viewer import CollapsibleCard
 from wafer.qt.meta.searchable import SearchableMetaWidget
-from wafer.utils.formatting import dpix
-from wafer.utils.logs import AppLogger
-from wafer.utils.paths import resolve_temp_path
+from wafer.qt.common.dpi import dpix
+from wafer.core.logs import AppLogger
+from wafer.core.common.paths import resolve_temp_path
 
 WORKFLOW_KEY = "workflow"
 _DRAG_HINT = "Drag here into ComfyUI to load workflow"

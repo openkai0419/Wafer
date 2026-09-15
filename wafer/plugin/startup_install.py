@@ -1,9 +1,9 @@
 import os
 import time
 
-from ..utils.logs import AppLogger
-from ..utils.notifier import Notifier
-from ..utils.process_lock import SafeProcessLock
+from ..core.logs import AppLogger
+from ..qt.common.notifier import Notifier
+from ..core.platform.process_lock import SafeProcessLock
 from . import failed_installs, installer_queue
 from .install_status import INSTALL_WAITER_LOCK_NAME, InstallStatusWriter, clear_cancel, clear_status, is_cancel_requested
 from .installer import cleanup_legacy_dirs, install_requirements_only, run_post_install

@@ -8,14 +8,14 @@ from wafer.app.indexer.receivers.parser_receiver import _parse_batch
 from wafer.app.parser.worker import _attach_file_hash
 from wafer.core.db.db_utils import build_basic_entries
 from wafer.core.db.file_db import FileDB
-from wafer.utils.paths import normalize_path
+from wafer.core.common.paths import normalize_path
 
 TAG_KEY = f"{DuplicateParser.NAME}.{TAG}"
 
 
 @pytest.fixture
 def db(tmp_path, monkeypatch):
-    import wafer.utils.paths as paths
+    import wafer.core.common.paths as paths
 
     db_path = tmp_path / "duplicate.db"
     database = FileDB(db_path)

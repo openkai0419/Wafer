@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-from ....utils.paths import get_resource_path
+from ....core.common.paths import get_resource_path
 
 _mouse_preset: str = "standard"
 _key_preset: str = "standard"

@@ -227,7 +227,6 @@ class TestFloatingTracking:
         assert not window.isVisible()
 
 
-
 class TestDynamicPanels:
     def test_dynamic_panel_registers_floating(self, layout_env):
         mgr, win, panels = layout_env
@@ -1640,6 +1639,7 @@ class TestDeferredRestore:
 class TestToggleCommandCheckable:
     def test_register_creates_checkable_command(self, layout_env):
         from wafer.qt.commands.command.core import CommandRegistry
+
         mgr, win, panels = layout_env
         cmd_id = LayoutManager._command_id("folder")
         registry = CommandRegistry.instance()
@@ -1649,6 +1649,7 @@ class TestToggleCommandCheckable:
 
     def test_resolver_returns_true_for_docked_panel(self, layout_env):
         from wafer.qt.commands.command.core import CommandRegistry
+
         mgr, win, panels = layout_env
         cmd_id = LayoutManager._command_id("folder")
         cmd_cls = CommandRegistry.instance().get_command(cmd_id)
@@ -1657,6 +1658,7 @@ class TestToggleCommandCheckable:
 
     def test_resolver_returns_true_for_collapsed_panel(self, layout_env):
         from wafer.qt.commands.command.core import CommandRegistry
+
         mgr, win, panels = layout_env
         _process(10)
         mgr.toggle_panel("viewer")
@@ -1669,6 +1671,7 @@ class TestToggleCommandCheckable:
 
     def test_resolver_returns_true_for_floating_panel(self, layout_env):
         from wafer.qt.commands.command.core import CommandRegistry
+
         mgr, win, panels = layout_env
         w = _make_panel("dyn")
         _register_floating(mgr, "dyn", w)
@@ -1680,6 +1683,7 @@ class TestToggleCommandCheckable:
 
     def test_resolver_returns_false_for_dormant_panel(self, layout_env):
         from wafer.qt.commands.command.core import CommandRegistry
+
         mgr, win, panels = layout_env
         w = _make_panel("dyn")
         _register_floating(mgr, "dyn", w)
@@ -1695,6 +1699,7 @@ class TestToggleCommandCheckable:
 
     def test_resolver_tracks_state_changes_dynamically(self, layout_env):
         from wafer.qt.commands.command.core import CommandRegistry
+
         mgr, win, panels = layout_env
         w = _make_panel("dyn")
         _register_floating(mgr, "dyn", w)

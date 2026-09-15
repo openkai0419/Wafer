@@ -4,8 +4,8 @@ from PySide6 import QtGui
 
 from ...core.files.render_target import RenderPlan, ResolveContext, SURFACE_IMAGE
 from ...qt.common.image import numpy_to_qimage, pil_to_qimage
-from ...utils.logs import AppLogger
-from ...utils.profiling import profiler
+from ...core.logs import AppLogger
+from ...core.profiling import profiler
 from ..registry import FilePluginRegistry
 from .base import BaseImageLoader
 

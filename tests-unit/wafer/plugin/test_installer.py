@@ -669,21 +669,25 @@ class TestRestartScopeOf:
     def test_viewer_scope(self):
         class ViewerPlugin:
             SCOPE = "viewer"
+
         assert restart_scope_of(ViewerPlugin) == RestartScope.VIEWER
 
     def test_tray_scope(self):
         class TrayPlugin:
             SCOPE = "tray"
+
         assert restart_scope_of(TrayPlugin) == RestartScope.TRAY
 
     def test_star_scope(self):
         class AllPlugin:
             SCOPE = "*"
+
         assert restart_scope_of(AllPlugin) == RestartScope.ALL
 
     def test_no_scope_defaults_to_viewer(self):
         class NoScopePlugin:
             pass
+
         assert restart_scope_of(NoScopePlugin) == RestartScope.VIEWER
 
 
@@ -694,14 +698,17 @@ class TestRestartScopeFromPlugins:
     def test_mixed(self):
         class V:
             SCOPE = "viewer"
+
         class T:
             SCOPE = "tray"
+
         scope = restart_scope_from_plugins([V, T])
         assert scope == RestartScope.ALL
 
     def test_single_tray(self):
         class T:
             SCOPE = "tray"
+
         assert restart_scope_from_plugins([T]) == RestartScope.TRAY
 
 
@@ -741,5 +748,3 @@ class TestResolveInstallState:
         monkeypatch.setattr(installer, "needs_install", lambda d: False)
         monkeypatch.setattr(installer, "needs_post_install", lambda d: False)
         assert resolve_install_state(str(tmp_path)) == InstallState.INSTALLED
-
-

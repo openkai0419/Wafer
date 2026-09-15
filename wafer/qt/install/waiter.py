@@ -7,8 +7,8 @@ from ...core.platform.process import AppProcess
 from ...plugin import installer_queue
 from ...plugin.install_status import INSTALL_WAITER_LOCK_NAME, read_status, request_cancel
 from ...plugin.loader import get_plugin_dir
-from ...utils.logs import AppLogger
-from ...utils.process_lock import SafeProcessLock
+from ...core.logs import AppLogger
+from ...core.platform.process_lock import SafeProcessLock
 from .splash import InstallSplash
 
 

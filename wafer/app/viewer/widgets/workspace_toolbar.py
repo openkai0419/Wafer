@@ -11,12 +11,12 @@ from ....core.lang.manager import t
 from ....qt.common.icon_engine import themed_icon
 from ....qt.common.dispatcher import Dispatcher
 from ....qt.common.thread import utility_pool
-from ....core.workspace import WindowSlot, WorkspaceStore
+from ....core.store.workspace import WindowSlot, WorkspaceStore
 from ....qt.widgets.dialogs import ConfirmDialog
 from ....qt.widgets.eliding import ElidingLabel
 from ....qt.widgets.popup import PopupBase
-from ....utils.formatting import dpix
-from ....utils.logs import AppLogger
+from ....qt.common.dpi import dpix
+from ....core.logs import AppLogger
 
 _KIND_UI = "ui"
 _KIND_PATH = "path"

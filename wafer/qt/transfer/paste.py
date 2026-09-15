@@ -9,12 +9,12 @@ from collections.abc import Callable
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ...utils.logs import AppLogger
-from ...utils.notifier import Notifier
+from ...core.logs import AppLogger
+from ..common.notifier import Notifier
 from ...core.lang.manager import t
-from ...core.app_settings import app_settings
-from ...utils.paths import safe_exists, safe_is_dir
-from ...utils.virtual_paths import is_virtual_path
+from ...core.store.settings import app_settings
+from ...core.common.paths import safe_exists, safe_is_dir
+from ...core.common.virtual_paths import is_virtual_path
 from ...core.platform.path_utils import unique_path
 from ...core.platform.file_operations import (
     CutCopy,

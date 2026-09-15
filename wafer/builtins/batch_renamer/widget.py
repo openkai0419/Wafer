@@ -18,9 +18,10 @@ from ...qt.common.rate_limit import qt_throttle
 from ...qt.common.thread import utility_pool
 from ...qt.common.geometry import screen_geometry_for
 from ...qt.widgets.popup import PopupBase
-from ...utils.formatting import dpix, natural_key
-from ...utils.logs import AppLogger
-from ...utils.paths import safe_is_file
+from ...core.common.formatting import natural_key
+from ...qt.common.dpi import dpix
+from ...core.logs import AppLogger
+from ...core.common.paths import safe_is_file
 from .engine import RenameColumn, RenameEngine, RenameResult
 from .overlay import ThumbnailOverlay
 from .layout import OrientedSplitter, DIRECTIONS, DIRECTION_ICONS

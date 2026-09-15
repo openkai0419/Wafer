@@ -6,7 +6,7 @@ import pytest
 
 from wafer.core.db.file_db import FileDB
 from wafer.core.db.query import FileSearchEngine, SearchQuery
-from wafer.utils.paths import normalize_path
+from wafer.core.common.paths import normalize_path
 
 
 def np(p):

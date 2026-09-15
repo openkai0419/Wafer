@@ -3,7 +3,7 @@ import os
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.qt.commands.command.context import CommandContext
-from wafer.utils.paths import normalize_path
+from wafer.core.common.paths import normalize_path
 from wafer.builtins.commands import grid as grid_module
 from wafer.builtins.commands.grid import GridDropTarget, GridViewDropCommands
 

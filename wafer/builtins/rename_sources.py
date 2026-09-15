@@ -15,7 +15,7 @@ from ..plugin.rename.base import (
     style_action,
     style_spinbox,
 )
-from ..utils.formatting import dpix
+from ..qt.common.dpi import dpix
 from ..core.lang.manager import t
 from ..qt.theme import ThemeManager
 

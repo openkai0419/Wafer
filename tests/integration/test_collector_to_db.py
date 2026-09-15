@@ -3,8 +3,8 @@ from pathlib import Path
 
 from PIL import Image
 
-from wafer.utils.paths import normalize_path
-from wafer.utils.hashes import fast_signature_hash
+from wafer.core.common.paths import normalize_path
+from wafer.core.common.hashes import fast_signature_hash
 from wafer.core.db.file_db import FileDB
 from wafer.core.db.query import FileSearchEngine, SearchQuery
 from wafer.plugin.collector.handler import collector_resolver

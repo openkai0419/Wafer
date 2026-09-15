@@ -8,7 +8,7 @@ from wafer.qt.common.geometry import (
     keep_window_on_screen,
     screen_geometry_for,
 )
-from wafer.utils.formatting import dpix
+from wafer.qt.common.dpi import dpix
 
 
 def _primary_geo():

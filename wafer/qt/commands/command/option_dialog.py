@@ -4,7 +4,7 @@ from collections.abc import Callable
 from decimal import Decimal, InvalidOperation
 from PySide6 import QtWidgets
 from ....core.lang.manager import t
-from ....utils.logs import AppLogger
+from ....core.logs import AppLogger
 from .state import CommandOptionStore
 
 

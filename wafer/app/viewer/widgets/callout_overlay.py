@@ -1,6 +1,6 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ....utils.formatting import dpix
+from ....qt.common.dpi import dpix
 from ....qt.theme import ThemeManager
 
 _TRACK_INTERVAL_MS = 100

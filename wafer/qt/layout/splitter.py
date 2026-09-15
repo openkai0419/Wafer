@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ...utils.formatting import dpix
+from ..common.dpi import dpix
 from .tree import LeafNode, SplitNode
 
 HANDLE_WIDTH = 6

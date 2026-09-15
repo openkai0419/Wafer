@@ -8,7 +8,7 @@ from wafer.app.viewer.state_coordinator import (
     QueryStateCoordinator,
     UIStateCoordinator,
 )
-from wafer.core.state import StateStore
+from wafer.core.store.state import StateStore
 
 
 class _SearchService:
@@ -115,19 +115,22 @@ class TestQueryStateCoordinator:
 
     def test_restore_applies_params_in_single_batch(self, monkeypatch):
         from PySide6 import QtCore
+
         monkeypatch.setattr(QtCore.QTimer, "singleShot", lambda ms, fn: None)
         w = _make_window()
         spy = MagicMock(wraps=w.search_service.set_params)
         w.search_service.set_params = spy
-        QueryStateCoordinator(w).restore({
-            "bars": [],
-            "sort_by": "name",
-            "ascending": True,
-            "include_subfolders": False,
-            "include_contained_files": False,
-            "auto_execute": False,
-            "auto_execute_on_update": False,
-        })
+        QueryStateCoordinator(w).restore(
+            {
+                "bars": [],
+                "sort_by": "name",
+                "ascending": True,
+                "include_subfolders": False,
+                "include_contained_files": False,
+                "auto_execute": False,
+                "auto_execute_on_update": False,
+            }
+        )
         spy.assert_called_once_with({"include_subfolders": False, "include_contained_files": False, "auto_execute": False, "auto_execute_on_update": False})
         assert w.search_service.get("auto_execute") is False
         assert w.search_service.get("auto_execute_on_update") is False
@@ -139,6 +142,7 @@ class TestQueryStateCoordinator:
 
     def test_restore_skips_set_params_when_keys_missing(self, monkeypatch):
         from PySide6 import QtCore
+
         monkeypatch.setattr(QtCore.QTimer, "singleShot", lambda ms, fn: None)
         w = _make_window()
         spy = MagicMock()

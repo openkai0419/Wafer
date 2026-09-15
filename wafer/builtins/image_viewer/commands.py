@@ -3,7 +3,7 @@ from PySide6 import QtCore
 from ...qt.commands.bridge import ActionKit, Command
 from ...qt.commands.command.require import require
 from ...plugin.viewer.handler import viewer_resolver
-from ...utils.logs import AppLogger
+from ...core.logs import AppLogger
 from .viewer import ImageViewer
 
 

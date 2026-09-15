@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 
 from PySide6 import QtCore
 
-from ...utils.logs import AppLogger
-from ...utils.notifier import Notifier
+from ...core.logs import AppLogger
+from ..common.notifier import Notifier
 from ...core.lang.manager import t
 
 

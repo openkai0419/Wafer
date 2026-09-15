@@ -8,7 +8,7 @@ from ...qt.commands.bridge import Command
 from ...core.lang.manager import t
 from ...qt.common.icon_engine import themed_icon
 from ...qt.widgets.popup import PopupBase
-from ...utils.formatting import dpix
+from ...qt.common.dpi import dpix
 from . import dialogs
 from .registry import MarkRegistry
 

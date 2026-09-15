@@ -7,7 +7,7 @@ from wafer.qt.theme import ThemeManager
 from wafer.plugin import BaseKeyValuePanelPlugin
 from wafer.qt.meta.viewer import CollapsibleCard
 from wafer.qt.widgets import FlowLayout
-from wafer.utils.formatting import dpix
+from wafer.qt.common.dpi import dpix
 
 from ._color import packed_to_hex
 from .commands import apply_color_filter, apply_selected_color

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ...plugin.badges import KNOWN_EXTENSIONS
-from ...utils.logs import AppLogger
+from ...core.logs import AppLogger
 
 
 PLAN_FORMAT_HEADER = "wafer-update-plan 1"

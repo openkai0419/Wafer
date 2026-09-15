@@ -4,7 +4,7 @@ import threading
 from collections.abc import Callable, Iterable
 
 from .config import PluginConfig
-from ..utils.logs import AppLogger
+from ..core.logs import AppLogger
 
 MODE_BLACKLIST = "blacklist"
 MODE_WHITELIST = "whitelist"

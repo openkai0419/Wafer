@@ -1,12 +1,12 @@
 import math
 from PySide6 import QtCore, QtGui, QtWidgets
-from ....utils.formatting import dpix
-from ....utils.logs import AppLogger
-from ....utils.profiling import profiler
+from ....qt.common.dpi import dpix
+from ....core.logs import AppLogger
+from ....core.profiling import profiler
 from ....qt.common.rate_limit import qt_debounce, qt_throttle
 from ....qt.common.visibility import WidgetVisibilityWatcher
 from ....qt.common.dispatcher import Dispatcher
-from ....core.app_settings import app_settings
+from ....core.store.settings import app_settings
 from ....plugin.grid.handler import grid_resolver, WidgetNotifier
 from ....plugin.grid.base import WidgetGridPlugin as _WidgetGridPlugin
 from .cachemanager import MemoryLimitedImageCache, GraphicsItemPool, AdditionalWidgetPool

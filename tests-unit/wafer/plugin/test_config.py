@@ -71,6 +71,7 @@ class TestPluginConfigSave:
         cfg = PluginConfig("blip", {"x": 1})
         cfg.save(x=2)
         from configparser import ConfigParser
+
         cp = ConfigParser()
         cp.read(str(ini_path), encoding="utf-8")
         assert cp.get("exiftool", "filter_mode") == "blacklist"
@@ -78,6 +79,7 @@ class TestPluginConfigSave:
 
     def test_save_and_notify_calls_ipc(self, ini_dir):
         from unittest.mock import MagicMock, patch
+
         mock_node = MagicMock()
         mock_registry = MagicMock()
         mock_registry.resolve_node.return_value = mock_node

@@ -1,6 +1,6 @@
 from PySide6 import QtWidgets
 
-from ...core.commands.bridge import ActionKit, UI
+from ...qt.commands.bridge import ActionKit, UI
 from ...plugin.grid.handler import grid_resolver, VIEWER_THUMBNAIL_DEFAULT_SIZE
 from ...utils.paths import resolve_data_path
 from ...core.platform.folders import show_in_explorer

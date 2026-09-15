@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from wafer.core.commands.binding.instance_registry import InstanceRegistry
+from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
 from ._color import normalize_hex, normalize_tolerance
 

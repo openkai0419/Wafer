@@ -9,7 +9,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ....utils.formatting import dpix, display_prefixed_key
 from ....utils.logs import AppLogger
 from ....core.lang.manager import t
-from ....core.commands.bridge import ActionKit, Menu
+from ...commands.bridge import ActionKit, Menu
 from ...common.icon_engine import icon_draw
 from ...theme import ThemeManager
 from .value_viewer_dialog import open_value_viewer

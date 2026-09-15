@@ -10,8 +10,8 @@ from ....utils.profiling import profiler
 from ....utils.logs import AppLogger
 from ....qt.common.dispatcher import Dispatcher, CancelToken
 from ....qt.common.thread import utility_pool
-from ....core.commands.bridge import UI, Context
-from ....core.commands.binding.common import TEXT_ENTRY_TYPES as INLINE_EDITOR_TYPES
+from ....qt.commands.bridge import UI, Context
+from ....qt.commands.binding.common import TEXT_ENTRY_TYPES as INLINE_EDITOR_TYPES
 from ....qt.transfer.dragparser import MimeDataParser
 from ....core.platform.file_operations import PastePlanItem
 from ....core.platform.path_utils import unique_path

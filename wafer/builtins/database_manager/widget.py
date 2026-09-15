@@ -287,7 +287,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         )
         if ret != "Delete":
             return
-        from ...core.commands.binding.instance_registry import InstanceRegistry
+        from ...qt.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
         if node:
@@ -326,7 +326,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
             return
         changed = self._detail_widget.commit(self._initial_paths)
         AppLogger.info(f"[DatabaseManager] Saved path changes for: {sorted(changed)}")
-        from ...core.commands.binding.instance_registry import InstanceRegistry
+        from ...qt.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
         if node and changed:

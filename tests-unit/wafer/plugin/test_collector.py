@@ -198,7 +198,7 @@ def test_notify_to_sends_ipc():
     mock_registry = MagicMock()
     mock_registry.resolve_node.return_value = mock_node
 
-    with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
+    with patch("wafer.qt.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
         BaseCollectorPlugin.notify_to("exiftool")
 
     mock_node.send.assert_called_once_with("plugin.notify", None, dst="collector-exiftool")
@@ -211,7 +211,7 @@ def test_notify_to_with_payload():
     mock_registry = MagicMock()
     mock_registry.resolve_node.return_value = mock_node
 
-    with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
+    with patch("wafer.qt.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
         BaseCollectorPlugin.notify_to("blip", payload={"min_length": 10})
 
     mock_node.send.assert_called_once_with("plugin.notify", {"min_length": 10}, dst="collector-blip")
@@ -223,7 +223,7 @@ def test_notify_to_no_node():
     mock_registry = MagicMock()
     mock_registry.resolve_node.return_value = None
 
-    with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
+    with patch("wafer.qt.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
         BaseCollectorPlugin.notify_to("exiftool")
 
 

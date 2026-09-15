@@ -10,7 +10,7 @@ from ....core.lang.manager import t
 from ....qt.common.dispatcher import Dispatcher, CancelSlot
 from ....qt.common.icon_engine import themed_icon
 from ....qt.common.thread import utility_pool
-from ....core.commands.bridge import ActionKit, Menu
+from ....qt.commands.bridge import ActionKit, Menu
 from ....plugin.query.handler import filter_registry, sort_registry
 from ....plugin.query.widgets import KeyStore
 from ....builtins.filters import TextFilter, DirectoryFilter, ContainedFilesFilter

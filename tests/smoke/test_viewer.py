@@ -84,7 +84,7 @@ def _disable_mpv():
 
 @pytest.fixture(autouse=True, scope="module")
 def _configure_command_store(tmp_path_factory):
-    from wafer.core.commands.command.state import CommandOptionStore
+    from wafer.qt.commands.command.state import CommandOptionStore
 
     prev = CommandOptionStore._instance, CommandOptionStore._initialized, CommandOptionStore._default_path
     CommandOptionStore._instance = None

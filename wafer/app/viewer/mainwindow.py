@@ -33,7 +33,7 @@ from ...builtins.commands.menu import AppMenuRegistrar
 from ..lifecycle import CloseReason
 from .search import SearchService
 from ...core.workspace import WorkspaceStore, WindowSlot
-from ...core.commands.bridge import UI, Command, Menu
+from ...qt.commands.bridge import UI, Command, Menu
 from ...qt.ui.layout.manager import LayoutManager
 from ...core.state import StateStore
 from ...qt.ui.window import WindowStateController

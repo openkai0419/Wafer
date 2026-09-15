@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QFileDialog, QListWidget, QMessageBox, QPushButton
 from wafer.utils.formatting import dpix
 from wafer.utils.paths import safe_exists
 from wafer.core.lang.manager import t
-from wafer.core.commands.bridge import ActionKit, Menu
+from wafer.qt.commands.bridge import ActionKit, Menu
 
 
 class FolderListWidget(QWidget):

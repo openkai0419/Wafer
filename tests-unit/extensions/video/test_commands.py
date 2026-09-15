@@ -29,7 +29,7 @@ def _reset_shared(monkeypatch):
 @pytest.fixture(autouse=True)
 def _suppress_notifier(monkeypatch):
     monkeypatch.setattr(
-        "wafer.core.commands.command.require.Notifier",
+        "wafer.qt.commands.command.require.Notifier",
         type("FakeNotifier", (), {"warning": staticmethod(lambda msg: None)}),
     )
 
@@ -398,7 +398,7 @@ class TestVideoGridCommandsMenuGroup:
 
     def test_commands_contains_expected_paths(self):
         from extensions.video.commands import VideoGridCommands
-        from wafer.core.commands.command.core import CommandMeta
+        from wafer.qt.commands.command.core import CommandMeta
 
         cmds = VideoGridCommands.commands()
         paths = [c.path for c in cmds if isinstance(c, CommandMeta)]
@@ -412,7 +412,7 @@ class TestVideoGridCommandsMenuGroup:
 
 @pytest.fixture()
 def video_registry(monkeypatch):
-    from wafer.core.commands.command.core import CommandRegistry
+    from wafer.qt.commands.command.core import CommandRegistry
 
     registry = CommandRegistry.instance()
     prev = dict(registry._commands)
@@ -427,7 +427,7 @@ def video_registry(monkeypatch):
 
 @pytest.fixture()
 def mock_slot_manager():
-    from wafer.core.commands.binding.instance_registry import InstanceRegistry
+    from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
     reg = InstanceRegistry.instance()
     sm = MagicMock()
@@ -443,28 +443,28 @@ def mock_slot_manager():
 
 class TestRegistryExecution:
     def test_volume_up_via_registry(self, video_registry, mock_slot_manager):
-        from wafer.core.commands.command.context import CommandContext
+        from wafer.qt.commands.command.context import CommandContext
 
         ctx = CommandContext.create(None, "*", source="menu")
         video_registry.execute("vgrid.volume_up", ctx=ctx, step=10)
         mock_slot_manager.set_volume.assert_called_once_with(50)
 
     def test_volume_down_via_registry(self, video_registry, mock_slot_manager):
-        from wafer.core.commands.command.context import CommandContext
+        from wafer.qt.commands.command.context import CommandContext
 
         ctx = CommandContext.create(None, "*", source="menu")
         video_registry.execute("vgrid.volume_down", ctx=ctx, step=10)
         mock_slot_manager.set_volume.assert_called_once_with(30)
 
     def test_set_max_slots_via_registry(self, video_registry, mock_slot_manager):
-        from wafer.core.commands.command.context import CommandContext
+        from wafer.qt.commands.command.context import CommandContext
 
         ctx = CommandContext.create(None, "*", source="menu")
         video_registry.execute("vgrid.set_max_playback_slots", ctx=ctx, max_slots=7)
         mock_slot_manager.set_max_selected.assert_called_once_with(7)
 
     def test_toggle_hover_via_registry(self, video_registry, mock_slot_manager):
-        from wafer.core.commands.command.context import CommandContext
+        from wafer.qt.commands.command.context import CommandContext
 
         assert mock_slot_manager.hover_autoplay is True
         ctx = CommandContext.create(None, "*", source="menu")
@@ -472,7 +472,7 @@ class TestRegistryExecution:
         assert mock_slot_manager.hover_autoplay is False
 
     def test_toggle_appear_via_registry(self, video_registry, mock_slot_manager):
-        from wafer.core.commands.command.context import CommandContext
+        from wafer.qt.commands.command.context import CommandContext
 
         assert mock_slot_manager.appear_autoplay is True
         ctx = CommandContext.create(None, "*", source="menu")
@@ -480,7 +480,7 @@ class TestRegistryExecution:
         assert mock_slot_manager.appear_autoplay is False
 
     def test_toggle_select_via_registry(self, video_registry, mock_slot_manager):
-        from wafer.core.commands.command.context import CommandContext
+        from wafer.qt.commands.command.context import CommandContext
 
         assert mock_slot_manager.select_autoplay is True
         ctx = CommandContext.create(None, "*", source="menu")

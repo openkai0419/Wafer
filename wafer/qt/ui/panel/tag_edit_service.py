@@ -212,7 +212,7 @@ class TagEditService(QtCore.QObject):
 
     def _resolve_node(self):
         try:
-            from ....core.commands.binding.instance_registry import InstanceRegistry
+            from ...commands.binding.instance_registry import InstanceRegistry
 
             return InstanceRegistry.instance().resolve_node()
         except Exception as e:

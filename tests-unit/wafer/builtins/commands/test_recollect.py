@@ -1,4 +1,4 @@
-from wafer.core.commands.command.core import CommandRegistry
+from wafer.qt.commands.command.core import CommandRegistry
 from wafer.builtins.commands.recollect import FileRecollectCommands, _folder_prefixes
 from wafer.utils.paths import normalize_path
 import wafer.builtins.commands.recollect as recollect_cmds

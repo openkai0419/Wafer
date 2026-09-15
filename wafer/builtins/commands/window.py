@@ -1,7 +1,7 @@
 import webbrowser
 
-from ...core.commands.bridge import ActionKit
-from ...core.commands.binding.instance_registry import InstanceRegistry
+from ...qt.commands.bridge import ActionKit
+from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...core.platform.process import AppProcess
 from ...core.workspace import WorkspaceStore
 from ...plugin import installer_queue

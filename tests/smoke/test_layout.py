@@ -11,7 +11,7 @@ from wafer.qt.ui.layout.tree import (
     Orientation,
     SplitNode,
 )
-from wafer.core.commands.command.core import CommandRegistry
+from wafer.qt.commands.command.core import CommandRegistry
 
 
 def _process_events(ms=50):
@@ -69,7 +69,7 @@ def _default_tree_with_d():
 
 @pytest.fixture(autouse=True, scope="module")
 def _configure_command_store(tmp_path_factory):
-    from wafer.core.commands.command.state import CommandOptionStore
+    from wafer.qt.commands.command.state import CommandOptionStore
 
     prev = CommandOptionStore._instance, CommandOptionStore._initialized, CommandOptionStore._default_path
     CommandOptionStore._instance = None

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets
 
-from wafer.core.commands.bridge import ActionKit, Menu
+from wafer.qt.commands.bridge import ActionKit, Menu
 from wafer.qt.theme import ThemeManager
 from wafer.plugin import BaseKeyValuePanelPlugin
 from wafer.qt.ui.panel.meta_viewer import CollapsibleCard

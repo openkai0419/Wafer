@@ -14,7 +14,7 @@ from ....plugin.layout.calc import LayoutData
 from .pipeline import GridPipeline
 from .items import GridItemModel
 from ....qt.theme import ThemeManager
-from ....core.commands.bridge import ActionKit, Command
+from ....qt.commands.bridge import ActionKit, Command
 
 
 class _SelectionOverlay(QtWidgets.QWidget):

@@ -1,14 +1,14 @@
 import pytest
 
-from wafer.core.commands.command.core import (
+from wafer.qt.commands.command.core import (
     CommandBase,
     CommandMeta,
     CommandParam,
     CommandRegistry,
     validate_command_args,
 )
-from wafer.core.commands.command.context import CommandContext
-from wafer.core.commands.command.state import CommandOptionStore
+from wafer.qt.commands.command.context import CommandContext
+from wafer.qt.commands.command.state import CommandOptionStore
 
 
 class TestCommandRegistryFlow:

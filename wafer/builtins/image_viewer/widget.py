@@ -4,7 +4,7 @@ from typing import Literal
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ...core.commands.bridge import ActionKit
+from ...qt.commands.bridge import ActionKit
 from ...plugin.viewer.base import viewer_context_values
 
 FitMode = Literal["contain", "cover"]

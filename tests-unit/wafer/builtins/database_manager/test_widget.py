@@ -101,7 +101,7 @@ class TestDatabaseManagerWidget:
             staticmethod(lambda *a, **kw: "Delete"),
         )
         mock_node = MagicMock()
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: mock_node)
         from wafer.builtins.database_manager.widget import DatabaseManagerWidget
@@ -151,7 +151,7 @@ class TestDatabaseManagerWidget:
             "wafer.builtins.database_manager.widget.ConfirmDialog.ask",
             staticmethod(lambda *a, **kw: "Delete"),
         )
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: None)
         from wafer.builtins.database_manager.widget import DatabaseManagerWidget
@@ -433,7 +433,7 @@ class TestDatabaseDetailWidget:
 
 class TestDatabaseManagerCommands:
     def _swap_instance(self, name, value):
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         registry = InstanceRegistry.instance()
         previous = list(registry._by_name.get(name, []))
@@ -795,7 +795,7 @@ class TestDatabaseDetailBulkOperations:
             staticmethod(lambda *a, **kw: folder),
         )
         mock_node = MagicMock()
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: mock_node)
         from wafer.builtins.database_manager.widget import DatabaseManagerWidget
@@ -826,7 +826,7 @@ class TestDatabaseDetailBulkOperations:
             "wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory",
             staticmethod(lambda *a, **kw: folder),
         )
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: None)
         from wafer.builtins.database_manager.widget import DatabaseManagerWidget
@@ -870,7 +870,7 @@ class TestDatabaseManagerTabs:
             lambda name: str(tmp_path / f"{name}.db"),
         )
         mock_node = MagicMock()
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: mock_node)
         from wafer.builtins.database_manager.widget import DatabaseManagerWidget
@@ -902,7 +902,7 @@ class TestDatabaseManagerTabs:
             "wafer.builtins.database_manager.widget.setting_db_path",
             lambda name: str(tmp_path / f"{name}.db"),
         )
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: MagicMock())
         from wafer.builtins.database_manager.widget import DatabaseManagerWidget
@@ -923,7 +923,7 @@ class TestDatabaseManagerTabs:
             "wafer.builtins.database_manager.widget.setting_db_path",
             lambda name: str(tmp_path / f"{name}.db"),
         )
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: None)
         from wafer.builtins.database_manager.widget import DatabaseManagerWidget

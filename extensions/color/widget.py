@@ -3,7 +3,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.qt.theme import ThemeManager
-from wafer.core.commands.binding.instance_registry import InstanceRegistry
+from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 from wafer.core.lang.manager import t
 from wafer.qt.common.icon_engine import themed_icon
 from wafer.plugin.key_filter_dialog import FilterSaveConfirmDialog

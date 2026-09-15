@@ -4,7 +4,7 @@ from PySide6 import QtCore
 
 from ... import _dev
 from ..._version import __version__
-from ...core.commands.binding.instance_registry import InstanceRegistry
+from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...qt.common.dispatcher import Dispatcher
 from ...qt.common.thread import utility_pool
 from ...core.workspace import WorkspaceStore

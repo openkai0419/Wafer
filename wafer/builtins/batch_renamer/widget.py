@@ -35,7 +35,7 @@ from .table import (
 from ...plugin.rename.handler import rename_source_registry
 from ...plugin.panel.base import BasePanelPlugin
 from ...core.lang.manager import t
-from ...core.commands.bridge import ActionKit, Context, Menu
+from ...qt.commands.bridge import ActionKit, Context, Menu
 
 
 _SQL_CHUNK_SIZE = 4000

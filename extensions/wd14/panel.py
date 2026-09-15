@@ -504,7 +504,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         self._dispatcher.post(lambda: self._do_preview_request(path, settings))
 
     def _do_preview_request(self, path: str, settings: dict):
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
         if not node:
@@ -551,7 +551,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         self._dispatcher.post(self._do_device_request)
 
     def _do_device_request(self):
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
         if not node:

@@ -4,7 +4,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from ..._version import __version__
 from ...qt.theme import ThemeManager
-from ...core.commands.binding.instance_registry import InstanceRegistry
+from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...core.lang.manager import t
 from ...qt.common.dispatcher import Dispatcher
 from ...qt.common.icon_engine import themed_icon

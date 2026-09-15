@@ -134,7 +134,7 @@ class TestCommandGroupRegistry:
         assert listed[0] is _FakeGroup
 
     def test_set_order_forwards_to_menu_hub(self):
-        from wafer.core.commands.command.menu import MenuHub
+        from wafer.qt.commands.command.menu import MenuHub
 
         hub = MenuHub.instance()
         saved = list(hub._menu_order)

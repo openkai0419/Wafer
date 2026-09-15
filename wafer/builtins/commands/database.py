@@ -1,5 +1,5 @@
-from ...core.commands.bridge import ActionKit
-from ...core.commands.command.require import require
+from ...qt.commands.bridge import ActionKit
+from ...qt.commands.command.require import require
 from ...core.lang.manager import t
 from ...utils.paths import list_setting_db_names
 from ...utils.logs import AppLogger

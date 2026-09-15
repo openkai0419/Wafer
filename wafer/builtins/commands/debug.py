@@ -1,4 +1,4 @@
-from ...core.commands.bridge import ActionKit
+from ...qt.commands.bridge import ActionKit
 from ...constants import DEV_MODE
 
 

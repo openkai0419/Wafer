@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from ...core.commands.bridge import ActionKit
-from ...core.commands.command.require import require
+from ...qt.commands.bridge import ActionKit
+from ...qt.commands.command.require import require
 from ...core.platform.process import AppProcess
 from ...core.workspace import (
     BarSpec,

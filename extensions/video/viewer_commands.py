@@ -1,5 +1,5 @@
 from wafer.plugin import MenuGroup, CommandMeta, CommandParam, require
-from wafer.core.commands.binding.instance_registry import InstanceRegistry
+from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
 
 def _vw():

@@ -82,7 +82,7 @@ class TestPluginConfigSave:
         mock_registry = MagicMock()
         mock_registry.resolve_node.return_value = mock_node
         cfg = PluginConfig("blip", {"min_length": 5})
-        with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
+        with patch("wafer.qt.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
             cfg.save_and_notify("blip", min_length=10)
         mock_node.send.assert_called_once()
         call_args = mock_node.send.call_args

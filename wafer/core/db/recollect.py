@@ -25,7 +25,7 @@ class Recollect:
 
     @staticmethod
     def _node():
-        from ..commands.binding.instance_registry import InstanceRegistry
+        from ...qt.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
         if node is None:

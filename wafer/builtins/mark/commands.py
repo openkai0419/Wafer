@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from ...core.commands.binding.instance_registry import InstanceRegistry
+from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...core.db.dispatch import send_to_db_scope
 from ...core.db.key_value import normalize_data_scope
 from ...core.lang.manager import t

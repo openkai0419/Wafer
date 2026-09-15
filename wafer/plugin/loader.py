@@ -36,7 +36,7 @@ from .kinds import (
 
 
 def _build_registry_map():
-    from ..core.commands.command.menu import MenuGroup
+    from ..qt.commands.command.menu import MenuGroup
 
     return {
         WidgetViewerPlugin: PLUGIN_KIND_VIEWER,

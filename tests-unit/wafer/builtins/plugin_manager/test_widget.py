@@ -743,7 +743,7 @@ class TestOrderTab:
 
     def test_refresh_updates_builtin_command_names(self, qtbot):
         from wafer.builtins.plugin_manager.viewers_tab import OrderTab
-        from wafer.core.commands.command.menu import MenuGroup
+        from wafer.qt.commands.command.menu import MenuGroup
 
         class BuiltinCmd(MenuGroup):
             NAME = "FileViewer"
@@ -836,7 +836,7 @@ class TestPluginManagerWidget:
         from wafer.builtins.plugin_manager.widget import PluginManagerWidget
 
         mock_node = MagicMock()
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: mock_node)
         dlg = PluginManagerWidget()
@@ -855,7 +855,7 @@ class TestPluginManagerWidget:
             lambda: "/nonexistent",
         )
         from wafer.builtins.plugin_manager.widget import PluginManagerWidget
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: None)
         dlg = PluginManagerWidget()

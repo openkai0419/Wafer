@@ -5,7 +5,7 @@ import threading
 from PySide6 import QtCore, QtWidgets
 
 from ...builtins.log_panel import LogPanelPlugin
-from ...core.commands.bridge import Command, Context, Menu, UI
+from ...qt.commands.bridge import Command, Context, Menu, UI
 from ...core.lang.manager import t
 from ...utils.formatting import dpix
 from ...utils.logs import AppLogger

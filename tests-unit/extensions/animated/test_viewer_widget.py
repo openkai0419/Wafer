@@ -40,7 +40,7 @@ class TestAnimatedViewerWidgetInit:
 
     def test_has_command_mixin(self):
         from extensions.animated.viewer_widget import AnimatedViewerWidget
-        from wafer.core.commands.bridge import ActionKit
+        from wafer.qt.commands.bridge import ActionKit
 
         assert issubclass(AnimatedViewerWidget, ActionKit.UIMixin)
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ...core.commands.bridge import ActionKit
+from ...qt.commands.bridge import ActionKit
 from ...core.lang.manager import t
 
 

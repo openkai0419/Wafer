@@ -4,7 +4,7 @@ import uuid
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ...core.commands.bridge import ActionKit, Menu
+from ...qt.commands.bridge import ActionKit, Menu
 from ...core.db.dispatch import send_to_db_scope
 from ...core.db.key_value import SCOPE_META_INFO, SCOPE_TAG, normalize_data_scope, other_data_scope
 from ...core.lang.manager import t
@@ -292,7 +292,7 @@ def show_mark_management_dialog(parent: QtWidgets.QWidget | None, mark_id: str) 
 
 
 def _send_convert_scope(mark_id: str, to_scope: str, db_scope: str = "*") -> int:
-    from ...core.commands.binding.instance_registry import InstanceRegistry
+    from ...qt.commands.binding.instance_registry import InstanceRegistry
 
     node = InstanceRegistry.instance().resolve_node()
     if node is None:

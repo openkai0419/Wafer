@@ -127,7 +127,7 @@ class MetaViewerWidget(QtWidgets.QWidget):
         return bar
 
     def _on_filter_clicked(self):
-        from ....core.commands.bridge import Command
+        from ....qt.commands.bridge import Command
 
         Command.run("panel.toggle_metadata_filter")
 

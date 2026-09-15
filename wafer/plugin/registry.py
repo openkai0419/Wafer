@@ -184,7 +184,7 @@ class CommandGroupRegistry(RegistryBase):
 
     def set_order(self, order: list[str]):
         super().set_order(order)
-        from ..core.commands.command.menu import MenuHub
+        from ..qt.commands.command.menu import MenuHub
 
         MenuHub.instance().set_menu_order(order)
 

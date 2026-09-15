@@ -1,6 +1,6 @@
-from ...core.commands.bridge import ActionKit
-from ...core.commands.binding.instance_registry import InstanceRegistry
-from ...core.commands.command.require import require
+from ...qt.commands.bridge import ActionKit
+from ...qt.commands.binding.instance_registry import InstanceRegistry
+from ...qt.commands.command.require import require
 from ...core.lang.manager import t
 from ...qt.ui.layout.manager import LayoutManager, MODE_EDIT
 from ...utils.logs import AppLogger

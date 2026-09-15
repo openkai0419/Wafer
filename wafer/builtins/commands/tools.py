@@ -1,7 +1,7 @@
 import os
 from functools import partial
 from PySide6 import QtWidgets, QtCore, QtGui
-from ...core.commands.bridge import ActionKit
+from ...qt.commands.bridge import ActionKit
 from ...utils.formatting import dpix
 from ...utils.paths import get_resource_path, get_app_root_dir
 from ..._version import __version__

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ...core.commands.bridge import ActionKit
+from ...qt.commands.bridge import ActionKit
 from ...core.db.dispatch import DB_SCOPE_ALL
 from ...core.db.recollect import Recollect
 from ...plugin.collector.handler import collector_resolver

@@ -3,8 +3,8 @@ from dataclasses import dataclass
 
 from PySide6 import QtCore, QtGui
 
-from ...core.commands.bridge import ActionKit
-from ...core.commands.binding.instance_registry import InstanceRegistry
+from ...qt.commands.bridge import ActionKit
+from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...core.lang.manager import t
 from ...utils.logs import AppLogger
 from ...utils.paths import normalize_path, containing_dir
@@ -598,7 +598,7 @@ class GridViewDragCommands(ActionKit.DragMenuBase):
             drag.setHotSpot(pixmap.rect().topLeft())
 
         def _run_drag():
-            from ...core.commands.binding.mouse.manager import MouseStateManager
+            from ...qt.commands.binding.mouse.manager import MouseStateManager
 
             try:
                 drag.exec(QtCore.Qt.CopyAction | QtCore.Qt.MoveAction)

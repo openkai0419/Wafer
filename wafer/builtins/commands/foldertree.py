@@ -2,7 +2,7 @@ import os
 
 from PySide6 import QtCore, QtWidgets
 
-from ...core.commands.bridge import ActionKit, Menu
+from ...qt.commands.bridge import ActionKit, Menu
 from ...core.lang.manager import t
 from ...utils.paths import normalize_path
 from ...utils.logs import AppLogger

@@ -5,8 +5,8 @@ from pathlib import Path
 
 from PySide6 import QtCore, QtGui
 
-from ...core.commands.bridge import ActionKit
-from ...core.commands.command.require import require
+from ...qt.commands.bridge import ActionKit
+from ...qt.commands.command.require import require
 from ...qt.ui.dialogs import ThumbnailConfirmDialog
 from ...qt.transfer.copy import ClipboardFileTransfer
 from ...qt.transfer.paste import paste_clipboard_files, execute_paste_plans_with_ui

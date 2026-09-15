@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from PySide6 import QtWidgets
 
-from wafer.core.commands.bridge import Menu
+from wafer.qt.commands.bridge import Menu
 from wafer.builtins.commands import file as file_mod
 from wafer.builtins.commands.file import FileCommands
 from wafer.core.platform.path_utils import get_os_new_folder_name

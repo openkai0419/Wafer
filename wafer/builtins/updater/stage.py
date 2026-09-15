@@ -245,7 +245,7 @@ def restart_into_launcher(host) -> bool:
         return False
     from ...core.platform.process import AppProcess
     from ...core.workspace import WorkspaceStore
-    from ...core.commands.binding.instance_registry import InstanceRegistry
+    from ...qt.commands.binding.instance_registry import InstanceRegistry
 
     store = WorkspaceStore.instance()
     node = getattr(host, "_node", None)

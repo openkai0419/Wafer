@@ -8,7 +8,7 @@ from PySide6 import QtCore, QtWidgets
 from PySide6.QtCore import Qt, Signal
 
 from ..registry import PluginBase
-from ...core.commands.bridge import ActionKit, Menu
+from ...qt.commands.bridge import ActionKit, Menu
 from ...utils.formatting import dpix
 
 

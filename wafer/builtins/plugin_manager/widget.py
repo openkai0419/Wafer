@@ -11,7 +11,7 @@ from ...plugin.panel.base import BasePanelPlugin
 from ...qt.theme import ThemeManager
 from ...qt.common.dispatcher import Dispatcher
 from ...qt.common.thread import utility_pool
-from ...core.commands.bridge import Command
+from ...qt.commands.bridge import Command
 from ...core.lang.manager import t
 
 

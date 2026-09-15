@@ -6,7 +6,7 @@ from pathlib import PurePath
 from PySide6 import QtCore, QtWidgets
 
 from ....qt.theme import ThemeManager
-from ....core.commands.bridge import Command
+from ....qt.commands.bridge import Command
 from ....core.lang.manager import t
 from ....qt.common.icon_engine import themed_icon
 from ....qt.common.dispatcher import Dispatcher

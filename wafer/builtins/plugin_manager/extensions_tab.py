@@ -129,7 +129,7 @@ class _PluginRow(QtWidgets.QWidget):
 
     @staticmethod
     def _toggle_panel(panel_name: str):
-        from ...core.commands.bridge import Command
+        from ...qt.commands.bridge import Command
 
         slug = panel_name.lower().replace(" ", "_")
         Command.run(f"panel.toggle_{slug}")

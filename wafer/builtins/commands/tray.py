@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6 import QtWidgets
 
-from ...core.commands.bridge import ActionKit
+from ...qt.commands.bridge import ActionKit
 from ...utils.logs import AppLogger
 from ...constants import DEV_MODE
 from ...core.platform.process import AppProcess

@@ -1,6 +1,6 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from wafer.core.commands.bridge import ActionKit, UI
+from wafer.qt.commands.bridge import ActionKit, UI
 from wafer.qt.common.dispatcher import Dispatcher, CancelSlot
 from wafer.qt.common.thread import utility_pool
 from wafer.plugin import viewer_context_values

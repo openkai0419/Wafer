@@ -100,7 +100,7 @@ def test_header_has_reload_and_add_buttons(qtbot):
 
 def test_filter_button_opens_metadata_filter_panel(qtbot, monkeypatch):
     import wafer.app.viewer.preview.meta_panel as mod
-    from wafer.core.commands.bridge import Command
+    from wafer.qt.commands.bridge import Command
 
     calls = []
     monkeypatch.setattr(Command, "run", staticmethod(lambda cmd_id, *a, **k: calls.append(cmd_id)))

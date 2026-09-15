@@ -2,7 +2,7 @@ from PySide6 import QtCore, QtWidgets
 from ...utils.profiling import profiler
 from ...utils.logs import AppLogger
 from ...constants import APP_NAME
-from ...core.commands.bridge import Command, Context, Menu, UI
+from ...qt.commands.bridge import Command, Context, Menu, UI
 
 from ...qt.common.rate_limit import qt_debounce
 from ...core.ipc.broker import Broker

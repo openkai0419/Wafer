@@ -666,7 +666,7 @@ class MpvCellWidget(QWidget):
             return
         cls._shared_initialized = True
         cls._slot_manager = PlaybackSlotManager(parent)
-        from wafer.core.commands.bridge import UI
+        from wafer.qt.commands.bridge import UI
 
         UI.register_instance("VideoSlotManager", cls._slot_manager)
         if cls._pending_grid_state is not None:

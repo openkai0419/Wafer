@@ -13,7 +13,7 @@ from ....utils.logs import AppLogger
 from ....utils.paths import list_setting_db_names
 from ....core.lang.manager import t
 from ...theme import ThemeManager
-from ....core.commands.bridge import ActionKit, Menu
+from ...commands.bridge import ActionKit, Menu
 from ...common.dispatcher import Dispatcher, CancelSlot
 from ...common.icon_engine import icon_draw, themed_icon
 from ...common.thread import utility_pool

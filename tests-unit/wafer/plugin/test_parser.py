@@ -95,7 +95,7 @@ def test_notify_to_sends_ipc():
     mock_registry = MagicMock()
     mock_registry.resolve_node.return_value = mock_node
 
-    with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
+    with patch("wafer.qt.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
         BaseParserPlugin.notify_to("novelai")
 
     mock_node.send.assert_called_once_with("plugin.notify", None, dst="parser-novelai")
@@ -107,7 +107,7 @@ def test_notify_to_no_node():
     mock_registry = MagicMock()
     mock_registry.resolve_node.return_value = None
 
-    with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
+    with patch("wafer.qt.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
         BaseParserPlugin.notify_to("novelai")
 
 
@@ -135,4 +135,3 @@ def test_resolver_required_collectors_unknown_is_empty():
     from wafer.plugin.parser.handler import parser_resolver
 
     assert parser_resolver.required_collectors("does_not_exist") == {}
-

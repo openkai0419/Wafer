@@ -1,5 +1,5 @@
-from ...core.commands.bridge import ActionKit
-from ...core.commands.binding.instance_registry import InstanceRegistry
+from ...qt.commands.bridge import ActionKit
+from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...plugin.query.handler import sort_registry
 
 

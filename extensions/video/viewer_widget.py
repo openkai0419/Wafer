@@ -8,11 +8,11 @@ from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
 )
-from wafer.utils.formatting import dpix
-from wafer.utils.logs import AppLogger
-from wafer.core.commands.bridge import ActionKit, UI
-from wafer.core.color.theme import ThemeManager
-from wafer.core.qt.icon_engine import icon_draw
+from wafer.qt.common.dpi import dpix
+from wafer.core.logs import AppLogger
+from wafer.qt.commands.bridge import ActionKit, UI
+from wafer.qt.theme import ThemeManager
+from wafer.qt.common.icon_engine import icon_draw
 from wafer.plugin import viewer_context_values
 
 DEFAULT_VOLUME = 50

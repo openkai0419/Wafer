@@ -5,14 +5,14 @@ from typing import Any
 
 from PySide6 import QtCore, QtWidgets
 
-from ....utils.formatting import dpix
-from ....utils.logs import AppLogger
-from ....core.state import StateStore
+from ....qt.common.dpi import dpix
+from ....core.logs import AppLogger
+from ....core.store.state import StateStore
 from ....core.db.key_value import DATA_SCOPES, SCOPE_ALL, normalize_data_scope
-from ....core.color.theme import ThemeManager
-from ....core.qt.icon_engine import themed_icon
+from ....qt.theme import ThemeManager
+from ....qt.common.icon_engine import themed_icon
 from ....core.lang.manager import t
-from ....ui.panel.meta_viewer import (
+from ....qt.meta.viewer import (
     CollapsibleCard,
     MetaRowWidget,
     SECTION_MARKER_META_PREFIX,
@@ -20,8 +20,8 @@ from ....ui.panel.meta_viewer import (
     SECTION_MARKER_TAG_PREFIX,
     SECTION_MARKER_TAG_ROOT,
 )
-from ....ui.panel.searchable_meta_widget import ScopedSearchKvAddDialog, SearchableMetaWidget
-from ....ui.panel.tag_edit_service import TagEditService
+from ....qt.meta.searchable import ScopedSearchKvAddDialog, SearchableMetaWidget
+from ....qt.meta.tag_edit_service import TagEditService
 
 _FIXED_SECTION_KEYS = ("file", "source")
 _TAG_PREFIX = "tag:"
@@ -127,7 +127,7 @@ class MetaViewerWidget(QtWidgets.QWidget):
         return bar
 
     def _on_filter_clicked(self):
-        from ....core.commands.bridge import Command
+        from ....qt.commands.bridge import Command
 
         Command.run("panel.toggle_metadata_filter")
 

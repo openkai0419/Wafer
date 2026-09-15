@@ -3,7 +3,7 @@ import os
 import threading
 import time
 
-from ..utils.logs import AppLogger
+from ..core.logs import AppLogger
 
 
 _FAILED_DIR = ".installer_queue"

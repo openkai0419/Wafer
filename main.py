@@ -16,9 +16,9 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = io.StringIO()
 
-from wafer.utils.paths import list_setting_db_names, resolve_data_path
-from wafer.utils.process_lock import SafeProcessLock
-from wafer.utils.logs import AppLogger
+from wafer.core.common.paths import list_setting_db_names, resolve_data_path
+from wafer.core.platform.process_lock import SafeProcessLock
+from wafer.core.logs import AppLogger
 
 
 def _setup_faulthandler(force=False):
@@ -39,7 +39,7 @@ def _setup_faulthandler(force=False):
 
 
 _setup_faulthandler()
-from wafer.utils.profiling import profiler
+from wafer.core.profiling import profiler
 from wafer import __version__
 from wafer.constants import APP_DATA_DIR_NAME, APP_ID, APP_NAME, DEFAULT_DB_NAME
 from wafer.app.indexer.main_indexer import IndexerProcess
@@ -52,7 +52,7 @@ import wafer.constants as constants
 
 def get_icon():
     from PySide6 import QtGui
-    from wafer.utils.paths import get_resource_path
+    from wafer.core.common.paths import get_resource_path
     icon = QtGui.QIcon(str(get_resource_path() / 'icon.ico'))
     if icon.isNull():
         icon = QtGui.QIcon()
@@ -74,7 +74,7 @@ def _bootstrap_plugins_for_tray():
 
 
 def _wait_install_then_load_plugins(app):
-    from wafer.ui.install_waiter import wait_for_install_complete
+    from wafer.qt.install.waiter import wait_for_install_complete
 
     wait_for_install_complete(icon=get_icon(), app=app)
     load_plugins()
@@ -93,7 +93,7 @@ def _enable_shared_opengl_contexts():
 
 def _create_app():
     from PySide6 import QtWidgets
-    from wafer.core.qt.tooltip import install_instant_tooltips
+    from wafer.qt.common.tooltip import install_instant_tooltips
 
     _enable_shared_opengl_contexts()
     app = QtWidgets.QApplication(sys.argv)
@@ -109,7 +109,7 @@ def _entry_viewer(app=None, slot_id=None):
     if constants.DEV_MODE:
         profiler.start()
     if constants.MEMWATCH:
-        from wafer.utils.profiling import memwatch
+        from wafer.core.profiling import memwatch
         memwatch.start(trace=constants.MEMWATCH_TRACE)
     if app is None:
         app = _create_app()
@@ -247,7 +247,7 @@ def main():
             AppProcess.terminate_cmd('--tray', wait=True)
         _ensure_tray_unless_pending()
         _wait_install_then_load_plugins(app)
-        from wafer.core.workspace import WorkspaceStore
+        from wafer.core.store.workspace import WorkspaceStore
         store = WorkspaceStore.instance()
         restore_ids = store.get_restore_slot_ids()
         for sid in restore_ids[1:]:

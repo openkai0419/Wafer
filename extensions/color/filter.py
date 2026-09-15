@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from wafer.plugin import BaseFilterPlugin
-from wafer.utils.profiling import profiler
+from wafer.core.profiling import profiler
 
 from ._color import color_param
 from .settings import palette_keys

@@ -9,8 +9,8 @@ from wafer.app.startup import StartupTasks
 from wafer.builtins.commands.panel import _find_standalone_panel, open_panel
 from wafer.builtins.updater import stage
 from wafer.builtins.updater.widget import PANEL_DISPLAY_NAME, UpdateNotifierWidget
-from wafer.core.commands.binding.instance_registry import InstanceRegistry
-from wafer.ui.layout import standalone
+from wafer.qt.commands.binding.instance_registry import InstanceRegistry
+from wafer.qt.layout import standalone
 
 
 def _process_until(predicate, timeout_ms=3000):
@@ -194,7 +194,7 @@ class TestRestartIntoLauncher:
         assert closed == [True]
 
     def test_mainwindow_host_shuts_down_other_slots(self, qtbot, monkeypatch):
-        from wafer.core.workspace import WorkspaceStore
+        from wafer.core.store.workspace import WorkspaceStore
 
         popen_calls, _ = self._install_stubs(monkeypatch)
         monkeypatch.setattr(WorkspaceStore, "get_active_slot_ids", lambda self: ["s1", "s2"])

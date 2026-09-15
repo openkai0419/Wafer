@@ -13,7 +13,7 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from typing import BinaryIO
 
-from wafer.utils.logs import AppLogger
+from wafer.core.logs import AppLogger
 
 from . import settings
 

@@ -5,20 +5,20 @@ from pathlib import Path
 
 from PySide6 import QtCore, QtGui
 
-from ...core.commands.bridge import ActionKit
-from ...core.commands.command.require import require
-from ...ui.dialogs import ThumbnailConfirmDialog
-from ...core.platform.copy import ClipboardFileTransfer
-from ...core.platform.paste import paste_clipboard_files, execute_paste_plans_with_ui
+from ...qt.commands.bridge import ActionKit
+from ...qt.commands.command.require import require
+from ...qt.widgets.dialogs import ThumbnailConfirmDialog
+from ...qt.transfer.copy import ClipboardFileTransfer
+from ...qt.transfer.paste import paste_clipboard_files, execute_paste_plans_with_ui
 from ...core.platform.path_utils import unique_path, get_os_new_folder_name, validate_filename
 from ...core.platform.file_operations import PastePlanItem, delete_to_trash
 from ...core.platform.folders import show_in_explorer as reveal_in_explorer, open_file as platform_open_file, make_directory
-from ...utils.logs import AppLogger
-from ...utils.notifier import Notifier
-from ...utils.paths import containing_dir
-from ...utils.virtual_paths import is_virtual_path
-from ...core.qt.dispatcher import Dispatcher
-from ...core.qt.thread import SimpleThreadPool
+from ...core.logs import AppLogger
+from ...qt.common.notifier import Notifier
+from ...core.common.paths import containing_dir
+from ...core.common.virtual_paths import is_virtual_path
+from ...qt.common.dispatcher import Dispatcher
+from ...qt.common.thread import SimpleThreadPool
 
 _file_cmd_pool = SimpleThreadPool("file_cmd")
 _file_cmd_dispatcher = Dispatcher(_file_cmd_pool)
@@ -239,7 +239,7 @@ def rename_file(ctx):
     path = _ctx_source(ctx)
     if not path or not os.path.isfile(path):
         return
-    from ...ui.dialogs import InputDialog
+    from ...qt.widgets.dialogs import InputDialog
 
     parent = ctx.get_instance("ContentViewerWidget") or ctx.get_instance("GridView")
     old_name = os.path.basename(path)

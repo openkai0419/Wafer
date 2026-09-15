@@ -3,8 +3,8 @@ from __future__ import annotations
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
 
-from ...ui.layout.splitter import HANDLE_WIDTH, GripHandle
-from ...utils.formatting import dpix
+from ...qt.layout.splitter import HANDLE_WIDTH, GripHandle
+from ...qt.common.dpi import dpix
 
 DIRECTIONS = ("TB", "BT", "LR", "RL")
 DIRECTION_ICONS = {"TB": "layout_tb", "BT": "layout_bt", "LR": "layout_lr", "RL": "layout_rl"}

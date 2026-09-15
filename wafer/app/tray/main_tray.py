@@ -1,10 +1,10 @@
 from PySide6 import QtCore, QtWidgets
-from ...utils.profiling import profiler
-from ...utils.logs import AppLogger
+from ...core.profiling import profiler
+from ...core.logs import AppLogger
 from ...constants import APP_NAME
-from ...core.commands.bridge import Command, Context, Menu, UI
+from ...qt.commands.bridge import Command, Context, Menu, UI
 
-from ...core.qt.rate_limit import qt_debounce
+from ...qt.common.rate_limit import qt_debounce
 from ...core.ipc.broker import Broker
 from ...core.ipc.node import Node
 from ...core.platform.process import AppProcess
@@ -81,7 +81,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
     def _shutdown_all(self, *, then_restart):
         AppLogger.info(f"_shutdown_all: shutting down all viewers, then tray (restart={then_restart})")
         from ...plugin.settings import PluginSettings
-        from ...core.workspace import WorkspaceStore
+        from ...core.store.workspace import WorkspaceStore
 
         PluginSettings().clear_restart_scope()
         self.shutting_down = True

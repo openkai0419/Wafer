@@ -75,7 +75,7 @@ class TestDatabaseManagerWidget:
             mock_new_main,
         )
         monkeypatch.setattr(
-            "wafer.core.qt.dispatcher.Dispatcher.post",
+            "wafer.qt.common.dispatcher.Dispatcher.post",
             lambda self, fn, **kw: fn(),
         )
         from wafer.builtins.database_manager.widget import DatabaseManagerWidget
@@ -101,7 +101,7 @@ class TestDatabaseManagerWidget:
             staticmethod(lambda *a, **kw: "Delete"),
         )
         mock_node = MagicMock()
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: mock_node)
         from wafer.builtins.database_manager.widget import DatabaseManagerWidget
@@ -151,7 +151,7 @@ class TestDatabaseManagerWidget:
             "wafer.builtins.database_manager.widget.ConfirmDialog.ask",
             staticmethod(lambda *a, **kw: "Delete"),
         )
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: None)
         from wafer.builtins.database_manager.widget import DatabaseManagerWidget
@@ -433,7 +433,7 @@ class TestDatabaseDetailWidget:
 
 class TestDatabaseManagerCommands:
     def _swap_instance(self, name, value):
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         registry = InstanceRegistry.instance()
         previous = list(registry._by_name.get(name, []))
@@ -473,7 +473,7 @@ class TestDatabaseManagerCommands:
             captured.update(title=title, key=key, size=size)
             return object()
 
-        monkeypatch.setattr("wafer.ui.layout.standalone.open_standalone", fake_open)
+        monkeypatch.setattr("wafer.qt.layout.standalone.open_standalone", fake_open)
         had = panel_registry.get(DatabaseManagerPlugin.NAME) is not None
         if not had:
             panel_registry.register(DatabaseManagerPlugin)
@@ -490,8 +490,8 @@ class TestDatabaseManagerCommands:
 
     def test_open_standalone_reuses_existing(self, qtbot, monkeypatch):
         from PySide6 import QtCore
-        from wafer.ui.layout import standalone
-        from wafer.ui.layout.standalone import open_standalone, _standalone_dialogs
+        from wafer.qt.layout import standalone
+        from wafer.qt.layout.standalone import open_standalone, _standalone_dialogs
 
         class _FakeStore:
             def __init__(self, *a, **kw):
@@ -795,7 +795,7 @@ class TestDatabaseDetailBulkOperations:
             staticmethod(lambda *a, **kw: folder),
         )
         mock_node = MagicMock()
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: mock_node)
         from wafer.builtins.database_manager.widget import DatabaseManagerWidget
@@ -826,7 +826,7 @@ class TestDatabaseDetailBulkOperations:
             "wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory",
             staticmethod(lambda *a, **kw: folder),
         )
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: None)
         from wafer.builtins.database_manager.widget import DatabaseManagerWidget
@@ -870,7 +870,7 @@ class TestDatabaseManagerTabs:
             lambda name: str(tmp_path / f"{name}.db"),
         )
         mock_node = MagicMock()
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: mock_node)
         from wafer.builtins.database_manager.widget import DatabaseManagerWidget
@@ -902,7 +902,7 @@ class TestDatabaseManagerTabs:
             "wafer.builtins.database_manager.widget.setting_db_path",
             lambda name: str(tmp_path / f"{name}.db"),
         )
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: MagicMock())
         from wafer.builtins.database_manager.widget import DatabaseManagerWidget
@@ -923,7 +923,7 @@ class TestDatabaseManagerTabs:
             "wafer.builtins.database_manager.widget.setting_db_path",
             lambda name: str(tmp_path / f"{name}.db"),
         )
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: None)
         from wafer.builtins.database_manager.widget import DatabaseManagerWidget
@@ -1001,10 +1001,10 @@ class TestDialogLayoutStore:
         from PySide6 import QtWidgets
 
         monkeypatch.setattr(
-            "wafer.utils.paths.resolve_data_path",
+            "wafer.core.common.paths.resolve_data_path",
             lambda name: tmp_path / name,
         )
-        from wafer.ui.window import DialogLayoutStore
+        from wafer.qt.common.window_state import DialogLayoutStore
 
         store = DialogLayoutStore("test_dialog")
 
@@ -1023,10 +1023,10 @@ class TestDialogLayoutStore:
         from PySide6 import QtWidgets, QtCore
 
         monkeypatch.setattr(
-            "wafer.utils.paths.resolve_data_path",
+            "wafer.core.common.paths.resolve_data_path",
             lambda name: tmp_path / name,
         )
-        from wafer.ui.window import DialogLayoutStore
+        from wafer.qt.common.window_state import DialogLayoutStore
 
         store = DialogLayoutStore("test_splitter")
 

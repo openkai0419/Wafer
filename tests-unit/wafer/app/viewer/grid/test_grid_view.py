@@ -3,12 +3,12 @@ import pytest
 from unittest.mock import MagicMock, patch
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from wafer.utils.formatting import dpix
+from wafer.qt.common.dpi import dpix
 
 
 @pytest.fixture(autouse=True, scope="module")
 def _configure_command_store(tmp_path_factory):
-    from wafer.core.commands.command.state import CommandOptionStore
+    from wafer.qt.commands.command.state import CommandOptionStore
 
     prev = CommandOptionStore._instance, CommandOptionStore._initialized, CommandOptionStore._default_path
     CommandOptionStore._instance = None
@@ -1196,4 +1196,3 @@ class TestGridActive:
 
         splitter.setSizes([500, 500])
         qtbot.waitUntil(lambda: gv._active is True and bool(gv.visible_indices))
-

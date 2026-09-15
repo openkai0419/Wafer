@@ -10,10 +10,10 @@ from pathlib import Path
 from ...constants import VIRTUAL_PATH_SEPARATOR
 from .db_utils import apply_read_pragmas, build_like_condition, escape_like
 from .key_value import SCOPE_ALL, SCOPE_META_INFO, SCOPE_TAG, iter_data_scopes, key_prefix_lookup_sql
-from ...utils.paths import normalize_path
-from ...utils.virtual_paths import build_virtual_path, is_virtual_path, split_virtual_path
-from ...utils.profiling import profiler
-from ...utils.logs import AppLogger
+from ..common.paths import normalize_path
+from ..common.virtual_paths import build_virtual_path, is_virtual_path, split_virtual_path
+from ..profiling import profiler
+from ..logs import AppLogger
 
 
 SYSTEM_FILE_HASH_KEY = "file_hash"

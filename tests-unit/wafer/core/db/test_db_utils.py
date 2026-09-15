@@ -1,4 +1,4 @@
-﻿import py_compile
+import py_compile
 import sqlite3
 
 import pytest
@@ -10,7 +10,7 @@ from wafer.core.db.db_utils import (
     connect_with_retry,
     delete_database_files,
 )
-from wafer.utils.hashes import fast_signature_hash
+from wafer.core.common.hashes import fast_signature_hash
 
 
 def test_compile():
@@ -130,5 +130,3 @@ def test_build_basic_entries_hash_from_file_info():
     sources, _ = build_basic_entries(paths, file_info, {}, 0.0)
     expected_hash = fast_signature_hash("/a/img.jpg", 512, 256)
     assert sources[0][1] == expected_hash
-
-

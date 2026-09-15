@@ -6,7 +6,7 @@ import threading
 from configparser import ConfigParser
 from typing import Any
 
-from ..utils.paths import resolve_data_path
+from ..core.common.paths import resolve_data_path
 
 _INI_FILENAME = "viewer_plugins.ini"
 

@@ -1,13 +1,13 @@
-﻿import sys
+import sys
 from types import SimpleNamespace
 
 from PySide6 import QtWidgets
 
-from wafer.core.commands.bridge import Menu
+from wafer.qt.commands.bridge import Menu
 from wafer.builtins.commands import file as file_mod
 from wafer.builtins.commands.file import FileCommands
 from wafer.core.platform.path_utils import get_os_new_folder_name
-from wafer.utils.virtual_paths import build_virtual_path
+from wafer.core.common.virtual_paths import build_virtual_path
 
 
 def test_file_commands_register_paths(qtbot):
@@ -68,7 +68,8 @@ def test_delete_files_cancel_does_not_delete(tmp_path, monkeypatch):
     p = tmp_path / "a.txt"
     p.write_text("x", encoding="utf-8")
     monkeypatch.setattr(
-        file_mod.ThumbnailConfirmDialog, "exec",
+        file_mod.ThumbnailConfirmDialog,
+        "exec",
         lambda self: setattr(self, "result_text", "Cancel"),
     )
     file_mod.delete_files(_Ctx(path=str(p)))
@@ -98,7 +99,8 @@ def test_delete_files_send2trash_failure_falls_back(tmp_path, monkeypatch):
     p = tmp_path / "a.txt"
     p.write_text("x", encoding="utf-8")
     monkeypatch.setattr(
-        file_mod.ThumbnailConfirmDialog, "exec",
+        file_mod.ThumbnailConfirmDialog,
+        "exec",
         lambda self: setattr(self, "result_text", "Delete"),
     )
     dummy = SimpleNamespace(send2trash=lambda *_a, **_k: (_ for _ in ()).throw(OSError("boom")))
@@ -111,14 +113,16 @@ def test_delete_files_calls_delete_to_trash(tmp_path, monkeypatch):
     p = tmp_path / "a.txt"
     p.write_text("x", encoding="utf-8")
     monkeypatch.setattr(
-        file_mod.ThumbnailConfirmDialog, "exec",
+        file_mod.ThumbnailConfirmDialog,
+        "exec",
         lambda self: setattr(self, "result_text", "Delete"),
     )
     from wafer.core.platform.file_operations import OperationResult
 
     called_with: list = []
     monkeypatch.setattr(
-        file_mod, "delete_to_trash",
+        file_mod,
+        "delete_to_trash",
         lambda paths: (called_with.extend(paths), [OperationResult(action="delete", src=str(p), dst="", status="ok")])[1],
     )
     file_mod.delete_files(_Ctx(path=str(p)))
@@ -154,7 +158,7 @@ def test_make_new_folder_here_with_file_path(tmp_path):
 def test_rename_file_success(tmp_path, monkeypatch):
     f = tmp_path / "old.txt"
     f.write_text("hi", encoding="utf-8")
-    from wafer.ui import dialogs as _dlg_mod
+    from wafer.qt.widgets import dialogs as _dlg_mod
 
     monkeypatch.setattr(
         _dlg_mod.InputDialog,
@@ -169,7 +173,7 @@ def test_rename_file_success(tmp_path, monkeypatch):
 def test_rename_file_cancel(tmp_path, monkeypatch):
     f = tmp_path / "old.txt"
     f.write_text("hi", encoding="utf-8")
-    from wafer.ui import dialogs as _dlg_mod
+    from wafer.qt.widgets import dialogs as _dlg_mod
 
     monkeypatch.setattr(
         _dlg_mod.InputDialog,
@@ -183,7 +187,7 @@ def test_rename_file_cancel(tmp_path, monkeypatch):
 def test_rename_file_same_name(tmp_path, monkeypatch):
     f = tmp_path / "old.txt"
     f.write_text("hi", encoding="utf-8")
-    from wafer.ui import dialogs as _dlg_mod
+    from wafer.qt.widgets import dialogs as _dlg_mod
 
     monkeypatch.setattr(
         _dlg_mod.InputDialog,
@@ -198,7 +202,7 @@ def test_rename_file_conflict(tmp_path, monkeypatch):
     f = tmp_path / "old.txt"
     f.write_text("hi", encoding="utf-8")
     (tmp_path / "taken.txt").write_text("x", encoding="utf-8")
-    from wafer.ui import dialogs as _dlg_mod
+    from wafer.qt.widgets import dialogs as _dlg_mod
 
     monkeypatch.setattr(
         _dlg_mod.InputDialog,
@@ -219,7 +223,7 @@ def test_rename_file_conflict(tmp_path, monkeypatch):
 def test_rename_file_invalid_name(tmp_path, monkeypatch):
     f = tmp_path / "old.txt"
     f.write_text("hi", encoding="utf-8")
-    from wafer.ui import dialogs as _dlg_mod
+    from wafer.qt.widgets import dialogs as _dlg_mod
 
     monkeypatch.setattr(
         _dlg_mod.InputDialog,

@@ -4,8 +4,8 @@ import shiboken6
 from unittest.mock import MagicMock
 from PySide6 import QtCore, QtWidgets
 from wafer.builtins.plugin_manager.extensions_tab import _ExtensionCard
-from wafer.core.qt.dispatcher import Dispatcher
-from wafer.core.qt.thread import SimpleThreadPool
+from wafer.qt.common.dispatcher import Dispatcher
+from wafer.qt.common.thread import SimpleThreadPool
 
 
 @pytest.fixture()
@@ -101,6 +101,7 @@ class TestExtensionCardMdFiles:
         card._toggle_md(md_path, toggle, browser)
 
         from PySide6.QtCore import QThread
+
         QThread.msleep(200)
         QtCore.QCoreApplication.processEvents()
         assert browser.rendered_html() == first_html
@@ -151,4 +152,3 @@ class TestActiveFolderNames:
         }
         fake = SimpleNamespace(_cards=cards)
         assert ExtensionsTab.active_folder_names(fake) == ["alpha", "zeta"]
-

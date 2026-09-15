@@ -1,11 +1,11 @@
 from PySide6 import QtWidgets, QtCore, QtGui
-from ...utils.formatting import dpix
-from ...utils.paths import list_setting_db_names, setting_db_path
+from ...qt.common.dpi import dpix
+from ...core.common.paths import list_setting_db_names, setting_db_path
 from ...core.db.setting_db import SettingDB
 from ...core.lang.manager import t
-from ...core.color.theme import ThemeManager
-from ...core.qt.color_utils import mix_colors
-from ...core.qt.icon_engine import themed_icon
+from ...qt.theme import ThemeManager
+from ...qt.common.color_utils import mix_colors
+from ...qt.common.icon_engine import themed_icon
 from ...plugin.badges import ExtensionBadge
 from .badge_texts import badge_tooltip_text, heavy_multi_warning_text, heavy_warning_title, parser_requirement_question_text, parser_requirement_text, parser_requirement_title
 

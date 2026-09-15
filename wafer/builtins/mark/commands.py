@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import uuid
 
-from ...core.commands.binding.instance_registry import InstanceRegistry
+from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...core.db.dispatch import send_to_db_scope
 from ...core.db.key_value import normalize_data_scope
 from ...core.lang.manager import t
 from ...plugin import CommandMeta, CommandParam, MenuGroup, require
-from ...utils.logs import AppLogger
-from ...utils.notifier import Notifier
+from ...core.logs import AppLogger
+from ...qt.common.notifier import Notifier
 from . import dialogs
 from .registry import MarkRegistry
 
@@ -39,7 +39,7 @@ def _resolve_id(name: str) -> str | None:
 
 @require(w="MainWindow")
 def _send_batch(ctx, paths, upserts, deletes, *, w, scope: str):
-    from ...ui.panel.tag_edit_service import TagEditService
+    from ...qt.meta.tag_edit_service import TagEditService
 
     db = w.database_name or ""
     if not db:

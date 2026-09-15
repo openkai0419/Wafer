@@ -5,8 +5,8 @@ import time
 from collections import deque
 
 from ..constants import APP_DATA_DIR_NAME
-from ..utils.logs import AppLogger
-from ..utils.paths import resolve_data_path
+from ..core.logs import AppLogger
+from ..core.common.paths import resolve_data_path
 
 
 _STATUS_FILENAME = "install_status.json"

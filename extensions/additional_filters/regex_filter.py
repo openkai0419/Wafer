@@ -5,7 +5,7 @@ import re
 from wafer.core.db.db_utils import escape_like
 from wafer.core.db.query import STANDARD_KEYS, standard_key_columns
 from wafer.plugin import BaseFilterPlugin
-from wafer.utils.profiling import profiler
+from wafer.core.profiling import profiler
 
 
 def _extract_literal_hints(pattern):

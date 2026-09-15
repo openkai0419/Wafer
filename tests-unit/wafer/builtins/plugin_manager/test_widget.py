@@ -24,7 +24,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.resolve_install_state",
             lambda folder: InstallState.INSTALLED,
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         monkeypatch.setattr(
@@ -59,7 +59,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.PluginLoader.discover_extension",
             staticmethod(lambda folder: [("grid", FakePlugin)]),
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
@@ -81,7 +81,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.resolve_install_state",
             lambda folder: InstallState.NOT_INSTALLED,
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
@@ -122,7 +122,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.PluginLoader.discover_extension",
             staticmethod(lambda folder: [("grid", EnabledPlugin), ("grid", DisabledPlugin)]),
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
@@ -156,7 +156,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.PluginLoader.discover_extension",
             staticmethod(lambda folder: [("viewer", FP)]),
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
@@ -199,7 +199,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.PluginLoader.discover_extension",
             staticmethod(lambda folder: [("grid", EnabledPlugin), ("grid", DisabledPlugin)]),
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
 
         tab = ExtensionsTab({}, Dispatcher())
@@ -243,7 +243,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.PluginLoader.discover_extension",
             staticmethod(lambda folder: [("viewer", ViewerP), ("grid", GridP)]),
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
@@ -271,7 +271,7 @@ class TestExtensionsTab:
             lambda folder: InstallState.NOT_INSTALLED,
         )
 
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
@@ -306,7 +306,7 @@ class TestExtensionsTab:
             staticmethod(lambda folder: [("grid", NoPostPlugin)]),
         )
 
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
@@ -316,7 +316,6 @@ class TestExtensionsTab:
         qtbot.waitUntil(lambda: "ext1" in tab._cards and len(tab._cards["ext1"]._rows) > 0, timeout=3000)
         card = tab._cards["ext1"]
         assert card._status_btn.text() == "No Dependencies"
-
 
     def test_install_enqueues_and_marks_restart_required(self, qtbot, tmp_path, monkeypatch):
         ext_dir = tmp_path / "extensions"
@@ -331,7 +330,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.resolve_install_state",
             lambda folder: InstallState.NOT_INSTALLED,
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         from wafer.plugin import installer_queue
 
@@ -354,7 +353,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.resolve_install_state",
             lambda folder: InstallState.NOT_INSTALLED,
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
 
         tab = ExtensionsTab(set(), Dispatcher())
@@ -391,7 +390,7 @@ class TestExtensionsTab:
             "wafer.builtins.plugin_manager.extensions_tab.resolve_install_state",
             lambda folder: InstallState.NOT_INSTALLED,
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
         from wafer.builtins.plugin_manager.extensions_tab import ExtensionsTab
         from wafer.plugin import installer_queue
 
@@ -431,7 +430,7 @@ class TestPluginRowPanelButton:
     def test_kind_badges_use_short_labels_and_fixed_width(self, qtbot):
         from wafer.builtins.plugin_manager.extensions_tab import _PLUGIN_KIND_BADGE_WIDTH, _PluginRow
         from wafer.plugin.kinds import PLUGIN_KIND_IMAGE_LOADER, PLUGIN_KIND_KEY_VALUE_PANEL, PLUGIN_KIND_PARSER
-        from wafer.utils.formatting import dpix
+        from wafer.qt.common.dpi import dpix
 
         class FakePlugin(BasePlugin):
             NAME = "test_plugin"
@@ -526,8 +525,8 @@ class TestPluginRowPanelButton:
 class TestExtensionCardMdFiles:
     @pytest.fixture()
     def dispatcher(self):
-        from wafer.core.qt.dispatcher import Dispatcher
-        from wafer.core.qt.thread import SimpleThreadPool
+        from wafer.qt.common.dispatcher import Dispatcher
+        from wafer.qt.common.thread import SimpleThreadPool
 
         pool = SimpleThreadPool("test")
         return Dispatcher(pool)
@@ -743,7 +742,7 @@ class TestOrderTab:
 
     def test_refresh_updates_builtin_command_names(self, qtbot):
         from wafer.builtins.plugin_manager.viewers_tab import OrderTab
-        from wafer.core.commands.command.menu import MenuGroup
+        from wafer.qt.commands.command.menu import MenuGroup
 
         class BuiltinCmd(MenuGroup):
             NAME = "FileViewer"
@@ -836,7 +835,7 @@ class TestPluginManagerWidget:
         from wafer.builtins.plugin_manager.widget import PluginManagerWidget
 
         mock_node = MagicMock()
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: mock_node)
         dlg = PluginManagerWidget()
@@ -855,7 +854,7 @@ class TestPluginManagerWidget:
             lambda: "/nonexistent",
         )
         from wafer.builtins.plugin_manager.widget import PluginManagerWidget
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: None)
         dlg = PluginManagerWidget()
@@ -883,6 +882,7 @@ class TestPluginManagerWidget:
             lambda: str(tmp_path),
         )
         from wafer.plugin.installer import RestartScope
+
         monkeypatch.setattr(
             "wafer.builtins.plugin_manager.widget.PluginSettings.needs_restart",
             lambda self, d: RestartScope.VIEWER,
@@ -900,6 +900,7 @@ class TestPluginManagerWidget:
             lambda: str(tmp_path),
         )
         from wafer.plugin.installer import RestartScope
+
         monkeypatch.setattr(
             "wafer.builtins.plugin_manager.widget.PluginSettings.needs_restart",
             lambda self, d: RestartScope.TRAY,
@@ -917,6 +918,7 @@ class TestPluginManagerWidget:
             lambda: str(tmp_path),
         )
         from wafer.plugin.installer import RestartScope
+
         monkeypatch.setattr(
             "wafer.builtins.plugin_manager.widget.PluginSettings.needs_restart",
             lambda self, d: RestartScope.ALL,
@@ -1239,7 +1241,7 @@ class TestDataTab:
             "wafer.builtins.database_manager.data_tab.list_setting_db_names",
             lambda: [],
         )
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.database_manager.data_tab import DataTab
@@ -1289,7 +1291,7 @@ class TestDataTab:
             lambda prefix: ("Collector", prefix) if prefix == "exif" else ("", ""),
         )
 
-        from wafer.core.qt.dispatcher import Dispatcher
+        from wafer.qt.common.dispatcher import Dispatcher
 
         dispatcher = Dispatcher()
         from wafer.builtins.database_manager.data_tab import DataTab
@@ -1302,5 +1304,3 @@ class TestDataTab:
         assert tab._collector_table.table.item(0, 2).text() == "1"
         assert tab._collector_table.table.item(0, 3).text() == "0"
         assert tab._collector_table.table.item(0, 4).text() == "Active"
-
-

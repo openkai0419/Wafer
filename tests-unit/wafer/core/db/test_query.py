@@ -4,10 +4,10 @@ import time
 import pytest
 from pathlib import Path
 from wafer.core.db.query import SearchQuery, FileSearchEngine, _kv_sort_join
-from wafer.utils.formatting import natural_key
+from wafer.core.common.formatting import natural_key
 from wafer.core.db.file_db import FileDB
-from wafer.utils.paths import normalize_path
-from wafer.utils.virtual_paths import build_virtual_path
+from wafer.core.common.paths import normalize_path
+from wafer.core.common.virtual_paths import build_virtual_path
 
 
 @pytest.fixture

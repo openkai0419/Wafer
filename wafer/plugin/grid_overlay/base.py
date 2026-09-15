@@ -37,7 +37,7 @@ class OverlayBadge:
 
     @classmethod
     def from_shape(cls, shape_key: str, color: QtGui.QColor | str, *, priority: int = 0, tooltip: str = "") -> OverlayBadge:
-        from ...core.qt.badge_engine import draw_badge_shape
+        from ...qt.common.badge_engine import draw_badge_shape
 
         qcolor = QtGui.QColor(color)
 

@@ -1,7 +1,7 @@
 import os
 from abc import ABC, abstractmethod
-from ..utils.profiling import profiler
-from ..utils.virtual_paths import leaf_extension, owner_extension
+from ..core.profiling import profiler
+from ..core.common.virtual_paths import leaf_extension, owner_extension
 
 
 DISPATCH_NORMAL = "normal"
@@ -184,12 +184,12 @@ class CommandGroupRegistry(RegistryBase):
 
     def set_order(self, order: list[str]):
         super().set_order(order)
-        from ..core.commands.command.menu import MenuHub
+        from ..qt.commands.command.menu import MenuHub
 
         MenuHub.instance().set_menu_order(order)
 
     def activate(self, scope: str):
-        from ..utils.logs import AppLogger
+        from ..core.logs import AppLogger
 
         for cls in sorted(self._groups, key=lambda c: c.PRIORITY):
             if cls in self._activated:

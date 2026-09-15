@@ -2,9 +2,9 @@ import os
 import sys
 import subprocess
 
-from ...utils.logs import AppLogger
-from ...utils.paths import containing_dir
-from ...utils.virtual_paths import is_virtual_path
+from ..logs import AppLogger
+from ..common.paths import containing_dir
+from ..common.virtual_paths import is_virtual_path
 
 _explorer_argtypes_set = False
 

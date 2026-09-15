@@ -5,14 +5,14 @@ from pathlib import Path
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from wafer.core.color.theme import ThemeManager
-from wafer.core.qt.icon_engine import icon_draw
+from wafer.qt.theme import ThemeManager
+from wafer.qt.common.icon_engine import icon_draw
 from wafer.plugin import BaseKeyValuePanelPlugin
-from wafer.ui.panel.meta_viewer import CollapsibleCard
-from wafer.ui.panel.searchable_meta_widget import SearchableMetaWidget
-from wafer.utils.formatting import dpix
-from wafer.utils.logs import AppLogger
-from wafer.utils.paths import resolve_temp_path
+from wafer.qt.meta.viewer import CollapsibleCard
+from wafer.qt.meta.searchable import SearchableMetaWidget
+from wafer.qt.common.dpi import dpix
+from wafer.core.logs import AppLogger
+from wafer.core.common.paths import resolve_temp_path
 
 WORKFLOW_KEY = "workflow"
 _DRAG_HINT = "Drag here into ComfyUI to load workflow"

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ...core.platform.path_utils import validate_filename
 from ...plugin.rename.base import BaseRenameSourcePlugin, SegmentInfo
-from ...utils.logs import AppLogger
+from ...core.logs import AppLogger
 
 
 @dataclass

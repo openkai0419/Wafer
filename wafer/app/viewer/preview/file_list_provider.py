@@ -6,12 +6,12 @@ from pathlib import Path
 from PySide6 import QtCore
 
 from ....core.db.query import FileSearchEngine
-from ....core.qt.dispatcher import Dispatcher, CancelToken
-from ....core.qt.thread import utility_pool
+from ....qt.common.dispatcher import Dispatcher, CancelToken
+from ....qt.common.thread import utility_pool
 from ....plugin.query.composer import SearchComposer
 from ....builtins.filters import DirectoryFilter, SourceChildrenFilter
 from ....builtins.sorts import NaturalPathSort
-from ....utils.virtual_paths import is_virtual_path, source_path
+from ....core.common.virtual_paths import is_virtual_path, source_path
 from .file_model import FileViewModel
 from ..grid.items import GridItemModel
 

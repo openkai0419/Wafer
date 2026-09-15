@@ -27,8 +27,8 @@ class TestIconButtonBar:
 
     def test_theme_change_refreshes_icons(self, qtbot):
         from wafer.app.viewer.widgets.button_bar import IconButtonBar, IconButtonConfig
-        from wafer.core.color.theme import ThemeManager
-        from wafer.core.color.theme_palette import DARK
+        from wafer.qt.theme import ThemeManager
+        from wafer.qt.palette import DARK
 
         bar = IconButtonBar(left_buttons=[IconButtonConfig("gear", "S")])
         bar._on_theme_changed(DARK)

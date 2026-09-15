@@ -128,7 +128,6 @@ class TestExifToolCollector:
         assert plugin._idle_timer is None
 
 
-
 class TestExifToolCooldown:
     def test_touch_starts_idle_timer(self):
         plugin = ExifToolCollectorPlugin()

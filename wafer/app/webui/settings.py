@@ -4,8 +4,8 @@ import os
 import threading
 from configparser import ConfigParser
 
-from ...utils.logs import AppLogger
-from ...utils.paths import resolve_data_path
+from ...core.logs import AppLogger
+from ...core.common.paths import resolve_data_path
 
 _FILENAME = "webui_settings.ini"
 _SECTION = "webui"

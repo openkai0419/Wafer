@@ -5,13 +5,13 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from wafer.plugin import BasePanelPlugin
 from wafer.plugin.collector.base import BaseCollector
 from wafer.plugin.key_filter_dialog import FilterSaveConfirmDialog
-from wafer.core.qt.image import numpy_to_qimage
+from wafer.qt.common.image import numpy_to_qimage
 from wafer.plugin.imageloader.handler import image_loader_resolver
-from wafer.utils.formatting import dpix
-from wafer.utils.notifier import Notifier
-from wafer.utils.paths import list_setting_db_names
+from wafer.qt.common.dpi import dpix
+from wafer.qt.common.notifier import Notifier
+from wafer.core.common.paths import list_setting_db_names
 from wafer.core.lang.manager import t
-from wafer.core.qt.dispatcher import Dispatcher
+from wafer.qt.common.dispatcher import Dispatcher
 from .settings import TAG_MAP, florence_config
 
 _DST = "collector-florence"
@@ -202,7 +202,7 @@ class FlorenceSettingsWidget(QtWidgets.QWidget):
         self._dispatcher.post(lambda: self._do_preview_request(path, settings))
 
     def _do_preview_request(self, path: str, settings: dict):
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
         if not node:
@@ -245,7 +245,7 @@ class FlorenceSettingsWidget(QtWidgets.QWidget):
         self._dispatcher.post(self._do_device_request)
 
     def _do_device_request(self):
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
         if not node:

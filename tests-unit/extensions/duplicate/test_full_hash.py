@@ -1,7 +1,7 @@
 import pytest
 
 from extensions.duplicate.full_hash import FULL_HASH_LENGTH, FullHashParser
-from wafer.utils.hashes import fast_signature_hash, full_hash
+from wafer.core.common.hashes import fast_signature_hash, full_hash
 
 
 @pytest.fixture

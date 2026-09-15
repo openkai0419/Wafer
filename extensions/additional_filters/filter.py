@@ -5,7 +5,7 @@ from calendar import monthrange
 from datetime import datetime, timezone, UTC
 
 from wafer.plugin import BaseFilterPlugin
-from wafer.utils.profiling import profiler
+from wafer.core.profiling import profiler
 
 _KNOWN_DATE_KEYS = frozenset({"modified", "created", "collected"})
 _DATE_HINTS = ("date", "time")

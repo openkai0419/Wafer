@@ -14,8 +14,8 @@ from wafer.builtins.sorts import CollectedSort, CreatedSort, ModifiedSort, Natur
 from wafer.core.db.query import FileSearchEngine
 from wafer.plugin.query.composer import SearchComposer
 from wafer.plugin.query.handler import filter_registry, sort_registry
-from wafer.utils.logs import AppLogger
-from wafer.utils.paths import data_db_path, list_data_db_names
+from wafer.core.logs import AppLogger
+from wafer.core.common.paths import data_db_path, list_data_db_names
 
 SESSION_LIMIT = 8
 SESSION_TTL = 3600.0

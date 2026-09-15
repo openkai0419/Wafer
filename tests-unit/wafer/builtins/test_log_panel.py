@@ -94,7 +94,7 @@ class TestLogPanelPlugin:
         assert LogPanelPlugin.DEFAULT_ENABLED is False
 
     def test_create_widget_returns_log_panel(self, qtbot):
-        from wafer.utils.logs import AppLogger
+        from wafer.core.logs import AppLogger
 
         signals = [AppLogger.on_debug, AppLogger.on_info, AppLogger.on_warning, AppLogger.on_error, AppLogger.on_critical]
         saved = [list(s._callbacks) for s in signals]

@@ -6,10 +6,10 @@ from collections import defaultdict
 from collections.abc import Sequence
 
 from ...core.db.file_db import FileDB
-from ...utils.hashes import HASH_FAILED, fast_signature_hash
-from ...utils.logs import AppLogger
-from ...utils.paths import normalize_path
-from ...utils.profiling import profiler
+from ...core.common.hashes import HASH_FAILED, fast_signature_hash
+from ...core.logs import AppLogger
+from ...core.common.paths import normalize_path
+from ...core.profiling import profiler
 
 
 class DatabaseWriter:

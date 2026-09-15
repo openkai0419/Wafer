@@ -4,7 +4,7 @@ import shutil
 import sys
 import tempfile
 
-from wafer.utils.downloader import (
+from wafer.core.common.downloader import (
     safe_download,
     fetch_json,
     extract_7z_members,
@@ -28,7 +28,7 @@ _MANUAL_HINT = "Download libmpv-2.dll from https://sourceforge.net/projects/mpv-
 
 def _log(msg, *, level="info", exc=None):
     try:
-        from wafer.utils.logs import AppLogger
+        from wafer.core.logs import AppLogger
 
         fn = getattr(AppLogger, level, AppLogger.info)
         if exc and level in ("error", "warning"):

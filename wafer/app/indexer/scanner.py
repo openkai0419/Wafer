@@ -9,9 +9,9 @@ from collections.abc import Sequence
 
 from ...core.db.db_utils import build_basic_entries, open_readonly
 from ...core.db.file_db import SOURCE_TRIGGER_KEYS
-from ...utils.logs import AppLogger
-from ...utils.paths import normalize_path
-from ...utils.profiling import profiler
+from ...core.logs import AppLogger
+from ...core.common.paths import normalize_path
+from ...core.profiling import profiler
 from .db_writer import DatabaseWriter
 from .receivers.parser_receiver import trigger_parser_pending
 from .watch.path_scope import contains_path_prefix, normalize_prefixes

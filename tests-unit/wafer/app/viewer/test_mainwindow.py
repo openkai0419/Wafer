@@ -466,9 +466,7 @@ class TestPanelPluginStartup:
             "healthy_panel": healthy_plugin,
         }[name]
 
-        with patch("wafer.plugin.panel.handler.panel_registry", registry), patch(
-            "wafer.app.viewer.mainwindow.AppLogger.warning"
-        ) as warning:
+        with patch("wafer.plugin.panel.handler.panel_registry", registry), patch("wafer.app.viewer.mainwindow.AppLogger.warning") as warning:
             MainWindow._run_panel_plugin_startups(win)
 
         assert healthy_plugin.calls == 1

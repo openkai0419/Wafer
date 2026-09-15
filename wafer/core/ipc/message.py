@@ -4,7 +4,7 @@ from typing import Any
 
 import msgpack
 
-from ...utils.logs import AppLogger
+from ..logs import AppLogger
 from .transport import Priority
 
 

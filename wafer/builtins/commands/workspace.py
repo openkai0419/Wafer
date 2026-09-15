@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-from ...core.commands.bridge import ActionKit
-from ...core.commands.command.require import require
+from ...qt.commands.bridge import ActionKit
+from ...qt.commands.command.require import require
 from ...core.platform.process import AppProcess
-from ...core.workspace import (
+from ...core.store.workspace import (
     BarSpec,
     PathPreset,
     QueryPreset,
     UIPreset,
     WorkspaceStore,
 )
-from ...ui.dialogs import InputDialog
-from ...utils.logs import AppLogger
-from ...utils.notifier import Notifier
+from ...qt.widgets.dialogs import InputDialog
+from ...core.logs import AppLogger
+from ...qt.common.notifier import Notifier
 
 
 def _store() -> WorkspaceStore:

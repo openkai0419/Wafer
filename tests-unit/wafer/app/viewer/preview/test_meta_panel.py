@@ -4,10 +4,10 @@ from unittest.mock import MagicMock
 import pytest
 from PySide6 import QtWidgets
 from wafer.app.viewer.preview.meta_panel import MetaViewerWidget, _FIXED_SECTION_KEYS
-from wafer.ui.panel.searchable_meta_widget import ScopedSearchKvAddDialog, SearchableMetaWidget
-from wafer.ui.panel.tag_edit_service import TagEditService
-from wafer.ui.panel.meta_viewer import CollapsibleCard, MetaRowWidget
-from wafer.ui.panel.meta_viewer import SECTION_MARKER_META_PREFIX, SECTION_MARKER_META_ROOT, SECTION_MARKER_TAG_PREFIX, SECTION_MARKER_TAG_ROOT
+from wafer.qt.meta.searchable import ScopedSearchKvAddDialog, SearchableMetaWidget
+from wafer.qt.meta.tag_edit_service import TagEditService
+from wafer.qt.meta.viewer import CollapsibleCard, MetaRowWidget
+from wafer.qt.meta.viewer import SECTION_MARKER_META_PREFIX, SECTION_MARKER_META_ROOT, SECTION_MARKER_TAG_PREFIX, SECTION_MARKER_TAG_ROOT
 
 
 @pytest.fixture(autouse=True)
@@ -100,7 +100,7 @@ def test_header_has_reload_and_add_buttons(qtbot):
 
 def test_filter_button_opens_metadata_filter_panel(qtbot, monkeypatch):
     import wafer.app.viewer.preview.meta_panel as mod
-    from wafer.core.commands.bridge import Command
+    from wafer.qt.commands.bridge import Command
 
     calls = []
     monkeypatch.setattr(Command, "run", staticmethod(lambda cmd_id, *a, **k: calls.append(cmd_id)))
@@ -108,7 +108,6 @@ def test_filter_button_opens_metadata_filter_panel(qtbot, monkeypatch):
     qtbot.addWidget(w)
     w._filter_btn.click()
     assert calls == ["panel.toggle_metadata_filter"]
-
 
 
 def test_global_add_dialog_embeds_scope_combo_with_legacy_wording(qtbot):
@@ -519,7 +518,7 @@ def test_key_value_plugin_card_pool_survives_rebuild_and_settings_change(qtbot):
 
 
 def test_key_value_panel_state_targets_scoped_instances(qtbot):
-    from wafer.core.state import StateStore
+    from wafer.core.store.state import StateStore
     from wafer.plugin.key_value_panel.base import BaseKeyValuePanelPlugin
     from wafer.plugin.key_value_panel.handler import key_value_panel_registry
 
@@ -577,9 +576,7 @@ def test_key_value_panel_state_targets_scoped_instances(qtbot):
         assert tag_plugin.state == {"value": "tag"}
         assert meta_plugin.state == {"value": "meta"}
         tag_plugin.state = {"value": "tag2"}
-        assert w._save_key_value_panel_state(StatefulPanel.NAME) == {
-            "scopes": {"tag": {"value": "tag2"}, "meta_info": {"value": "meta"}}
-        }
+        assert w._save_key_value_panel_state(StatefulPanel.NAME) == {"scopes": {"tag": {"value": "tag2"}, "meta_info": {"value": "meta"}}}
     finally:
         key_value_panel_registry._plugins = original_plugins
         key_value_panel_registry._instances = original_instances
@@ -587,7 +584,7 @@ def test_key_value_panel_state_targets_scoped_instances(qtbot):
 
 
 def test_key_value_panel_prefix_order_respects_registry_order(qtbot):
-    from wafer.core.state import StateStore
+    from wafer.core.store.state import StateStore
     from wafer.plugin.key_value_panel.base import BaseKeyValuePanelPlugin
     from wafer.plugin.key_value_panel.handler import key_value_panel_registry
 

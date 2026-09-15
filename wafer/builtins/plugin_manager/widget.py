@@ -1,17 +1,17 @@
 from PySide6 import QtWidgets, QtCore
-from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
-from ...utils.notifier import Notifier
+from ...qt.common.dpi import dpix
+from ...core.logs import AppLogger
+from ...qt.common.notifier import Notifier
 from ...plugin.settings import PluginSettings
 from ...plugin.installer import RestartScope, restart_scope_from_plugins
 from ...plugin import installer_queue
 from ...plugin.loader import get_plugin_dir
 from ...plugin.kinds import PLUGIN_KIND_COLLECTOR, PLUGIN_KIND_COMMAND, PLUGIN_KIND_PARSER
 from ...plugin.panel.base import BasePanelPlugin
-from ...core.color.theme import ThemeManager
-from ...core.qt.dispatcher import Dispatcher
-from ...core.qt.thread import utility_pool
-from ...core.commands.bridge import Command
+from ...qt.theme import ThemeManager
+from ...qt.common.dispatcher import Dispatcher
+from ...qt.common.thread import utility_pool
+from ...qt.commands.bridge import Command
 from ...core.lang.manager import t
 
 

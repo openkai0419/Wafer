@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets
 
-from ....utils.formatting import dpix
-from ....utils.profiling import profiler
+from ....qt.common.dpi import dpix
+from ....core.profiling import profiler
 from ....core.db.query import FileSearchEngine
 from ....plugin.query.composer import SearchComposer
 from ....core.lang.manager import t
-from ....core.qt.dispatcher import Dispatcher, CancelSlot
-from ....core.qt.icon_engine import themed_icon
-from ....core.qt.thread import utility_pool
-from ....core.commands.bridge import ActionKit, Menu
+from ....qt.common.dispatcher import Dispatcher, CancelSlot
+from ....qt.common.icon_engine import themed_icon
+from ....qt.common.thread import utility_pool
+from ....qt.commands.bridge import ActionKit, Menu
 from ....plugin.query.handler import filter_registry, sort_registry
 from ....plugin.query.widgets import KeyStore
 from ....builtins.filters import TextFilter, DirectoryFilter, ContainedFilesFilter

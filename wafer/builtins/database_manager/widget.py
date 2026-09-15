@@ -1,22 +1,22 @@
 import os
 
 from PySide6 import QtWidgets, QtCore, QtGui
-from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
-from ...utils.notifier import Notifier
-from ...utils.paths import (
+from ...qt.common.dpi import dpix
+from ...core.logs import AppLogger
+from ...qt.common.notifier import Notifier
+from ...core.common.paths import (
     list_setting_db_names,
     setting_db_path,
     data_db_path,
 )
-from ...core.color.theme import ThemeManager
+from ...qt.theme import ThemeManager
 from ...core.lang.manager import t
 from ...core.db.setting_db import SettingDB
 from ...core.platform.process import AppProcess
-from ...ui.dialogs import ConfirmDialog, InputDialog
-from ...core.qt.dispatcher import Dispatcher
-from ...core.qt.icon_engine import themed_icon
-from ...core.qt.thread import utility_pool
+from ...qt.widgets.dialogs import ConfirmDialog, InputDialog
+from ...qt.common.dispatcher import Dispatcher
+from ...qt.common.icon_engine import themed_icon
+from ...qt.common.thread import utility_pool
 from ...plugin.panel.base import BasePanelPlugin
 
 
@@ -287,7 +287,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         )
         if ret != "Delete":
             return
-        from ...core.commands.binding.instance_registry import InstanceRegistry
+        from ...qt.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
         if node:
@@ -326,7 +326,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
             return
         changed = self._detail_widget.commit(self._initial_paths)
         AppLogger.info(f"[DatabaseManager] Saved path changes for: {sorted(changed)}")
-        from ...core.commands.binding.instance_registry import InstanceRegistry
+        from ...qt.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
         if node and changed:

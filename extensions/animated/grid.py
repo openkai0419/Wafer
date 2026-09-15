@@ -1,8 +1,8 @@
 from PySide6 import QtCore, QtGui
 
 from wafer.plugin import WidgetGridPlugin
-from wafer.core.qt.dispatcher import Dispatcher
-from wafer.utils.profiling import profiler
+from wafer.qt.common.dispatcher import Dispatcher
+from wafer.core.profiling import profiler
 from ._common import is_animated, decode_frames, _grid_cache
 from .widget import AnimatedCellWidget
 
@@ -17,7 +17,7 @@ class AnimatedGridPlugin(WidgetGridPlugin):
 
     def __init__(self):
         super().__init__()
-        from wafer.core.qt.thread import grid_render_pool
+        from wafer.qt.common.thread import grid_render_pool
 
         self._dispatcher = Dispatcher(grid_render_pool)
 

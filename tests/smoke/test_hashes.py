@@ -1,6 +1,6 @@
 import os
 
-from wafer.utils.hashes import fast_signature_hash, full_hash
+from wafer.core.common.hashes import fast_signature_hash, full_hash
 
 
 def _write_file(path, content: bytes):

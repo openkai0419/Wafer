@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ...plugin import BaseFilterPlugin
-from ...utils.profiling import profiler
+from ...core.profiling import profiler
 
 from .registry import MarkRegistry
 from .widget import MarkFilterWidget

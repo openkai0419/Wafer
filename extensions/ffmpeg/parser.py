@@ -3,7 +3,7 @@ import json
 import subprocess
 from fractions import Fraction
 
-from wafer.utils.logs import AppLogger
+from wafer.core.logs import AppLogger
 
 
 def _parse_frame_rate(rate_str: str) -> float | None:

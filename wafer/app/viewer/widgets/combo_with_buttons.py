@@ -1,8 +1,8 @@
 from PySide6.QtCore import QSignalBlocker, QSize, Qt, Signal
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QPushButton, QWidget
 from ....core.lang.manager import t
-from ....core.qt.icon_engine import themed_icon
-from ....core.color.theme import ThemeManager
+from ....qt.common.icon_engine import themed_icon
+from ....qt.theme import ThemeManager
 
 
 class NoWheelComboBox(QComboBox):

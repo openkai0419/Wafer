@@ -35,7 +35,7 @@ class BaseCollector(BasePlugin):
 
     @staticmethod
     def notify_to(name: str, payload: Any = None) -> None:
-        from ...core.commands.binding.instance_registry import InstanceRegistry
+        from ...qt.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
         if node:

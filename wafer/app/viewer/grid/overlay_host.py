@@ -4,8 +4,8 @@ from collections.abc import Callable
 
 from PySide6 import QtCore, QtGui
 
-from ....core.qt.badge_engine import draw_overflow_badge
-from ....core.state import StateStore
+from ....qt.common.badge_engine import draw_overflow_badge
+from ....core.store.state import StateStore
 from ....plugin.grid_overlay.base import (
     BaseBadgeOverlayPlugin,
     BaseCellOverlayPlugin,
@@ -16,8 +16,8 @@ from ....plugin.grid_overlay.base import (
 )
 from ....plugin.grid_overlay.handler import grid_overlay_registry
 from ....plugin.grid_overlay.helper import OverlayHelper
-from ....utils.formatting import dpix
-from ....utils.logs import AppLogger
+from ....qt.common.dpi import dpix
+from ....core.logs import AppLogger
 
 
 _STATE_NAMESPACE = "grid/overlay"
@@ -188,7 +188,7 @@ class GridOverlayHost(QtCore.QObject):
                 x = cell_rect.left() + margin + col * (size + gap)
                 y = cell_rect.top() + margin + row * (size + gap)
                 rect = QtCore.QRectF(x, y, size, size)
-                from ....core.color.theme import ThemeManager
+                from ....qt.theme import ThemeManager
 
                 draw_overflow_badge(painter, rect, overflow, QtGui.QColor(ThemeManager.instance().palette.bg_primary))
             painter.restore()

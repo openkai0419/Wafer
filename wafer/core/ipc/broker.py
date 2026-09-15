@@ -7,7 +7,7 @@ from typing import Any
 
 import zmq
 
-from ...utils.logs import AppLogger
+from ..logs import AppLogger
 from .transport import (
     BROKER_QUEUE_MAX,
     DEFAULT_PORT,
@@ -353,7 +353,7 @@ class Broker:
     def _get_workspace_store(self):
         if self._workspace_store_factory:
             return self._workspace_store_factory()
-        from ..workspace import WorkspaceStore
+        from ..store.workspace import WorkspaceStore
 
         return WorkspaceStore.instance()
 

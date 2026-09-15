@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 
 pytestmark = pytest.mark.unstable
 
-from wafer.utils.paths import normalize_path
+from wafer.core.common.paths import normalize_path
 from wafer.core.db.file_db import FileDB
 from wafer.core.db.setting_db import SettingDB
 from wafer.plugin.collector.handler import collector_resolver
@@ -84,7 +84,7 @@ def _disable_mpv():
 
 @pytest.fixture(autouse=True, scope="module")
 def _configure_command_store(tmp_path_factory):
-    from wafer.core.commands.command.state import CommandOptionStore
+    from wafer.qt.commands.command.state import CommandOptionStore
 
     prev = CommandOptionStore._instance, CommandOptionStore._initialized, CommandOptionStore._default_path
     CommandOptionStore._instance = None
@@ -136,7 +136,7 @@ class TestSmokeViewer:
     def test_mainwindow_boots_and_searches(self, smoke_env, qtbot, tmp_path):
         db_path, setting_db_path, img_dir = smoke_env
 
-        from wafer.core.workspace import WorkspaceStore
+        from wafer.core.store.workspace import WorkspaceStore
 
         prev_instance = WorkspaceStore._instance
         store = WorkspaceStore(path=str(tmp_path / "workspace.json"))
@@ -146,7 +146,7 @@ class TestSmokeViewer:
 
         try:
             with patch("wafer.app.viewer.mainwindow.Node", return_value=stub_node):
-                with patch("wafer.utils.logs.AppLogger.set_node"):
+                with patch("wafer.core.logs.AppLogger.set_node"):
                     from wafer.app.viewer.mainwindow import MainWindow
 
                     win = MainWindow(icon=None, slot_id=None)
@@ -203,7 +203,7 @@ class TestSmokeViewer:
         writer.initialize()
         writer.close()
 
-        from wafer.core.workspace import WorkspaceStore
+        from wafer.core.store.workspace import WorkspaceStore
 
         prev_instance = WorkspaceStore._instance
         store = WorkspaceStore(path=str(tmp_path / "workspace.json"))
@@ -213,7 +213,7 @@ class TestSmokeViewer:
 
         try:
             with patch("wafer.app.viewer.mainwindow.Node", return_value=stub_node):
-                with patch("wafer.utils.logs.AppLogger.set_node"):
+                with patch("wafer.core.logs.AppLogger.set_node"):
                     from wafer.app.viewer.mainwindow import MainWindow
 
                     win = MainWindow(icon=None, slot_id=None)

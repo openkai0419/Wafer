@@ -24,9 +24,9 @@ from wafer.builtins.rename_sources import (
     SequentialSource,
 )
 from wafer.builtins.batch_renamer.widget import BatchRenamerPlugin
-from wafer.core.qt.dispatcher import CancelToken
+from wafer.qt.common.dispatcher import CancelToken
 from wafer.core.db.file_db import FileDB
-from wafer.utils.formatting import dpix
+from wafer.qt.common.dpi import dpix
 
 
 @pytest.fixture(autouse=True)
@@ -1573,9 +1573,7 @@ class TestSegmentEditingNavigation:
             qtbot.keyClick(editor, Qt.Key_Tab)
 
             qtbot.waitUntil(
-                lambda: dlg._seg_table.currentIndex().row() == 1
-                and dlg._seg_table.currentIndex().column() == fixed_col
-                and dlg._seg_table.is_editing(),
+                lambda: dlg._seg_table.currentIndex().row() == 1 and dlg._seg_table.currentIndex().column() == fixed_col and dlg._seg_table.is_editing(),
                 timeout=3000,
             )
         finally:
@@ -1590,9 +1588,7 @@ class TestSegmentEditingNavigation:
             dlg._seg_table.closeEditor(editor, QtWidgets.QAbstractItemDelegate.EditPreviousItem)
 
             qtbot.waitUntil(
-                lambda: dlg._seg_table.currentIndex().row() == 0
-                and dlg._seg_table.currentIndex().column() == fixed_col
-                and dlg._seg_table.is_editing(),
+                lambda: dlg._seg_table.currentIndex().row() == 0 and dlg._seg_table.currentIndex().column() == fixed_col and dlg._seg_table.is_editing(),
                 timeout=3000,
             )
         finally:
@@ -2253,7 +2249,7 @@ class TestContextMenu:
 
     @patch.object(BatchRenameWidget, "_start_async_init")
     def test_show_row_menu_builds_command_menu(self, mock_init, qtbot, tmp_files):
-        from wafer.core.commands.bridge import Menu
+        from wafer.qt.commands.bridge import Menu
 
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
@@ -2297,7 +2293,7 @@ class TestContextMenu:
 
     @patch.object(BatchRenameWidget, "_start_async_init")
     def test_context_menu_passes_selected_paths(self, mock_init, qtbot, tmp_files):
-        from wafer.core.commands.bridge import Menu
+        from wafer.qt.commands.bridge import Menu
 
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
@@ -2338,7 +2334,7 @@ class TestContextMenu:
 
     @patch.object(BatchRenameWidget, "_start_async_init")
     def test_context_menu_splits_logical_paths_and_sources(self, mock_init, qtbot, tmp_files):
-        from wafer.core.commands.bridge import Menu
+        from wafer.qt.commands.bridge import Menu
 
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
@@ -2379,7 +2375,7 @@ class TestContextMenu:
 
     @patch.object(BatchRenameWidget, "_start_async_init")
     def test_context_menu_multiple_selection(self, mock_init, qtbot, tmp_files):
-        from wafer.core.commands.bridge import Menu
+        from wafer.qt.commands.bridge import Menu
 
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
@@ -2433,7 +2429,7 @@ class TestContextMenu:
 
     @patch.object(BatchRenameWidget, "_start_async_init")
     def test_context_menu_has_remove_action(self, mock_init, qtbot, tmp_files):
-        from wafer.core.commands.bridge import Menu, ActionKit
+        from wafer.qt.commands.bridge import Menu, ActionKit
 
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
@@ -2475,7 +2471,7 @@ class TestContextMenu:
 
     @patch.object(BatchRenameWidget, "_start_async_init")
     def test_context_menu_has_restore_action_for_edited_cell(self, mock_init, qtbot, tmp_files):
-        from wafer.core.commands.bridge import Menu
+        from wafer.qt.commands.bridge import Menu
 
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
@@ -2518,7 +2514,7 @@ class TestContextMenu:
 
     @patch.object(BatchRenameWidget, "_start_async_init")
     def test_context_menu_has_restore_selected_action_for_multiple_edited_cells(self, mock_init, qtbot, tmp_files):
-        from wafer.core.commands.bridge import Menu
+        from wafer.qt.commands.bridge import Menu
 
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
@@ -2566,7 +2562,7 @@ class TestContextMenu:
 
     @patch.object(BatchRenameWidget, "_start_async_init")
     def test_context_menu_has_restore_action_for_unedited_cell(self, mock_init, qtbot, tmp_files):
-        from wafer.core.commands.bridge import Menu
+        from wafer.qt.commands.bridge import Menu
 
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
@@ -2634,7 +2630,7 @@ class TestContextMenu:
 
     @patch.object(BatchRenameWidget, "_start_async_init")
     def test_set_files_resets_selection_count_in_menu(self, mock_init, qtbot, tmp_path):
-        from wafer.core.commands.bridge import Menu
+        from wafer.qt.commands.bridge import Menu
 
         files_4 = []
         for name in ["a.jpg", "b.jpg", "c.jpg", "d.jpg"]:
@@ -2800,7 +2796,7 @@ class TestDropFiles:
 
 class TestStandaloneLaunch:
     def _swap_instance(self, name, value):
-        from wafer.core.commands.binding.instance_registry import InstanceRegistry
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
         registry = InstanceRegistry.instance()
         previous = list(registry._by_name.get(name, []))
@@ -2840,7 +2836,7 @@ class TestStandaloneLaunch:
             captured.update(title=title, key=key)
             return object()
 
-        monkeypatch.setattr("wafer.ui.layout.standalone.open_standalone", fake_open)
+        monkeypatch.setattr("wafer.qt.layout.standalone.open_standalone", fake_open)
         had = panel_registry.get(BatchRenamerPlugin.NAME) is not None
         if not had:
             panel_registry.register(BatchRenamerPlugin)

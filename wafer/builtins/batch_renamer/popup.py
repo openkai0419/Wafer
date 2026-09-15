@@ -12,10 +12,10 @@ from ...plugin.rename.base import (
     style_toggle,
     style_spinbox,
 )
-from ...utils.formatting import dpix
-from ...core.color.theme import ThemeManager
+from ...qt.common.dpi import dpix
+from ...qt.theme import ThemeManager
 from ...core.lang.manager import t
-from ...ui.popups import PopupBase
+from ...qt.widgets.popup import PopupBase
 from .engine import RenameColumn
 
 

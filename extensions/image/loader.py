@@ -7,8 +7,8 @@ from PIL import Image
 from PySide6 import QtCore, QtGui
 
 from wafer.plugin import BaseImageLoader
-from wafer.utils.logs import AppLogger
-from wafer.utils.profiling import profiler
+from wafer.core.logs import AppLogger
+from wafer.core.profiling import profiler
 
 
 class ImageFileLoader(BaseImageLoader):

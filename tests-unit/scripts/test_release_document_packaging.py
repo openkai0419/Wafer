@@ -41,7 +41,7 @@ def test_generate_third_party_notices_uses_utf8_stdio_and_writes_output(tmp_path
     assert (tmp_path / "THIRD-PARTY-NOTICES.txt").read_text(encoding="utf-8") == "notices\n"
     assert seen["env"]["PYTHONIOENCODING"] == "utf-8"
     assert seen["env"]["PYTHONUTF8"] == "1"
-    packages = set(seen["args"][seen["args"].index("--packages") + 1:])
+    packages = set(seen["args"][seen["args"].index("--packages") + 1 :])
     assert packages == build.RUNTIME_PACKAGES
 
 

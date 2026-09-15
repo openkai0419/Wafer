@@ -1,20 +1,20 @@
 import math
 from PySide6 import QtCore, QtGui, QtWidgets
-from ....utils.formatting import dpix
-from ....utils.logs import AppLogger
-from ....utils.profiling import profiler
-from ....core.qt.rate_limit import qt_debounce, qt_throttle
-from ....core.qt.visibility import WidgetVisibilityWatcher
-from ....core.qt.dispatcher import Dispatcher
-from ....core.app_settings import app_settings
+from ....qt.common.dpi import dpix
+from ....core.logs import AppLogger
+from ....core.profiling import profiler
+from ....qt.common.rate_limit import qt_debounce, qt_throttle
+from ....qt.common.visibility import WidgetVisibilityWatcher
+from ....qt.common.dispatcher import Dispatcher
+from ....core.store.settings import app_settings
 from ....plugin.grid.handler import grid_resolver, WidgetNotifier
 from ....plugin.grid.base import WidgetGridPlugin as _WidgetGridPlugin
 from .cachemanager import MemoryLimitedImageCache, GraphicsItemPool, AdditionalWidgetPool
 from ....plugin.layout.calc import LayoutData
 from .pipeline import GridPipeline
 from .items import GridItemModel
-from ....core.color.theme import ThemeManager
-from ....core.commands.bridge import ActionKit, Command
+from ....qt.theme import ThemeManager
+from ....qt.commands.bridge import ActionKit, Command
 
 
 class _SelectionOverlay(QtWidgets.QWidget):
@@ -142,7 +142,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.additional_pool = AdditionalWidgetPool(grid_resolver)
         self.additional_pool.warm_up(self.viewport())
         self._notifier = WidgetNotifier(grid_resolver.registry)
-        from ....core.qt.thread import grid_thumb_pool, grid_render_pool, utility_pool
+        from ....qt.common.thread import grid_thumb_pool, grid_render_pool, utility_pool
 
         self._thumb_dispatcher = Dispatcher(grid_thumb_pool)
         self._render_dispatcher = Dispatcher(grid_render_pool)

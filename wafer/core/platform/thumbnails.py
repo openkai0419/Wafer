@@ -5,7 +5,7 @@ import sys
 import threading
 from PIL import Image
 
-from ...utils.logs import AppLogger
+from ..logs import AppLogger
 
 _IShellItemImageFactory = None
 _shell_argtypes_set = False

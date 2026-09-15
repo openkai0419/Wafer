@@ -32,13 +32,13 @@ _EXPORTS = {
     "BaseRenameSourcePlugin": (".rename.base", None),
     "SegmentInfo": (".rename.base", None),
     "BaseImageLoader": (".imageloader.base", None),
-    "ActionKit": ("..core.commands.bridge", None),
-    "require": ("..core.commands.command.require", None),
-    "require_v": ("..core.commands.command.require", None),
-    "CommandMeta": ("..core.commands.bridge", "ActionKit.Command"),
-    "CommandParam": ("..core.commands.bridge", "ActionKit.Param"),
-    "MenuGroup": ("..core.commands.bridge", "ActionKit.MenuBase"),
-    "DragMenuGroup": ("..core.commands.bridge", "ActionKit.DragMenuBase"),
+    "ActionKit": ("..qt.commands.bridge", None),
+    "require": ("..qt.commands.command.require", None),
+    "require_v": ("..qt.commands.command.require", None),
+    "CommandMeta": ("..qt.commands.bridge", "ActionKit.Command"),
+    "CommandParam": ("..qt.commands.bridge", "ActionKit.Param"),
+    "MenuGroup": ("..qt.commands.bridge", "ActionKit.MenuBase"),
+    "DragMenuGroup": ("..qt.commands.bridge", "ActionKit.DragMenuBase"),
 }
 
 

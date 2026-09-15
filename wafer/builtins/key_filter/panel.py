@@ -12,14 +12,14 @@ from ...plugin.collector.handler import collector_resolver
 from ...plugin.parser.handler import parser_resolver
 from ...plugin.key_filter_dialog import FilterSaveConfirmDialog
 from ...core.db.recollect import Recollect
-from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
-from ...utils.notifier import Notifier
+from ...qt.common.dpi import dpix
+from ...core.logs import AppLogger
+from ...qt.common.notifier import Notifier
 from ...core.lang.manager import t
-from ...utils.paths import list_setting_db_names, data_db_path
+from ...core.common.paths import list_setting_db_names, data_db_path
 from ...core.db.db_utils import apply_read_pragmas
-from ...core.qt.dispatcher import Dispatcher, CancelSlot
-from ...core.qt.icon_engine import themed_icon
+from ...qt.common.dispatcher import Dispatcher, CancelSlot
+from ...qt.common.icon_engine import themed_icon
 from ...app.viewer.widgets.loading_overlay import OverlayLoadingIndicator
 
 _CHECK_COL = 0

@@ -1,6 +1,6 @@
-from ...utils.paths import get_resource_path
-from ...utils.logs import AppLogger
-from ...utils.json_io import read_json_file, write_json_file
+from ..common.paths import get_resource_path
+from ..logs import AppLogger
+from ..common.json_io import read_json_file, write_json_file
 
 _t_instance = None
 

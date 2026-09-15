@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from wafer.core.ipc.broker import Broker
 from wafer.core.db.setting_db import SettingDB
-from wafer.utils.paths import normalize_path
+from wafer.core.common.paths import normalize_path
 
 
 def _create_test_image(path, width=200, height=150):

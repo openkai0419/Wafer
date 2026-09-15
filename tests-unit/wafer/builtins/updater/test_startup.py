@@ -1,7 +1,7 @@
 from wafer.builtins.updater import startup
 from wafer.builtins.updater.service import UpdateCheckResult, UpdateInfo
-from wafer.core.commands.binding.instance_registry import InstanceRegistry
-from wafer.core.workspace import WorkspaceStore
+from wafer.qt.commands.binding.instance_registry import InstanceRegistry
+from wafer.core.store.workspace import WorkspaceStore
 
 
 class _Dispatcher:
@@ -187,7 +187,7 @@ def test_present_updater_uses_standalone_without_mainwindow(monkeypatch):
         captured.update(title=title, key=key, parent=parent)
         return _Widget()
 
-    monkeypatch.setattr("wafer.ui.layout.standalone.open_standalone", fake_open)
+    monkeypatch.setattr("wafer.qt.layout.standalone.open_standalone", fake_open)
     had = panel_registry.get(UpdateNotifierPlugin.NAME) is not None
     if not had:
         panel_registry.register(UpdateNotifierPlugin)

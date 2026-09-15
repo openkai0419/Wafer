@@ -4,13 +4,10 @@ import json as _json
 import pytest
 
 import extensions.video._downloader as dl
-from wafer.utils import downloader as common
+from wafer.core.common import downloader as common
 
 
-def _payload(name="mpv-dev-x86_64-20260527-git-abcdef0.7z",
-             digest="sha256:" + ("a" * 64),
-             url="https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260527/x.7z",
-             tag="20260527"):
+def _payload(name="mpv-dev-x86_64-20260527-git-abcdef0.7z", digest="sha256:" + ("a" * 64), url="https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260527/x.7z", tag="20260527"):
     return {"tag_name": tag, "assets": [{"name": name, "digest": digest, "browser_download_url": url}]}
 
 
@@ -29,8 +26,7 @@ class _Resp:
 
 
 def _patch(monkeypatch, payload: bytes):
-    monkeypatch.setattr(common.urllib.request, "urlopen",
-                        lambda req, timeout=None: _Resp(payload))
+    monkeypatch.setattr(common.urllib.request, "urlopen", lambda req, timeout=None: _Resp(payload))
 
 
 class TestFindAssetEdgeCases:

@@ -4,9 +4,9 @@ import threading
 import time
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
-from ....utils.logs import AppLogger
-from ....utils.paths import normalize_path
-from ....utils.profiling import profiler
+from ....core.logs import AppLogger
+from ....core.common.paths import normalize_path
+from ....core.profiling import profiler
 from ..db_writer import DatabaseWriter
 from .path_scope import contains_path_prefix, normalize_prefixes
 from ..runtime.progress_aggregator import ProgressAggregator

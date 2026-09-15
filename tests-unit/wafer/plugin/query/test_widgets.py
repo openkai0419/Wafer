@@ -2,8 +2,8 @@ import pytest
 from PySide6 import QtGui, QtWidgets
 
 from wafer.builtins.filters import TextFilter
-from wafer.core.color.theme import ThemeManager
-from wafer.core.state import StateStore
+from wafer.qt.theme import ThemeManager
+from wafer.core.store.state import StateStore
 from wafer.plugin.query.widgets import CheckableCombo, _CATALOG_KEY_ROLE, _KeySelectorPopup
 
 
@@ -244,12 +244,14 @@ class TestCheckableComboActiveKeys:
 class TestKeySelectorPopupGroups:
     def test_prefixed_keys_grouped(self, qapp):
         combo = CheckableCombo()
-        combo.remake([
-            ("path", 100),
-            ("exif.width", 50),
-            ("exif.height", 50),
-            ("nai.prompt", 30),
-        ])
+        combo.remake(
+            [
+                ("path", 100),
+                ("exif.width", 50),
+                ("exif.height", 50),
+                ("nai.prompt", 30),
+            ]
+        )
         popup = _KeySelectorPopup.instance()
         tree = popup._catalog_tree
         root = tree.invisibleRootItem()
@@ -261,12 +263,14 @@ class TestKeySelectorPopupGroups:
 
     def test_search_filters_catalog(self, qapp):
         combo = CheckableCombo()
-        combo.remake([
-            ("path", 100),
-            ("exif.width", 50),
-            ("exif.height", 50),
-            ("nai.prompt", 30),
-        ])
+        combo.remake(
+            [
+                ("path", 100),
+                ("exif.width", 50),
+                ("exif.height", 50),
+                ("nai.prompt", 30),
+            ]
+        )
         popup = _KeySelectorPopup.instance()
         popup._search_input.setText("exif")
         root = popup._catalog_tree.invisibleRootItem()
@@ -288,11 +292,13 @@ class TestKeySelectorPopupGroups:
 
     def test_save_state_includes_expanded_groups_and_splitter_sizes(self, qapp):
         combo = CheckableCombo()
-        combo.remake([
-            ("path", 100),
-            ("exif.width", 50),
-            ("exif.height", 50),
-        ])
+        combo.remake(
+            [
+                ("path", 100),
+                ("exif.width", 50),
+                ("exif.height", 50),
+            ]
+        )
         popup = _KeySelectorPopup.instance()
         popup.resize(320, 420)
         popup.show()
@@ -311,11 +317,13 @@ class TestKeySelectorPopupGroups:
     def test_restore_state_applies_expanded_groups_after_catalog_rebuild(self, qapp):
         popup = _KeySelectorPopup.instance()
         popup._restore_state({"keys": ["path"], "expanded": ["exif"]})
-        popup.set_catalog([
-            ("path", 100),
-            ("exif.width", 50),
-            ("exif.height", 50),
-        ])
+        popup.set_catalog(
+            [
+                ("path", 100),
+                ("exif.width", 50),
+                ("exif.height", 50),
+            ]
+        )
 
         group = _group_item(popup, "exif")
 

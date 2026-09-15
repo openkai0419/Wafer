@@ -1,4 +1,4 @@
-from wafer.utils.helpers import (
+from wafer.core.common.helpers import (
     get_callable,
     invoke,
     invoke_int,

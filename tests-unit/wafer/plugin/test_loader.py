@@ -91,11 +91,7 @@ class TestGridOverlayPluginLoading:
         overlay_dir.mkdir(parents=True)
         (overlay_dir / "__init__.py").write_text("")
         (overlay_dir / "overlay.py").write_text(
-            "from wafer.plugin import BaseBadgeOverlayPlugin\n"
-            "class StubOverlayPlugin(BaseBadgeOverlayPlugin):\n"
-            '    NAME = "stub_overlay"\n'
-            "    PRIORITY = 10\n"
-            "    DEFAULT_ENABLED = True\n"
+            'from wafer.plugin import BaseBadgeOverlayPlugin\nclass StubOverlayPlugin(BaseBadgeOverlayPlugin):\n    NAME = "stub_overlay"\n    PRIORITY = 10\n    DEFAULT_ENABLED = True\n'
         )
 
         registries = _make_registries()
@@ -128,8 +124,8 @@ class TestDeferredCommandRegistration:
         cmd_dir.mkdir(parents=True)
         (cmd_dir / "__init__.py").write_text("")
         (cmd_dir / "commands.py").write_text(
-            "from wafer.core.commands.command.menu import MenuGroup\n"
-            "from wafer.core.commands.command.core import CommandMeta\n"
+            "from wafer.qt.commands.command.menu import MenuGroup\n"
+            "from wafer.qt.commands.command.core import CommandMeta\n"
             "class TestCmdGroup(MenuGroup):\n"
             '    NAME = "TestCmd"\n'
             "    DEFAULT_ENABLED = True\n"
@@ -145,7 +141,7 @@ class TestDeferredCommandRegistration:
         loader = PluginLoader(str(plugin_dir), registries)
         loader.load_all()
         assert len(cmd_registry.list_all()) > 0
-        from wafer.core.commands.command.core import CommandRegistry
+        from wafer.qt.commands.command.core import CommandRegistry
 
         reg = CommandRegistry.instance()
         assert not reg.has_command("tcmd.noop")

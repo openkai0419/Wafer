@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from wafer.core.color.theme import ThemeManager
-from wafer.core.commands.binding.instance_registry import InstanceRegistry
+from wafer.qt.theme import ThemeManager
+from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 from wafer.core.lang.manager import t
-from wafer.core.qt.icon_engine import themed_icon
+from wafer.qt.common.icon_engine import themed_icon
 from wafer.plugin.key_filter_dialog import FilterSaveConfirmDialog
-from wafer.ui.popups import PopupBase
-from wafer.ui.widgets.color_picker import ColorPickerDialog
-from wafer.utils.formatting import dpix
-from wafer.utils.notifier import Notifier
-from wafer.utils.paths import list_setting_db_names
+from wafer.qt.widgets.popup import PopupBase
+from wafer.qt.widgets.color_picker import ColorPickerDialog
+from wafer.qt.common.dpi import dpix
+from wafer.qt.common.notifier import Notifier
+from wafer.core.common.paths import list_setting_db_names
 
 from ._color import normalize_hex, normalize_tolerance
 from .settings import MAX_PALETTE_SLOTS, MIN_PALETTE_SLOTS, ColorSettings

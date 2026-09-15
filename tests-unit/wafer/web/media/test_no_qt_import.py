@@ -4,12 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
 
-CHECK_CODE = (
-    "import sys;"
-    "import wafer.web.media;"
-    "qt = [m for m in sys.modules if m.startswith(('PySide6', 'shiboken6'))];"
-    "sys.exit(1 if qt else 0)"
-)
+CHECK_CODE = "import sys;import wafer.web.media;qt = [m for m in sys.modules if m.startswith(('PySide6', 'shiboken6'))];sys.exit(1 if qt else 0)"
 
 
 def test_web_media_imports_no_qt():

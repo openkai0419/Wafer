@@ -4,7 +4,7 @@ import threading
 import time
 from dataclasses import dataclass, asdict
 
-from ..utils.logs import AppLogger
+from ..core.logs import AppLogger
 
 
 _QUEUE_DIR = ".installer_queue"

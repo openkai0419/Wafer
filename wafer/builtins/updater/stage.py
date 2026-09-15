@@ -10,13 +10,13 @@ import zipfile
 from contextlib import ExitStack
 from pathlib import Path
 
-from ...utils.downloader import fetch_json, safe_download, validate_archive_path
-from ...utils.hashes import verify_sha256
-from ...utils.json_io import read_json_file, write_json_file
-from ...utils.logs import AppLogger
-from ...utils.notifier import Notifier
-from ...utils.paths import get_app_root_dir, get_launcher_path
-from ...utils.process_lock import file_lock
+from ...core.common.downloader import fetch_json, safe_download, validate_archive_path
+from ...core.common.hashes import verify_sha256
+from ...core.common.json_io import read_json_file, write_json_file
+from ...core.logs import AppLogger
+from ...qt.common.notifier import Notifier
+from ...core.common.paths import get_app_root_dir, get_launcher_path
+from ...core.platform.process_lock import file_lock
 from ... import _dev
 from ..._version import __version__
 from . import plan as update_plan
@@ -244,8 +244,8 @@ def restart_into_launcher(host) -> bool:
     if launcher is None or not staged_version():
         return False
     from ...core.platform.process import AppProcess
-    from ...core.workspace import WorkspaceStore
-    from ...core.commands.binding.instance_registry import InstanceRegistry
+    from ...core.store.workspace import WorkspaceStore
+    from ...qt.commands.binding.instance_registry import InstanceRegistry
 
     store = WorkspaceStore.instance()
     node = getattr(host, "_node", None)

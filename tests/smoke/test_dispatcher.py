@@ -1,7 +1,7 @@
 import threading
 import time
 
-from wafer.core.qt.dispatcher import CancelToken, CancelSlot, Dispatcher
+from wafer.qt.common.dispatcher import CancelToken, CancelSlot, Dispatcher
 
 
 class TestCancelTokenSmoke:
@@ -67,7 +67,7 @@ class TestCancelSlotSmoke:
 
 class TestDispatcherSmoke:
     def test_post_executes_task(self, qtbot):
-        from wafer.core.qt.thread import utility_pool
+        from wafer.qt.common.thread import utility_pool
 
         dispatcher = Dispatcher(pool=utility_pool)
         result = []
@@ -83,7 +83,7 @@ class TestDispatcherSmoke:
         assert result[0] != threading.current_thread().name
 
     def test_post_cancelled_skips(self, qtbot):
-        from wafer.core.qt.thread import utility_pool
+        from wafer.qt.common.thread import utility_pool
 
         dispatcher = Dispatcher(pool=utility_pool)
         result = []

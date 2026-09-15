@@ -7,7 +7,7 @@ import pytest
 from wafer.builtins.updater import stage
 from wafer.builtins.updater.plan import plan_path, read_plan
 from wafer.builtins.updater.stage import StageCancelled, StageError
-from wafer.utils.process_lock import file_lock
+from wafer.core.platform.process_lock import file_lock
 
 
 ZIP_NAME = "Wafer-v2.0.0.zip"
@@ -224,4 +224,3 @@ class TestClaimResultFile:
 
     def test_missing_returns_none(self, tmp_path):
         assert stage.claim_result_file(tmp_path / "absent.txt") is None
-

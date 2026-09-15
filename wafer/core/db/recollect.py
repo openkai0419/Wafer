@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from .dispatch import DB_SCOPE_ALL, send_to_db_scope
-from ...utils.logs import AppLogger
+from ..logs import AppLogger
 
 
 class Recollect:
@@ -25,7 +25,7 @@ class Recollect:
 
     @staticmethod
     def _node():
-        from ..commands.binding.instance_registry import InstanceRegistry
+        from ...qt.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
         if node is None:

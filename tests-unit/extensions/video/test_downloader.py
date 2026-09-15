@@ -7,7 +7,7 @@ import pytest
 from unittest.mock import patch
 
 import extensions.video._downloader as dl
-from wafer.utils import downloader as common
+from wafer.core.common import downloader as common
 
 
 @pytest.fixture(autouse=True)
@@ -36,17 +36,14 @@ class _Resp:
 
 class TestFindAsset:
     def _patch(self, monkeypatch, body: bytes):
-        monkeypatch.setattr(common.urllib.request, "urlopen",
-                            lambda req, timeout=None: _Resp(body))
+        monkeypatch.setattr(common.urllib.request, "urlopen", lambda req, timeout=None: _Resp(body))
 
     def test_returns_tuple_for_matching_asset(self, monkeypatch):
         digest = "sha256:" + ("a" * 64)
         payload = {
             "tag_name": "20260527",
             "assets": [
-                {"name": "mpv-dev-x86_64-20260527-git-abcdef0.7z",
-                 "browser_download_url": "https://github.com/shinchiro/mpv/releases/download/20260527/x.7z",
-                 "digest": digest},
+                {"name": "mpv-dev-x86_64-20260527-git-abcdef0.7z", "browser_download_url": "https://github.com/shinchiro/mpv/releases/download/20260527/x.7z", "digest": digest},
             ],
         }
         self._patch(monkeypatch, _json.dumps(payload).encode("utf-8"))
@@ -59,12 +56,8 @@ class TestFindAsset:
         payload = {
             "tag_name": "20260527",
             "assets": [
-                {"name": "mpv-dev-aarch64-20260527-git-abcdef0.7z",
-                 "browser_download_url": "https://github.com/x.7z",
-                 "digest": "sha256:" + ("b" * 64)},
-                {"name": "mpv-dev-x86_64-v3-20260527-git-abcdef0.7z",
-                 "browser_download_url": "https://github.com/y.7z",
-                 "digest": "sha256:" + ("c" * 64)},
+                {"name": "mpv-dev-aarch64-20260527-git-abcdef0.7z", "browser_download_url": "https://github.com/x.7z", "digest": "sha256:" + ("b" * 64)},
+                {"name": "mpv-dev-x86_64-v3-20260527-git-abcdef0.7z", "browser_download_url": "https://github.com/y.7z", "digest": "sha256:" + ("c" * 64)},
             ],
         }
         self._patch(monkeypatch, _json.dumps(payload).encode("utf-8"))
@@ -75,9 +68,7 @@ class TestFindAsset:
         payload = {
             "tag_name": "20260527",
             "assets": [
-                {"name": "mpv-dev-x86_64-20260527-git-abcdef0.7z",
-                 "browser_download_url": "https://github.com/x.7z",
-                 "digest": ""},
+                {"name": "mpv-dev-x86_64-20260527-git-abcdef0.7z", "browser_download_url": "https://github.com/x.7z", "digest": ""},
             ],
         }
         self._patch(monkeypatch, _json.dumps(payload).encode("utf-8"))
@@ -136,9 +127,7 @@ class TestEnsureMpvDll:
             patch.object(dl, "safe_download") as mock_download,
             patch("os.add_dll_directory"),
         ):
-            mock_extract.side_effect = lambda archive, target, members: (
-                os.makedirs(target, exist_ok=True) or open(dl._DLL_PATH, "w").close()
-            )
+            mock_extract.side_effect = lambda archive, target, members: os.makedirs(target, exist_ok=True) or open(dl._DLL_PATH, "w").close()
             assert dl.ensure_mpv_dll() is True
             mock_download.assert_called_once()
             mock_extract.assert_called_once()

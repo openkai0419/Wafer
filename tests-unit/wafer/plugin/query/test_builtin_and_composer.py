@@ -16,8 +16,8 @@ from wafer.builtins.sorts import (
     CollectedSort,
     RandomSort,
 )
-from wafer.utils.paths import normalize_path
-from wafer.utils.virtual_paths import build_virtual_path
+from wafer.core.common.paths import normalize_path
+from wafer.core.common.virtual_paths import build_virtual_path
 
 
 def np(p):

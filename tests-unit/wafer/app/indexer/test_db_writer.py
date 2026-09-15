@@ -6,8 +6,8 @@ import pytest
 
 from wafer.app.indexer.db_writer import DatabaseWriter
 from wafer.core.db.db_utils import build_basic_entries
-from wafer.utils.paths import normalize_path
-from wafer.utils.virtual_paths import build_virtual_path
+from wafer.core.common.paths import normalize_path
+from wafer.core.common.virtual_paths import build_virtual_path
 
 
 def test_compile():
@@ -127,10 +127,7 @@ def test_infer_moved_sources_skips_ambiguous_duplicates(writer, tmp_path):
     for path in (old_a, old_b):
         path.write_bytes(b"same-content" * 128)
     old_norms = [normalize_path(str(old_a)), normalize_path(str(old_b))]
-    info = {
-        normalize_path(str(path)): (path.stat().st_mtime, path.stat().st_size, path.stat().st_ctime)
-        for path in (old_a, old_b)
-    }
+    info = {normalize_path(str(path)): (path.stat().st_mtime, path.stat().st_size, path.stat().st_ctime) for path in (old_a, old_b)}
     source_entries, file_entries = build_basic_entries(old_norms, info, {path: 1.0 for path in old_norms}, 1.0)
     writer.upsert_sources(source_entries, file_entries)
     old_a.rename(new_a)

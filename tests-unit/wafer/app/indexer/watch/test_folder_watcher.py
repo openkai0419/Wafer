@@ -145,7 +145,7 @@ def test_flush_only_deleted():
 
 def test_flush_infers_move_from_delete_create(tmp_path):
     from wafer.app.indexer.watch.folder_watcher import _MOVE_INFER_WINDOW
-    from wafer.utils.paths import normalize_path
+    from wafer.core.common.paths import normalize_path
 
     root = tmp_path / "watched"
     root.mkdir()
@@ -170,7 +170,7 @@ def test_flush_infers_move_from_delete_create(tmp_path):
 
 def test_flush_buffers_delete_until_move_window_expires(tmp_path):
     from wafer.app.indexer.watch.folder_watcher import _MOVE_INFER_WINDOW
-    from wafer.utils.paths import normalize_path
+    from wafer.core.common.paths import normalize_path
 
     root = tmp_path / "watched"
     root.mkdir()
@@ -570,39 +570,47 @@ class TestZipWatchScenarios:
 
     def test_zip_created_triggers_update(self):
         """新しい.zipファイルが作成された場合 → request_updateが呼ばれる"""
-        scheduler, scanner = self._run_and_flush([
-            ("created", "archive.zip"),
-        ])
+        scheduler, scanner = self._run_and_flush(
+            [
+                ("created", "archive.zip"),
+            ]
+        )
         assert scanner.request_update.called
         paths = scanner.request_update.call_args[0][0]
         assert "archive.zip" in paths
 
     def test_zip_created_with_multiple_changes_triggers_update(self):
         """zipファイルが作成後に複数回変更されても → request_updateが呼ばれる（多重書き込みシナリオ）"""
-        scheduler, scanner = self._run_and_flush([
-            ("created", "archive.zip"),
-            ("changed", "archive.zip"),
-            ("changed", "archive.zip"),
-            ("changed", "archive.zip"),
-        ])
+        scheduler, scanner = self._run_and_flush(
+            [
+                ("created", "archive.zip"),
+                ("changed", "archive.zip"),
+                ("changed", "archive.zip"),
+                ("changed", "archive.zip"),
+            ]
+        )
         assert scanner.request_update.called
         paths = scanner.request_update.call_args[0][0]
         assert "archive.zip" in paths
 
     def test_zip_deleted_triggers_delete(self):
         """zipファイルが削除された場合 → delete_sourcesが呼ばれる"""
-        scheduler, scanner = self._run_and_flush([
-            ("deleted", "/nonexistent/archive.zip"),
-        ])
+        scheduler, scanner = self._run_and_flush(
+            [
+                ("deleted", "/nonexistent/archive.zip"),
+            ]
+        )
         ops = [c[0][0].name for c in scheduler.submit.call_args_list]
         assert "delete_sources" in ops
         assert not scanner.request_update.called
 
     def test_zip_modified_triggers_update(self):
         """既存のzipファイルが更新された場合 → request_updateが呼ばれる"""
-        scheduler, scanner = self._run_and_flush([
-            ("changed", "archive.zip"),
-        ])
+        scheduler, scanner = self._run_and_flush(
+            [
+                ("changed", "archive.zip"),
+            ]
+        )
         assert scanner.request_update.called
         paths = scanner.request_update.call_args[0][0]
         assert "archive.zip" in paths
@@ -610,12 +618,14 @@ class TestZipWatchScenarios:
     def test_extraction_scenario_zip_deleted_files_appear(self):
         """zip解凍シナリオ: zipが削除され、展開されたファイルが出現する場合
         期待: 展開されたファイルのupdate + zipのdelete"""
-        scheduler, scanner = self._run_and_flush([
-            ("created", "image1.jpg"),
-            ("created", "image2.jpg"),
-            ("created", "image3.jpg"),
-            ("deleted", "/nonexistent/archive.zip"),
-        ])
+        scheduler, scanner = self._run_and_flush(
+            [
+                ("created", "image1.jpg"),
+                ("created", "image2.jpg"),
+                ("created", "image3.jpg"),
+                ("deleted", "/nonexistent/archive.zip"),
+            ]
+        )
         ops = [c[0][0].name for c in scheduler.submit.call_args_list]
         assert "delete_sources" in ops
         assert scanner.request_update.called
@@ -629,11 +639,13 @@ class TestZipWatchScenarios:
     def test_compression_scenario_files_deleted_zip_appears(self):
         """zip圧縮シナリオ: 複数ファイルが削除され、新しいzipが作成される場合
         期待: zipのupdate + 元ファイルのdelete"""
-        scheduler, scanner = self._run_and_flush([
-            ("created", "archive.zip"),
-            ("deleted", "/nonexistent/image1.jpg"),
-            ("deleted", "/nonexistent/image2.jpg"),
-        ])
+        scheduler, scanner = self._run_and_flush(
+            [
+                ("created", "archive.zip"),
+                ("deleted", "/nonexistent/image1.jpg"),
+                ("deleted", "/nonexistent/image2.jpg"),
+            ]
+        )
         ops = [c[0][0].name for c in scheduler.submit.call_args_list]
         assert "delete_sources" in ops
         assert scanner.request_update.called
@@ -643,11 +655,13 @@ class TestZipWatchScenarios:
     def test_zip_created_via_temp_rename(self):
         """圧縮ツールがtempファイル→zipへのリネームで作成するシナリオ
         期待: archive.zipへのrequest_update（renameではなくnew file扱い）"""
-        scheduler, scanner = self._run_and_flush([
-            ("created", "archive.tmp"),
-            ("changed", "archive.tmp"),
-            ("moved", ("archive.tmp", "archive.zip")),
-        ])
+        scheduler, scanner = self._run_and_flush(
+            [
+                ("created", "archive.tmp"),
+                ("changed", "archive.tmp"),
+                ("moved", ("archive.tmp", "archive.zip")),
+            ]
+        )
         ops = [c[0][0].name for c in scheduler.submit.call_args_list]
         assert "rename_paths" not in ops
         assert scanner.request_update.called
@@ -657,10 +671,12 @@ class TestZipWatchScenarios:
     def test_zip_replaced_triggers_update(self):
         """既存zipが新しい内容に置き換えられるシナリオ（再圧縮）
         期待: request_updateが呼ばれる"""
-        scheduler, scanner = self._run_and_flush([
-            ("deleted", "/nonexistent/archive.zip"),
-            ("created", "archive.zip"),
-        ])
+        scheduler, scanner = self._run_and_flush(
+            [
+                ("deleted", "/nonexistent/archive.zip"),
+                ("created", "archive.zip"),
+            ]
+        )
         assert scanner.request_update.called
         paths = scanner.request_update.call_args[0][0]
         assert "archive.zip" in paths
@@ -668,10 +684,12 @@ class TestZipWatchScenarios:
     def test_extraction_keeps_zip_intact(self):
         """zip解凍してzipを残すシナリオ（zipは変更なし、展開ファイルのみ出現）
         期待: 展開ファイルのupdateのみ（zipのdeleteなし）"""
-        scheduler, scanner = self._run_and_flush([
-            ("created", "extracted/image1.jpg"),
-            ("created", "extracted/image2.jpg"),
-        ])
+        scheduler, scanner = self._run_and_flush(
+            [
+                ("created", "extracted/image1.jpg"),
+                ("created", "extracted/image2.jpg"),
+            ]
+        )
         ops = [c[0][0].name for c in scheduler.submit.call_args_list]
         assert "delete_sources" not in ops
         assert scanner.request_update.called

@@ -43,9 +43,7 @@ def test_mark_scope_dialog_target_is_all_only_label(qtbot, monkeypatch):
 
     monkeypatch.setattr(QtWidgets.QDialog, "exec", fake_exec)
     assert dialogs.show_mark_management_dialog(parent, mark_id) is True
-    assert captured["combo_texts"] == [
-        ["Metadata (path scoped)", "Tag (hash scoped)"]
-    ]
+    assert captured["combo_texts"] == [["Metadata (path scoped)", "Tag (hash scoped)"]]
     assert "All databases" in captured["labels"]
 
 

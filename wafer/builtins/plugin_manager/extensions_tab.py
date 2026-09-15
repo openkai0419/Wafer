@@ -2,15 +2,15 @@ import os
 from enum import Enum
 from pathlib import Path
 from PySide6 import QtWidgets, QtCore, QtGui
-from ...utils.formatting import dpix
-from ...utils.logs import AppLogger
-from ...utils.markdown_browser import MarkdownBrowser, render_to_html
-from ...core.color.theme import ThemeManager
+from ...qt.common.dpi import dpix
+from ...core.logs import AppLogger
+from ...qt.widgets.markdown_browser import MarkdownBrowser, render_to_html
+from ...qt.theme import ThemeManager
 from ...core.lang.manager import t
-from ...core.qt.color_utils import mix_colors
+from ...qt.common.color_utils import mix_colors
 from ...plugin.loader import get_plugin_dir, PluginLoader, qualify_plugin_name
 from ...plugin.settings import PluginSettings
-from ...ui.widgets.eliding import ElidingLabel
+from ...qt.widgets.eliding import ElidingLabel
 from ...plugin.kinds import PLUGIN_KIND_COLLECTOR, PLUGIN_KIND_PANEL, PLUGIN_KIND_PARSER, plugin_kind_color, plugin_kind_label
 from ...plugin.installer import (
     InstallState,
@@ -19,8 +19,8 @@ from ...plugin.installer import (
 )
 from ...plugin import failed_installs, installer_queue
 from ...plugin.badges import ExtensionBadge, resolve_badge, badge_sort_key
-from ...core.qt.icon_engine import themed_icon
-from ...core.qt.dispatcher import Dispatcher
+from ...qt.common.icon_engine import themed_icon
+from ...qt.common.dispatcher import Dispatcher
 from .badge_texts import badge_tooltip_text, heavy_install_confirm_text, heavy_install_title
 from .readme_summary import extract_readme_summary
 
@@ -129,7 +129,7 @@ class _PluginRow(QtWidgets.QWidget):
 
     @staticmethod
     def _toggle_panel(panel_name: str):
-        from ...core.commands.bridge import Command
+        from ...qt.commands.bridge import Command
 
         slug = panel_name.lower().replace(" ", "_")
         Command.run(f"panel.toggle_{slug}")

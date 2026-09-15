@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets
 
-from wafer.core.commands.bridge import ActionKit, Menu
-from wafer.core.color.theme import ThemeManager
+from wafer.qt.commands.bridge import ActionKit, Menu
+from wafer.qt.theme import ThemeManager
 from wafer.plugin import BaseKeyValuePanelPlugin
-from wafer.ui.panel.meta_viewer import CollapsibleCard
-from wafer.ui.widgets import FlowLayout
-from wafer.utils.formatting import dpix
+from wafer.qt.meta.viewer import CollapsibleCard
+from wafer.qt.widgets import FlowLayout
+from wafer.qt.common.dpi import dpix
 
 from ._color import packed_to_hex
 from .commands import apply_color_filter, apply_selected_color

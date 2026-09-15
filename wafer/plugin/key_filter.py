@@ -4,7 +4,7 @@ import threading
 from collections.abc import Callable, Iterable
 
 from .config import PluginConfig
-from ..utils.logs import AppLogger
+from ..core.logs import AppLogger
 
 MODE_BLACKLIST = "blacklist"
 MODE_WHITELIST = "whitelist"
@@ -141,7 +141,7 @@ class KeyFilter:
 
     @staticmethod
     def _broadcast_reload() -> None:
-        from ..core.commands.binding.instance_registry import InstanceRegistry
+        from ..qt.commands.binding.instance_registry import InstanceRegistry
         from ..core.db.dispatch import send_to_db_scope
 
         node = InstanceRegistry.instance().resolve_node()

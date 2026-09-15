@@ -9,7 +9,7 @@ import pytest
 
 from wafer.core.platform.process import AppProcess
 from wafer.core.platform.process_checker import ParentProcessChecker
-from wafer.utils.process_lock import SafeProcessLock
+from wafer.core.platform.process_lock import SafeProcessLock
 
 
 def _base_cmd():
@@ -47,7 +47,7 @@ class TestProcessLockLifecycle:
         lock1.release()
 
     def test_lock_acquire_timeout_on_corruption(self, tmp_path):
-        from wafer.utils.process_lock import _ACQUIRE_TIMEOUT
+        from wafer.core.platform.process_lock import _ACQUIRE_TIMEOUT
 
         lock_file = tmp_path / "test.lock"
         lock_file.write_text("corrupt data that is not json and not a pid")

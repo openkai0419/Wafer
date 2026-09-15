@@ -1,4 +1,4 @@
-﻿import os
+import os
 import tempfile
 import pytest
 from unittest.mock import patch
@@ -372,9 +372,10 @@ class TestParserRequirement:
         setup({"db1": []})
         tab = self._tab(qtbot, ["exiftool"], ["novelai"])
 
-        with patch("wafer.plugin.parser.handler.parser_resolver.required_collectors", return_value={"exiftool": ["PNG:Comment"]}), patch.object(
-            QtWidgets.QMessageBox, "question", return_value=QtWidgets.QMessageBox.Yes
-        ) as question:
+        with (
+            patch("wafer.plugin.parser.handler.parser_resolver.required_collectors", return_value={"exiftool": ["PNG:Comment"]}),
+            patch.object(QtWidgets.QMessageBox, "question", return_value=QtWidgets.QMessageBox.Yes) as question,
+        ):
             tab._matrix[("novelai", "db1")].setChecked(True)
 
         question.assert_called_once()
@@ -385,8 +386,9 @@ class TestParserRequirement:
         setup({"db1": []})
         tab = self._tab(qtbot, ["exiftool"], ["novelai"])
 
-        with patch("wafer.plugin.parser.handler.parser_resolver.required_collectors", return_value={"exiftool": ["PNG:Comment"]}), patch.object(
-            QtWidgets.QMessageBox, "question", return_value=QtWidgets.QMessageBox.No
+        with (
+            patch("wafer.plugin.parser.handler.parser_resolver.required_collectors", return_value={"exiftool": ["PNG:Comment"]}),
+            patch.object(QtWidgets.QMessageBox, "question", return_value=QtWidgets.QMessageBox.No),
         ):
             tab._matrix[("novelai", "db1")].setChecked(True)
 
@@ -398,9 +400,7 @@ class TestParserRequirement:
         setup({"db1": ["exiftool"]})
         tab = self._tab(qtbot, ["exiftool"], ["novelai"])
 
-        with patch("wafer.plugin.parser.handler.parser_resolver.required_collectors", return_value={"exiftool": ["PNG:Comment"]}), patch.object(
-            QtWidgets.QMessageBox, "question"
-        ) as question:
+        with patch("wafer.plugin.parser.handler.parser_resolver.required_collectors", return_value={"exiftool": ["PNG:Comment"]}), patch.object(QtWidgets.QMessageBox, "question") as question:
             tab._matrix[("novelai", "db1")].setChecked(True)
 
         question.assert_not_called()
@@ -410,9 +410,11 @@ class TestParserRequirement:
         setup({"db1": []})
         tab = self._tab(qtbot, ["exiftool"], ["novelai"])
 
-        with patch("wafer.plugin.parser.handler.parser_resolver.required_collectors", return_value={"ffmpeg": ["Duration"]}), patch.object(
-            QtWidgets.QMessageBox, "warning"
-        ) as warning, patch.object(QtWidgets.QMessageBox, "question") as question:
+        with (
+            patch("wafer.plugin.parser.handler.parser_resolver.required_collectors", return_value={"ffmpeg": ["Duration"]}),
+            patch.object(QtWidgets.QMessageBox, "warning") as warning,
+            patch.object(QtWidgets.QMessageBox, "question") as question,
+        ):
             tab._matrix[("novelai", "db1")].setChecked(True)
 
         warning.assert_called_once()
@@ -424,10 +426,13 @@ class TestParserRequirement:
         setup({"db1": []})
         tab = self._tab(qtbot, ["exiftool"], ["novelai"])
 
-        with patch(
-            "wafer.plugin.parser.handler.parser_resolver.required_collectors",
-            return_value={"exiftool": ["PNG:Comment"], "ffmpeg": ["Duration"]},
-        ), patch.object(QtWidgets.QMessageBox, "question", return_value=QtWidgets.QMessageBox.No) as question:
+        with (
+            patch(
+                "wafer.plugin.parser.handler.parser_resolver.required_collectors",
+                return_value={"exiftool": ["PNG:Comment"], "ffmpeg": ["Duration"]},
+            ),
+            patch.object(QtWidgets.QMessageBox, "question", return_value=QtWidgets.QMessageBox.No) as question,
+        ):
             tab._matrix[("novelai", "db1")].setChecked(True)
 
         question.assert_called_once()
@@ -441,11 +446,12 @@ class TestParserRequirement:
         setup({"db1": []})
         tab = self._tab(qtbot, ["exiftool"], ["plain"])
 
-        with patch("wafer.plugin.parser.handler.parser_resolver.required_collectors", return_value={}), patch.object(
-            QtWidgets.QMessageBox, "question"
-        ) as question, patch.object(QtWidgets.QMessageBox, "warning") as warning:
+        with (
+            patch("wafer.plugin.parser.handler.parser_resolver.required_collectors", return_value={}),
+            patch.object(QtWidgets.QMessageBox, "question") as question,
+            patch.object(QtWidgets.QMessageBox, "warning") as warning,
+        ):
             tab._matrix[("plain", "db1")].setChecked(True)
 
         question.assert_not_called()
         warning.assert_not_called()
-

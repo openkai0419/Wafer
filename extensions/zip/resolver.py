@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from wafer.core.files.render_target import RenderPlan, ResolveContext
 from wafer.plugin import BaseImageLoader, WidgetGridPlugin, WidgetViewerPlugin
-from wafer.utils.virtual_paths import is_virtual_path, owner_extension
+from wafer.core.common.virtual_paths import is_virtual_path, owner_extension
 
 from .cache import zip_cache
 

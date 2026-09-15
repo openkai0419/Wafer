@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 
 from PySide6 import QtWidgets, QtCore
 
-from wafer.core.qt.dispatcher import Dispatcher, CancelSlot
+from wafer.qt.common.dispatcher import Dispatcher, CancelSlot
 
 
 MODULE = "wafer.builtins.database_manager.data_tab"

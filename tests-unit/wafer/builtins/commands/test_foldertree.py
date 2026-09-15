@@ -2,9 +2,9 @@ import os
 
 from PySide6 import QtWidgets
 
-from wafer.core.commands.bridge import Menu
-from wafer.core.commands.command.core import CommandRegistry
-from wafer.utils.paths import normalize_path
+from wafer.qt.commands.bridge import Menu
+from wafer.qt.commands.command.core import CommandRegistry
+from wafer.core.common.paths import normalize_path
 from wafer.builtins.commands.foldertree import (
     FolderTreeCommands,
     _ctx_normalized_path,

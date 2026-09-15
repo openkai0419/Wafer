@@ -1,7 +1,7 @@
 import sqlite3
 
 from wafer.core.db.file_db import FileDB
-from wafer.utils.virtual_paths import build_virtual_path
+from wafer.core.common.virtual_paths import build_virtual_path
 
 
 def _make_db(tmp_path):
@@ -104,7 +104,10 @@ def test_rename_preserves_lock_and_value(tmp_path):
     _seed(db)
     _apply(db, "src1", [("rating", "9", 9.0, 1)], [])
     file_hash, applied, deleted = _apply(
-        db, "src1", [], [],
+        db,
+        "src1",
+        [],
+        [],
         renames=[("rating", "score", "9", 9.0, 1)],
     )
     assert file_hash == "h1"
@@ -119,7 +122,10 @@ def test_rename_with_value_and_lock_change(tmp_path):
     db = _make_db(tmp_path)
     _seed(db)
     file_hash, applied, deleted = _apply(
-        db, "src1", [], [],
+        db,
+        "src1",
+        [],
+        [],
         renames=[("rating", "stars", "10", 10.0, 1)],
     )
     assert applied == ["stars"]
@@ -132,7 +138,10 @@ def test_rename_collision_skipped(tmp_path):
     _seed(db)
     _apply(db, "src1", [("color", "red", None, 0)], [])
     file_hash, applied, deleted = _apply(
-        db, "src1", [], [],
+        db,
+        "src1",
+        [],
+        [],
         renames=[("rating", "color", "5", 5.0, 0)],
     )
     assert applied == []
@@ -146,7 +155,10 @@ def test_rename_unknown_old_key_no_change(tmp_path):
     db = _make_db(tmp_path)
     _seed(db)
     file_hash, applied, deleted = _apply(
-        db, "src1", [], [],
+        db,
+        "src1",
+        [],
+        [],
         renames=[("ghost", "stars", "1", 1.0, 0)],
     )
     assert applied == []
@@ -158,24 +170,25 @@ def test_rename_unknown_old_key_no_change(tmp_path):
 def test_apply_user_tags_multiple_paths(tmp_path):
     db = _make_db(tmp_path)
     db.upsert_batches(
-        [('p1', 'h1', 100, 1.0), ('p2', 'h2', 100, 1.0)],
-        [('p1', 'p1', 1.5), ('p2', 'p2', 1.5)],
-        [], [],
+        [("p1", "h1", 100, 1.0), ("p2", "h2", 100, 1.0)],
+        [("p1", "p1", 1.5), ("p2", "p2", 1.5)],
+        [],
+        [],
     )
     results = db.apply_user_kv(
-        ['p1', 'p2', 'missing'],
-        [('mark.1', '1', 1.0, 0)],
+        ["p1", "p2", "missing"],
+        [("mark.1", "1", 1.0, 0)],
         [],
         scope="tag",
     )
-    assert set(results.keys()) == {'p1', 'p2'}
-    assert results['p1'][0] == 'h1'
-    assert 'mark.1' in results['p1'][1]
-    assert _get_tag(db, 'h1', 'mark.1') is not None
-    assert _get_tag(db, 'h2', 'mark.1') is not None
-    delres = db.apply_user_kv(['p1', 'p2'], [], ['mark.1'], scope="tag")
-    assert 'mark.1' in delres['p1'][2]
-    assert _get_tag(db, 'h1', 'mark.1') is None
+    assert set(results.keys()) == {"p1", "p2"}
+    assert results["p1"][0] == "h1"
+    assert "mark.1" in results["p1"][1]
+    assert _get_tag(db, "h1", "mark.1") is not None
+    assert _get_tag(db, "h2", "mark.1") is not None
+    delres = db.apply_user_kv(["p1", "p2"], [], ["mark.1"], scope="tag")
+    assert "mark.1" in delres["p1"][2]
+    assert _get_tag(db, "h1", "mark.1") is None
     db.close()
 
 

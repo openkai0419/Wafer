@@ -1,8 +1,8 @@
 import pytest
 from PySide6 import QtWidgets
 
-from wafer.core.commands.binding.instance_registry import InstanceRegistry
-from wafer.core.state import StateStore
+from wafer.qt.commands.binding.instance_registry import InstanceRegistry
+from wafer.core.store.state import StateStore
 
 
 @pytest.fixture(autouse=True)

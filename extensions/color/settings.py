@@ -48,7 +48,7 @@ class ColorSettings(QtCore.QObject):
 
     @staticmethod
     def _app_settings():
-        from wafer.core.app_settings import app_settings
+        from wafer.core.store.settings import app_settings
 
         return app_settings
 

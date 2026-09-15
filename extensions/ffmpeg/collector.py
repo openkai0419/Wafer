@@ -1,5 +1,5 @@
 from wafer.plugin import BaseCollectorPlugin, CollectorResult
-from wafer.utils.logs import AppLogger
+from wafer.core.logs import AppLogger
 
 POST_INSTALL_VERSION = "1"
 

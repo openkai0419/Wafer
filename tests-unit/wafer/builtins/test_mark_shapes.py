@@ -1,7 +1,7 @@
 from PySide6 import QtCore, QtGui
 
 from wafer.builtins.mark import shapes
-from wafer.core.qt.badge_engine import badge_shape_keys, badge_shape_pixmap, default_badge_shape_key, has_badge_shape
+from wafer.qt.common.badge_engine import badge_shape_keys, badge_shape_pixmap, default_badge_shape_key, has_badge_shape
 
 
 def _alpha_bounds(image: QtGui.QImage) -> QtCore.QRect:

@@ -3,8 +3,8 @@ import queue
 import signal
 import threading
 
-from ...utils.logs import AppLogger
-from ...utils.paths import normalize_path
+from ...core.logs import AppLogger
+from ...core.common.paths import normalize_path
 from ...core.ipc.node import Node
 from ...core.ipc.transport import BROKER_LOST_TIMEOUT
 from ...plugin.collector.handler import collector_resolver
@@ -158,7 +158,7 @@ class CollectorWorker:
 
 
 def run_collector(db_name: str, plugin_name: str, parent_pid: int | None = None):
-    from ...utils.process_lock import SafeProcessLock
+    from ...core.platform.process_lock import SafeProcessLock
     from ...constants import APP_DATA_DIR_NAME
     from ...core.platform.process_checker import ParentProcessChecker
 

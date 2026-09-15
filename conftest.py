@@ -6,9 +6,9 @@ import time
 
 import pytest
 
-from wafer.utils.logs import AppLogger
-from wafer.utils.logs import debug_non_recursive
-from wafer.utils.logs import set_suppress_dialog
+from wafer.core.logs import AppLogger
+from wafer.core.logs import debug_non_recursive
+from wafer.core.logs import set_suppress_dialog
 from wafer.plugin.loader import load_plugins, get_command_registry
 from wafer.plugin.settings import PluginSettings
 
@@ -71,7 +71,7 @@ def _record_cleanup_error(label: str, exc: BaseException) -> None:
 def _close_qt_widgets_after_test():
     yield
     try:
-        from wafer.core.qt.thread import grid_thumb_pool, grid_render_pool, utility_pool
+        from wafer.qt.common.thread import grid_thumb_pool, grid_render_pool, utility_pool
 
         _drain_pool(grid_thumb_pool.pool)
         _drain_pool(grid_render_pool.pool)
@@ -127,7 +127,7 @@ def _cleanup_background_resources():
     except Exception as e:
         _record_cleanup_error("terminate child processes", e)
     try:
-        from wafer.core.qt.thread import grid_thumb_pool, grid_render_pool, utility_pool
+        from wafer.qt.common.thread import grid_thumb_pool, grid_render_pool, utility_pool
 
         _drain_pool(grid_thumb_pool.pool)
         _drain_pool(grid_render_pool.pool)
@@ -149,13 +149,13 @@ def _cleanup_background_resources():
     except Exception as e:
         _record_cleanup_error("close qt top level widgets", e)
     try:
-        from wafer.utils.profiling import profiler
+        from wafer.core.profiling import profiler
 
         profiler.stop()
     except Exception as e:
         _record_cleanup_error("stop profiler", e)
     try:
-        from wafer.core.app_settings import app_settings
+        from wafer.core.store.settings import app_settings
 
         app_settings.close()
     except Exception as e:

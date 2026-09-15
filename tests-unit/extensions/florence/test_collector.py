@@ -318,7 +318,6 @@ class TestIdleTimeout:
             mock_ensure.assert_called_once_with("large", version=POST_INSTALL_VERSION)
 
 
-
 class TestPostInstall:
     def test_post_install_calls_ensure_model(self):
         with patch("extensions.florence.collector.ensure_model") as mock_model:

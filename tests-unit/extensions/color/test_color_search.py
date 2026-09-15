@@ -16,7 +16,7 @@ from extensions.color.filter import ColorFilter
 from extensions.color.panel import _ColorButton
 from extensions.color.settings import APP_SETTINGS_KEY, ColorSettings, palette_keys
 from extensions.color.widget import ColorFilterWidget, _DEFAULT_TOLERANCE
-from wafer.core.commands.binding.instance_registry import InstanceRegistry
+from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
 
 @pytest.fixture()

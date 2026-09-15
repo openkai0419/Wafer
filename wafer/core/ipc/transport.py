@@ -8,8 +8,8 @@ from typing import Any
 
 import zmq
 
-from ...utils.logs import debug_non_recursive
-from ...utils.paths import resolve_data_path
+from ..logs import debug_non_recursive
+from ..common.paths import resolve_data_path
 
 
 class Priority:
@@ -39,7 +39,7 @@ def tune_socket(sock: zmq.Socket) -> None:
         try:
             sock.setsockopt(opt, val)
         except Exception as e:
-            from ...utils.logs import AppLogger
+            from ..logs import AppLogger
 
             AppLogger.debug(f"tune_socket setsockopt failed: {e}")
 
@@ -48,13 +48,13 @@ def close_socket(sock: zmq.Socket) -> None:
     try:
         sock.setsockopt(zmq.LINGER, 0)
     except Exception as e:
-        from ...utils.logs import AppLogger
+        from ..logs import AppLogger
 
         AppLogger.debug(f"close_socket LINGER failed: {e}")
     try:
         sock.close()
     except Exception as e:
-        from ...utils.logs import AppLogger
+        from ..logs import AppLogger
 
         AppLogger.debug(f"close_socket close failed: {e}")
 
@@ -117,6 +117,6 @@ def remove_broker_port():
     try:
         _PORT_FILE.unlink(missing_ok=True)
     except Exception as e:
-        from ...utils.logs import AppLogger
+        from ..logs import AppLogger
 
         AppLogger.debug(f"remove_broker_port failed: {e}")

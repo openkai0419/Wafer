@@ -1,7 +1,7 @@
 import os
 import re
 
-from ...utils.logs import AppLogger
+from ...core.logs import AppLogger
 
 _README_NAMES = ("README.md", "readme.md", "Readme.md")
 _MAX_BYTES = 8192

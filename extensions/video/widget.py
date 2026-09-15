@@ -6,9 +6,9 @@ from PySide6.QtGui import QImage, QPainter, QCursor
 from PySide6.QtWidgets import QWidget, QApplication
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from collections import OrderedDict
-from wafer.core.qt.rate_limit import qt_debounce_manager
-from wafer.utils.logs import AppLogger
-from wafer.utils.profiling import profiler
+from wafer.qt.common.rate_limit import qt_debounce_manager
+from wafer.core.logs import AppLogger
+from wafer.core.profiling import profiler
 
 DEFAULT_VOLUME = 20
 GL_COLOR_BUFFER_BIT = 0x00004000
@@ -287,8 +287,8 @@ class PlaybackSlotManager:
         self._cooled_down = False
         self._debounce_key = f"PlaybackSlotManager.hover.{id(self)}"
         if self._mpv_available:
-            from wafer.core.qt.dispatcher import Dispatcher, CancelToken
-            from wafer.core.qt.thread import utility_pool
+            from wafer.qt.common.dispatcher import Dispatcher, CancelToken
+            from wafer.qt.common.thread import utility_pool
 
             self._dispatcher = Dispatcher(pool=utility_pool)
             self._warm_cancel = CancelToken()
@@ -425,7 +425,7 @@ class PlaybackSlotManager:
         if not self._cooled_down:
             return
         self._cooled_down = False
-        from wafer.core.qt.dispatcher import CancelToken
+        from wafer.qt.common.dispatcher import CancelToken
 
         self._warm_cancel = CancelToken()
         self._warm_players()
@@ -666,7 +666,7 @@ class MpvCellWidget(QWidget):
             return
         cls._shared_initialized = True
         cls._slot_manager = PlaybackSlotManager(parent)
-        from wafer.core.commands.bridge import UI
+        from wafer.qt.commands.bridge import UI
 
         UI.register_instance("VideoSlotManager", cls._slot_manager)
         if cls._pending_grid_state is not None:

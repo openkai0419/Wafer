@@ -10,9 +10,9 @@ from collections.abc import Sequence
 from .db_utils import apply_read_pragmas, apply_write_pragmas, connect_with_retry, escape_like
 from .key_value import SCOPE_ALL, SCOPE_META_INFO, SCOPE_TAG, conversion_spec, normalize_data_scope, scope_spec
 from ...constants import VIRTUAL_PATH_SEPARATOR
-from ...utils.virtual_paths import display_name
-from ...utils.profiling import profiler
-from ...utils.logs import AppLogger
+from ..common.virtual_paths import display_name
+from ..profiling import profiler
+from ..logs import AppLogger
 
 _TABLES = (
     ("hash_index", (), "CREATE TABLE IF NOT EXISTS hash_index (file_hash TEXT PRIMARY KEY)"),

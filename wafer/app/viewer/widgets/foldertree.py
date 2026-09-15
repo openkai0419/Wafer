@@ -5,17 +5,17 @@ from collections import deque
 from pathlib import Path
 from natsort import natsorted
 from PySide6 import QtCore, QtGui, QtWidgets
-from ....utils.paths import normalize_path
-from ....utils.profiling import profiler
-from ....utils.logs import AppLogger
-from ....core.qt.dispatcher import Dispatcher, CancelToken
-from ....core.qt.thread import utility_pool
-from ....core.commands.bridge import UI, Context
-from ....core.commands.binding.common import TEXT_ENTRY_TYPES as INLINE_EDITOR_TYPES
-from ....core.platform.dragparser import MimeDataParser
+from ....core.common.paths import normalize_path
+from ....core.profiling import profiler
+from ....core.logs import AppLogger
+from ....qt.common.dispatcher import Dispatcher, CancelToken
+from ....qt.common.thread import utility_pool
+from ....qt.commands.bridge import UI, Context
+from ....qt.commands.binding.common import TEXT_ENTRY_TYPES as INLINE_EDITOR_TYPES
+from ....qt.transfer.dragparser import MimeDataParser
 from ....core.platform.file_operations import PastePlanItem
 from ....core.platform.path_utils import unique_path
-from ....core.platform.paste import execute_paste_plans_with_ui, drop_files_with_ui, resolve_drop_operation_with_ui
+from ....qt.transfer.paste import execute_paste_plans_with_ui, drop_files_with_ui, resolve_drop_operation_with_ui
 
 
 def _scan_children(path, excluded):
@@ -563,7 +563,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
     def __init__(self, roots=None, excluded=None):
         super().__init__()
-        from ....core.color.theme import ThemeManager
+        from ....qt.theme import ThemeManager
 
         _p = ThemeManager.instance().palette
         self.setStyleSheet(f"QTreeView::item:selected {{ background-color: {_p.accent}; color: {_p.accent_text}; }}")

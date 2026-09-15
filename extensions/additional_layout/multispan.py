@@ -1,7 +1,7 @@
 from PySide6 import QtCore
 from wafer.plugin.layout import BaseLayoutPlugin, BaseLayoutCalculator, SCROLLBAR_INT_MAX
-from wafer.utils.profiling import profiler
-from wafer.utils.logs import AppLogger
+from wafer.core.profiling import profiler
+from wafer.core.logs import AppLogger
 
 MAX_SPAN_C = 3
 MAX_SPAN_R = 3

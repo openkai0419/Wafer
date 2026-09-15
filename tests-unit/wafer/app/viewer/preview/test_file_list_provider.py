@@ -4,7 +4,7 @@ from wafer.app.viewer.preview.file_list_provider import FileListProvider, ListMo
 from wafer.app.viewer.preview.file_model import FileViewModel
 from wafer.app.viewer.grid.items import GridItemModel
 from wafer.builtins.filters import SourceChildrenFilter
-from wafer.utils.virtual_paths import build_virtual_path
+from wafer.core.common.virtual_paths import build_virtual_path
 
 
 @pytest.fixture
@@ -99,7 +99,7 @@ class TestContainedFilesListOption:
         archive = "C:/data/temp.zip"
         child_a = build_virtual_path(archive, "a.png")
         child_b = build_virtual_path(archive, "b.png")
-        from wafer.core.qt.dispatcher import CancelToken
+        from wafer.qt.common.dispatcher import CancelToken
 
         cancel = CancelToken()
         provider._dir_cancel = cancel
@@ -113,7 +113,7 @@ class TestContainedFilesListOption:
         archive = "C:/data/temp.zip"
         child_a = build_virtual_path(archive, "a.png")
         child_b = build_virtual_path(archive, "b.png")
-        from wafer.core.qt.dispatcher import CancelToken
+        from wafer.qt.common.dispatcher import CancelToken
 
         cancel = CancelToken()
         provider._dir_cancel = cancel
@@ -123,7 +123,7 @@ class TestContainedFilesListOption:
         assert file_model.current_index() == 1
 
     def test_empty_contained_result_falls_back_to_mode(self, provider, file_model):
-        from wafer.core.qt.dispatcher import CancelToken
+        from wafer.qt.common.dispatcher import CancelToken
 
         cancel = CancelToken()
         provider._dir_cancel = cancel
@@ -255,7 +255,7 @@ class TestDirMode:
         mock_query.assert_called_once_with("/dir/test.jpg")
 
     def test_cancel_pending_on_mode_change(self, provider):
-        from wafer.core.qt.dispatcher import CancelToken
+        from wafer.qt.common.dispatcher import CancelToken
 
         token = CancelToken()
         provider._dir_cancel = token
@@ -263,7 +263,7 @@ class TestDirMode:
         assert token.is_cancelled()
 
     def test_on_dir_ready_updates_file_model(self, provider, file_model):
-        from wafer.core.qt.dispatcher import CancelToken
+        from wafer.qt.common.dispatcher import CancelToken
 
         provider.set_mode(ListMode.DIR)
         file_model.set_items([], [])
@@ -277,7 +277,7 @@ class TestDirMode:
         assert file_model.current_index() == 1
 
     def test_on_dir_ready_ignores_cancelled(self, provider, file_model):
-        from wafer.core.qt.dispatcher import CancelToken
+        from wafer.qt.common.dispatcher import CancelToken
 
         provider.set_mode(ListMode.DIR)
         file_model.set_items(["old"], ["s_old"])

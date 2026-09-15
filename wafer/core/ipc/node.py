@@ -9,7 +9,7 @@ from collections.abc import Callable
 
 import zmq
 
-from ...utils.logs import AppLogger
+from ..logs import AppLogger
 from .transport import (
     DEFAULT_PORT,
     HEARTBEAT_INTERVAL,

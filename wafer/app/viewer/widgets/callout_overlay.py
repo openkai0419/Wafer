@@ -1,7 +1,7 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ....utils.formatting import dpix
-from ....core.color.theme import ThemeManager
+from ....qt.common.dpi import dpix
+from ....qt.theme import ThemeManager
 
 _TRACK_INTERVAL_MS = 100
 _FADE_DURATION_MS = 500

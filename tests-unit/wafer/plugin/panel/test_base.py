@@ -65,8 +65,10 @@ class TestBasePanelPlugin:
         class BuiltinPanel(BasePanelPlugin):
             NAME = "builtin_test"
             SOURCE = "Builtin"
+
             def create_widget(self):
                 return QtWidgets.QWidget()
+
         assert BuiltinPanel.SOURCE == "Builtin"
 
 
@@ -202,12 +204,16 @@ class TestPanelPluginState:
     def test_overridden_save_restore_roundtrip(self):
         class StatefulPanel(BasePanelPlugin):
             NAME = "stateful"
+
             def __init__(self):
                 self._value = 0
+
             def create_widget(self):
                 return QtWidgets.QWidget()
+
             def save_ui_state(self):
                 return {"value": self._value}
+
             def restore_ui_state(self, state):
                 self._value = state.get("value", 0)
 

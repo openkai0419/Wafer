@@ -11,7 +11,7 @@ from wafer.app.viewer.widgets.foldertree import (
     _has_subfolders_bg,
     _collect_segments_for_paths,
 )
-from wafer.utils.paths import normalize_path
+from wafer.core.common.paths import normalize_path
 
 
 def create_fs_tree(base):
@@ -784,7 +784,7 @@ def test_cancel_pending_expands(qtbot):
     try:
         tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
         qtbot.addWidget(tree)
-        from wafer.core.qt.dispatcher import CancelToken
+        from wafer.qt.common.dispatcher import CancelToken
 
         token = CancelToken()
         tree.model_._pending_expands["dummy"] = token

@@ -5,7 +5,7 @@ from functools import lru_cache
 
 from PySide6 import QtCore, QtGui
 
-from wafer.utils.profiling import profiler
+from wafer.core.profiling import profiler
 
 _PNG_SIGNATURE_LEN = 8
 _CHUNK_HEADER_LEN = 8

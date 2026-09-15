@@ -7,7 +7,7 @@ from PySide6 import QtWidgets
 from .collector.handler import collector_resolver
 from .parser.handler import parser_resolver
 from ..core.lang.manager import t
-from ..utils.formatting import dpix
+from ..qt.common.dpi import dpix
 
 
 def recollect_target_lines(prefixes: Iterable[str]) -> list[str]:

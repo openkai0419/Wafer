@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from wafer.core.commands.binding.instance_registry import InstanceRegistry
+from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 from wafer.core.db.recollect import Recollect
 
 

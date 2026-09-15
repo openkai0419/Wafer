@@ -6,7 +6,7 @@ from ..constants import VIRTUAL_PATH_SEPARATOR
 from ..core.db.db_utils import build_like_condition, escape_like
 from ..core.db.query import SYSTEM_FILE_HASH_KEY, STANDARD_KEYS, standard_key_columns
 from ..plugin.query.base import BaseFilterPlugin
-from ..utils.profiling import profiler
+from ..core.profiling import profiler
 
 
 def _normalize_text_inputs(params):

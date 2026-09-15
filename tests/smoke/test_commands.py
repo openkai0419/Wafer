@@ -3,14 +3,14 @@ import time
 import pytest
 from PySide6 import QtCore, QtWidgets
 
-from wafer.core.commands.bridge import ActionKit, Command, Menu
-from wafer.core.commands.command.core import CommandBase, CommandMeta, CommandParam, CommandRegistry
-from wafer.core.commands.command.context import CommandContext
-from wafer.core.commands.command.menu import MenuGroup, MenuHub
-from wafer.core.commands.command.menu_builder import CommandMenuBuilder
-from wafer.core.commands.command.maker import MenuMaker
-from wafer.core.commands.command.state import CommandOptionStore
-from wafer.ui.layout.manager import LayoutManager
+from wafer.qt.commands.bridge import ActionKit, Command, Menu
+from wafer.qt.commands.command.core import CommandBase, CommandMeta, CommandParam, CommandRegistry
+from wafer.qt.commands.command.context import CommandContext
+from wafer.qt.commands.command.menu import MenuGroup, MenuHub
+from wafer.qt.commands.command.menu_builder import CommandMenuBuilder
+from wafer.qt.commands.command.maker import MenuMaker
+from wafer.qt.commands.command.state import CommandOptionStore
+from wafer.qt.layout.manager import LayoutManager
 
 
 def _process_events(ms=50):

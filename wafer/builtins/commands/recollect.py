@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from ...core.commands.bridge import ActionKit
+from ...qt.commands.bridge import ActionKit
 from ...core.db.dispatch import DB_SCOPE_ALL
 from ...core.db.recollect import Recollect
 from ...plugin.collector.handler import collector_resolver
 from ...plugin.parser.handler import parser_resolver
-from ...ui.dialogs import ConfirmDialog
-from ...utils.notifier import Notifier
-from ...utils.paths import containing_dir, normalize_path
-from ...utils.virtual_paths import is_virtual_path
+from ...qt.widgets.dialogs import ConfirmDialog
+from ...qt.common.notifier import Notifier
+from ...core.common.paths import containing_dir, normalize_path
+from ...core.common.virtual_paths import is_virtual_path
 from .file import _ctx_sources
 
 

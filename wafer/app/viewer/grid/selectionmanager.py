@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 from PySide6 import QtCore
-from ....utils.profiling import profiler
+from ....core.profiling import profiler
 
 
 class SelectionManager(QtCore.QObject):

@@ -1,4 +1,4 @@
-from wafer.utils.formatting import (
+from wafer.core.common.formatting import (
     natural_key,
     format_size,
     format_size_detail,

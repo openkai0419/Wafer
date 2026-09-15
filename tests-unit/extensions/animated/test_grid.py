@@ -284,7 +284,7 @@ class TestDecodeFrames:
 
 def test_release_calls_suspend():
     from extensions.animated.grid import AnimatedGridPlugin
-    from wafer.core.qt.dispatcher import CancelSlot
+    from wafer.qt.common.dispatcher import CancelSlot
 
     plugin = AnimatedGridPlugin()
     widget = MagicMock()
@@ -295,7 +295,7 @@ def test_release_calls_suspend():
 
 def test_release_cancels_cancel_slot():
     from extensions.animated.grid import AnimatedGridPlugin
-    from wafer.core.qt.dispatcher import CancelSlot
+    from wafer.qt.common.dispatcher import CancelSlot
 
     plugin = AnimatedGridPlugin()
     widget = MagicMock()

@@ -63,7 +63,7 @@ def test_collectors_for_path_non_image():
 def test_exif_plugin_process_success(tmp_path):
     from PIL import Image
     import os
-    from wafer.utils.paths import normalize_path
+    from wafer.core.common.paths import normalize_path
 
     img_path = tmp_path / "test.png"
     Image.new("RGB", (100, 200)).save(str(img_path))
@@ -198,7 +198,7 @@ def test_notify_to_sends_ipc():
     mock_registry = MagicMock()
     mock_registry.resolve_node.return_value = mock_node
 
-    with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
+    with patch("wafer.qt.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
         BaseCollectorPlugin.notify_to("exiftool")
 
     mock_node.send.assert_called_once_with("plugin.notify", None, dst="collector-exiftool")
@@ -211,7 +211,7 @@ def test_notify_to_with_payload():
     mock_registry = MagicMock()
     mock_registry.resolve_node.return_value = mock_node
 
-    with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
+    with patch("wafer.qt.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
         BaseCollectorPlugin.notify_to("blip", payload={"min_length": 10})
 
     mock_node.send.assert_called_once_with("plugin.notify", {"min_length": 10}, dst="collector-blip")
@@ -223,7 +223,7 @@ def test_notify_to_no_node():
     mock_registry = MagicMock()
     mock_registry.resolve_node.return_value = None
 
-    with patch("wafer.core.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
+    with patch("wafer.qt.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
         BaseCollectorPlugin.notify_to("exiftool")
 
 
@@ -317,7 +317,7 @@ def test_collector_result_to_dict_with_meta():
 def test_process_success_to_dict(tmp_path):
     from PIL import Image
     import os
-    from wafer.utils.paths import normalize_path
+    from wafer.core.common.paths import normalize_path
 
     img_path = tmp_path / "keys.png"
     Image.new("RGB", (50, 50)).save(str(img_path))

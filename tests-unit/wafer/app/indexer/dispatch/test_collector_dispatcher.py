@@ -142,6 +142,7 @@ def test_tray_pid_defaults_none(tmp_path):
     dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress)
     assert dispatcher._tray_pid is None
 
+
 def test_collectors_includes_all(tmp_path):
     scheduler = MagicMock()
     writer = MagicMock()
@@ -169,9 +170,7 @@ def test_terminate_collectors_requests_shutdown_before_fallback(tmp_path):
     dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress, collectors=["exif"])
     dispatcher._node = MagicMock()
 
-    with patch.object(dispatcher, "_wait_collector_stopped", return_value=False), patch(
-        "wafer.app.indexer.dispatch.collector_dispatcher.AppProcess.terminate_cmd"
-    ) as terminate_cmd:
+    with patch.object(dispatcher, "_wait_collector_stopped", return_value=False), patch("wafer.app.indexer.dispatch.collector_dispatcher.AppProcess.terminate_cmd") as terminate_cmd:
         dispatcher._terminate_collectors()
 
     dispatcher._node.send.assert_called_once_with(
@@ -191,9 +190,7 @@ def test_terminate_collectors_skips_fallback_when_graceful_stop_succeeds(tmp_pat
     dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress, collectors=["exif"])
     dispatcher._node = MagicMock()
 
-    with patch.object(dispatcher, "_wait_collector_stopped", return_value=True), patch(
-        "wafer.app.indexer.dispatch.collector_dispatcher.AppProcess.terminate_cmd"
-    ) as terminate_cmd:
+    with patch.object(dispatcher, "_wait_collector_stopped", return_value=True), patch("wafer.app.indexer.dispatch.collector_dispatcher.AppProcess.terminate_cmd") as terminate_cmd:
         dispatcher._terminate_collectors()
 
     dispatcher._node.send.assert_called_once()

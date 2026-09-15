@@ -2,8 +2,8 @@
 import sys
 
 from ...constants import APP_ID, APP_NAME
-from ...utils.logs import AppLogger
-from ...utils.paths import get_launcher_path
+from ..logs import AppLogger
+from ..common.paths import get_launcher_path
 
 
 def apply_window_identity(hwnd):

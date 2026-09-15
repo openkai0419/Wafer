@@ -1,13 +1,13 @@
 from __future__ import annotations
-from ...core.app_settings import app_settings
-from ...core.qt.dispatcher import CancelSlot, Dispatcher
-from ...core.qt.image_cache import MemoryLimitedImageCache, fullsize_key
-from ...core.qt.pixmap import PixmapFactory
-from ...core.qt.thread import utility_pool
+from ...core.store.settings import app_settings
+from ...qt.common.dispatcher import CancelSlot, Dispatcher
+from ...core.files.image_cache import MemoryLimitedImageCache, fullsize_key
+from ...qt.common.pixmap import PixmapFactory
+from ...qt.common.thread import utility_pool
 from ...plugin.imageloader.handler import image_loader_resolver
 from ...plugin.viewer.base import MultiWidgetViewerPlugin, ViewerContext
-from ...utils.logs import AppLogger
-from ...utils.profiling import profiler
+from ...core.logs import AppLogger
+from ...core.profiling import profiler
 from .widget import ImageDisplayWidget
 
 _IMAGE_SPREAD_DIRECTIONS = {"left-to-right", "right-to-left", "top-to-bottom", "bottom-to-top"}

@@ -36,9 +36,7 @@ def test_toggle_image_spread_enables_with_saved_settings():
     image_viewer = MagicMock()
     image_viewer.image_spread_enabled = False
 
-    with patch("wafer.builtins.image_viewer.commands.viewer_resolver") as mock_resolver, patch(
-        "wafer.builtins.image_viewer.commands.Command"
-    ) as mock_command:
+    with patch("wafer.builtins.image_viewer.commands.viewer_resolver") as mock_resolver, patch("wafer.builtins.image_viewer.commands.Command") as mock_command:
         mock_resolver.registry.instance.return_value = image_viewer
         toggle_image_spread(MagicMock())
 
@@ -50,9 +48,7 @@ def test_toggle_image_spread_disables_to_single_page():
     image_viewer = MagicMock()
     image_viewer.image_spread_enabled = True
 
-    with patch("wafer.builtins.image_viewer.commands.viewer_resolver") as mock_resolver, patch(
-        "wafer.builtins.image_viewer.commands.Command"
-    ) as mock_command:
+    with patch("wafer.builtins.image_viewer.commands.viewer_resolver") as mock_resolver, patch("wafer.builtins.image_viewer.commands.Command") as mock_command:
         mock_resolver.registry.instance.return_value = image_viewer
         toggle_image_spread(MagicMock())
 

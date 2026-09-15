@@ -5,7 +5,7 @@ import pytest
 from PySide6 import QtCore, QtGui, QtWidgets
 from unittest.mock import MagicMock
 
-from wafer.core.qt.dispatcher import Dispatcher, CancelToken
+from wafer.qt.common.dispatcher import Dispatcher, CancelToken
 from wafer.app.viewer.grid.pipeline import GridPipeline
 from wafer.core.files.render_target import RenderPlan
 from wafer.plugin.grid.base import WidgetGridPlugin
@@ -24,7 +24,7 @@ def qapp():
 
 @pytest.fixture()
 def dispatcher(qapp):
-    from wafer.core.qt.thread import SimpleThreadPool
+    from wafer.qt.common.thread import SimpleThreadPool
 
     pool = SimpleThreadPool("test_pipeline_integ")
     d = Dispatcher(pool=pool)
@@ -709,8 +709,13 @@ class TestAppearAfterRender:
 
         plugin = _TrackPlugin()
         pipeline = GridPipeline(
-            dispatcher, dispatcher, dispatcher, cache,
-            lambda i: widgets.get(i), lambda i, n: None, appear_fn,
+            dispatcher,
+            dispatcher,
+            dispatcher,
+            cache,
+            lambda i: widgets.get(i),
+            lambda i, n: None,
+            appear_fn,
         )
 
         widget = MagicMock()
@@ -744,8 +749,13 @@ class TestAppearAfterRender:
 
         plugin = _TrackPlugin2()
         pipeline = GridPipeline(
-            dispatcher, dispatcher, dispatcher, cache,
-            lambda i: widgets.get(i), lambda i, n: None, appear_fn,
+            dispatcher,
+            dispatcher,
+            dispatcher,
+            cache,
+            lambda i: widgets.get(i),
+            lambda i, n: None,
+            appear_fn,
         )
 
         widget = MagicMock()

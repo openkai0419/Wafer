@@ -1,7 +1,7 @@
 import json
 
 from wafer.plugin import BaseSingletonParser, ParserResult
-from wafer.utils.logs import AppLogger
+from wafer.core.logs import AppLogger
 
 from ._common import stringify_meta_info
 

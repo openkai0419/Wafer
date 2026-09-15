@@ -202,25 +202,19 @@ class TestRestartScope:
         assert RestartScope.TRAY in scope
 
     def test_needs_restart_with_pending_packages(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(
-            "wafer.plugin.installer_queue.has_pending_queue", lambda d: True
-        )
+        monkeypatch.setattr("wafer.plugin.installer_queue.has_pending_queue", lambda d: True)
         ps = PluginSettings()
         scope = ps.needs_restart(str(tmp_path))
         assert RestartScope.VIEWER in scope
         assert RestartScope.TRAY in scope
 
     def test_needs_restart_no_pending_no_scope(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(
-            "wafer.plugin.installer_queue.has_pending_queue", lambda d: False
-        )
+        monkeypatch.setattr("wafer.plugin.installer_queue.has_pending_queue", lambda d: False)
         ps = PluginSettings()
         assert ps.needs_restart(str(tmp_path)) == RestartScope.NONE
 
     def test_needs_restart_viewer_scope_only(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(
-            "wafer.plugin.installer_queue.has_pending_queue", lambda d: False
-        )
+        monkeypatch.setattr("wafer.plugin.installer_queue.has_pending_queue", lambda d: False)
         ps = PluginSettings()
         ps.set_restart_scope(RestartScope.VIEWER)
         scope = ps.needs_restart(str(tmp_path))

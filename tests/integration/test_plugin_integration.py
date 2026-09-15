@@ -7,7 +7,7 @@ import pytest
 from PIL import Image
 from PySide6 import QtCore, QtGui
 
-from wafer.utils.paths import normalize_path
+from wafer.core.common.paths import normalize_path
 from wafer.plugin.registry import FilePluginRegistry, BasePlugin
 from wafer.plugin.grid.handler import grid_resolver
 from wafer.plugin.grid.base import WidgetGridPlugin, BaseGridPlugin

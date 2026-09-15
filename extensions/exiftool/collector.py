@@ -3,8 +3,8 @@ import threading
 import weakref
 
 from wafer.plugin import BaseCollectorPlugin, CollectorResult
-from wafer.utils.logs import AppLogger
-from wafer.utils.logs import debug_non_recursive
+from wafer.core.logs import AppLogger
+from wafer.core.logs import debug_non_recursive
 
 _IDLE_TIMEOUT = 120.0
 

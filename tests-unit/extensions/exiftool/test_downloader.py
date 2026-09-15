@@ -25,7 +25,8 @@ class _Resp:
 
 
 def _patch_urlopen(monkeypatch, payload: bytes):
-    from wafer.utils import downloader as dl
+    from wafer.core.common import downloader as dl
+
     monkeypatch.setattr(dl.urllib.request, "urlopen", lambda req, timeout=None: _Resp(payload))
 
 
@@ -166,7 +167,7 @@ class TestVersionMarker:
         return lib, exe, pl
 
     def test_marker_stores_post_install_version_not_upstream(self, monkeypatch, tmp_path):
-        from wafer.utils import downloader as common
+        from wafer.core.common import downloader as common
         from extensions.exiftool import _downloader as dl
 
         lib, exe, pl = self._prepare(monkeypatch, tmp_path)
@@ -186,7 +187,7 @@ class TestVersionMarker:
         assert common.read_lib_version(str(lib)) == "1"
 
     def test_reinstall_with_marker_skips_download(self, monkeypatch, tmp_path):
-        from wafer.utils import downloader as common
+        from wafer.core.common import downloader as common
         from extensions.exiftool import _downloader as dl
 
         lib, exe, pl = self._prepare(monkeypatch, tmp_path)
@@ -202,4 +203,3 @@ class TestVersionMarker:
         monkeypatch.setattr(dl, "safe_download", boom)
 
         assert dl.ensure_exiftool(version="1") is True
-

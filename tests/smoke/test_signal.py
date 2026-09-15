@@ -1,6 +1,6 @@
 import threading
 
-from wafer.utils.signal import Signal
+from wafer.core.common.signal import Signal
 
 
 class TestSignalBasic:

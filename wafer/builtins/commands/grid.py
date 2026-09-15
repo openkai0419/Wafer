@@ -3,16 +3,16 @@ from dataclasses import dataclass
 
 from PySide6 import QtCore, QtGui
 
-from ...core.commands.bridge import ActionKit
-from ...core.commands.binding.instance_registry import InstanceRegistry
+from ...qt.commands.bridge import ActionKit
+from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...core.lang.manager import t
-from ...utils.logs import AppLogger
-from ...utils.paths import normalize_path, containing_dir
-from ...utils.formatting import dpix
-from ...core.platform.dragparser import MimeDataParser
-from ...core.platform.paste import drop_files_with_ui, get_saved_drop_operation
-from ...core.qt.pixmap import PixmapFactory
-from ...ui.dialogs import ConfirmDialog, DropTargetDialog
+from ...core.logs import AppLogger
+from ...core.common.paths import normalize_path, containing_dir
+from ...qt.common.dpi import dpix
+from ...qt.transfer.dragparser import MimeDataParser
+from ...qt.transfer.paste import drop_files_with_ui, get_saved_drop_operation
+from ...qt.common.pixmap import PixmapFactory
+from ...qt.widgets.dialogs import ConfirmDialog, DropTargetDialog
 
 INTERNAL_MIME_TYPE = b"application/x-gridview-internal" + f"{os.getpid()}".encode()
 
@@ -598,7 +598,7 @@ class GridViewDragCommands(ActionKit.DragMenuBase):
             drag.setHotSpot(pixmap.rect().topLeft())
 
         def _run_drag():
-            from ...core.commands.binding.mouse.manager import MouseStateManager
+            from ...qt.commands.binding.mouse.manager import MouseStateManager
 
             try:
                 drag.exec(QtCore.Qt.CopyAction | QtCore.Qt.MoveAction)

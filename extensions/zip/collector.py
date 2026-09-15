@@ -4,8 +4,8 @@ import zipfile
 
 from wafer.plugin import BaseSingletonCollector, CollectorResult
 from wafer.plugin.imageloader.handler import image_loader_resolver
-from wafer.utils.logs import AppLogger
-from wafer.utils.virtual_paths import build_virtual_path
+from wafer.core.logs import AppLogger
+from wafer.core.common.virtual_paths import build_virtual_path
 
 from .archive import ZipEntry, list_entries
 from .cache import zip_cache

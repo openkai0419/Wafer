@@ -3,12 +3,12 @@ from __future__ import annotations
 from PySide6 import QtCore, QtWidgets
 
 from ...app.viewer.grid.overlay_host import MAX_BADGE_RADIUS, MIN_BADGE_RADIUS
-from ...core.commands.binding.instance_registry import InstanceRegistry
-from ...core.commands.bridge import Command
+from ...qt.commands.binding.instance_registry import InstanceRegistry
+from ...qt.commands.bridge import Command
 from ...core.lang.manager import t
-from ...core.qt.icon_engine import themed_icon
-from ...ui.popups import PopupBase
-from ...utils.formatting import dpix
+from ...qt.common.icon_engine import themed_icon
+from ...qt.widgets.popup import PopupBase
+from ...qt.common.dpi import dpix
 from . import dialogs
 from .registry import MarkRegistry
 

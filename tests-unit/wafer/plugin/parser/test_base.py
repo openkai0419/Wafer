@@ -103,7 +103,7 @@ def test_query_db_without_db_name_raises():
 
 def test_query_db_reads_assigned_database(tmp_path, monkeypatch):
     from wafer.core.db.file_db import FileDB
-    import wafer.utils.paths as paths
+    import wafer.core.common.paths as paths
 
     db_path = tmp_path / "querydb.db"
     db = FileDB(db_path)

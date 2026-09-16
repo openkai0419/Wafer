@@ -84,7 +84,7 @@ export class KeyPicker {
   }
 
   updateButton() {
-    setIcon(this.button, 'key');
+    setIcon(this.button, 'filter');
     this.button.classList.toggle('active', this.active.length > 0);
     if (this.active.length) {
       const badge = document.createElement('span');

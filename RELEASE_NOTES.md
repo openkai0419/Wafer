@@ -2,6 +2,18 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.7.8]
+
+### Highlights
+- WebUI search now runs live as you type, with AND/OR matching and a configurable separator.
+- WebUI grid supports auto-scroll with adjustable speed.
+
+### Improvements
+- WebUI key catalog and metadata are now grouped by source.
+- WebUI search filter popup now opens instantly instead of showing a loading state.
+- WebUI folder tree only shows an expand arrow where there's something to expand.
+- WebUI thumbnails match the size of their grid cell for sharper images.
+
 ## [v0.7.7]
 
 ### Highlights

@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.7.8]
+### Added
+- WebUI: Grid auto-scroll with adjustable speed, stopping on any scroll or key input.
+- WebUI: Search keywords can be matched with AND or OR, using a configurable separator.
+
+### Changed
+- WebUI search now runs live as you type, with a busy indicator while a search is in progress.
+- WebUI key catalog and metadata panel group keys by their source (e.g. exiftool, wd14) instead of fixed sections.
+- WebUI folder tree only shows an expand arrow for folders that actually contain subfolders.
+- WebUI thumbnails request the resolution their grid cell actually needs instead of a single fixed size.
+- WebUI key catalog loads from a background cache, so the search filter popup opens instantly.
+
 ## [v0.7.7]
 ### Added
 - WebUI: browser-based access to Wafer with a grid, folder tree, search, and viewer, plus a headless mode and its own management window.

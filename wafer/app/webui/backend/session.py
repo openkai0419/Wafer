@@ -198,7 +198,7 @@ class QueryService:
         for service in self._dbs.values():
             try:
                 await asyncio.wait_for(loop.run_in_executor(None, service.close), timeout=DB_CLOSE_TIMEOUT)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 AppLogger.warning(f"WebUI db close timed out for {service.name}, a background scan may still be running")
         self._dbs.clear()
         self._sessions.clear()

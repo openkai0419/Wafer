@@ -68,7 +68,7 @@ async def on_startup(app: web.Application):
 async def on_shutdown(app: web.Application):
     AppLogger.info("WebUI shutting down.")
     await app[EVENT_HUB].close()
-    app[QUERY_SERVICE].close()
+    await app[QUERY_SERVICE].close()
     app[MEDIA_EXECUTOR].shutdown(wait=True, cancel_futures=True)
 
 

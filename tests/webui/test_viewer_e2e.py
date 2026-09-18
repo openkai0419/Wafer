@@ -98,7 +98,7 @@ def test_meta_panel_groups_keys_by_prefix(ready_page):
     page.wait_for_function("document.querySelectorAll('#meta-content h3').length > 1")
 
     headings = page.locator("#meta-content h3").all_inner_texts()
-    assert headings == ["File", "general (2)", "exiftool (2)", "wd14 (1)"]
+    assert headings == ["File", "(no prefix) (2)", "exiftool (2)", "wd14 (1)"]
 
     keys = page.locator("#meta-content dt").all_inner_texts()
     assert "Model" in keys and "exiftool.Model" not in keys

@@ -1,7 +1,7 @@
 import { getJson } from './api.js';
 import { groupEntriesByPrefix, stripPrefix } from './keygroups.js';
 
-const UNPREFIXED_TITLE = 'general';
+const UNPREFIXED_TITLE = '(no prefix)';
 
 export class MetaPanel {
   constructor() {

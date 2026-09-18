@@ -320,8 +320,10 @@ def test_keys_serve_stale_cache_while_refreshing(client, app, monkeypatch):
 
 
 def test_keys_retry_after_a_failed_refresh(client, app, monkeypatch):
+    from wafer.app.webui.backend import session as session_module
     from wafer.app.webui.backend.session import QUERY_SERVICE
 
+    monkeypatch.setattr(session_module, "KEY_SCAN_RETRY_COOLDOWN", 0.05)
     service = app[QUERY_SERVICE]
     original = service.composer.list_all_keys
     calls = []
@@ -346,4 +348,10 @@ def test_keys_retry_after_a_failed_refresh(client, app, monkeypatch):
     resp, still_stale = client.get("/api/keys", params={"db": DB})
     assert resp.status == 200
     assert jbody(still_stale) == jbody(first)
+    assert len(calls) == 2, "a request inside the retry cooldown must not start another scan"
+
+    _wait_until(client.loop, lambda: time.monotonic() >= service._key_retry_after[DB])
+    resp, retried = client.get("/api/keys", params={"db": DB})
+    assert resp.status == 200
+    assert jbody(retried) == jbody(first)
     _wait_until(client.loop, lambda: len(calls) == 3)

@@ -60,10 +60,12 @@ export class FolderTree {
         for (const child of data.folders) children.appendChild(this.makeBranch(child, depth + 1));
       }
     };
-    node.querySelector('.expander').addEventListener('click', (e) => {
-      e.stopPropagation();
-      expand();
-    });
+    if (entry.has_children) {
+      node.querySelector('.expander').addEventListener('click', (e) => {
+        e.stopPropagation();
+        expand();
+      });
+    }
     this.branches.set(path, { node, expand });
     return wrap;
   }

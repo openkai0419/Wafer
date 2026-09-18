@@ -15,6 +15,7 @@ export class KeyPicker {
     this.catalog = null;
     this.pending = null;
     this.error = '';
+    this.requestToken = 0;
     this.selectedEl = popup.querySelector('#key-selected');
     this.searchEl = popup.querySelector('#key-search');
     this.catalogEl = popup.querySelector('#key-catalog');
@@ -40,21 +41,23 @@ export class KeyPicker {
     this.catalog = null;
     this.pending = null;
     this.error = '';
+    this.requestToken++;
   }
 
   loadCatalog() {
     if (this.catalog !== null) return Promise.resolve();
     if (!this.pending) {
-      const requestedDb = this.db;
-      this.pending = getKeys(requestedDb)
+      const db = this.db;
+      const token = this.requestToken;
+      this.pending = getKeys(db)
         .then((data) => {
-          if (requestedDb === this.db) this.catalog = data.keys;
+          if (token === this.requestToken) this.catalog = data.keys;
         })
         .catch((e) => {
-          if (requestedDb === this.db) this.error = e.message;
+          if (token === this.requestToken) this.error = e.message;
         })
         .finally(() => {
-          if (requestedDb === this.db) this.pending = null;
+          if (token === this.requestToken) this.pending = null;
         });
     }
     return this.pending;

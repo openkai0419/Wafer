@@ -20,12 +20,21 @@
   <main id="main">
     <header id="toolbar">
       <button id="sidebar-toggle" title="toggle sidebar" aria-label="toggle sidebar"></button>
-      <button id="key-picker" title="search keys" aria-label="search keys"></button>
-      <input id="search-input" type="search" placeholder="search... (Enter)">
+      <button id="key-picker" title="search options" aria-label="search options"></button>
+      <input id="search-input" type="search" placeholder="search...">
       <select id="sort-select"></select>
       <button id="order-toggle" title="sort order" aria-label="sort order"></button>
       <span id="status"></span>
       <div id="key-popup" class="hidden">
+        <div id="search-options">
+          <div id="keyword-mode" class="segmented">
+            <button data-mode="AND">AND</button>
+            <button data-mode="OR">OR</button>
+          </div>
+          <label id="separator-field">split text by:
+            <input id="keyword-separator" type="text" maxlength="4">
+          </label>
+        </div>
         <div id="key-selected"></div>
         <input id="key-search" type="search" placeholder="filter keys...">
         <div id="key-catalog"></div>
@@ -56,6 +65,13 @@
     <div id="settings-title">Settings</div>
     <label class="settings-row">thumbnail size (px)
       <select id="thumb-size"></select>
+    </label>
+    <div class="settings-row">auto scroll
+      <button id="auto-scroll-toggle">off</button>
+    </div>
+    <label class="settings-row">auto scroll speed (px/s)
+      <input id="auto-scroll-speed" type="range" min="0" step="1">
+      <input id="auto-scroll-speed-value" type="number" min="5" max="500" step="1">
     </label>
   </div>
 </div>

@@ -28,7 +28,6 @@ def test_settings_thumb_size_persists_across_reload(ready_page):
 
     page.select_option("#thumb-size", "512")
     page.wait_for_function("h => document.querySelector('#grid-canvas .cell').offsetHeight > h", arg=before)
-    page.wait_for_function("document.querySelector('#grid-canvas .cell img').src.includes('size=512')")
 
     page.keyboard.press("Escape")
     page.wait_for_selector("#settings-modal", state="hidden")

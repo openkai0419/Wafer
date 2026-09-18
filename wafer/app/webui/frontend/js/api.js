@@ -1,5 +1,3 @@
-import { load } from './store.js';
-
 export class ApiError extends Error {
   constructor(message, status) {
     super(message);
@@ -39,8 +37,9 @@ export function fileUrl(db, path) {
 }
 
 export const THUMB_SIZE_DEFAULT = 256;
+export const THUMB_STEPS = [128, 160, 192, 224, 256, 320, 384, 448, 512, 640, 768, 896, 1024];
 
-export function thumbUrl(db, path, size = load('thumbSize', THUMB_SIZE_DEFAULT)) {
+export function thumbUrl(db, path, size) {
   return `/api/thumb?${new URLSearchParams({ db, path, size })}`;
 }
 

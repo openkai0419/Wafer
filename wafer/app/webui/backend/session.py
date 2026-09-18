@@ -6,6 +6,7 @@ import uuid
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from functools import partial
 
 from aiohttp import web
 
@@ -19,6 +20,8 @@ from wafer.core.common.paths import data_db_path, list_data_db_names
 
 SESSION_LIMIT = 8
 SESSION_TTL = 3600.0
+KEY_SCAN_RETRY_COOLDOWN = 5.0
+DB_CLOSE_TIMEOUT = 5.0
 
 BUILTIN_FILTERS = (TextFilter, DirectoryFilter, ContainedFilesFilter, SourceChildrenFilter)
 BUILTIN_SORTS = (NoSort, NaturalPathSort, NaturalNameSort, ModifiedSort, CreatedSort, SizeSort, CollectedSort, RandomSort)
@@ -70,6 +73,11 @@ class QueryService:
     def __init__(self):
         self._dbs: dict[str, DbService] = {}
         self._sessions: OrderedDict[str, QuerySession] = OrderedDict()
+        self._key_tasks: dict[str, asyncio.Task] = {}
+        self._key_cache: dict[str, list[tuple[str, int]]] = {}
+        self._key_stale: set[str] = set()
+        self._key_version: dict[str, int] = {}
+        self._key_retry_after: dict[str, float] = {}
         self.composer = SearchComposer()
         register_builtin_query_plugins()
 
@@ -85,6 +93,56 @@ class QueryService:
             service = DbService(name)
             self._dbs[name] = service
         return service
+
+    async def keys(self, db_name: str) -> list[tuple[str, int]]:
+        service = self.db(db_name)
+        cached = self._key_cache.get(db_name)
+        if cached is not None and db_name not in self._key_stale:
+            return cached
+        task = self._key_tasks.get(db_name)
+        if task is None:
+            retry_after = self._key_retry_after.get(db_name)
+            if cached is not None and retry_after is not None and time.monotonic() < retry_after:
+                return cached
+            version = self._key_version.get(db_name, 0)
+            task = asyncio.get_running_loop().create_task(self._scan_keys(service, version))
+            task.add_done_callback(partial(self._on_scan_done, db_name))
+            self._key_tasks[db_name] = task
+        if cached is not None:
+            return cached
+        return await asyncio.shield(task)
+
+    async def _scan_keys(self, service: DbService, version: int) -> list[tuple[str, int]]:
+        started = time.perf_counter()
+        try:
+            keys = await service.run(self.composer.list_all_keys, service.engine, [], True)
+        finally:
+            self._key_tasks.pop(service.name, None)
+        self._key_cache[service.name] = keys
+        self._key_retry_after.pop(service.name, None)
+        if self._key_version.get(service.name, 0) == version:
+            self._key_stale.discard(service.name)
+        AppLogger.info(f"WebUI key scan db={service.name} -> {len(keys)} keys in {time.perf_counter() - started:.3f}s")
+        return keys
+
+    def _on_scan_done(self, db_name: str, task: asyncio.Task):
+        if task.cancelled():
+            return
+        error = task.exception()
+        if error is not None:
+            self._key_stale.add(db_name)
+            self._key_retry_after[db_name] = time.monotonic() + KEY_SCAN_RETRY_COOLDOWN
+            AppLogger.warning(f"WebUI key scan failed for {db_name}, cached keys kept: {error}")
+
+    def invalidate_keys(self, db_name: str = ""):
+        if db_name:
+            self._key_stale.add(db_name)
+            self._key_version[db_name] = self._key_version.get(db_name, 0) + 1
+        else:
+            self._key_stale.update(self._key_cache)
+            self._key_stale.update(self._key_tasks)
+            for name in set(self._key_cache) | set(self._key_tasks):
+                self._key_version[name] = self._key_version.get(name, 0) + 1
 
     async def execute(self, db_name: str, filters: list[dict], sort: str, ascending: bool) -> QuerySession:
         service = self.db(db_name)
@@ -127,9 +185,21 @@ class QueryService:
         self._sessions.move_to_end(query_id)
         return session
 
-    def close(self):
+    async def close(self):
+        for task in self._key_tasks.values():
+            if not task.done():
+                task.cancel()
+        self._key_tasks.clear()
+        self._key_cache.clear()
+        self._key_stale.clear()
+        self._key_version.clear()
+        self._key_retry_after.clear()
+        loop = asyncio.get_running_loop()
         for service in self._dbs.values():
-            service.close()
+            try:
+                await asyncio.wait_for(loop.run_in_executor(None, service.close), timeout=DB_CLOSE_TIMEOUT)
+            except TimeoutError:
+                AppLogger.warning(f"WebUI db close timed out for {service.name}, a background scan may still be running")
         self._dbs.clear()
         self._sessions.clear()
 

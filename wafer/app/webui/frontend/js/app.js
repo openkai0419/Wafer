@@ -1,19 +1,27 @@
-import { getJson, THUMB_SIZE_DEFAULT } from './api.js';
+import { getJson, THUMB_SIZE_DEFAULT, THUMB_STEPS } from './api.js';
 import { QueryClient } from './query.js';
 import { FolderTree } from './foldertree.js';
 import { Grid } from './grid.js';
 import { KeyPicker } from './keypicker.js';
+import { SearchOptions, KEYWORD_MODE_DEFAULT, KEYWORD_SEPARATOR_DEFAULT } from './searchoptions.js';
 import { MetaPanel } from './meta.js';
 import { Viewer } from './viewer.js';
 import { connectEvents } from './ws.js';
+import { debounce } from './ratelimit.js';
+import { AutoScroll, SPEED_STEPS, SPEED_DEFAULT, nearestSpeedIndex } from './autoscroll.js';
 import { load, save } from './store.js';
 import { setIcon } from './icons.js';
+
+const SEARCH_DEBOUNCE_MS = 250;
+const UPDATE_REFRESH_MS = 1500;
 
 const state = {
   db: load('db', ''),
   folder: load('folder', null),
   keywords: load('keywords', ''),
   keys: load('searchKeys', []),
+  keywordMode: load('keywordMode', KEYWORD_MODE_DEFAULT),
+  separator: load('keywordSeparator', KEYWORD_SEPARATOR_DEFAULT),
   sort: load('sort', 'name'),
   ascending: load('ascending', true),
 };
@@ -40,13 +48,24 @@ const grid = new Grid(
   document.getElementById('grid-canvas'),
   (index) => viewer.open(index, grid.item(index)),
 );
+const autoScroll = new AutoScroll(document.getElementById('grid-scroll'), document.getElementById('grid-canvas'), (running) => {
+  const toggle = document.getElementById('auto-scroll-toggle');
+  toggle.classList.toggle('active', running);
+  toggle.textContent = running ? 'on' : 'off';
+});
 const tree = new FolderTree(document.getElementById('folder-tree'), (path) => {
   state.folder = path;
   save('folder', path);
   runQuery();
 });
-const keyPicker = new KeyPicker(document.getElementById('key-picker'), document.getElementById('key-popup'), (keys) => {
+const searchPopup = document.getElementById('key-popup');
+const keyPicker = new KeyPicker(document.getElementById('key-picker'), searchPopup, (keys) => {
   state.keys = keys;
+  runQuery();
+});
+const searchOptions = new SearchOptions(searchPopup, () => {
+  state.keywordMode = searchOptions.mode;
+  state.separator = searchOptions.separator;
   runQuery();
 });
 
@@ -63,7 +82,12 @@ function buildFilters() {
     filters.push({ name: 'directory', params: { directories: [state.folder], include_subfolders: true } });
   }
   if (state.keywords || state.keys.length) {
-    const params = { keywords: state.keywords, keyword_separator: ' ', require_keys: !state.keywords };
+    const params = {
+      keywords: state.keywords,
+      keyword_separator: state.separator,
+      keyword_mode: state.keywordMode,
+      require_keys: !state.keywords,
+    };
     if (state.keys.length) params.keys = state.keys;
     filters.push({ name: 'text', params });
   }
@@ -71,13 +95,19 @@ function buildFilters() {
 }
 
 let queryToken = 0;
-async function runQuery() {
+let lastSnapshot = '';
+async function runQuery(force = false) {
   if (!state.db) return;
+  const filters = buildFilters();
+  const snapshot = JSON.stringify([state.db, filters, state.sort, state.ascending]);
+  if (!force && snapshot === lastSnapshot) return;
+  lastSnapshot = snapshot;
   const token = ++queryToken;
   status.textContent = 'searching...';
+  status.classList.add('busy');
   try {
     const client = new QueryClient();
-    const result = await client.run(state.db, buildFilters(), state.sort, state.ascending);
+    const result = await client.run(state.db, filters, state.sort, state.ascending);
     if (token !== queryToken) return;
     const aspects = await client.aspects();
     if (token !== queryToken) return;
@@ -85,7 +115,12 @@ async function runQuery() {
     viewer.setQuery(client, client.total);
     status.textContent = `${result.total} files`;
   } catch (e) {
-    if (token === queryToken) status.textContent = `error: ${e.message}`;
+    if (token === queryToken) {
+      lastSnapshot = '';
+      status.textContent = `error: ${e.message}`;
+    }
+  } finally {
+    if (token === queryToken) status.classList.remove('busy');
   }
 }
 
@@ -99,6 +134,7 @@ async function switchDb(db, restoreFolder = false) {
   }
   await tree.load(db, restoreFolder ? state.folder : null);
   await runQuery();
+  keyPicker.loadCatalog();
 }
 
 async function fetchDbs(retries = 10) {
@@ -150,12 +186,30 @@ orderToggle.addEventListener('click', () => {
   setOrderIcon();
   runQuery();
 });
+function commitKeywords() {
+  state.keywords = searchInput.value.trim();
+  save('keywords', state.keywords);
+  runQuery();
+}
+
+const requestSearch = debounce(SEARCH_DEBOUNCE_MS, commitKeywords);
+let composing = false;
+
+searchInput.addEventListener('compositionstart', () => {
+  composing = true;
+});
+searchInput.addEventListener('compositionend', () => {
+  composing = false;
+  requestSearch();
+});
+searchInput.addEventListener('blur', () => {
+  composing = false;
+});
+searchInput.addEventListener('input', () => {
+  if (!composing) requestSearch();
+});
 searchInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    state.keywords = searchInput.value.trim();
-    save('keywords', state.keywords);
-    runQuery();
-  }
+  if (e.key === 'Enter' && !e.isComposing) requestSearch.flush();
 });
 
 function setOrderIcon() {
@@ -186,7 +240,7 @@ function setupSettings() {
   const modal = document.getElementById('settings-modal');
   const thumbSelect = document.getElementById('thumb-size');
   setIcon(button, 'menu');
-  for (const px of [128, 192, 256, 384, 512, 768, 1024]) {
+  for (const px of THUMB_STEPS) {
     const opt = document.createElement('option');
     opt.value = String(px);
     opt.textContent = String(px);
@@ -196,6 +250,24 @@ function setupSettings() {
   thumbSelect.addEventListener('change', () => {
     save('thumbSize', Number(thumbSelect.value));
     grid.relayout();
+  });
+  const scrollToggle = document.getElementById('auto-scroll-toggle');
+  const speedSlider = document.getElementById('auto-scroll-speed');
+  const speedValue = document.getElementById('auto-scroll-speed-value');
+  speedSlider.max = String(SPEED_STEPS.length - 1);
+  const showSpeed = () => {
+    speedSlider.value = String(nearestSpeedIndex(autoScroll.speed));
+    speedValue.value = String(autoScroll.speed);
+  };
+  showSpeed();
+  scrollToggle.addEventListener('click', () => autoScroll.toggle());
+  speedSlider.addEventListener('input', () => {
+    autoScroll.setSpeed(SPEED_STEPS[Number(speedSlider.value)]);
+    showSpeed();
+  });
+  speedValue.addEventListener('change', () => {
+    autoScroll.setSpeed(Number(speedValue.value) || SPEED_DEFAULT);
+    showSpeed();
   });
   button.addEventListener('click', () => modal.classList.remove('hidden'));
   modal.addEventListener('click', (e) => {
@@ -208,13 +280,12 @@ function setupSettings() {
 
 const connBanner = document.getElementById('conn-banner');
 
-let refreshTimer = null;
+const refreshQuery = debounce(UPDATE_REFRESH_MS, () => runQuery(true));
 connectEvents(
   (event) => {
     if (event.topic === 'update' && event.db === state.db) {
       keyPicker.invalidate();
-      clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(runQuery, 1500);
+      refreshQuery();
     } else if (event.topic === 'db.created' || event.topic === 'db.deleted') {
       location.reload();
     }

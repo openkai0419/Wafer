@@ -127,7 +127,7 @@ def read_setting_folders(db_name: str) -> tuple[list[str], list[str]]:
         return [], []
 
 
-def list_subfolders(parent: str, ignored: list[str]) -> list[str]:
+def list_subfolders(parent: str, ignored: set[str]) -> list[str]:
     result = []
     try:
         with os.scandir(parent) as it:
@@ -140,6 +140,25 @@ def list_subfolders(parent: str, ignored: list[str]) -> list[str]:
         AppLogger.warning(f"WebUI folder scan failed for {parent}: {e}")
     result.sort()
     return result
+
+
+def has_subfolders(path: str, ignored: set[str]) -> bool:
+    try:
+        with os.scandir(path) as it:
+            for entry in it:
+                if entry.is_dir(follow_symlinks=False) and normalize_path(entry.path) not in ignored:
+                    return True
+    except OSError as e:
+        AppLogger.warning(f"WebUI folder probe failed for {path}: {e}")
+    return False
+
+
+def folder_entries(paths: list[str], ignored: set[str]) -> list[dict]:
+    return [{"path": path, "has_children": has_subfolders(path, ignored)} for path in paths]
+
+
+def scan_folder_entries(parent: str, ignored: set[str]) -> list[dict]:
+    return folder_entries(list_subfolders(parent, ignored), ignored)
 
 
 def is_under_roots(path: str, roots: list[str]) -> bool:
@@ -161,15 +180,17 @@ async def get_folders(request: web.Request):
         raise web.HTTPNotFound(reason=f"unknown db: {db}")
     loop = asyncio.get_running_loop()
     roots, ignored = await loop.run_in_executor(None, read_setting_folders, db)
+    ignored_set = set(ignored)
     parent = request.query.get("path", "")
     if not parent:
-        return web.json_response({"folders": roots})
+        folders = await loop.run_in_executor(None, folder_entries, roots, ignored_set)
+        return web.json_response({"folders": folders})
     parent = normalize_path(parent)
     if not is_under_roots(parent, roots):
         raise web.HTTPForbidden(reason="path is outside of indexed folders")
     if not safe_is_dir(parent):
         raise web.HTTPNotFound(reason="folder not found")
-    folders = await loop.run_in_executor(None, list_subfolders, parent, ignored)
+    folders = await loop.run_in_executor(None, scan_folder_entries, parent, ignored_set)
     return web.json_response({"folders": folders})
 
 
@@ -178,12 +199,10 @@ async def get_keys(request: web.Request):
     db = request.query.get("db", "")
     if not db:
         raise web.HTTPBadRequest(reason="db is required")
-    service_hub = request.app[QUERY_SERVICE]
     try:
-        service = service_hub.db(db)
+        keys = await request.app[QUERY_SERVICE].keys(db)
     except KeyError:
         raise web.HTTPNotFound(reason=f"unknown db: {db}") from None
-    keys = await service.run(service_hub.composer.list_all_keys, service.engine, [], True)
     return web.json_response({"keys": [[key, count] for key, count in keys]})
 
 

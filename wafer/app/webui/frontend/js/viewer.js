@@ -57,7 +57,7 @@ export class Viewer {
 
     const selectFolder = document.createElement('button');
     selectFolder.className = 'menu-item';
-    selectFolder.textContent = 'select folder';
+    selectFolder.textContent = 'move to folder';
     selectFolder.addEventListener('click', () => {
       this.menu.classList.add('hidden');
       if (this.item) this.onSelectFolder(this.item);
@@ -69,7 +69,7 @@ export class Viewer {
 
     const intervalRow = document.createElement('label');
     intervalRow.className = 'menu-item';
-    intervalRow.textContent = 'interval (s)';
+    intervalRow.textContent = 'slideshow interval (s)';
     const input = document.createElement('input');
     input.type = 'number';
     input.min = String(MIN_SLIDESHOW_INTERVAL);

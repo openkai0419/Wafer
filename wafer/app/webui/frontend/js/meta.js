@@ -1,4 +1,7 @@
 import { getJson } from './api.js';
+import { groupEntriesByPrefix, stripPrefix } from './keygroups.js';
+
+const UNPREFIXED_TITLE = '(no prefix)';
 
 export class MetaPanel {
   constructor() {
@@ -11,31 +14,18 @@ export class MetaPanel {
     this.content.textContent = 'loading...';
     try {
       const data = await getJson('/api/meta', { db, path: item.path });
+      const entries = [...valueEntries(data.meta), ...valueEntries(data.tags)];
       this.content.replaceChildren(
-        this.section('File', { name: item.name, path: item.path, hash: data.file_hash || '' }),
-        this.section('Metadata', mapValues(data.meta)),
-        this.section('Tags', mapValues(data.tags)),
+        section('File', [
+          ['name', item.name],
+          ['path', item.path],
+          ['hash', data.file_hash || ''],
+        ]),
+        ...groupEntriesByPrefix(entries).map(([prefix, group]) => section(`${prefix || UNPREFIXED_TITLE} (${group.length})`, group)),
       );
     } catch (e) {
       this.content.textContent = `failed to load metadata: ${e.message}`;
     }
-  }
-
-  section(title, entries) {
-    const box = document.createElement('section');
-    const h = document.createElement('h3');
-    h.textContent = title;
-    box.appendChild(h);
-    const dl = document.createElement('dl');
-    for (const [key, value] of Object.entries(entries)) {
-      const dt = document.createElement('dt');
-      dt.textContent = key;
-      const dd = document.createElement('dd');
-      dd.textContent = String(value ?? '');
-      dl.append(dt, dd);
-    }
-    box.appendChild(dl);
-    return box;
   }
 
   hide() {
@@ -47,8 +37,27 @@ export class MetaPanel {
   }
 }
 
-function mapValues(obj) {
-  const out = {};
-  for (const [key, entry] of Object.entries(obj || {})) out[key] = entry.value;
-  return out;
+function section(title, entries) {
+  const box = document.createElement('section');
+  const heading = document.createElement('h3');
+  heading.textContent = title;
+  box.append(heading, definitionList(entries));
+  return box;
+}
+
+function definitionList(entries) {
+  const dl = document.createElement('dl');
+  for (const [key, value] of entries) {
+    const dt = document.createElement('dt');
+    dt.textContent = stripPrefix(key);
+    dt.title = key;
+    const dd = document.createElement('dd');
+    dd.textContent = String(value ?? '');
+    dl.append(dt, dd);
+  }
+  return dl;
+}
+
+function valueEntries(obj) {
+  return Object.entries(obj || {}).map(([key, entry]) => [key, entry.value]);
 }

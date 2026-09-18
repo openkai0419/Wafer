@@ -30,7 +30,7 @@ def test_viewer_meta_panel(ready_page):
     _open_first(page)
     page.click("#viewer-info")
     page.wait_for_selector("#meta-panel:not(.hidden)")
-    page.wait_for_function("document.querySelector('#meta-content').textContent.includes('Metadata')")
+    page.wait_for_function("document.querySelector('#meta-content').textContent.includes('File')")
 
 
 def test_viewer_menu_opens(ready_page):
@@ -73,7 +73,7 @@ def test_viewer_select_folder(ready_page):
     page.click("#grid-canvas .cell[title='c_cat.png']")
     page.wait_for_selector("#viewer:not(.hidden)")
     page.click("#viewer-menu")
-    page.get_by_role("button", name="select folder").click()
+    page.get_by_role("button", name="move to folder").click()
     page.wait_for_selector("#viewer", state="hidden")
     page.wait_for_function("document.querySelector('.folder-node.selected')?.textContent.trim() === 'sub'")
     page.wait_for_function("document.querySelector('#status').textContent.startsWith('1 ')")
@@ -88,3 +88,18 @@ def test_viewer_next_survives_backend_session_loss(ready_page, webui_query_servi
 
     page.click("#viewer-next")
     page.wait_for_function("document.querySelector('#viewer-caption').textContent.startsWith('2/')")
+
+
+def test_meta_panel_groups_keys_by_prefix(ready_page):
+    page = ready_page
+    _open_first(page)
+    page.click("#viewer-info")
+    page.wait_for_selector("#meta-panel:not(.hidden)")
+    page.wait_for_function("document.querySelectorAll('#meta-content h3').length > 1")
+
+    headings = page.locator("#meta-content h3").all_inner_texts()
+    assert headings == ["File", "(no prefix) (2)", "exiftool (2)", "wd14 (1)"]
+
+    keys = page.locator("#meta-content dt").all_inner_texts()
+    assert "Model" in keys and "exiftool.Model" not in keys
+    assert "prompt" in keys and "animal" in keys

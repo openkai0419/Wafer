@@ -32,7 +32,7 @@ def app(dataset, monkeypatch, tmp_path):
 
     application = create_app(with_events=False)
     yield application
-    application[QUERY_SERVICE].close()
+    asyncio.run(application[QUERY_SERVICE].close())
     application[MEDIA_EXECUTOR].shutdown(wait=True, cancel_futures=True)
 
 

@@ -1,5 +1,7 @@
+import asyncio
 import json
 import struct
+import time
 
 import pytest
 
@@ -112,13 +114,13 @@ def test_meta(client, dataset):
 def test_folders_roots(client, dataset):
     resp, body = client.get("/api/folders", params={"db": DB})
     assert resp.status == 200
-    assert jbody(body)["folders"] == [dataset["images"]]
+    assert jbody(body)["folders"] == [{"path": dataset["images"], "has_children": True}]
 
 
 def test_folders_children(client, dataset):
     resp, body = client.get("/api/folders", params={"db": DB, "path": dataset["images"]})
     assert resp.status == 200
-    assert jbody(body)["folders"] == [dataset["images"] + "/sub"]
+    assert jbody(body)["folders"] == [{"path": dataset["images"] + "/sub", "has_children": False}]
 
 
 def test_folders_outside_root(client):
@@ -237,3 +239,119 @@ def test_query_filter_name_not_string_rejected(client):
 def test_folders_unknown_db(client):
     resp, _ = client.get("/api/folders", params={"db": "nope"})
     assert resp.status == 404
+
+
+@pytest.fixture
+def key_scan_calls(app, monkeypatch):
+    from wafer.app.webui.backend.session import QUERY_SERVICE
+
+    service = app[QUERY_SERVICE]
+    original = service.composer.list_all_keys
+    calls = []
+
+    def counted(*args):
+        calls.append(args)
+        return original(*args)
+
+    monkeypatch.setattr(service.composer, "list_all_keys", counted)
+    return calls
+
+
+def test_keys_are_cached_across_requests(client, key_scan_calls):
+    resp, first = client.get("/api/keys", params={"db": DB})
+    assert resp.status == 200
+    resp, second = client.get("/api/keys", params={"db": DB})
+    assert resp.status == 200
+
+    assert jbody(first) == jbody(second)
+    assert len(key_scan_calls) == 1
+
+
+def test_keys_scan_once_for_concurrent_requests(client, key_scan_calls):
+    async def both():
+        return await asyncio.gather(
+            client.raw.get("/api/keys", params={"db": DB}),
+            client.raw.get("/api/keys", params={"db": DB}),
+        )
+
+    responses = client.loop.run_until_complete(both())
+    assert [r.status for r in responses] == [200, 200]
+    assert len(key_scan_calls) == 1
+
+
+def _wait_until(loop, predicate, timeout=5.0):
+    async def waiter():
+        deadline = time.monotonic() + timeout
+        while not predicate():
+            assert time.monotonic() < deadline, "timed out waiting for the background key scan"
+            await asyncio.sleep(0.01)
+
+    loop.run_until_complete(waiter())
+
+
+def test_keys_serve_stale_cache_while_refreshing(client, app, monkeypatch):
+    from wafer.app.webui.backend.session import QUERY_SERVICE
+
+    service = app[QUERY_SERVICE]
+    original = service.composer.list_all_keys
+    calls = []
+
+    def counted(*args):
+        calls.append(args)
+        if len(calls) == 1:
+            return original(*args)
+        return [("refreshed", 1)]
+
+    monkeypatch.setattr(service.composer, "list_all_keys", counted)
+
+    resp, first = client.get("/api/keys", params={"db": DB})
+    assert resp.status == 200
+    assert "prompt" in [k for k, _ in jbody(first)["keys"]]
+
+    service.invalidate_keys(DB)
+    resp, stale = client.get("/api/keys", params={"db": DB})
+    assert resp.status == 200
+    assert jbody(stale) == jbody(first)
+
+    _wait_until(client.loop, lambda: len(calls) == 2)
+    resp, fresh = client.get("/api/keys", params={"db": DB})
+    assert resp.status == 200
+    assert jbody(fresh)["keys"] == [["refreshed", 1]]
+
+
+def test_keys_retry_after_a_failed_refresh(client, app, monkeypatch):
+    from wafer.app.webui.backend import session as session_module
+    from wafer.app.webui.backend.session import QUERY_SERVICE
+
+    monkeypatch.setattr(session_module, "KEY_SCAN_RETRY_COOLDOWN", 0.05)
+    service = app[QUERY_SERVICE]
+    original = service.composer.list_all_keys
+    calls = []
+
+    def counted(*args):
+        calls.append(args)
+        if len(calls) == 2:
+            raise RuntimeError("scan boom")
+        return original(*args)
+
+    monkeypatch.setattr(service.composer, "list_all_keys", counted)
+
+    resp, first = client.get("/api/keys", params={"db": DB})
+    assert resp.status == 200
+
+    service.invalidate_keys(DB)
+    resp, stale = client.get("/api/keys", params={"db": DB})
+    assert resp.status == 200
+    assert jbody(stale) == jbody(first)
+
+    _wait_until(client.loop, lambda: DB in service._key_stale)
+    resp, still_stale = client.get("/api/keys", params={"db": DB})
+    assert resp.status == 200
+    assert jbody(still_stale) == jbody(first)
+    assert len(calls) == 2, "a request inside the retry cooldown must not start another scan"
+
+    _wait_until(client.loop, lambda: time.monotonic() >= service._key_retry_after[DB])
+    resp, retried = client.get("/api/keys", params={"db": DB})
+    assert resp.status == 200
+    assert jbody(retried) == jbody(first)
+    _wait_until(client.loop, lambda: len(calls) == 3)

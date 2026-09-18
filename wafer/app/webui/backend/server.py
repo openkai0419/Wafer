@@ -68,7 +68,7 @@ async def on_startup(app: web.Application):
 async def on_shutdown(app: web.Application):
     AppLogger.info("WebUI shutting down.")
     await app[EVENT_HUB].close()
-    app[QUERY_SERVICE].close()
+    await app[QUERY_SERVICE].close()
     app[MEDIA_EXECUTOR].shutdown(wait=True, cancel_futures=True)
 
 
@@ -79,7 +79,7 @@ def create_app(with_events: bool = True, on_app_shutdown=None, on_dev_log=None, 
         app[ALLOWED_HOSTS] = allowed_hosts
     app[QUERY_SERVICE] = QueryService()
     app[MEDIA_EXECUTOR] = ThreadPoolExecutor(max_workers=4, thread_name_prefix="webmedia")
-    app[EVENT_HUB] = EventHub(on_app_shutdown=on_app_shutdown, on_dev_log=on_dev_log)
+    app[EVENT_HUB] = EventHub(on_app_shutdown=on_app_shutdown, on_dev_log=on_dev_log, on_db_changed=app[QUERY_SERVICE].invalidate_keys)
     app.router.add_get("/", index)
     app.router.add_get("/favicon.ico", favicon)
     app.add_routes(api.routes)

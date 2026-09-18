@@ -169,3 +169,50 @@ def test_status_is_highlighted_while_searching(ready_page):
 
     assert page.evaluate("window.__busySeen") is True
     assert "busy" not in (page.get_attribute("#status", "class") or "")
+
+
+def test_key_catalog_groups_by_prefix(ready_page):
+    page = ready_page
+    page.click("#key-picker")
+    page.wait_for_selector("#key-popup:not(.hidden)")
+    page.wait_for_selector(".key-row")
+
+    assert page.locator(".key-group").all_inner_texts() == ["exiftool", "wd14"]
+    assert page.locator("#key-catalog > *").first.get_attribute("class") == "key-row"
+
+    row = page.locator(".key-row", has_text="Model").first
+    assert row.inner_text().startswith("Model")
+    assert row.get_attribute("title") == "exiftool.Model"
+
+
+def test_key_catalog_filter_matches_full_key(ready_page):
+    page = ready_page
+    page.click("#key-picker")
+    page.wait_for_selector("#key-popup:not(.hidden)")
+    page.wait_for_selector(".key-row")
+
+    page.fill("#key-search", "exiftool.mo")
+    page.wait_for_function("document.querySelectorAll('.key-row').length === 1")
+    assert page.locator(".key-group").all_inner_texts() == ["exiftool"]
+
+    page.click(".key-row")
+    page.wait_for_function("document.querySelector('#status').textContent.startsWith('4 ')")
+    assert page.inner_text(".key-chip-name") == "exiftool.Model"
+
+
+def test_key_catalog_is_prefetched_before_the_popup_opens(page, webui_base_url):
+    with page.expect_response(lambda r: "/api/keys" in r.url):
+        page.goto(webui_base_url)
+    page.wait_for_selector("#grid-canvas .cell")
+    assert page.locator("#key-popup").is_hidden()
+
+    later = []
+
+    def on_request(request):
+        if "/api/keys" in request.url:
+            later.append(request.url)
+
+    page.on("request", on_request)
+    page.click("#key-picker")
+    page.wait_for_selector(".key-row")
+    assert later == []

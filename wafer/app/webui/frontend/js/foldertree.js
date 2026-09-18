@@ -17,14 +17,14 @@ export class FolderTree {
     this.selected = null;
     this.branches.clear();
     this.el.textContent = '';
-    const all = this.makeNode('(all files)', null, 0);
+    const all = this.makeNode('(all files)', null, 0, false);
     this.el.appendChild(all);
     if (restorePath == null) {
       all.classList.add('selected');
       this.selected = all;
     }
     const data = await getJson('/api/folders', { db });
-    for (const path of data.folders) this.el.appendChild(this.makeBranch(path, 0));
+    for (const entry of data.folders) this.el.appendChild(this.makeBranch(entry, 0));
     if (restorePath != null) await this.reveal(restorePath);
   }
 
@@ -41,9 +41,10 @@ export class FolderTree {
     return true;
   }
 
-  makeBranch(path, depth) {
+  makeBranch(entry, depth) {
+    const path = entry.path;
     const wrap = document.createElement('div');
-    const node = this.makeNode(path.split('/').pop() || path, path, depth);
+    const node = this.makeNode(path.split('/').pop() || path, path, depth, entry.has_children);
     wrap.appendChild(node);
     const children = document.createElement('div');
     children.className = 'children hidden';
@@ -74,13 +75,13 @@ export class FolderTree {
     this.onSelect(path);
   }
 
-  makeNode(label, path, depth) {
+  makeNode(label, path, depth, hasChildren) {
     const node = document.createElement('div');
     node.className = 'folder-node';
     node.style.paddingLeft = `${depth * 14 + 4}px`;
     const expander = document.createElement('span');
     expander.className = 'expander';
-    if (path !== null) setIcon(expander, 'chevron-right');
+    if (hasChildren) setIcon(expander, 'chevron-right');
     const name = document.createElement('span');
     name.textContent = label;
     node.append(expander, name);

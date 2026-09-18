@@ -6,6 +6,7 @@ import uuid
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from functools import partial
 
 from aiohttp import web
 
@@ -70,6 +71,9 @@ class QueryService:
     def __init__(self):
         self._dbs: dict[str, DbService] = {}
         self._sessions: OrderedDict[str, QuerySession] = OrderedDict()
+        self._key_tasks: dict[str, asyncio.Task] = {}
+        self._key_cache: dict[str, list[tuple[str, int]]] = {}
+        self._key_stale: set[str] = set()
         self.composer = SearchComposer()
         register_builtin_query_plugins()
 
@@ -85,6 +89,51 @@ class QueryService:
             service = DbService(name)
             self._dbs[name] = service
         return service
+
+    async def keys(self, db_name: str) -> list[tuple[str, int]]:
+        service = self.db(db_name)
+        cached = self._key_cache.get(db_name)
+        if cached is not None and db_name not in self._key_stale:
+            return cached
+        task = self._key_tasks.get(db_name)
+        if task is None:
+            self._key_stale.discard(db_name)
+            task = asyncio.get_running_loop().create_task(self._scan_keys(service))
+            task.add_done_callback(partial(self._on_scan_done, db_name))
+            self._key_tasks[db_name] = task
+        if cached is not None:
+            return cached
+        try:
+            return await asyncio.shield(task)
+        except Exception:
+            if self._key_tasks.get(db_name) is task:
+                del self._key_tasks[db_name]
+            raise
+
+    async def _scan_keys(self, service: DbService) -> list[tuple[str, int]]:
+        started = time.perf_counter()
+        try:
+            keys = await service.run(self.composer.list_all_keys, service.engine, [], True)
+        finally:
+            self._key_tasks.pop(service.name, None)
+        self._key_cache[service.name] = keys
+        AppLogger.info(f"WebUI key scan db={service.name} -> {len(keys)} keys in {time.perf_counter() - started:.3f}s")
+        return keys
+
+    def _on_scan_done(self, db_name: str, task: asyncio.Task):
+        if task.cancelled():
+            return
+        error = task.exception()
+        if error is not None:
+            self._key_stale.add(db_name)
+            AppLogger.warning(f"WebUI key scan failed for {db_name}, cached keys kept: {error}")
+
+    def invalidate_keys(self, db_name: str = ""):
+        if db_name:
+            self._key_stale.add(db_name)
+        else:
+            self._key_stale.update(self._key_cache)
+            self._key_stale.update(self._key_tasks)
 
     async def execute(self, db_name: str, filters: list[dict], sort: str, ascending: bool) -> QuerySession:
         service = self.db(db_name)
@@ -128,6 +177,12 @@ class QueryService:
         return session
 
     def close(self):
+        for task in self._key_tasks.values():
+            if not task.done():
+                task.cancel()
+        self._key_tasks.clear()
+        self._key_cache.clear()
+        self._key_stale.clear()
         for service in self._dbs.values():
             service.close()
         self._dbs.clear()

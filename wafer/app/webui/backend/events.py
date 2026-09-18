@@ -9,18 +9,20 @@ from wafer.core.ipc.node import Node
 from wafer.core.logs import AppLogger
 
 RELAY_TOPICS = ("update", "folderchanged", "progress", "maximum", "db.created", "db.deleted", "tags.updated")
+DB_CHANGE_TOPICS = ("update", "db.created", "db.deleted", "tags.updated")
 
 routes = web.RouteTableDef()
 
 
 class EventHub:
-    def __init__(self, on_app_shutdown=None, on_dev_log=None):
+    def __init__(self, on_app_shutdown=None, on_dev_log=None, on_db_changed=None):
         self.clients: set[web.WebSocketResponse] = set()
         self.loop: asyncio.AbstractEventLoop | None = None
         self.node: Node | None = None
         self.pending: set[asyncio.Task] = set()
         self.on_app_shutdown = on_app_shutdown
         self.on_dev_log = on_dev_log
+        self.on_db_changed = on_db_changed
 
     def start_node(self):
         self.loop = asyncio.get_running_loop()
@@ -49,6 +51,8 @@ class EventHub:
 
     def make_relay(self, topic: str):
         def handler(msg):
+            if self.on_db_changed is not None and topic in DB_CHANGE_TOPICS and self.loop is not None:
+                self.loop.call_soon_threadsafe(self.on_db_changed, msg.db or "")
             payload = msg.payload
             if not isinstance(payload, (str, int, float, bool, list, dict, type(None))):
                 payload = str(payload)

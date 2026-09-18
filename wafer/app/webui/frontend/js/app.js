@@ -1,4 +1,4 @@
-import { getJson, THUMB_SIZE_DEFAULT } from './api.js';
+import { getJson, THUMB_SIZE_DEFAULT, THUMB_STEPS } from './api.js';
 import { QueryClient } from './query.js';
 import { FolderTree } from './foldertree.js';
 import { Grid } from './grid.js';
@@ -8,6 +8,7 @@ import { MetaPanel } from './meta.js';
 import { Viewer } from './viewer.js';
 import { connectEvents } from './ws.js';
 import { debounce } from './ratelimit.js';
+import { AutoScroll, SPEED_STEPS, SPEED_DEFAULT, nearestSpeedIndex } from './autoscroll.js';
 import { load, save } from './store.js';
 import { setIcon } from './icons.js';
 
@@ -47,6 +48,11 @@ const grid = new Grid(
   document.getElementById('grid-canvas'),
   (index) => viewer.open(index, grid.item(index)),
 );
+const autoScroll = new AutoScroll(document.getElementById('grid-scroll'), document.getElementById('grid-canvas'), (running) => {
+  const toggle = document.getElementById('auto-scroll-toggle');
+  toggle.classList.toggle('active', running);
+  toggle.textContent = running ? 'on' : 'off';
+});
 const tree = new FolderTree(document.getElementById('folder-tree'), (path) => {
   state.folder = path;
   save('folder', path);
@@ -128,6 +134,7 @@ async function switchDb(db, restoreFolder = false) {
   }
   await tree.load(db, restoreFolder ? state.folder : null);
   await runQuery();
+  keyPicker.loadCatalog();
 }
 
 async function fetchDbs(retries = 10) {
@@ -233,7 +240,7 @@ function setupSettings() {
   const modal = document.getElementById('settings-modal');
   const thumbSelect = document.getElementById('thumb-size');
   setIcon(button, 'menu');
-  for (const px of [128, 192, 256, 384, 512, 768, 1024]) {
+  for (const px of THUMB_STEPS) {
     const opt = document.createElement('option');
     opt.value = String(px);
     opt.textContent = String(px);
@@ -243,6 +250,24 @@ function setupSettings() {
   thumbSelect.addEventListener('change', () => {
     save('thumbSize', Number(thumbSelect.value));
     grid.relayout();
+  });
+  const scrollToggle = document.getElementById('auto-scroll-toggle');
+  const speedSlider = document.getElementById('auto-scroll-speed');
+  const speedValue = document.getElementById('auto-scroll-speed-value');
+  speedSlider.max = String(SPEED_STEPS.length - 1);
+  const showSpeed = () => {
+    speedSlider.value = String(nearestSpeedIndex(autoScroll.speed));
+    speedValue.value = String(autoScroll.speed);
+  };
+  showSpeed();
+  scrollToggle.addEventListener('click', () => autoScroll.toggle());
+  speedSlider.addEventListener('input', () => {
+    autoScroll.setSpeed(SPEED_STEPS[Number(speedSlider.value)]);
+    showSpeed();
+  });
+  speedValue.addEventListener('change', () => {
+    autoScroll.setSpeed(Number(speedValue.value) || SPEED_DEFAULT);
+    showSpeed();
   });
   button.addEventListener('click', () => modal.classList.remove('hidden'));
   modal.addEventListener('click', (e) => {

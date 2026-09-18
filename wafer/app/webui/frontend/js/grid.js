@@ -1,9 +1,14 @@
-import { thumbUrl, THUMB_SIZE_DEFAULT } from './api.js';
+import { thumbUrl, THUMB_SIZE_DEFAULT, THUMB_STEPS } from './api.js';
 import { load } from './store.js';
 
 const GAP = 4;
 const PAGE = 200;
 const OVERSCAN = 600;
+
+function thumbStepFor(width, height) {
+  const needed = Math.ceil(Math.max(width, height) * devicePixelRatio);
+  return THUMB_STEPS.find((step) => step >= needed) ?? THUMB_STEPS.at(-1);
+}
 
 export class Grid {
   constructor(scrollEl, canvasEl, onOpen) {
@@ -111,19 +116,19 @@ export class Grid {
         this.cells.set(i, cell);
       }
       cell.style.cssText = `left:${x}px;top:${row.y}px;width:${w}px;height:${row.h}px`;
-      this.fillCell(cell, i);
+      this.fillCell(cell, i, thumbStepFor(w, row.h));
       x += w + GAP;
     }
   }
 
-  fillCell(cell, i) {
+  fillCell(cell, i, size) {
     const item = this.items.get(i);
-    if (!item || cell.dataset.filled === `${this.client.id}:${i}`) return;
-    cell.dataset.filled = `${this.client.id}:${i}`;
+    if (!item || cell.dataset.filled === `${this.client.id}:${i}:${size}`) return;
+    cell.dataset.filled = `${this.client.id}:${i}:${size}`;
     cell.title = item.name;
     const img = document.createElement('img');
     img.loading = 'lazy';
-    img.src = thumbUrl(this.client.db, item.path);
+    img.src = thumbUrl(this.client.db, item.path, size);
     img.onerror = () => {
       const label = document.createElement('div');
       label.className = `placeholder ${item.kind}`;

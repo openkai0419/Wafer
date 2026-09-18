@@ -1,6 +1,7 @@
 import { getKeys } from './api.js';
 import { load, save } from './store.js';
 import { setIcon } from './icons.js';
+import { groupEntriesByPrefix, stripPrefix } from './keygroups.js';
 
 export class KeyPicker {
   constructor(button, popup, onChange) {
@@ -12,7 +13,8 @@ export class KeyPicker {
     for (const key of this.active) if (!this.pinned.includes(key)) this.pinned.push(key);
     this.db = '';
     this.catalog = null;
-    this.loading = false;
+    this.pending = null;
+    this.error = '';
     this.selectedEl = popup.querySelector('#key-selected');
     this.searchEl = popup.querySelector('#key-search');
     this.catalogEl = popup.querySelector('#key-catalog');
@@ -31,32 +33,40 @@ export class KeyPicker {
   setDb(db) {
     if (db === this.db) return;
     this.db = db;
-    this.catalog = null;
-    this.loading = false;
+    this.invalidate();
   }
 
   invalidate() {
     this.catalog = null;
+    this.pending = null;
+    this.error = '';
+  }
+
+  loadCatalog() {
+    if (this.catalog !== null) return Promise.resolve();
+    if (!this.pending) {
+      const requestedDb = this.db;
+      this.pending = getKeys(requestedDb)
+        .then((data) => {
+          if (requestedDb === this.db) this.catalog = data.keys;
+        })
+        .catch((e) => {
+          if (requestedDb === this.db) this.error = e.message;
+        })
+        .finally(() => {
+          if (requestedDb === this.db) this.pending = null;
+        });
+    }
+    return this.pending;
   }
 
   async openPopup() {
     this.popup.classList.remove('hidden');
     this.renderSelected();
     this.searchEl.focus();
-    if (this.catalog === null && !this.loading) {
-      const requestedDb = this.db;
-      this.loading = true;
+    if (this.catalog === null) {
       this.catalogEl.textContent = 'loading...';
-      try {
-        const data = await getKeys(requestedDb);
-        if (requestedDb !== this.db) return;
-        this.catalog = data.keys;
-      } catch (e) {
-        if (requestedDb === this.db) this.catalogEl.textContent = `error: ${e.message}`;
-        return;
-      } finally {
-        if (requestedDb === this.db) this.loading = false;
-      }
+      await this.loadCatalog();
     }
     this.renderCatalog();
   }
@@ -118,23 +128,37 @@ export class KeyPicker {
   }
 
   renderCatalog() {
-    if (this.catalog === null) return;
+    if (this.catalog === null) {
+      if (this.error) this.catalogEl.textContent = `error: ${this.error}`;
+      return;
+    }
     const needle = this.searchEl.value.trim().toLowerCase();
     this.catalogEl.replaceChildren();
-    for (const [key, count] of this.catalog) {
-      if (needle && !key.toLowerCase().includes(needle)) continue;
-      const row = document.createElement('div');
-      row.className = 'key-row';
-      row.classList.toggle('selected', this.active.includes(key));
-      const name = document.createElement('span');
-      name.textContent = key;
-      const freq = document.createElement('span');
-      freq.className = 'key-count';
-      freq.textContent = count;
-      row.append(name, freq);
-      row.addEventListener('click', () => this.toggle(key));
-      this.catalogEl.appendChild(row);
+    const matched = this.catalog.filter(([key]) => !needle || key.toLowerCase().includes(needle));
+    for (const [prefix, group] of groupEntriesByPrefix(matched)) {
+      if (prefix) {
+        const heading = document.createElement('div');
+        heading.className = 'key-group';
+        heading.textContent = prefix;
+        this.catalogEl.appendChild(heading);
+      }
+      for (const [key, count] of group) this.catalogEl.appendChild(this.catalogRow(key, count));
     }
     if (this.catalogEl.childElementCount === 0) this.catalogEl.textContent = 'no keys';
+  }
+
+  catalogRow(key, count) {
+    const row = document.createElement('div');
+    row.className = 'key-row';
+    row.title = key;
+    row.classList.toggle('selected', this.active.includes(key));
+    const name = document.createElement('span');
+    name.textContent = stripPrefix(key);
+    const freq = document.createElement('span');
+    freq.className = 'key-count';
+    freq.textContent = count;
+    row.append(name, freq);
+    row.addEventListener('click', () => this.toggle(key));
+    return row;
   }
 }

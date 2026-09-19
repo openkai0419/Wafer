@@ -36,6 +36,29 @@ def test_ignore_folder_crud(setting_db):
     assert setting_db.get_all_ignore_folders() == []
 
 
+def test_ignore_pattern_crud(setting_db):
+    assert setting_db.add_ignore_pattern("*cache*") is True
+    assert setting_db.add_ignore_pattern("*cache*") is False
+    patterns = setting_db.get_all_ignore_patterns()
+    assert patterns == ["*cache*"]
+    assert setting_db.remove_ignore_pattern("*cache*") is True
+    assert setting_db.remove_ignore_pattern("*cache*") is False
+    assert setting_db.get_all_ignore_patterns() == []
+
+
+def test_ignore_pattern_normalizes_backslashes(setting_db):
+    setting_db.add_ignore_pattern("path\\cache")
+    assert setting_db.get_all_ignore_patterns() == ["path/cache"]
+
+
+def test_sync_ignore_patterns(setting_db):
+    setting_db.add_ignore_pattern("*old*")
+    setting_db.sync_ignore_patterns(["*new1*", "*new2*"])
+    patterns = setting_db.get_all_ignore_patterns()
+    assert "*old*" not in patterns
+    assert set(patterns) == {"*new1*", "*new2*"}
+
+
 def test_sync_parent_folders(setting_db):
     setting_db.add_parent_folder("C:/old")
     result = setting_db.sync_parent_folders(["C:/new1", "C:/new2"])

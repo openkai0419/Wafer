@@ -8,7 +8,7 @@ from ....core.logs import AppLogger
 from ....core.common.paths import normalize_path
 from ....core.profiling import profiler
 from ..db_writer import DatabaseWriter
-from .path_scope import contains_path_prefix, normalize_prefixes
+from .path_scope import compile_ignore_patterns, contains_path_prefix, normalize_prefixes
 from ..runtime.progress_aggregator import ProgressAggregator
 from ..scanner import DirectoryScanner
 from ..runtime.scheduler import TaskScheduler
@@ -187,6 +187,8 @@ class FolderWatcher:
         self._watch_roots = []
         self._folders = []
         self._ignore_paths = []
+        self._ignore_patterns = []
+        self._ignore_pattern_re = None
         self._pending_deletes: dict[str, tuple[str, float]] = {}
         self._stop = threading.Event()
         self._worker = threading.Thread(target=self._loop, daemon=True)
@@ -210,6 +212,11 @@ class FolderWatcher:
     def set_ignore_paths(self, paths):
         self._ignore_paths = normalize_prefixes(paths)
         self._scanner.set_exclude_paths(paths)
+
+    def set_ignore_patterns(self, patterns):
+        self._ignore_patterns = list(patterns)
+        self._ignore_pattern_re = compile_ignore_patterns(patterns)
+        self._scanner.set_ignore_patterns(patterns)
 
     def request_cleanup(self):
         self._q.put(("cleanup", None))
@@ -332,7 +339,10 @@ class FolderWatcher:
                 self._pending_deletes.pop(norm, None)
 
     def _is_in_scope(self, path: str) -> bool:
-        return contains_path_prefix(self._folders, path) and not contains_path_prefix(self._ignore_paths, path)
+        normalized = normalize_path(path)
+        if not contains_path_prefix(self._folders, normalized) or contains_path_prefix(self._ignore_paths, normalized):
+            return False
+        return self._ignore_pattern_re is None or self._ignore_pattern_re.match(normalized) is None
 
     def _rename_with_fallback(self, pairs):
         missing = self._writer.rename_paths(pairs)

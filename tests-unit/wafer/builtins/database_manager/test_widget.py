@@ -268,6 +268,46 @@ class TestDatabaseDetailWidget:
         assert widget._ignore_list.count() == 0
         assert sdb.get_all_ignore_folders() == [folder.replace("\\", "/")]
 
+    def test_add_ignore_pattern(self, qtbot, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.setting_db_path",
+            lambda name: str(tmp_path / f"{name}.db"),
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.InputDialog.get_text",
+            staticmethod(lambda *a, **kw: "*cache*"),
+        )
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
+
+        widget = _DatabaseDetailWidget()
+        qtbot.addWidget(widget)
+        widget.load("test")
+
+        widget._add_ignore_pattern()
+        assert widget._ignore_pattern_list.count() == 1
+        assert widget._buffers["test"][2] == []
+
+    def test_remove_ignore_pattern(self, qtbot, tmp_path, monkeypatch):
+        sdb_path = str(tmp_path / "test.db")
+        sdb = SettingDB(sdb_path)
+        sdb.add_ignore_pattern("*cache*")
+
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.setting_db_path",
+            lambda name: sdb_path,
+        )
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
+
+        widget = _DatabaseDetailWidget()
+        qtbot.addWidget(widget)
+        widget.load("test")
+
+        assert widget._ignore_pattern_list.count() == 1
+        widget._ignore_pattern_list.setCurrentRow(0)
+        widget._remove_ignore_pattern()
+        assert widget._ignore_pattern_list.count() == 0
+        assert sdb.get_all_ignore_patterns() == ["*cache*"]
+
     def test_load_populates_both_lists(self, qtbot, tmp_path, monkeypatch):
         sdb_path = str(tmp_path / "full.db")
         sdb = SettingDB(sdb_path)
@@ -306,7 +346,7 @@ class TestDatabaseDetailWidget:
         qtbot.addWidget(widget)
         widget.load("test")
 
-        initial = {"test": ([src], [ign])}
+        initial = {"test": ([src], [ign], [])}
         assert not widget.has_changes(initial)
 
     def test_has_changes_with_change(self, qtbot, tmp_path, monkeypatch):
@@ -330,7 +370,7 @@ class TestDatabaseDetailWidget:
         widget.load("test")
         widget._add_source()
 
-        initial = {"test": ([src], [])}
+        initial = {"test": ([src], [], [])}
         assert widget.has_changes(initial)
 
     def test_commit_writes_to_db(self, qtbot, tmp_path, monkeypatch):
@@ -353,7 +393,7 @@ class TestDatabaseDetailWidget:
         widget.load("test")
         widget._add_source()
 
-        initial = {"test": ([], [])}
+        initial = {"test": ([], [], [])}
         changed = widget.commit(initial)
         assert changed == ["test"]
         assert len(sdb.get_all_parent_folders()) == 1
@@ -374,7 +414,7 @@ class TestDatabaseDetailWidget:
         qtbot.addWidget(widget)
         widget.load("test")
 
-        initial = {"test": ([src], [])}
+        initial = {"test": ([src], [], [])}
         changed = widget.commit(initial)
         assert changed == []
 
@@ -426,9 +466,9 @@ class TestDatabaseDetailWidget:
         widget.load("test")
         widget._add_source()
 
-        initial = {"test": ([], [])}
+        initial = {"test": ([], [], [])}
         widget.revert(initial)
-        assert widget._buffers["test"] == ([], [])
+        assert widget._buffers["test"] == ([], [], [])
 
 
 class TestDatabaseManagerCommands:
@@ -1075,7 +1115,7 @@ class TestSplitters:
         widget = _DatabaseDetailWidget()
         qtbot.addWidget(widget)
         assert isinstance(widget.splitter, QtWidgets.QSplitter)
-        assert widget.splitter.count() == 2
+        assert widget.splitter.count() == 3
 
     def test_paths_splitter_exists(self, qtbot, tmp_path, monkeypatch):
         monkeypatch.setattr(
@@ -1117,7 +1157,7 @@ class TestSplitters:
         assert "detail_splitter" in state
         assert isinstance(state["paths_splitter"], list)
         assert len(state["paths_splitter"]) == 2
-        assert len(state["detail_splitter"]) == 2
+        assert len(state["detail_splitter"]) == 3
 
         dlg._tabs.setCurrentIndex(1)
         QApplication.processEvents()

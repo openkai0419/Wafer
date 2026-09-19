@@ -91,6 +91,7 @@ class IndexerProcess:
 
         self.scanner = DirectoryScanner(db_path, self.scheduler, self.writer, progress, collectors)
         self.scanner.set_exclude_paths(self.setting_db.get_all_ignore_folders())
+        self.scanner.set_ignore_patterns(self.setting_db.get_all_ignore_patterns())
         self.scanner.start()
 
         self.receiver = CollectorReceiver(self.scheduler, self.writer, progress)
@@ -134,8 +135,10 @@ class IndexerProcess:
         self.setting_watcher = SettingWatcher(self.setting_db)
         self.setting_watcher.parent_folders_changed.connect(self.folder_watcher.start)
         self.setting_watcher.ignore_folders_changed.connect(self.folder_watcher.set_ignore_paths)
+        self.setting_watcher.ignore_patterns_changed.connect(self.folder_watcher.set_ignore_patterns)
         self.setting_watcher.parent_folders_changed.connect(lambda _: progress.send_event("folderchanged"))
         self.setting_watcher.ignore_folders_changed.connect(lambda _: progress.send_event("folderchanged"))
+        self.setting_watcher.ignore_patterns_changed.connect(lambda _: progress.send_event("folderchanged"))
         self.setting_watcher.start()
 
         if is_new:

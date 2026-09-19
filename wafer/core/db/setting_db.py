@@ -7,7 +7,11 @@ from ..profiling import profiler
 from ..logs import AppLogger
 from .db_utils import connect_with_retry
 
-_VALID_FOLDER_TABLES = frozenset({"parent_folders", "ignore_folders"})
+_ENTRY_TABLE_COLUMNS = {
+    "parent_folders": "path",
+    "ignore_folders": "path",
+    "ignore_patterns": "pattern",
+}
 
 
 class SettingDB:
@@ -60,6 +64,12 @@ class SettingDB:
                 );
             """)
             con.execute("""
+                CREATE TABLE IF NOT EXISTS ignore_patterns (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    pattern TEXT NOT NULL UNIQUE
+                );
+            """)
+            con.execute("""
                 CREATE TABLE IF NOT EXISTS kv_store (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL,
@@ -67,47 +77,54 @@ class SettingDB:
                 );
             """)
 
-    def _validate_folder_type(self, folder_type):
-        if folder_type not in _VALID_FOLDER_TABLES:
-            raise ValueError(f"Invalid folder type: {folder_type}")
+    def _validate_table(self, table):
+        column = _ENTRY_TABLE_COLUMNS.get(table)
+        if column is None:
+            raise ValueError(f"Invalid folder type: {table}")
+        return column
 
-    def _sync_folders(self, folder_type, new_paths):
-        self._validate_folder_type(folder_type)
-        norm_paths = set(normalize_path(p) for p in new_paths)
+    def _normalize_entry(self, column, value):
+        return normalize_path(value) if column == "path" else value.strip().replace("\\", "/")
+
+    def _sync_folders(self, table, new_values):
+        column = self._validate_table(table)
+        norm_values = {self._normalize_entry(column, v) for v in new_values if v and v.strip()}
         with self._conn() as con:
-            current = {row[0] for row in con.execute(f"SELECT path FROM {folder_type}")}
-            to_add = norm_paths - current
-            to_remove = current - norm_paths
+            current = {row[0] for row in con.execute(f"SELECT {column} FROM {table}")}
+            to_add = norm_values - current
+            to_remove = current - norm_values
             if to_add:
-                con.executemany(f"INSERT OR IGNORE INTO {folder_type}(path) VALUES (?)", ((p,) for p in to_add))
+                con.executemany(f"INSERT OR IGNORE INTO {table}({column}) VALUES (?)", ((v,) for v in to_add))
             if to_remove:
-                con.executemany(f"DELETE FROM {folder_type} WHERE path = ?", ((p,) for p in to_remove))
+                con.executemany(f"DELETE FROM {table} WHERE {column} = ?", ((v,) for v in to_remove))
         return {"added": list(to_add), "removed": list(to_remove)}
 
-    def _add_folder(self, folder_type, path):
-        self._validate_folder_type(folder_type)
-        norm_path = normalize_path(path)
+    def _add_folder(self, table, value):
+        column = self._validate_table(table)
+        norm_value = self._normalize_entry(column, value)
+        if not norm_value:
+            return False
         with self._conn() as con:
-            cur = con.execute(f"SELECT 1 FROM {folder_type} WHERE path = ?", (norm_path,))
+            cur = con.execute(f"SELECT 1 FROM {table} WHERE {column} = ?", (norm_value,))
             if cur.fetchone():
                 return False
-            con.execute(f"INSERT INTO {folder_type}(path) VALUES (?)", (norm_path,))
+            con.execute(f"INSERT INTO {table}({column}) VALUES (?)", (norm_value,))
         return True
 
-    def _remove_folder(self, folder_type, path):
-        self._validate_folder_type(folder_type)
-        norm_path = normalize_path(path)
+    def _remove_folder(self, table, value):
+        column = self._validate_table(table)
+        norm_value = self._normalize_entry(column, value)
         with self._conn() as con:
-            cur = con.execute(f"SELECT 1 FROM {folder_type} WHERE path = ?", (norm_path,))
+            cur = con.execute(f"SELECT 1 FROM {table} WHERE {column} = ?", (norm_value,))
             if not cur.fetchone():
                 return False
-            con.execute(f"DELETE FROM {folder_type} WHERE path = ?", (norm_path,))
+            con.execute(f"DELETE FROM {table} WHERE {column} = ?", (norm_value,))
         return True
 
-    def _get_all_folders(self, folder_type):
-        self._validate_folder_type(folder_type)
+    def _get_all_folders(self, table):
+        column = self._validate_table(table)
         with self._conn(read_only=True) as con:
-            cur = con.execute(f"SELECT path FROM {folder_type} ORDER BY id ASC")
+            cur = con.execute(f"SELECT {column} FROM {table} ORDER BY id ASC")
             return [row[0] for row in cur.fetchall()]
 
     @profiler.profile
@@ -141,6 +158,22 @@ class SettingDB:
     @profiler.profile
     def get_all_ignore_folders(self):
         return self._get_all_folders("ignore_folders")
+
+    @profiler.profile
+    def sync_ignore_patterns(self, new_patterns):
+        return self._sync_folders("ignore_patterns", new_patterns)
+
+    @profiler.profile
+    def add_ignore_pattern(self, pattern):
+        return self._add_folder("ignore_patterns", pattern)
+
+    @profiler.profile
+    def remove_ignore_pattern(self, pattern):
+        return self._remove_folder("ignore_patterns", pattern)
+
+    @profiler.profile
+    def get_all_ignore_patterns(self):
+        return self._get_all_folders("ignore_patterns")
 
     @profiler.profile
     def set_setting(self, key, value):

@@ -14,7 +14,7 @@ from ...core.common.paths import normalize_path
 from ...core.profiling import profiler
 from .db_writer import DatabaseWriter
 from .receivers.parser_receiver import trigger_parser_pending
-from .watch.path_scope import contains_path_prefix, normalize_prefixes
+from .watch.path_scope import compile_ignore_patterns, contains_path_prefix, normalize_prefixes
 from .runtime.progress_aggregator import ProgressAggregator
 from .runtime.scheduler import TaskScheduler
 from .runtime.task import CancelToken, Task, TaskPriority
@@ -38,6 +38,8 @@ class DirectoryScanner:
         self._collectors = collectors or []
         self._parsers: list[tuple[str, tuple[str, ...]]] = []
         self._exclude_paths: list[str] = []
+        self._ignore_patterns: list[str] = []
+        self._ignore_pattern_re = None
         self._read_conn = None
         self._stop = threading.Event()
         self._request_queue: list[tuple[str, object]] = []
@@ -76,6 +78,12 @@ class DirectoryScanner:
         AppLogger.info(f"[Scanner] Exclude paths set: {len(self._exclude_paths)}")
         self._submit_remove_excluded()
 
+    def set_ignore_patterns(self, patterns: list[str]):
+        self._ignore_patterns = list(patterns)
+        self._ignore_pattern_re = compile_ignore_patterns(patterns)
+        AppLogger.info(f"[Scanner] Ignore patterns set: {len(self._ignore_patterns)}")
+        self._submit_remove_excluded()
+
     def set_parsers(self, parsers: list[tuple[str, tuple[str, ...]]]):
         self._parsers = parsers
 
@@ -112,7 +120,9 @@ class DirectoryScanner:
                     AppLogger.error(f"[Scanner] request failed ({kind}): {e}", exc=e)
 
     def _is_excluded(self, path: str) -> bool:
-        return contains_path_prefix(self._exclude_paths, path)
+        if contains_path_prefix(self._exclude_paths, path):
+            return True
+        return self._ignore_pattern_re is not None and self._ignore_pattern_re.match(path) is not None
 
     @profiler.profile
     def _do_full_scan(self, root_paths: Sequence[str]):
@@ -264,7 +274,7 @@ class DirectoryScanner:
             )
 
     def _submit_remove_excluded(self):
-        if not self._exclude_paths:
+        if not self._exclude_paths and not self._ignore_patterns:
             return
         if not self._read_conn:
             return
@@ -371,7 +381,10 @@ class DirectoryScanner:
                 with os.scandir(current) as it:
                     for entry in it:
                         if entry.is_file(follow_symlinks=False):
-                            yield (normalize_path(entry.path), _get_stat(entry.stat()))
+                            file_path = normalize_path(entry.path)
+                            if self._is_excluded(file_path):
+                                continue
+                            yield (file_path, _get_stat(entry.stat()))
                         elif entry.is_dir(follow_symlinks=False):
                             stack.append(entry.path)
                 self._progress.increment(1, 0)

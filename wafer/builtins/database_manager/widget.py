@@ -105,7 +105,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         self.setStyleSheet(_build_stylesheet())
 
         self._dispatcher = Dispatcher(utility_pool)
-        self._initial_paths: dict[str, tuple[list[str], list[str]]] = {}
+        self._initial_paths: dict[str, tuple[list[str], list[str], list[str]]] = {}
 
         self._db_list = QtWidgets.QListWidget()
         self._db_list.setMinimumHeight(dpix(60))
@@ -216,6 +216,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
             self._initial_paths[name] = (
                 list(sdb.get_all_parent_folders()),
                 list(sdb.get_all_ignore_folders()),
+                list(sdb.get_all_ignore_patterns()),
             )
 
     def _refresh_db_list(self):
@@ -262,7 +263,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
 
             def _on_done():
                 self._refresh_db_list()
-                self._initial_paths[text] = ([], [])
+                self._initial_paths[text] = ([], [], [])
                 items = self._db_list.findItems(text, QtCore.Qt.MatchExactly)
                 if items:
                     self._db_list.setCurrentItem(items[0])
@@ -370,7 +371,7 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._db_name = None
-        self._buffers: dict[str, tuple[list[str], list[str]]] = {}
+        self._buffers: dict[str, tuple[list[str], list[str], list[str]]] = {}
 
         self._source_list = QtWidgets.QListWidget()
         self._source_list.setMinimumHeight(dpix(50))
@@ -422,11 +423,38 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         ign_layout.addWidget(self._ignore_list)
         ign_layout.addLayout(ign_btn_layout)
 
+        self._ignore_pattern_list = QtWidgets.QListWidget()
+        self._ignore_pattern_list.setMinimumHeight(dpix(50))
+        self._ignore_pattern_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self._ignore_pattern_list.installEventFilter(self)
+        add_ign_pattern_btn = QtWidgets.QPushButton()
+        add_ign_pattern_btn.setIcon(themed_icon("plus"))
+        add_ign_pattern_btn.setObjectName("folder_add_btn")
+        add_ign_pattern_btn.setToolTip(t("Add Ignore Pattern"))
+        add_ign_pattern_btn.clicked.connect(self._add_ignore_pattern)
+        rm_ign_pattern_btn = QtWidgets.QPushButton()
+        rm_ign_pattern_btn.setIcon(themed_icon("minus"))
+        rm_ign_pattern_btn.setObjectName("remove_btn")
+        rm_ign_pattern_btn.setToolTip(t("Remove Selected"))
+        rm_ign_pattern_btn.clicked.connect(self._remove_ignore_pattern)
+
+        ign_pattern_btn_layout = QtWidgets.QHBoxLayout()
+        ign_pattern_btn_layout.addStretch()
+        ign_pattern_btn_layout.addWidget(add_ign_pattern_btn)
+        ign_pattern_btn_layout.addWidget(rm_ign_pattern_btn)
+
+        ign_pattern_group = QtWidgets.QGroupBox(t("Ignore Patterns"))
+        ign_pattern_layout = QtWidgets.QVBoxLayout(ign_pattern_group)
+        ign_pattern_layout.addWidget(self._ignore_pattern_list)
+        ign_pattern_layout.addLayout(ign_pattern_btn_layout)
+
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         self.splitter.addWidget(src_group)
         self.splitter.addWidget(ign_group)
+        self.splitter.addWidget(ign_pattern_group)
         self.splitter.setStretchFactor(0, 1)
         self.splitter.setStretchFactor(1, 1)
+        self.splitter.setStretchFactor(2, 1)
         self.splitter.setChildrenCollapsible(False)
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -437,54 +465,61 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         if self._db_name:
             sources = [self._source_list.item(i).text() for i in range(self._source_list.count())]
             ignores = [self._ignore_list.item(i).text() for i in range(self._ignore_list.count())]
-            self._buffers[self._db_name] = (sources, ignores)
+            ignore_patterns = [self._ignore_pattern_list.item(i).text() for i in range(self._ignore_pattern_list.count())]
+            self._buffers[self._db_name] = (sources, ignores, ignore_patterns)
 
     def load(self, db_name: str):
         self._save_current_to_buffer()
         self._db_name = db_name
         if db_name in self._buffers:
-            sources, ignores = self._buffers[db_name]
+            sources, ignores, ignore_patterns = self._buffers[db_name]
         else:
             sdb = SettingDB(setting_db_path(db_name))
             sources = list(sdb.get_all_parent_folders())
             ignores = list(sdb.get_all_ignore_folders())
-            self._buffers[db_name] = (sources, ignores)
+            ignore_patterns = list(sdb.get_all_ignore_patterns())
+            self._buffers[db_name] = (sources, ignores, ignore_patterns)
         self._source_list.clear()
         for path in sources:
             self._source_list.addItem(path)
         self._ignore_list.clear()
         for path in ignores:
             self._ignore_list.addItem(path)
+        self._ignore_pattern_list.clear()
+        for pattern in ignore_patterns:
+            self._ignore_pattern_list.addItem(pattern)
 
-    def has_changes(self, initial_paths: dict[str, tuple[list[str], list[str]]]) -> bool:
+    def has_changes(self, initial_paths: dict[str, tuple[list[str], list[str], list[str]]]) -> bool:
         self._save_current_to_buffer()
-        for name, (buf_src, buf_ign) in self._buffers.items():
-            initial = initial_paths.get(name, ([], []))
-            if buf_src != initial[0] or buf_ign != initial[1]:
+        for name, (buf_src, buf_ign, buf_ign_patterns) in self._buffers.items():
+            initial = initial_paths.get(name, ([], [], []))
+            if buf_src != initial[0] or buf_ign != initial[1] or buf_ign_patterns != initial[2]:
                 return True
         return False
 
-    def commit(self, initial_paths: dict[str, tuple[list[str], list[str]]]) -> list[str]:
+    def commit(self, initial_paths: dict[str, tuple[list[str], list[str], list[str]]]) -> list[str]:
         self._save_current_to_buffer()
         changed = []
-        for name, (buf_src, buf_ign) in self._buffers.items():
-            initial = initial_paths.get(name, ([], []))
-            if buf_src == initial[0] and buf_ign == initial[1]:
+        for name, (buf_src, buf_ign, buf_ign_patterns) in self._buffers.items():
+            initial = initial_paths.get(name, ([], [], []))
+            if buf_src == initial[0] and buf_ign == initial[1] and buf_ign_patterns == initial[2]:
                 continue
             sdb = SettingDB(setting_db_path(name))
             if buf_src != initial[0]:
                 sdb.sync_parent_folders(buf_src)
             if buf_ign != initial[1]:
                 sdb.sync_ignore_folders(buf_ign)
+            if buf_ign_patterns != initial[2]:
+                sdb.sync_ignore_patterns(buf_ign_patterns)
             changed.append(name)
         return changed
 
-    def revert(self, initial_paths: dict[str, tuple[list[str], list[str]]]):
+    def revert(self, initial_paths: dict[str, tuple[list[str], list[str], list[str]]]):
         self._buffers.clear()
-        for name, (sources, ignores) in initial_paths.items():
-            self._buffers[name] = (list(sources), list(ignores))
+        for name, (sources, ignores, ignore_patterns) in initial_paths.items():
+            self._buffers[name] = (list(sources), list(ignores), list(ignore_patterns))
 
-    def reset(self, initial_paths: dict[str, tuple[list[str], list[str]]]):
+    def reset(self, initial_paths: dict[str, tuple[list[str], list[str], list[str]]]):
         self._db_name = None
         self.revert(initial_paths)
 
@@ -522,20 +557,39 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         for item in self._ignore_list.selectedItems():
             self._ignore_list.takeItem(self._ignore_list.row(item))
 
+    def _add_ignore_pattern(self):
+        if not self._db_name:
+            return
+        pattern = InputDialog.get_text(
+            t('Add a pattern to ignore (e.g. *cache*, *.tmp):'),
+            title=f'{t("Add Ignore Pattern")} - "{self._db_name}"',
+            parent=self,
+        )
+        if not pattern or not pattern.strip():
+            return
+        pattern = pattern.strip()
+        existing = {self._ignore_pattern_list.item(i).text() for i in range(self._ignore_pattern_list.count())}
+        if pattern not in existing:
+            self._ignore_pattern_list.addItem(pattern)
+
+    def _remove_ignore_pattern(self):
+        for item in self._ignore_pattern_list.selectedItems():
+            self._ignore_pattern_list.takeItem(self._ignore_pattern_list.row(item))
+
     def eventFilter(self, obj, event):
         if event.type() != QtCore.QEvent.KeyPress:
             return super().eventFilter(obj, event)
-        if obj not in (self._source_list, self._ignore_list):
+        if obj not in (self._source_list, self._ignore_list, self._ignore_pattern_list):
             return super().eventFilter(obj, event)
         if event.matches(QtGui.QKeySequence.Paste):
-            self._paste_paths(obj)
+            self._paste_paths(obj, require_dir=obj is not self._ignore_pattern_list)
             return True
         if event.matches(QtGui.QKeySequence.Copy):
             self._copy_paths(obj)
             return True
         return super().eventFilter(obj, event)
 
-    def _paste_paths(self, list_widget: QtWidgets.QListWidget):
+    def _paste_paths(self, list_widget: QtWidgets.QListWidget, require_dir: bool = True):
         clipboard = QtWidgets.QApplication.clipboard()
         text = clipboard.text()
         if not text:
@@ -545,9 +599,10 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
             path = line.strip()
             if not path or path in existing:
                 continue
-            if os.path.isdir(path):
-                list_widget.addItem(path)
-                existing.add(path)
+            if require_dir and not os.path.isdir(path):
+                continue
+            list_widget.addItem(path)
+            existing.add(path)
 
     def _copy_paths(self, list_widget: QtWidgets.QListWidget):
         selected = [item.text() for item in list_widget.selectedItems()]

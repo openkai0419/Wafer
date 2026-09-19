@@ -289,6 +289,34 @@ def test_exec_cleanup():
     assert task.name == "delete_orphans"
 
 
+def test_set_ignore_patterns_forwards_to_scanner():
+    wf, scheduler, writer, scanner, _ = _make_watcher()
+    wf.set_ignore_patterns(["*cache*"])
+    assert wf._ignore_patterns == ["*cache*"]
+    scanner.set_ignore_patterns.assert_called_once_with(["*cache*"])
+
+
+def test_is_in_scope_respects_ignore_pattern(tmp_path):
+    root = tmp_path / "watched"
+    wf, *_ = _make_watcher()
+    _set_scope(wf, [root])
+    wf.set_ignore_patterns(["*cache*"])
+
+    assert wf._is_in_scope(str(root / "photo.jpg"))
+    assert not wf._is_in_scope(str(root / "my_cache_dir" / "file.jpg"))
+
+
+def test_is_in_scope_ignore_pattern_is_case_sensitive(tmp_path):
+    root = tmp_path / "watched"
+    wf, *_ = _make_watcher()
+    _set_scope(wf, [root])
+    wf.set_ignore_patterns(["*CACHE*"])
+
+    assert not wf._is_in_scope(str(root / "CACHE" / "file.jpg"))
+    assert wf._is_in_scope(str(root / "cache" / "file.jpg"))
+
+
+
 @patch("wafer.app.indexer.watch.folder_watcher.Observer")
 def test_start_reuses_observer_setup_and_rescans(mock_observer_cls, tmp_path):
     from wafer.app.indexer.watch.path_scope import normalize_prefixes

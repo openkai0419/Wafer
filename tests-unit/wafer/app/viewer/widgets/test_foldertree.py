@@ -12,6 +12,7 @@ from wafer.app.viewer.widgets.foldertree import (
     _collect_segments_for_paths,
 )
 from wafer.core.common.paths import normalize_path
+from wafer.app.indexer.watch.path_scope import compile_ignore_patterns
 
 
 def create_fs_tree(base):
@@ -551,6 +552,32 @@ def test_set_state_async_empty_states(qtbot):
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def test_set_state_async_filters_ignore_pattern(qtbot, qapp):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, "keep"), exist_ok=True)
+        os.makedirs(os.path.join(tmpdir, "cache_dir"), exist_ok=True)
+        ignore_pattern_re = compile_ignore_patterns(["*cache*"])
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[], ignore_pattern_re=ignore_pattern_re)
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+
+        root_norm = normalize_path(tmpdir)
+        done = []
+        tree.set_state_async(([root_norm], []), on_complete=lambda: done.append(True))
+
+        deadline = time.monotonic() + 5.0
+        while not done and time.monotonic() < deadline:
+            qapp.processEvents()
+            time.sleep(0.01)
+
+        assert done, "set_state_async did not complete"
+        assert tree.model_.find_item_by_path(os.path.join(tmpdir, "keep")) is not None
+        assert tree.model_.find_item_by_path(os.path.join(tmpdir, "cache_dir")) is None
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 def test_programmatic_expand_suppresses_request_expand(qtbot):
     tmpdir = tempfile.mkdtemp()
     try:
@@ -876,6 +903,27 @@ def test_expand_and_select_paths_dedupes(qtbot):
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def test_expand_and_select_paths_filters_ignore_pattern(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, "A"), exist_ok=True)
+        os.makedirs(os.path.join(tmpdir, "cache_dir"), exist_ok=True)
+        ignore_pattern_re = compile_ignore_patterns(["*cache*"])
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[], ignore_pattern_re=ignore_pattern_re)
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+
+        path_a = os.path.join(tmpdir, "A")
+        done = []
+        tree.expand_and_select_paths([path_a], on_complete=lambda: done.append(True))
+        qtbot.waitUntil(lambda: bool(done), timeout=3000)
+
+        assert tree.model_.find_item_by_path(normalize_path(path_a)) is not None
+        assert tree.model_.find_item_by_path(normalize_path(os.path.join(tmpdir, "cache_dir"))) is None
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 def test_navigate_next_folder_emits_after_selection(qtbot):
     tmpdir = tempfile.mkdtemp()
     try:
@@ -1076,7 +1124,7 @@ def test_expand_recursive_drains_entries_by_timer(qtbot, monkeypatch, tmp_path):
         path_b1: [],
     }
 
-    def scan_children(path, _excluded):
+    def scan_children(path, _excluded, _ignore_pattern_re=None):
         return children_by_path.get(normalize_path(path), [])
 
     tree = LazyFolderTreeView(roots=[root], excluded=[])
@@ -1111,11 +1159,31 @@ def test_expand_recursive_drains_entries_by_timer(qtbot, monkeypatch, tmp_path):
     assert tree.model_.find_item_by_path(path_b1) is not None
 
 
+def test_expand_recursive_filters_ignore_pattern(qtbot, tmp_path):
+    root = normalize_path(str(tmp_path))
+    path_a = normalize_path(os.path.join(root, "A"))
+    os.makedirs(os.path.join(root, "A", "keep"), exist_ok=True)
+    os.makedirs(os.path.join(root, "A", "cache_dir"), exist_ok=True)
+
+    ignore_pattern_re = compile_ignore_patterns(["*cache*"])
+    tree = LazyFolderTreeView(roots=[root], excluded=[], ignore_pattern_re=ignore_pattern_re)
+    qtbot.addWidget(tree)
+    tree.model_._build_roots([root])
+
+    root_index = tree.model_.indexFromItem(tree.model_.find_item_by_path(root))
+    tree.expand_recursive(root_index)
+    qtbot.waitUntil(lambda: root not in tree.model_._pending_expands, timeout=3000)
+
+    assert tree.model_.find_item_by_path(path_a) is not None
+    assert tree.model_.find_item_by_path(os.path.join(root, "A", "keep")) is not None
+    assert tree.model_.find_item_by_path(os.path.join(root, "A", "cache_dir")) is None
+
+
 def test_expand_recursive_cancel_clears_job(qtbot, monkeypatch, tmp_path):
     root = normalize_path(str(tmp_path))
     path_a = normalize_path(os.path.join(root, "A"))
 
-    def scan_children(path, _excluded):
+    def scan_children(path, _excluded, _ignore_pattern_re=None):
         return [(path_a, True)] if normalize_path(path) == root else []
 
     tree = LazyFolderTreeView(roots=[root], excluded=[])
@@ -1140,7 +1208,7 @@ def test_cancel_expand_recursive_cancels_active_job(qtbot, monkeypatch, tmp_path
     started = threading.Event()
     released = threading.Event()
 
-    def scan_children(path, _excluded):
+    def scan_children(path, _excluded, _ignore_pattern_re=None):
         if normalize_path(path) == root:
             started.set()
             released.wait(2.0)

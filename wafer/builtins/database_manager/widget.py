@@ -20,6 +20,14 @@ from ...qt.common.thread import utility_pool
 from ...plugin.panel.base import BasePanelPlugin
 
 
+def _scrollable(widget: QtWidgets.QWidget) -> QtWidgets.QScrollArea:
+    scroll = QtWidgets.QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+    scroll.setWidget(widget)
+    return scroll
+
+
 def _build_stylesheet() -> str:
     p = ThemeManager.instance().palette
     r = dpix(4)
@@ -106,6 +114,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
 
         self._dispatcher = Dispatcher(utility_pool)
         self._initial_paths: dict[str, tuple[list[str], list[str], list[str]]] = {}
+        self._did_auto_select_current_db = False
 
         self._db_list = QtWidgets.QListWidget()
         self._db_list.setMinimumHeight(dpix(60))
@@ -176,8 +185,8 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         self._data_tab.apply_requested.connect(self._apply_data_actions)
 
         self._tabs = QtWidgets.QTabWidget()
-        self._tabs.addTab(self._scrollable(paths_container), t("Paths"))
-        self._tabs.addTab(self._scrollable(self._data_tab), t("Data"))
+        self._tabs.addTab(_scrollable(paths_container), t("Paths"))
+        self._tabs.addTab(_scrollable(self._data_tab), t("Data"))
 
         layout = QtWidgets.QVBoxLayout(self)
         p = dpix(6)
@@ -187,6 +196,20 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
 
         self._refresh_db_list()
         self._snapshot_all()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._did_auto_select_current_db:
+            self._did_auto_select_current_db = True
+            self._select_current_db()
+
+    def _select_current_db(self):
+        name = getattr(self.window(), "database_name", None)
+        if not name:
+            return
+        items = self._db_list.findItems(name, QtCore.Qt.MatchExactly)
+        if items:
+            self._db_list.setCurrentItem(items[0])
 
     def _save_ui_state(self) -> dict:
         state = {}
@@ -358,15 +381,6 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         self._data_tab.clear_checks()
         AppLogger.info(f"[DatabaseManager] Sent data changes for {len(actions)} pairs")
 
-    @staticmethod
-    def _scrollable(widget: QtWidgets.QWidget) -> QtWidgets.QScrollArea:
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        scroll.setWidget(widget)
-        return scroll
-
-
 class _DatabaseDetailWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -459,7 +473,7 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.splitter)
+        layout.addWidget(_scrollable(self.splitter))
 
     def _save_current_to_buffer(self):
         if self._db_name:

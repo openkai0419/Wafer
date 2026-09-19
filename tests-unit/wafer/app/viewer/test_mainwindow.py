@@ -156,6 +156,7 @@ class TestReloadFolderList:
             win.setting_db = MagicMock()
             win.setting_db.get_all_parent_folders.return_value = ["/root"]
             win.setting_db.get_all_ignore_folders.return_value = ["/ignored"]
+            win.setting_db.get_all_ignore_patterns.return_value = []
             win.folder_view = MagicMock()
             win.folder_view.is_structure_current.return_value = False
             win.folder_view.defer_reload_if_editing.return_value = False
@@ -170,11 +171,11 @@ class TestReloadFolderList:
         MainWindow._reload_folderlist_now(win)
 
         assert win.folder_view.method_calls == [
-            call.is_structure_current(["/root"], ["/ignored"]),
+            call.is_structure_current(["/root"], ["/ignored"], None),
             call.defer_reload_if_editing(ANY, strong=True),
             call.capture_scroll_state(),
             call.get_state(),
-            call.set_folders(["/root"], ["/ignored"]),
+            call.set_folders(["/root"], ["/ignored"], None),
             call.set_state((["/root"], ["/root/A"]), scroll_to_selection=False),
             call.restore_scroll_state({"value": 37, "maximum": 120}),
         ]
@@ -186,7 +187,7 @@ class TestReloadFolderList:
 
         MainWindow._reload_folderlist_now(win)
 
-        win.folder_view.is_structure_current.assert_called_once_with(["/root"], ["/ignored"])
+        win.folder_view.is_structure_current.assert_called_once_with(["/root"], ["/ignored"], None)
         win.folder_view.capture_scroll_state.assert_not_called()
         win.folder_view.set_folders.assert_not_called()
         win._dismiss_folder_callout.assert_called_once()
@@ -197,7 +198,7 @@ class TestReloadFolderList:
 
         MainWindow._reload_folderlist_now(win)
 
-        win.folder_view.is_structure_current.assert_called_once_with(["/root"], ["/ignored"])
+        win.folder_view.is_structure_current.assert_called_once_with(["/root"], ["/ignored"], None)
         win.folder_view.defer_reload_if_editing.assert_called_once_with(ANY, strong=True)
         win.folder_view.capture_scroll_state.assert_not_called()
         win.folder_view.set_folders.assert_not_called()

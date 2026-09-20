@@ -227,6 +227,58 @@ class TestDatabaseDetailWidget:
         assert widget._source_list.count() == 0
         assert sdb.get_all_parent_folders() == [folder.replace("\\", "/")]
 
+    def test_edit_source_folder(self, qtbot, tmp_path, monkeypatch):
+        sdb_path = str(tmp_path / "test.db")
+        old_folder = str(tmp_path / "old")
+        new_folder = str(tmp_path / "new")
+        sdb = SettingDB(sdb_path)
+        sdb.add_parent_folder(old_folder)
+
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.setting_db_path",
+            lambda name: sdb_path,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory",
+            staticmethod(lambda *a, **kw: new_folder),
+        )
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
+
+        widget = _DatabaseDetailWidget()
+        qtbot.addWidget(widget)
+        widget.load("test")
+
+        item = widget._source_list.item(0)
+        widget._edit_source(item)
+        assert widget._source_list.count() == 1
+        assert widget._source_list.item(0).text() == new_folder
+
+    def test_edit_source_folder_no_duplicate(self, qtbot, tmp_path, monkeypatch):
+        sdb_path = str(tmp_path / "test.db")
+        folder_a = str(tmp_path / "a")
+        folder_b = str(tmp_path / "b")
+        sdb = SettingDB(sdb_path)
+        sdb.add_parent_folder(folder_a)
+        sdb.add_parent_folder(folder_b)
+
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.setting_db_path",
+            lambda name: sdb_path,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory",
+            staticmethod(lambda *a, **kw: folder_b.replace("\\", "/")),
+        )
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
+
+        widget = _DatabaseDetailWidget()
+        qtbot.addWidget(widget)
+        widget.load("test")
+
+        item = widget._source_list.item(0)
+        widget._edit_source(item)
+        assert widget._source_list.item(0).text() == folder_a.replace("\\", "/")
+
     def test_add_ignore_folder(self, qtbot, tmp_path, monkeypatch):
         monkeypatch.setattr(
             "wafer.builtins.database_manager.widget.setting_db_path",
@@ -268,6 +320,32 @@ class TestDatabaseDetailWidget:
         assert widget._ignore_list.count() == 0
         assert sdb.get_all_ignore_folders() == [folder.replace("\\", "/")]
 
+    def test_edit_ignore_folder(self, qtbot, tmp_path, monkeypatch):
+        sdb_path = str(tmp_path / "test.db")
+        old_folder = str(tmp_path / "old_cache")
+        new_folder = str(tmp_path / "new_cache")
+        sdb = SettingDB(sdb_path)
+        sdb.add_ignore_folder(old_folder)
+
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.setting_db_path",
+            lambda name: sdb_path,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory",
+            staticmethod(lambda *a, **kw: new_folder),
+        )
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
+
+        widget = _DatabaseDetailWidget()
+        qtbot.addWidget(widget)
+        widget.load("test")
+
+        item = widget._ignore_list.item(0)
+        widget._edit_ignore(item)
+        assert widget._ignore_list.count() == 1
+        assert widget._ignore_list.item(0).text() == new_folder
+
     def test_add_ignore_pattern(self, qtbot, tmp_path, monkeypatch):
         monkeypatch.setattr(
             "wafer.builtins.database_manager.widget.setting_db_path",
@@ -286,6 +364,53 @@ class TestDatabaseDetailWidget:
         widget._add_ignore_pattern()
         assert widget._ignore_pattern_list.count() == 1
         assert widget._buffers["test"][2] == []
+
+    def test_edit_ignore_pattern(self, qtbot, tmp_path, monkeypatch):
+        sdb_path = str(tmp_path / "test.db")
+        sdb = SettingDB(sdb_path)
+        sdb.add_ignore_pattern("*cache*")
+
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.setting_db_path",
+            lambda name: sdb_path,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.InputDialog.get_text",
+            staticmethod(lambda *a, **kw: "*.tmp"),
+        )
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
+
+        widget = _DatabaseDetailWidget()
+        qtbot.addWidget(widget)
+        widget.load("test")
+
+        item = widget._ignore_pattern_list.item(0)
+        widget._edit_ignore_pattern(item)
+        assert widget._ignore_pattern_list.count() == 1
+        assert widget._ignore_pattern_list.item(0).text() == "*.tmp"
+
+    def test_edit_ignore_pattern_cancel_keeps_value(self, qtbot, tmp_path, monkeypatch):
+        sdb_path = str(tmp_path / "test.db")
+        sdb = SettingDB(sdb_path)
+        sdb.add_ignore_pattern("*cache*")
+
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.setting_db_path",
+            lambda name: sdb_path,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.widget.InputDialog.get_text",
+            staticmethod(lambda *a, **kw: None),
+        )
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
+
+        widget = _DatabaseDetailWidget()
+        qtbot.addWidget(widget)
+        widget.load("test")
+
+        item = widget._ignore_pattern_list.item(0)
+        widget._edit_ignore_pattern(item)
+        assert widget._ignore_pattern_list.item(0).text() == "*cache*"
 
     def test_remove_ignore_pattern(self, qtbot, tmp_path, monkeypatch):
         sdb_path = str(tmp_path / "test.db")

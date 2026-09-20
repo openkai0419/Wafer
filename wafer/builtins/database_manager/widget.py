@@ -391,6 +391,7 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         self._source_list.setMinimumHeight(dpix(50))
         self._source_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self._source_list.installEventFilter(self)
+        self._source_list.itemDoubleClicked.connect(self._edit_source)
         add_src_btn = QtWidgets.QPushButton()
         add_src_btn.setIcon(themed_icon("plus"))
         add_src_btn.setObjectName("folder_add_btn")
@@ -416,6 +417,7 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         self._ignore_list.setMinimumHeight(dpix(50))
         self._ignore_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self._ignore_list.installEventFilter(self)
+        self._ignore_list.itemDoubleClicked.connect(self._edit_ignore)
         add_ign_btn = QtWidgets.QPushButton()
         add_ign_btn.setIcon(themed_icon("plus"))
         add_ign_btn.setObjectName("folder_add_btn")
@@ -441,6 +443,7 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         self._ignore_pattern_list.setMinimumHeight(dpix(50))
         self._ignore_pattern_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self._ignore_pattern_list.installEventFilter(self)
+        self._ignore_pattern_list.itemDoubleClicked.connect(self._edit_ignore_pattern)
         add_ign_pattern_btn = QtWidgets.QPushButton()
         add_ign_pattern_btn.setIcon(themed_icon("plus"))
         add_ign_pattern_btn.setObjectName("folder_add_btn")
@@ -554,6 +557,23 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         for item in self._source_list.selectedItems():
             self._source_list.takeItem(self._source_list.row(item))
 
+    def _edit_source(self, item: QtWidgets.QListWidgetItem):
+        if not self._db_name:
+            return
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            f'Edit Source Folder in "{self._db_name}"',
+            item.text(),
+        )
+        if not folder or folder == item.text():
+            return
+        existing = {
+            self._source_list.item(i).text() for i in range(self._source_list.count()) if self._source_list.item(i) is not item
+        }
+        if folder in existing:
+            return
+        item.setText(folder)
+
     def _add_ignore(self):
         if not self._db_name:
             return
@@ -570,6 +590,23 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
     def _remove_ignore(self):
         for item in self._ignore_list.selectedItems():
             self._ignore_list.takeItem(self._ignore_list.row(item))
+
+    def _edit_ignore(self, item: QtWidgets.QListWidgetItem):
+        if not self._db_name:
+            return
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            f'Edit Ignore Folder in "{self._db_name}"',
+            item.text(),
+        )
+        if not folder or folder == item.text():
+            return
+        existing = {
+            self._ignore_list.item(i).text() for i in range(self._ignore_list.count()) if self._ignore_list.item(i) is not item
+        }
+        if folder in existing:
+            return
+        item.setText(folder)
 
     def _add_ignore_pattern(self):
         if not self._db_name:
@@ -589,6 +626,29 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
     def _remove_ignore_pattern(self):
         for item in self._ignore_pattern_list.selectedItems():
             self._ignore_pattern_list.takeItem(self._ignore_pattern_list.row(item))
+
+    def _edit_ignore_pattern(self, item: QtWidgets.QListWidgetItem):
+        if not self._db_name:
+            return
+        pattern = InputDialog.get_text(
+            t('Edit ignore pattern (e.g. *cache*, *.tmp):'),
+            title=f'{t("Edit Ignore Pattern")} - "{self._db_name}"',
+            parent=self,
+            default=item.text(),
+        )
+        if pattern is None:
+            return
+        pattern = pattern.strip()
+        if not pattern or pattern == item.text():
+            return
+        existing = {
+            self._ignore_pattern_list.item(i).text()
+            for i in range(self._ignore_pattern_list.count())
+            if self._ignore_pattern_list.item(i) is not item
+        }
+        if pattern in existing:
+            return
+        item.setText(pattern)
 
     def eventFilter(self, obj, event):
         if event.type() != QtCore.QEvent.KeyPress:

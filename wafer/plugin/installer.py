@@ -14,6 +14,7 @@ from collections.abc import Iterable
 
 from ..core.common.hashes import sha256_file
 from ..core.logs import AppLogger
+from ..core.platform.process import kill_with_parent, terminate_pid_tree
 
 
 class RestartScope(Flag):
@@ -109,6 +110,7 @@ def _run_subprocess(cmd: list[str], on_progress=None, on_log=None, timeout: int 
         env=env,
         **kwargs,
     )
+    kill_with_parent(proc.pid)
     stderr_chunks: list[bytes] = []
     line_buf: list[str] = []
     buf_lock = threading.Lock()
@@ -137,10 +139,10 @@ def _run_subprocess(cmd: list[str], on_progress=None, on_log=None, timeout: int 
     try:
         while proc.poll() is None:
             if is_cancelled and is_cancelled():
-                proc.kill()
+                terminate_pid_tree(proc.pid)
                 raise InstallerCancelled("Installation cancelled by user")
             if deadline and time.monotonic() > deadline:
-                proc.kill()
+                terminate_pid_tree(proc.pid)
                 raise TimeoutError(f"Command timed out after {timeout}s")
             if on_log:
                 with buf_lock:

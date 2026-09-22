@@ -2,13 +2,13 @@ import json
 import importlib
 import os
 import shutil
-import subprocess
 import tempfile
 import urllib.request
 from urllib.parse import urlparse
 
 from wafer.core.common.hashes import verify_sha256
 from wafer.core.logs import AppLogger
+from wafer.core.platform.process import run_external
 
 
 _SEVEN_ZR_URL = "https://www.7-zip.org/a/7zr.exe"
@@ -181,6 +181,9 @@ def _extract_7z_py7zr(archive_path: str, target_dir: str, members_set: set[str])
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+_EXTRACT_TIMEOUT = 600
+
+
 def _extract_7z_external(archive_path: str, target_dir: str, members_set: set[str]) -> None:
     exe = find_system_7z()
     if exe is None:
@@ -188,11 +191,11 @@ def _extract_7z_external(archive_path: str, target_dir: str, members_set: set[st
     temp_dir = tempfile.mkdtemp()
     try:
         for name in members_set:
-            result = subprocess.run(
+            result = run_external(
                 [exe, "e", archive_path, f"-o{temp_dir}", name, "-r", "-y"],
                 capture_output=True,
                 text=True,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                timeout=_EXTRACT_TIMEOUT,
             )
             if result.returncode != 0:
                 raise RuntimeError(f"7z extraction failed for {name} (rc={result.returncode}): {result.stderr.strip()}")

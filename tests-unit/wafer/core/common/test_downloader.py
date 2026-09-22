@@ -265,7 +265,7 @@ class TestExtract7zMembers:
             r.stderr = ""
             return r
 
-        monkeypatch.setattr(dl.subprocess, "run", fake_run)
+        monkeypatch.setattr(dl, "run_external", fake_run)
         with pytest.raises(FileNotFoundError, match="Missing after 7z extraction"):
             dl.extract_7z_members(str(tmp_path / "fake.7z"), str(tmp_path / "out"), ("ffprobe.exe",))
 
@@ -310,7 +310,7 @@ class TestExtract7zMembers:
 
             return R()
 
-        monkeypatch.setattr(dl.subprocess, "run", fake_run)
+        monkeypatch.setattr(dl, "run_external", fake_run)
         target = tmp_path / "lib"
         dl.extract_7z_members(str(tmp_path / "fake.7z"), str(target), ("ffmpeg.exe",))
         assert (target / "ffmpeg.exe").read_bytes() == b"DATA"

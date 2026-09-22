@@ -96,6 +96,10 @@ class PluginRegistry(RegistryBase):
                 self._instances[name] = inst
         return inst
 
+    def discard_instance(self, name: str):
+        """Drop the cached instance after shutdown() so the next caller gets a usable one."""
+        self._instances.pop(name, None)
+
 
 class FilePluginRegistry(PluginRegistry):
     def __init__(self):

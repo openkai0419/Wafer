@@ -1,10 +1,20 @@
 import os
 import subprocess
 import sys
+import threading
 import psutil
 from ..logs import AppLogger
 
 MAIN_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "main.py")
+
+_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+_JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
+_PROCESS_SET_QUOTA = 0x0100
+_PROCESS_TERMINATE = 0x0001
+
+_kill_with_parent_job = None
+_kill_with_parent_lock = threading.Lock()
+_kill_with_parent_failed = False
 
 
 def _windows_no_window_flags(extra=0):
@@ -13,6 +23,92 @@ def _windows_no_window_flags(extra=0):
     flags = extra
     flags |= getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
     return flags
+
+
+def _build_kill_on_close_job():
+    import ctypes
+    from ctypes import wintypes
+
+    class IoCounters(ctypes.Structure):
+        _fields_ = [(name, ctypes.c_ulonglong) for name in ("Read", "Write", "Other", "ReadBytes", "WriteBytes", "OtherBytes")]
+
+    class BasicLimits(ctypes.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", wintypes.LARGE_INTEGER),
+            ("PerJobUserTimeLimit", wintypes.LARGE_INTEGER),
+            ("LimitFlags", wintypes.DWORD),
+            ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t),
+            ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t),
+            ("PriorityClass", wintypes.DWORD),
+            ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class ExtendedLimits(ctypes.Structure):
+        _fields_ = [
+            ("BasicLimitInformation", BasicLimits),
+            ("IoInfo", IoCounters),
+            ("ProcessMemoryLimit", ctypes.c_size_t),
+            ("JobMemoryLimit", ctypes.c_size_t),
+            ("PeakProcessMemoryUsed", ctypes.c_size_t),
+            ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+    kernel32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+    job = kernel32.CreateJobObjectW(None, None)
+    if not job:
+        raise OSError(ctypes.get_last_error(), "CreateJobObjectW failed")
+    limits = ExtendedLimits()
+    limits.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    if not kernel32.SetInformationJobObject(job, _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION, ctypes.byref(limits), ctypes.sizeof(limits)):
+        error = ctypes.get_last_error()
+        kernel32.CloseHandle(job)
+        raise OSError(error, "SetInformationJobObject failed")
+    return kernel32, job
+
+
+def kill_with_parent(pid: int) -> bool:
+    """Tie an external child process to this process: Windows kills it when we exit, however we exit.
+
+    Use for third-party binaries (exiftool, ffmpeg, ...). Never for Wafer's own processes,
+    which are spawned detached on purpose and must outlive their parent.
+    """
+    global _kill_with_parent_job, _kill_with_parent_failed
+    if sys.platform != "win32" or _kill_with_parent_failed:
+        return False
+    import ctypes
+    from ctypes import wintypes
+
+    with _kill_with_parent_lock:
+        if _kill_with_parent_job is None:
+            try:
+                _kill_with_parent_job = _build_kill_on_close_job()
+            except OSError as e:
+                _kill_with_parent_failed = True
+                AppLogger.warning("kill_with_parent: job object unavailable, children may outlive this process", exc=e)
+                return False
+        kernel32, job = _kill_with_parent_job
+
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    handle = kernel32.OpenProcess(_PROCESS_SET_QUOTA | _PROCESS_TERMINATE, False, pid)
+    if not handle:
+        AppLogger.warning(f"kill_with_parent: cannot open pid={pid} (error={ctypes.get_last_error()})")
+        return False
+    try:
+        if not kernel32.AssignProcessToJobObject(job, handle):
+            AppLogger.warning(f"kill_with_parent: cannot assign pid={pid} (error={ctypes.get_last_error()})")
+            return False
+    finally:
+        kernel32.CloseHandle(handle)
+    return True
 
 
 class ProcessMatcher:
@@ -242,3 +338,34 @@ class AppProcess:
         proc = subprocess.Popen(cmd, env=env, **popen_kwargs)
         AppLogger.info(f"new_main: spawned pid={proc.pid} args={list(args)}")
         return proc
+
+
+def run_external(cmd, timeout=None, capture_output=False, check=False, **popen_kwargs) -> subprocess.CompletedProcess:
+    """subprocess.run for third-party binaries: no console window, tied to this process, tree killed on timeout."""
+    if capture_output:
+        popen_kwargs["stdout"] = subprocess.PIPE
+        popen_kwargs["stderr"] = subprocess.PIPE
+    if sys.platform == "win32":
+        popen_kwargs["creationflags"] = _windows_no_window_flags(popen_kwargs.pop("creationflags", 0))
+    with subprocess.Popen(cmd, **popen_kwargs) as proc:
+        kill_with_parent(proc.pid)
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            AppLogger.warning(f"run_external: timed out after {timeout}s, killing {cmd[0]}")
+            terminate_pid_tree(proc.pid)
+            stdout, stderr = proc.communicate()
+            raise subprocess.TimeoutExpired(cmd, timeout, output=stdout, stderr=stderr) from None
+        result = subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+        if check:
+            result.check_returncode()
+        return result
+
+
+def terminate_pid_tree(pid: int, timeout=1, kill_timeout=2):
+    """Kill an external child and everything it spawned. Dropping a live child's reference leaks it forever."""
+    try:
+        proc = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        return
+    AppProcess.terminate_tree([proc], timeout=timeout, kill_timeout=kill_timeout)

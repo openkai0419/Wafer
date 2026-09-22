@@ -6,11 +6,14 @@ import subprocess
 import threading
 import psutil
 
-from wafer.core.platform.process import AppProcess
+from wafer.core.platform.process import AppProcess, kill_with_parent, terminate_pid_tree
 from wafer.core.logs import AppLogger
 from wafer.core.logs import debug_non_recursive
 
 _QUERY_TIMEOUT = 30
+
+_spawned: dict[int, psutil.Process] = {}
+_spawned_lock = threading.Lock()
 
 _SKIP_GROUPS = frozenset({"System", "ExifTool"})
 _SKIP_KEYS = frozenset({"SourceFile"})
@@ -32,6 +35,7 @@ class ExifToolProcess:
     def start(self):
         if self.alive:
             return
+        kill_spawned()
         self._proc = subprocess.Popen(
             [
                 self._exe,
@@ -53,21 +57,23 @@ class ExifToolProcess:
             errors="replace",
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
+        kill_with_parent(self._proc.pid)
+        _remember(self._proc.pid)
 
     def stop(self):
-        with self._lock:
-            proc = self._proc
-            if proc is None:
-                return
-            self._proc = None
+        proc = self._proc
+        self._proc = None
+        if proc is None:
+            return
         try:
             if proc.stdin:
                 proc.stdin.write("-stay_open\nFalse\n")
                 proc.stdin.flush()
             proc.wait(timeout=5)
-        except (BrokenPipeError, OSError, subprocess.TimeoutExpired):
-            self._terminate_proc_tree(proc)
+        except (BrokenPipeError, OSError, ValueError, subprocess.TimeoutExpired):
+            terminate_pid_tree(proc.pid)
         finally:
+            _forget(proc.pid)
             self._close_pipes(proc)
 
     def query(self, path: str) -> dict | None:
@@ -79,54 +85,51 @@ class ExifToolProcess:
             self._seq += 1
             seq = self._seq
             sentinel = f"{{ready{seq}}}"
+            proc = self._proc
             try:
-                self._proc.stdin.write(f"{path}\n-execute{seq}\n")
-                self._proc.stdin.flush()
-            except OSError:
-                self._proc = None
+                proc.stdin.write(f"{path}\n-execute{seq}\n")
+                proc.stdin.flush()
+            except (OSError, ValueError) as e:
+                AppLogger.warning(f"[exiftool] Write failed, restarting process: {e}")
+                self._discard(proc)
                 return None
             lines: list[str] = []
-            result: dict | None = None
-            proc = self._proc
+            completed = False
 
             def _read():
-                nonlocal result
-                while True:
-                    line = proc.stdout.readline()
-                    if not line:
-                        return
-                    stripped = line.rstrip("\r\n")
-                    if stripped == sentinel:
-                        result = _parse_json_output("\n".join(lines))
-                        return
-                    lines.append(stripped)
+                nonlocal completed
+                try:
+                    while True:
+                        line = proc.stdout.readline()
+                        if not line:
+                            return
+                        stripped = line.rstrip("\r\n")
+                        if stripped == sentinel:
+                            completed = True
+                            return
+                        lines.append(stripped)
+                except (OSError, ValueError) as e:
+                    debug_non_recursive(f"[exiftool] Reader stopped: {e}")
 
             reader = threading.Thread(target=_read, daemon=True)
             reader.start()
             reader.join(timeout=_QUERY_TIMEOUT)
             if reader.is_alive():
-                AppLogger.warning(f"[exiftool] Query timed out for: {path}")
-                self._kill_proc()
+                AppLogger.warning(f"[exiftool] Query timed out, restarting process: {path}")
+                self._discard(proc)
                 return None
-            if result is None and not lines:
-                self._proc = None
+            if not completed:
+                AppLogger.warning(f"[exiftool] Process ended unexpectedly, restarting: {path}")
+                self._discard(proc)
                 return None
-            return result
+            return _parse_json_output("\n".join(lines))
 
-    def _kill_proc(self):
-        proc = self._proc
-        self._proc = None
-        if proc:
-            self._terminate_proc_tree(proc)
-            self._close_pipes(proc)
-
-    @staticmethod
-    def _terminate_proc_tree(proc: subprocess.Popen):
-        try:
-            ps_proc = psutil.Process(proc.pid)
-        except psutil.NoSuchProcess:
-            return
-        AppProcess.terminate_tree([ps_proc], timeout=1, kill_timeout=2)
+    def _discard(self, proc: subprocess.Popen):
+        if self._proc is proc:
+            self._proc = None
+        terminate_pid_tree(proc.pid)
+        _forget(proc.pid)
+        self._close_pipes(proc)
 
     @staticmethod
     def _close_pipes(proc: subprocess.Popen):
@@ -143,6 +146,55 @@ class ExifToolProcess:
             self.stop()
         except (OSError, RuntimeError) as e:
             debug_non_recursive(f"[exiftool] Process cleanup failed: {e}")
+
+
+def _remember(pid: int):
+    try:
+        proc = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        return
+    with _spawned_lock:
+        _spawned[pid] = proc
+
+
+def _forget(pid: int):
+    with _spawned_lock:
+        _spawned.pop(pid, None)
+
+
+def kill_spawned():
+    with _spawned_lock:
+        tracked = list(_spawned.values())
+        _spawned.clear()
+    strays = [p for p in tracked if p.is_running()]
+    if not strays:
+        return 0
+    AppLogger.warning(f"[exiftool] Killing {len(strays)} stray process(es) left behind by earlier queries")
+    AppProcess.terminate_tree(strays, timeout=1, kill_timeout=2)
+    return len(strays)
+
+
+def kill_orphans(exe_path: str) -> int:
+    target = os.path.normcase(os.path.abspath(exe_path))
+    name = os.path.basename(target)
+    orphans = []
+    for proc in psutil.process_iter(["name", "exe"]):
+        try:
+            if os.path.normcase(proc.info.get("name") or "") != name:
+                continue
+            exe = proc.info.get("exe")
+            if not exe or os.path.normcase(os.path.abspath(exe)) != target:
+                continue
+            if proc.parent() is not None:
+                continue
+            orphans.append(proc)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    if not orphans:
+        return 0
+    AppLogger.warning(f"[exiftool] Killing {len(orphans)} orphaned process(es) left by a previous run")
+    AppProcess.terminate_tree(orphans, timeout=1, kill_timeout=2)
+    return len(orphans)
 
 
 def _parse_json_output(raw: str) -> dict | None:

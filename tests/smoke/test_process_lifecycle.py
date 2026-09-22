@@ -243,3 +243,33 @@ class TestTerminateAndWait:
 
         for pp in ps_procs:
             assert not pp.is_running()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="job objects are Windows only")
+class TestKillWithParent:
+    SCRIPT = (
+        "import subprocess, sys, time;"
+        "from wafer.core.platform.process import kill_with_parent;"
+        "c = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']);"
+        "assert kill_with_parent(c.pid);"
+        "print(c.pid, flush=True);"
+        "time.sleep(60)"
+    )
+
+    def test_grandchild_dies_when_parent_is_force_killed(self):
+        parent = subprocess.Popen(
+            [sys.executable, "-c", self.SCRIPT],
+            cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            stdout=subprocess.PIPE,
+            text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        try:
+            grandchild_pid = int(parent.stdout.readline().strip())
+            assert psutil.pid_exists(grandchild_pid)
+            parent.kill()
+            parent.wait(timeout=10)
+            assert _poll_until(lambda: not psutil.pid_exists(grandchild_pid), timeout=10.0)
+        finally:
+            if parent.poll() is None:
+                parent.kill()

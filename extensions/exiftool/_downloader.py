@@ -87,6 +87,10 @@ def get_exiftool_path() -> str | None:
     return None
 
 
+def is_bundled_exiftool(path: str) -> bool:
+    return os.path.normcase(os.path.abspath(path)) == os.path.normcase(os.path.abspath(_EXIFTOOL_PATH))
+
+
 def _fetch_latest_version() -> str:
     text = fetch_text(
         _VERSION_URL,

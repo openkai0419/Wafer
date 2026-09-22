@@ -1619,22 +1619,25 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         return None
 
     @staticmethod
-    def _list_subdirs(path, excluded):
+    def _list_subdirs(path, excluded, ignore_pattern_re=None):
         try:
             entries = []
             for entry in os.scandir(path):
                 if entry.is_dir(follow_symlinks=False):
                     full = normalize_path(entry.path)
-                    if full not in excluded:
-                        entries.append(full)
+                    if full in excluded:
+                        continue
+                    if ignore_pattern_re is not None and ignore_pattern_re.match(full):
+                        continue
+                    entries.append(full)
             return natsorted(entries, key=lambda p: os.path.basename(p).lower())
         except (PermissionError, OSError):
             return []
 
     @staticmethod
-    def _deepest_last(path, excluded):
+    def _deepest_last(path, excluded, ignore_pattern_re=None):
         while True:
-            children = LazyFolderTreeView._list_subdirs(path, excluded)
+            children = LazyFolderTreeView._list_subdirs(path, excluded, ignore_pattern_re)
             if not children:
                 return path
             path = children[-1]
@@ -1648,10 +1651,11 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
         current = normalize_path(current)
         excluded = self.model_.excluded
+        ignore_pattern_re = self.model_.ignore_pattern_re
         sorted_roots = natsorted([normalize_path(r) for r in self.model_.roots], key=lambda p: os.path.basename(p).lower())
         roots_set = set(sorted_roots)
 
-        children = self._list_subdirs(current, excluded)
+        children = self._list_subdirs(current, excluded, ignore_pattern_re)
         if children:
             return self._select_path_for_navigation(children[0], trigger_search=trigger_search)
 
@@ -1666,7 +1670,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
                     pass
                 return None
             parent = normalize_path(os.path.dirname(path))
-            siblings = self._list_subdirs(parent, excluded)
+            siblings = self._list_subdirs(parent, excluded, ignore_pattern_re)
             try:
                 idx = siblings.index(path)
                 if idx + 1 < len(siblings):
@@ -1683,6 +1687,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
         current = normalize_path(current)
         excluded = self.model_.excluded
+        ignore_pattern_re = self.model_.ignore_pattern_re
         sorted_roots = natsorted([normalize_path(r) for r in self.model_.roots], key=lambda p: os.path.basename(p).lower())
         roots_set = set(sorted_roots)
 
@@ -1690,17 +1695,17 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             try:
                 idx = sorted_roots.index(current)
                 if idx > 0:
-                    return self._select_path_for_navigation(self._deepest_last(sorted_roots[idx - 1], excluded), trigger_search=trigger_search)
+                    return self._select_path_for_navigation(self._deepest_last(sorted_roots[idx - 1], excluded, ignore_pattern_re), trigger_search=trigger_search)
             except ValueError:
                 pass
             return None
 
         parent = normalize_path(os.path.dirname(current))
-        siblings = self._list_subdirs(parent, excluded)
+        siblings = self._list_subdirs(parent, excluded, ignore_pattern_re)
         try:
             idx = siblings.index(current)
             if idx > 0:
-                return self._select_path_for_navigation(self._deepest_last(siblings[idx - 1], excluded), trigger_search=trigger_search)
+                return self._select_path_for_navigation(self._deepest_last(siblings[idx - 1], excluded, ignore_pattern_re), trigger_search=trigger_search)
         except ValueError:
             pass
         return self._select_path_for_navigation(parent, trigger_search=trigger_search)

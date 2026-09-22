@@ -1110,6 +1110,46 @@ def test_navigate_next_dfs_does_not_expand_target(qtbot):
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def test_navigate_next_dfs_skips_ignore_pattern_folder(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, "cache_dir", "inside"), exist_ok=True)
+        os.makedirs(os.path.join(tmpdir, "keep"), exist_ok=True)
+        ignore_pattern_re = compile_ignore_patterns(["*cache*"])
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[], ignore_pattern_re=ignore_pattern_re)
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+
+        root_index = tree.expand_path(tmpdir)
+        tree.setCurrentIndex(root_index)
+        path_keep = normalize_path(os.path.join(tmpdir, "keep"))
+
+        assert tree.navigate_next_dfs() == path_keep
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_navigate_prev_dfs_skips_ignore_pattern_folder(qtbot):
+    tmpdir = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmpdir, "A", "keep"), exist_ok=True)
+        os.makedirs(os.path.join(tmpdir, "A", "zz_cache"), exist_ok=True)
+        os.makedirs(os.path.join(tmpdir, "B"), exist_ok=True)
+        ignore_pattern_re = compile_ignore_patterns(["*cache*"])
+        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[], ignore_pattern_re=ignore_pattern_re)
+        qtbot.addWidget(tree)
+        tree.model_._build_roots([tmpdir])
+
+        path_b = normalize_path(os.path.join(tmpdir, "B"))
+        b_index = tree.model_.indexFromItem(tree.model_.find_item_by_path(path_b))
+        tree.setCurrentIndex(b_index)
+        path_a_keep = normalize_path(os.path.join(tmpdir, "A", "keep"))
+
+        assert tree.navigate_prev_dfs() == path_a_keep
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 def test_expand_recursive_drains_entries_by_timer(qtbot, monkeypatch, tmp_path):
     root = normalize_path(str(tmp_path))
     path_a = normalize_path(os.path.join(root, "A"))

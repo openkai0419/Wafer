@@ -98,8 +98,29 @@ def test_meta_panel_groups_keys_by_prefix(ready_page):
     page.wait_for_function("document.querySelectorAll('#meta-content h3').length > 1")
 
     headings = page.locator("#meta-content h3").all_inner_texts()
-    assert headings == ["File", "(no prefix) (2)", "exiftool (2)", "wd14 (1)"]
+    assert headings == ["File", "Source", "(no prefix) (2)", "exiftool (2)", "wd14 (1)"]
 
     keys = page.locator("#meta-content dt").all_inner_texts()
     assert "Model" in keys and "exiftool.Model" not in keys
     assert "prompt" in keys and "animal" in keys
+    assert "size" in keys and "modified" in keys
+
+
+def test_meta_panel_falls_back_to_item_name_for_unindexed_file(ready_page):
+    page = ready_page
+    _open_first(page)
+    page.route(
+        "**/api/meta*",
+        lambda route: route.fulfill(
+            content_type="application/json",
+            body='{"file": [], "source": [], "collectors": [], "meta": {}, "tags": {}}',
+        ),
+    )
+    page.click("#viewer-info")
+    page.wait_for_selector("#meta-panel:not(.hidden)")
+    page.wait_for_function("document.querySelectorAll('#meta-content h3').length > 0")
+
+    headings = page.locator("#meta-content h3").all_inner_texts()
+    assert headings == ["File"]
+    keys = page.locator("#meta-content dt").all_inner_texts()
+    assert keys == ["name", "path"]

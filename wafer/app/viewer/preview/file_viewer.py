@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from PySide6 import QtCore
 from natsort import natsorted
 
-from ....core.common.formatting import format_aspect, format_size_detail, format_timestamp
+from ....core.common.formatting import format_file_entries, format_source_entries
 from ....core.common.paths import db_name_from_path
 from ....core.db.query import FileSearchEngine
 from ....core.files.render_target import RenderPlan
@@ -22,9 +22,6 @@ from ....qt.theme import ThemeManager
 from ....core.logs import AppLogger
 from ....core.profiling import profiler
 
-_STANDARD_SOURCE_KEYS = ("source", "size", "created", "modified", "collected", "file_hash")
-_STANDARD_FILE_KEYS = ("name", "path", "aspect_ratio", "source_extension")
-
 
 @dataclass(frozen=True)
 class ViewerBatch:
@@ -39,27 +36,8 @@ def _format_meta(engine, path, dbpath):
     tag_locks = {k: lk for k, (_, lk) in tags_with_lock.items()}
     meta_infos = {k: v for k, (v, _) in meta_infos_with_lock.items()}
     meta_locks = {k: lk for k, (_, lk) in meta_infos_with_lock.items()}
-    if file_rec.get("aspect_ratio"):
-        file_rec["aspect_ratio"] = format_aspect(file_rec["aspect_ratio"])
-    if not file_rec.get("source_extension"):
-        file_rec.pop("source_extension", None)
-    file_section = {k: file_rec[k] for k in _STANDARD_FILE_KEYS if k in file_rec and file_rec[k] is not None}
-    source_section: dict = {}
-    for k in _STANDARD_SOURCE_KEYS:
-        v = source_rec.get(k)
-        if v is None:
-            continue
-        if k == "size":
-            try:
-                v = format_size_detail(float(v))
-            except (ValueError, TypeError):
-                pass
-        elif k in ("created", "modified", "collected"):
-            try:
-                v = format_timestamp(float(v))
-            except (ValueError, TypeError):
-                pass
-        source_section[k] = v
+    file_section = dict(format_file_entries(file_rec))
+    source_section = dict(format_source_entries(source_rec))
     meta_prefixed: dict[str, dict] = {}
     meta_prefixed_locks: dict[str, dict] = {}
     meta_root: dict[str, str] = {}

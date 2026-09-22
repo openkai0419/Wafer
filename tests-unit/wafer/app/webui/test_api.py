@@ -1,5 +1,8 @@
 import asyncio
 import json
+import os
+import re
+import sqlite3
 import struct
 import time
 
@@ -108,7 +111,47 @@ def test_meta(client, dataset):
     data = jbody(body)
     assert data["meta"]["prompt"]["value"] == "a cat picture"
     assert data["tags"]["animal"]["value"] == "cat"
-    assert data["file_hash"] == "hash0"
+    file_section = dict(data["file"])
+    assert file_section["name"] == "a_cat.png"
+    assert file_section["path"] == path
+    assert file_section["aspect_ratio"] == "2:1"
+    source = dict(data["source"])
+    assert source["file_hash"] == "hash0"
+    assert source["source"] == path
+    assert source["size"].endswith(f"({os.path.getsize(path):,} bytes)")
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", source["modified"])
+    assert "created" not in source and "collected" not in source
+    assert data["collectors"] == []
+
+
+def test_meta_virtual_path(client, dataset):
+    resp, body = client.get("/api/meta", params={"db": DB, "path": dataset["virtual"]})
+    assert resp.status == 200
+    source = dict(jbody(body)["source"])
+    assert source["source"] == dataset["zip_source"]
+    assert source["file_hash"] == "hashzip"
+    assert " bytes)" in source["size"]
+
+
+def test_meta_collectors(client, dataset):
+    path = dataset["files"][1][0]
+    con = sqlite3.connect(dataset["root"] / "data" / f"{DB}.db")
+    with con:
+        con.executemany(
+            "INSERT OR REPLACE INTO collection_status (source, collector, status, collected_at) VALUES (?, ?, ?, ?)",
+            [(path, "wd14", "ok", time.time() + 60), (path, "exiftool", "fail", None)],
+        )
+    con.close()
+    resp, body = client.get("/api/meta", params={"db": DB, "path": path})
+    assert resp.status == 200
+    assert jbody(body)["collectors"] == [["exiftool", "fail"], ["wd14", "ok"]]
+
+
+def test_meta_unknown_path(client):
+    resp, body = client.get("/api/meta", params={"db": DB, "path": "C:/nope.png"})
+    assert resp.status == 200
+    data = jbody(body)
+    assert data["file"] == [] and data["source"] == [] and data["meta"] == {} and data["tags"] == {}
 
 
 def test_folders_roots(client, dataset):

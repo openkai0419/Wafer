@@ -4,8 +4,19 @@ import { setIcon } from './icons.js';
 
 const MIN_SLIDESHOW_INTERVAL = 0.5;
 
+export const DEFAULT_LABELS = {
+  selectFolder: 'move to folder',
+  interval: 'slideshow interval (s)',
+  slideshowStart: 'start slideshow',
+  slideshowStop: 'stop slideshow',
+  notFound: 'error: item not found',
+  loadError: (message) => `error: ${message}`,
+  download: (name) => `download: ${name}`,
+};
+
 export class Viewer {
-  constructor(onIndexChange, onInfo, onSelectFolder) {
+  constructor(onIndexChange, onInfo, onSelectFolder, labels = {}) {
+    this.labels = { ...DEFAULT_LABELS, ...labels };
     this.el = document.getElementById('viewer');
     this.stage = document.getElementById('viewer-stage');
     this.caption = document.getElementById('viewer-caption');
@@ -57,7 +68,7 @@ export class Viewer {
 
     const selectFolder = document.createElement('button');
     selectFolder.className = 'menu-item';
-    selectFolder.textContent = 'move to folder';
+    selectFolder.textContent = this.labels.selectFolder;
     selectFolder.addEventListener('click', () => {
       this.menu.classList.add('hidden');
       if (this.item) this.onSelectFolder(this.item);
@@ -69,7 +80,7 @@ export class Viewer {
 
     const intervalRow = document.createElement('label');
     intervalRow.className = 'menu-item';
-    intervalRow.textContent = 'slideshow interval (s)';
+    intervalRow.textContent = this.labels.interval;
     const input = document.createElement('input');
     input.type = 'number';
     input.min = String(MIN_SLIDESHOW_INTERVAL);
@@ -93,7 +104,7 @@ export class Viewer {
   }
 
   updateMenu() {
-    this.slideshowToggle.textContent = this.slideshow ? 'stop slideshow' : 'start slideshow';
+    this.slideshowToggle.textContent = this.slideshow ? this.labels.slideshowStop : this.labels.slideshowStart;
   }
 
   toggleSlideshow() {
@@ -156,12 +167,12 @@ export class Viewer {
         item = data.items[0];
       } catch (e) {
         if (this.index !== index) return;
-        this.caption.textContent = `error: ${e.message}`;
+        this.caption.textContent = this.labels.loadError(e.message);
         return;
       }
       if (!item) {
         if (this.index !== index) return;
-        this.caption.textContent = 'error: item not found';
+        this.caption.textContent = this.labels.notFound;
         return;
       }
     }
@@ -184,7 +195,7 @@ export class Viewer {
     } else {
       const link = document.createElement('a');
       link.href = url;
-      link.textContent = `download: ${item.name}`;
+      link.textContent = this.labels.download(item.name);
       link.download = item.name;
       this.stage.replaceChildren(link);
     }

@@ -8,6 +8,7 @@
   --hover: #37373d;
   --border-hover: #6e6e6e;
   --success: #4caf50;
+  --error: #f44336;
 }
 
 * { box-sizing: border-box; }
@@ -227,6 +228,9 @@ button:hover, select:hover, input:hover { border-color: var(--border-hover); }
 #meta-content dl { margin: 0; }
 #meta-content dt { color: #999; font-size: 11px; margin-top: 6px; }
 #meta-content dd { margin: 0; word-break: break-all; white-space: pre-wrap; }
+#meta-content .collectors { display: flex; flex-wrap: wrap; gap: 10px; }
+#meta-content .collector::before { content: '\25cf'; margin-right: 4px; color: var(--error); }
+#meta-content .collector.ok::before { color: var(--success); }
 
 #viewer {
   position: fixed;

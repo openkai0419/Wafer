@@ -292,7 +292,7 @@ def test_exec_cleanup():
 def test_set_ignore_patterns_forwards_to_scanner():
     wf, scheduler, writer, scanner, _ = _make_watcher()
     wf.set_ignore_patterns(["*cache*"])
-    assert wf._ignore_patterns == ["*cache*"]
+    assert wf._ignore_pattern_re.match("my_cache_dir")
     scanner.set_ignore_patterns.assert_called_once_with(["*cache*"])
 
 

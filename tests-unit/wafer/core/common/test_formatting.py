@@ -1,4 +1,12 @@
-from wafer.core.common.formatting import split_last, format_timestamp, format_aspect, format_size, format_size_detail
+from wafer.core.common.formatting import (
+    split_last,
+    format_timestamp,
+    format_aspect,
+    format_size,
+    format_size_detail,
+    format_source_entries,
+    format_file_entries,
+)
 
 
 def test_split_last():
@@ -57,3 +65,23 @@ def test_format_size_detail():
     assert "bytes" in result
     assert "1,500" in result
     assert format_size_detail(None) is None
+
+
+def test_format_source_entries_formats_and_skips_empty():
+    entries = format_source_entries({"source": "C:/a.png", "size": 1500, "created": "", "modified": None})
+    assert dict(entries) == {"source": "C:/a.png", "size": format_size_detail(1500)}
+
+
+def test_format_source_entries_falls_back_on_invalid_timestamp():
+    entries = format_source_entries({"modified": float("inf")})
+    assert dict(entries) == {"modified": "inf"}
+
+
+def test_format_file_entries_formats_aspect_and_skips_empty():
+    entries = format_file_entries({"name": "a.png", "path": "", "aspect_ratio": 2.0})
+    assert dict(entries) == {"name": "a.png", "aspect_ratio": format_aspect(2.0)}
+
+
+def test_format_file_entries_falls_back_on_invalid_aspect_ratio():
+    entries = format_file_entries({"aspect_ratio": float("inf")})
+    assert dict(entries) == {"aspect_ratio": "inf"}

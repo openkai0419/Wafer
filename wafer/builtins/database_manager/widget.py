@@ -381,6 +381,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         self._data_tab.clear_checks()
         AppLogger.info(f"[DatabaseManager] Sent data changes for {len(actions)} pairs")
 
+
 class _DatabaseDetailWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -540,6 +541,18 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         self._db_name = None
         self.revert(initial_paths)
 
+    @staticmethod
+    def _add_unique_item(list_widget: QtWidgets.QListWidget, value: str):
+        existing = {list_widget.item(i).text() for i in range(list_widget.count())}
+        if value not in existing:
+            list_widget.addItem(value)
+
+    @staticmethod
+    def _set_unique_item_text(list_widget: QtWidgets.QListWidget, item: QtWidgets.QListWidgetItem, value: str):
+        existing = {list_widget.item(i).text() for i in range(list_widget.count()) if list_widget.item(i) is not item}
+        if value not in existing:
+            item.setText(value)
+
     def _add_source(self):
         if not self._db_name:
             return
@@ -549,9 +562,7 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         )
         if not folder:
             return
-        existing = [self._source_list.item(i).text() for i in range(self._source_list.count())]
-        if folder not in existing:
-            self._source_list.addItem(folder)
+        self._add_unique_item(self._source_list, folder)
 
     def _remove_source(self):
         for item in self._source_list.selectedItems():
@@ -567,12 +578,7 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         )
         if not folder or folder == item.text():
             return
-        existing = {
-            self._source_list.item(i).text() for i in range(self._source_list.count()) if self._source_list.item(i) is not item
-        }
-        if folder in existing:
-            return
-        item.setText(folder)
+        self._set_unique_item_text(self._source_list, item, folder)
 
     def _add_ignore(self):
         if not self._db_name:
@@ -583,9 +589,7 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         )
         if not folder:
             return
-        existing = [self._ignore_list.item(i).text() for i in range(self._ignore_list.count())]
-        if folder not in existing:
-            self._ignore_list.addItem(folder)
+        self._add_unique_item(self._ignore_list, folder)
 
     def _remove_ignore(self):
         for item in self._ignore_list.selectedItems():
@@ -601,27 +605,19 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         )
         if not folder or folder == item.text():
             return
-        existing = {
-            self._ignore_list.item(i).text() for i in range(self._ignore_list.count()) if self._ignore_list.item(i) is not item
-        }
-        if folder in existing:
-            return
-        item.setText(folder)
+        self._set_unique_item_text(self._ignore_list, item, folder)
 
     def _add_ignore_pattern(self):
         if not self._db_name:
             return
         pattern = InputDialog.get_text(
-            t('Add a pattern to ignore (e.g. *cache*, *.tmp):'),
+            t("Add a pattern to ignore (e.g. *cache*, *.tmp):"),
             title=f'{t("Add Ignore Pattern")} - "{self._db_name}"',
             parent=self,
         )
         if not pattern or not pattern.strip():
             return
-        pattern = pattern.strip()
-        existing = {self._ignore_pattern_list.item(i).text() for i in range(self._ignore_pattern_list.count())}
-        if pattern not in existing:
-            self._ignore_pattern_list.addItem(pattern)
+        self._add_unique_item(self._ignore_pattern_list, pattern.strip())
 
     def _remove_ignore_pattern(self):
         for item in self._ignore_pattern_list.selectedItems():
@@ -631,7 +627,7 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         if not self._db_name:
             return
         pattern = InputDialog.get_text(
-            t('Edit ignore pattern (e.g. *cache*, *.tmp):'),
+            t("Edit ignore pattern (e.g. *cache*, *.tmp):"),
             title=f'{t("Edit Ignore Pattern")} - "{self._db_name}"',
             parent=self,
             default=item.text(),
@@ -641,14 +637,7 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         pattern = pattern.strip()
         if not pattern or pattern == item.text():
             return
-        existing = {
-            self._ignore_pattern_list.item(i).text()
-            for i in range(self._ignore_pattern_list.count())
-            if self._ignore_pattern_list.item(i) is not item
-        }
-        if pattern in existing:
-            return
-        item.setText(pattern)
+        self._set_unique_item_text(self._ignore_pattern_list, item, pattern)
 
     def eventFilter(self, obj, event):
         if event.type() != QtCore.QEvent.KeyPress:

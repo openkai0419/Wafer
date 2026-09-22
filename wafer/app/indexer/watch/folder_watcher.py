@@ -187,7 +187,6 @@ class FolderWatcher:
         self._watch_roots = []
         self._folders = []
         self._ignore_paths = []
-        self._ignore_patterns = []
         self._ignore_pattern_re = None
         self._pending_deletes: dict[str, tuple[str, float]] = {}
         self._stop = threading.Event()
@@ -214,7 +213,6 @@ class FolderWatcher:
         self._scanner.set_exclude_paths(paths)
 
     def set_ignore_patterns(self, patterns):
-        self._ignore_patterns = list(patterns)
         self._ignore_pattern_re = compile_ignore_patterns(patterns)
         self._scanner.set_ignore_patterns(patterns)
 

@@ -65,6 +65,51 @@ def test_exiftool_process_stop_fallback_terminates_tree(monkeypatch):
     assert proc.stdout.closed is True
 
 
+def test_exiftool_process_stop_logs_graceful_failure(monkeypatch):
+    from extensions.exiftool import parser as parser_module
+
+    warnings = []
+    proc = _Proc()  # stdin fails write -> falls into the except branch
+    tool = parser_module.ExifToolProcess("exiftool.exe")
+    tool._proc = proc
+
+    monkeypatch.setattr(parser_module, "terminate_pid_tree", lambda pid: None)
+    monkeypatch.setattr(parser_module.AppLogger, "warning", lambda text: warnings.append(text))
+
+    tool.stop()
+
+    assert any("Graceful stop failed" in w for w in warnings)
+
+
+def test_exiftool_process_stop_force_kills_when_lock_held_by_query(monkeypatch):
+    import time
+    from extensions.exiftool import parser as parser_module
+
+    warnings = []
+    kills = []
+    proc = _Proc()
+    proc.stdin = _OkStdin()
+    tool = parser_module.ExifToolProcess("exiftool.exe")
+    tool._proc = proc
+
+    monkeypatch.setattr(parser_module, "_STOP_LOCK_TIMEOUT", 0.05)
+    monkeypatch.setattr(parser_module, "terminate_pid_tree", lambda pid: kills.append(pid))
+    monkeypatch.setattr(parser_module.AppLogger, "warning", lambda text: warnings.append(text))
+
+    tool._lock.acquire()
+    try:
+        begin = time.monotonic()
+        tool.stop()
+        elapsed = time.monotonic() - begin
+    finally:
+        tool._lock.release()
+
+    assert kills == [proc.pid]
+    assert any("could not acquire lock" in w for w in warnings)
+    assert elapsed < 1.0
+    assert proc.stdin.closed is True
+
+
 def test_exiftool_process_close_pipes_logs_failure(monkeypatch):
     from extensions.exiftool import parser as parser_module
 

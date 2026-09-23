@@ -9,6 +9,7 @@ from ...core.ipc.node import Node
 from ...core.ipc.transport import BROKER_LOST_TIMEOUT
 from ...plugin.parser.handler import parser_resolver
 from ...plugin.parser.base import ParserResult, BaseSingletonParser
+from ..worker_lifecycle import PluginWorkerLifecycle
 
 _SHUTDOWN_WAIT = 5
 
@@ -44,7 +45,7 @@ class ParserWorker:
         self._batch_timeout = parser_resolver.batch_timeout(plugin_name)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=self._max_workers)
         self._stop = threading.Event()
-        self._plugin_shutdown = threading.Event()
+        self._lifecycle = PluginWorkerLifecycle(lambda: self._plugin, parser_resolver.registry, plugin_name, self._executor, "Parser")
         self._batch_queue: queue.Queue = queue.Queue()
         self._batch_thread = threading.Thread(target=self._batch_loop, daemon=True)
 
@@ -57,8 +58,7 @@ class ParserWorker:
     def stop(self):
         self._stop.set()
         self._batch_queue.put(None)
-        self._shutdown_plugin()
-        self._executor.shutdown(wait=True, cancel_futures=True)
+        self._lifecycle.stop()
         if self._batch_thread.is_alive():
             self._batch_thread.join(timeout=_SHUTDOWN_WAIT)
         self._node.stop()
@@ -77,17 +77,6 @@ class ParserWorker:
         self._batch_queue.put(None)
         AppLogger.info(f"[Parser] Shutdown requested: {self.plugin_name}")
         return True
-
-    def _shutdown_plugin(self):
-        if self._plugin_shutdown.is_set():
-            return
-        self._plugin_shutdown.set()
-        try:
-            self._plugin.shutdown()
-        except Exception as e:
-            AppLogger.warning(f"[Parser] plugin shutdown failed: {self.plugin_name}", exc=e)
-        finally:
-            parser_resolver.registry.discard_instance(self.plugin_name)
 
     def _handle_batch(self, msg) -> bool:
         if self._stop.is_set():

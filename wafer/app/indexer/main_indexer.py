@@ -90,8 +90,6 @@ class IndexerProcess:
         self._progress = progress
 
         self.scanner = DirectoryScanner(db_path, self.scheduler, self.writer, progress, collectors)
-        self.scanner.set_exclude_paths(self.setting_db.get_all_ignore_folders())
-        self.scanner.set_ignore_patterns(self.setting_db.get_all_ignore_patterns())
         self.scanner.start()
 
         self.receiver = CollectorReceiver(self.scheduler, self.writer, progress)
@@ -131,14 +129,14 @@ class IndexerProcess:
         self.scanner.backfill_pending()
 
         self.folder_watcher = FolderWatcher(self.scheduler, self.writer, self.scanner, progress)
-        self.folder_watcher.start(self.setting_db.get_all_parent_folders())
+        parents, ignores, ignore_patterns = self.setting_db.get_all_folder_settings()
+        self.folder_watcher.set_ignore(ignores, ignore_patterns)
+        self.folder_watcher.start(parents)
         self.setting_watcher = SettingWatcher(self.setting_db)
         self.setting_watcher.parent_folders_changed.connect(self.folder_watcher.start)
-        self.setting_watcher.ignore_folders_changed.connect(self.folder_watcher.set_ignore_paths)
-        self.setting_watcher.ignore_patterns_changed.connect(self.folder_watcher.set_ignore_patterns)
+        self.setting_watcher.ignore_changed.connect(self.folder_watcher.set_ignore)
         self.setting_watcher.parent_folders_changed.connect(lambda _: progress.send_event("folderchanged"))
-        self.setting_watcher.ignore_folders_changed.connect(lambda _: progress.send_event("folderchanged"))
-        self.setting_watcher.ignore_patterns_changed.connect(lambda _: progress.send_event("folderchanged"))
+        self.setting_watcher.ignore_changed.connect(lambda _folders, _patterns: progress.send_event("folderchanged"))
         self.setting_watcher.start()
 
         if is_new:

@@ -84,6 +84,14 @@ class DirectoryScanner:
         AppLogger.info(f"[Scanner] Ignore patterns set: {len(self._ignore_patterns)}")
         self._submit_remove_excluded()
 
+    def set_exclusions(self, exclude_paths: list[str], ignore_patterns: list[str]):
+        """Set exclude paths and ignore patterns together, submitting a single removal scan."""
+        self._exclude_paths = normalize_prefixes(exclude_paths)
+        self._ignore_patterns = list(ignore_patterns)
+        self._ignore_pattern_re = compile_ignore_patterns(ignore_patterns)
+        AppLogger.info(f"[Scanner] Exclusions set: {len(self._exclude_paths)} paths, {len(self._ignore_patterns)} patterns")
+        self._submit_remove_excluded()
+
     def set_parsers(self, parsers: list[tuple[str, tuple[str, ...]]]):
         self._parsers = parsers
 

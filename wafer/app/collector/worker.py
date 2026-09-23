@@ -9,6 +9,7 @@ from ...core.ipc.node import Node
 from ...core.ipc.transport import BROKER_LOST_TIMEOUT
 from ...plugin.collector.handler import collector_resolver
 from ...plugin.collector.base import CollectorResult, BaseSingletonCollector
+from ..worker_lifecycle import PluginWorkerLifecycle
 
 _SHUTDOWN_WAIT = 5
 
@@ -31,7 +32,7 @@ class CollectorWorker:
         self._batch_timeout = collector_resolver.batch_timeout(plugin_name)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=self._max_workers)
         self._stop = threading.Event()
-        self._plugin_shutdown = threading.Event()
+        self._lifecycle = PluginWorkerLifecycle(lambda: self._plugin, collector_resolver.registry, plugin_name, self._executor, "Collector")
         self._batch_queue: queue.Queue = queue.Queue()
         self._batch_thread = threading.Thread(target=self._batch_loop, daemon=True)
 
@@ -44,8 +45,7 @@ class CollectorWorker:
     def stop(self):
         self._stop.set()
         self._batch_queue.put(None)
-        self._shutdown_plugin()
-        self._executor.shutdown(wait=True, cancel_futures=True)
+        self._lifecycle.stop()
         if self._batch_thread.is_alive():
             self._batch_thread.join(timeout=_SHUTDOWN_WAIT)
         self._node.stop()
@@ -75,17 +75,6 @@ class CollectorWorker:
         self._batch_queue.put(None)
         AppLogger.info(f"[Collector] Shutdown requested: {self.plugin_name}")
         return True
-
-    def _shutdown_plugin(self):
-        if self._plugin_shutdown.is_set():
-            return
-        self._plugin_shutdown.set()
-        try:
-            self._plugin.shutdown()
-        except Exception as e:
-            AppLogger.warning(f"[Collector] plugin shutdown failed: {self.plugin_name}", exc=e)
-        finally:
-            collector_resolver.registry.discard_instance(self.plugin_name)
 
     def _handle_batch(self, msg) -> bool:
         if self._stop.is_set():

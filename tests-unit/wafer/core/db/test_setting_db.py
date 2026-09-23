@@ -80,25 +80,25 @@ def test_kv_store_complex_value(setting_db):
     assert result == {"a": 1, "b": [2, 3]}
 
 
-def test_invalid_folder_type_raises(setting_db):
-    with pytest.raises(ValueError, match="Invalid folder type"):
-        setting_db._sync_folders("invalid_table", [])
-    with pytest.raises(ValueError, match="Invalid folder type"):
-        setting_db._add_folder("malicious; DROP TABLE", "C:/")
-    with pytest.raises(ValueError, match="Invalid folder type"):
-        setting_db._remove_folder("bad_table", "C:/")
-    with pytest.raises(ValueError, match="Invalid folder type"):
-        setting_db._get_all_folders("bad_table")
+def test_invalid_table_raises(setting_db):
+    with pytest.raises(ValueError, match="Invalid table"):
+        setting_db._sync_entries("invalid_table", [])
+    with pytest.raises(ValueError, match="Invalid table"):
+        setting_db._add_entry("malicious; DROP TABLE", "C:/")
+    with pytest.raises(ValueError, match="Invalid table"):
+        setting_db._remove_entry("bad_table", "C:/")
+    with pytest.raises(ValueError, match="Invalid table"):
+        setting_db._get_all_entries("bad_table")
 
 
-def test_sync_folders_is_atomic(tmp_path):
+def test_sync_entries_is_atomic(tmp_path):
     import sqlite3
 
     db = SettingDB(str(tmp_path / "atomic.db"))
     db.add_parent_folder("C:/keep")
     db.add_parent_folder("C:/remove")
 
-    db._sync_folders("parent_folders", ["C:/keep", "C:/new"])
+    db._sync_entries("parent_folders", ["C:/keep", "C:/new"])
 
     folders = db.get_all_parent_folders()
     from wafer.core.common.paths import normalize_path
@@ -107,6 +107,17 @@ def test_sync_folders_is_atomic(tmp_path):
     assert normalize_path("C:/keep") in norm
     assert normalize_path("C:/new") in norm
     assert normalize_path("C:/remove") not in norm
+
+
+def test_get_all_folder_settings(setting_db):
+    setting_db.add_parent_folder("C:/photos")
+    setting_db.add_ignore_folder("C:/photos/temp")
+    setting_db.add_ignore_pattern("*cache*")
+
+    parents, ignores, patterns = setting_db.get_all_folder_settings()
+    assert parents == setting_db.get_all_parent_folders()
+    assert ignores == setting_db.get_all_ignore_folders()
+    assert patterns == setting_db.get_all_ignore_patterns()
 
 
 def test_enabled_collectors_default_none(setting_db):

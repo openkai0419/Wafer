@@ -154,9 +154,7 @@ class TestReloadFolderList:
 
             win = MainWindow.__new__(MainWindow)
             win.setting_db = MagicMock()
-            win.setting_db.get_all_parent_folders.return_value = ["/root"]
-            win.setting_db.get_all_ignore_folders.return_value = ["/ignored"]
-            win.setting_db.get_all_ignore_patterns.return_value = []
+            win.setting_db.get_all_folder_settings.return_value = (["/root"], ["/ignored"], [])
             win.folder_view = MagicMock()
             win.folder_view.is_structure_current.return_value = False
             win.folder_view.defer_reload_if_editing.return_value = False

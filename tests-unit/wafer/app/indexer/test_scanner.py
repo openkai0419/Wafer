@@ -63,6 +63,17 @@ def test_set_ignore_patterns(tmp_path):
     scanner.stop()
 
 
+def test_set_exclusions_sets_both_in_one_call(tmp_path):
+    scanner, scheduler, _, _ = _make_scanner(tmp_path)
+    scanner.start()
+    scanner.set_exclusions(["/a/b"], ["*cache*"])
+    assert len(scanner._exclude_paths) == 1
+    assert scanner._ignore_patterns == ["*cache*"]
+    assert scanner._is_excluded(scanner._exclude_paths[0])
+    assert scanner._is_excluded("/x/my_cache_dir/file.png")
+    scanner.stop()
+
+
 def test_is_excluded_by_ignore_pattern(tmp_path):
     scanner, *_ = _make_scanner(tmp_path)
     scanner.set_ignore_patterns(["*cache*"])

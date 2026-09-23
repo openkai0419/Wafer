@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.7.9]
+### Added
+- Database Manager: ignore patterns (e.g. `*cache*`, `*.tmp`) exclude matching files and folders in addition to explicit ignore folders.
+- Database Manager: existing source, ignore folder, and ignore pattern entries can be edited in place, not just added or removed.
+- WebUI metadata panel shows file and source details and which extensions have collected data for the selected item.
+
+### Changed
+- WebUI search shows a slim loading bar instead of a spinner while a query is running.
+- External tool subprocesses (7-Zip extraction, ffprobe, plugin installs) are tied to Wafer's lifetime and force-killed on timeout, reducing leftover processes.
+
+### Fixed
+- exiftool no longer leaves orphaned background processes behind after normal use or an unexpected shutdown, including a shutdown race that could corrupt its process pipe.
+- Ignore folders and patterns configured before the app starts are now applied immediately to file watching, not just full scans.
+- Fixed a rare crash when a parser plugin's database reader closed while a query was still running.
+
 ## [v0.7.8]
 ### Added
 - WebUI: Grid auto-scroll with adjustable speed, stopping on any scroll or key input.

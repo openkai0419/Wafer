@@ -11,6 +11,7 @@ from wafer.core.logs import AppLogger
 from wafer.core.logs import debug_non_recursive
 
 _QUERY_TIMEOUT = 30
+_STOP_LOCK_TIMEOUT = 1.0
 
 _spawned: dict[int, psutil.Process] = {}
 _spawned_lock = threading.Lock()
@@ -65,14 +66,23 @@ class ExifToolProcess:
         self._proc = None
         if proc is None:
             return
+        acquired = self._lock.acquire(timeout=_STOP_LOCK_TIMEOUT)
         try:
-            if proc.stdin:
-                proc.stdin.write("-stay_open\nFalse\n")
-                proc.stdin.flush()
-            proc.wait(timeout=5)
-        except (BrokenPipeError, OSError, ValueError, subprocess.TimeoutExpired):
-            terminate_pid_tree(proc.pid)
+            if not acquired:
+                AppLogger.warning(f"[exiftool] stop() could not acquire lock (query in progress), force-killing pid={proc.pid}")
+                terminate_pid_tree(proc.pid)
+                return
+            try:
+                if proc.stdin:
+                    proc.stdin.write("-stay_open\nFalse\n")
+                    proc.stdin.flush()
+                proc.wait(timeout=5)
+            except (BrokenPipeError, OSError, ValueError, subprocess.TimeoutExpired) as e:
+                AppLogger.warning(f"[exiftool] Graceful stop failed, force-killing pid={proc.pid}: {e}")
+                terminate_pid_tree(proc.pid)
         finally:
+            if acquired:
+                self._lock.release()
             _forget(proc.pid)
             self._close_pipes(proc)
 

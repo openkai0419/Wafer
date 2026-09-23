@@ -80,13 +80,13 @@ class SettingDB:
     def _validate_table(self, table):
         column = _ENTRY_TABLE_COLUMNS.get(table)
         if column is None:
-            raise ValueError(f"Invalid folder type: {table}")
+            raise ValueError(f"Invalid table: {table}")
         return column
 
     def _normalize_entry(self, column, value):
         return normalize_path(value) if column == "path" else value.strip().replace("\\", "/")
 
-    def _sync_folders(self, table, new_values):
+    def _sync_entries(self, table, new_values):
         column = self._validate_table(table)
         norm_values = {self._normalize_entry(column, v) for v in new_values if v and v.strip()}
         with self._conn() as con:
@@ -99,7 +99,7 @@ class SettingDB:
                 con.executemany(f"DELETE FROM {table} WHERE {column} = ?", ((v,) for v in to_remove))
         return {"added": list(to_add), "removed": list(to_remove)}
 
-    def _add_folder(self, table, value):
+    def _add_entry(self, table, value):
         column = self._validate_table(table)
         norm_value = self._normalize_entry(column, value)
         if not norm_value:
@@ -111,7 +111,7 @@ class SettingDB:
             con.execute(f"INSERT INTO {table}({column}) VALUES (?)", (norm_value,))
         return True
 
-    def _remove_folder(self, table, value):
+    def _remove_entry(self, table, value):
         column = self._validate_table(table)
         norm_value = self._normalize_entry(column, value)
         with self._conn() as con:
@@ -121,7 +121,7 @@ class SettingDB:
             con.execute(f"DELETE FROM {table} WHERE {column} = ?", (norm_value,))
         return True
 
-    def _get_all_folders(self, table):
+    def _get_all_entries(self, table):
         column = self._validate_table(table)
         with self._conn(read_only=True) as con:
             cur = con.execute(f"SELECT {column} FROM {table} ORDER BY id ASC")
@@ -129,51 +129,60 @@ class SettingDB:
 
     @profiler.profile
     def sync_parent_folders(self, new_paths):
-        return self._sync_folders("parent_folders", new_paths)
+        return self._sync_entries("parent_folders", new_paths)
 
     @profiler.profile
     def add_parent_folder(self, path):
-        return self._add_folder("parent_folders", path)
+        return self._add_entry("parent_folders", path)
 
     @profiler.profile
     def remove_parent_folder(self, path):
-        return self._remove_folder("parent_folders", path)
+        return self._remove_entry("parent_folders", path)
 
     @profiler.profile
     def get_all_parent_folders(self):
-        return self._get_all_folders("parent_folders")
+        return self._get_all_entries("parent_folders")
 
     @profiler.profile
     def sync_ignore_folders(self, new_paths):
-        return self._sync_folders("ignore_folders", new_paths)
+        return self._sync_entries("ignore_folders", new_paths)
 
     @profiler.profile
     def add_ignore_folder(self, path):
-        return self._add_folder("ignore_folders", path)
+        return self._add_entry("ignore_folders", path)
 
     @profiler.profile
     def remove_ignore_folder(self, path):
-        return self._remove_folder("ignore_folders", path)
+        return self._remove_entry("ignore_folders", path)
 
     @profiler.profile
     def get_all_ignore_folders(self):
-        return self._get_all_folders("ignore_folders")
+        return self._get_all_entries("ignore_folders")
 
     @profiler.profile
     def sync_ignore_patterns(self, new_patterns):
-        return self._sync_folders("ignore_patterns", new_patterns)
+        return self._sync_entries("ignore_patterns", new_patterns)
 
     @profiler.profile
     def add_ignore_pattern(self, pattern):
-        return self._add_folder("ignore_patterns", pattern)
+        return self._add_entry("ignore_patterns", pattern)
 
     @profiler.profile
     def remove_ignore_pattern(self, pattern):
-        return self._remove_folder("ignore_patterns", pattern)
+        return self._remove_entry("ignore_patterns", pattern)
 
     @profiler.profile
     def get_all_ignore_patterns(self):
-        return self._get_all_folders("ignore_patterns")
+        return self._get_all_entries("ignore_patterns")
+
+    @profiler.profile
+    def get_all_folder_settings(self) -> tuple[list[str], list[str], list[str]]:
+        """Fetch parent/ignore folders and ignore patterns in a single connection."""
+        with self._conn(read_only=True) as con:
+            parents = [row[0] for row in con.execute("SELECT path FROM parent_folders ORDER BY id ASC")]
+            ignores = [row[0] for row in con.execute("SELECT path FROM ignore_folders ORDER BY id ASC")]
+            patterns = [row[0] for row in con.execute("SELECT pattern FROM ignore_patterns ORDER BY id ASC")]
+        return parents, ignores, patterns
 
     @profiler.profile
     def set_setting(self, key, value):

@@ -493,9 +493,7 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
             sources, ignores, ignore_patterns = self._buffers[db_name]
         else:
             sdb = SettingDB(setting_db_path(db_name))
-            sources = list(sdb.get_all_parent_folders())
-            ignores = list(sdb.get_all_ignore_folders())
-            ignore_patterns = list(sdb.get_all_ignore_patterns())
+            sources, ignores, ignore_patterns = sdb.get_all_folder_settings()
             self._buffers[db_name] = (sources, ignores, ignore_patterns)
         self._source_list.clear()
         for path in sources:
@@ -553,91 +551,74 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         if value not in existing:
             item.setText(value)
 
-    def _add_source(self):
+    def _pick_folder_for_list(self, list_widget: QtWidgets.QListWidget, kind: str, item: QtWidgets.QListWidgetItem | None = None):
         if not self._db_name:
             return
+        current = item.text() if item else ""
+        verb, preposition = ("Edit", "in") if item else ("Add", "to")
         folder = QtWidgets.QFileDialog.getExistingDirectory(
             self,
-            f'Add Source Folder to "{self._db_name}"',
+            f'{verb} {kind} Folder {preposition} "{self._db_name}"',
+            current,
         )
-        if not folder:
+        if not folder or folder == current:
             return
-        self._add_unique_item(self._source_list, folder)
+        if item:
+            self._set_unique_item_text(list_widget, item, folder)
+        else:
+            self._add_unique_item(list_widget, folder)
+
+    def _pick_pattern_for_list(self, item: QtWidgets.QListWidgetItem | None = None):
+        if not self._db_name:
+            return
+        current = item.text() if item else ""
+        prompt = t("Edit ignore pattern (e.g. *cache*, *.tmp):") if item else t("Add a pattern to ignore (e.g. *cache*, *.tmp):")
+        title_verb = t("Edit Ignore Pattern") if item else t("Add Ignore Pattern")
+        pattern = InputDialog.get_text(
+            prompt,
+            title=f'{title_verb} - "{self._db_name}"',
+            parent=self,
+            default=current,
+        )
+        if pattern is None:
+            return
+        pattern = pattern.strip()
+        if not pattern or pattern == current:
+            return
+        if item:
+            self._set_unique_item_text(self._ignore_pattern_list, item, pattern)
+        else:
+            self._add_unique_item(self._ignore_pattern_list, pattern)
+
+    def _add_source(self):
+        self._pick_folder_for_list(self._source_list, "Source")
 
     def _remove_source(self):
         for item in self._source_list.selectedItems():
             self._source_list.takeItem(self._source_list.row(item))
 
     def _edit_source(self, item: QtWidgets.QListWidgetItem):
-        if not self._db_name:
-            return
-        folder = QtWidgets.QFileDialog.getExistingDirectory(
-            self,
-            f'Edit Source Folder in "{self._db_name}"',
-            item.text(),
-        )
-        if not folder or folder == item.text():
-            return
-        self._set_unique_item_text(self._source_list, item, folder)
+        self._pick_folder_for_list(self._source_list, "Source", item)
 
     def _add_ignore(self):
-        if not self._db_name:
-            return
-        folder = QtWidgets.QFileDialog.getExistingDirectory(
-            self,
-            f'Add Ignore Folder to "{self._db_name}"',
-        )
-        if not folder:
-            return
-        self._add_unique_item(self._ignore_list, folder)
+        self._pick_folder_for_list(self._ignore_list, "Ignore")
 
     def _remove_ignore(self):
         for item in self._ignore_list.selectedItems():
             self._ignore_list.takeItem(self._ignore_list.row(item))
 
     def _edit_ignore(self, item: QtWidgets.QListWidgetItem):
-        if not self._db_name:
-            return
-        folder = QtWidgets.QFileDialog.getExistingDirectory(
-            self,
-            f'Edit Ignore Folder in "{self._db_name}"',
-            item.text(),
-        )
-        if not folder or folder == item.text():
-            return
-        self._set_unique_item_text(self._ignore_list, item, folder)
+        self._pick_folder_for_list(self._ignore_list, "Ignore", item)
 
     def _add_ignore_pattern(self):
-        if not self._db_name:
-            return
-        pattern = InputDialog.get_text(
-            t("Add a pattern to ignore (e.g. *cache*, *.tmp):"),
-            title=f'{t("Add Ignore Pattern")} - "{self._db_name}"',
-            parent=self,
-        )
-        if not pattern or not pattern.strip():
-            return
-        self._add_unique_item(self._ignore_pattern_list, pattern.strip())
+        self._pick_pattern_for_list()
 
     def _remove_ignore_pattern(self):
         for item in self._ignore_pattern_list.selectedItems():
             self._ignore_pattern_list.takeItem(self._ignore_pattern_list.row(item))
 
     def _edit_ignore_pattern(self, item: QtWidgets.QListWidgetItem):
-        if not self._db_name:
-            return
-        pattern = InputDialog.get_text(
-            t("Edit ignore pattern (e.g. *cache*, *.tmp):"),
-            title=f'{t("Edit Ignore Pattern")} - "{self._db_name}"',
-            parent=self,
-            default=item.text(),
-        )
-        if pattern is None:
-            return
-        pattern = pattern.strip()
-        if not pattern or pattern == item.text():
-            return
-        self._set_unique_item_text(self._ignore_pattern_list, item, pattern)
+        self._pick_pattern_for_list(item)
 
     def eventFilter(self, obj, event):
         if event.type() != QtCore.QEvent.KeyPress:

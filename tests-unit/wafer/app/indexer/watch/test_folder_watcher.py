@@ -296,6 +296,14 @@ def test_set_ignore_patterns_forwards_to_scanner():
     scanner.set_ignore_patterns.assert_called_once_with(["*cache*"])
 
 
+def test_set_ignore_sets_both_and_forwards_to_scanner_once():
+    wf, scheduler, writer, scanner, _ = _make_watcher()
+    wf.set_ignore(["C:/ignored"], ["*cache*"])
+    assert len(wf._ignore_paths) == 1
+    assert wf._ignore_pattern_re.match("my_cache_dir")
+    scanner.set_exclusions.assert_called_once_with(["C:/ignored"], ["*cache*"])
+
+
 def test_is_in_scope_respects_ignore_pattern(tmp_path):
     root = tmp_path / "watched"
     wf, *_ = _make_watcher()
@@ -304,6 +312,25 @@ def test_is_in_scope_respects_ignore_pattern(tmp_path):
 
     assert wf._is_in_scope(str(root / "photo.jpg"))
     assert not wf._is_in_scope(str(root / "my_cache_dir" / "file.jpg"))
+
+
+def test_is_in_scope_skips_normalize_when_no_ignore_pattern(monkeypatch):
+    import wafer.app.indexer.watch.folder_watcher as folder_watcher_module
+
+    wf, *_ = _make_watcher()
+    _set_scope(wf, ["."])
+    calls = []
+    original = folder_watcher_module.normalize_path
+
+    def _spy(p):
+        calls.append(p)
+        return original(p)
+
+    monkeypatch.setattr(folder_watcher_module, "normalize_path", _spy)
+
+    wf._is_in_scope("./photo.jpg")
+
+    assert calls == []
 
 
 def test_is_in_scope_ignore_pattern_is_case_sensitive(tmp_path):

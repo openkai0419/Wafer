@@ -216,6 +216,11 @@ class FolderWatcher:
         self._ignore_pattern_re = compile_ignore_patterns(patterns)
         self._scanner.set_ignore_patterns(patterns)
 
+    def set_ignore(self, paths, patterns):
+        self._ignore_paths = normalize_prefixes(paths)
+        self._ignore_pattern_re = compile_ignore_patterns(patterns)
+        self._scanner.set_exclusions(paths, patterns)
+
     def request_cleanup(self):
         self._q.put(("cleanup", None))
 
@@ -337,10 +342,11 @@ class FolderWatcher:
                 self._pending_deletes.pop(norm, None)
 
     def _is_in_scope(self, path: str) -> bool:
-        normalized = normalize_path(path)
-        if not contains_path_prefix(self._folders, normalized) or contains_path_prefix(self._ignore_paths, normalized):
+        if not contains_path_prefix(self._folders, path) or contains_path_prefix(self._ignore_paths, path):
             return False
-        return self._ignore_pattern_re is None or self._ignore_pattern_re.match(normalized) is None
+        if self._ignore_pattern_re is None:
+            return True
+        return self._ignore_pattern_re.match(normalize_path(path)) is None
 
     def _rename_with_fallback(self, pairs):
         missing = self._writer.rename_paths(pairs)

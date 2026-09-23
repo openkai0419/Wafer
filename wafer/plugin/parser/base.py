@@ -51,6 +51,8 @@ class BaseParser(BasePlugin):
         if reader is None or lock is None:
             reader, lock = self._open_reader()
         with lock:
+            if self._reader is None:
+                return []
             cur = reader.cursor()
             try:
                 return cur.execute(sql, tuple(params)).fetchall()
@@ -70,9 +72,16 @@ class BaseParser(BasePlugin):
             return self._reader, self._reader_lock
 
     def shutdown(self):
-        if self._reader is not None:
-            self._reader.close()
+        reader, lock = self._reader, self._reader_lock
+        if reader is None:
+            return
+        if lock is None:
             self._reader = None
+            reader.close()
+            return
+        with lock:
+            self._reader = None
+            reader.close()
 
     def on_notify(self, payload: dict | None = None) -> None:
         pass

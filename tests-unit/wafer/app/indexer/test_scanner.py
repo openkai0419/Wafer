@@ -55,6 +55,63 @@ def test_is_excluded_empty(tmp_path):
     assert not scanner._is_excluded("/any/path")
 
 
+def test_set_ignore_patterns(tmp_path):
+    scanner, scheduler, _, _ = _make_scanner(tmp_path)
+    scanner.start()
+    scanner.set_ignore_patterns(["*cache*"])
+    assert scanner._ignore_patterns == ["*cache*"]
+    scanner.stop()
+
+
+def test_set_exclusions_sets_both_in_one_call(tmp_path):
+    scanner, scheduler, _, _ = _make_scanner(tmp_path)
+    scanner.start()
+    scanner.set_exclusions(["/a/b"], ["*cache*"])
+    assert len(scanner._exclude_paths) == 1
+    assert scanner._ignore_patterns == ["*cache*"]
+    assert scanner._is_excluded(scanner._exclude_paths[0])
+    assert scanner._is_excluded("/x/my_cache_dir/file.png")
+    scanner.stop()
+
+
+def test_is_excluded_by_ignore_pattern(tmp_path):
+    scanner, *_ = _make_scanner(tmp_path)
+    scanner.set_ignore_patterns(["*cache*"])
+    assert scanner._is_excluded("/a/my_cache_dir/file.png")
+    assert not scanner._is_excluded("/a/data/file.png")
+
+
+def test_is_excluded_by_ignore_pattern_is_case_sensitive(tmp_path):
+    scanner, *_ = _make_scanner(tmp_path)
+    scanner.set_ignore_patterns(["*CACHE*"])
+    assert scanner._is_excluded("/a/CACHE/file.png")
+    assert not scanner._is_excluded("/a/cache/file.png")
+
+
+def test_scan_directory_skips_files_matching_ignore_pattern(tmp_path):
+    scanner, *_ = _make_scanner(tmp_path)
+    scan_dir = tmp_path / "data"
+    scan_dir.mkdir()
+    (scan_dir / "keep.txt").write_text("x")
+    (scan_dir / "thumbs.cache").write_text("y")
+    scanner.set_ignore_patterns(["*cache*"])
+    results = dict(scanner._scan_directory(str(scan_dir)))
+    assert normalize_path(str(scan_dir / "keep.txt")) in results
+    assert normalize_path(str(scan_dir / "thumbs.cache")) not in results
+
+
+def test_scan_directory_skips_subdirectories_matching_ignore_pattern(tmp_path):
+    scanner, *_ = _make_scanner(tmp_path)
+    scan_dir = tmp_path / "data"
+    (scan_dir / "my_cache_dir").mkdir(parents=True)
+    (scan_dir / "my_cache_dir" / "inside.txt").write_text("y")
+    (scan_dir / "keep.txt").write_text("x")
+    scanner.set_ignore_patterns(["*cache*"])
+    results = dict(scanner._scan_directory(str(scan_dir)))
+    assert normalize_path(str(scan_dir / "keep.txt")) in results
+    assert normalize_path(str(scan_dir / "my_cache_dir" / "inside.txt")) not in results
+
+
 def test_request_scan_queues(tmp_path):
     scanner, *_ = _make_scanner(tmp_path)
     scanner.request_scan(["/folder1"])

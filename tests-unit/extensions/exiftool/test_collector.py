@@ -247,3 +247,37 @@ class TestExifToolCooldown:
         assert result is new_proc
         assert plugin._process is new_proc
         new_proc.start.assert_called_once()
+
+
+def test_shutdown_prevents_further_process_spawn(monkeypatch):
+    from extensions.exiftool.collector import ExifToolCollectorPlugin
+
+    resolved = []
+    monkeypatch.setattr(ExifToolCollectorPlugin, "_resolve_exe", staticmethod(lambda: resolved.append("resolve") or "exiftool.exe"))
+
+    plugin = ExifToolCollectorPlugin()
+    plugin.shutdown()
+
+    assert plugin._ensure_process() is None
+    assert resolved == []
+    result = plugin.process("photo.jpg", (0.0, 0))
+    assert result.status is False
+    assert plugin._process is None
+
+
+def test_resolve_exe_sweeps_orphans_only_for_bundled_binary(monkeypatch):
+    from extensions.exiftool import _downloader
+    from extensions.exiftool import parser as parser_module
+    from extensions.exiftool.collector import ExifToolCollectorPlugin
+
+    swept = []
+    monkeypatch.setattr(parser_module, "kill_orphans", lambda exe: swept.append(exe))
+
+    monkeypatch.setattr(_downloader, "get_exiftool_path", lambda: "C:/tools/exiftool.exe")
+    monkeypatch.setattr(_downloader, "is_bundled_exiftool", lambda path: False)
+    assert ExifToolCollectorPlugin._resolve_exe() == "C:/tools/exiftool.exe"
+    assert swept == []
+
+    monkeypatch.setattr(_downloader, "is_bundled_exiftool", lambda path: True)
+    assert ExifToolCollectorPlugin._resolve_exe() == "C:/tools/exiftool.exe"
+    assert swept == ["C:/tools/exiftool.exe"]

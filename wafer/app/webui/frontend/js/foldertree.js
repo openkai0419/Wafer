@@ -2,8 +2,13 @@ import { getJson } from './api.js';
 import { load, save } from './store.js';
 import { setIcon } from './icons.js';
 
+export const DEFAULT_LABELS = {
+  allFiles: '(all files)',
+};
+
 export class FolderTree {
-  constructor(el, onSelect) {
+  constructor(el, onSelect, labels = {}) {
+    this.labels = { ...DEFAULT_LABELS, ...labels };
     this.el = el;
     this.onSelect = onSelect;
     this.db = '';
@@ -17,7 +22,7 @@ export class FolderTree {
     this.selected = null;
     this.branches.clear();
     this.el.textContent = '';
-    const all = this.makeNode('(all files)', null, 0, false);
+    const all = this.makeNode(this.labels.allFiles, null, 0, false);
     this.el.appendChild(all);
     if (restorePath == null) {
       all.classList.add('selected');

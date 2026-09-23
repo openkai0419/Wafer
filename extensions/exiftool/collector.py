@@ -58,11 +58,13 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
         self._exe_path: str | None = None
         self._last_used: float = 0.0
         self._idle_timer: threading.Timer | None = None
+        self._closed = threading.Event()
         from .settings import migrate_legacy_filter
 
         migrate_legacy_filter()
 
     def shutdown(self):
+        self._closed.set()
         self._close_process()
 
     def _touch(self):
@@ -104,15 +106,17 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
     def _ensure_process(self):
         from .parser import ExifToolProcess
 
+        if self._closed.is_set():
+            return None
         if self._process and self._process.alive:
             return self._process
         with self._process_lock:
+            if self._closed.is_set():
+                return None
             if self._process and self._process.alive:
                 return self._process
             if self._exe_path is None:
-                from ._downloader import get_exiftool_path
-
-                self._exe_path = get_exiftool_path()
+                self._exe_path = self._resolve_exe()
             if self._exe_path is None:
                 return None
             old = self._process
@@ -121,6 +125,17 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
             if old is not None:
                 old.stop()
             return self._process
+
+    @staticmethod
+    def _resolve_exe() -> str | None:
+        from ._downloader import get_exiftool_path, is_bundled_exiftool
+
+        exe_path = get_exiftool_path()
+        if exe_path and is_bundled_exiftool(exe_path):
+            from .parser import kill_orphans
+
+            kill_orphans(exe_path)
+        return exe_path
 
     def process(self, path: str, file_info: tuple) -> CollectorResult:
         proc = self._ensure_process()

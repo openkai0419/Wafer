@@ -364,3 +364,94 @@ def test_list_viewers_excludes_workers(monkeypatch):
     monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: iter(fakes))
     pids = sorted(p.pid for p in AppProcess.list_viewers(exclude_self=False))
     assert pids == [101, 102]
+
+
+class TestKillWithParent:
+    @staticmethod
+    def _is_in_job(pid):
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        handle = kernel32.OpenProcess(0x1000, False, pid)
+        assert handle
+        try:
+            result = wintypes.BOOL()
+            assert kernel32.IsProcessInJob(handle, None, ctypes.byref(result))
+            return bool(result.value)
+        finally:
+            kernel32.CloseHandle(handle)
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="job objects are Windows only")
+    def test_assigns_child_to_kill_on_close_job(self):
+        from wafer.core.platform.process import kill_with_parent
+
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], creationflags=subprocess.CREATE_NO_WINDOW)
+        try:
+            assert kill_with_parent(child.pid) is True
+            assert self._is_in_job(child.pid) is True
+        finally:
+            child.kill()
+            child.wait(timeout=5)
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="job objects are Windows only")
+    def test_returns_false_for_unknown_pid(self):
+        from wafer.core.platform.process import kill_with_parent
+
+        assert kill_with_parent(0x7FFFFFF0) is False
+
+
+class TestRunExternal:
+    def test_returns_captured_output(self):
+        from wafer.core.platform.process import run_external
+
+        result = run_external([sys.executable, "-c", "print('hello')"], timeout=30, capture_output=True, text=True)
+
+        assert result.returncode == 0
+        assert result.stdout.strip() == "hello"
+
+    def test_timeout_kills_the_whole_tree(self):
+        from wafer.core.platform.process import run_external
+
+        script = "import subprocess, sys, time; subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); time.sleep(60)"
+        with pytest.raises(subprocess.TimeoutExpired):
+            run_external([sys.executable, "-c", script], timeout=1, capture_output=True)
+
+    def test_check_raises_on_failure(self):
+        from wafer.core.platform.process import run_external
+
+        with pytest.raises(subprocess.CalledProcessError):
+            run_external([sys.executable, "-c", "raise SystemExit(3)"], timeout=30, capture_output=True, check=True)
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="job objects are Windows only")
+    def test_child_is_tied_to_this_process(self, monkeypatch):
+        from wafer.core.platform import process as process_module
+
+        tied = []
+        monkeypatch.setattr(process_module, "kill_with_parent", lambda pid: tied.append(pid) or True)
+
+        process_module.run_external([sys.executable, "-c", "pass"], timeout=30, capture_output=True)
+
+        assert len(tied) == 1
+
+
+class TestTerminatePidTree:
+    def test_kills_child_and_grandchild(self):
+        from wafer.core.platform.process import terminate_pid_tree
+
+        script = "import subprocess, sys, time; c = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); print(c.pid, flush=True); time.sleep(60)"
+        parent = subprocess.Popen([sys.executable, "-c", script], stdout=subprocess.PIPE, text=True)
+        try:
+            grandchild_pid = int(parent.stdout.readline().strip())
+            terminate_pid_tree(parent.pid)
+            assert not psutil.pid_exists(grandchild_pid)
+            assert parent.poll() is not None
+        finally:
+            if parent.poll() is None:
+                parent.kill()
+
+    def test_unknown_pid_is_a_no_op(self):
+        from wafer.core.platform.process import terminate_pid_tree
+
+        terminate_pid_tree(0x7FFFFFF0)

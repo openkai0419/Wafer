@@ -6,6 +6,7 @@ from ...core.logs import AppLogger
 from ...qt.common.notifier import Notifier
 from ...constants import APP_NAME, DEFAULT_DB_NAME
 from ...core.db.setting_db import SettingDB
+from ..indexer.watch.path_scope import compile_ignore_patterns
 from wafer.core.lang.manager import t
 
 from ...qt.common.rate_limit import qt_debounce
@@ -145,21 +146,22 @@ class MainWindow(QtWidgets.QMainWindow):
                 sdb = SettingDB(db_path)
                 roots = sdb.get_all_parent_folders()
                 excluded = sdb.get_all_ignore_folders()
+                ignore_pattern_re = compile_ignore_patterns(sdb.get_all_ignore_patterns())
                 if cancel.is_cancelled():
                     return
-                self._dispatcher.invoke(lambda: self._apply_db_reload(sdb, roots, excluded, cancel, on_complete))
+                self._dispatcher.invoke(lambda: self._apply_db_reload(sdb, roots, excluded, ignore_pattern_re, cancel, on_complete))
             except Exception as e:
                 AppLogger.error(f"Failed to load database: {name}", exc=e)
                 self._dispatcher.invoke(lambda _e=e: self._on_db_reload_failed(name, _e, on_complete))
 
         self._dispatcher.post(task, priority=8, cancel=cancel)
 
-    def _apply_db_reload(self, sdb, roots, excluded, cancel, on_complete=None):
+    def _apply_db_reload(self, sdb, roots, excluded, ignore_pattern_re, cancel, on_complete=None):
         if cancel.is_cancelled():
             return
         self._db_reload_cancel = None
         self.setting_db = sdb
-        self.folder_view.set_folders(roots, excluded)
+        self.folder_view.set_folders(roots, excluded, ignore_pattern_re)
         self.grid_overlay_host.reload()
         if on_complete:
             on_complete()
@@ -517,9 +519,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _reload_folderlist_now(self):
         AppLogger.debug("[RUNNING] reload_folderlist")
         if self.setting_db:
-            roots = self.setting_db.get_all_parent_folders()
-            excluded = self.setting_db.get_all_ignore_folders()
-            if self.folder_view.is_structure_current(roots, excluded):
+            roots, excluded, ignore_patterns = self.setting_db.get_all_folder_settings()
+            ignore_pattern_re = compile_ignore_patterns(ignore_patterns)
+            if self.folder_view.is_structure_current(roots, excluded, ignore_pattern_re):
                 if roots:
                     self._dismiss_folder_callout()
                 return
@@ -527,7 +529,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
             scroll_state = self.folder_view.capture_scroll_state()
             state = self.folder_view.get_state()
-            self.folder_view.set_folders(roots, excluded)
+            self.folder_view.set_folders(roots, excluded, ignore_pattern_re)
             self.folder_view.set_state(state, scroll_to_selection=False)
             self.folder_view.restore_scroll_state(scroll_state)
             if roots:

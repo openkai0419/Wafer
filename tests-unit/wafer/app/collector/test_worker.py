@@ -302,3 +302,41 @@ def test_shutdown_cancel_futures(make_worker):
     worker._node.stop = MagicMock()
     worker.stop()
     assert worker._stop.is_set()
+
+
+def test_stop_shuts_plugin_down_before_waiting_for_workers(make_worker):
+    import threading
+    import time
+
+    worker = make_worker()
+    started = threading.Event()
+    released = threading.Event()
+
+    class _BlockingPlugin:
+        def process(self, path, file_info):
+            started.set()
+            released.wait(timeout=20)
+            return []
+
+        def shutdown(self):
+            released.set()
+
+    worker._plugin = _BlockingPlugin()
+    worker._executor.submit(worker._plugin.process, "blocking.jpg", (0.0, 0))
+    assert started.wait(timeout=5)
+
+    begin = time.monotonic()
+    worker.stop()
+    elapsed = time.monotonic() - begin
+
+    assert released.is_set()
+    assert elapsed < 5, f"stop() waited {elapsed:.1f}s for in-flight work instead of releasing it first"
+
+
+def _wait_for(predicate, timeout=5.0):
+    import time
+
+    deadline = time.monotonic() + timeout
+    while not predicate() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    return predicate()

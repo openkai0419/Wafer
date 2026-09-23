@@ -2,8 +2,13 @@ import datetime
 import math
 import re
 
+from ..logs import AppLogger
 
 _NUM_SPLIT = re.compile(r"([0-9]+)").split
+
+SOURCE_KEYS = ("source", "size", "created", "modified", "collected", "file_hash")
+FILE_KEYS = ("name", "path", "aspect_ratio", "source_extension")
+_SOURCE_TIME_KEYS = ("created", "modified", "collected")
 
 
 def natural_key(s):
@@ -50,6 +55,38 @@ def format_size_detail(size: int) -> str:
     if size is None:
         return None
     return f"{format_size(size)} ({size:,} bytes)"
+
+
+def format_source_entries(record: dict) -> list[tuple[str, str]]:
+    entries = []
+    for key in SOURCE_KEYS:
+        value = record.get(key)
+        if value is None or value == "":
+            continue
+        try:
+            if key == "size":
+                value = format_size_detail(int(value))
+            elif key in _SOURCE_TIME_KEYS:
+                value = format_timestamp(float(value))
+        except (TypeError, ValueError, OSError, OverflowError):
+            AppLogger.warning(f"Unexpected {key} value in source record: {value!r}")
+        entries.append((key, str(value)))
+    return entries
+
+
+def format_file_entries(record: dict) -> list[tuple[str, str]]:
+    entries = []
+    for key in FILE_KEYS:
+        value = record.get(key)
+        if value is None or value == "":
+            continue
+        if key == "aspect_ratio":
+            try:
+                value = format_aspect(float(value))
+            except (TypeError, ValueError, OverflowError):
+                AppLogger.warning(f"Unexpected aspect_ratio value: {value!r}")
+        entries.append((key, str(value)))
+    return entries
 
 
 def display_prefixed_key(key: str) -> str:

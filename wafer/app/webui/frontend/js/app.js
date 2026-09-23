@@ -27,6 +27,7 @@ const state = {
 };
 
 const status = document.getElementById('status');
+const loadBar = document.getElementById('load-bar');
 const dbSelect = document.getElementById('db-select');
 const sortSelect = document.getElementById('sort-select');
 const orderToggle = document.getElementById('order-toggle');
@@ -104,7 +105,7 @@ async function runQuery(force = false) {
   lastSnapshot = snapshot;
   const token = ++queryToken;
   status.textContent = 'searching...';
-  status.classList.add('busy');
+  loadBar.classList.add('busy');
   try {
     const client = new QueryClient();
     const result = await client.run(state.db, filters, state.sort, state.ascending);
@@ -120,7 +121,7 @@ async function runQuery(force = false) {
       status.textContent = `error: ${e.message}`;
     }
   } finally {
-    if (token === queryToken) status.classList.remove('busy');
+    if (token === queryToken) loadBar.classList.remove('busy');
   }
 }
 

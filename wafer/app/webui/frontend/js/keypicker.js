@@ -3,8 +3,18 @@ import { load, save } from './store.js';
 import { setIcon } from './icons.js';
 import { groupEntriesByPrefix, stripPrefix } from './keygroups.js';
 
+export const DEFAULT_LABELS = {
+  loading: 'loading...',
+  disable: 'disable',
+  enable: 'enable',
+  remove: 'remove',
+  noKeys: 'no keys',
+  loadError: (message) => `error: ${message}`,
+};
+
 export class KeyPicker {
-  constructor(button, popup, onChange) {
+  constructor(button, popup, onChange, labels = {}) {
+    this.labels = { ...DEFAULT_LABELS, ...labels };
     this.button = button;
     this.popup = popup;
     this.onChange = onChange;
@@ -68,7 +78,7 @@ export class KeyPicker {
     this.renderSelected();
     this.searchEl.focus();
     if (this.catalog === null) {
-      this.catalogEl.textContent = 'loading...';
+      this.catalogEl.textContent = this.labels.loading;
       await this.loadCatalog();
     }
     this.renderCatalog();
@@ -116,12 +126,12 @@ export class KeyPicker {
       const name = document.createElement('button');
       name.className = 'key-chip-name';
       name.textContent = key;
-      name.title = this.active.includes(key) ? 'disable' : 'enable';
+      name.title = this.active.includes(key) ? this.labels.disable : this.labels.enable;
       name.addEventListener('click', () => this.toggle(key));
       const remove = document.createElement('button');
       remove.className = 'key-chip-x';
-      remove.title = 'remove';
-      remove.setAttribute('aria-label', `remove ${key}`);
+      remove.title = this.labels.remove;
+      remove.setAttribute('aria-label', `${this.labels.remove} ${key}`);
       setIcon(remove, 'close');
       remove.addEventListener('click', () => this.unpin(key));
       chip.append(name, remove);
@@ -132,7 +142,7 @@ export class KeyPicker {
 
   renderCatalog() {
     if (this.catalog === null) {
-      if (this.error) this.catalogEl.textContent = `error: ${this.error}`;
+      if (this.error) this.catalogEl.textContent = this.labels.loadError(this.error);
       return;
     }
     const needle = this.searchEl.value.trim().toLowerCase();
@@ -147,7 +157,7 @@ export class KeyPicker {
       }
       for (const [key, count] of group) this.catalogEl.appendChild(this.catalogRow(key, count));
     }
-    if (this.catalogEl.childElementCount === 0) this.catalogEl.textContent = 'no keys';
+    if (this.catalogEl.childElementCount === 0) this.catalogEl.textContent = this.labels.noKeys;
   }
 
   catalogRow(key, count) {

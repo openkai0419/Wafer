@@ -139,3 +139,35 @@ class TestFlatten:
         meta, aspect = flatten(data)
         assert meta["VideoCodec"] == "h264"
         assert meta["Width"] == "1920"
+
+
+def test_probe_runs_ffprobe_tied_to_this_process(monkeypatch):
+    import json
+    import subprocess
+    from extensions.ffmpeg import parser as parser_module
+
+    calls = {}
+
+    def fake_run_external(cmd, timeout=None, capture_output=False, **kwargs):
+        calls["cmd"] = cmd
+        calls["timeout"] = timeout
+        return subprocess.CompletedProcess(cmd, 0, json.dumps({"format": {}, "streams": []}), "")
+
+    monkeypatch.setattr(parser_module, "run_external", fake_run_external)
+
+    assert parser_module.probe("movie.mp4", "ffprobe.exe") == {"format": {}, "streams": []}
+    assert calls["cmd"][0] == "ffprobe.exe"
+    assert calls["cmd"][-1] == "movie.mp4"
+    assert calls["timeout"] == 30
+
+
+def test_probe_returns_none_when_ffprobe_times_out(monkeypatch):
+    import subprocess
+    from extensions.ffmpeg import parser as parser_module
+
+    def fake_run_external(cmd, timeout=None, **kwargs):
+        raise subprocess.TimeoutExpired(cmd, timeout)
+
+    monkeypatch.setattr(parser_module, "run_external", fake_run_external)
+
+    assert parser_module.probe("movie.mp4", "ffprobe.exe") is None

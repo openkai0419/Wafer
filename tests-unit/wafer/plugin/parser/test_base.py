@@ -101,6 +101,55 @@ def test_query_db_without_db_name_raises():
         parser.query_db("SELECT 1")
 
 
+def test_shutdown_is_safe_when_reader_never_opened():
+    parser = DummyParser()
+    parser.shutdown()
+    assert parser._reader is None
+
+
+def test_shutdown_waits_for_in_flight_query_lock_before_closing(tmp_path, monkeypatch):
+    import threading
+    from wafer.core.db.file_db import FileDB
+    import wafer.core.common.paths as paths
+
+    db_path = tmp_path / "querydb_shutdown_race.db"
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+    db.close()
+    monkeypatch.setattr(paths, "data_db_path", lambda name: str(db_path))
+
+    parser = DummyParser()
+    parser.db_name = "querydb_shutdown_race"
+    parser.query_db("SELECT 1")  # establishes _reader/_reader_lock
+
+    errors = []
+    lock_held = threading.Event()
+    release_lock = threading.Event()
+
+    def hold_query_lock():
+        try:
+            with parser._reader_lock:
+                lock_held.set()
+                release_lock.wait(timeout=5)
+        except Exception as e:
+            errors.append(e)
+
+    holder = threading.Thread(target=hold_query_lock)
+    holder.start()
+    assert lock_held.wait(timeout=5)
+
+    shutdown_thread = threading.Thread(target=parser.shutdown)
+    shutdown_thread.start()
+
+    release_lock.set()
+    holder.join(timeout=5)
+    shutdown_thread.join(timeout=5)
+
+    assert not errors
+    assert parser._reader is None
+
+
 def test_query_db_reads_assigned_database(tmp_path, monkeypatch):
     from wafer.core.db.file_db import FileDB
     import wafer.core.common.paths as paths

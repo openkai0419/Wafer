@@ -10,6 +10,7 @@ from aiohttp import web
 from wafer.core.db.db_utils import open_readonly
 from wafer.plugin.query.handler import filter_registry, sort_registry
 from wafer.core.logs import AppLogger
+from wafer.core.common.formatting import format_file_entries, format_source_entries
 from wafer.core.common.paths import normalize_path, safe_is_dir, setting_db_path
 from wafer.web.media import classify
 
@@ -89,6 +90,10 @@ async def get_items(request: web.Request):
     return web.json_response({"items": items, "db": session.db})
 
 
+def read_metadata(engine, path: str):
+    return engine.get_all_metadata_with_locks(path), engine.get_collection_status(path)
+
+
 @routes.get("/api/meta")
 async def get_meta(request: web.Request):
     db = request.query.get("db", "")
@@ -99,13 +104,14 @@ async def get_meta(request: web.Request):
         service = request.app[QUERY_SERVICE].db(db)
     except KeyError:
         raise web.HTTPNotFound(reason=f"unknown db: {db}") from None
-    meta = await service.run(service.engine.get_meta_info_with_lock_by_path, path)
-    file_hash, tags = await service.run(service.engine.get_tags_with_lock_by_path, path)
+    (source, file_record, _, tags, meta), collectors = await service.run(read_metadata, service.engine, path)
     return web.json_response(
         {
+            "file": format_file_entries(file_record),
+            "source": format_source_entries(source),
+            "collectors": sorted(collectors),
             "meta": {k: {"value": v, "locked": locked} for k, (v, locked) in meta.items()},
             "tags": {k: {"value": v, "locked": locked} for k, (v, locked) in tags.items()},
-            "file_hash": file_hash,
         }
     )
 

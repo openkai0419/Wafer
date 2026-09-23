@@ -1,3 +1,4 @@
+import io
 import os
 import platform
 import shutil
@@ -748,3 +749,35 @@ class TestResolveInstallState:
         monkeypatch.setattr(installer, "needs_install", lambda d: False)
         monkeypatch.setattr(installer, "needs_post_install", lambda d: False)
         assert resolve_install_state(str(tmp_path)) == InstallState.INSTALLED
+
+
+class TestPipProcessLifetime:
+    def test_pip_is_tied_to_this_process_and_cancel_kills_its_tree(self, monkeypatch):
+        from wafer.plugin import installer as installer_module
+
+        tied = []
+        killed = []
+
+        class _FakeProc:
+            pid = 4242
+            returncode = 0
+
+            def __init__(self):
+                self.stdout = io.BytesIO(b"")
+                self.stderr = io.BytesIO(b"")
+                self._polls = 0
+
+            def poll(self):
+                self._polls += 1
+                return None
+
+        monkeypatch.setattr(installer_module.subprocess, "Popen", lambda *a, **kw: _FakeProc())
+        monkeypatch.setattr(installer_module, "kill_with_parent", lambda pid: tied.append(pid))
+        monkeypatch.setattr(installer_module, "terminate_pid_tree", lambda pid: killed.append(pid))
+        monkeypatch.setattr(installer_module, "_SUBPROCESS_POLL_INTERVAL", 0)
+
+        with pytest.raises(installer_module.InstallerCancelled):
+            installer_module._run_subprocess(["pip", "install", "x"], is_cancelled=lambda: True)
+
+        assert tied == [4242]
+        assert killed == [4242]

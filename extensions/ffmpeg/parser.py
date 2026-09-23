@@ -1,9 +1,9 @@
 from __future__ import annotations
 import json
-import subprocess
 from fractions import Fraction
 
 from wafer.core.logs import AppLogger
+from wafer.core.platform.process import run_external
 
 
 def _parse_frame_rate(rate_str: str) -> float | None:
@@ -24,7 +24,7 @@ def _to_num(value: str) -> float | None:
 
 def probe(path: str, ffprobe_path: str) -> dict | None:
     try:
-        result = subprocess.run(
+        result = run_external(
             [
                 ffprobe_path,
                 "-v",
@@ -39,7 +39,6 @@ def probe(path: str, ffprobe_path: str) -> dict | None:
             encoding="utf-8",
             errors="replace",
             timeout=30,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if result.returncode != 0:
             AppLogger.debug(f"[ffmpeg] ffprobe returned {result.returncode} for {path}: {result.stderr}")

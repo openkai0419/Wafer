@@ -2,6 +2,18 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.7.9]
+
+### Improvements
+- Database Manager can now edit existing source, ignore folder, and ignore pattern entries, and supports ignore patterns (e.g. *cache*) alongside ignore folders.
+- WebUI metadata panel shows file and source details plus which extensions have collected data for the selected item.
+- WebUI shows a slim loading bar instead of a spinner while searching.
+
+### Fixes
+- Reduced leftover exiftool.exe processes left running in the background, including a rare crash during shutdown.
+- Ignore folders and patterns set before startup are now applied immediately to live file watching, not just full scans.
+- Other extensions using external tools (7-Zip, ffprobe, plugin installs) no longer leave orphaned processes behind.
+
 ## [v0.7.8]
 
 ### Highlights

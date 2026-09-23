@@ -1,30 +1,37 @@
 import { getJson } from './api.js';
 import { groupEntriesByPrefix, stripPrefix } from './keygroups.js';
 
-const UNPREFIXED_TITLE = '(no prefix)';
+export const DEFAULT_LABELS = {
+  loading: 'loading...',
+  noPrefix: '(no prefix)',
+  fileSection: 'File',
+  sourceSection: 'Source',
+  collectedBy: 'collected by',
+  loadError: (message) => `failed to load metadata: ${message}`,
+};
 
 export class MetaPanel {
-  constructor() {
+  constructor(labels = {}) {
+    this.labels = { ...DEFAULT_LABELS, ...labels };
     this.el = document.getElementById('meta-panel');
     this.content = document.getElementById('meta-content');
   }
 
   async show(db, item) {
     this.el.classList.remove('hidden');
-    this.content.textContent = 'loading...';
+    this.content.textContent = this.labels.loading;
     try {
       const data = await getJson('/api/meta', { db, path: item.path });
       const entries = [...valueEntries(data.meta), ...valueEntries(data.tags)];
-      this.content.replaceChildren(
-        section('File', [
-          ['name', item.name],
-          ['path', item.path],
-          ['hash', data.file_hash || ''],
-        ]),
-        ...groupEntriesByPrefix(entries).map(([prefix, group]) => section(`${prefix || UNPREFIXED_TITLE} (${group.length})`, group)),
-      );
+      const source = [...data.source];
+      if (data.collectors.length) source.push([this.labels.collectedBy, collectorList(data.collectors)]);
+      const fileEntries = data.file.length ? data.file : [['name', item.name], ['path', item.path]];
+      const sections = [section(this.labels.fileSection, fileEntries)];
+      if (source.length) sections.push(section(this.labels.sourceSection, source));
+      for (const [prefix, group] of groupEntriesByPrefix(entries)) sections.push(section(`${prefix || this.labels.noPrefix} (${group.length})`, group));
+      this.content.replaceChildren(...sections);
     } catch (e) {
-      this.content.textContent = `failed to load metadata: ${e.message}`;
+      this.content.textContent = this.labels.loadError(e.message);
     }
   }
 
@@ -52,10 +59,23 @@ function definitionList(entries) {
     dt.textContent = stripPrefix(key);
     dt.title = key;
     const dd = document.createElement('dd');
-    dd.textContent = String(value ?? '');
+    if (value instanceof Node) dd.append(value);
+    else dd.textContent = String(value ?? '');
     dl.append(dt, dd);
   }
   return dl;
+}
+
+function collectorList(collectors) {
+  const box = document.createElement('span');
+  box.className = 'collectors';
+  for (const [name, status] of collectors) {
+    const chip = document.createElement('span');
+    chip.className = `collector ${status}`;
+    chip.textContent = name;
+    box.append(chip);
+  }
+  return box;
 }
 
 function valueEntries(obj) {

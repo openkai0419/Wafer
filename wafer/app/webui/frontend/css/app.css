@@ -22,7 +22,7 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100dvh;
 }
 
 #app { display: flex; flex: 1; min-height: 0; }
@@ -78,6 +78,7 @@ button:hover, select:hover, input:hover { border-color: var(--border-hover); }
 #toolbar {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   padding: 8px 8px 8px 0;
@@ -240,7 +241,7 @@ button:hover, select:hover, input:hover { border-color: var(--border-hover); }
   display: flex;
 }
 #viewer.hidden { display: none; }
-#viewer-main { position: relative; flex: 1; min-width: 0; }
+#viewer-main { position: relative; flex: 1; min-width: 0; min-height: 0; container: viewer / inline-size; }
 #viewer-stage {
   position: absolute;
   inset: 0;
@@ -248,7 +249,7 @@ button:hover, select:hover, input:hover { border-color: var(--border-hover); }
   align-items: center;
   justify-content: center;
 }
-#viewer-stage img, #viewer-stage video { max-width: 100%; max-height: 92vh; object-fit: contain; }
+#viewer-stage img, #viewer-stage video { max-width: 100%; max-height: 92dvh; object-fit: contain; }
 #viewer-stage a { color: var(--accent); font-size: 16px; }
 #viewer-caption {
   position: absolute;
@@ -353,3 +354,30 @@ button:hover, select:hover, input:hover { border-color: var(--border-hover); }
   font-size: 12px;
 }
 #conn-banner.hidden { display: none; }
+
+@container viewer (max-width: 400px) {
+  #viewer-menu-popup { right: 12px; }
+}
+
+@media (max-width: 640px) {
+  #app, #viewer { flex-direction: column; }
+  #main { min-height: 0; }
+  #toolbar { padding: 0 8px 8px; }
+  #sidebar-toggle {
+    order: -1;
+    flex-basis: 100%;
+    height: 18px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 3px 3px;
+  }
+  #sidebar-toggle .icon { transform: rotate(90deg); }
+  #sidebar { width: auto; max-height: 40dvh; border-right: none; border-bottom: 1px solid var(--border); }
+  #meta-panel { width: auto; max-height: 45dvh; border-left: none; border-top: 1px solid var(--border); }
+  #viewer-stage img, #viewer-stage video { max-height: 100%; }
+}
+
+@media (pointer: coarse) {
+  input, select, textarea, #auto-scroll-speed-value { font-size: 16px; }
+}

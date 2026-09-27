@@ -65,17 +65,11 @@ const keyPicker = new KeyPicker(document.getElementById('key-picker'), searchPop
   state.keys = keys;
   runQuery();
 });
-const searchOptions = new SearchOptions(
-  searchPopup,
-  () => {
-    state.keywordMode = searchOptions.mode;
-    state.separator = searchOptions.separator;
-    state.directOnly = searchOptions.directOnly;
-    save('directOnly', state.directOnly);
-    runQuery();
-  },
-  state.directOnly,
-);
+const searchOptions = new SearchOptions(searchPopup, () => {
+  state.keywordMode = searchOptions.mode;
+  state.separator = searchOptions.separator;
+  runQuery();
+});
 
 async function selectFolderOf(item) {
   const source = (item.source || item.path).replace(/\\/g, '/');
@@ -258,6 +252,13 @@ function setupSettings() {
   thumbSelect.addEventListener('change', () => {
     save('thumbSize', Number(thumbSelect.value));
     grid.relayout();
+  });
+  const directOnly = document.getElementById('direct-only');
+  directOnly.checked = state.directOnly;
+  directOnly.addEventListener('change', () => {
+    state.directOnly = directOnly.checked;
+    save('directOnly', state.directOnly);
+    runQuery();
   });
   const scrollToggle = document.getElementById('auto-scroll-toggle');
   const speedSlider = document.getElementById('auto-scroll-speed');

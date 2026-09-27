@@ -27,11 +27,11 @@ def _wait_total(page, prefix):
 
 
 def _set_direct_only(page, checked):
-    page.click("#key-picker")
-    page.wait_for_selector("#key-popup:not(.hidden)")
+    page.click("#settings-btn")
+    page.wait_for_selector("#settings-modal:not(.hidden)")
     page.set_checked("#direct-only", checked)
-    page.click("#status")
-    page.wait_for_selector("#key-popup.hidden", state="attached")
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#settings-modal.hidden", state="attached")
 
 
 def test_direct_only_drops_files_in_subfolders(ready_page):

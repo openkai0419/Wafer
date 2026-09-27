@@ -22,6 +22,7 @@ const state = {
   keys: load('searchKeys', []),
   keywordMode: load('keywordMode', KEYWORD_MODE_DEFAULT),
   separator: load('keywordSeparator', KEYWORD_SEPARATOR_DEFAULT),
+  directOnly: load('directOnly', false),
   sort: load('sort', 'name'),
   ascending: load('ascending', true),
 };
@@ -64,11 +65,17 @@ const keyPicker = new KeyPicker(document.getElementById('key-picker'), searchPop
   state.keys = keys;
   runQuery();
 });
-const searchOptions = new SearchOptions(searchPopup, () => {
-  state.keywordMode = searchOptions.mode;
-  state.separator = searchOptions.separator;
-  runQuery();
-});
+const searchOptions = new SearchOptions(
+  searchPopup,
+  () => {
+    state.keywordMode = searchOptions.mode;
+    state.separator = searchOptions.separator;
+    state.directOnly = searchOptions.directOnly;
+    save('directOnly', state.directOnly);
+    runQuery();
+  },
+  state.directOnly,
+);
 
 async function selectFolderOf(item) {
   const source = (item.source || item.path).replace(/\\/g, '/');
@@ -80,7 +87,7 @@ async function selectFolderOf(item) {
 function buildFilters() {
   const filters = [];
   if (state.folder) {
-    filters.push({ name: 'directory', params: { directories: [state.folder], include_subfolders: true } });
+    filters.push({ name: 'directory', params: { directories: [state.folder], include_subfolders: !state.directOnly } });
   }
   if (state.keywords || state.keys.length) {
     const params = {

@@ -215,6 +215,13 @@ class TestTextFilterExecution:
         paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
         assert len(paths) == 0
 
+    def test_trim_keywords_false_matches_leading_space(self, engine, composer):
+        params = {"keys": ["Comment"], "keywords": " 5", "keyword_separator": ",", "query_mode": "LIKE"}
+        kept, _, _ = composer.execute(engine, [(TextFilter, {**params, "trim_keywords": False}, None)], NaturalNameSort, True)
+        trimmed, _, _ = composer.execute(engine, [(TextFilter, params, None)], NaturalNameSort, True)
+        assert sorted(int(p[-8:-4]) for p in kept) == [5, *range(50, 60)]
+        assert len(trimmed) > len(kept)
+
 
 class TestDirectoryFilterBuildPathQuery:
     def test_no_directories(self):

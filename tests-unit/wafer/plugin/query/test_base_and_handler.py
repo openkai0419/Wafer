@@ -325,6 +325,11 @@ class TestNormalizeTextInputs:
         keys, inc, exc = _normalize_text_inputs({"keywords": ("a,b", "c"), "keyword_separator": ","})
         assert inc == ["a,b", "c"]
 
+    def test_trim_keywords_false_keeps_spaces(self):
+        keys, inc, exc = _normalize_text_inputs({"keywords": " a , -c ", "keyword_separator": ",", "trim_keywords": False})
+        assert inc == [" a ", " -c "]
+        assert exc == []
+
 
 class TestMatchClause:
     def test_like_mode(self):

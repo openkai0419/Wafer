@@ -45,6 +45,18 @@ def standard_key_columns_with_num(key: str) -> tuple[str, str, str, str] | None:
     return from_clause, path_col, val_col, "NULL"
 
 
+def parse_keywords(keywords, separator: str | None = None, trim: bool = True) -> tuple[list[str], list[str]]:
+    if isinstance(keywords, str):
+        words = keywords.split(separator) if separator else [keywords]
+        if trim:
+            words = [w.strip() for w in words]
+    else:
+        words = list(keywords or [])
+    include = [w for w in words if w.strip() and not w.startswith("-")]
+    exclude = [w[1:] for w in words if w.startswith("-") and w[1:].strip()]
+    return include, exclude
+
+
 @dataclass(frozen=True)
 class SearchQuery:
     keys: tuple[str, ...] | str | None = None
@@ -70,11 +82,7 @@ class SearchQuery:
     @profiler.profile
     def normalize_inputs(self):
         keys = [self.keys] if isinstance(self.keys, str) else list(self.keys or [])
-        keywords = self.keywords
-        if isinstance(keywords, str):
-            keywords = [w.strip() for w in keywords.split(self.keyword_separator)] if self.keyword_separator else [keywords]
-        include = [kw for kw in (keywords or []) if kw and not kw.startswith("-")]
-        exclude = [kw[1:] for kw in (keywords or []) if kw and kw.startswith("-") and len(kw) > 1]
+        include, exclude = parse_keywords(self.keywords, self.keyword_separator)
         return keys, include, exclude
 
     def _match_clause(self, field, keywords, op):

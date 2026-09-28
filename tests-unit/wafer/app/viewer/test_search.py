@@ -134,6 +134,13 @@ def test_build_filter_entries_keyword_separator():
     assert entries[0][1]["keyword_separator"] == ";"
 
 
+def test_build_filter_entries_trim_keywords():
+    svc = _make_service()
+    assert svc.build_filter_entries()[0][1]["trim_keywords"] is True
+    svc.set_param("trim_keywords", False)
+    assert svc.build_filter_entries()[0][1]["trim_keywords"] is False
+
+
 def test_reset_state():
     svc = _make_service()
     svc.set_keys(["k"])

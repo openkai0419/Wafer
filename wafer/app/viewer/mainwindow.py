@@ -508,6 +508,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 "query_mode": values.get("query_mode", "GLOB"),
                 "keyword_mode": values.get("keyword_mode", "AND"),
                 "keyword_separator": values.get("keyword_separator", ","),
+                "trim_keywords": values.get("trim_keywords", True),
             }
         )
 

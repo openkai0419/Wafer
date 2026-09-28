@@ -3,7 +3,7 @@ import sqlite3
 import time
 import pytest
 from pathlib import Path
-from wafer.core.db.query import SearchQuery, FileSearchEngine, _kv_sort_join
+from wafer.core.db.query import SearchQuery, FileSearchEngine, _kv_sort_join, parse_keywords
 from wafer.core.common.formatting import natural_key
 from wafer.core.db.file_db import FileDB
 from wafer.core.common.paths import normalize_path
@@ -1466,6 +1466,29 @@ class TestSearchQueryNormalizeInputs:
         q = SearchQuery(keys=None)
         keys, include, exclude = q.normalize_inputs()
         assert keys == []
+
+
+class TestParseKeywords:
+    def test_trim_by_default(self):
+        assert parse_keywords(" a , b , -c ", ",") == (["a", "b"], ["c"])
+
+    def test_keep_spaces(self):
+        assert parse_keywords(" hair, long hair ", ",", trim=False) == ([" hair", " long hair "], [])
+
+    def test_keep_spaces_drops_blank_words(self):
+        assert parse_keywords("a, ,  ", ",", trim=False) == (["a"], [])
+
+    def test_keep_spaces_drops_dash_blank(self):
+        assert parse_keywords("a,- ,-  ", ",", trim=False) == (["a"], [])
+
+    def test_keep_spaces_dash_only_at_head(self):
+        assert parse_keywords("a, -b,-c ", ",", trim=False) == (["a", " -b"], ["c "])
+
+    def test_trim_without_separator(self):
+        assert parse_keywords("  cat dog ") == (["cat dog"], [])
+
+    def test_sequence_used_as_is(self):
+        assert parse_keywords((" a", " ", "-b"), ",") == ([" a"], ["b"])
 
 
 class TestKvSortJoinValidation:

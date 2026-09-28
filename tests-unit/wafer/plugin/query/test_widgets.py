@@ -161,6 +161,18 @@ class TestTextFilterWriteParams:
         assert result["keyword_mode"] == original["keyword_mode"]
         assert result["keyword_separator"] == original["keyword_separator"]
 
+    def test_trim_keywords_default_true(self, qapp):
+        w = TextFilter.create_widget()
+        assert TextFilter.read_params(w)["trim_keywords"] is True
+
+    def test_write_trim_keywords(self, qapp):
+        w = TextFilter.create_widget()
+        TextFilter.write_params(w, {"trim_keywords": False})
+        assert TextFilter.read_params(w)["trim_keywords"] is False
+
+    def test_trim_keywords_inheritable(self, qapp):
+        assert TextFilter.inheritable_params({"trim_keywords": False}) == {"trim_keywords": False}
+
 
 class TestCheckableComboRemake:
     def test_remake_emits_action_changed(self, qapp):

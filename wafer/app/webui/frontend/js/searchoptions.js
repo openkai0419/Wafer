@@ -1,6 +1,6 @@
 import { load, save } from './store.js';
 
-export const KEYWORD_MODE_DEFAULT = 'AND';
+export const KEYWORD_MODE_DEFAULT = 'OR';
 export const KEYWORD_SEPARATOR_DEFAULT = ',';
 
 export class SearchOptions {

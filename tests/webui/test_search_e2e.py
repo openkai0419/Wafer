@@ -73,41 +73,38 @@ def _wait_total(page, prefix):
     page.wait_for_function(f"document.querySelector('#status').textContent.startsWith('{prefix} ')")
 
 
-def test_keywords_split_by_comma_with_and(ready_page):
+def test_keywords_split_by_comma_with_or_by_default(ready_page):
     page = ready_page
+    page.fill("#search-input", "cat,dog")
+    page.press("#search-input", "Enter")
+    _wait_total(page, "3")
+
+
+def test_keyword_mode_and_narrows_results(ready_page):
+    page = ready_page
+    page.fill("#search-input", "cat,dog")
+    page.press("#search-input", "Enter")
+    _wait_total(page, "3")
+
+    _open_search_options(page)
+    page.click("#keyword-mode button[data-mode='AND']")
+    _wait_total(page, "0")
+
     page.fill("#search-input", "cat,picture")
     page.press("#search-input", "Enter")
     _wait_total(page, "2")
 
-    page.fill("#search-input", "cat,dog")
-    page.press("#search-input", "Enter")
-    _wait_total(page, "0")
-
-
-def test_keyword_mode_or_widens_results(ready_page):
-    page = ready_page
-    page.fill("#search-input", "cat,dog")
-    page.press("#search-input", "Enter")
-    _wait_total(page, "0")
-
-    _open_search_options(page)
-    page.click("#keyword-mode button[data-mode='OR']")
-    _wait_total(page, "3")
-
-    page.click("#keyword-mode button[data-mode='AND']")
-    _wait_total(page, "0")
-
 
 def test_keyword_separator_is_configurable(ready_page):
     page = ready_page
-    page.fill("#search-input", "cat;picture")
+    page.fill("#search-input", "cat;dog")
     page.press("#search-input", "Enter")
     _wait_total(page, "0")
 
     _open_search_options(page)
     page.fill("#keyword-separator", ";")
     page.press("#keyword-separator", "Enter")
-    _wait_total(page, "2")
+    _wait_total(page, "3")
 
 
 def _count_query_posts(page):

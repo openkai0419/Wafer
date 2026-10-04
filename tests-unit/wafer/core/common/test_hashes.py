@@ -50,6 +50,25 @@ def test_fast_signature_hash_empty_file():
         os.unlink(path)
 
 
+def test_fast_signature_hash_single_byte_file():
+    path = _make_file(b"x")
+    try:
+        h = fast_signature_hash(path)
+        assert isinstance(h, str)
+        assert h not in ("", "z", "f")
+    finally:
+        os.unlink(path)
+
+
+def test_fast_signature_hash_explicit_size_matches_stat():
+    data = b"0123456789" * 100
+    path = _make_file(data)
+    try:
+        assert fast_signature_hash(path, size=len(data)) == fast_signature_hash(path)
+    finally:
+        os.unlink(path)
+
+
 def test_fast_signature_hash_nonexistent():
     h = fast_signature_hash("/nonexistent/file.bin")
     assert h == "f"

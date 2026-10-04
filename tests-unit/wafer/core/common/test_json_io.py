@@ -60,6 +60,17 @@ def test_write_indent():
 def test_roundtrip_complex():
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "complex.json"
-        data = {"list": [1, 2, 3], "nested": {"a": True, "b": None}}
+        data = {"str": "hello", "int": 42, "float": 3.14, "list": [1, "two", 3.0], "nested": {"a": True, "b": None, "c": False}}
         write_json_file(p, data)
-        assert read_json_file(p) == data
+        result = read_json_file(p)
+        assert result == data
+        assert result["nested"]["a"] is True
+        assert result["nested"]["c"] is False
+        assert result["nested"]["b"] is None
+
+
+def test_write_overwrites_existing_with_str_path(tmp_path):
+    p = str(tmp_path / "rw.json")
+    write_json_file(p, {"v": 1})
+    write_json_file(p, {"v": 2})
+    assert read_json_file(p) == {"v": 2}

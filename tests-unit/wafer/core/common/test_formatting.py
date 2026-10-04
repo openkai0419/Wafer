@@ -1,4 +1,6 @@
 from wafer.core.common.formatting import (
+    natural_key,
+    display_prefixed_key,
     split_last,
     format_timestamp,
     format_aspect,
@@ -7,6 +9,30 @@ from wafer.core.common.formatting import (
     format_source_entries,
     format_file_entries,
 )
+
+
+def test_natural_key_pure_alpha():
+    assert natural_key("abc") == ["abc"]
+
+
+def test_natural_key_parses_numeric_segments():
+    assert 10 in natural_key("file10name")
+
+
+def test_natural_key_sorts_numbers_numerically():
+    assert sorted(["item2", "item10", "item1"], key=natural_key) == ["item1", "item2", "item10"]
+
+
+def test_display_prefixed_key_with_prefix():
+    assert display_prefixed_key("exif.width") == "[exif]  width"
+
+
+def test_display_prefixed_key_without_prefix():
+    assert display_prefixed_key("name") == "name"
+
+
+def test_display_prefixed_key_splits_on_first_dot_only():
+    assert display_prefixed_key("nai.prompt.text") == "[nai]  prompt.text"
 
 
 def test_split_last():
@@ -47,6 +73,10 @@ def test_format_aspect():
     assert format_aspect(-1) == "N/A"
 
 
+def test_format_aspect_integer_ratio():
+    assert format_aspect(2.0) == "2:1"
+
+
 def test_format_aspect_ratio():
     result = format_aspect(16 / 9)
     assert "16" in result
@@ -55,8 +85,10 @@ def test_format_aspect_ratio():
 
 def test_format_size():
     assert format_size(0) == "0.0 B"
-    assert "KB" in format_size(1024)
-    assert "MB" in format_size(1024 * 1024)
+    assert format_size(500) == "500.0 B"
+    assert format_size(1024) == "1.0 KB"
+    assert format_size(1024 * 1024) == "1.0 MB"
+    assert format_size(1024**3) == "1.0 GB"
     assert format_size(None) is None
 
 
@@ -64,6 +96,7 @@ def test_format_size_detail():
     result = format_size_detail(1500)
     assert "bytes" in result
     assert "1,500" in result
+    assert "KB" in result
     assert format_size_detail(None) is None
 
 

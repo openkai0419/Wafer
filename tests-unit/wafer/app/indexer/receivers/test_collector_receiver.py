@@ -1,7 +1,9 @@
 import py_compile
-import time
 from unittest.mock import MagicMock
 
+import pytest
+
+from wafer.app.indexer.receivers import collector_receiver
 from wafer.app.indexer.receivers.collector_receiver import (
     CollectorReceiver,
     _parse_batch,
@@ -24,6 +26,11 @@ class _StubMsg:
 
 def test_compile():
     py_compile.compile("wafer/app/indexer/receivers/collector_receiver.py")
+
+
+@pytest.fixture
+def short_flush_delay(monkeypatch):
+    monkeypatch.setattr(collector_receiver, "FLUSH_DELAY", 0.05)
 
 
 def _make_receiver():
@@ -64,7 +71,7 @@ def test_handle_result_empty_results():
     assert not scheduler.submit.called
 
 
-def test_handle_result_sets_collector_on_results():
+def test_handle_result_sets_collector_on_results(short_flush_delay):
     receiver, scheduler, writer, _ = _make_receiver()
     results = [{"source": "a", "status": True}]
     msg = _StubMsg({"collector": "test_coll", "results": results})
@@ -76,7 +83,7 @@ def test_handle_result_sets_collector_on_results():
     assert any(c[1] == "test_coll" for c in collector_status)
 
 
-def test_coalescing_multiple_batches():
+def test_coalescing_multiple_batches(short_flush_delay):
     receiver, scheduler, writer, progress = _make_receiver()
     for i in range(5):
         msg = _StubMsg(
@@ -96,7 +103,7 @@ def test_coalescing_multiple_batches():
     progress.send_event.assert_called_once_with("update")
 
 
-def test_flush_reschedules_on_pending():
+def test_flush_reschedules_on_pending(short_flush_delay):
     receiver, scheduler, writer, progress = _make_receiver()
     msg = _StubMsg({"collector": "exif", "results": [{"source": "a", "status": True}]})
     receiver.handle_result(msg)

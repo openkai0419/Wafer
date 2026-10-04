@@ -1,5 +1,4 @@
 import os
-import time
 from pathlib import Path
 
 from PIL import Image
@@ -179,9 +178,7 @@ class TestIndexToSearch:
         img_dir = tmp_path / "photos"
         img_dir.mkdir()
         _create_test_image(img_dir / "aaa.jpg", 100, 80)
-        time.sleep(0.05)
         _create_test_image(img_dir / "zzz.jpg", 100, 80)
-        time.sleep(0.05)
         _create_test_image(img_dir / "mmm.jpg", 100, 80)
 
         collectors = collector_resolver.summary()
@@ -257,8 +254,9 @@ class TestIndexToSearch:
         assert len(pre_paths) == 1
         assert pre_aspects[0] != 0
 
-        time.sleep(1.1)
+        old_mtime = img_path.stat().st_mtime
         _create_test_image(img_path, 400, 100)
+        os.utime(img_path, (old_mtime + 2, old_mtime + 2))
 
         with ScanHarness(db_path, collectors=collectors) as harness:
             harness.scan(img_dir)

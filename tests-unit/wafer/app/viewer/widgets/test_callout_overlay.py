@@ -1,5 +1,13 @@
 import py_compile
+import pytest
 from PySide6 import QtCore, QtWidgets
+
+from wafer.app.viewer.widgets import callout_overlay
+
+
+@pytest.fixture(autouse=True)
+def fast_fade(monkeypatch):
+    monkeypatch.setattr(callout_overlay, "_FADE_DURATION_MS", 20)
 
 
 def test_compile():

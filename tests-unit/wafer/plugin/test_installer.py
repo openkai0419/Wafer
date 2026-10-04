@@ -58,7 +58,7 @@ class TestRunSubprocess:
         script = tmp_path / "hang.py"
         script.write_text("import time; time.sleep(60)")
         with pytest.raises(TimeoutError):
-            _run_subprocess([sys.executable, str(script)], timeout=1)
+            _run_subprocess([sys.executable, str(script)], timeout=0.2)
 
     def test_progress_callback(self, tmp_path):
         script = tmp_path / "slow.py"
@@ -194,17 +194,24 @@ class TestInstallRequirements:
 
         assert success is False
 
-    def test_empty_merge_still_writes_stamp(self, tmp_path):
+    def test_empty_merge_still_writes_stamp(self, tmp_path, monkeypatch):
         ext_dir = tmp_path / "extensions"
         plugin = ext_dir / "empty"
         plugin.mkdir(parents=True)
-        (plugin / "requirements.txt").write_text("# no deps\n")
+        req = plugin / "requirements.txt"
+        req.write_text("# no deps\n")
+        pip_commands = []
+        monkeypatch.setattr(installer, "_run_subprocess", lambda cmd, **kw: pip_commands.append(cmd))
 
         success = install_requirements(str(plugin), str(ext_dir))
 
         assert success is True
+        assert len(pip_commands) == 1
+        assert pip_commands[0][1:4] == ["-m", "pip", "install"]
+        assert str(req) in pip_commands[0]
         stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "empty.installed"
         assert stamp.exists()
+        assert stamp.read_text("utf-8") == _requirements_hash(str(req))
 
 
 class TestStampVersionMatches:

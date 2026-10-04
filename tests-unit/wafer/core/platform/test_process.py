@@ -293,7 +293,9 @@ def test_app_process_terminate_tree_kills_descendants():
         ps = psutil.Process(proc.pid)
         assert psutil.pid_exists(child_pid)
         AppProcess.terminate_tree([ps], timeout=3, kill_timeout=2)
-        time.sleep(0.3)
+        deadline = time.monotonic() + 5.0
+        while psutil.pid_exists(child_pid) and time.monotonic() < deadline:
+            time.sleep(0.01)
         assert not psutil.pid_exists(child_pid)
     finally:
         for pid in (child_pid, proc.pid):
@@ -323,7 +325,7 @@ def test_wait_procs_then_kill_force_kills_unresponsive():
     proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     try:
         ps = psutil.Process(proc.pid)
-        AppProcess.wait_procs_then_kill([ps], wait=1, kill_timeout=2)
+        AppProcess.wait_procs_then_kill([ps], wait=0.2, kill_timeout=2)
         proc.wait(timeout=3)
         assert proc.returncode is not None
     finally:

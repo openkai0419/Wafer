@@ -1,5 +1,4 @@
 import os
-import time
 from pathlib import Path
 
 from PIL import Image
@@ -278,8 +277,8 @@ class TestImagePipeline:
         old_mtime = db_check.read_conn.execute("SELECT modified FROM sources WHERE source=?", (norm,)).fetchone()[0]
         db_check.close()
 
-        time.sleep(1.1)
         _create_test_image(img_path, 200, 100)
+        os.utime(img_path, (old_mtime + 2.0, old_mtime + 2.0))
         new_st = os.stat(str(img_path))
         assert new_st.st_mtime != old_mtime
 

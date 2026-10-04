@@ -9,6 +9,7 @@ from wafer.qt.commands.command.core import (
 )
 from wafer.qt.commands.command.menu_builder import CommandMenuBuilder, MenuBuilder
 from wafer.qt.commands.command.maker import MenuMaker
+from wafer.qt.commands.command.menu import MenuHub
 from wafer.qt.commands.command.state import CommandOptionStore
 from wafer.qt.commands.command.payload import CommandPayload
 from wafer.qt.commands.binding.editors_common import (
@@ -46,6 +47,11 @@ def _menu_labels(menu):
 
 
 @pytest.fixture(autouse=True)
+def _isolated_menu_hub(monkeypatch):
+    monkeypatch.setattr(MenuHub, "_instance", None)
+
+
+@pytest.fixture(autouse=True)
 def _reset_singletons(tmp_path):
     prev_instance = CommandOptionStore._instance
     prev_default = CommandOptionStore._default_path
@@ -70,6 +76,8 @@ def _register(cmd_id, display, folder="Test"):
         func=lambda ctx: None,
     )
     register_command_defs([meta])
+    menu_path = f"{folder}/{cmd_id}"
+    MenuHub.instance().register_paths(type(f"_Menu_{cmd_id}", (), {}), {cmd_id: menu_path}, items=[menu_path])
     return meta
 
 

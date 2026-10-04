@@ -60,6 +60,13 @@ def _process_events_until(predicate, timeout_ms=5000):
         time.sleep(0.01)
 
 
+def _drain(dispatcher, rounds=3):
+    app = QtWidgets.QApplication.instance()
+    for _ in range(rounds):
+        assert dispatcher._pool.pool.waitForDone(5000)
+        app.processEvents()
+
+
 def _make_image(w=100, h=100):
     img = QtGui.QImage(w, h, QtGui.QImage.Format_ARGB32)
     img.fill(0)
@@ -211,8 +218,7 @@ class TestPipelineCancelDuringRender:
             time.sleep(0.05)
             pipeline.cancel_index(0)
 
-        time.sleep(0.5)
-        QtWidgets.QApplication.instance().processEvents()
+        _drain(dispatcher)
         widget.set_image.assert_not_called()
 
     def test_reschedule_cancels_previous(self, dispatcher):
@@ -271,8 +277,7 @@ class TestPipelineWidgetRecycle:
         pipeline.cancel_index(0)
         deliver_event.set()
 
-        time.sleep(0.3)
-        QtWidgets.QApplication.instance().processEvents()
+        _drain(dispatcher)
         widget.set_image.assert_not_called()
 
 
@@ -390,8 +395,7 @@ class TestPipelineCancelAllDuringRender:
         barrier.set()
         assert pipeline.active_count() == 0
 
-        time.sleep(0.4)
-        QtWidgets.QApplication.instance().processEvents()
+        _drain(dispatcher)
         w0.set_image.assert_not_called()
         w1.set_image.assert_not_called()
 
@@ -489,21 +493,22 @@ class TestPipelineFallbackRender:
         widget = MagicMock()
         widgets[0] = widget
         barrier = threading.Event()
+        load_started = threading.Event()
 
         with pytest.MonkeyPatch.context() as mp:
 
             def slow_load(p, s=None):
+                load_started.set()
                 barrier.wait(timeout=2)
                 return _make_image()
 
             mp.setattr("wafer.app.viewer.grid.pipeline.grid_resolver", _fake_resolver(load_fn=slow_load))
             pipeline.schedule_render(0, "/song.mp3", QtCore.QSize(200, 200))
-            time.sleep(0.05)
+            assert load_started.wait(timeout=5)
             pipeline.cancel_index(0)
             barrier.set()
 
-        time.sleep(0.3)
-        QtWidgets.QApplication.instance().processEvents()
+        _drain(dispatcher)
         widget.set_image.assert_not_called()
 
 

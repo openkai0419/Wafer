@@ -4,12 +4,27 @@ import time
 
 import pytest
 
+from wafer.app.indexer.runtime import scheduler as scheduler_module
 from wafer.app.indexer.runtime.scheduler import TaskScheduler, PeriodicTask, _QUEUE_POLL_INTERVAL, _IMMEDIATE_THRESHOLD
 from wafer.app.indexer.runtime.task import Task, TaskPriority
 
 
 def test_compile():
     py_compile.compile("wafer/app/indexer/runtime/scheduler.py")
+
+
+@pytest.fixture(autouse=True)
+def fast_queue_poll(monkeypatch):
+    monkeypatch.setattr(scheduler_module, "_QUEUE_POLL_INTERVAL", 0.02)
+
+
+def wait_until(predicate, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return predicate()
 
 
 @pytest.fixture
@@ -50,21 +65,24 @@ def test_priority_ordering_within_background_lane(scheduler):
     execution_order = []
     lock = threading.Lock()
     barrier = threading.Event()
+    blocker_started = threading.Event()
 
     scheduler.submit(
         Task.create(
             "blocker",
             priority=TaskPriority.SCAN,
-            run=lambda: barrier.wait(5.0),
+            run=lambda: (blocker_started.set(), barrier.wait(5.0)),
         )
     )
-    time.sleep(0.2)
+    assert blocker_started.wait(timeout=5.0)
 
+    low_done = threading.Event()
     scheduler.submit(
         Task.create(
             "low",
             priority=TaskPriority.MAINTENANCE,
             run=lambda: (lock.acquire(), execution_order.append("low"), lock.release()),
+            on_complete=low_done.set,
         )
     )
     done = threading.Event()
@@ -79,7 +97,7 @@ def test_priority_ordering_within_background_lane(scheduler):
 
     barrier.set()
     assert done.wait(timeout=5.0)
-    time.sleep(0.3)
+    low_done.wait(timeout=5.0)
 
     with lock:
         if "high" in execution_order and "low" in execution_order:
@@ -290,19 +308,22 @@ def test_cancel_all_cancels_tracked_tokens(scheduler):
 
 def test_cancel_all_drains_queue(scheduler):
     barrier = threading.Event()
+    blocker_started = threading.Event()
+    blocker_done = threading.Event()
     scheduler.submit(
         Task.create(
             "blocker",
             priority=TaskPriority.REALTIME,
-            run=lambda: barrier.wait(5.0),
+            run=lambda: (blocker_started.set(), barrier.wait(5.0)),
+            on_complete=blocker_done.set,
         )
     )
-    time.sleep(0.2)
+    assert blocker_started.wait(timeout=5.0)
     for i in range(5):
         scheduler.submit(Task.create(f"pending_{i}", run=lambda: None))
     scheduler.cancel_all()
     barrier.set()
-    time.sleep(0.5)
+    assert blocker_done.wait(timeout=5.0)
     assert scheduler._immediate_queue.empty()
     assert scheduler._background_queue.empty()
 
@@ -367,6 +388,14 @@ def test_once_per_idle_fires_once_then_suppressed():
 
 def test_once_per_idle_resets_on_active_task():
     s = TaskScheduler()
+    checks = {"n": 0}
+    check_periodic_tasks = s._check_periodic_tasks
+
+    def counting_check():
+        check_periodic_tasks()
+        checks["n"] += 1
+
+    s._check_periodic_tasks = counting_check
     s.start()
 
     run_count = {"n": 0}
@@ -386,11 +415,11 @@ def test_once_per_idle_resets_on_active_task():
     )
 
     s._last_active_time = time.monotonic() - 100
-    time.sleep(3.0)
+    assert wait_until(lambda: run_count["n"] >= 1)
     first_count = run_count["n"]
-    assert first_count >= 1
 
-    time.sleep(2.0)
+    checks_after_first = checks["n"]
+    assert wait_until(lambda: checks["n"] >= checks_after_first + 20)
     assert run_count["n"] == first_count
 
     done = threading.Event()
@@ -398,8 +427,7 @@ def test_once_per_idle_resets_on_active_task():
     assert done.wait(timeout=5.0)
 
     s._last_active_time = time.monotonic() - 100
-    time.sleep(3.0)
-    assert run_count["n"] > first_count
+    assert wait_until(lambda: run_count["n"] > first_count)
 
     s.stop()
 

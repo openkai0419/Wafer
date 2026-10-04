@@ -238,6 +238,45 @@ class TestMenuHub:
         hub = MenuHub.instance()
         assert hub.has_folder("__nonexistent_folder__") is False
 
+    def test_find_folder_prefixes_returns_nested_folder_path(self):
+        hub = MenuHub.instance()
+
+        class FakeMenu:
+            pass
+
+        hub.register_paths(FakeMenu, {"pf_a": "RootPF/Sub/pf_a", "pf_b": "RootPF/Sub/pf_b"}, ["RootPF/Sub/pf_a", "RootPF/Sub/pf_b"])
+        assert "RootPF/Sub" in hub.find_folder_prefixes("Sub")
+
+    def test_collect_items_by_folder(self):
+        hub = MenuHub.instance()
+
+        class FakeMenu:
+            pass
+
+        hub.register_paths(FakeMenu, {"col_x": "Collect/col_x", "col_y": "Collect/col_y"}, ["Collect/col_x", "Collect/col_y"])
+        assert len(hub.collect_items_by_folder("Collect")) >= 2
+
+    def test_menu_group_register_with_separator_registers_all_commands(self):
+        class SepGroup(MenuGroup):
+            NAME = "__TestSepGroup__"
+            PRIORITY = 100
+
+            @classmethod
+            def commands(cls):
+                return [
+                    CommandMeta(path="__test_sep_cmd1__", display="Cmd 1", func=lambda ctx: None),
+                    "-",
+                    CommandMeta(path="__test_sep_cmd2__", display="Cmd 2", func=lambda ctx: None),
+                ]
+
+        try:
+            SepGroup.register()
+            reg = CommandRegistry.instance()
+            assert reg.has_command("__test_sep_cmd1__")
+            assert reg.has_command("__test_sep_cmd2__")
+        finally:
+            MenuGroup._flags.pop(SepGroup, None)
+
 
 class TestDiscoverCommandClasses:
     def test_finds_menu_group_subclass(self):

@@ -59,6 +59,13 @@ def _process_events_until(predicate, timeout_ms=5000):
         time.sleep(0.01)
 
 
+def _drain(dispatcher, rounds=3):
+    app = QtWidgets.QApplication.instance()
+    for _ in range(rounds):
+        assert dispatcher._pool.pool.waitForDone(5000)
+        app.processEvents()
+
+
 class TestGridPipelineLayout:
     def test_layout_emits_result(self, dispatcher):
         result = {}
@@ -85,8 +92,7 @@ class TestGridPipelineLayout:
         pipeline.request_layout(aspects, 50, 2, 400, 300)
         pipeline.request_layout(aspects, 100, 4, 800, 600)
         _process_events_until(lambda: result["count"] >= 1, timeout_ms=3000)
-        time.sleep(0.2)
-        QtWidgets.QApplication.instance().processEvents()
+        _drain(dispatcher)
         assert result["count"] <= 2
 
     def test_layout_masonry_mode(self, dispatcher):
@@ -109,7 +115,7 @@ class TestGridPipelineLayout:
         pipeline.layout_ready.connect(lambda layout: result.update({"layout": layout}))
 
         pipeline.request_layout([], 100, 4, 800, 600)
-        _process_events_until(lambda: "layout" in result, timeout_ms=1000)
+        _drain(dispatcher)
         assert "layout" not in result
 
 

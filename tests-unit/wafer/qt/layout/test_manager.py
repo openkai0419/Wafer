@@ -93,6 +93,14 @@ class TestModeSwitch:
         mgr.set_mode(MODE_LOCKED)
         assert received == [MODE_EDIT, MODE_LOCKED]
 
+    def test_set_same_mode_is_noop(self, layout_env):
+        mgr, win, panels = layout_env
+        received = []
+        mgr.mode_changed.connect(lambda m: received.append(m))
+        mgr.set_mode(MODE_LOCKED)
+        _process()
+        assert received == []
+
 
 class TestPanelPreservation:
     def test_all_panels_survive_lock_edit_lock(self, layout_env):
@@ -125,6 +133,44 @@ class TestPanelPreservation:
         _process()
 
         assert set(mgr._tree.docked_names()) == initial_docked
+
+    def test_mode_switch_preserves_widget_instances(self, layout_env):
+        mgr, win, panels = layout_env
+        widgets_before = {name: mgr.panel_widget(name) for name in mgr.panel_names()}
+
+        mgr.set_mode(MODE_EDIT)
+        _process()
+        mgr.set_mode(MODE_LOCKED)
+        _process()
+
+        for name, w in widgets_before.items():
+            assert mgr.panel_widget(name) is w
+
+
+class TestPanelWidget:
+    def test_panel_widget_returns_visible_docked_widgets(self, layout_env, qtbot):
+        mgr, win, panels = layout_env
+        qtbot.waitUntil(lambda: all(panels[name].isVisible() for name in panels), timeout=2000)
+
+        for name, w in panels.items():
+            assert mgr.is_panel_visible(name)
+            assert mgr.panel_widget(name) is w
+
+    def test_panel_widget_creates_widget_for_dormant_panel_after_empty_restore(self, qtbot):
+        win = QtWidgets.QMainWindow()
+        win.resize(800, 600)
+        qtbot.addWidget(win)
+        mgr = LayoutManager(win)
+        w = _make_panel("x")
+        mgr.register("x", lambda: w)
+        mgr.restore_state({"mode": MODE_LOCKED, "tree": {"root": None, "floating": {}}})
+        win.show()
+        qtbot.waitExposed(win)
+
+        assert "x" in mgr.dormant_panels()
+        assert mgr.panel_widget("x") is w
+        assert mgr.panel_widget("missing") is None
+        win.close()
 
 
 class TestFloatingTracking:
@@ -277,6 +323,26 @@ class TestDynamicPanels:
         assert "dynamic_1" not in mgr.panel_names()
         assert "dynamic_1" not in mgr._tree.floating
 
+    def test_unregister_docked_panel_removes_it(self, layout_env):
+        mgr, win, panels = layout_env
+        mgr.unregister("viewer")
+        _process()
+
+        assert "viewer" not in mgr.panel_names()
+        assert "viewer" not in set(mgr._tree.docked_names())
+        assert not mgr.is_panel_visible("viewer")
+
+    def test_register_unregister_cycle_leaves_no_entry(self, layout_env):
+        mgr, win, panels = layout_env
+        for _ in range(3):
+            mgr.register("temp", lambda: _make_panel("temp"))
+            _process()
+            assert "temp" in mgr.dormant_panels()
+            mgr.unregister("temp")
+            _process()
+
+        assert "temp" not in mgr.panel_names()
+
 
 class TestToggleCollapse:
     def test_toggle_collapses_docked_panel(self, layout_env):
@@ -345,6 +411,20 @@ class TestToggleCollapse:
         assert mgr.is_panel_collapsed("folder")
         assert mgr.is_panel_collapsed("viewer")
         assert mgr.is_panel_visible("grid")
+
+    def test_ensure_panel_visible_expands_collapsed_panel(self, layout_env):
+        mgr, win, panels = layout_env
+        _process(10)
+
+        mgr.toggle_panel("viewer")
+        _process()
+        assert not mgr.is_panel_visible("viewer")
+
+        mgr.ensure_panel_visible("viewer")
+        _process()
+
+        assert mgr.is_panel_visible("viewer")
+        assert not mgr.is_panel_collapsed("viewer")
 
 
 class TestPanelSolo:
@@ -886,6 +966,56 @@ class TestSaveRestore:
 
         restored_tree = LayoutTree.from_dict(tree_dict)
         assert "folder" in restored_tree.collapsed
+
+    def test_restore_registered_floating_panel(self, qtbot):
+        win = QtWidgets.QMainWindow()
+        win.resize(800, 600)
+        qtbot.addWidget(win)
+        mgr = LayoutManager(win)
+        mgr.register("a", lambda: _make_panel("a"))
+        mgr.register("b", lambda: _make_panel("b"))
+        mgr.restore_state(
+            {
+                "mode": MODE_LOCKED,
+                "tree": {
+                    "root": {"type": "leaf", "panel": "a"},
+                    "floating": {"b": {"x": 100, "y": 100, "width": 300, "height": 200}},
+                },
+            }
+        )
+        win.show()
+        qtbot.waitExposed(win)
+
+        assert mgr.is_panel_visible("a")
+        assert "b" in mgr._tree.floating
+        win.close()
+
+    def test_restore_alternates_between_docked_and_dormant(self, layout_env):
+        mgr, win, panels = layout_env
+        without_grid = {
+            "mode": MODE_LOCKED,
+            "tree": {
+                "root": {
+                    "type": "split",
+                    "orientation": "vertical",
+                    "children": [
+                        {"type": "leaf", "panel": "folder"},
+                        {"type": "leaf", "panel": "viewer"},
+                    ],
+                    "sizes": [400, 400],
+                },
+                "floating": {},
+            },
+            "dormant": {"grid": None},
+        }
+
+        for _ in range(3):
+            mgr.restore_state(_DEFAULT_STATE)
+            _process()
+            assert mgr.is_panel_visible("grid")
+            mgr.restore_state(without_grid)
+            _process()
+            assert "grid" in mgr.dormant_panels()
 
 
 class TestDockOptions:
@@ -1483,6 +1613,19 @@ class TestDynamicToggleCommands:
         assert mgr._command_id("Folder Tree") == "panel.toggle_folder_tree"
         assert mgr._command_id("Grid View") == "panel.toggle_grid_view"
         assert mgr._command_id("Search") == "panel.toggle_search"
+
+    def test_executing_toggle_command_collapses_panel(self, layout_env):
+        from wafer.qt.commands.command.context import CommandContext
+        from wafer.qt.commands.command.core import CommandRegistry
+
+        mgr, win, panels = layout_env
+        _process(10)
+
+        CommandRegistry.instance().execute(LayoutManager._command_id("folder"), ctx=CommandContext.build(source="test"))
+        _process()
+
+        assert mgr.is_panel_collapsed("folder")
+        assert not mgr.is_panel_visible("folder")
 
 
 class TestDeferredRestore:

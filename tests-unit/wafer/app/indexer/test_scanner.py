@@ -321,10 +321,15 @@ def test_loop_survives_exception(tmp_path):
     scan_dir.mkdir()
     (scan_dir / "a.txt").write_text("x")
 
+    def wait_for_calls(n):
+        deadline = time.monotonic() + 5.0
+        while call_count < n and time.monotonic() < deadline:
+            time.sleep(0.01)
+
     scanner.request_scan([str(scan_dir)])
-    time.sleep(0.5)
+    wait_for_calls(1)
     scanner.request_scan([str(scan_dir)])
-    time.sleep(0.5)
+    wait_for_calls(2)
 
     assert scanner._thread.is_alive()
     assert call_count >= 2

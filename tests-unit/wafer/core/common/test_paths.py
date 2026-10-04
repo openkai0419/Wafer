@@ -3,7 +3,19 @@ import tempfile
 from pathlib import Path
 
 from wafer.constants import APP_DATA_DIR_NAME
-from wafer.core.common.paths import normalize_path, natural_sort, resolve_cache_path, resolve_temp_path, stem, list_files, containing_dir
+from wafer.core.common.paths import (
+    containing_dir,
+    list_files,
+    natural_sort,
+    normalize_path,
+    resolve_cache_path,
+    resolve_temp_path,
+    safe_exists,
+    safe_getsize,
+    safe_is_dir,
+    safe_is_file,
+    stem,
+)
 
 
 class _FakePlatformDirs:
@@ -20,6 +32,41 @@ def test_normalize_path():
 def test_normalize_path_absolute():
     result = normalize_path(os.path.abspath("."))
     assert "/" in result
+    assert os.path.isabs(result)
+
+
+def test_normalize_path_makes_relative_absolute():
+    assert os.path.isabs(normalize_path("relative/path.txt"))
+
+
+def test_normalize_path_resolves_parent_segments(tmp_path):
+    assert ".." not in normalize_path(str(tmp_path / "sub" / ".." / "file.txt"))
+
+
+def test_safe_exists(tmp_path):
+    p = tmp_path / "exists.txt"
+    p.write_text("ok")
+    assert safe_exists(str(p)) is True
+    assert safe_exists(str(tmp_path / "nope.txt")) is False
+
+
+def test_safe_is_file(tmp_path):
+    p = tmp_path / "file.txt"
+    p.write_text("ok")
+    assert safe_is_file(str(p)) is True
+    assert safe_is_file(str(tmp_path)) is False
+
+
+def test_safe_is_dir(tmp_path):
+    assert safe_is_dir(str(tmp_path)) is True
+    assert safe_is_dir(str(tmp_path / "nope")) is False
+
+
+def test_safe_getsize(tmp_path):
+    p = tmp_path / "sized.bin"
+    p.write_bytes(b"12345")
+    assert safe_getsize(str(p)) == 5
+    assert safe_getsize(str(tmp_path / "nope")) is None
 
 
 def test_containing_dir_returns_dir_itself(tmp_path):
@@ -63,10 +110,17 @@ def test_natural_sort():
     assert result[3] == "b2"
 
 
+def test_natural_sort_trivial_inputs():
+    assert natural_sort([]) == []
+    assert natural_sort(["a"]) == ["a"]
+
+
 def test_get_name_without_ext():
     assert stem("/path/to/file.txt") == "file"
     assert stem("image.png") == "image"
     assert stem("noext") == "noext"
+    assert stem("/a/b.c.d.txt") == "b.c.d"
+    assert stem("/dir/.hidden") == ".hidden"
 
 
 def test_list_files():
@@ -86,3 +140,13 @@ def test_list_files_dot_prefix():
         (Path(d) / "a.log").write_text("")
         result = list_files(d, "log")
         assert len(result) == 1
+
+
+def test_list_files_no_match(tmp_path):
+    (tmp_path / "a.txt").write_text("x")
+    assert list_files(str(tmp_path), ".py") == []
+
+
+def test_list_files_extension_is_case_insensitive(tmp_path):
+    (tmp_path / "upper.TXT").write_text("x")
+    assert len(list_files(str(tmp_path), ".txt")) == 1

@@ -12,6 +12,10 @@ class _Obj:
         return self._v
 
 
+class _WithAttribute:
+    not_callable = "string"
+
+
 class _Widget:
     def __init__(self, v=None, raise_on_property: bool = False):
         self._v = v
@@ -35,6 +39,10 @@ def test_get_callable_and_invoke():
     assert invoke(o, "missing") is None
 
 
+def test_get_callable_rejects_non_callable_attribute():
+    assert get_callable(_WithAttribute(), "not_callable") is None
+
+
 def test_invoke_int():
     assert invoke_int(_Obj(None), "f", 7) == 7
     assert invoke_int(_Obj(5), "f", 7) == 5
@@ -42,6 +50,7 @@ def test_invoke_int():
     assert invoke_int(_Obj(" 42 "), "f", 7) == 42
     assert invoke_int(_Obj("4.2"), "f", 7) == 7
     assert invoke_int(_Obj(object()), "f", 7) == 7
+    assert invoke_int(_Obj(5), "missing", 7) == 7
 
 
 def test_widget_prop_bool():
@@ -61,13 +70,17 @@ def test_to_int():
     assert to_int(" 42 ", 7) == 42
     assert to_int("4.2", 7) == 7
     assert to_int(object(), 7) == 7
+    assert to_int(3.9, 7) == 3
+    assert to_int("", 7) == 7
 
 
 def test_try_cast_and_try_json_loads_and_try_invoke():
     assert try_cast(int, "123", None) == 123
     assert try_cast(int, "x", 9) == 9
+    assert try_cast(float, "xyz") is None
     assert try_json_loads('{"a": 1}', None) == {"a": 1}
     assert try_json_loads("bad", None) is None
+    assert try_json_loads(42, "fallback") == "fallback"
     seen = []
     assert try_json_loads("bad", 123, on_error=lambda e: seen.append(type(e))) == 123
     assert seen == [json.JSONDecodeError]
@@ -77,3 +90,5 @@ def test_try_cast_and_try_json_loads_and_try_invoke():
             raise RuntimeError("boom")
 
     assert try_invoke(_Bad(), "f", 7) == 7
+    assert try_invoke(_Obj("ok"), "f", 7) == "ok"
+    assert try_invoke(_Obj("ok"), "missing", 7) == 7

@@ -107,3 +107,24 @@ class ScanHarness:
         assert ok, f"scan_and_wait: timed out waiting for {expected} sources in DB"
         ok = self.wait_for_idle(timeout=timeout)
         assert ok, "scan_and_wait: timed out waiting for scheduler to become idle"
+
+
+def track_full_scans(scanner):
+    completed = []
+    run_full_scan = scanner._do_full_scan
+
+    def tracked(root_paths):
+        try:
+            run_full_scan(root_paths)
+        finally:
+            completed.append(root_paths)
+
+    scanner._do_full_scan = tracked
+    return completed
+
+
+def scheduler_drained(scheduler):
+    if not scheduler.is_idle():
+        return False
+    time.sleep(0.05)
+    return scheduler.is_idle()

@@ -14,6 +14,7 @@ from wafer.app.indexer.scanner import DirectoryScanner
 from wafer.app.indexer.runtime.scheduler import TaskScheduler
 from wafer.app.indexer.runtime.task import Task, TaskPriority
 from wafer.app.indexer.runtime.progress_aggregator import ProgressAggregator
+from test_support.scan_harness import scheduler_drained, track_full_scans
 
 
 class _StubNode:
@@ -36,13 +37,14 @@ def _create_test_file(path, content=b"dummy"):
     Path(path).write_bytes(content)
 
 
-def _wait_for_condition(predicate, timeout=10.0, interval=0.1):
+def _wait_for_condition(predicate, timeout=10.0, interval=0.02):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():
             return True
         time.sleep(interval)
     return False
+
 
 
 class TestScannerSchedulerPipeline:
@@ -147,6 +149,7 @@ class TestScannerSchedulerPipeline:
         scheduler = TaskScheduler()
         scanner = DirectoryScanner(db_path, scheduler, writer, progress, collectors)
         scanner.set_exclude_paths([str(skip_dir)])
+        full_scans = track_full_scans(scanner)
 
         scheduler.start()
         scanner.start()
@@ -156,7 +159,8 @@ class TestScannerSchedulerPipeline:
                 lambda: writer.db.read_conn.execute("SELECT count(*) FROM sources").fetchone()[0] >= 1,
                 timeout=10.0,
             )
-            time.sleep(1.0)
+            assert _wait_for_condition(lambda: len(full_scans) >= 1)
+            assert _wait_for_condition(lambda: scheduler_drained(scheduler))
 
             count = writer.db.read_conn.execute("SELECT count(*) FROM sources").fetchone()[0]
             assert count == 1
@@ -214,19 +218,19 @@ class TestScannerSchedulerPipeline:
         writer.initialize()
         scheduler = TaskScheduler()
         scheduler.start()
-        time.sleep(0.3)
 
         executed_ops = []
+        blocker_started = threading.Event()
         barrier = threading.Event()
 
         scheduler.submit(
             Task.create(
                 "blocker",
                 priority=TaskPriority.SCAN,
-                run=lambda: barrier.wait(5.0),
+                run=lambda: (blocker_started.set(), barrier.wait(5.0)),
             )
         )
-        time.sleep(0.1)
+        assert blocker_started.wait(timeout=5.0)
 
         for _ in range(3):
             scheduler.submit(
@@ -248,7 +252,7 @@ class TestScannerSchedulerPipeline:
 
         barrier.set()
         done.wait(timeout=5.0)
-        time.sleep(1.0)
+        _wait_for_condition(lambda: len(executed_ops) == 4, timeout=5.0)
         scheduler.stop()
         writer.close()
 

@@ -3,8 +3,10 @@ import shutil
 import time
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
+from wafer.app.indexer.watch import folder_watcher as folder_watcher_module
 from wafer.core.common.paths import normalize_path
 from wafer.core.db.query import FileSearchEngine, SearchQuery
 from wafer.builtins.mark.filter import MarkFilter
@@ -14,6 +16,13 @@ from wafer.app.indexer.scanner import DirectoryScanner
 from wafer.app.indexer.runtime.scheduler import TaskScheduler
 from wafer.app.indexer.watch.folder_watcher import FolderWatcher
 from wafer.app.indexer.runtime.progress_aggregator import ProgressAggregator
+from test_support.scan_harness import scheduler_drained, track_full_scans
+
+
+@pytest.fixture(autouse=True)
+def fast_watch_timing(monkeypatch):
+    monkeypatch.setattr(folder_watcher_module, "_BATCH_TIMEOUT", 0.1)
+    monkeypatch.setattr(folder_watcher_module, "_MOVE_INFER_WINDOW", 0.3)
 
 
 class _StubNode:
@@ -32,7 +41,7 @@ def _create_test_image(path, width=100, height=80, fmt="JPEG"):
     img.save(str(path), format=fmt)
 
 
-def _wait_for_condition(predicate, timeout=15.0, interval=0.2):
+def _wait_for_condition(predicate, timeout=15.0, interval=0.02):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():
@@ -48,6 +57,7 @@ def _source_count(db):
 def _sources(db):
     rows = db.read_conn.execute("SELECT source FROM sources ORDER BY source").fetchall()
     return [row[0] for row in rows]
+
 
 
 def _build_watcher_stack(tmp_path):
@@ -296,8 +306,8 @@ class TestFsWatchToDb:
             old_mtime = row_before[0]
             old_size = row_before[1]
 
-            time.sleep(1.5)
             _create_test_image(img_path, 300, 200)
+            assert os.path.getsize(img_path) != old_size
 
             def modification_detected():
                 row = writer.db.read_conn.execute("SELECT modified, size FROM sources WHERE source=?", (norm,)).fetchone()
@@ -319,14 +329,16 @@ class TestFsWatchToDb:
             _create_test_image(img_dir / f"img_{i}.jpg", 100 + i, 80)
 
         db_path, writer, scheduler, scanner, watcher = _build_watcher_stack(tmp_path)
+        full_scans = track_full_scans(scanner)
         scheduler.start()
         scanner.start()
         try:
             watcher.start([str(img_dir)])
-            assert _wait_for_condition(lambda: _source_count(writer.db) >= 3)
+            assert _wait_for_condition(lambda: _source_count(writer.db) >= 3 and len(full_scans) >= 1)
 
             watcher.rescan_all()
-            time.sleep(3.0)
+            assert _wait_for_condition(lambda: len(full_scans) >= 2)
+            assert _wait_for_condition(lambda: scheduler_drained(scheduler))
 
             count = _source_count(writer.db)
             assert count == 3

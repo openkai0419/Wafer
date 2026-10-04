@@ -365,6 +365,15 @@ class TestCommandRegistryCategories:
         result = reg.get_commands_by_category("tools")
         assert "test.catcmd" in result
 
+    def test_get_commands_by_category_excludes_other_categories(self):
+        reg = CommandRegistry.instance()
+        for cid, category in (("test.c1", "edit"), ("test.c2", "view"), ("test.c3", "edit")):
+            reg.register(create_command_from_meta(CommandMeta(id=cid, category=category, func=lambda ctx: None)))
+        result = reg.get_commands_by_category("edit")
+        assert "test.c1" in result
+        assert "test.c3" in result
+        assert "test.c2" not in result
+
     def test_get_commands_by_category_with_target(self):
         reg = CommandRegistry.instance()
         m = CommandMeta(id="test.targeted", category="tools", func=lambda ctx: None, target_widgets=["GridView"])

@@ -14,17 +14,6 @@ from ..worker_lifecycle import PluginWorkerLifecycle
 _SHUTDOWN_WAIT = 5
 
 
-def _attach_file_hash(result: dict, info: tuple):
-    if not result.get("tags") and not result.get("delete_tag_keys"):
-        result.pop("file_hash", None)
-        return
-    file_hash = result.get("update_hash") or (info[2] if len(info) > 2 else None)
-    if file_hash:
-        result["file_hash"] = file_hash
-    else:
-        result.pop("file_hash", None)
-
-
 class ParserWorker:
     def __init__(self, db_name: str, plugin_name: str):
         self.db_name = db_name
@@ -113,10 +102,7 @@ class ParserWorker:
                     info = file_info.get(p, (0.0, 0))
                     meta = metadata.get(p, {})
                     result = self._plugin.process(normalize_path(p), info, meta)
-                    d = result.to_dict() if isinstance(result, ParserResult) else result
-                    if d:
-                        _attach_file_hash(d, info)
-                    return d
+                    return result.to_dict() if isinstance(result, ParserResult) else result
                 except Exception as e:
                     AppLogger.warning(f"[Parser] process failed: {p}: {e}", exc=e)
                     return {}

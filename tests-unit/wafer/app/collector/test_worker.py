@@ -111,7 +111,7 @@ def test_non_singleton_node_uses_db_name(make_worker):
     assert worker._node.db == "mydb"
 
 
-def test_file_hash_auto_injected_when_tags_present(make_worker):
+def test_result_is_sent_without_file_hash(make_worker):
     from unittest.mock import MagicMock
     from wafer.plugin.collector.base import CollectorResult
 
@@ -121,79 +121,13 @@ def test_file_hash_auto_injected_when_tags_present(make_worker):
     worker._plugin.process = lambda path, info: CollectorResult(
         source=path,
         status=True,
-        tags={"wd14.tags": "1girl, blue_hair"},
+        tags={"tags": "1girl, blue_hair"},
     )
-    paths = ["/test/a.jpg"]
-    file_info = {"/test/a.jpg": [0.0, 100, "abc123hash"]}
-    worker._process_batch(paths, file_info, "test_db")
+    worker._process_batch(["/test/a.jpg"], {"/test/a.jpg": [0.0, 100, "abc123hash"]}, "test_db")
 
-    payload = worker._node.send_reliable.call_args[0][1]
-    result = payload["results"][0]
-    assert result["file_hash"] == "abc123hash"
-    assert result["tags"] == {"wd14.tags": "1girl, blue_hair"}
-
-
-def test_file_hash_not_injected_without_tags(make_worker):
-    from unittest.mock import MagicMock
-    from wafer.plugin.collector.base import CollectorResult
-
-    worker = make_worker()
-    worker._node = MagicMock()
-
-    worker._plugin.process = lambda path, info: CollectorResult(
-        source=path,
-        status=True,
-        meta_info={"exif.camera": "Canon"},
-    )
-    paths = ["/test/a.jpg"]
-    file_info = {"/test/a.jpg": [0.0, 100, "abc123hash"]}
-    worker._process_batch(paths, file_info, "test_db")
-
-    payload = worker._node.send_reliable.call_args[0][1]
-    result = payload["results"][0]
+    result = worker._node.send_reliable.call_args[0][1]["results"][0]
     assert "file_hash" not in result
-
-
-def test_explicit_file_hash_is_replaced_by_source_hash(make_worker):
-    from unittest.mock import MagicMock
-
-    worker = make_worker()
-    worker._node = MagicMock()
-
-    worker._plugin.process = lambda path, info: {
-        "source": path,
-        "status": True,
-        "file_hash": "explicit_hash",
-        "tags": {"wd14.tags": "tag_data"},
-    }
-    paths = ["/test/a.jpg"]
-    file_info = {"/test/a.jpg": [0.0, 100, "from_file_info"]}
-    worker._process_batch(paths, file_info, "test_db")
-
-    payload = worker._node.send_reliable.call_args[0][1]
-    result = payload["results"][0]
-    assert result["file_hash"] == "from_file_info"
-
-
-def test_file_hash_compat_with_old_file_info(make_worker):
-    from unittest.mock import MagicMock
-    from wafer.plugin.collector.base import CollectorResult
-
-    worker = make_worker()
-    worker._node = MagicMock()
-
-    worker._plugin.process = lambda path, info: CollectorResult(
-        source=path,
-        status=True,
-        tags={"wd14.tags": "tag_data"},
-    )
-    paths = ["/test/a.jpg"]
-    file_info = {"/test/a.jpg": [0.0, 100]}
-    worker._process_batch(paths, file_info, "test_db")
-
-    payload = worker._node.send_reliable.call_args[0][1]
-    result = payload["results"][0]
-    assert "file_hash" not in result
+    assert result["tags"] == {"tags": "1girl, blue_hair"}
 
 
 def test_on_notify_calls_plugin(make_worker):

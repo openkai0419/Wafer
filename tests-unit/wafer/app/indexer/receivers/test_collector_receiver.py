@@ -204,7 +204,6 @@ def test_parse_batch_ok_status():
             "path": "src1",
             "name": "test.png",
             "aspect": 1.5,
-            "file_hash": "h1",
             "meta_info": {"width": "100"},
             "tags": {"rating": "5"},
             "status": True,
@@ -235,7 +234,6 @@ def test_parse_batch_skips_none_meta():
     results = [
         {
             "source": "src",
-            "file_hash": "h",
             "meta_info": {"width": "100", "empty": None},
             "tags": {"good": "yes", "bad": None},
             "status": True,
@@ -258,7 +256,6 @@ def test_parse_batch_blacklist_filters_meta_and_tags(monkeypatch):
     results = [
         {
             "source": "s",
-            "file_hash": "h",
             "meta_info": {"width": "100", "secret": "x"},
             "tags": {"rating": "5", "secret": "y"},
             "status": True,
@@ -407,36 +404,17 @@ def test_try_float_preserves_existing_numeric():
     assert try_float("3.14") == 3.14
 
 
-def test_parse_batch_tags_require_file_hash():
+def test_parse_batch_tags_are_keyed_by_source():
     results = [
         {
             "source": "src",
             "status": True,
-            "tags": {"tags": "1girl, blue_hair"},
-            "collector": "wd14",
-        }
-    ]
-    data = _parse_batch(results)
-    assert len(data["tag_entries"]) == 0
-
-
-def test_parse_batch_tags_with_file_hash():
-    results = [
-        {
-            "source": "src",
-            "status": True,
-            "file_hash": "abc123",
             "tags": {"tags": "1girl, blue_hair, smile"},
             "collector": "wd14",
         }
     ]
     data = _parse_batch(results)
-    assert len(data["tag_entries"]) == 1
-    te = data["tag_entries"][0]
-    assert te[0] == "abc123"
-    assert te[1] == "wd14.tags"
-    assert te[2] == "1girl, blue_hair, smile"
-    assert te[3] is None
+    assert data["tag_entries"] == [("src", "wd14.tags", "1girl, blue_hair, smile", None)]
 
 
 def test_parse_batch_mixed_meta_and_tags():
@@ -444,7 +422,6 @@ def test_parse_batch_mixed_meta_and_tags():
         {
             "source": "img.jpg",
             "status": True,
-            "file_hash": "hash1",
             "meta_info": {"camera": "Canon"},
             "tags": {"tags": "landscape, sky"},
             "collector": "wd14",
@@ -462,7 +439,6 @@ def test_parse_batch_failed_result_no_tags():
         {
             "source": "fail.jpg",
             "status": False,
-            "file_hash": "somehash",
             "tags": {"tags": "should_not_register"},
             "collector": "wd14",
         }
@@ -475,7 +451,6 @@ def test_parse_batch_exif_datetime_value_num():
     results = [
         {
             "source": "img.jpg",
-            "file_hash": "h1",
             "meta_info": {"DateTimeOriginal": "2024:01:15 10:30:45"},
             "status": True,
             "collector": "exif",

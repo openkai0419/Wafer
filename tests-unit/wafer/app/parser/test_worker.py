@@ -8,54 +8,6 @@ def test_compile():
     py_compile.compile("wafer/app/parser/worker.py")
 
 
-def test_attach_file_hash_uses_file_info_for_tags():
-    from wafer.app.parser.worker import _attach_file_hash
-
-    result = {"source": "/a.png", "status": True, "tags": {"k": "v"}}
-    _attach_file_hash(result, (1.0, 100, "fast1"))
-    assert result["file_hash"] == "fast1"
-
-
-def test_attach_file_hash_prefers_update_hash():
-    from wafer.app.parser.worker import _attach_file_hash
-
-    result = {"source": "/a.png", "status": True, "tags": {"k": "v"}, "update_hash": "full1"}
-    _attach_file_hash(result, (1.0, 100, "fast1"))
-    assert result["file_hash"] == "full1"
-
-
-def test_attach_file_hash_applies_to_delete_tag_keys():
-    from wafer.app.parser.worker import _attach_file_hash
-
-    result = {"source": "/a.png", "status": True, "delete_tag_keys": ["x.y"]}
-    _attach_file_hash(result, (1.0, 100, "fast1"))
-    assert result["file_hash"] == "fast1"
-
-
-def test_attach_file_hash_skipped_for_delete_meta_keys():
-    from wafer.app.parser.worker import _attach_file_hash
-
-    result = {"source": "/a.png", "status": True, "delete_meta_keys": ["exiftool.PNG:Comment"]}
-    _attach_file_hash(result, (1.0, 100, "fast1"))
-    assert "file_hash" not in result
-
-
-def test_attach_file_hash_skipped_without_hash_scoped_payload():
-    from wafer.app.parser.worker import _attach_file_hash
-
-    result = {"source": "/a.png", "status": True, "meta_info": {"k": "v"}}
-    _attach_file_hash(result, (1.0, 100, "fast1"))
-    assert "file_hash" not in result
-
-
-def test_attach_file_hash_skipped_without_file_info_hash():
-    from wafer.app.parser.worker import _attach_file_hash
-
-    result = {"source": "/a.png", "status": True, "tags": {"k": "v"}}
-    _attach_file_hash(result, (1.0, 100))
-    assert "file_hash" not in result
-
-
 def test_db_name_injected_only_for_per_indexer_parser():
     from wafer.app.parser.worker import ParserWorker
     from wafer.plugin.parser.base import BaseParserPlugin, BaseSingletonParser, ParserResult

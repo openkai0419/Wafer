@@ -1065,7 +1065,7 @@ def _setup_db_for_parser(tmp_path):
         [("src1", "src1", 1.0), ("src2", "src2", 1.5)],
         [("src1", "exif.parameters", "steps:20", None), ("src1", "exif.other", "val", None), ("src2", "exif.parameters", "steps:30", None)],
     )
-    db.upsert_collection_results([], [], [("hash1", "wd14.general", "cat", None)], [])
+    db.upsert_collection_results([], [], [("src1", "wd14.general", "cat", None)], [])
     return db
 
 
@@ -1073,7 +1073,7 @@ def test_delete_meta_and_tags_by_keys(tmp_path):
     db = _setup_db_for_parser(tmp_path)
     db.delete_meta_and_tags_by_keys(
         [
-            ("src1", "hash1", ["exif.parameters"], ["wd14.general"]),
+            ("src1", "src1", ["exif.parameters"], ["wd14.general"]),
         ]
     )
     cur = db.get_reader_cursor()
@@ -1088,7 +1088,7 @@ def test_delete_meta_and_tags_by_keys(tmp_path):
     db.close()
 
 
-def test_delete_meta_and_tags_by_keys_no_hash(tmp_path):
+def test_delete_meta_and_tags_by_keys_no_source(tmp_path):
     db = _setup_db_for_parser(tmp_path)
     db.delete_meta_and_tags_by_keys(
         [

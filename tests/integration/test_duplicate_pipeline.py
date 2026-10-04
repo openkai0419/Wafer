@@ -4,8 +4,8 @@ import pytest
 
 from extensions.duplicate.duplicate import TAG, DuplicateParser
 from extensions.duplicate.full_hash import FULL_HASH_LENGTH, FullHashParser
+from wafer.app.indexer.receivers.collector_receiver import _parse_batch as parse_collector_batch
 from wafer.app.indexer.receivers.parser_receiver import _parse_batch
-from wafer.app.parser.worker import _attach_file_hash
 from wafer.core.db.db_utils import build_basic_entries
 from wafer.core.db.file_db import FileDB
 from wafer.core.common.paths import normalize_path
@@ -52,7 +52,6 @@ def _run_parser(database, plugin, sources):
         if result is None:
             continue
         entry = result.to_dict()
-        _attach_file_hash(entry, info)
         entry["parser"] = plugin.NAME
         results.append(entry)
     data = _parse_batch(results)
@@ -158,3 +157,27 @@ def test_flag_is_removed_after_the_duplicate_sibling_is_deleted(db, tmp_path):
         assert _tagged_sources(db) == []
     finally:
         flagger.shutdown()
+
+
+def test_collector_tags_survive_full_hash_replacing_hash_in_flight(db, tmp_path):
+    image = tmp_path / "image.bin"
+    image.write_bytes(b"image payload" * 500)
+    [source] = _register(db, [image])
+    dispatched_hash = _file_info(db, source)[2]
+
+    _run_parser(db, FullHashParser(), [source])
+    assert _file_info(db, source)[2] != dispatched_hash
+
+    data = parse_collector_batch([{"source": source, "status": True, "tags": {"tags": "1girl"}, "collector": "wd14"}])
+    db.upsert_collection_results([], [], data["tag_entries"], data["collector_status"])
+
+    cur = db.get_reader_cursor()
+    try:
+        row = cur.execute(
+            "SELECT t.value FROM tags t JOIN sources s ON s.file_hash = t.file_hash WHERE s.source = ? AND t.key = 'wd14.tags'",
+            (source,),
+        ).fetchone()
+        assert row == ("1girl",)
+        assert cur.execute("SELECT COUNT(*) FROM tags WHERE file_hash = ?", (dispatched_hash,)).fetchone()[0] == 0
+    finally:
+        cur.close()

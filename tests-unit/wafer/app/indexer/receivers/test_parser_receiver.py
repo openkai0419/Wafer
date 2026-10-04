@@ -119,12 +119,12 @@ def test_parse_batch_source_keys_from_meta_info():
     }
 
 
-def test_parse_batch_source_keys_of_tags_use_source_not_file_hash():
+def test_parse_batch_tags_and_source_keys_are_keyed_by_source():
     results = [
-        {"source": "/a.png", "parser": "wd14", "status": True, "file_hash": "hash1", "tags": {"general": "cat"}},
+        {"source": "/a.png", "parser": "wd14", "status": True, "tags": {"general": "cat"}},
     ]
     parsed = _parse_batch(results)
-    assert parsed["tag_entries"] == [("hash1", "wd14.general", "cat", None)]
+    assert parsed["tag_entries"] == [("/a.png", "wd14.general", "cat", None)]
     assert parsed["source_keys"] == {"/a.png": {"wd14.general"}}
 
 
@@ -148,7 +148,6 @@ def test_parse_batch_blacklist_filters_meta_and_tags(monkeypatch):
     results = [
         {
             "source": "s",
-            "file_hash": "h",
             "meta_info": {"seed": "1", "prompt": "x"},
             "tags": {"artist": "a", "prompt": "y"},
             "status": True,
@@ -233,3 +232,11 @@ def test_parse_batch_unfiltered_prefix_passes_all(monkeypatch):
     data = _parse_batch(results)
     meta_keys = sorted(e[1] for e in data["meta_info_entries"])
     assert meta_keys == ["sd.a", "sd.b"]
+
+
+def test_parse_batch_delete_entries_are_keyed_by_source():
+    results = [
+        {"source": "/a.zip", "path": "/a.zip::b.png", "parser": "sd", "status": True, "delete_tag_keys": ["sd.x"]},
+    ]
+    parsed = _parse_batch(results)
+    assert parsed["delete_entries"] == [("/a.zip::b.png", "/a.zip", [], ["sd.x"])]

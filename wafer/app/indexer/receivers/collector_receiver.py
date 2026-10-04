@@ -133,7 +133,6 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
         path = r.get("path", source)
         name = r.get("name") or None
         aspect = r.get("aspect")
-        file_hash = r.get("file_hash")
         meta_info = r.get("meta_info", {})
         tags = r.get("tags", {})
         status = r.get("status")
@@ -161,11 +160,11 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
                     key = f"{prefix}{k}"
                     meta_info_entries.append((path, key, str(v), try_float(v)))
                     changed_keys.add(key)
-            if file_hash:
+            if source:
                 for k, v in tags.items():
                     if v is not None and (keep is None or keep(k)):
                         key = f"{prefix}{k}"
-                        tag_entries.append((file_hash, key, str(v), try_float(v)))
+                        tag_entries.append((source, key, str(v), try_float(v)))
                         changed_keys.add(key)
 
     return {

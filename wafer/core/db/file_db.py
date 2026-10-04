@@ -162,6 +162,13 @@ _SQL_UPSERT_TAGS = """INSERT INTO tags (file_hash, key, value, value_num)
         value_num = excluded.value_num
     WHERE tags.locked = 0"""
 
+_SQL_UPSERT_SOURCE_TAGS = """INSERT INTO tags (file_hash, key, value, value_num)
+    SELECT file_hash, ?, ?, ? FROM sources WHERE source = ?
+    ON CONFLICT(file_hash, key) DO UPDATE SET
+        value     = excluded.value,
+        value_num = excluded.value_num
+    WHERE tags.locked = 0"""
+
 _SQL_UPSERT_USER_TAGS = """INSERT INTO tags (file_hash, key, value, value_num, locked)
     VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(file_hash, key) DO UPDATE SET
@@ -686,9 +693,8 @@ class FileDB:
                             cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
                 if meta_info_entries:
                     cur.executemany(_SQL_UPSERT_META, meta_info_entries)
-                self._ensure_hash_indexes(cur, [], tag_entries)
                 if tag_entries:
-                    cur.executemany(_SQL_UPSERT_TAGS, tag_entries)
+                    cur.executemany(_SQL_UPSERT_SOURCE_TAGS, [(key, value, num, source) for source, key, value, num in tag_entries])
                 if collector_status_entries:
                     try:
                         cur.executemany(_SQL_UPSERT_COLLECTION_STATUS, collector_status_entries)
@@ -1108,18 +1114,19 @@ class FileDB:
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             try:
-                for path, file_hash, meta_keys, tag_keys in delete_entries:
+                for path, source, meta_keys, tag_keys in delete_entries:
                     if meta_keys:
                         placeholders = ",".join(["?"] * len(meta_keys))
                         cur.execute(
                             f"DELETE FROM meta_info WHERE path = ? AND key IN ({placeholders}) AND locked = 0",
                             [path] + list(meta_keys),
                         )
-                    if file_hash and tag_keys:
+                    if source and tag_keys:
                         placeholders = ",".join(["?"] * len(tag_keys))
                         cur.execute(
-                            f"DELETE FROM tags WHERE file_hash = ? AND key IN ({placeholders}) AND locked = 0",
-                            [file_hash] + list(tag_keys),
+                            f"""DELETE FROM tags WHERE file_hash = (SELECT file_hash FROM sources WHERE source = ?)
+                            AND key IN ({placeholders}) AND locked = 0""",
+                            [source] + list(tag_keys),
                         )
             finally:
                 cur.close()

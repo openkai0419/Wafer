@@ -110,17 +110,7 @@ class CollectorWorker:
                     info = file_info.get(p, (0.0, 0))
                     result = self._plugin.process(normalize_path(p), info)
                     items = result if isinstance(result, list) else [result]
-                    dicts = [r.to_dict() if isinstance(r, CollectorResult) else r for r in items if r is not None]
-                    fh = info[2] if len(info) > 2 else None
-                    for d in dicts:
-                        if d.get("tags"):
-                            if fh:
-                                d["file_hash"] = fh
-                            else:
-                                d.pop("file_hash", None)
-                        else:
-                            d.pop("file_hash", None)
-                    return dicts
+                    return [r.to_dict() if isinstance(r, CollectorResult) else r for r in items if r is not None]
                 except Exception as e:
                     AppLogger.warning(f"[Collector] process failed: {p}: {e}", exc=e)
                     return []

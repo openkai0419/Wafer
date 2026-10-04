@@ -15,10 +15,6 @@ def natural_key(s):
     return [int(c) if c.isascii() and c.isdigit() else c.casefold() for c in _NUM_SPLIT(s)]
 
 
-def split_last(lst):
-    return (lst[:-1], lst[-1]) if lst else ([], None)
-
-
 def format_timestamp(ts: float) -> str:
     if ts is None:
         return None

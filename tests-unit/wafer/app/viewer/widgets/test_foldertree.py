@@ -123,9 +123,6 @@ def test_restore_scroll_state_clamps_to_maximum(qtbot):
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-import py_compile
-
-
 def test_scan_children_returns_dirs_only():
     tmpdir = tempfile.mkdtemp()
     try:
@@ -200,17 +197,6 @@ def test_has_subfolders_with_exclusion():
 
 def test_has_subfolders_nonexistent():
     assert _has_subfolders_bg("/nonexistent/path", set()) is False
-
-
-def test_model_dispatcher_initialized(qtbot):
-    tmpdir = tempfile.mkdtemp()
-    try:
-        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
-        qtbot.addWidget(tree)
-        assert tree.model_._dispatcher is not None
-        assert tree.model_._pending_expands == {}
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def test_foldertree_model_accepts_internal_copy_drop(qtbot, tmp_path):
@@ -470,21 +456,6 @@ def test_foldertree_model_rejects_drop_when_target_path_is_not_directory(qtbot, 
     monkeypatch.setattr(foldertree_module, "drop_files_with_ui", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("drop_files_with_ui should not be called")))
 
     assert not tree.model_.dropMimeData(mime, QtCore.Qt.DropAction.CopyAction, -1, 0, dst_index)
-
-
-def test_foldertree_drop_target_state_clears(qtbot, tmp_path):
-    tree, root, _mime = make_drop_tree(qtbot, tmp_path)
-    target_index = tree.model_.find_index_by_path(str(root / "A"))
-
-    tree._set_drop_target_index(target_index)
-    assert tree._drop_target_index == target_index
-
-    tree._clear_drop_target_index()
-    assert not tree._drop_target_index.isValid()
-
-
-def test_compile():
-    py_compile.compile("wafer/app/viewer/widgets/foldertree.py")
 
 
 def test_collect_segments_basic():

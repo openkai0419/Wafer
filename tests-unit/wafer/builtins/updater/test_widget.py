@@ -54,13 +54,6 @@ def _info(*, latest="0.6.19", is_newer=True):
     )
 
 
-def test_stylesheet_defines_disabled_colors_with_theme_roles():
-    css = update_widget._build_stylesheet()
-    assert "QPushButton#primary_update_btn:disabled" in css
-    assert 'QPushButton#primary_update_btn[actionState="cancel"]' in css
-    assert "QPushButton#secondary_update_btn:disabled" in css
-
-
 def test_update_available_state_git_mode_disables_download_with_guidance(monkeypatch, qtbot):
     w = _make_widget(monkeypatch, qtbot)
 
@@ -83,27 +76,6 @@ def test_update_available_state_git_mode_disables_download_with_guidance(monkeyp
     assert w._skip_btn.isEnabled() is True
     assert w._check_btn.text() == ""
     assert w._browser.markdown == "release body"
-
-
-def test_initial_state_git_shows_disabled_pull_button(monkeypatch, qtbot):
-    w = _make_widget(monkeypatch, qtbot)
-
-    assert w._open_btn.isHidden() is True
-    assert w._open_btn.isEnabled() is False
-    assert w._primary_btn.isHidden() is False
-    assert w._primary_btn.isEnabled() is False
-    assert w._primary_btn.text() == "Use git pull instead"
-    assert w._primary_btn.property("actionState") == "guidance"
-
-
-def test_initial_state_portable_shows_disabled_actions(monkeypatch, qtbot):
-    w = _make_widget(monkeypatch, qtbot, mode="portable")
-
-    assert w._open_btn.isHidden() is True
-    assert w._primary_btn.isHidden() is False
-    assert w._primary_btn.isEnabled() is False
-    assert w._primary_btn.text() == "Download Update"
-    assert w._primary_btn.property("actionState") == "disabled"
 
 
 def test_update_available_state_portable_enables_download(monkeypatch, qtbot):

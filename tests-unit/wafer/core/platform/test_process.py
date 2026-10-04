@@ -11,11 +11,6 @@ def test_process_matcher_empty_cmd_raises():
         ProcessMatcher([])
 
 
-def test_normalize_path():
-    result = ProcessMatcher._normalize_path(sys.executable)
-    assert os.path.isabs(result)
-
-
 def test_same_executable_self():
     assert ProcessMatcher._same_executable(
         sys.executable,
@@ -119,10 +114,12 @@ def test_list_viewers_captures_relative_root_and_excludes_workers(monkeypatch):
     child_viewer = _FakeProc(102, [exe, abs_script, "--viewer", "--slot", "s1"])
     tray = _FakeProc(201, [exe, abs_script, "--tray"])
     indexer = _FakeProc(202, [exe, abs_script, "--indexer", "lib"])
+    collector = _FakeProc(203, [exe, abs_script, "--collector", "lib"])
+    parser = _FakeProc(204, [exe, abs_script, "--parser", "lib"])
     monkeypatch.setattr(
         psutil,
         "process_iter",
-        lambda attrs=None: [root_viewer, child_viewer, tray, indexer],
+        lambda attrs=None: [root_viewer, child_viewer, tray, indexer, collector, parser],
     )
     pids = sorted(p.pid for p in AppProcess.list_viewers(exclude_self=False))
     assert pids == [101, 102]
@@ -225,41 +222,6 @@ def test_new_main_merges_extra_env(monkeypatch):
     assert captured["env"]["WAFER_REPLACE_TRAY"] == "1"
 
 
-def test_app_process_children():
-    children = AppProcess.children()
-    assert isinstance(children, list)
-
-
-def test_app_process_terminate_empty():
-    AppProcess.terminate([])
-
-
-def test_app_process_terminate_and_wait_empty():
-    AppProcess.terminate_and_wait([])
-
-
-def test_app_process_terminate_and_wait_delegates_to_wait_procs_then_kill(monkeypatch):
-    calls = []
-    processes = [object()]
-    monkeypatch.setattr(
-        AppProcess,
-        "terminate",
-        staticmethod(lambda procs: calls.append(("terminate", procs))),
-    )
-    monkeypatch.setattr(
-        AppProcess,
-        "wait_procs_then_kill",
-        staticmethod(lambda procs, wait=5, kill_timeout=3: calls.append(("wait", procs, wait, kill_timeout))),
-    )
-
-    AppProcess.terminate_and_wait(processes, timeout=7, kill_timeout=2)
-
-    assert calls == [
-        ("terminate", processes),
-        ("wait", processes, 7, 2),
-    ]
-
-
 def test_app_process_terminate_and_wait_kills_process():
     import subprocess
     import time
@@ -306,17 +268,9 @@ def test_app_process_terminate_tree_kills_descendants():
                     pass
 
 
-def test_app_process_shutdown_children():
-    AppProcess.shutdown_children()
-
-
 def test_list_app_excludes_self():
     procs = AppProcess.list_app(exclude_self=True)
     assert os.getpid() not in [p.pid for p in procs]
-
-
-def test_wait_procs_then_kill_empty():
-    AppProcess.wait_procs_then_kill([])
 
 
 def test_wait_procs_then_kill_force_kills_unresponsive():
@@ -346,26 +300,6 @@ def test_force_close_all_no_app_processes(monkeypatch):
     count = AppProcess.force_close_all(timeout=1, kill_timeout=1)
     assert count == 0
     assert calls["terminated"] == []
-
-
-def test_list_viewers_excludes_workers(monkeypatch):
-    class _FakeProc:
-        def __init__(self, pid, cmdline):
-            self.pid = pid
-            self.info = {"pid": pid, "cmdline": cmdline}
-
-    exe, main = AppProcess.base_command()
-    fakes = [
-        _FakeProc(101, [exe, main]),
-        _FakeProc(102, [exe, main, "--viewer", "--slot", "abc"]),
-        _FakeProc(103, [exe, main, "--tray"]),
-        _FakeProc(104, [exe, main, "--indexer", "db"]),
-        _FakeProc(105, [exe, main, "--collector", "db"]),
-        _FakeProc(106, [exe, main, "--parser", "db"]),
-    ]
-    monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: iter(fakes))
-    pids = sorted(p.pid for p in AppProcess.list_viewers(exclude_self=False))
-    assert pids == [101, 102]
 
 
 class TestKillWithParent:

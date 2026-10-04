@@ -1,6 +1,5 @@
 import pytest
 from wafer.qt.commands.binding.editors_common import DraftOverlay
-from wafer.qt.commands.binding.store_base import resolve_for_widget
 from wafer.qt.commands.command.payload import CommandPayload
 
 
@@ -9,13 +8,6 @@ def _pay(name: str) -> CommandPayload:
 
 
 class TestUpdate:
-    def test_update_adds_entry(self):
-        d = DraftOverlay()
-        d.update("a", {"*": _pay("cmd1")})
-        merged = d.merge({})
-        assert "a" in merged
-        assert merged["a"]["*"].id == "cmd1"
-
     def test_update_empty_scopes_acts_as_delete(self):
         d = DraftOverlay()
         d.update("a", {"*": _pay("cmd1")})
@@ -118,17 +110,6 @@ class TestKeys:
         d = DraftOverlay()
         assert d.keys() == set()
 
-    def test_keys_after_update(self):
-        d = DraftOverlay()
-        d.update("a", {"*": _pay("x")})
-        d.update("b", {"*": _pay("y")})
-        assert d.keys() == {"a", "b"}
-
-    def test_keys_after_delete(self):
-        d = DraftOverlay()
-        d.delete("c")
-        assert d.keys() == {"c"}
-
     def test_keys_union_of_changes_and_deleted(self):
         d = DraftOverlay()
         d.update("a", {"*": _pay("x")})
@@ -140,39 +121,3 @@ class TestKeys:
         d.update("a", {"*": _pay("x")})
         d.delete("a")
         assert d.keys() == {"a"}
-
-
-class TestResolveForWidget:
-    def test_resolve_global_scope(self):
-        data = {"k1": {"*": _pay("cmd1")}}
-        result = resolve_for_widget(data, "viewer")
-        assert result["k1"].id == "cmd1"
-
-    def test_resolve_widget_scope_overrides_global(self):
-        data = {"k1": {"*": _pay("global"), "viewer": _pay("specific")}}
-        result = resolve_for_widget(data, "viewer")
-        assert result["k1"].id == "specific"
-
-    def test_resolve_unrelated_scope_falls_back_to_global(self):
-        data = {"k1": {"*": _pay("global"), "viewer": _pay("specific")}}
-        result = resolve_for_widget(data, "folder")
-        assert result["k1"].id == "global"
-
-    def test_resolve_no_matching_scope_excluded(self):
-        data = {"k1": {"viewer": _pay("only_viewer")}}
-        result = resolve_for_widget(data, "folder")
-        assert "k1" not in result
-
-    def test_resolve_multiple_keys(self):
-        data = {
-            "k1": {"*": _pay("a")},
-            "k2": {"folder": _pay("b")},
-            "k3": {"*": _pay("c"), "folder": _pay("d")},
-        }
-        result = resolve_for_widget(data, "folder")
-        assert result["k1"].id == "a"
-        assert result["k2"].id == "b"
-        assert result["k3"].id == "d"
-
-    def test_resolve_empty_data(self):
-        assert resolve_for_widget({}, "viewer") == {}

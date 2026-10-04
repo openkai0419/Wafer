@@ -53,9 +53,6 @@ def _write_ini_value(key: str, value):
 
 
 class PluginSettings:
-    def has_enabled_overrides(self) -> bool:
-        return isinstance(_read_ini_value("plugins/enabled_overrides"), dict)
-
     def enabled_overrides(self) -> dict[str, bool]:
         val = _read_ini_value("plugins/enabled_overrides")
         if not isinstance(val, dict):
@@ -65,15 +62,6 @@ class PluginSettings:
     def set_enabled_overrides(self, overrides: dict[str, bool]):
         clean = {str(k): bool(v) for k, v in sorted(overrides.items())}
         _write_ini_value("plugins/enabled_overrides", clean)
-
-    def enabled_names(self) -> set[str] | None:
-        val = _read_ini_value("plugins/enabled")
-        if isinstance(val, list):
-            return set(val)
-        return None
-
-    def set_enabled(self, names: set[str]):
-        _write_ini_value("plugins/enabled", sorted(names))
 
     def active_folders(self) -> list[str]:
         val = _read_ini_value("plugins/active_folders")
@@ -87,26 +75,20 @@ class PluginSettings:
         qualified_name: str,
         plugin_cls: type,
         overrides: dict[str, bool] | None = None,
-        legacy_enabled: set[str] | None = None,
     ) -> bool:
         if overrides is None:
             overrides = self.enabled_overrides()
-            if legacy_enabled is None and not self.has_enabled_overrides():
-                legacy_enabled = self.enabled_names()
-        return self.resolve_enabled(qualified_name, plugin_cls, overrides, legacy_enabled)
+        return self.resolve_enabled(qualified_name, plugin_cls, overrides)
 
     @staticmethod
     def resolve_enabled(
         qualified_name: str,
         plugin_cls: type,
         overrides: dict[str, bool] | None = None,
-        legacy_enabled: set[str] | None = None,
     ) -> bool:
         overrides = overrides or {}
         if qualified_name in overrides:
             return bool(overrides[qualified_name])
-        if legacy_enabled is not None:
-            return qualified_name in legacy_enabled
         return bool(getattr(plugin_cls, "DEFAULT_ENABLED", False))
 
     @staticmethod
@@ -118,9 +100,6 @@ class PluginSettings:
 
     def priority_order(self, key: str) -> list[str]:
         val = _read_ini_value(f"priority/{key}")
-        if isinstance(val, list):
-            return val
-        val = _read_ini_value(f"plugins/{key}_order")
         if isinstance(val, list):
             return val
         return []
@@ -147,8 +126,6 @@ class PluginSettings:
                 elif s == "tray":
                     scope |= RestartScope.TRAY
             return scope
-        if str(_read_ini_value("plugins/restart_pending", False)).lower() == "true":
-            return RestartScope.ALL
         return RestartScope.NONE
 
     def set_restart_scope(self, scope: RestartScope):

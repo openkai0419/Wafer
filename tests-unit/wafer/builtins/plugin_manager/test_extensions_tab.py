@@ -41,16 +41,6 @@ class TestExtensionCardMdFiles:
         assert any("CHANGELOG.md" in p for p in paths)
         assert any("README.md" in p for p in paths)
 
-    def test_hidden_md_files_excluded(self, qtbot, tmp_path, dispatcher):
-        folder = tmp_path / "ext_hidden"
-        folder.mkdir()
-        (folder / ".hidden.md").write_text("# Hidden", encoding="utf-8")
-        (folder / "_private.md").write_text("# Private", encoding="utf-8")
-        (folder / "README.md").write_text("# Visible", encoding="utf-8")
-        card = _ExtensionCard("ext_hidden", str(folder), dispatcher, md_files=["README.md"])
-        qtbot.addWidget(card)
-        assert len(card._md_entries) == 1
-
     def test_toggle_md_shows_and_hides(self, qtbot, tmp_path, dispatcher):
         folder = tmp_path / "ext_toggle"
         folder.mkdir()

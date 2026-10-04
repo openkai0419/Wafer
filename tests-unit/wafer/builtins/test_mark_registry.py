@@ -1,14 +1,8 @@
-from wafer.builtins.mark import Mark, MarkRegistry
+from wafer.builtins.mark import MarkRegistry
 from wafer.builtins.mark.registry import _normalize_id
 from wafer.builtins.mark.shapes import DEFAULT_SHAPE_KEY
 
 import pytest
-
-
-def test_mark_registry_singleton():
-    a = MarkRegistry.instance()
-    b = MarkRegistry.instance()
-    assert a is b
 
 
 def test_mark_registry_default_has_at_least_one_mark():
@@ -16,13 +10,9 @@ def test_mark_registry_default_has_at_least_one_mark():
     assert len(reg.marks()) >= 1
 
 
-def test_mark_tag_key_and_parse():
+def test_mark_tag_key():
     assert MarkRegistry.key("3") == "mark.3"
     assert MarkRegistry.key("fav") == "mark.fav"
-    assert MarkRegistry.parse_key("mark.3") == "3"
-    assert MarkRegistry.parse_key("mark.fav") == "fav"
-    assert MarkRegistry.parse_key("notmark.1") is None
-    assert MarkRegistry.parse_key("plainkey") is None
 
 
 def test_mark_registry_color_of_unknown_returns_fallback():
@@ -138,12 +128,3 @@ def test_normalize_id_basic():
     assert _normalize_id("  Leading/Trailing  ") == "leading_trailing"
     assert _normalize_id("***") == "mark"
     assert _normalize_id("") == "mark"
-
-
-def test_mark_dataclass():
-    m = Mark(id="x", name="X", color="#000000")
-    assert m.id == "x"
-    assert m.name == "X"
-    assert m.color == "#000000"
-    assert m.storage_scope == "meta_info"
-    assert m.shape_key == DEFAULT_SHAPE_KEY

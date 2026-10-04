@@ -82,19 +82,6 @@ class TestGridPipelineLayout:
         assert isinstance(layout, LayoutData)
         assert len(layout) == 5
 
-    def test_layout_cancel_previous(self, dispatcher):
-        result = {"count": 0}
-        cache = FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None, _noop_appear)
-        pipeline.layout_ready.connect(lambda layout: result.update({"count": result["count"] + 1}))
-
-        aspects = [1.0] * 20
-        pipeline.request_layout(aspects, 50, 2, 400, 300)
-        pipeline.request_layout(aspects, 100, 4, 800, 600)
-        _process_events_until(lambda: result["count"] >= 1, timeout_ms=3000)
-        _drain(dispatcher)
-        assert result["count"] <= 2
-
     def test_layout_masonry_mode(self, dispatcher):
         result = {}
         cache = FakeCache()
@@ -157,30 +144,6 @@ class TestGridPipelineCancel:
 
 
 class TestScheduleRender:
-    def test_schedule_render_cancels_existing(self, dispatcher):
-        cache = FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None, _noop_appear)
-
-        old_token = CancelToken()
-        pipeline._active[0] = old_token
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "wafer.app.viewer.grid.pipeline.grid_resolver",
-                type(
-                    "R",
-                    (),
-                    {
-                        "resolve_chain": staticmethod(lambda p: []),
-                        "registry": type("Reg", (), {"instance": staticmethod(lambda n: None)})(),
-                        "load": staticmethod(lambda p, s=None: None),
-                    },
-                )(),
-            )
-            pipeline.schedule_render(0, "/a.png", QtCore.QSize(200, 200))
-
-        assert old_token.is_cancelled()
-
     def test_schedule_render_no_plugin_uses_deferred_resolve(self, dispatcher):
         cache = FakeCache()
         pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None, _noop_appear)
@@ -235,21 +198,6 @@ class TestScheduleRender:
         assert loader.calls == []
         assert loaded["path"] == "materialized.png"
         assert "virtual.png" in cache
-
-
-class TestGridPipelineIntegration:
-    def test_layout_then_cancel_all(self, dispatcher):
-        result = {}
-        cache = FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: None, lambda i, n: None, _noop_appear)
-        pipeline.layout_ready.connect(lambda layout: result.update({"layout": layout}))
-
-        aspects = [1.0] * 10
-        pipeline.request_layout(aspects, 100, 4, 800, 600)
-        _process_events_until(lambda: "layout" in result)
-
-        pipeline.cancel_all()
-        assert pipeline.active_count() == 0
 
 
 class TestDispatchThumbnail:

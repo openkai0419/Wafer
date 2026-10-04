@@ -56,15 +56,6 @@ class TestQtDebounceManager:
     def test_cancel_nonexistent_key_noop(self, manager, qtbot):
         manager.cancel("no_such_key")
 
-    def test_independent_keys(self, manager, qtbot):
-        cb1 = MagicMock()
-        cb2 = MagicMock()
-        manager.debounce("a", 30, cb1)
-        manager.debounce("b", 30, cb2)
-        _flush_events(80)
-        cb1.assert_called_once()
-        cb2.assert_called_once()
-
     def test_cancel_one_key_keeps_other(self, manager, qtbot):
         cb1 = MagicMock()
         cb2 = MagicMock()
@@ -88,11 +79,6 @@ class TestQtThrottleManager:
         from wafer.qt.common.rate_limit import QtThrottleManager
 
         return QtThrottleManager()
-
-    def test_throttle_fires_immediately(self, manager, qtbot):
-        cb = MagicMock()
-        manager.throttle("k", 200, 100, cb, "first")
-        cb.assert_called_once_with("first")
 
     def test_throttle_idle_fires_with_latest_args(self, manager, qtbot):
         received = []

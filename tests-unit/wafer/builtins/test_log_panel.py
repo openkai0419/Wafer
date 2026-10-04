@@ -1,10 +1,7 @@
-import py_compile
-
 import pytest
 from PySide6 import QtWidgets
 
 from wafer.builtins.log_panel import LogPanel, LogPanelPlugin
-from wafer.plugin.panel.base import BasePanelPlugin
 from wafer.plugin.registry import PluginBase
 
 
@@ -14,10 +11,6 @@ def panel(qtbot):
     qtbot.addWidget(p)
     yield p
     LogPanel._instance = None
-
-
-def test_compile():
-    py_compile.compile("wafer/builtins/log_panel.py")
 
 
 class TestLogPanel:
@@ -78,34 +71,8 @@ class TestLogPanel:
         assert len(panel._entries) == 0
         assert panel._all_tab.toPlainText() == ""
 
-    def test_instance(self, panel):
-        assert LogPanel.instance() is panel
-
 
 class TestLogPanelPlugin:
-    def test_inherits_base_panel_plugin(self):
-        assert issubclass(LogPanelPlugin, BasePanelPlugin)
-
-    def test_attributes(self):
-        assert LogPanelPlugin.NAME == "log"
-        assert LogPanelPlugin.DISPLAY_NAME == "Log"
-        assert LogPanelPlugin.CLOSABLE is True
-        assert LogPanelPlugin.SOURCE == "Builtin"
-        assert LogPanelPlugin.DEFAULT_ENABLED is False
-
-    def test_create_widget_returns_log_panel(self, qtbot):
-        from wafer.core.logs import AppLogger
-
-        signals = [AppLogger.on_debug, AppLogger.on_info, AppLogger.on_warning, AppLogger.on_error, AppLogger.on_critical]
-        saved = [list(s._callbacks) for s in signals]
-        plugin = LogPanelPlugin()
-        widget = plugin.create_widget()
-        qtbot.addWidget(widget)
-        assert isinstance(widget, LogPanel)
-        LogPanel._instance = None
-        for s, cb in zip(signals, saved):
-            s._callbacks = cb
-
     def test_registered_in_panel_registry(self):
         from wafer.plugin.panel.handler import panel_registry
 

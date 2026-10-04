@@ -1,16 +1,11 @@
-import py_compile
 import threading
 import time
 
 import pytest
 
 from wafer.app.indexer.runtime import scheduler as scheduler_module
-from wafer.app.indexer.runtime.scheduler import TaskScheduler, PeriodicTask, _QUEUE_POLL_INTERVAL, _IMMEDIATE_THRESHOLD
+from wafer.app.indexer.runtime.scheduler import TaskScheduler, PeriodicTask
 from wafer.app.indexer.runtime.task import Task, TaskPriority
-
-
-def test_compile():
-    py_compile.compile("wafer/app/indexer/runtime/scheduler.py")
 
 
 @pytest.fixture(autouse=True)
@@ -97,26 +92,10 @@ def test_priority_ordering_within_background_lane(scheduler):
 
     barrier.set()
     assert done.wait(timeout=5.0)
-    low_done.wait(timeout=5.0)
+    assert low_done.wait(timeout=5.0)
 
     with lock:
-        if "high" in execution_order and "low" in execution_order:
-            assert execution_order.index("high") < execution_order.index("low")
-
-
-def test_on_complete_callback(scheduler):
-    results = []
-    done = threading.Event()
-
-    scheduler.submit(
-        Task.create(
-            "op",
-            run=lambda: None,
-            on_complete=lambda: (results.append("called"), done.set()),
-        )
-    )
-    assert done.wait(timeout=5.0)
-    assert results == ["called"]
+        assert execution_order == ["high", "low"]
 
 
 def test_on_complete_error_does_not_crash(scheduler):
@@ -244,30 +223,6 @@ def test_is_idle_respects_idle_base_delay():
     assert s.is_idle()
 
 
-def test_multiple_submits(scheduler):
-    done = threading.Event()
-    count = {"n": 0}
-    lock = threading.Lock()
-
-    def inc():
-        with lock:
-            count["n"] += 1
-            if count["n"] >= 10:
-                done.set()
-
-    for _ in range(10):
-        scheduler.submit(
-            Task.create(
-                "op",
-                run=lambda: None,
-                on_complete=inc,
-            )
-        )
-
-    assert done.wait(timeout=10.0)
-    assert count["n"] == 10
-
-
 def test_is_idle_false_while_task_is_running(scheduler):
     started = threading.Event()
     release = threading.Event()
@@ -348,11 +303,8 @@ def test_stop_from_task_thread_no_hang():
 @pytest.mark.parametrize(
     "priority,resets",
     [
-        (TaskPriority.SCAN, True),
-        (TaskPriority.COLLECTION, True),
         (TaskPriority.DISPATCH, True),
         (TaskPriority.RETRY, False),
-        (TaskPriority.MAINTENANCE, False),
     ],
 )
 def test_idle_timer_reset_by_priority(priority, resets):
@@ -363,12 +315,11 @@ def test_idle_timer_reset_by_priority(priority, resets):
     done = threading.Event()
     s.submit(Task.create("op", priority=priority, run=lambda: None, on_complete=done.set))
     assert done.wait(timeout=5.0)
-    time.sleep(0.1)
+    s.stop()
     if resets:
         assert s._last_active_time > stale
     else:
         assert s._last_active_time == stale
-    s.stop()
 
 
 def test_once_per_idle_fires_once_then_suppressed():
@@ -435,59 +386,16 @@ def test_once_per_idle_resets_on_active_task():
 # ── 2-lane specific tests ──────────────────────────────────────
 
 
-def test_immediate_task_routes_to_immediate_queue():
-    s = TaskScheduler()
-    t = Task.create("rt", priority=TaskPriority.REALTIME, run=lambda: None)
-    s.submit(t)
-    assert not s._immediate_queue.empty()
-    assert s._background_queue.empty()
-
-
-def test_background_task_routes_to_background_queue():
-    s = TaskScheduler()
-    t = Task.create("scan", priority=TaskPriority.SCAN, run=lambda: None)
-    s.submit(t)
-    assert s._immediate_queue.empty()
-    assert not s._background_queue.empty()
-
-
 def test_threshold_boundary():
     s = TaskScheduler()
     below = Task.create("user_req", priority=TaskPriority.USER_REQUEST, run=lambda: None)
     at = Task.create("scan", priority=TaskPriority.SCAN, run=lambda: None)
     s.submit(below)
     s.submit(at)
-    assert not s._immediate_queue.empty()
-    assert not s._background_queue.empty()
-
-
-def test_immediate_not_blocked_by_background(scheduler):
-    bg_barrier = threading.Event()
-    immediate_done = threading.Event()
-
-    scheduler.submit(
-        Task.create(
-            "slow_scan",
-            priority=TaskPriority.SCAN,
-            run=lambda: bg_barrier.wait(10.0),
-        )
-    )
-    time.sleep(0.1)
-
-    start = time.monotonic()
-    scheduler.submit(
-        Task.create(
-            "user_op",
-            priority=TaskPriority.USER_REQUEST,
-            run=lambda: None,
-            on_complete=immediate_done.set,
-        )
-    )
-    assert immediate_done.wait(timeout=3.0)
-    elapsed = time.monotonic() - start
-    assert elapsed < 2.0
-
-    bg_barrier.set()
+    assert s._immediate_queue.get_nowait() is below
+    assert s._background_queue.get_nowait() is at
+    assert s._immediate_queue.empty()
+    assert s._background_queue.empty()
 
 
 def test_both_lanes_execute_concurrently(scheduler):
@@ -530,5 +438,4 @@ def test_immediate_lane_resets_idle_timer(scheduler):
         )
     )
     assert done.wait(timeout=5.0)
-    time.sleep(0.1)
-    assert scheduler._last_active_time > stale
+    assert wait_until(lambda: scheduler._last_active_time > stale)

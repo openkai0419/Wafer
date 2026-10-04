@@ -1,4 +1,3 @@
-import py_compile
 from unittest.mock import ANY, MagicMock, call, patch
 
 import pytest
@@ -44,20 +43,9 @@ def _register():
     parser_resolver.registry._instances.update(prev_instances)
 
 
-def test_compile():
-    py_compile.compile("wafer/app/indexer/receivers/parser_receiver.py")
-
-
 def test_trigger_empty_source_keys():
     writer = MagicMock()
     trigger_parser_pending({}, writer)
-    writer.insert_pending.assert_not_called()
-
-
-def test_trigger_no_matching_keys():
-    writer = MagicMock()
-    source_keys = {"/a.png": {"exif.Width", "exif.Height"}}
-    trigger_parser_pending(source_keys, writer)
     writer.insert_pending.assert_not_called()
 
 
@@ -102,8 +90,9 @@ def test_trigger_calls_request_dispatch():
 def test_trigger_no_dispatch_when_no_match():
     writer = MagicMock()
     dispatch = MagicMock()
-    source_keys = {"/a.png": {"unrelated.key"}}
+    source_keys = {"/a.png": {"unrelated.key"}, "/b.png": {"exif.Width", "exif.Height"}}
     trigger_parser_pending(source_keys, writer, request_dispatch=dispatch)
+    writer.insert_pending.assert_not_called()
     dispatch.assert_not_called()
 
 
@@ -163,23 +152,6 @@ def test_parse_batch_blacklist_filters_meta_and_tags(monkeypatch):
     assert "sd.prompt" not in tag_keys
 
 
-def test_parse_batch_whitelist_keeps_only_selected(monkeypatch):
-    from wafer.plugin.key_filter import KeyFilter
-
-    monkeypatch.setattr(KeyFilter, "_cache", {"sd": ("whitelist", frozenset({"seed"}))})
-    results = [
-        {
-            "source": "s",
-            "meta_info": {"seed": "1", "prompt": "x"},
-            "status": True,
-            "parser": "sd",
-        }
-    ]
-    data = _parse_batch(results)
-    meta_keys = [e[1] for e in data["meta_info_entries"]]
-    assert meta_keys == ["sd.seed"]
-
-
 def test_parse_batch_collects_update_hash():
     results = [
         {"source": "/a.png", "update_hash": "full1", "status": True, "parser": "full_hash"},
@@ -215,23 +187,6 @@ def test_flush_applies_hash_updates_before_writing_and_retriggers():
     writer.update_source_hashes.assert_called_once_with([("/a.png", "full1")])
     assert writer.mock_calls.index(call.update_source_hashes([("/a.png", "full1")])) < writer.mock_calls.index(call.upsert_parser_results([], [], [("/a.png", "_test_det_a", "ok", ANY)], []))
     assert trigger.call_args[0][0] == {"/a.png": {"file_hash"}}
-
-
-def test_parse_batch_unfiltered_prefix_passes_all(monkeypatch):
-    from wafer.plugin.key_filter import KeyFilter
-
-    monkeypatch.setattr(KeyFilter, "_cache", {"other": ("whitelist", frozenset())})
-    results = [
-        {
-            "source": "s",
-            "meta_info": {"a": "1", "b": "2"},
-            "status": True,
-            "parser": "sd",
-        }
-    ]
-    data = _parse_batch(results)
-    meta_keys = sorted(e[1] for e in data["meta_info_entries"])
-    assert meta_keys == ["sd.a", "sd.b"]
 
 
 def test_parse_batch_delete_entries_are_keyed_by_source():

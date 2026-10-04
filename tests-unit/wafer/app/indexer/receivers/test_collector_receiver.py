@@ -1,4 +1,3 @@
-import py_compile
 from unittest.mock import MagicMock
 
 import pytest
@@ -10,22 +9,13 @@ from wafer.app.indexer.receivers.collector_receiver import (
     _merge_parsed,
     _write_batched,
 )
-from wafer.app.indexer.receivers._batch_utils import (
-    BATCH_SIZE,
-    FLUSH_DELAY,
-    ResultBuffer,
-    try_float,
-)
+from wafer.app.indexer.receivers._batch_utils import BATCH_SIZE
 from wafer.core.common.virtual_paths import build_virtual_path
 
 
 class _StubMsg:
     def __init__(self, payload):
         self.payload = payload
-
-
-def test_compile():
-    py_compile.compile("wafer/app/indexer/receivers/collector_receiver.py")
 
 
 @pytest.fixture
@@ -39,12 +29,6 @@ def _make_receiver():
     progress = MagicMock()
     receiver = CollectorReceiver(scheduler, writer, progress)
     return receiver, scheduler, writer, progress
-
-
-def test_handle_result_returns_true():
-    receiver, _, _, _ = _make_receiver()
-    msg = _StubMsg({"collector": "exif", "results": [{"source": "a", "status": True}]})
-    assert receiver.handle_result(msg) is True
 
 
 def test_handle_result_invalid_payload():
@@ -121,48 +105,6 @@ def test_flush_reschedules_on_pending(short_flush_delay):
     assert second_task.name == "flush_collection_results"
 
 
-def test_result_buffer_append_drain():
-    buf = ResultBuffer(_merge_parsed)
-    parsed = {
-        "image_entries": [("p", "s", 1.0)],
-        "meta_info_entries": [],
-        "tag_entries": [],
-        "source_keys": {},
-        "collector_status": [("s", "exif", "ok", 0.0)],
-    }
-    assert buf.append(parsed, 1) is True
-    assert buf.append(parsed, 1) is False
-    data, count = buf.drain()
-    assert count == 2
-    assert len(data["collector_status"]) == 1
-
-
-def test_result_buffer_empty_drain():
-    buf = ResultBuffer(_merge_parsed)
-    data, count = buf.drain()
-    assert data is None
-    assert count == 0
-
-
-def test_result_buffer_has_pending():
-    buf = ResultBuffer(_merge_parsed)
-    assert buf.has_pending() is False
-    parsed = {
-        "image_entries": [],
-        "meta_info_entries": [],
-        "tag_entries": [],
-        "source_keys": {},
-        "collector_status": [("s", "c", "ok", 0.0)],
-    }
-    buf.append(parsed, 1)
-    buf.drain()
-    assert buf.has_pending() is False
-    buf.append(parsed, 1)
-    with buf._lock:
-        buf._flush_scheduled = False
-    assert buf.has_pending() is True
-
-
 def test_merge_parsed_ok_overrides_fail():
     entries = [
         {
@@ -198,10 +140,6 @@ def test_write_batched_runs_source_extension_cleanup_after_chunks():
     assert writer.upsert_results.call_count == 2
     assert all(call.kwargs == {"cleanup": False} for call in writer.upsert_results.call_args_list)
     writer.cleanup_source_extensions.assert_called_once_with(image_entries, collector_status)
-
-
-def test_flush_delay_constant():
-    assert FLUSH_DELAY > 0
 
 
 def test_parse_batch_ok_status():
@@ -278,40 +216,6 @@ def test_parse_batch_blacklist_filters_meta_and_tags(monkeypatch):
     assert "exif.secret" not in tag_keys
 
 
-def test_parse_batch_whitelist_keeps_only_selected(monkeypatch):
-    from wafer.plugin.key_filter import KeyFilter
-
-    monkeypatch.setattr(KeyFilter, "_cache", {"exif": ("whitelist", frozenset({"width"}))})
-    results = [
-        {
-            "source": "s",
-            "meta_info": {"width": "100", "height": "50"},
-            "status": True,
-            "collector": "exif",
-        }
-    ]
-    data = _parse_batch(results)
-    meta_keys = [e[1] for e in data["meta_info_entries"]]
-    assert meta_keys == ["exif.width"]
-
-
-def test_parse_batch_unfiltered_prefix_passes_all(monkeypatch):
-    from wafer.plugin.key_filter import KeyFilter
-
-    monkeypatch.setattr(KeyFilter, "_cache", {"other": ("whitelist", frozenset())})
-    results = [
-        {
-            "source": "s",
-            "meta_info": {"a": "1", "b": "2"},
-            "status": True,
-            "collector": "exif",
-        }
-    ]
-    data = _parse_batch(results)
-    meta_keys = [e[1] for e in data["meta_info_entries"]]
-    assert set(meta_keys) == {"exif.a", "exif.b"}
-
-
 def test_parse_batch_multi_path():
     child_a = build_virtual_path("zip.zip", "a.png")
     child_b = build_virtual_path("zip.zip", "b.png")
@@ -337,80 +241,6 @@ def test_parse_batch_ok_overrides_fail():
     assert data["collector_status"][0][2] == "ok"
 
 
-def test_batch_size_positive():
-    assert BATCH_SIZE > 0
-
-
-def test_try_float_none():
-    assert try_float(None) is None
-
-
-def test_try_float_int():
-    assert try_float(42) == 42.0
-
-
-def test_try_float_float():
-    assert try_float(3.14) == 3.14
-
-
-def test_try_float_numeric_string():
-    assert try_float("123.456") == 123.456
-
-
-def test_try_float_non_numeric_string():
-    assert try_float("hello") is None
-
-
-def test_try_float_exif_datetime():
-    result = try_float("2024:01:15 10:30:45")
-    assert isinstance(result, float)
-    assert result > 0
-    from datetime import datetime, timezone
-
-    expected = datetime(2024, 1, 15, 10, 30, 45, tzinfo=timezone.utc).timestamp()
-    assert result == expected
-
-
-def test_try_float_iso_datetime():
-    result = try_float("2024-01-15 10:30:45")
-    assert isinstance(result, float)
-    from datetime import datetime, timezone
-
-    expected = datetime(2024, 1, 15, 10, 30, 45, tzinfo=timezone.utc).timestamp()
-    assert result == expected
-
-
-def test_try_float_date_only_colon():
-    result = try_float("2024:06:01")
-    assert isinstance(result, float)
-    from datetime import datetime, timezone
-
-    expected = datetime(2024, 6, 1, tzinfo=timezone.utc).timestamp()
-    assert result == expected
-
-
-def test_try_float_date_only_hyphen():
-    result = try_float("2024-06-01")
-    assert isinstance(result, float)
-    from datetime import datetime, timezone
-
-    expected = datetime(2024, 6, 1, tzinfo=timezone.utc).timestamp()
-    assert result == expected
-
-
-def test_try_float_invalid_date():
-    assert try_float("not-a-date") is None
-
-
-def test_try_float_empty_string():
-    assert try_float("") is None
-
-
-def test_try_float_preserves_existing_numeric():
-    assert try_float("100") == 100.0
-    assert try_float("3.14") == 3.14
-
-
 def test_parse_batch_tags_are_keyed_by_source():
     results = [
         {
@@ -422,36 +252,6 @@ def test_parse_batch_tags_are_keyed_by_source():
     ]
     data = _parse_batch(results)
     assert data["tag_entries"] == [("src", "wd14.tags", "1girl, blue_hair, smile", None)]
-
-
-def test_parse_batch_mixed_meta_and_tags():
-    results = [
-        {
-            "source": "img.jpg",
-            "status": True,
-            "meta_info": {"camera": "Canon"},
-            "tags": {"tags": "landscape, sky"},
-            "collector": "wd14",
-        }
-    ]
-    data = _parse_batch(results)
-    assert len(data["meta_info_entries"]) == 1
-    assert len(data["tag_entries"]) == 1
-    assert data["meta_info_entries"][0][1] == "wd14.camera"
-    assert data["tag_entries"][0][1] == "wd14.tags"
-
-
-def test_parse_batch_failed_result_no_tags():
-    results = [
-        {
-            "source": "fail.jpg",
-            "status": False,
-            "tags": {"tags": "should_not_register"},
-            "collector": "wd14",
-        }
-    ]
-    data = _parse_batch(results)
-    assert len(data["tag_entries"]) == 0
 
 
 def test_parse_batch_exif_datetime_value_num():

@@ -1,6 +1,3 @@
-import py_compile
-from pathlib import Path
-
 from wafer.app.tray.main_tray import TrayApp
 
 
@@ -16,14 +13,6 @@ def _patch_store(monkeypatch):
     store = _Store()
     monkeypatch.setattr("wafer.core.store.workspace.WorkspaceStore.instance", classmethod(lambda cls: store))
     return store
-
-
-def test_compile():
-    root = Path("wafer/app/tray")
-    for p in root.rglob("*.py"):
-        if "__pycache__" in p.parts:
-            continue
-        py_compile.compile(str(p), doraise=True)
 
 
 def test_close_all_waits_for_viewers_then_force_closes_remaining(monkeypatch):

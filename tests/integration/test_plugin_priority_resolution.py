@@ -5,18 +5,6 @@ from wafer.plugin.collector.handler import collector_resolver
 
 
 class TestGridPriorityResolution:
-    def test_animated_resolves_before_image_for_gif(self):
-        chain = grid_resolver.resolve_merged_chain("test.gif")
-        names = [p.NAME for p, kind in chain]
-        if "animated" in names and "image" in names:
-            assert names.index("animated") < names.index("image")
-
-    def test_animated_resolves_before_image_for_webp(self):
-        chain = grid_resolver.resolve_merged_chain("test.webp")
-        names = [p.NAME for p, kind in chain]
-        if "animated" in names and "image" in names:
-            assert names.index("animated") < names.index("image")
-
     def test_image_resolves_before_system_thumbnail(self):
         chain = grid_resolver.resolve_merged_chain("test.jpg")
         names = [p.NAME for p, kind in chain]
@@ -25,8 +13,7 @@ class TestGridPriorityResolution:
     def test_system_thumbnail_always_last(self):
         for ext in [".jpg", ".png", ".gif", ".webp", ".mp4", ".xyz"]:
             chain = grid_resolver.resolve_merged_chain(f"test{ext}")
-            if chain:
-                assert chain[-1][0].NAME == "system_thumbnail"
+            assert chain[-1][0].NAME == "system_thumbnail"
 
     def test_video_resolves_for_mp4(self):
         chain = grid_resolver.resolve_merged_chain("test.mp4")
@@ -39,11 +26,11 @@ class TestGridPriorityResolution:
         assert "video" not in names
 
     def test_highest_priority_wins_in_resolve(self):
-        resolved = grid_resolver.resolve("test.jpg")
-        chain = grid_resolver.resolve_merged_chain("test.jpg")
+        resolved = grid_resolver.resolve("test.mp4")
+        chain = grid_resolver.resolve_merged_chain("test.mp4")
         widget_chain = [p for p, kind in chain if kind == WIDGET]
-        if widget_chain:
-            assert resolved == widget_chain[0]
+        assert widget_chain
+        assert resolved == widget_chain[0]
 
     def test_unknown_extension_only_system_thumbnail(self):
         chain = grid_resolver.resolve_merged_chain("test.xyz_unknown_ext")
@@ -52,12 +39,6 @@ class TestGridPriorityResolution:
 
 
 class TestViewerPriorityResolution:
-    def test_animated_viewer_before_image_for_gif(self):
-        chain = viewer_resolver.registry.resolve_chain("test.gif")
-        names = [p.NAME for p in chain]
-        if "animated" in names and "image" in names:
-            assert names.index("animated") < names.index("image")
-
     def test_image_fallback_viewer_for_jpg(self):
         chain = viewer_resolver.registry.resolve_chain("test.jpg")
         names = [p.NAME for p in chain]

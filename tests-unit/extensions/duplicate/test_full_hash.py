@@ -37,18 +37,3 @@ def test_fails_on_unreadable_file(tmp_path):
     result = parser.process(str(tmp_path / "missing.bin"), (1.0, 100, "fast"), {})
     assert result.status is False
     assert result.update_hash is None
-
-
-def test_triggers_on_source_file_hash():
-    from wafer.core.db.file_db import SOURCE_TRIGGER_KEYS
-
-    assert FullHashParser.TRIGGER_KEYS == ("file_hash",)
-    assert "file_hash" in SOURCE_TRIGGER_KEYS
-
-
-def test_needs_no_collector_and_is_opt_in():
-    from wafer.plugin.parser.base import required_collectors
-
-    assert required_collectors(FullHashParser.TRIGGER_KEYS) == {}
-    assert FullHashParser.DEFAULT_ENABLED is False
-    assert FullHashParser.NAME == "full_hash"

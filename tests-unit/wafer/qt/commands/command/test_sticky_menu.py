@@ -18,15 +18,6 @@ def _add_submenu(parent: StickyMenu, title: str) -> QtWidgets.QMenu:
     return sub
 
 
-class TestStickyMenuInit:
-    def test_initial_state(self, menu):
-        assert menu._sticky_action is None
-        assert not menu._sticky_timer.isActive()
-
-    def test_is_qmenu(self, menu):
-        assert isinstance(menu, QtWidgets.QMenu)
-
-
 class TestStickyClick:
     def test_click_on_submenu_action_sets_sticky(self, menu):
         sub = _add_submenu(menu, "Sub1")

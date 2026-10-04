@@ -191,14 +191,6 @@ class CommandRegistry:
                     result[cid] = cmd_class
         return result
 
-    def get_all_categories(self) -> list[str]:
-        categories = set()
-        for cmd_class in self._commands.values():
-            meta = cmd_class.meta
-            if meta and meta.category:
-                categories.add(meta.category)
-        return sorted(categories)
-
 
 class DropAcceptRegistry:
     _instance: DropAcceptRegistry | None = None
@@ -237,10 +229,6 @@ class DropAcceptRegistry:
             if callable(a) and not any(x is a for x in out):
                 out.append(a)
         return tuple(out)
-
-
-def register_drop_accept(widget_scope: str, acceptor: Callable[..., bool]) -> None:
-    DropAcceptRegistry.instance().register(widget_scope, acceptor)
 
 
 def resolve_drop_accept(widget_scope: str | None) -> Sequence[Callable[..., bool]]:

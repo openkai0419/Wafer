@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import time
+import os
 
 from wafer.core.files.disk_cache import DiskCache
 
@@ -42,8 +42,8 @@ def test_failed_producer_returns_none_and_no_file(tmp_path):
 def test_sweep_evicts_over_size_cap(tmp_path):
     cache = DiskCache(tmp_path, size_limit_bytes=250)
     for i in range(5):
-        cache.get_or_create(f"k{i}", _writer(b"x" * 100), ".bin")
-        time.sleep(0.01)
+        path = cache.get_or_create(f"k{i}", _writer(b"x" * 100), ".bin")
+        os.utime(path, (1000 + i, 1000 + i))
     removed = cache.sweep()
     assert removed >= 1
     total = sum(p.stat().st_size for p in tmp_path.rglob("*.bin"))
@@ -54,7 +54,7 @@ def test_sweep_removes_idle_entries(tmp_path):
     cache = DiskCache(tmp_path, size_limit_bytes=10 * 1024, idle_seconds=0)
     path = cache.get_or_create("k", _writer(b"data"), ".bin")
     assert path is not None
-    time.sleep(0.01)
+    os.utime(path, (1000, 1000))
     removed = cache.sweep()
     assert removed == 1
     assert not path.exists()

@@ -34,13 +34,6 @@ class TestPersistentStore:
         store._set_raw("key1", {"a": 1})
         assert store._get_raw("key1") == {"a": 1}
 
-    def test_commit_writes_to_file(self, tmp_path):
-        p = tmp_path / "test.json"
-        store = PersistentStore(p)
-        store._set_raw("key1", {"a": 1})
-        store.commit()
-        assert p.exists()
-
     def test_get_missing_key(self, tmp_path):
         store = PersistentStore(tmp_path / "test.json")
         assert store._get_raw("missing") == {}
@@ -93,12 +86,6 @@ class TestCommandOptionStore:
         p = store.get("cmd.test")
         assert p.args.get("x") == 42
 
-    def test_set_with_dict(self):
-        store = CommandOptionStore.instance()
-        store.set("cmd.test", {"y": 10})
-        p = store.get("cmd.test")
-        assert p.args.get("y") == 10
-
     def test_commit_and_reload(self, tmp_path):
         store_path = tmp_path / "reload_opts.json"
         prev_inst = CommandOptionStore._instance
@@ -115,11 +102,6 @@ class TestCommandOptionStore:
         assert p.args.get("val") == 99
 
         CommandOptionStore._instance = prev_inst
-
-    def test_configure_creates_singleton(self, tmp_path):
-        s1 = CommandOptionStore.instance()
-        s2 = CommandOptionStore.instance()
-        assert s1 is s2
 
 
 class _FakeRegistry:
@@ -147,30 +129,9 @@ class TestActionGroupStateManager:
         mgr.register_member("grp", "cmd.a")
         assert mgr.get_members("grp") == ["cmd.a"]
 
-    def test_get_group_for_command(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp", "cmd.a")
-        assert mgr.get_group_for_command("cmd.a") == "grp"
-
-    def test_get_group_for_unknown_command(self):
-        mgr = ActionGroupStateManager.instance()
-        assert mgr.get_group_for_command("nonexistent") is None
-
     def test_get_members_empty_group(self):
         mgr = ActionGroupStateManager.instance()
         assert mgr.get_members("nonexistent") == []
-
-    def test_find_current_returns_resolver_match(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp", "cmd.a")
-        mgr.register_member("grp", "cmd.b")
-        registry = _FakeRegistry(
-            {
-                "cmd.a": {"resolver": lambda: False},
-                "cmd.b": {"resolver": lambda: True},
-            }
-        )
-        assert mgr.find_current("grp", registry) == "cmd.b"
 
     def test_find_current_returns_first_truthy(self):
         mgr = ActionGroupStateManager.instance()

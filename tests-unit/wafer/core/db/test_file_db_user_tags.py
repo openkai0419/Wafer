@@ -81,6 +81,27 @@ def test_apply_user_tags_delete_respects_lock(tmp_path):
     db.close()
 
 
+def test_lock_only_does_not_change_value(tmp_path):
+    db = _make_db(tmp_path)
+    _seed(db)
+    _apply(db, "src1", [("rating", "5", 5.0, 0)], [])
+    fh, applied, deleted = _apply(db, "src1", [("rating", "ignored", None, 1)], [], lock_only=True)
+    assert applied == ["rating"]
+    val, locked = _get_tag(db, "h1", "rating")
+    assert val == "5"
+    assert locked == 1
+    db.close()
+
+
+def test_lock_only_skips_missing_keys(tmp_path):
+    db = _make_db(tmp_path)
+    _seed(db)
+    fh, applied, deleted = _apply(db, "src1", [("ghost", "x", None, 1)], [], lock_only=True)
+    assert applied == []
+    assert _get_tag(db, "h1", "ghost") is None
+    db.close()
+
+
 def test_migrate_tags_on_hash_change_preserves_all(tmp_path):
     db = _make_db(tmp_path)
     _seed(db)

@@ -31,18 +31,6 @@ def registry():
 
 
 class TestRenameSourceRegistry:
-    def test_register_and_get(self, registry):
-        assert registry.get("src_a") is _SrcA
-        assert registry.get("src_b") is _SrcB
-
-    def test_get_unknown(self, registry):
-        assert registry.get("unknown") is None
-
-    def test_list_all_sorted_by_priority_desc(self, registry):
-        all_ = registry.list_all()
-        assert all_[0] is _SrcB
-        assert all_[1] is _SrcA
-
     def test_deserialise(self, registry):
         inst = registry.deserialise({"type": "src_a"})
         assert isinstance(inst, _SrcA)

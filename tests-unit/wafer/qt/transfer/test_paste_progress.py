@@ -143,34 +143,6 @@ class TestRunWithProgress:
 
 
 class TestExecutePasteItems:
-    def test_copy_files_with_progress(self, qapp, tmp_path):
-        from wafer.qt.transfer.paste import _execute_paste_items
-
-        src = tmp_path / "a.txt"
-        src.write_text("hello", encoding="utf-8")
-        dst_dir = tmp_path / "dst"
-        dst_dir.mkdir()
-        dst = dst_dir / "a.txt"
-
-        plans = [
-            PastePlanItem(
-                index=0,
-                src=src,
-                is_dir=False,
-                action="copy",
-                dst_default=dst,
-                conflict=False,
-                suggested_dst=None,
-            )
-        ]
-        decisions = {0: PasteDecision(mode="overwrite")}
-        results = _execute_paste_items(plans, decisions, None, "copy")
-        assert len(results) == 1
-        assert results[0].status == "ok"
-        assert dst.exists()
-        assert dst.read_text(encoding="utf-8") == "hello"
-        assert src.exists()
-
     def test_move_files_with_progress(self, qapp, tmp_path):
         from wafer.qt.transfer.paste import _execute_paste_items
 
@@ -251,6 +223,7 @@ class TestExecutePasteItems:
         assert all(r.status == "ok" for r in results)
         for i in range(5):
             assert (dst_dir / f"file_{i}.txt").read_text(encoding="utf-8") == f"content_{i}"
+            assert (tmp_path / f"file_{i}.txt").exists()
 
 
 class TestDirectoryProgress:

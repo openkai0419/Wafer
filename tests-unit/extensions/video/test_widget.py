@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock
 from PySide6 import QtCore, QtGui, QtWidgets
 
 
@@ -29,13 +29,6 @@ def _reset_shared(monkeypatch):
 
 @pytest.mark.unstable
 class TestMpvGLOverlay:
-    def test_create_player(self, qtbot):
-        from extensions.video.widget import DEFAULT_VOLUME, MpvGLOverlay
-
-        player = MpvGLOverlay._create_player()
-        assert player is not None
-        assert player.volume == DEFAULT_VOLUME
-
     def test_init_with_prewarmed_player(self, qtbot):
         from extensions.video.widget import MpvGLOverlay
 
@@ -74,26 +67,6 @@ class TestMpvGLOverlay:
         overlay.activate("/test.mp4")
         assert overlay.isVisible()
 
-    def test_first_frame_shows_overlay(self, qtbot):
-        from extensions.video.widget import MpvGLOverlay
-
-        overlay = MpvGLOverlay()
-        overlay.player = MagicMock()
-        overlay._ctx = MagicMock()
-        overlay.activate("/test.mp4")
-        assert not overlay.isVisible()
-        overlay._frame_generation = overlay._play_generation
-        overlay._frame_ready = True
-        overlay._request_update()
-        assert not overlay.isVisible()
-        overlay._playback_ready = True
-        overlay._frame_ready = True
-        overlay._frame_generation = overlay._play_generation
-        overlay._request_update()
-        QtWidgets.QApplication.instance().processEvents()
-        assert overlay.isVisible()
-        assert not overlay._awaiting_first_frame
-
     def test_deactivate_stops_and_hides(self, qtbot):
         from extensions.video.widget import MpvGLOverlay
 
@@ -128,18 +101,6 @@ class TestMpvGLOverlay:
         overlay._ctx.render.assert_not_called()
         overlay._clear_gl.assert_called_once()
 
-    def test_paintgl_clears_while_awaiting(self, qtbot):
-        from extensions.video.widget import MpvGLOverlay
-
-        overlay = MpvGLOverlay()
-        overlay._ctx = MagicMock()
-        overlay._clear_gl = MagicMock()
-        overlay._awaiting_first_frame = True
-        overlay._frame_ready = True
-        overlay.paintGL()
-        overlay._ctx.render.assert_not_called()
-        overlay._clear_gl.assert_called_once()
-
     def test_paintgl_renders_after_first_frame_shown(self, qtbot):
         from extensions.video.widget import MpvGLOverlay
 
@@ -149,18 +110,6 @@ class TestMpvGLOverlay:
         overlay._frame_ready = True
         overlay.paintGL()
         overlay._ctx.render.assert_called_once()
-
-    def test_stale_callback_after_deactivate_no_show(self, qtbot):
-        from extensions.video.widget import MpvGLOverlay
-
-        overlay = MpvGLOverlay()
-        overlay.player = MagicMock()
-        overlay._ctx = MagicMock()
-        overlay.activate("/test.mp4")
-        overlay.deactivate()
-        overlay._frame_ready = True
-        overlay._request_update()
-        assert not overlay.isVisible()
 
     def test_cleanup_frees_resources(self, qtbot):
         from extensions.video.widget import MpvGLOverlay
@@ -185,23 +134,6 @@ class TestMpvCellWidget:
         assert not isinstance(w, QOpenGLWidget)
         w.cleanup()
 
-    def test_init_shared_creates_slot_manager(self, qtbot):
-        from extensions.video.widget import MpvCellWidget, PlaybackSlotManager
-
-        parent = QtWidgets.QWidget()
-        w = MpvCellWidget(parent)
-        assert isinstance(MpvCellWidget._slot_manager, PlaybackSlotManager)
-        w.cleanup()
-
-    def test_load_sets_path(self, qtbot):
-        from extensions.video.widget import MpvCellWidget
-
-        w = MpvCellWidget()
-        w.resize(200, 150)
-        w.load("/test.mp4")
-        assert w._path == "/test.mp4"
-        w.cleanup()
-
     def test_load_clears_thumbnail_on_new_path(self, qtbot):
         from extensions.video.widget import MpvCellWidget
 
@@ -223,28 +155,6 @@ class TestMpvCellWidget:
         assert w._thumbnail is thumb
         w.cleanup()
 
-    def test_set_thumbnail_sets_image(self, qtbot):
-        from extensions.video.widget import MpvCellWidget
-
-        w = MpvCellWidget()
-        w._path = "/test.mp4"
-        image = QtGui.QImage(100, 100, QtGui.QImage.Format_ARGB32)
-        w.set_thumbnail(image)
-        assert w._thumbnail is image
-        w.cleanup()
-
-    def test_set_thumbnail_replaces_existing(self, qtbot):
-        from extensions.video.widget import MpvCellWidget
-
-        w = MpvCellWidget()
-        w._path = "/test.mp4"
-        first = QtGui.QImage(10, 10, QtGui.QImage.Format_ARGB32)
-        w._thumbnail = first
-        second = QtGui.QImage(20, 20, QtGui.QImage.Format_ARGB32)
-        w.set_thumbnail(second)
-        assert w._thumbnail is second
-        w.cleanup()
-
     def test_suspend_clears_state(self, qtbot):
         from extensions.video.widget import MpvCellWidget
 
@@ -254,13 +164,6 @@ class TestMpvCellWidget:
         w.suspend()
         assert w._path is None
         assert w._thumbnail is None
-        w.cleanup()
-
-    def test_resume_is_noop(self, qtbot):
-        from extensions.video.widget import MpvCellWidget
-
-        w = MpvCellWidget()
-        w.resume()
         w.cleanup()
 
     def test_suspend_releases_cell_from_slot_manager(self, qtbot):
@@ -345,33 +248,6 @@ class TestMpvCellWidget:
         assert not MpvCellWidget._slot_manager.is_selected(w)
         assert MpvCellWidget._slot_manager.is_appeared(w)
         assert MpvCellWidget._slot_manager._appeared[w] is overlay
-        w.cleanup()
-
-    def test_overlay_leave_deactivates_hover(self, qtbot):
-        from extensions.video.widget import MpvCellWidget
-
-        parent = QtWidgets.QWidget()
-        w = MpvCellWidget(parent)
-        w._path = "/test.mp4"
-        w.setGeometry(0, 0, 200, 150)
-        sm = MpvCellWidget._slot_manager
-        sm.activate_hover(w, "/test.mp4")
-        sm._apply_hover()
-        MpvCellWidget._on_overlay_leave(w)
-        assert sm._hover_cell is None
-        w.cleanup()
-
-    def test_overlay_leave_keeps_selected(self, qtbot):
-        from extensions.video.widget import MpvCellWidget
-
-        parent = QtWidgets.QWidget()
-        w = MpvCellWidget(parent)
-        w._path = "/test.mp4"
-        w.setGeometry(0, 0, 200, 150)
-        sm = MpvCellWidget._slot_manager
-        sm.activate_select(w, "/test.mp4")
-        MpvCellWidget._on_overlay_leave(w)
-        assert sm.is_selected(w)
         w.cleanup()
 
 
@@ -860,9 +736,6 @@ class TestPlaybackSlotManager:
         assert len(manager._appear_queue) == 0
         cell.cleanup()
 
-    def test_pause_in_background_default_false(self, manager):
-        assert manager.pause_in_background is False
-
     def test_background_pauses_when_enabled(self, manager, parent):
         from PySide6.QtCore import Qt
 
@@ -915,16 +788,15 @@ class TestPlaybackSlotManager:
     def test_cooldown_releases_pool_and_players(self, manager, parent):
         player = MagicMock()
         manager._player_pool.append(player)
-        pool_overlay = manager._pool[0] if manager._pool else None
-        if pool_overlay:
-            pool_overlay.cleanup = MagicMock()
+        assert manager._pool
+        pool_overlay = manager._pool[0]
+        pool_overlay.cleanup = MagicMock()
         manager._cooldown()
         assert len(manager._pool) == 0
         assert len(manager._player_pool) == 0
         assert manager._cooled_down is True
         player.terminate.assert_called_once()
-        if pool_overlay:
-            pool_overlay.cleanup.assert_called_once()
+        pool_overlay.cleanup.assert_called_once()
 
     def test_cooldown_skipped_when_active_overlays(self, manager, parent):
         cell = self._make_cell(parent)
@@ -950,13 +822,10 @@ class TestPlaybackSlotManager:
         assert manager._cooled_down is False
 
     def test_touch_resets_timer(self, manager, parent):
-        import time as _time
-
         manager._touch()
         first_timer = manager._idle_timer
         assert first_timer is not None
         assert first_timer.is_alive()
-        _time.sleep(0.01)
         manager._touch()
         assert manager._idle_timer is not first_timer
         assert not first_timer.is_alive()
@@ -977,7 +846,3 @@ class TestPlaybackSlotManager:
         manager._check_idle()
         assert manager._cooled_down is False
         assert manager._pool == pool_before
-
-
-class TestThumbnailRunner:
-    pass

@@ -1,21 +1,7 @@
 import pytest
 from PySide6 import QtCore, QtGui, QtWidgets
-from wafer.qt.meta.viewer import MetaRowWidget, CollapsibleCard
+from wafer.qt.meta.viewer import CollapsibleCard
 from wafer.qt.common.dpi import dpix
-
-
-def test_meta_row_widget_has_key_role_style(qtbot):
-    w = MetaRowWidget(0, {"key": "value"})
-    qtbot.addWidget(w)
-    ss = w.styleSheet()
-    assert "keyRole" in ss
-    assert "font-weight" in ss
-
-
-def test_collapsible_card_default_expanded(qtbot):
-    card = CollapsibleCard("test", "test_key")
-    qtbot.addWidget(card)
-    assert card.expanded is True
 
 
 def test_collapsible_card_toggle(qtbot):
@@ -25,14 +11,6 @@ def test_collapsible_card_toggle(qtbot):
     assert card.expanded is False
     card.set_expanded(True)
     assert card.expanded is True
-
-
-def test_collapsible_card_set_content(qtbot):
-    card = CollapsibleCard("test", "test_key")
-    qtbot.addWidget(card)
-    label = QtWidgets.QLabel("hello")
-    card.set_content_widget(label)
-    assert card.content_widget() is label
 
 
 def test_collapsible_card_replace_content(qtbot):
@@ -72,12 +50,6 @@ def test_collapsible_card_title_with_count(qtbot):
     assert "(5)" in card.title()
     card.update_title_count(0)
     assert "(0)" not in card.title()
-
-
-def test_collapsible_card_is_frame(qtbot):
-    card = CollapsibleCard("test", "test_key")
-    qtbot.addWidget(card)
-    assert isinstance(card, QtWidgets.QFrame)
 
 
 def test_collapsible_card_content_hidden_when_collapsed(qtbot):

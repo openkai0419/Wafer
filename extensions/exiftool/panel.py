@@ -28,9 +28,6 @@ class ExifSettingsPanelPlugin(BasePanelPlugin):
     PRIORITY = 50
 
     def create_widget(self) -> QtWidgets.QWidget:
-        from .settings import migrate_legacy_filter
-
-        migrate_legacy_filter()
         return ExifSettingsWidget()
 
 

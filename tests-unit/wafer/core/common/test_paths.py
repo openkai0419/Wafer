@@ -6,7 +6,6 @@ from wafer.constants import APP_DATA_DIR_NAME
 from wafer.core.common.paths import (
     containing_dir,
     list_files,
-    natural_sort,
     normalize_path,
     resolve_cache_path,
     resolve_temp_path,
@@ -100,19 +99,6 @@ def test_resolve_temp_path_uses_app_temp_dir(monkeypatch):
     result = resolve_temp_path("comfyui_workflows/abc.json")
 
     assert result.endswith(f"/wafer-data/{APP_DATA_DIR_NAME}/.temp/comfyui_workflows/abc.json")
-
-
-def test_natural_sort():
-    result = natural_sort(["b2", "a10", "a2", "a1"])
-    assert result[0] == "a1"
-    assert result[1] == "a2"
-    assert result[2] == "a10"
-    assert result[3] == "b2"
-
-
-def test_natural_sort_trivial_inputs():
-    assert natural_sort([]) == []
-    assert natural_sort(["a"]) == ["a"]
 
 
 def test_get_name_without_ext():

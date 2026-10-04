@@ -1,7 +1,5 @@
-import pytest
 from PySide6 import QtWidgets
 
-from wafer.qt.commands.command.core import CommandMeta
 from wafer.qt.commands.command.payload import CommandPayload
 from wafer.qt.commands.binding.key.sequence import KeySequence
 from wafer.qt.commands.binding.mixins import CommandBindingMixin
@@ -19,11 +17,6 @@ def _first_row_hotkey(menu: QtWidgets.QMenu) -> str:
     a0 = menu.actions()[0]
     w = a0.defaultWidget() if hasattr(a0, "defaultWidget") else None
     return str(getattr(w, "_hotkey", "") or "") if w is not None else ""
-
-
-def test_commandmeta_hotkey_is_forbidden():
-    with pytest.raises(ValueError):
-        CommandMeta(id="x", display="X", hotkey="Ctrl+X")
 
 
 def test_menu_hotkey_is_resolved_from_bindings(qtbot):

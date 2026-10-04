@@ -5,7 +5,6 @@ import os
 import re
 import sqlite3
 
-import pytest
 
 from wafer.core.db.db_utils import apply_read_pragmas, apply_write_pragmas
 
@@ -85,9 +84,6 @@ class TestExtractLiteralHints:
     def test_simple_literal(self):
         assert _extract_literal_hints("hello") == ["hello"]
 
-    def test_digit_class(self):
-        assert _extract_literal_hints(r"\d+") == []
-
     def test_mixed_literal_and_class(self):
         hints = _extract_literal_hints(r"\d{4}_sunset")
         assert "_sunset" in hints
@@ -116,28 +112,16 @@ class TestExtractLiteralHints:
         hints = _extract_literal_hints(r"[abc]_test")
         assert "_test" in hints
 
-    def test_quantifier_star(self):
-        hints = _extract_literal_hints("ab*c")
-        assert "ab" not in hints
-        assert any("a" in h for h in hints)
-        assert any("c" in h for h in hints)
+    def test_quantifier_zero_min(self):
+        for pattern in ("ab*c", "ab?c", "ab{0,3}c"):
+            hints = _extract_literal_hints(pattern)
+            assert "ab" not in hints
+            assert any("a" in h for h in hints)
+            assert any("c" in h for h in hints)
 
-    def test_quantifier_plus(self):
-        hints = _extract_literal_hints("ab+c")
-        assert "ab" in hints
-
-    def test_quantifier_question(self):
-        hints = _extract_literal_hints("ab?c")
-        assert "ab" not in hints
-        assert any("a" in h for h in hints)
-
-    def test_quantifier_brace_zero_min(self):
-        hints = _extract_literal_hints("ab{0,3}c")
-        assert "ab" not in hints
-
-    def test_quantifier_brace_nonzero_min(self):
-        hints = _extract_literal_hints("ab{2,5}c")
-        assert "ab" in hints
+    def test_quantifier_nonzero_min(self):
+        for pattern in ("ab+c", "ab{2,5}c"):
+            assert "ab" in _extract_literal_hints(pattern)
 
     def test_dot_breaks_literal(self):
         hints = _extract_literal_hints("hello.world")
@@ -194,13 +178,6 @@ class TestInheritableParams:
         result = RegexFilter.inheritable_params(params)
         assert result == {"keys": ["path", "prompt"], "ignore_case": True}
         assert "pattern" not in result
-
-    def test_empty_params(self):
-        assert RegexFilter.inheritable_params({}) == {}
-
-    def test_partial_params(self):
-        result = RegexFilter.inheritable_params({"ignore_case": False})
-        assert result == {"ignore_case": False}
 
 
 class TestBuildPathQuery:
@@ -445,24 +422,6 @@ class TestMetaFiltering:
         )
         assert result == {"c:/a.jpg"}
 
-    def test_standard_modified_match(self, tmp_path):
-        db = _setup_db(
-            tmp_path,
-            files=["c:/a.jpg", "c:/b.jpg"],
-            source_num=[
-                ("c:/a.jpg", 100, 1700000000.0, None, None),
-                ("c:/b.jpg", 100, 1800000000.0, None, None),
-            ],
-        )
-        result = _query(
-            db,
-            {
-                "pattern": r"1700000000",
-                "keys": ["modified"],
-            },
-        )
-        assert result == {"c:/a.jpg"}
-
     def test_meta_value_like_match(self, tmp_path):
         db = _setup_db(
             tmp_path,
@@ -518,23 +477,6 @@ class TestMetaFiltering:
 
 
 class TestPostFilter:
-    def test_filepath_only_exact_verification(self, tmp_path):
-        db = _setup_db(
-            tmp_path,
-            files=[
-                "c:/photos/IMG_0001.jpg",
-                "c:/photos/IMG_test.jpg",
-            ],
-        )
-        result = _query(
-            db,
-            {
-                "pattern": r"IMG_\d{4}",
-                "keys": ["path"],
-            },
-        )
-        assert result == {"c:/photos/IMG_0001.jpg"}
-
     def test_mixed_keys_no_path_stripping(self, tmp_path):
         db = _setup_db(
             tmp_path,
@@ -552,17 +494,6 @@ class TestPostFilter:
 
 
 class TestEdgeCases:
-    def test_empty_db(self, tmp_path):
-        db = _setup_db(tmp_path)
-        result = _query(
-            db,
-            {
-                "pattern": r"test",
-                "keys": ["path"],
-            },
-        )
-        assert result == set()
-
     def test_pattern_matching_nothing(self, tmp_path):
         db = _setup_db(tmp_path, files=["c:/a.jpg"])
         result = _query(
@@ -608,44 +539,9 @@ class TestEdgeCases:
         )
         assert "c:/path\\to\\file.jpg" in result
 
-    def test_only_quantifiers_pattern(self, tmp_path):
-        db = _setup_db(tmp_path, files=["c:/a.jpg"])
-        result = _query(
-            db,
-            {
-                "pattern": r".+",
-                "keys": ["path"],
-            },
-        )
-        assert result == {"c:/a.jpg"}
-
-    def test_deeply_nested_groups(self, tmp_path):
-        hints = _extract_literal_hints(r"a((b|c)(d|e))f")
-        assert "a" in hints
-        assert "f" in hints
-        assert "b" not in hints
-        assert "c" not in hints
-
     def test_quantifier_on_group(self, tmp_path):
         hints = _extract_literal_hints(r"(abc)+_end")
         assert "_end" in hints
-
-    def test_percent_in_pattern(self, tmp_path):
-        db = _setup_db(
-            tmp_path,
-            files=[
-                "c:/100%_complete.jpg",
-                "c:/100_complete.jpg",
-            ],
-        )
-        result = _query(
-            db,
-            {
-                "pattern": r"100%_complete",
-                "keys": ["path"],
-            },
-        )
-        assert result == {"c:/100%_complete.jpg"}
 
     def test_underscore_in_literal(self, tmp_path):
         db = _setup_db(

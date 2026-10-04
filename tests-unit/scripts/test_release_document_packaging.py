@@ -6,24 +6,10 @@ import pytest
 from scripts import build, copy_clean_project
 
 
-def test_release_notes_are_included_in_portable_build_metadata():
-    assert "RELEASE_NOTES.md" in build.META_FILES
-    assert "CHANGELOG.md" in build.META_FILES
-
-
-def test_test_only_metadata_is_not_included_in_portable_build():
-    assert "conftest.py" not in build.SOURCE_ITEMS
-    assert "pyproject.toml" not in build.SOURCE_ITEMS
-
-
-def test_release_notes_are_included_in_clean_project_copy():
-    assert "RELEASE_NOTES.md" in copy_clean_project.COPY_FILES
-    assert "CHANGELOG.md" in copy_clean_project.COPY_FILES
-
-
-def test_test_only_metadata_is_preserved_in_clean_project_copy():
-    assert "conftest.py" in copy_clean_project.COPY_FILES
-    assert "pyproject.toml" in copy_clean_project.COPY_FILES
+def test_packaging_file_lists():
+    assert {"RELEASE_NOTES.md", "CHANGELOG.md"} <= set(build.META_FILES)
+    assert {"conftest.py", "pyproject.toml"}.isdisjoint(build.SOURCE_ITEMS)
+    assert {"RELEASE_NOTES.md", "CHANGELOG.md", "conftest.py", "pyproject.toml"} <= set(copy_clean_project.COPY_FILES)
 
 
 def test_generate_third_party_notices_uses_utf8_stdio_and_writes_output(tmp_path, monkeypatch):

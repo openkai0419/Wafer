@@ -11,7 +11,6 @@ from wafer.core.ipc.outbox import (
     _extract_pid,
     _delete_db_files,
     scan_all_outbox,
-    remove_outbox_from,
     remove_outbox_batch_from,
     cleanup_empty_outbox_files,
 )
@@ -100,20 +99,6 @@ class TestOutboxStore:
 
                 records = scan_all_outbox(db_filter=None)
                 assert len(records) == 3
-
-    def test_remove_from(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
-                store = OutboxStore("node-x")
-                rid = store.push("t", "p", "indexer")
-                db_path = store._path
-                store.close()
-
-                remove_outbox_from(db_path, rid)
-
-                store2 = OutboxStore("node-x")
-                assert store2.pending() == []
-                store2.close()
 
     def test_remove_batch_from(self):
         with tempfile.TemporaryDirectory() as tmp:

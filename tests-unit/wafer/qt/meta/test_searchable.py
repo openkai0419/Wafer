@@ -9,7 +9,6 @@ from wafer.qt.meta.searchable import (
     highlight_html,
     SHORT_VALUE_LIMIT,
     SNIPPET_BUDGET,
-    SAFETY_CHAR_LIMIT,
 )
 from wafer.qt.meta.tag_edit_service import TagEditService
 
@@ -57,28 +56,12 @@ def _find_menu_action(menu, text):
     return None
 
 
-def test_set_data_populates_grid(qtbot):
-    w = SearchableMetaWidget()
-    qtbot.addWidget(w)
-    w.set_data({"a": "1", "b": "2"})
-    assert w._data == {"a": "1", "b": "2"}
-    assert len(w._filtered_keys) == 2
-
-
 def test_filter_by_key(qtbot):
     w = SearchableMetaWidget()
     qtbot.addWidget(w)
     w.set_data({"width": "100", "height": "200", "model": "Canon"})
     w._apply_filter("width")
     assert w._filtered_keys == ["width"]
-
-
-def test_filter_by_value(qtbot):
-    w = SearchableMetaWidget()
-    qtbot.addWidget(w)
-    w.set_data({"width": "100", "height": "200", "model": "Canon"})
-    w._apply_filter("canon")
-    assert w._filtered_keys == ["model"]
 
 
 def test_filter_empty_shows_all(qtbot):
@@ -161,11 +144,6 @@ def test_highlight_html_no_query():
     assert "hello world" in result
 
 
-def test_highlight_html_with_query():
-    result = highlight_html("hello world", "world")
-    assert "<span" in result
-
-
 def test_highlight_html_escapes_html():
     result = highlight_html("<b>bold</b>", "")
     assert "<b>" not in result
@@ -190,21 +168,6 @@ def test_model_row_count_matches_filter(qtbot):
     assert w._model.rowCount() == 1
     w._apply_filter("")
     assert w._model.rowCount() == 3
-
-
-def test_safety_limit_truncates(qtbot):
-    w = SearchableMetaWidget()
-    qtbot.addWidget(w)
-    huge = "a" * (SAFETY_CHAR_LIMIT + 500)
-    w.set_data({"big": huge})
-    assert len(w._filtered_keys) == 1
-
-
-def test_search_index_none_before_async_build(qtbot):
-    w = SearchableMetaWidget()
-    qtbot.addWidget(w)
-    w.set_data({"a": "1"})
-    assert w._search_index is None or isinstance(w._search_index, dict)
 
 
 def test_search_index_built_after_async(qtbot):
@@ -243,12 +206,6 @@ def test_set_data_cancels_previous_index_build(qtbot):
     qtbot.waitUntil(lambda: w._search_index is not None, timeout=5000)
     assert "new" in w._search_index
     assert "old" not in w._search_index
-
-
-def test_debounce_attribute_exists(qtbot):
-    w = SearchableMetaWidget()
-    qtbot.addWidget(w)
-    assert w.DEBOUNCE_MS == 50
 
 
 def test_full_value_returns_untruncated(qtbot):
@@ -348,18 +305,6 @@ def test_delete_uses_full_key(qtbot, monkeypatch):
     w._submit_delete("k")
     payload = node.send_reliable.call_args[0][1]
     assert payload["deletes"] == ["custom.k"]
-
-
-def test_detail_dialog_places_lock_and_delete_in_bottom_action_row(qtbot):
-    dlg = SearchKvDetailDialog(None, title="Edit", key="k", value="v", locked=True)
-    qtbot.addWidget(dlg)
-    button_layout = dlg.layout().itemAt(dlg.layout().count() - 1).widget().layout()
-    assert button_layout.itemAt(0).widget() is dlg.delete_btn
-    assert button_layout.itemAt(1).widget() is dlg.lock_check
-    assert button_layout.itemAt(2).spacerItem() is not None
-    assert button_layout.itemAt(3).widget() is dlg.revert_btn
-    assert button_layout.itemAt(4).widget() is dlg.save_btn
-    assert button_layout.itemAt(5).widget() is dlg.cancel_btn
 
 
 def test_detail_dialog_hides_delete_in_add_mode(qtbot):

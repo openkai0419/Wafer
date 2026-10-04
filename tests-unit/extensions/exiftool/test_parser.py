@@ -210,32 +210,15 @@ class TestFlatten:
         assert not any(k.startswith("ExifTool:") for k in meta)
         assert aspect == pytest.approx(4000 / 3000)
 
-    def test_orientation_rotated_90(self):
-        data = {
-            "File:ImageWidth": 3000,
-            "File:ImageHeight": 4000,
-            "IFD0:Orientation": "Rotate 90 CW",
-        }
-        meta, aspect = flatten(data)
-        assert aspect == pytest.approx(4000 / 3000)
-
-    def test_orientation_rotated_270(self):
-        data = {
-            "File:ImageWidth": 3000,
-            "File:ImageHeight": 4000,
-            "IFD0:Orientation": "Rotate 270 CW",
-        }
-        meta, aspect = flatten(data)
-        assert aspect == pytest.approx(4000 / 3000)
-
-    def test_orientation_normal(self):
-        data = {
-            "File:ImageWidth": 4000,
-            "File:ImageHeight": 3000,
-            "IFD0:Orientation": "Horizontal (normal)",
-        }
-        meta, aspect = flatten(data)
-        assert aspect == pytest.approx(4000 / 3000)
+    def test_orientation_rotated(self):
+        for orientation in ("Rotate 90 CW", "Rotate 270 CW"):
+            data = {
+                "File:ImageWidth": 3000,
+                "File:ImageHeight": 4000,
+                "IFD0:Orientation": orientation,
+            }
+            meta, aspect = flatten(data)
+            assert aspect == pytest.approx(4000 / 3000)
 
     def test_list_values(self):
         data = {

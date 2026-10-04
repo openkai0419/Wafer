@@ -9,7 +9,6 @@ from wafer.builtins.commands.foldertree import (
     FolderTreeCommands,
     _ctx_normalized_path,
     _ctx_normalized_paths,
-    _ctx_dir_path,
     next_folder,
     parent_folder,
     remove_from_view,
@@ -61,13 +60,6 @@ def test_ctx_normalized_path_returns_path_for_nonexistent_folder(tmp_path):
     result = _ctx_normalized_path(ctx)
     assert result is not None
     assert "nonexistent" in result
-
-
-def test_ctx_dir_path_returns_none_for_nonexistent_folder(tmp_path):
-    missing = str(tmp_path / "nonexistent")
-    ctx = _FakeCtx(path=missing)
-    result = _ctx_dir_path(ctx)
-    assert result is None
 
 
 def test_ctx_normalized_path_returns_path_for_existing_folder(tmp_path):

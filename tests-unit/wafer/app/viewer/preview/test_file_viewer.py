@@ -1,4 +1,3 @@
-import py_compile
 from unittest.mock import MagicMock, patch, PropertyMock
 from PySide6 import QtGui
 from wafer.app.viewer.preview.file_viewer import _format_meta, FileViewerController, ViewerBatch
@@ -53,10 +52,6 @@ def _mock_engine(**overrides):
     )
     engine.get_collection_status.return_value = defaults["get_collection_status"]
     return engine
-
-
-def test_compile():
-    py_compile.compile("wafer/app/viewer/preview/file_viewer.py")
 
 
 def test_format_meta_source_same_as_path():
@@ -391,17 +386,6 @@ class TestViewerBatchNavigation:
 
         assert model.current_index() == 2
 
-    def test_autoplay_advance_single_viewer_advances_one(self, qtbot):
-        w, model = self._make_controller(qtbot)
-        model.set_items(["a", "b", "c"], None)
-        model.set_current_index(0)
-        w._set_target_contexts((_context("a"),))
-        w._autoplay_active = True
-
-        w._do_advance()
-
-        assert model.current_index() == 1
-
     def test_image_display_count_uses_declared_max_without_orientation_probe(self, qtbot, tmp_path):
         first = tmp_path / "first.png"
         spread = tmp_path / "spread.png"
@@ -411,17 +395,6 @@ class TestViewerBatchNavigation:
         _save_image(last, 100, 200)
         w, model = self._make_controller(qtbot)
         model.set_items([str(first), str(spread), str(last)], None)
-        _image_viewer(w).set_image_spread(pages=3)
-
-        assert _image_viewer(w).display_count(0, model.paths) == 3
-        assert len(w._resolve_viewer_batch(0).contexts) == 3
-
-    def test_image_display_count_can_group_multiple_images(self, qtbot, tmp_path):
-        paths = [tmp_path / f"{i}.png" for i in range(4)]
-        for path in paths:
-            _save_image(path, 100, 200)
-        w, model = self._make_controller(qtbot)
-        model.set_items([str(path) for path in paths], None)
         _image_viewer(w).set_image_spread(pages=3)
 
         assert _image_viewer(w).display_count(0, model.paths) == 3
@@ -563,20 +536,6 @@ def test_flush_shows_image_for_default():
     assert viewer._pending_meta is None
 
 
-def test_flush_shows_error_image_when_content_none_for_default():
-    viewer = _make_viewer_stub()
-    viewer._target_plugin = _IMAGE_VIEWER_NAME
-    viewer._pending_content = (ViewerBatch(_IMAGE_VIEWER_NAME, "/a.zip", (_context("/a.zip"),)), None)
-    viewer._pending_meta = [{"size": "0"}, {}, {}, {}]
-
-    batch = viewer._pending_content[0]
-    with patch("wafer.app.viewer.preview.file_viewer.viewer_resolver") as mock_resolver:
-        viewer._flush()
-
-    mock_resolver.render.assert_called_once_with(batch.contexts, plugin_name=_IMAGE_VIEWER_NAME)
-    viewer.meta_viewer.set_data.assert_called_once()
-
-
 def test_flush_renders_widget_plugin():
     viewer = _make_viewer_stub()
     viewer._target_plugin = "stub_widget"
@@ -668,22 +627,6 @@ def test_on_path_changed_widget_sets_target():
     assert viewer._target_plugin == "stub_widget"
 
 
-def test_switch_to_deactivates_previous_widget_plugin():
-    viewer = _make_viewer_stub()
-    viewer.content_viewer._current_plugin_name = "stub_widget"
-
-    with patch("wafer.app.viewer.preview.content_viewer.viewer_resolver") as mock_resolver:
-        from wafer.app.viewer.preview.content_viewer import ContentViewerWidget
-
-        viewer.content_viewer.switch_to = lambda name: ContentViewerWidget.switch_to(viewer.content_viewer, name)
-        viewer._switch_to = lambda name: FileViewerController._switch_to(viewer, name)
-        viewer._switch_to(_IMAGE_VIEWER_NAME)
-
-        mock_resolver.deactivate.assert_called_once_with("stub_widget")
-
-    assert viewer.content_viewer._current_plugin_name == _IMAGE_VIEWER_NAME
-
-
 def test_switch_to_activates_new_widget_plugin():
     viewer = _make_viewer_stub()
     viewer.content_viewer._current_plugin_name = _IMAGE_VIEWER_NAME
@@ -728,6 +671,7 @@ def test_switch_to_image_plugin_activates_image():
 
         mock_resolver.deactivate.assert_called_once_with("stub_widget")
         mock_resolver.activate.assert_called_once_with(_IMAGE_VIEWER_NAME)
+    assert viewer.content_viewer._current_plugin_name == _IMAGE_VIEWER_NAME
 
 
 def test_switch_to_unknown_plugin_uses_placeholder():

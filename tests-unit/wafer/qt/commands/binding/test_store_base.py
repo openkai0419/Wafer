@@ -18,14 +18,6 @@ def _reset_store():
 
 
 class TestResolveForWidget:
-    def test_global_scope(self):
-        data = {
-            KeySequence(["A"]): {"*": CommandPayload("cmd.a")},
-        }
-        result = resolve_for_widget(data, "Viewer")
-        assert KeySequence(["A"]) in result
-        assert result[KeySequence(["A"])].id == "cmd.a"
-
     def test_widget_scope_overrides_global(self):
         data = {
             KeySequence(["A"]): {
@@ -67,15 +59,6 @@ class TestResolveForWidget:
 
 
 class TestBindingStoreBaseSetAll:
-    def test_set_all_basic(self):
-        store = _TestStore.instance()
-        store.set_all(
-            {
-                KeySequence(["A"]): {"*": CommandPayload("cmd.a")},
-            }
-        )
-        assert store.get_all()[KeySequence(["A"])]["*"].id == "cmd.a"
-
     def test_set_all_invalid_key_type_raises(self):
         store = _TestStore.instance()
         with pytest.raises(TypeError, match="KeySequence"):
@@ -101,12 +84,6 @@ class TestBindingStoreBaseSetBinding:
         store.set_binding(KeySequence(["A"]), "*", CommandPayload("cmd.a"))
         store.set_binding(KeySequence(["A"]), "*", CommandPayload("cmd.b"))
         assert store.resolve("*", KeySequence(["A"])).id == "cmd.b"
-
-    def test_delete_binding_with_none(self):
-        store = _TestStore.instance()
-        store.set_binding(KeySequence(["A"]), "*", CommandPayload("cmd.a"))
-        store.set_binding(KeySequence(["A"]), "*", None)
-        assert store.resolve("*", KeySequence(["A"])) is None
 
     def test_delete_binding_cleans_empty_key(self):
         store = _TestStore.instance()
@@ -148,27 +125,6 @@ class TestBindingStoreBaseSetBinding:
 
 
 class TestBindingStoreBaseResolve:
-    def test_widget_scope_hit(self):
-        store = _TestStore.instance()
-        store.set_all(
-            {
-                KeySequence(["A"]): {
-                    "*": CommandPayload("cmd.global"),
-                    "viewer": CommandPayload("cmd.viewer"),
-                },
-            }
-        )
-        assert store.resolve("viewer", KeySequence(["A"])).id == "cmd.viewer"
-
-    def test_global_fallback(self):
-        store = _TestStore.instance()
-        store.set_all(
-            {
-                KeySequence(["A"]): {"*": CommandPayload("cmd.global")},
-            }
-        )
-        assert store.resolve("viewer", KeySequence(["A"])).id == "cmd.global"
-
     def test_no_match(self):
         store = _TestStore.instance()
         store.set_all(

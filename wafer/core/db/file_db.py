@@ -779,22 +779,6 @@ class FileDB:
                 cur.close()
 
     @profiler.profile
-    def get_sources_without_collector(self, collector):
-        cur = self.get_reader_cursor()
-        try:
-            cur.execute(
-                """SELECT s.source FROM sources s
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM collection_status cs
-                    WHERE cs.source = s.source AND cs.collector = ?
-                )""",
-                (collector,),
-            )
-            return [row[0] for row in cur.fetchall()]
-        finally:
-            cur.close()
-
-    @profiler.profile
     def get_pending_sources(self, collector, limit=5000):
         cur = self.get_reader_cursor()
         try:
@@ -991,20 +975,6 @@ class FileDB:
             return f"{len(prefixes)} folders"
         return "all sources"
 
-    def delete_collection_data(self, collector: str | None = None, sources: Sequence[str] | None = None, prefixes: Sequence[str] | None = None, *, drop_status: bool = False) -> tuple[int, int, int]:
-        sources = [s for s in sources if s] or None if sources else None
-        prefixes = [p for p in prefixes if p] or None if prefixes else None
-        with self._write_lock, self.conn:
-            cur = self.conn.cursor()
-            try:
-                meta_deleted, tags_deleted, child_deleted = self._delete_collection_cur(cur, collector, sources, prefixes, drop_status=drop_status)
-            finally:
-                cur.close()
-        AppLogger.info(
-            f"[DB] Deleted collection data: collector={collector or '*'}, {self._scope_label(sources, prefixes)}, children={child_deleted}, meta={meta_deleted}, tags={tags_deleted}, drop_status={drop_status}"
-        )
-        return meta_deleted, tags_deleted, child_deleted
-
     def delete_keys(self, keys: list[str]) -> tuple[int, int]:
         if not keys:
             return 0, 0
@@ -1073,40 +1043,6 @@ class FileDB:
                 cur.close()
         AppLogger.info(f"[DB] Deleted all sources (forget whole DB): {affected}")
         return affected
-
-    def collector_data_counts(self) -> list[tuple[str, int]]:
-        cur = self.get_reader_cursor()
-        try:
-            cur.execute("SELECT collector, COUNT(*) FROM collection_status WHERE status = 'ok' GROUP BY collector")
-            return cur.fetchall()
-        finally:
-            cur.close()
-
-    def prefix_data_summary(self) -> list[tuple[str, int, int]]:
-        cur = self.get_reader_cursor()
-        try:
-            cur.execute("""
-                SELECT prefix, SUM(meta_count), SUM(tag_count) FROM (
-                    SELECT
-                        CASE WHEN INSTR(key, '.') > 0
-                             THEN SUBSTR(key, 1, INSTR(key, '.') - 1)
-                             ELSE '' END AS prefix,
-                        COUNT(*) AS meta_count,
-                        0 AS tag_count
-                    FROM meta_info GROUP BY prefix
-                    UNION ALL
-                    SELECT
-                        CASE WHEN INSTR(key, '.') > 0
-                             THEN SUBSTR(key, 1, INSTR(key, '.') - 1)
-                             ELSE '' END AS prefix,
-                        0 AS meta_count,
-                        COUNT(*) AS tag_count
-                    FROM tags GROUP BY prefix
-                ) GROUP BY prefix ORDER BY prefix
-            """)
-            return cur.fetchall()
-        finally:
-            cur.close()
 
     def delete_meta_and_tags_by_keys(self, delete_entries: list[tuple[str, str | None, list[str], list[str]]]):
         if not delete_entries:

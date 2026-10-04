@@ -1,71 +1,39 @@
-import py_compile
-import time
+from datetime import UTC, datetime
+from types import SimpleNamespace
 
+from wafer.app.indexer.receivers import _batch_utils
 from wafer.app.indexer.receivers._batch_utils import (
-    BATCH_SIZE,
-    FLUSH_DELAY,
     ResultBuffer,
     try_float,
     try_parse_datetime,
 )
 
 
-def test_compile():
-    py_compile.compile("wafer/app/indexer/receivers/_batch_utils.py")
-
-
-def test_constants():
-    assert BATCH_SIZE > 0
-    assert FLUSH_DELAY > 0
-
-
-def test_try_float_none():
+def test_try_float_numeric():
     assert try_float(None) is None
-
-
-def test_try_float_int():
     assert try_float(42) == 42.0
-
-
-def test_try_float_float():
     assert try_float(3.14) == 3.14
-
-
-def test_try_float_numeric_string():
     assert try_float("123.456") == 123.456
+    assert try_float("100") == 100.0
 
 
-def test_try_float_non_numeric():
+def test_try_float_rejects_non_numeric():
     assert try_float("hello") is None
-
-
-def test_try_float_empty():
     assert try_float("") is None
-
-
-def test_try_float_exif_datetime():
-    result = try_float("2024:01:15 10:30:45")
-    assert isinstance(result, float)
-    assert result > 0
-
-
-def test_try_float_iso_datetime():
-    result = try_float("2024-01-15 10:30:45")
-    assert isinstance(result, float)
-
-
-def test_try_float_date_only():
-    assert isinstance(try_float("2024:06:01"), float)
-    assert isinstance(try_float("2024-06-01"), float)
-
-
-def test_try_parse_datetime_valid():
-    result = try_parse_datetime("2024:01:15 10:30:45")
-    assert isinstance(result, float)
-
-
-def test_try_parse_datetime_invalid():
+    assert try_float("not-a-date") is None
     assert try_parse_datetime("not-a-date") is None
+
+
+def test_try_float_parses_datetime_formats():
+    cases = {
+        "2024:01:15 10:30:45": datetime(2024, 1, 15, 10, 30, 45, tzinfo=UTC),
+        "2024-01-15 10:30:45": datetime(2024, 1, 15, 10, 30, 45, tzinfo=UTC),
+        "2024:06:01": datetime(2024, 6, 1, tzinfo=UTC),
+        "2024-06-01": datetime(2024, 6, 1, tzinfo=UTC),
+    }
+    for text, expected in cases.items():
+        assert try_parse_datetime(text) == expected.timestamp()
+        assert try_float(text) == expected.timestamp()
 
 
 def test_result_buffer_append_drain():
@@ -102,10 +70,11 @@ def test_result_buffer_has_pending():
     assert buf.has_pending() is True
 
 
-def test_result_buffer_time_since_first():
+def test_result_buffer_time_since_first(monkeypatch):
+    clock = {"now": 100.0}
+    monkeypatch.setattr(_batch_utils, "time", SimpleNamespace(monotonic=lambda: clock["now"]))
     buf = ResultBuffer(lambda x: {})
     assert buf.time_since_first() == 0.0
     buf.append({"x": 1}, 1)
-    time.sleep(0.05)
-    elapsed = buf.time_since_first()
-    assert elapsed >= 0.04
+    clock["now"] = 100.5
+    assert buf.time_since_first() == 0.5

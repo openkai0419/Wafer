@@ -1,5 +1,3 @@
-import py_compile
-
 import pytest
 
 from wafer.app.collector.worker import CollectorWorker, _SHUTDOWN_WAIT
@@ -22,10 +20,6 @@ def make_worker():
         worker._stop.set()
         worker._batch_queue.put(None)
         worker._executor.shutdown(wait=True, cancel_futures=True)
-
-
-def test_compile():
-    py_compile.compile("wafer/app/collector/worker.py")
 
 
 def test_unknown_plugin_raises():
@@ -144,12 +138,6 @@ def test_on_notify_calls_plugin(make_worker):
     assert result is True
 
 
-def test_notify_subscribed(make_worker):
-    worker = make_worker()
-    assert "plugin.notify" in worker._node._handlers
-    assert "worker.shutdown" in worker._node._handlers
-
-
 def test_worker_shutdown_message_sets_stop(make_worker):
     from unittest.mock import MagicMock
 
@@ -158,19 +146,6 @@ def test_worker_shutdown_message_sets_stop(make_worker):
     result = worker._on_shutdown(msg)
     assert result is True
     assert worker._stop.is_set()
-
-
-def test_stop_calls_plugin_shutdown_once(make_worker):
-    from unittest.mock import MagicMock
-
-    worker = make_worker()
-    worker._node = MagicMock()
-    worker._plugin.shutdown = MagicMock()
-
-    worker.stop()
-    worker.stop()
-
-    worker._plugin.shutdown.assert_called_once()
 
 
 def test_stop_shuts_down_executor_before_join(make_worker):
@@ -206,10 +181,6 @@ def test_stop_continues_when_plugin_shutdown_fails(make_worker):
     worker._node.stop.assert_called()
 
 
-def test_constants():
-    assert _SHUTDOWN_WAIT > 0
-
-
 def test_handle_batch_rejects_when_stopped(make_worker):
     from unittest.mock import MagicMock
     from wafer.core.ipc.message import Message
@@ -226,16 +197,6 @@ def test_handle_batch_rejects_when_stopped(make_worker):
     )
     result = worker._handle_batch(msg)
     assert result is True
-
-
-def test_shutdown_cancel_futures(make_worker):
-    from unittest.mock import MagicMock
-
-    worker = make_worker()
-    worker._node = MagicMock()
-    worker._node.stop = MagicMock()
-    worker.stop()
-    assert worker._stop.is_set()
 
 
 def test_stop_shuts_plugin_down_before_waiting_for_workers(make_worker):
@@ -265,12 +226,3 @@ def test_stop_shuts_plugin_down_before_waiting_for_workers(make_worker):
 
     assert released.is_set()
     assert elapsed < 5, f"stop() waited {elapsed:.1f}s for in-flight work instead of releasing it first"
-
-
-def _wait_for(predicate, timeout=5.0):
-    import time
-
-    deadline = time.monotonic() + timeout
-    while not predicate() and time.monotonic() < deadline:
-        time.sleep(0.01)
-    return predicate()

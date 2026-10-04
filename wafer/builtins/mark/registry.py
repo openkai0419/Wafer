@@ -260,12 +260,5 @@ class MarkRegistry(QtCore.QObject):
         return f"{_TAG_PREFIX}.{mark_id}"
 
     @staticmethod
-    def parse_key(key: str) -> str | None:
-        if not key or not key.startswith(_TAG_PREFIX + "."):
-            return None
-        rest = key[len(_TAG_PREFIX) + 1 :]
-        return rest or None
-
-    @staticmethod
     def tag_prefix() -> str:
         return _TAG_PREFIX

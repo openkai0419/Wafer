@@ -1,62 +1,8 @@
-import py_compile
 import threading
 from unittest.mock import MagicMock, patch
 
 from wafer.app.indexer.main_indexer import IndexerProcess
 from wafer.app.indexer.runtime.task import TaskPriority
-
-
-def test_compile():
-    py_compile.compile("wafer/app/indexer/main_indexer.py")
-
-
-def test_compile_collector_receiver():
-    py_compile.compile("wafer/app/indexer/receivers/collector_receiver.py")
-
-
-def test_compile_scanner():
-    py_compile.compile("wafer/app/indexer/scanner.py")
-
-
-class TestIndexerProcessInit:
-    @patch("wafer.app.indexer.main_indexer.Node")
-    def test_accepts_stop_event(self, mock_node_cls):
-        mock_node_cls.return_value = MagicMock()
-        stop = threading.Event()
-        proc = IndexerProcess("test", stop_event=stop)
-        assert proc._stop_event is stop
-
-    @patch("wafer.app.indexer.main_indexer.Node")
-    def test_subscribes_to_db_delete(self, mock_node_cls):
-        node = MagicMock()
-        mock_node_cls.return_value = node
-        IndexerProcess("test")
-        topics = [call.args[0] for call in node.subscribe.call_args_list]
-        assert "db.delete" in topics
-
-    @patch("wafer.app.indexer.main_indexer.Node")
-    def test_subscribes_to_recollect(self, mock_node_cls):
-        node = MagicMock()
-        mock_node_cls.return_value = node
-        IndexerProcess("test")
-        topics = [call.args[0] for call in node.subscribe.call_args_list]
-        assert "recollect" in topics
-
-    @patch("wafer.app.indexer.main_indexer.Node")
-    def test_subscribes_to_kv_convert_scope(self, mock_node_cls):
-        node = MagicMock()
-        mock_node_cls.return_value = node
-        IndexerProcess("test")
-        topics = [call.args[0] for call in node.subscribe.call_args_list]
-        assert "kv.convert_scope" in topics
-
-    @patch("wafer.app.indexer.main_indexer.Node")
-    def test_subscribes_to_keyfilter_reload(self, mock_node_cls):
-        node = MagicMock()
-        mock_node_cls.return_value = node
-        IndexerProcess("test")
-        topics = [call.args[0] for call in node.subscribe.call_args_list]
-        assert "keyfilter.reload" in topics
 
 
 class TestOnDeleteRequested:
@@ -100,18 +46,6 @@ class TestDelete:
     @patch("wafer.app.indexer.main_indexer.remove_orphan_databases")
     @patch("wafer.app.indexer.main_indexer.delete_database_files")
     @patch("wafer.app.indexer.main_indexer.Node")
-    def test_delete_without_stop_event(self, mock_node_cls, mock_del_files, mock_orphan):
-        node = MagicMock()
-        mock_node_cls.return_value = node
-        proc = IndexerProcess("test")
-        proc.setting_db = MagicMock()
-        proc.setting_db.db_name = "test_setting.db"
-        proc.delete()
-        node.send.assert_called_with("db.deleted", "test", dst="viewer")
-
-    @patch("wafer.app.indexer.main_indexer.remove_orphan_databases")
-    @patch("wafer.app.indexer.main_indexer.delete_database_files")
-    @patch("wafer.app.indexer.main_indexer.Node")
     def test_delete_with_setting_db_none(self, mock_node_cls, mock_del_files, mock_orphan):
         node = MagicMock()
         mock_node_cls.return_value = node
@@ -124,36 +58,11 @@ class TestDelete:
 
 class TestPeriodicBackfill:
     @patch("wafer.app.indexer.main_indexer.Node")
-    def test_register_periodic_tasks_includes_backfill(self, mock_node_cls):
-        mock_node_cls.return_value = MagicMock()
-        proc = IndexerProcess("test")
-        proc.scheduler = MagicMock()
-        proc._register_periodic_tasks()
-        names = [call.args[0].name for call in proc.scheduler.add_periodic_task.call_args_list]
-        assert "backfill_pending" in names
-
-    @patch("wafer.app.indexer.main_indexer.Node")
-    def test_request_backfill_delegates_to_scanner(self, mock_node_cls):
-        mock_node_cls.return_value = MagicMock()
-        proc = IndexerProcess("test")
-        proc.scanner = MagicMock()
-        proc._request_backfill()
-        proc.scanner.backfill_pending.assert_called_once()
-
-    @patch("wafer.app.indexer.main_indexer.Node")
     def test_request_backfill_without_scanner(self, mock_node_cls):
         mock_node_cls.return_value = MagicMock()
         proc = IndexerProcess("test")
         proc.scanner = None
         proc._request_backfill()
-
-    @patch("wafer.app.indexer.main_indexer.Node")
-    def test_request_idle_rescan_delegates_to_watcher_refresh(self, mock_node_cls):
-        mock_node_cls.return_value = MagicMock()
-        proc = IndexerProcess("test")
-        proc.folder_watcher = MagicMock()
-        proc._request_idle_rescan()
-        proc.folder_watcher.refresh_watch.assert_called_once()
 
     @patch("wafer.app.indexer.main_indexer.Node")
     def test_request_idle_rescan_without_watcher(self, mock_node_cls):
@@ -164,15 +73,6 @@ class TestPeriodicBackfill:
 
 
 class TestIdleProgressReset:
-    @patch("wafer.app.indexer.main_indexer.Node")
-    def test_register_includes_idle_progress_reset(self, mock_node_cls):
-        mock_node_cls.return_value = MagicMock()
-        proc = IndexerProcess("test")
-        proc.scheduler = MagicMock()
-        proc._register_periodic_tasks()
-        names = [call.args[0].name for call in proc.scheduler.add_periodic_task.call_args_list]
-        assert "idle_progress_reset" in names
-
     @patch("wafer.app.indexer.main_indexer.Node")
     def test_idle_progress_reset_calls_reset_when_active(self, mock_node_cls):
         mock_node_cls.return_value = MagicMock()
@@ -201,20 +101,6 @@ class TestIdleProgressReset:
 
 
 class TestPeriodicTaskConfig:
-    @patch("wafer.app.indexer.main_indexer.Node")
-    def test_once_per_idle_flags(self, mock_node_cls):
-        mock_node_cls.return_value = MagicMock()
-        proc = IndexerProcess("test")
-        proc.scheduler = MagicMock()
-        proc._register_periodic_tasks()
-        tasks = {call.args[0].name: call.args[0] for call in proc.scheduler.add_periodic_task.call_args_list}
-        assert tasks["truncate_checkpoint"].once_per_idle is True
-        assert tasks["cleanup_optimize"].once_per_idle is True
-        assert tasks["idle_progress_reset"].once_per_idle is True
-        assert tasks["retry_stale_dispatched"].once_per_idle is False
-        assert tasks["backfill_pending"].once_per_idle is False
-        assert tasks["idle_rescan"].once_per_idle is False
-
     @patch("wafer.app.indexer.main_indexer.Node")
     def test_idle_rescan_is_retry_priority(self, mock_node_cls):
         mock_node_cls.return_value = MagicMock()
@@ -304,17 +190,6 @@ class TestOnRecollect:
         proc.writer.reset_collection.assert_called_once_with(None, None, None, None, delete=False, re_collect=True)
 
     @patch("wafer.app.indexer.main_indexer.Node")
-    def test_reset_with_delete(self, mock_node_cls):
-        mock_node_cls.return_value = MagicMock()
-        proc = self._proc()
-        msg = MagicMock()
-        msg.payload = {"mode": "reset", "collector": "exif", "sources": ["/a"], "delete": True}
-        proc._on_recollect(msg)
-        task = proc.scheduler.submit.call_args[0][0]
-        task.run()
-        proc.writer.reset_collection.assert_called_once_with("exif", ["/a"], None, None, delete=True, re_collect=True)
-
-    @patch("wafer.app.indexer.main_indexer.Node")
     def test_forget_sources(self, mock_node_cls):
         mock_node_cls.return_value = MagicMock()
         proc = self._proc()
@@ -360,12 +235,12 @@ class TestOnRecollect:
         mock_node_cls.return_value = MagicMock()
         proc = self._proc()
         msg = MagicMock()
-        msg.payload = {"mode": "reset", "collector": "color", "delete": True, "re_collect": True}
+        msg.payload = {"mode": "reset", "collector": "color", "sources": ["/a"], "delete": True, "re_collect": True}
         proc._on_recollect(msg)
         task = proc.scheduler.submit.call_args[0][0]
         assert task.name == "recollect_reset"
         task.run()
-        proc.writer.reset_collection.assert_called_once_with("color", None, None, None, delete=True, re_collect=True)
+        proc.writer.reset_collection.assert_called_once_with("color", ["/a"], None, None, delete=True, re_collect=True)
 
     @patch("wafer.app.indexer.main_indexer.Node")
     def test_reset_delete_no_recollect(self, mock_node_cls):

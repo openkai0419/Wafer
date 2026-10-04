@@ -18,34 +18,20 @@ def _drag_enter_event(mime: QtCore.QMimeData) -> QtGui.QDragEnterEvent:
     )
 
 
-def test_drop_enter_sets_copy_action(qtbot):
+def test_drop_enter_sets_action_for_each_op(qtbot):
     qtbot.addWidget(QtWidgets.QWidget())
-    mime = QtCore.QMimeData()
-    mime.setUrls([QtCore.QUrl.fromLocalFile(__file__)])
-    ev = _drag_enter_event(mime)
-    ctx = CommandContext.create(None, None, source="drop", event=ev)
-    GridViewDropCommands._apply_drop_action(ctx, "copy")
-    assert ev.dropAction() == QtCore.Qt.DropAction.CopyAction
-
-
-def test_drop_enter_sets_move_action(qtbot):
-    qtbot.addWidget(QtWidgets.QWidget())
-    mime = QtCore.QMimeData()
-    mime.setUrls([QtCore.QUrl.fromLocalFile(__file__)])
-    ev = _drag_enter_event(mime)
-    ctx = CommandContext.create(None, None, source="drop", event=ev)
-    GridViewDropCommands._apply_drop_action(ctx, "move")
-    assert ev.dropAction() == QtCore.Qt.DropAction.MoveAction
-
-
-def test_drop_enter_sets_ignore_action(qtbot):
-    qtbot.addWidget(QtWidgets.QWidget())
-    mime = QtCore.QMimeData()
-    mime.setUrls([QtCore.QUrl.fromLocalFile(__file__)])
-    ev = _drag_enter_event(mime)
-    ctx = CommandContext.create(None, None, source="drop", event=ev)
-    GridViewDropCommands._apply_drop_action(ctx, "ignore")
-    assert ev.dropAction() == QtCore.Qt.DropAction.IgnoreAction
+    expected = {
+        "copy": QtCore.Qt.DropAction.CopyAction,
+        "move": QtCore.Qt.DropAction.MoveAction,
+        "ignore": QtCore.Qt.DropAction.IgnoreAction,
+    }
+    for op, action in expected.items():
+        mime = QtCore.QMimeData()
+        mime.setUrls([QtCore.QUrl.fromLocalFile(__file__)])
+        ev = _drag_enter_event(mime)
+        ctx = CommandContext.create(None, None, source="drop", event=ev)
+        GridViewDropCommands._apply_drop_action(ctx, op)
+        assert ev.dropAction() == action
 
 
 def test_drop_enter_ask_uses_saved_operation(qtbot, monkeypatch):
@@ -238,49 +224,3 @@ def test_drop_save_empty_grid_without_folder_selection_shows_dialog(qtbot, monke
 
     assert messages
     assert ev.dropAction() == QtCore.Qt.DropAction.IgnoreAction
-
-
-def test_drop_target_dir_from_hover_uses_source_only(monkeypatch, tmp_path):
-    archive = tmp_path / "archive.zip"
-
-    class _Items:
-        def source_at(self, index):
-            assert index == 0
-            return str(archive)
-
-        def path_at(self, index):
-            raise AssertionError("path_at must not be used for file operations")
-
-    monkeypatch.setattr(GridViewDropCommands, "_hover_index", staticmethod(lambda ctx, view: 0))
-
-    dst = GridViewDropCommands._drop_target_dir_from_hover(object(), object(), _Items())
-    assert dst == str(tmp_path)
-
-
-def test_drop_target_dir_from_hover_returns_none_without_source(monkeypatch):
-    class _Items:
-        def source_at(self, index):
-            assert index == 0
-            return None
-
-        def path_at(self, index):
-            raise AssertionError("path_at must not be used for file operations")
-
-    monkeypatch.setattr(GridViewDropCommands, "_hover_index", staticmethod(lambda ctx, view: 0))
-
-    assert GridViewDropCommands._drop_target_dir_from_hover(object(), object(), _Items()) is None
-
-
-def test_drop_target_dir_requires_source_and_does_not_use_view_root():
-    class _Ctx:
-        def get(self, key, default=None):
-            return default
-
-    class _Root:
-        def __str__(self):
-            raise AssertionError("view.root must not be used for file operations")
-
-    class _View:
-        root = _Root()
-
-    assert GridViewDropCommands._drop_target_dir(_Ctx(), _View()) is None

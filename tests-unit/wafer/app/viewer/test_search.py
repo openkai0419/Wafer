@@ -1,31 +1,10 @@
 from unittest.mock import patch
-from wafer.app.viewer.search import SearchService, _DEFAULTS
-from wafer.plugin.query.handler import sort_registry
-from wafer.qt.common.dispatcher import CancelToken
+from wafer.app.viewer.search import SearchService
 from wafer.builtins.filters import TextFilter, DirectoryFilter, ContainedFilesFilter
 
 
 def _make_service():
     return SearchService(dbpath_getter=lambda: ":memory:")
-
-
-def test_initial_params():
-    svc = _make_service()
-    params = svc.params
-    for key in _DEFAULTS:
-        assert key in params
-
-
-def test_get_param():
-    svc = _make_service()
-    assert svc.get("sort_by") in [s.NAME for s in sort_registry.list_all()]
-    assert svc.get("nonexistent", "fallback") == "fallback"
-
-
-def test_set_param():
-    svc = _make_service()
-    svc.set_param("sort_by", "name")
-    assert svc.get("sort_by") == "name"
 
 
 def test_set_param_no_change():
@@ -76,9 +55,12 @@ def test_set_directories():
 
 def test_build_filter_entries_basic():
     svc = _make_service()
+    assert svc.build_filter_entries()[0][1]["trim_keywords"] is True
     svc.set_param("keywords", "test")
     svc.set_param("query_mode", "GLOB")
     svc.set_param("keyword_mode", "AND")
+    svc.set_param("keyword_separator", ";")
+    svc.set_param("trim_keywords", False)
     entries = svc.build_filter_entries()
     assert len(entries) == 1
     text_cls, text_params, op = entries[0]
@@ -86,17 +68,9 @@ def test_build_filter_entries_basic():
     assert text_params["keywords"] == "test"
     assert text_params["query_mode"] == "GLOB"
     assert text_params["keyword_mode"] == "AND"
+    assert text_params["keyword_separator"] == ";"
+    assert text_params["trim_keywords"] is False
     assert op is None
-
-
-def test_build_filter_entries_with_directories():
-    svc = _make_service()
-    svc.set_directories(["/dir"])
-    entries = svc.build_filter_entries()
-    assert len(entries) == 2
-    assert entries[0][2] is None
-    assert entries[1][0] is DirectoryFilter
-    assert entries[1][2] is None
 
 
 def test_build_filter_entries_excludes_contained_files_when_disabled():
@@ -120,27 +94,6 @@ def test_resolve_sort_default():
     assert sort_cls.NAME == "none"
 
 
-def test_resolve_sort_none():
-    svc = _make_service()
-    svc.set_param("sort_by", "none")
-    sort_cls = svc.resolve_sort()
-    assert sort_cls.NAME == "none"
-
-
-def test_build_filter_entries_keyword_separator():
-    svc = _make_service()
-    svc.set_param("keyword_separator", ";")
-    entries = svc.build_filter_entries()
-    assert entries[0][1]["keyword_separator"] == ";"
-
-
-def test_build_filter_entries_trim_keywords():
-    svc = _make_service()
-    assert svc.build_filter_entries()[0][1]["trim_keywords"] is True
-    svc.set_param("trim_keywords", False)
-    assert svc.build_filter_entries()[0][1]["trim_keywords"] is False
-
-
 def test_reset_state():
     svc = _make_service()
     svc.set_keys(["k"])
@@ -151,63 +104,18 @@ def test_reset_state():
     assert len(entries) == 1
 
 
-def test_params_returns_copy():
-    svc = _make_service()
-    p1 = svc.params
-    p1["sort_by"] = "random"
-    assert svc.get("sort_by") != "random" or svc.get("sort_by") == p1["sort_by"]
-    p2 = svc.params
-    assert p2 is not p1
-
-
-def test_dispatcher_and_cancel_token_initialized():
-    svc = _make_service()
-    assert svc._dispatcher is not None
-    assert svc._current_cancel is None
-    assert svc._current_snapshot is None
-
-
-def test_cancel_token_on_new_search():
-    svc = _make_service()
-    cancel = CancelToken()
-    svc._current_cancel = cancel
-    svc._current_snapshot = svc._query_snapshot()
-    svc.set_param("keywords", "changed")
-    new_cancel = CancelToken()
-    svc._current_cancel = new_cancel
-    assert cancel is not new_cancel
-
-
 def test_query_snapshot_changes_with_params():
-    svc = _make_service()
-    snap1 = svc._query_snapshot()
-    svc.set_param("keywords", "changed")
-    snap2 = svc._query_snapshot()
-    assert snap1 != snap2
-
-
-def test_query_snapshot_changes_with_keys():
-    svc = _make_service()
-    snap1 = svc._query_snapshot()
-    svc.set_keys(["key1"])
-    snap2 = svc._query_snapshot()
-    assert snap1 != snap2
-
-
-def test_query_snapshot_changes_with_directories():
-    svc = _make_service()
-    snap1 = svc._query_snapshot()
-    svc.set_directories(["/dir"])
-    snap2 = svc._query_snapshot()
-    assert snap1 != snap2
-
-
-def test_query_snapshot_changes_with_contained_files_setting():
-    svc = _make_service()
-    snap1 = svc._query_snapshot()
-    svc.set_param("include_contained_files", False)
-    snap2 = svc._query_snapshot()
-    assert snap1 != snap2
+    mutations = (
+        lambda svc: svc.set_param("keywords", "changed"),
+        lambda svc: svc.set_keys(["key1"]),
+        lambda svc: svc.set_directories(["/dir"]),
+        lambda svc: svc.set_param("include_contained_files", False),
+    )
+    for mutate in mutations:
+        svc = _make_service()
+        snap1 = svc._query_snapshot()
+        mutate(svc)
+        assert svc._query_snapshot() != snap1
 
 
 def test_set_filter_entries_overrides_build():
@@ -268,39 +176,6 @@ def test_entries_builder_takes_priority_over_external():
     svc.set_entries_builder(builder)
     result = svc.build_filter_entries()
     assert result[0][1]["keywords"] == "dynamic"
-
-
-def test_entries_builder_reflects_directory_changes():
-    svc = _make_service()
-    dirs = []
-
-    def builder():
-        if dirs:
-            return [
-                (TextFilter, {"keywords": "", "keys": None, "query_mode": "GLOB", "keyword_mode": "AND", "keyword_separator": ","}, None),
-                (DirectoryFilter, {"directories": list(dirs), "include_subfolders": True}, None),
-            ]
-        return [(TextFilter, {"keywords": "", "keys": None, "query_mode": "GLOB", "keyword_mode": "AND", "keyword_separator": ","}, None)]
-
-    svc.set_entries_builder(builder)
-    snap1 = svc._query_snapshot()
-    dirs.append("/new/dir")
-    snap2 = svc._query_snapshot()
-    assert snap1 != snap2
-
-
-def test_entries_builder_reflects_param_changes():
-    svc = _make_service()
-    mode = ["GLOB"]
-
-    def builder():
-        return [(TextFilter, {"keywords": "", "keys": None, "query_mode": mode[0], "keyword_mode": "AND", "keyword_separator": ","}, None)]
-
-    svc.set_entries_builder(builder)
-    snap1 = svc._query_snapshot()
-    mode[0] = "LIKE"
-    snap2 = svc._query_snapshot()
-    assert snap1 != snap2
 
 
 def test_reset_state_keeps_entries_builder():

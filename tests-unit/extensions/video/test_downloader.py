@@ -75,6 +75,22 @@ class TestFindAsset:
         with pytest.raises(RuntimeError, match="asset not found"):
             dl._find_asset()
 
+    def test_skips_short_digest(self, monkeypatch):
+        payload = {
+            "tag_name": "20260527",
+            "assets": [
+                {"name": "mpv-dev-x86_64-20260527-git-abcdef0.7z", "browser_download_url": "https://github.com/x.7z", "digest": "sha256:" + ("a" * 32)},
+            ],
+        }
+        self._patch(monkeypatch, _json.dumps(payload).encode("utf-8"))
+        with pytest.raises(RuntimeError, match="asset not found"):
+            dl._find_asset()
+
+    def test_oversized_response_rejected(self, monkeypatch):
+        self._patch(monkeypatch, b"x" * (dl._MAX_RELEASE_RESPONSE + 10))
+        with pytest.raises(RuntimeError, match="too large"):
+            dl._find_asset()
+
 
 class TestSetupDllPath:
     def test_adds_lib_dir_to_path(self):

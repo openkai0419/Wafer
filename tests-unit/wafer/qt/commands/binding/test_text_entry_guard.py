@@ -1,7 +1,7 @@
 import pytest
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from wafer.qt.commands.binding.common import TEXT_ENTRY_TYPES, is_text_entry_focused
+from wafer.qt.commands.binding.common import is_text_entry_focused
 from wafer.qt.commands.binding.key import shortcutmanager as sm_mod
 from wafer.qt.commands.binding.key.shortcutmanager import ShortcutManager
 
@@ -24,11 +24,6 @@ class TestIsTextEntryFocused:
         w.setFocus()
         qtbot.waitUntil(lambda: QtWidgets.QApplication.focusWidget() is w)
         assert is_text_entry_focused() is False
-
-    def test_text_entry_types_cover_common_inputs(self):
-        assert QtWidgets.QLineEdit in TEXT_ENTRY_TYPES
-        assert QtWidgets.QPlainTextEdit in TEXT_ENTRY_TYPES
-        assert QtWidgets.QTextEdit in TEXT_ENTRY_TYPES
 
 
 class TestEventFilterTextEntryGuard:

@@ -7,7 +7,10 @@ from PIL import Image
 
 from wafer.core.common.paths import normalize_path
 from wafer.core.db.file_db import FileDB
-from wafer.core.db.query import FileSearchEngine, SearchQuery
+from wafer.core.db.query import FileSearchEngine
+from wafer.builtins.filters import TextFilter
+from wafer.builtins.sorts import NoSort
+from wafer.plugin.query.composer import SearchComposer
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.app.indexer.db_writer import DatabaseWriter
 from wafer.app.indexer.scanner import DirectoryScanner
@@ -290,11 +293,6 @@ class TestScannerSchedulerPipeline:
             scheduler.stop()
 
         engine = FileSearchEngine(str(db_path))
-        paths, _, _ = engine.search(
-            SearchQuery(
-                keys="path",
-                keywords="findme",
-            )
-        )
+        paths, _, _ = SearchComposer().execute(engine, [(TextFilter, {"keys": ["path"], "keywords": "findme"}, "OR")], NoSort, True)
         assert len(paths) == 1
         assert "findme" in paths[0]

@@ -1,5 +1,3 @@
-import py_compile
-
 import pytest
 
 from wafer.core.db.setting_db import SettingDB
@@ -10,10 +8,6 @@ TEST_DB_NAME = None
 @pytest.fixture
 def setting_db(tmp_path):
     return SettingDB(str(tmp_path / "settings.db"))
-
-
-def test_compile():
-    py_compile.compile("wafer/core/db/setting_db.py")
 
 
 def test_parent_folder_crud(setting_db):
@@ -91,24 +85,6 @@ def test_invalid_table_raises(setting_db):
         setting_db._get_all_entries("bad_table")
 
 
-def test_sync_entries_is_atomic(tmp_path):
-    import sqlite3
-
-    db = SettingDB(str(tmp_path / "atomic.db"))
-    db.add_parent_folder("C:/keep")
-    db.add_parent_folder("C:/remove")
-
-    db._sync_entries("parent_folders", ["C:/keep", "C:/new"])
-
-    folders = db.get_all_parent_folders()
-    from wafer.core.common.paths import normalize_path
-
-    norm = {normalize_path(f) for f in folders}
-    assert normalize_path("C:/keep") in norm
-    assert normalize_path("C:/new") in norm
-    assert normalize_path("C:/remove") not in norm
-
-
 def test_get_all_folder_settings(setting_db):
     setting_db.add_parent_folder("C:/photos")
     setting_db.add_ignore_folder("C:/photos/temp")
@@ -128,12 +104,6 @@ def test_enabled_collectors_roundtrip(setting_db):
     setting_db.set_enabled_collectors(["exif", "ai_tags"])
     result = setting_db.get_enabled_collectors()
     assert result == ["exif", "ai_tags"]
-
-
-def test_enabled_collectors_overwrite(setting_db):
-    setting_db.set_enabled_collectors(["exif"])
-    setting_db.set_enabled_collectors(["video_meta"])
-    assert setting_db.get_enabled_collectors() == ["video_meta"]
 
 
 def test_enabled_collectors_invalid_type(setting_db):

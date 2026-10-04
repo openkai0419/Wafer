@@ -114,7 +114,7 @@ def _show_in_explorer_windows(path: str) -> bool:
         return False
 
 
-def _first_scandir(path: str, *, files_only: bool = False) -> str | None:
+def first_entry(path: str) -> str | None:
     if not path:
         return None
     base = os.path.normpath(os.path.abspath(str(path)))
@@ -123,24 +123,10 @@ def _first_scandir(path: str, *, files_only: bool = False) -> str | None:
     try:
         with os.scandir(base) as it:
             for entry in it:
-                if files_only:
-                    try:
-                        if not entry.is_file(follow_symlinks=False):
-                            continue
-                    except OSError:
-                        continue
                 return entry.path
     except OSError:
         return None
     return None
-
-
-def first_file(path: str) -> str | None:
-    return _first_scandir(path, files_only=True)
-
-
-def first_entry(path: str) -> str | None:
-    return _first_scandir(path)
 
 
 def open_file(path: str) -> None:

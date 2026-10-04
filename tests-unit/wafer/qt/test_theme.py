@@ -1,20 +1,11 @@
 from wafer.qt.theme import ThemeManager
-from wafer.qt.palette import DARK, LIGHT, ThemePalette
+from wafer.qt.palette import DARK, LIGHT
 
 
 class TestThemeManager:
     def setup_method(self):
         ThemeManager.on_theme_changed._callbacks.clear()
         ThemeManager._instance = None
-
-    def test_singleton(self, qtbot):
-        a = ThemeManager.instance()
-        b = ThemeManager.instance()
-        assert a is b
-
-    def test_default_palette(self, qtbot):
-        tm = ThemeManager.instance()
-        assert isinstance(tm.palette, ThemePalette)
 
     def test_set_dark(self, qtbot):
         tm = ThemeManager.instance()
@@ -51,8 +42,3 @@ class TestThemeManager:
         tm.on_theme_changed.connect(lambda p: received.append(p))
         tm.set_dark()
         assert received == []
-
-    def test_sync_system(self, qtbot):
-        tm = ThemeManager.instance()
-        tm.sync_system()
-        assert isinstance(tm.palette, ThemePalette)

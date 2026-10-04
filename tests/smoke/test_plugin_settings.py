@@ -16,8 +16,8 @@ class TestIniReadWrite:
         ini_path = str(tmp_path / "test.ini")
         monkeypatch.setattr("wafer.plugin.settings._ini_path", lambda: ini_path)
 
-        _write_ini_value("plugins/enabled", ["image", "video"])
-        result = _read_ini_value("plugins/enabled")
+        _write_ini_value("plugins/active_folders", ["image", "video"])
+        result = _read_ini_value("plugins/active_folders")
         assert result == ["image", "video"]
 
     def test_read_missing_key_returns_default(self, tmp_path, monkeypatch):
@@ -34,22 +34,6 @@ class TestIniReadWrite:
 
 
 class TestPluginSettings:
-    def test_enabled_names_roundtrip(self, tmp_path, monkeypatch):
-        ini_path = str(tmp_path / "plugins.ini")
-        monkeypatch.setattr("wafer.plugin.settings._ini_path", lambda: ini_path)
-
-        ps = PluginSettings()
-        ps.set_enabled({"image", "video", "animated"})
-        result = ps.enabled_names()
-        assert result == {"image", "video", "animated"}
-
-    def test_enabled_names_empty_file(self, tmp_path, monkeypatch):
-        ini_path = str(tmp_path / "empty.ini")
-        monkeypatch.setattr("wafer.plugin.settings._ini_path", lambda: ini_path)
-
-        ps = PluginSettings()
-        assert ps.enabled_names() is None
-
     def test_priority_order_roundtrip(self, tmp_path, monkeypatch):
         ini_path = str(tmp_path / "priority.ini")
         monkeypatch.setattr("wafer.plugin.settings._ini_path", lambda: ini_path)

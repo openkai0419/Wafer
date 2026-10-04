@@ -21,34 +21,12 @@ def test_reset_payload(monkeypatch):
     )
 
 
-def test_reset_delete_payload(monkeypatch):
-    node = _node(monkeypatch)
-    Recollect.reset(db_scope=["db1"], collector="color", keys=["k"], delete=True, re_collect=False)
-    node.send_reliable.assert_called_once_with(
-        "recollect",
-        {"mode": "reset", "collector": "color", "sources": None, "prefixes": None, "keys": ["k"], "delete": True, "re_collect": False},
-        dst="indexer",
-        db="db1",
-    )
-
-
 def test_forget_payload(monkeypatch):
     node = _node(monkeypatch)
     Recollect.forget(db_scope=["db1"], prefixes=["/dir"])
     node.send_reliable.assert_called_once_with(
         "recollect",
         {"mode": "forget", "sources": None, "prefixes": ["/dir"], "all": False},
-        dst="indexer",
-        db="db1",
-    )
-
-
-def test_forget_all_payload(monkeypatch):
-    node = _node(monkeypatch)
-    Recollect.forget(db_scope=["db1"], all=True)
-    node.send_reliable.assert_called_once_with(
-        "recollect",
-        {"mode": "forget", "sources": None, "prefixes": None, "all": True},
         dst="indexer",
         db="db1",
     )

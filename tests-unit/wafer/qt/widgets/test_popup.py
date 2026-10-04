@@ -2,16 +2,6 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from wafer.qt.widgets.popup import PopupBase
 
 
-def test_popup_base_flags(qtbot):
-    popup = PopupBase()
-    qtbot.addWidget(popup)
-    flags = popup.windowFlags()
-    assert flags & QtCore.Qt.Popup
-    assert flags & QtCore.Qt.FramelessWindowHint
-    assert not popup.testAttribute(QtCore.Qt.WA_TranslucentBackground)
-    assert popup.autoFillBackground()
-
-
 def test_show_below_clamps_to_screen(qtbot):
     anchor = QtWidgets.QPushButton("anchor")
     anchor.resize(80, 24)

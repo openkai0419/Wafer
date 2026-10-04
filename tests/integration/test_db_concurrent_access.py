@@ -5,7 +5,10 @@ from PIL import Image
 
 from wafer.core.common.paths import normalize_path
 from wafer.core.db.file_db import FileDB
-from wafer.core.db.query import FileSearchEngine, SearchQuery
+from wafer.core.db.query import FileSearchEngine
+from wafer.builtins.sorts import NoSort
+from wafer.plugin.query.composer import SearchComposer
+from wafer.plugin.query.handler import sort_registry
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.app.indexer.receivers.collector_receiver import _parse_batch
 from test_support.scan_harness import ScanHarness
@@ -61,7 +64,7 @@ class TestSearchDuringIndexing:
         def search_thread():
             try:
                 engine = FileSearchEngine(str(db_path))
-                paths, _, _ = engine.search(SearchQuery(require_keys=False))
+                paths, _, _ = SearchComposer().execute(engine, [], NoSort, True)
                 search_results.append(len(paths))
             except Exception as e:
                 search_errors.append(e)
@@ -113,7 +116,7 @@ class TestSearchDuringIndexing:
         def searcher():
             try:
                 engine = FileSearchEngine(str(db_path))
-                paths, _, _ = engine.search(SearchQuery(require_keys=False))
+                paths, _, _ = SearchComposer().execute(engine, [], NoSort, True)
                 search_results.append(len(paths))
             except Exception as e:
                 errors.append(e)
@@ -152,7 +155,7 @@ class TestMultipleReadersNoCrash:
         def reader(sort_by):
             try:
                 engine = FileSearchEngine(str(db_path))
-                paths, _, _ = engine.search(SearchQuery(sort_by=sort_by, require_keys=False))
+                paths, _, _ = SearchComposer().execute(engine, [], sort_registry.get(sort_by), True)
                 counts.append(len(paths))
             except Exception as e:
                 errors.append(e)
@@ -192,7 +195,7 @@ class TestDBConsistencyAfterConcurrentWrites:
             _write_results(h.db, results)
 
         engine = FileSearchEngine(str(db_path))
-        paths, _, _ = engine.search(SearchQuery(require_keys=False))
+        paths, _, _ = SearchComposer().execute(engine, [], NoSort, True)
         assert len(paths) == 10
 
         db = FileDB(db_path)

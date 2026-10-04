@@ -1,5 +1,4 @@
 import json
-import py_compile
 
 from wafer.core.common.helpers import invoke, invoke_int, get_callable, to_int, try_invoke, try_cast, try_json_loads, widget_prop_bool
 
@@ -25,10 +24,6 @@ class _Widget:
         if self._raise:
             raise RuntimeError("boom")
         return self._v
-
-
-def test_compile():
-    py_compile.compile("wafer/core/common/helpers.py")
 
 
 def test_get_callable_and_invoke():

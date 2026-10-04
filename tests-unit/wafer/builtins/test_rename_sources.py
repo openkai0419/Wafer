@@ -3,7 +3,7 @@ import time
 import pytest
 from pathlib import Path
 
-from wafer.plugin.rename.base import SegmentInfo, RenameConfigWidget, DropdownButton
+from wafer.plugin.rename.base import SegmentInfo
 from wafer.builtins.rename_sources import (
     NameSource,
     FixedSource,
@@ -36,9 +36,6 @@ class TestNameSource:
 
 
 class TestFixedSource:
-    def test_default(self):
-        assert FixedSource().evaluate(_seg()) == "_"
-
     def test_custom_text(self):
         assert FixedSource("--").evaluate(_seg()) == "--"
 
@@ -95,18 +92,11 @@ class TestMetaSource:
 
 
 class TestDateSource:
-    def test_default_fmt_includes_time(self):
-        s = DateSource()
-        assert "H" in s.fmt
-        assert "M" in s.fmt
-        assert "S" in s.fmt
-
-    def test_modified(self):
+    def test_modified_and_created(self):
         s = DateSource(source="modified", fmt="%Y")
         result = s.evaluate(_seg(metadata={"modified": "1700000000.0"}))
         assert result.isdigit() and len(result) == 4
 
-    def test_created(self):
         s = DateSource(source="created", fmt="%Y%m%d")
         result = s.evaluate(_seg(metadata={"created": "1700000000.0"}))
         assert len(result) == 8
@@ -158,19 +148,12 @@ class TestRandomSource:
         s = RandomSource(length=12)
         r1 = s.evaluate(_seg(original_path=Path("a.jpg")))
         r2 = s.evaluate(_seg(original_path=Path("b.jpg")))
-        assert r1 != r2 or True
+        assert r1 != r2
 
     def test_hex_pool(self):
         s = RandomSource(chars="hex", length=20)
         r = s.evaluate(_seg())
         assert all(c in "0123456789abcdef" for c in r)
-
-    def test_cache_cleared(self):
-        s = RandomSource()
-        s.evaluate(_seg())
-        assert len(s._cache) == 1
-        s._cache.clear()
-        assert len(s._cache) == 0
 
     def test_serialise_roundtrip(self):
         s = RandomSource("digits", 10)
@@ -207,14 +190,6 @@ class TestExtSource:
 
 
 class TestConfigWidgets:
-    def test_name_returns_none(self, qtbot):
-        assert NameSource().create_config_widget() is None
-
-    def test_fixed_returns_widget(self, qtbot):
-        w = FixedSource("hi").create_config_widget()
-        qtbot.addWidget(w)
-        assert isinstance(w, RenameConfigWidget)
-
     def test_fixed_changed_on_edit(self, qtbot):
         src = FixedSource("x")
         w = src.create_config_widget()
@@ -228,12 +203,6 @@ class TestConfigWidgets:
         assert len(received) == 1
         assert src.text == "y"
 
-    def test_sequential_returns_widget(self, qtbot):
-        w = SequentialSource().create_config_widget()
-        qtbot.addWidget(w)
-        assert isinstance(w, RenameConfigWidget)
-        assert hasattr(w, "resequence_requested")
-
     def test_meta_sets_initial_key(self, qtbot):
         src = MetaSource()
         w = src.create_config_widget(meta_keys=["width", "height"])
@@ -245,18 +214,3 @@ class TestConfigWidgets:
         w = src.create_config_widget(meta_keys=["width", "height"])
         qtbot.addWidget(w)
         assert src.key == "height"
-
-    def test_date_returns_widget(self, qtbot):
-        w = DateSource().create_config_widget()
-        qtbot.addWidget(w)
-        assert isinstance(w, RenameConfigWidget)
-
-    def test_random_returns_widget(self, qtbot):
-        w = RandomSource().create_config_widget()
-        qtbot.addWidget(w)
-        assert isinstance(w, RenameConfigWidget)
-
-    def test_ext_returns_widget(self, qtbot):
-        w = ExtSource().create_config_widget()
-        qtbot.addWidget(w)
-        assert isinstance(w, RenameConfigWidget)

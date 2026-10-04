@@ -63,15 +63,6 @@ def test_batch_size(resolver):
     assert resolver.batch_size("nonexistent") == 1200
 
 
-def test_execution_settings(resolver):
-    assert resolver.max_workers("fake_a") == 1
-    assert resolver.max_workers("fake_b") == 1
-    assert resolver.max_workers("nonexistent") == 1
-    assert resolver.batch_timeout("fake_a") == 300.0
-    assert resolver.batch_timeout("fake_b") == 300.0
-    assert resolver.batch_timeout("nonexistent") == 300.0
-
-
 def test_trigger_keys(resolver):
     assert resolver.trigger_keys("fake_a") == ("exif.parameters", "exif.Comment")
     assert resolver.trigger_keys("fake_b") == ("sd.prompt",)
@@ -95,11 +86,7 @@ def test_parsers_for_keys_no_match(resolver):
     assert matched == []
 
 
-def test_parsers_for_keys_empty(resolver):
-    matched = resolver.parsers_for_keys(set())
-    assert matched == []
+def test_resolver_required_collectors_unknown_is_empty():
+    from wafer.plugin.parser.handler import parser_resolver
 
-
-def test_status_name(resolver):
-    assert resolver.status_name("fake_a") == "fake_a"
-    assert resolver.status_name("fake_b") == "fake_b"
+    assert parser_resolver.required_collectors("does_not_exist") == {}

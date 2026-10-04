@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -14,20 +15,14 @@ from wafer.plugin.settings import PluginSettings
 
 set_suppress_dialog(True)
 
-_orig_enabled_names = PluginSettings.enabled_names
 _orig_enabled_overrides = PluginSettings.enabled_overrides
-_orig_has_enabled_overrides = PluginSettings.has_enabled_overrides
-PluginSettings.enabled_names = lambda self: None
 PluginSettings.enabled_overrides = lambda self: {}
-PluginSettings.has_enabled_overrides = lambda self: False
 
 try:
     load_plugins()
     get_command_registry().activate("viewer")
 finally:
-    PluginSettings.enabled_names = _orig_enabled_names
     PluginSettings.enabled_overrides = _orig_enabled_overrides
-    PluginSettings.has_enabled_overrides = _orig_has_enabled_overrides
 
 _vendored_packages = os.path.join("extensions", ".packages")
 _vendored_abs = os.path.normpath(os.path.abspath(_vendored_packages))
@@ -297,7 +292,6 @@ def pytest_sessionfinish(session, exitstatus):
     _write_summary(exitstatus=exitstatus)
 
 
-from pathlib import Path
 
 _SAMPLE_DIR = Path(__file__).parent / ".sample"
 _SAMPLE_MANIFEST = _SAMPLE_DIR / "manifest.json"

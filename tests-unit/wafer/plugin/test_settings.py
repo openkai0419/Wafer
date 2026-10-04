@@ -1,7 +1,6 @@
 import os
-import json
 import pytest
-from wafer.plugin.settings import PluginSettings, _ini_path, _write_ini_value, _read_ini_value
+from wafer.plugin.settings import PluginSettings, _write_ini_value
 from wafer.plugin.installer import RestartScope
 from wafer.plugin.kinds import PLUGIN_KINDS
 import wafer.plugin.settings as settings_mod
@@ -22,29 +21,6 @@ def isolate_ini(tmp_path, monkeypatch):
     yield ini
 
 
-class TestPluginSettingsEnabledNames:
-    def test_none_when_no_file(self):
-        ps = PluginSettings()
-        assert ps.enabled_names() is None
-
-    def test_roundtrip(self):
-        ps = PluginSettings()
-        ps.set_enabled({"image", "exif", "animated"})
-        result = ps.enabled_names()
-        assert result == {"image", "exif", "animated"}
-
-    def test_empty_set_roundtrip(self):
-        ps = PluginSettings()
-        ps.set_enabled(set())
-        assert ps.enabled_names() == set()
-
-    def test_overwrite(self):
-        ps = PluginSettings()
-        ps.set_enabled({"image", "exif"})
-        ps.set_enabled({"video"})
-        assert ps.enabled_names() == {"video"}
-
-
 class TestPluginSettingsActiveFolders:
     def test_empty_when_no_file(self):
         assert PluginSettings().active_folders() == []
@@ -53,12 +29,6 @@ class TestPluginSettingsActiveFolders:
         ps = PluginSettings()
         ps.set_active_folders(["video", "image", "image"])
         assert ps.active_folders() == ["image", "video"]
-
-    def test_overwrite(self):
-        ps = PluginSettings()
-        ps.set_active_folders(["image"])
-        ps.set_active_folders(["exif"])
-        assert ps.active_folders() == ["exif"]
 
     def test_empty_roundtrip(self):
         ps = PluginSettings()
@@ -70,13 +40,11 @@ class TestPluginSettingsEnabledOverrides:
     def test_empty_when_no_file(self):
         ps = PluginSettings()
         assert ps.enabled_overrides() == {}
-        assert not ps.has_enabled_overrides()
 
     def test_roundtrip(self):
         ps = PluginSettings()
         ps.set_enabled_overrides({"viewer:Video": False, "grid:Zip": True})
         assert ps.enabled_overrides() == {"viewer:Video": False, "grid:Zip": True}
-        assert ps.has_enabled_overrides()
 
     def test_missing_override_uses_default_enabled(self):
         ps = PluginSettings()
@@ -92,22 +60,6 @@ class TestPluginSettingsEnabledOverrides:
         ps = PluginSettings()
         overrides = {"viewer:DefaultDisabledPlugin": True}
         assert ps.is_plugin_enabled("viewer:DefaultDisabledPlugin", DefaultDisabledPlugin, overrides)
-
-    def test_legacy_enabled_set_behaves_as_allowlist(self):
-        ps = PluginSettings()
-        ps.set_enabled(set())
-        assert not ps.is_plugin_enabled("viewer:DefaultEnabledPlugin", DefaultEnabledPlugin)
-
-    def test_legacy_enabled_can_enable_default_disabled_plugin(self):
-        ps = PluginSettings()
-        ps.set_enabled({"viewer:DefaultDisabledPlugin"})
-        assert ps.is_plugin_enabled("viewer:DefaultDisabledPlugin", DefaultDisabledPlugin)
-
-    def test_new_overrides_take_precedence_over_legacy_enabled(self):
-        ps = PluginSettings()
-        ps.set_enabled({"viewer:DefaultDisabledPlugin"})
-        ps.set_enabled_overrides({})
-        assert not ps.is_plugin_enabled("viewer:DefaultDisabledPlugin", DefaultDisabledPlugin)
 
     def test_enabled_override_omits_default_matching_state(self):
         assert PluginSettings.enabled_override("viewer:DefaultEnabledPlugin", DefaultEnabledPlugin, True) is None
@@ -127,34 +79,12 @@ class TestPluginSettingsPriorityOrder:
         ps.set_priority_order("viewer", ["animated", "video", "image"])
         assert ps.priority_order("viewer") == ["animated", "video", "image"]
 
-    def test_preserves_order(self):
-        ps = PluginSettings()
-        ps.set_priority_order("viewer", ["image", "animated", "video"])
-        assert ps.priority_order("viewer") == ["image", "animated", "video"]
-
-    def test_different_keys_independent(self):
-        ps = PluginSettings()
-        ps.set_priority_order("viewer", ["image"])
-        ps.set_priority_order("grid", ["image", "animated"])
-        assert ps.priority_order("viewer") == ["image"]
-        assert ps.priority_order("grid") == ["image", "animated"]
-
-    def test_all_registry_keys(self):
+    def test_all_registry_keys_independent(self):
         ps = PluginSettings()
         for key in PLUGIN_KINDS:
             ps.set_priority_order(key, [f"{key}_a", f"{key}_b"])
+        for key in PLUGIN_KINDS:
             assert ps.priority_order(key) == [f"{key}_a", f"{key}_b"]
-
-    def test_backward_compat_reads_old_key(self, isolate_ini):
-        _write_ini_value("plugins/viewer_order", ["old_a", "old_b"])
-        ps = PluginSettings()
-        assert ps.priority_order("viewer") == ["old_a", "old_b"]
-
-    def test_new_key_takes_precedence_over_old(self, isolate_ini):
-        _write_ini_value("plugins/viewer_order", ["old_a"])
-        ps = PluginSettings()
-        ps.set_priority_order("viewer", ["new_a", "new_b"])
-        assert ps.priority_order("viewer") == ["new_a", "new_b"]
 
 
 class TestRestartScope:
@@ -162,22 +92,11 @@ class TestRestartScope:
         ps = PluginSettings()
         assert ps.restart_scope() == RestartScope.NONE
 
-    def test_set_viewer(self):
+    def test_set_roundtrip(self):
         ps = PluginSettings()
-        ps.set_restart_scope(RestartScope.VIEWER)
-        assert ps.restart_scope() == RestartScope.VIEWER
-
-    def test_set_tray(self):
-        ps = PluginSettings()
-        ps.set_restart_scope(RestartScope.TRAY)
-        assert ps.restart_scope() == RestartScope.TRAY
-
-    def test_set_all(self):
-        ps = PluginSettings()
-        ps.set_restart_scope(RestartScope.ALL)
-        scope = ps.restart_scope()
-        assert RestartScope.VIEWER in scope
-        assert RestartScope.TRAY in scope
+        for scope in (RestartScope.VIEWER, RestartScope.TRAY, RestartScope.ALL):
+            ps.set_restart_scope(scope)
+            assert ps.restart_scope() == scope
 
     def test_merge_viewer_then_tray(self):
         ps = PluginSettings()
@@ -193,13 +112,6 @@ class TestRestartScope:
         ps.set_restart_scope(RestartScope.ALL)
         ps.clear_restart_scope()
         assert ps.restart_scope() == RestartScope.NONE
-
-    def test_backward_compat_old_restart_pending(self, isolate_ini):
-        _write_ini_value("plugins/restart_pending", True)
-        ps = PluginSettings()
-        scope = ps.restart_scope()
-        assert RestartScope.VIEWER in scope
-        assert RestartScope.TRAY in scope
 
     def test_needs_restart_with_pending_packages(self, tmp_path, monkeypatch):
         monkeypatch.setattr("wafer.plugin.installer_queue.has_pending_queue", lambda d: True)
@@ -223,13 +135,6 @@ class TestRestartScope:
 
 
 class TestIniLowLevel:
-    def test_read_missing_key(self):
-        assert _read_ini_value("nonexistent/key") is None
-
-    def test_write_and_read_json_list(self):
-        _write_ini_value("test/mylist", ["a", "b", "c"])
-        assert _read_ini_value("test/mylist") == ["a", "b", "c"]
-
     def test_write_creates_directory(self, isolate_ini):
         assert not os.path.isfile(isolate_ini)
         _write_ini_value("section/key", "value")

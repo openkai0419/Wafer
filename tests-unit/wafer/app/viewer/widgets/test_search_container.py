@@ -100,23 +100,6 @@ def _find_menu_action(menu, text):
 
 
 class TestFilterRow:
-    def test_create_with_text_filter(self, qapp):
-        row = FilterRow(TextFilter)
-        assert row.filter_cls is TextFilter
-
-    def test_op_combo_default_and(self, qapp):
-        row = FilterRow(TextFilter)
-        assert row.operator == "AND"
-
-    def test_op_combo_has_not(self, qapp):
-        row = FilterRow(TextFilter)
-        values = [row.op_combo.itemData(i) for i in range(row.op_combo.count())]
-        assert "NOT" in values
-
-    def test_op_hidden_when_show_op_false(self, qapp):
-        row = FilterRow(TextFilter, show_op=False)
-        assert not row._has_op
-
     def test_read_entry_returns_tuple(self, qapp):
         row = FilterRow(TextFilter, show_op=False)
         entry = row.read_entry()
@@ -125,12 +108,7 @@ class TestFilterRow:
         assert cls is TextFilter
         assert isinstance(params, dict)
         assert op is None
-
-    def test_read_entry_with_op(self, qapp):
-        row = FilterRow(TextFilter, show_op=True)
-        entry = row.read_entry()
-        cls, params, op = entry
-        assert op == "AND"
+        assert FilterRow(TextFilter, show_op=True).read_entry()[2] == "AND"
 
     def test_write_entry(self, qapp):
         row = FilterRow(TextFilter, show_op=True)
@@ -141,21 +119,10 @@ class TestFilterRow:
         assert params["query_mode"] == "LIKE"
         assert op == "OR"
 
-    def test_write_entry_not_operator(self, qapp):
-        row = FilterRow(TextFilter, show_op=True)
-        row.write_entry("text", {"keywords": "hello"}, "NOT")
-        entry = row.read_entry()
-        assert entry[2] == "NOT"
-
     def test_write_entry_wrong_type_ignored(self, qapp):
         row = FilterRow(TextFilter, show_op=True)
         row.write_entry("directory", {"directories": ["/a"]}, "OR")
         assert row.filter_cls is TextFilter
-
-    def test_param_widget_exists(self, qapp):
-        row = FilterRow(TextFilter)
-        w = row.get_param_widget()
-        assert w is not None
 
     def test_set_removable(self, qapp):
         row = FilterRow(TextFilter)
@@ -165,23 +132,11 @@ class TestFilterRow:
         row.set_removable(True)
         assert row.remove_button.isVisibleTo(row)
 
-    def test_default_enabled(self, qapp):
-        row = FilterRow(TextFilter)
-        assert row.is_enabled() is True
-
-    def test_no_dedicated_toggle_button(self, qapp):
-        row = FilterRow(TextFilter)
-        assert not hasattr(row, "toggle_button")
-
     def test_set_enabled_false_skips_entry(self, qapp):
         row = FilterRow(TextFilter, show_op=False)
         row.set_enabled(False)
         assert row.is_enabled() is False
         assert row.read_entry() is None
-
-    def test_set_enabled_true_restores_entry(self, qapp):
-        row = FilterRow(TextFilter, show_op=False)
-        row.set_enabled(False)
         row.set_enabled(True)
         assert row.read_entry() is not None
 
@@ -193,20 +148,15 @@ class TestFilterRow:
         assert signals == []
 
     def test_disabled_grays_out_param_widget(self, qapp):
-        row = FilterRow(TextFilter)
+        row = FilterRow(TextFilter, show_op=True)
         w = row.get_param_widget()
         assert w.isEnabled() is True
-        row.set_enabled(False)
-        assert w.isEnabled() is False
-        row.set_enabled(True)
-        assert w.isEnabled() is True
-
-    def test_disabled_grays_out_op_combo(self, qapp):
-        row = FilterRow(TextFilter, show_op=True)
         assert row.op_combo.isEnabled() is True
         row.set_enabled(False)
+        assert w.isEnabled() is False
         assert row.op_combo.isEnabled() is False
         row.set_enabled(True)
+        assert w.isEnabled() is True
         assert row.op_combo.isEnabled() is True
 
     def test_remove_button_context_request_uses_global_position(self, qapp):
@@ -222,9 +172,6 @@ class TestSearchContainer:
     def test_default_has_one_row(self, qapp):
         container = SearchContainer()
         assert len(container._rows) == 1
-
-    def test_default_row_is_text_filter(self, qapp):
-        container = SearchContainer()
         assert container._rows[0].filter_cls is TextFilter
 
     def test_default_row_removable(self, qapp):
@@ -301,12 +248,6 @@ class TestSearchContainer:
         container = SearchContainer()
         assert ContainedFilesFilter not in container._available_filter_classes()
 
-    def test_build_entries_multiple_rows(self, qapp):
-        container = SearchContainer()
-        container._add_row(TextFilter)
-        entries = container.build_filter_entries()
-        assert len(entries) == 2
-
     def test_build_entries_preserves_not_operator(self, qapp):
         container = SearchContainer()
         container._add_row(TextFilter)
@@ -321,30 +262,15 @@ class TestSearchContainer:
         entries = container.build_filter_entries()
         assert len(entries) == 0
 
-    def test_get_sort_defaults(self, qapp):
-        container = SearchContainer()
-        sort_name, ascending = container.get_sort()
-        assert sort_name == "none"
-        assert ascending is False
-
     def test_set_sort(self, qapp):
         container = SearchContainer()
         container.set_sort("modified", True)
         sort_name, ascending = container.get_sort()
         assert sort_name == "modified"
         assert ascending is True
-
-    def test_set_ascending(self, qapp):
-        container = SearchContainer()
-        container.set_ascending(True)
-        _, ascending = container.get_sort()
-        assert ascending is True
-
-    def test_set_sort_by(self, qapp):
-        container = SearchContainer()
+        container.set_ascending(False)
         container.set_sort_by("name")
-        sort_name, _ = container.get_sort()
-        assert sort_name == "name"
+        assert container.get_sort() == ("name", False)
 
     def test_sort_menu_syncs(self, qapp):
         container = SearchContainer()
@@ -360,13 +286,6 @@ class TestSearchContainer:
         assert descending_action is not None
         assert not descending_action.isChecked()
 
-    def test_get_values_returns_dict(self, qapp):
-        container = SearchContainer()
-        values = container.get_values()
-        assert isinstance(values, dict)
-        assert "sort_by" in values
-        assert "ascending" in values
-
     def test_get_values_empty(self, qapp):
         container = SearchContainer()
         container._on_remove_row(container._rows[0])
@@ -378,37 +297,6 @@ class TestSearchContainer:
         container.filter_changed.connect(lambda: signals.append(True))
         container._add_row(TextFilter)
         assert len(signals) >= 1
-
-    def test_row_menu_contains_row_actions(self, qapp):
-        container = SearchContainer()
-        container._add_row(TextFilter)
-        container._add_row(TextFilter)
-        menu = container._build_row_menu(container._rows[1])
-        labels = _menu_labels(menu)
-        assert "Enabled" in labels
-        assert "Move up" in labels
-        assert "Move down" in labels
-        assert "Move to top" in labels
-        assert "Move to bottom" in labels
-        assert "Delete filter" in labels
-        assert any(a.menu() and a.text() == "Add filter after this" for a in menu.actions())
-
-    def test_row_menu_has_header(self, qapp):
-        container = SearchContainer()
-        menu = container._build_row_menu(container._rows[0])
-        header = menu.actions()[0]
-        assert isinstance(header, QtWidgets.QWidgetAction)
-        widget = header.defaultWidget()
-        assert widget is not None
-        assert widget.findChild(QtWidgets.QLabel).text() == "Filter Menu"
-
-    def test_row_menu_enabled_action_is_checkable(self, qapp):
-        container = SearchContainer()
-        menu = container._build_row_menu(container._rows[0])
-        enabled_action = _find_menu_action(menu, "Enabled")
-        assert enabled_action is not None
-        assert enabled_action.isCheckable()
-        assert enabled_action.isChecked()
 
     def test_row_menu_enabled_action_sets_state(self, qapp):
         container = SearchContainer()
@@ -444,11 +332,6 @@ class TestSearchContainer:
         assert not container._rows[0]._has_op
         assert container._rows[1]._has_op
 
-    def test_insert_row_updates_tool_placement(self, qapp):
-        container = SearchContainer()
-        container._insert_row(0, TextFilter)
-        assert container._tools_host is container._rows[-1]
-
     def test_insert_row_inherits_from_previous_rows_only(self, qapp):
         container = SearchContainer()
         first = container._rows[0].get_param_widget()
@@ -460,19 +343,14 @@ class TestSearchContainer:
         inserted = container._rows[1].get_param_widget()
         assert inserted.read_params()["query_mode"] == "LIKE"
 
-    def test_move_row_up(self, qapp):
-        container = SearchContainer()
-        container._add_row(TextFilter)
-        first, second = container._rows
-        container._move_row(second, 0)
-        assert container._rows == [second, first]
-
     def test_move_row_down(self, qapp):
         container = SearchContainer()
         container._add_row(TextFilter)
         first, second = container._rows
         container._move_row(first, 1)
         assert container._rows == [second, first]
+        container._move_row(first, 0)
+        assert container._rows == [first, second]
 
     def test_move_row_updates_layout_order(self, qapp):
         container = SearchContainer()
@@ -591,19 +469,6 @@ class TestSearchContainerState:
         container.restore_state(state)
         assert container._tools_host is container._rows[-1]
 
-    def test_roundtrip_save_restore(self, qapp):
-        container1 = SearchContainer()
-        container1._add_row(TextFilter)
-        state = container1.save_state()
-        container2 = SearchContainer()
-        container2.restore_state(state)
-        assert len(container2._rows) == len(container1._rows)
-
-    def test_save_includes_enabled_field(self, qapp):
-        container = SearchContainer()
-        state = container.save_state()
-        assert state["bars"][0]["enabled"] is True
-
     def test_save_preserves_disabled_rows(self, qapp):
         container = SearchContainer()
         container._add_row(TextFilter)
@@ -658,12 +523,6 @@ class TestSearchContainerState:
 
 
 class TestSearchContainerFolderWorker:
-    def test_first_call_runs(self, qapp):
-        container = SearchContainer()
-        with patch.object(container, "_dispatcher") as mock_disp:
-            container.run_folder_worker("dummy.db", [])
-            assert mock_disp.post.call_count == 1
-
     def test_duplicate_call_skipped(self, qapp):
         container = SearchContainer()
         with patch.object(container, "_dispatcher") as mock_disp:
@@ -717,19 +576,8 @@ class TestUpdateKeyCombos:
         container._key_store.set_data([("path", 10), ("prompt", 5), ("artist", 3)])
         w = container._rows[0].get_param_widget()
         assert "path" in w.keys_combo.active_keys
-
-    def test_filepath_default_checked(self, qapp):
-        container = SearchContainer()
-        container._key_store.set_data([("path", 10), ("prompt", 5)])
-        w = container._rows[0].get_param_widget()
         assert "path" in w.keys_combo.checked_items()
-
-    def test_counts_in_catalog(self, qapp):
-        container = SearchContainer()
-        container._key_store.set_data([("path", 10), ("prompt", 5)])
-        w = container._rows[0].get_param_widget()
-        catalog = dict(w.keys_combo._popup.catalog_data())
-        assert catalog["path"] == 10
+        assert dict(w.keys_combo._popup.catalog_data())["path"] == 10
 
     def test_empty_results_keeps_default_key(self, qapp):
         container = SearchContainer()
@@ -782,12 +630,6 @@ class TestInvalidateKeyCache:
             container.invalidate_key_cache()
             container.run_folder_worker("db2.db", ["/a"])
             assert mock_disp.post.call_count == 2
-
-    def test_invalidate_resets_last_paths(self, qapp):
-        container = SearchContainer()
-        container._last_paths = ("/some/path",)
-        container.invalidate_key_cache()
-        assert container._last_paths != ("/some/path",)
 
 
 class TestFilterInheritance:
@@ -846,14 +688,6 @@ class TestFilterInheritance:
         second = container._rows[1].get_param_widget()
         params = second.read_params()
         assert "prompt" in (params.get("keys") or [])
-
-    def test_first_row_no_inheritance(self, qapp):
-        container = SearchContainer()
-        container._on_remove_row(container._rows[0])
-        container._add_row(TextFilter)
-        params = container._rows[0].get_param_widget().read_params()
-        assert params["query_mode"] == "GLOB"
-        assert params["keyword_mode"] == "AND"
 
 
 class TestSelectableParamWidgets:

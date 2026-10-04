@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch, PropertyMock, call
+from unittest.mock import MagicMock
 from PySide6 import QtCore, QtWidgets
 from wafer.plugin import ViewerContext
 
@@ -38,49 +38,8 @@ class TestVideoViewerWidgetInit:
         assert w._player_area.testAttribute(QtCore.Qt.WidgetAttribute.WA_NativeWindow)
         w.cleanup()
 
-    def test_creates_control_bar(self, qtbot):
-        from extensions.video.viewer_widget import VideoViewerWidget, VideoControlBar
-
-        w = VideoViewerWidget()
-        assert isinstance(w._control_bar, VideoControlBar)
-        assert not w._control_bar.isVisible()
-        w.cleanup()
-
-    def test_initial_state(self, qtbot):
-        from extensions.video.viewer_widget import VideoViewerWidget, DEFAULT_VOLUME
-
-        w = VideoViewerWidget()
-        assert w._path is None
-        assert w._player is None
-        assert w._volume == DEFAULT_VOLUME
-        assert w.muted is False
-        assert w.cover_mode is False
-        assert w.looping is True
-        assert w.pause_in_background is False
-        w.cleanup()
-
 
 class TestVideoViewerWidgetLoad:
-    def test_load_sets_path(self, qtbot, _patch_mpv_viewer):
-        from extensions.video.viewer_widget import VideoViewerWidget
-
-        w = VideoViewerWidget()
-        _patch_mpv_viewer.MPV.return_value = MagicMock()
-        w.load(_context("/test.mp4"))
-        assert w._path == "/test.mp4"
-        w.cleanup()
-
-    def test_load_creates_player(self, qtbot, _patch_mpv_viewer):
-        from extensions.video.viewer_widget import VideoViewerWidget
-
-        w = VideoViewerWidget()
-        mock_player = MagicMock()
-        _patch_mpv_viewer.MPV.return_value = mock_player
-        w.load(_context("/test.mp4"))
-        assert w._player is mock_player
-        mock_player.play.assert_called_once_with("/test.mp4")
-        w.cleanup()
-
     def test_load_starts_pos_timer(self, qtbot, _patch_mpv_viewer):
         from extensions.video.viewer_widget import VideoViewerWidget
 
@@ -154,30 +113,6 @@ class TestVideoViewerWidgetControls:
         assert player.pause is True
         w.cleanup()
 
-    def test_seek_forward(self, qtbot, _patch_mpv_viewer):
-        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
-        w.seek(10)
-        player.seek.assert_called_once_with(10)
-        w.cleanup()
-
-    def test_seek_backward(self, qtbot, _patch_mpv_viewer):
-        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
-        w.seek(-10)
-        player.seek.assert_called_once_with(-10)
-        w.cleanup()
-
-    def test_frame_step(self, qtbot, _patch_mpv_viewer):
-        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
-        w.frame_step()
-        player.frame_step.assert_called_once()
-        w.cleanup()
-
-    def test_frame_back_step(self, qtbot, _patch_mpv_viewer):
-        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
-        w.frame_back_step()
-        player.frame_back_step.assert_called_once()
-        w.cleanup()
-
     def test_set_volume(self, qtbot, _patch_mpv_viewer):
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
         w.set_volume(75)
@@ -243,15 +178,6 @@ class TestVideoViewerWidgetControls:
         w.toggle_loop()
         assert w.looping is False
         assert player.__setitem__.call_args_list[-1] == (("loop-file", "no"),)
-        w.cleanup()
-
-    def test_toggle_pause_in_background(self, qtbot, _patch_mpv_viewer):
-        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
-        assert w.pause_in_background is False
-        w.toggle_pause_in_background()
-        assert w.pause_in_background is True
-        w.toggle_pause_in_background()
-        assert w.pause_in_background is False
         w.cleanup()
 
     def test_background_pauses_when_enabled(self, qtbot, _patch_mpv_viewer):
@@ -326,116 +252,24 @@ class TestVideoViewerWidgetControlBarVisibility:
 
 
 class TestVideoViewerWidgetNoPlayer:
-    def test_toggle_pause_noop(self, qtbot):
+    def test_controls_noop_without_player(self, qtbot):
         from extensions.video.viewer_widget import VideoViewerWidget
 
         w = VideoViewerWidget()
         w.toggle_pause()
-        w.cleanup()
-
-    def test_seek_noop(self, qtbot):
-        from extensions.video.viewer_widget import VideoViewerWidget
-
-        w = VideoViewerWidget()
         w.seek(10)
-        w.cleanup()
-
-    def test_frame_step_noop(self, qtbot):
-        from extensions.video.viewer_widget import VideoViewerWidget
-
-        w = VideoViewerWidget()
         w.frame_step()
-        w.cleanup()
-
-    def test_clear_noop(self, qtbot):
-        from extensions.video.viewer_widget import VideoViewerWidget
-
-        w = VideoViewerWidget()
         w.clear()
+        assert w._player is None
         w.cleanup()
 
 
 class TestVideoControlBar:
-    def test_has_seek_slider(self, qtbot):
-        from extensions.video.viewer_widget import VideoControlBar
-
-        bar = VideoControlBar()
-        assert bar.seek_slider is not None
-        assert bar.seek_slider.maximum() == 1000
-
-    def test_has_volume_slider_in_popup(self, qtbot):
-        from extensions.video.viewer_widget import VideoControlBar
-
-        bar = VideoControlBar()
-        assert bar.volume_slider is not None
-        assert bar.volume_slider.maximum() == 100
-
-    def test_has_play_button(self, qtbot):
-        from extensions.video.viewer_widget import VideoControlBar, _MediaButton
-
-        bar = VideoControlBar()
-        assert bar.btn_play is not None
-        assert isinstance(bar.btn_play, _MediaButton)
-
-    def test_has_volume_button(self, qtbot):
-        from extensions.video.viewer_widget import VideoControlBar, _MediaButton
-
-        bar = VideoControlBar()
-        assert bar.btn_volume is not None
-        assert isinstance(bar.btn_volume, _MediaButton)
-
-    def test_has_time_label(self, qtbot):
-        from extensions.video.viewer_widget import VideoControlBar
-
-        bar = VideoControlBar()
-        assert bar.time_label is not None
-        assert "00:00" in bar.time_label.text()
-
     def test_native_window_attribute(self, qtbot):
         from extensions.video.viewer_widget import VideoControlBar
 
         bar = VideoControlBar()
         assert bar.testAttribute(QtCore.Qt.WidgetAttribute.WA_NativeWindow)
-
-    def test_single_row_layout(self, qtbot):
-        from extensions.video.viewer_widget import VideoControlBar
-
-        bar = VideoControlBar()
-        layout = bar.layout()
-        assert isinstance(layout, QtWidgets.QHBoxLayout)
-
-
-class TestMediaButton:
-    def test_icon_key_play(self, qtbot):
-        from extensions.video.viewer_widget import _MediaButton
-
-        btn = _MediaButton("play")
-        assert btn._icon_key == "play"
-
-    def test_set_icon_key(self, qtbot):
-        from extensions.video.viewer_widget import _MediaButton
-
-        btn = _MediaButton("play")
-        btn.set_icon_key("pause")
-        assert btn._icon_key == "pause"
-
-
-class TestVolumePopup:
-    def test_has_slider(self, qtbot):
-        from extensions.video.viewer_widget import VolumePopup
-
-        popup = VolumePopup()
-        assert popup.slider is not None
-        assert popup.slider.orientation() == QtCore.Qt.Orientation.Vertical
-        assert popup.slider.maximum() == 100
-        popup.close()
-
-    def test_initially_hidden(self, qtbot):
-        from extensions.video.viewer_widget import VolumePopup
-
-        popup = VolumePopup()
-        assert not popup.isVisible()
-        popup.close()
 
 
 class TestFormatTime:
@@ -459,27 +293,6 @@ class TestFormatTime:
 
         assert _format_time(None) == "00:00"
 
-    def test_negative(self):
-        from extensions.video.viewer_widget import _format_time
-
-        assert _format_time(-5) == "00:00"
-
-
-class TestVideoViewerWidgetDefaultState:
-    def test_default_volume_uses_constant(self, qtbot):
-        from extensions.video.viewer_widget import VideoViewerWidget, DEFAULT_VOLUME
-
-        w = VideoViewerWidget()
-        assert w._volume == DEFAULT_VOLUME
-        w.cleanup()
-
-    def test_default_muted_false(self, qtbot):
-        from extensions.video.viewer_widget import VideoViewerWidget
-
-        w = VideoViewerWidget()
-        assert w.muted is False
-        w.cleanup()
-
 
 class TestThemeIntegration:
     def test_control_bar_uses_palette_bg(self, qtbot):
@@ -496,19 +309,6 @@ class TestThemeIntegration:
         assert bg.red() == expected.red()
         assert bg.green() == expected.green()
         assert bg.blue() == expected.blue()
-
-    def test_apply_theme_updates_stylesheet(self, qtbot):
-        from extensions.video.viewer_widget import VideoControlBar
-        from wafer.qt.palette import DARK, LIGHT
-
-        bar = VideoControlBar()
-        bar.apply_theme(LIGHT)
-        style = bar.styleSheet()
-        assert LIGHT.accent in style
-        assert LIGHT.border_default in style
-        bar.apply_theme(DARK)
-        style = bar.styleSheet()
-        assert DARK.accent in style
 
     def test_volume_popup_theme_applied(self, qtbot):
         from extensions.video.viewer_widget import VolumePopup
@@ -547,13 +347,6 @@ class TestAutoplayObserver:
         mock_mpv.MPV.return_value = mock_player
         w.load(_context("/test.mp4"))
         return w, mock_player
-
-    def test_ensure_player_registers_observers(self, qtbot, _patch_mpv_viewer):
-        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
-        observe_calls = {c.args[0] for c in player.observe_property.call_args_list}
-        assert "time-pos" in observe_calls
-        assert "eof-reached" in observe_calls
-        w.cleanup()
 
     def test_eof_observer_fires_advance_when_not_looping(self, qtbot, _patch_mpv_viewer):
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)

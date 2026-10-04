@@ -1,7 +1,6 @@
 from wafer.core.common.formatting import (
     natural_key,
     display_prefixed_key,
-    split_last,
     format_timestamp,
     format_aspect,
     format_size,
@@ -23,6 +22,19 @@ def test_natural_key_sorts_numbers_numerically():
     assert sorted(["item2", "item10", "item1"], key=natural_key) == ["item1", "item2", "item10"]
 
 
+def test_natural_key_case_insensitive():
+    assert sorted(["B.jpg", "a.jpg", "C.jpg"], key=natural_key) == ["a.jpg", "B.jpg", "C.jpg"]
+
+
+def test_natural_key_leading_zeros_equal():
+    assert natural_key("file_001.jpg") == natural_key("file_1.jpg")
+
+
+def test_natural_key_keeps_non_ascii_digits_as_text():
+    assert natural_key("file①.jpg") == ["file①.jpg"]
+    assert sorted(["b①", "a②", "c"], key=natural_key) == ["a②", "b①", "c"]
+
+
 def test_display_prefixed_key_with_prefix():
     assert display_prefixed_key("exif.width") == "[exif]  width"
 
@@ -33,24 +45,6 @@ def test_display_prefixed_key_without_prefix():
 
 def test_display_prefixed_key_splits_on_first_dot_only():
     assert display_prefixed_key("nai.prompt.text") == "[nai]  prompt.text"
-
-
-def test_split_last():
-    rest, last = split_last([1, 2, 3])
-    assert rest == [1, 2]
-    assert last == 3
-
-
-def test_split_last_empty():
-    rest, last = split_last([])
-    assert rest == []
-    assert last is None
-
-
-def test_split_last_single():
-    rest, last = split_last([42])
-    assert rest == []
-    assert last == 42
 
 
 def test_format_timestamp():

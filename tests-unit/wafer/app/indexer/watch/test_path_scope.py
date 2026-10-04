@@ -1,11 +1,5 @@
-import py_compile
-
 from wafer.app.indexer.watch.path_scope import compile_ignore_patterns, contains_path_prefix, normalize_prefixes
 from wafer.core.common.paths import normalize_path
-
-
-def test_compile():
-    py_compile.compile("wafer/app/indexer/watch/path_scope.py")
 
 
 def test_contains_path_prefix_boundary():
@@ -58,12 +52,7 @@ def test_matches_ignore_pattern_is_case_sensitive():
     assert not _matches("/a/b/cache/file.jpg", ["*CACHE*"])
 
 
-def test_matches_ignore_pattern_empty():
-    assert not _matches("/a/b", [])
-
-
 def test_matches_ignore_pattern_multiple_patterns_combined():
     assert _matches("/a/b/thumbs.db", ["*cache*", "*thumbs.db"])
     assert _matches("/a/b/my_cache/x.jpg", ["*cache*", "*thumbs.db"])
     assert not _matches("/a/b/keep.jpg", ["*cache*", "*thumbs.db"])
-

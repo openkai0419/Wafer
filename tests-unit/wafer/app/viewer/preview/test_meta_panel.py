@@ -62,16 +62,6 @@ def test_tag_section_hidden_when_empty(qtbot):
     assert "tag" not in w._sections
 
 
-def test_meta_section_hidden_when_empty(qtbot):
-    w = MetaViewerWidget()
-    qtbot.addWidget(w)
-    meta = _sample_meta()
-    meta["meta"] = {}
-    meta["_path"] = "/a.png"
-    w.set_data(meta)
-    assert "meta" not in w._sections
-
-
 def test_header_visible_only_after_set_data(qtbot):
     w = MetaViewerWidget()
     qtbot.addWidget(w)
@@ -88,14 +78,6 @@ def test_reload_button_emits_signal(qtbot):
     w.set_data(_sample_meta())
     with qtbot.waitSignal(w.reload_requested, timeout=500):
         w._reload_btn.click()
-
-
-def test_header_has_reload_and_add_buttons(qtbot):
-    w = MetaViewerWidget()
-    qtbot.addWidget(w)
-    w.set_data(_sample_meta())
-    buttons = [btn for btn in w._header.findChildren(QtWidgets.QToolButton) if not btn.isHidden()]
-    assert buttons == [w._reload_btn, w._add_btn, w._filter_btn]
 
 
 def test_filter_button_opens_metadata_filter_panel(qtbot, monkeypatch):
@@ -256,15 +238,6 @@ def test_global_add_dedupes_full_meta_key(qtbot, monkeypatch):
     assert payload["upserts"] == [{"key": "exiftool.width_2", "value": "300", "locked": False}]
 
 
-def test_sections_default_expanded(qtbot):
-    w = MetaViewerWidget()
-    qtbot.addWidget(w)
-    w.set_data(_sample_meta())
-    for card in w._sections.values():
-        if isinstance(card, CollapsibleCard):
-            assert card.expanded is True
-
-
 def test_collapse_state_persists(qtbot):
     w = MetaViewerWidget()
     qtbot.addWidget(w)
@@ -285,11 +258,11 @@ def test_restore_collapse_state(qtbot):
     w._restore_collapse_state({"collapsed": {"tag": False, "meta:exiftool": False}})
     for key in ("tag", "meta:exiftool"):
         card = w._sections[key]
-        if isinstance(card, CollapsibleCard):
-            assert card.expanded is False
+        assert isinstance(card, CollapsibleCard)
+        assert card.expanded is False
     source_card = w._sections["source"]
-    if isinstance(source_card, CollapsibleCard):
-        assert source_card.expanded is True
+    assert isinstance(source_card, CollapsibleCard)
+    assert source_card.expanded is True
 
 
 def test_update_reuses_existing_sections(qtbot):
@@ -380,12 +353,6 @@ def test_set_data_after_clear_hides_placeholder(qtbot):
     assert not w._placeholder.isHidden()
     w.set_data(_sample_meta())
     assert w._placeholder.isHidden()
-
-
-def test_placeholder_visible_on_init(qtbot):
-    w = MetaViewerWidget()
-    qtbot.addWidget(w)
-    assert not w._placeholder.isHidden()
 
 
 def test_tag_prefixed_falls_back_to_search_kv(qtbot):

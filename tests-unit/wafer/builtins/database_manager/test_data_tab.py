@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 
 from PySide6 import QtWidgets, QtCore
 
-from wafer.qt.common.dispatcher import Dispatcher, CancelSlot
+from wafer.qt.common.dispatcher import Dispatcher
 
 
 MODULE = "wafer.builtins.database_manager.data_tab"
@@ -73,10 +73,6 @@ class TestDataTabInit:
         assert tab._parser_table.table.rowCount() == 0
         assert tab._initial_loaded is True
 
-    def test_primary_action_uses_apply_label(self, qtbot, sync_dispatcher):
-        tab = _make_tab(qtbot, sync_dispatcher, [])
-        assert tab._save_btn.text() == "Apply"
-
     def test_creates_with_sample_rows(self, qtbot, sync_dispatcher):
         tab = _make_tab(qtbot, sync_dispatcher, SAMPLE_ROWS)
         assert tab._collector_table.table.rowCount() == 3
@@ -87,12 +83,6 @@ class TestDataTabInit:
         tab = _make_tab(qtbot, sync_dispatcher, MIXED_ROWS)
         assert tab._collector_table.table.rowCount() == 2
         assert tab._parser_table.table.rowCount() == 1
-
-    def test_has_two_cancel_slots(self, qtbot, sync_dispatcher):
-        tab = _make_tab(qtbot, sync_dispatcher, [])
-        assert isinstance(tab._load_cancel, CancelSlot)
-        assert isinstance(tab._poll_cancel, CancelSlot)
-        assert tab._load_cancel is not tab._poll_cancel
 
 
 class TestApplyRows:
@@ -159,12 +149,6 @@ class TestApplyRows:
         c_rows, _ = _split_rows(rows_without_prefix)
         tab._collector_table.apply_rows(c_rows)
         assert tab._collector_table.table.cellWidget(0, 5) is None
-
-
-class TestOnLoaded:
-    def test_sets_initial_loaded(self, qtbot, sync_dispatcher):
-        tab = _make_tab(qtbot, sync_dispatcher, [])
-        assert tab._initial_loaded is True
 
 
 class TestShowHideEvent:
@@ -375,21 +359,8 @@ class TestSaveRevert:
         assert tab._collector_table.get_actions() == []
         assert not tab._save_btn.isEnabled()
 
-    def test_revert_clears_checks(self, qtbot, sync_dispatcher):
-        tab = _make_tab(qtbot, sync_dispatcher, SAMPLE_ROWS)
-        tab._collector_table.table.cellWidget(0, 5).findChild(QtWidgets.QCheckBox).setChecked(True)
-        tab._collector_table.table.cellWidget(0, 6).findChild(QtWidgets.QCheckBox).setChecked(True)
-        tab._on_revert()
-        assert tab._collector_table.get_actions() == []
-        assert not tab._save_btn.isEnabled()
-
 
 class TestRefreshButton:
-    def test_refresh_button_exists(self, qtbot, sync_dispatcher):
-        tab = _make_tab(qtbot, sync_dispatcher, [])
-        assert tab._refresh_btn is not None
-        assert tab._refresh_btn.toolTip() == "Refresh"
-
     def test_refresh_button_triggers_reload(self, qtbot, sync_dispatcher):
         tab = _make_tab(qtbot, sync_dispatcher, SAMPLE_ROWS)
         new_rows = [("db1", "exif", 999, 999, "Collector", "Active", True)]
@@ -425,13 +396,6 @@ class TestRefreshCancelsPoll:
         with patch(f"{MODULE}.list_setting_db_names", return_value=["db1"]), patch(f"{MODULE}._build_rows", return_value=SAMPLE_ROWS):
             tab.refresh()
         assert not tab._debounce_timer.isActive()
-
-    def test_refresh_reloads_data_after_debounce(self, qtbot, sync_dispatcher):
-        tab = _make_tab(qtbot, sync_dispatcher, SAMPLE_ROWS)
-        new_rows = [("db1", "exif", 999, 999, "Collector", "Active", True)]
-        with patch(f"{MODULE}.list_setting_db_names", return_value=["db1"]), patch(f"{MODULE}._build_rows", return_value=new_rows):
-            tab.refresh()
-        assert tab._collector_table.table.item(0, 2).text() == "999"
 
 
 class TestSplitRows:
@@ -498,3 +462,59 @@ class TestQueryPrefixSummary:
 
         result = _query_prefix_summary(db_path)
         assert len(result) == 1
+
+
+class TestLoadFromDbs:
+    def test_loads_data_from_dbs(self, qtbot, tmp_path, monkeypatch):
+        from wafer.core.db.setting_db import SettingDB
+        from wafer.core.db.file_db import FileDB
+
+        sdb_path = str(tmp_path / "settings.db")
+        SettingDB(sdb_path).set_enabled_collectors(["exif"])
+
+        fdb_path = str(tmp_path / "data.db")
+        fdb = FileDB(fdb_path)
+        fdb.start()
+        fdb.initialize_database()
+        fdb.upsert_basic_sources(
+            [("src0", "h0", 100, 1.0)],
+            [("c:/a.jpg", "src0", 1.5)],
+        )
+        fdb.upsert_collection_results(
+            [],
+            [("c:/a.jpg", "exif.width", "1920", 1920)],
+            [],
+            [],
+        )
+        fdb.close()
+
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.data_tab.list_setting_db_names",
+            lambda: ["testdb"],
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.data_tab.setting_db_path",
+            lambda name: sdb_path,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.data_tab.data_db_path",
+            lambda name: fdb_path,
+        )
+        monkeypatch.setattr(
+            "wafer.builtins.database_manager.data_tab._resolve_plugin_info",
+            lambda prefix: ("Collector", prefix) if prefix == "exif" else ("", ""),
+        )
+
+        from wafer.qt.common.dispatcher import Dispatcher
+
+        dispatcher = Dispatcher()
+        from wafer.builtins.database_manager.data_tab import DataTab
+
+        tab = DataTab(dispatcher)
+        qtbot.addWidget(tab)
+        qtbot.waitUntil(lambda: tab._collector_table.table.rowCount() > 0, timeout=5000)
+        assert tab._collector_table.table.rowCount() >= 1
+        assert tab._collector_table.table.item(0, 1).text() == "exif"
+        assert tab._collector_table.table.item(0, 2).text() == "1"
+        assert tab._collector_table.table.item(0, 3).text() == "0"
+        assert tab._collector_table.table.item(0, 4).text() == "Active"

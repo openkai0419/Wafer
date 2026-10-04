@@ -8,7 +8,10 @@ from PIL import Image
 
 from wafer.app.indexer.watch import folder_watcher as folder_watcher_module
 from wafer.core.common.paths import normalize_path
-from wafer.core.db.query import FileSearchEngine, SearchQuery
+from wafer.core.db.query import FileSearchEngine
+from wafer.builtins.filters import TextFilter
+from wafer.builtins.sorts import NoSort
+from wafer.plugin.query.composer import SearchComposer
 from wafer.builtins.mark.filter import MarkFilter
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.app.indexer.db_writer import DatabaseWriter
@@ -118,7 +121,7 @@ class TestFsWatchToDb:
             assert _wait_for_condition(lambda: _source_count(writer.db) == 1, timeout=20.0)
 
             engine = FileSearchEngine(str(db_path))
-            paths, _, _ = engine.search(SearchQuery(require_keys=False))
+            paths, _, _ = SearchComposer().execute(engine, [], NoSort, True)
             assert len(paths) == 1
             assert paths[0] == normalize_path(str(keep))
         finally:
@@ -152,12 +155,7 @@ class TestFsWatchToDb:
             assert _wait_for_condition(rename_reflected, timeout=20.0)
 
             engine = FileSearchEngine(str(db_path))
-            paths, _, _ = engine.search(
-                SearchQuery(
-                    keys="path",
-                    keywords="new_name",
-                )
-            )
+            paths, _, _ = SearchComposer().execute(engine, [(TextFilter, {"keys": ["path"], "keywords": "new_name"}, "OR")], NoSort, True)
             assert len(paths) >= 1
             assert any("new_name" in p for p in paths)
         finally:

@@ -1,13 +1,7 @@
-import py_compile
-
 from PySide6 import QtGui
 
 from wafer.builtins.image_viewer.widget import ImageDisplayWidget
 from wafer.plugin import ViewerContext
-
-
-def test_compile():
-    py_compile.compile("wafer/builtins/image_viewer/widget.py")
 
 
 def test_set_images_uses_multiple_scene_items(qtbot):

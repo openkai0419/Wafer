@@ -73,21 +73,3 @@ def test_fails_on_failed_hash_sentinel(parser):
     result = parser.process("/a.png", (1.0, 100, HASH_FAILED), {})
     assert result.status is False
     assert result.tags is None
-
-
-def test_triggers_on_source_file_hash_without_collector():
-    from wafer.core.db.file_db import SOURCE_TRIGGER_KEYS
-    from wafer.plugin.parser.base import required_collectors
-
-    assert DuplicateParser.TRIGGER_KEYS == ("file_hash",)
-    assert "file_hash" in SOURCE_TRIGGER_KEYS
-    assert required_collectors(DuplicateParser.TRIGGER_KEYS) == {}
-    assert DuplicateParser.DEFAULT_ENABLED is False
-    assert DuplicateParser.NAME == "duplicate"
-
-
-def test_registered_as_known_extension():
-    from wafer.plugin.badges import resolve_badge, KNOWN_EXTENSIONS
-
-    assert "duplicate" in KNOWN_EXTENSIONS
-    assert resolve_badge("duplicate") is None

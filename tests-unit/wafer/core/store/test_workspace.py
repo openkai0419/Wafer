@@ -340,11 +340,6 @@ class TestSnapshot:
         assert [p.name for p in path] == ["P"]
         assert [q.name for q in query] == ["Q"]
 
-    def test_snapshot_empty(self, tmp_path):
-        store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-        ui, path, query = store.snapshot()
-        assert ui == [] and path == [] and query == []
-
 
 class TestRecentSlots:
     def test_recent_slots_excludes_active_and_sorts_latest_first(self, tmp_path):

@@ -1,31 +1,8 @@
 from __future__ import annotations
 
-import py_compile
 from pathlib import Path
 
 from wafer.core.common.virtual_paths import build_virtual_path
-
-
-def test_compile():
-    py_compile.compile("wafer/qt/transfer/paste.py")
-
-
-def test_paste_clipboard_files_exists():
-    from wafer.qt.transfer.paste import paste_clipboard_files
-
-    assert callable(paste_clipboard_files)
-
-
-def test_execute_paste_plans_with_ui_exists():
-    from wafer.qt.transfer.paste import execute_paste_plans_with_ui
-
-    assert callable(execute_paste_plans_with_ui)
-
-
-def test_drop_files_with_ui_exists():
-    from wafer.qt.transfer.paste import drop_files_with_ui
-
-    assert callable(drop_files_with_ui)
 
 
 def test_drop_files_with_ui_invalid_op():
@@ -69,12 +46,6 @@ def test_resolve_drop_operation_with_ui_ask_saves_selection(monkeypatch):
 
     assert paste.resolve_drop_operation_with_ui("ask", message="Drop?") == "move"
     assert saved[paste.DROP_OPERATION_SETTING_KEY] == "move"
-
-
-def test_clipboard_file_paster_importable():
-    from wafer.qt.transfer.paste import ClipboardFilePaster
-
-    assert ClipboardFilePaster is not None
 
 
 def test_paste_clipboard_files_rejects_virtual_destination(monkeypatch, tmp_path):

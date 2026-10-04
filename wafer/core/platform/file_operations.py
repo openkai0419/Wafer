@@ -561,8 +561,3 @@ def delete_to_trash(paths: list[str | Path]) -> list[OperationResult]:
             else:
                 results.append(OperationResult(action="delete", src=p, dst="", status="error", error=f"Cannot delete folder without send2trash: {p}"))
     return results
-
-
-PasteExecutor = FileExecutor
-safe_remove = _safe_remove
-save_remote_item = _save_remote_item

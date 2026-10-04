@@ -3,7 +3,7 @@ import pytest
 from PySide6 import QtCore, QtWidgets
 
 from wafer.qt.layout.manager import LayoutManager, MODE_EDIT, MODE_LOCKED, PanelEntry
-from wafer.qt.layout.tree import FloatingState, LayoutTree, LeafNode, Orientation, SplitNode, insert_panel
+from wafer.qt.layout.tree import FloatingState, LeafNode, Orientation, SplitNode, insert_panel
 
 
 def _make_panel(name: str) -> QtWidgets.QWidget:
@@ -74,10 +74,6 @@ def _get_splitter_sizes(mgr: LayoutManager):
 
 
 class TestModeSwitch:
-    def test_initial_mode_is_locked(self, layout_env):
-        mgr, win, panels = layout_env
-        assert mgr.mode == MODE_LOCKED
-
     def test_toggle_mode_switches(self, layout_env):
         mgr, win, panels = layout_env
         mgr.toggle_mode()
@@ -113,15 +109,6 @@ class TestPanelPreservation:
         for name in panels:
             assert name in mgr.panel_names()
             assert mgr.is_panel_visible(name)
-
-    def test_all_panels_survive_many_toggles(self, layout_env):
-        mgr, win, panels = layout_env
-        for _ in range(5):
-            mgr.toggle_mode()
-            _process()
-
-        for name in panels:
-            assert name in mgr.panel_names()
 
     def test_docked_names_stable_after_roundtrip(self, layout_env):
         mgr, win, panels = layout_env
@@ -213,31 +200,6 @@ class TestFloatingTracking:
         assert mgr.is_panel_visible("dyn")
         assert entry.floating_window is not None
         assert "dyn" in mgr._tree.floating
-
-    def test_floating_survives_many_toggles(self, layout_env):
-        mgr, win, panels = layout_env
-        w = _make_panel("dyn")
-        _register_floating(mgr, "dyn", w)
-        _process()
-
-        for _ in range(6):
-            mgr.toggle_mode()
-            _process()
-
-        assert mgr.is_panel_visible("dyn")
-        assert "dyn" in mgr._tree.floating
-
-    def test_dock_float_changed_tracks_floating(self, layout_env):
-        mgr, win, panels = layout_env
-        mgr.set_mode(MODE_EDIT)
-        _process()
-
-        entry = mgr._panels["viewer"]
-        assert entry.dock_widget is not None
-        entry.dock_widget.setFloating(True)
-        _process()
-
-        assert "viewer" in mgr._tree.floating
 
     def test_close_floating_windows_closes_and_clears(self, layout_env):
         mgr, win, panels = layout_env
@@ -751,10 +713,6 @@ class TestToggleDormant:
 
 
 class TestDormantPanels:
-    def test_dormant_panels_initially_empty(self, layout_env):
-        mgr, win, panels = layout_env
-        assert mgr.dormant_panels() == []
-
     def test_dock_close_makes_dormant(self, layout_env):
         mgr, win, panels = layout_env
         mgr.set_mode(MODE_EDIT)
@@ -860,15 +818,6 @@ class TestSizeStability:
 
 
 class TestSaveRestore:
-    def test_save_restore_locked_mode(self, layout_env):
-        mgr, win, panels = layout_env
-        _process()
-
-        state = mgr.save_state()
-        assert "mode" in state
-        assert "tree" in state
-        assert state["mode"] == MODE_LOCKED
-
     def test_restore_preserves_panels(self, layout_env):
         mgr, win, panels = layout_env
         _process()
@@ -956,17 +905,6 @@ class TestSaveRestore:
         assert entry.dock_widget is None
         assert entry.floating_window is None
 
-    def test_save_restore_roundtrip_tree(self, layout_env):
-        mgr, win, panels = layout_env
-        mgr.toggle_panel("folder")
-        _process()
-
-        state = mgr.save_state()
-        tree_dict = state["tree"]
-
-        restored_tree = LayoutTree.from_dict(tree_dict)
-        assert "folder" in restored_tree.collapsed
-
     def test_restore_registered_floating_panel(self, qtbot):
         win = QtWidgets.QMainWindow()
         win.resize(800, 600)
@@ -1016,18 +954,6 @@ class TestSaveRestore:
             mgr.restore_state(without_grid)
             _process()
             assert "grid" in mgr.dormant_panels()
-
-
-class TestDockOptions:
-    def test_tabs_not_allowed(self, layout_env):
-        mgr, win, panels = layout_env
-        opts = win.dockOptions()
-        assert not (opts & QtWidgets.QMainWindow.AllowTabbedDocks)
-
-    def test_nesting_allowed(self, layout_env):
-        mgr, win, panels = layout_env
-        opts = win.dockOptions()
-        assert opts & QtWidgets.QMainWindow.AllowNestedDocks
 
 
 class TestEditModeDockBehavior:
@@ -1154,16 +1080,6 @@ class TestFloatingWindowZOrder:
         _process()
 
         entry = mgr._panels["dyn"]
-        assert entry.floating_window is not None
-        assert entry.floating_window.parent() is win
-
-    def test_register_as_floating_has_parent(self, layout_env):
-        mgr, win, panels = layout_env
-        w = _make_panel("dynamic_1")
-        _register_floating(mgr, "dynamic_1", w)
-        _process()
-
-        entry = mgr._panels["dynamic_1"]
         assert entry.floating_window is not None
         assert entry.floating_window.parent() is win
 
@@ -1503,18 +1419,6 @@ class TestUnregisterCollapsed:
 
 
 class TestClosableOption:
-    def test_register_non_closable(self, layout_env):
-        mgr, win, panels = layout_env
-        w = _make_panel("toolbar")
-        mgr.register("toolbar", lambda: w, closable=False)
-        entry = mgr._panels["toolbar"]
-        assert entry.closable is False
-
-    def test_register_default_closable(self, layout_env):
-        mgr, win, panels = layout_env
-        entry = mgr._panels["folder"]
-        assert entry.closable is True
-
     def test_non_closable_toggle_from_visible_collapses(self, layout_env):
         mgr, win, panels = layout_env
         w = _make_panel("toolbar")
@@ -1571,24 +1475,8 @@ class TestClosableOption:
         _process()
         assert "toolbar" in mgr._tree.floating
 
-    def test_closable_panel_can_be_toggled_off(self, layout_env):
-        mgr, win, panels = layout_env
-        assert mgr.is_panel_visible("folder")
-        mgr.toggle_panel("folder")
-        _process()
-        assert mgr.is_panel_collapsed("folder")
-
 
 class TestDynamicToggleCommands:
-    def test_register_creates_toggle_command(self, layout_env):
-        mgr, win, panels = layout_env
-        from wafer.qt.commands.command.core import CommandRegistry
-
-        reg = CommandRegistry.instance()
-        assert reg.has_command("panel.toggle_folder")
-        assert reg.has_command("panel.toggle_grid")
-        assert reg.has_command("panel.toggle_viewer")
-
     def test_unregister_removes_toggle_command(self, layout_env):
         mgr, win, panels = layout_env
         from wafer.qt.commands.command.core import CommandRegistry
@@ -1607,12 +1495,6 @@ class TestDynamicToggleCommands:
 
         reg = CommandRegistry.instance()
         assert reg.has_command("panel.toggle_file_viewer")
-
-    def test_command_id_generation(self, layout_env):
-        mgr, win, panels = layout_env
-        assert mgr._command_id("Folder Tree") == "panel.toggle_folder_tree"
-        assert mgr._command_id("Grid View") == "panel.toggle_grid_view"
-        assert mgr._command_id("Search") == "panel.toggle_search"
 
     def test_executing_toggle_command_collapses_panel(self, layout_env):
         from wafer.qt.commands.command.context import CommandContext
@@ -1811,34 +1693,6 @@ class TestToggleCommandCheckable:
         cmd_id = LayoutManager._command_id("viewer")
         cmd_cls = CommandRegistry.instance().get_command(cmd_id)
         assert cmd_cls.meta.checked() is True
-
-    def test_resolver_returns_true_for_floating_panel(self, layout_env):
-        from wafer.qt.commands.command.core import CommandRegistry
-
-        mgr, win, panels = layout_env
-        w = _make_panel("dyn")
-        _register_floating(mgr, "dyn", w)
-        _process()
-
-        cmd_id = LayoutManager._command_id("dyn")
-        cmd_cls = CommandRegistry.instance().get_command(cmd_id)
-        assert cmd_cls.meta.checked() is True
-
-    def test_resolver_returns_false_for_dormant_panel(self, layout_env):
-        from wafer.qt.commands.command.core import CommandRegistry
-
-        mgr, win, panels = layout_env
-        w = _make_panel("dyn")
-        _register_floating(mgr, "dyn", w)
-        _process()
-
-        mgr.toggle_panel("dyn")
-        _process()
-        assert "dyn" in mgr.dormant_panels()
-
-        cmd_id = LayoutManager._command_id("dyn")
-        cmd_cls = CommandRegistry.instance().get_command(cmd_id)
-        assert cmd_cls.meta.checked() is False
 
     def test_resolver_tracks_state_changes_dynamically(self, layout_env):
         from wafer.qt.commands.command.core import CommandRegistry

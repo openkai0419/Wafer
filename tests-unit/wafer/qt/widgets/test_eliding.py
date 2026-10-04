@@ -1,10 +1,4 @@
-import py_compile
-
 from PySide6 import QtWidgets
-
-
-def test_compile():
-    py_compile.compile("wafer/qt/widgets/eliding.py")
 
 
 class TestElidingLabel:

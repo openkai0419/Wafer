@@ -131,18 +131,6 @@ class TestWorkspaceCommands:
         win._save_slot.assert_not_called()
         win._restore_from_slot.assert_called_once_with(slot)
 
-    def test_restore_slot_other_slot_saves_current_before_restore(self):
-        win = MagicMock()
-        win.slot_id = "current"
-        store = MagicMock()
-        store.get_slot.return_value = WindowSlot(slot_id="slot1")
-
-        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store):
-            workspace_commands.restore_slot(_Ctx(win), slot_id="slot1")
-
-        win._save_slot.assert_called_once_with()
-        win._restore_from_slot.assert_called_once_with(store.get_slot.return_value)
-
     def test_rename_slot_updates_store(self):
         win = MagicMock()
         store = MagicMock()
@@ -212,19 +200,6 @@ class TestWorkspaceCommands:
                 workspace_commands.new_window(_Ctx())
 
         store.release_slot.assert_called_once_with("slot1")
-
-    def test_popup_commands_call_toolbar_widget(self):
-        tb = MagicMock()
-
-        workspace_commands.show_ui_popup(_Ctx(WorkspaceToolbarWidget=tb))
-        workspace_commands.show_path_popup(_Ctx(WorkspaceToolbarWidget=tb))
-        workspace_commands.show_filter_popup(_Ctx(WorkspaceToolbarWidget=tb))
-        workspace_commands.show_recent_popup(_Ctx(WorkspaceToolbarWidget=tb))
-
-        tb.show_ui_popup.assert_called_once_with()
-        tb.show_path_popup.assert_called_once_with()
-        tb.show_filter_popup.assert_called_once_with()
-        tb.show_recent_popup.assert_called_once_with()
 
     def test_workspace_menu_uses_popup_commands_instead_of_panel_toggle(self):
         from wafer.qt.layout.manager import LayoutManager

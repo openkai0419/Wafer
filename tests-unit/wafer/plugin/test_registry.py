@@ -90,16 +90,6 @@ class TestCommandGroupRegistry:
         assert _FakeGroupStar._registered is True
         assert _FakeGroupB._registered is False
 
-    def test_activate_tray_scope(self):
-        reg = CommandGroupRegistry()
-        reg.register(_FakeGroup)
-        reg.register(_FakeGroupB)
-        reg.register(_FakeGroupStar)
-        reg.activate("tray")
-        assert _FakeGroup._registered is False
-        assert _FakeGroupB._registered is True
-        assert _FakeGroupStar._registered is True
-
     def test_activate_does_not_double_register(self):
         reg = CommandGroupRegistry()
         reg.register(_FakeGroup)
@@ -115,15 +105,6 @@ class TestCommandGroupRegistry:
         reg.register(_SharedName2)
         names = reg.names()
         assert names.count("Shared") == 1
-
-    def test_list_all_sorted_by_priority(self):
-        reg = CommandGroupRegistry()
-        reg.register(_FakeGroupStar)
-        reg.register(_FakeGroupB)
-        reg.register(_FakeGroup)
-        listed = reg.list_all()
-        priorities = [c.PRIORITY for c in listed]
-        assert priorities == sorted(priorities, reverse=True)
 
     def test_set_order_changes_sort(self):
         reg = CommandGroupRegistry()

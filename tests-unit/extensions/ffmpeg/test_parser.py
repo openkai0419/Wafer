@@ -1,4 +1,3 @@
-import pytest
 from extensions.ffmpeg.parser import flatten, _parse_frame_rate
 
 
@@ -55,21 +54,24 @@ class TestParseFrameRate:
     def test_zero_division(self):
         assert _parse_frame_rate("0/0") is None
 
-    def test_empty_string(self):
+    def test_empty(self):
         assert _parse_frame_rate("") is None
-
-    def test_none(self):
         assert _parse_frame_rate(None) is None
 
 
 class TestFlatten:
-    def test_basic_metadata(self):
+    def test_format_and_container_tags(self):
         meta, aspect = flatten(SAMPLE_FFPROBE_OUTPUT)
         assert meta["Duration"] == "12.345"
         assert meta["Bitrate"] == "5000000"
         assert meta["FormatName"] == "mov,mp4,m4a,3gp,3g2,mj2"
+        assert meta["Tag/encoder"] == "Lavf58.29.100"
+        assert meta["Tag/creation_time"] == "2024-01-15T10:30:00.000000Z"
+        assert "Tag/prompt" in meta
+        assert "CheckpointLoaderSimple" in meta["Tag/prompt"]
+        assert "Tag/workflow" in meta
 
-    def test_video_stream(self):
+    def test_streams_and_aspect(self):
         meta, aspect = flatten(SAMPLE_FFPROBE_OUTPUT)
         assert meta["VideoCodec"] == "h264"
         assert meta["Width"] == "1920"
@@ -77,33 +79,13 @@ class TestFlatten:
         assert meta["PixelFormat"] == "yuv420p"
         assert meta["FrameRate"] == "30.000"
         assert meta["VideoBitrate"] == "4500000"
-
-    def test_audio_stream(self):
-        meta, aspect = flatten(SAMPLE_FFPROBE_OUTPUT)
         assert meta["AudioCodec"] == "aac"
         assert meta["SampleRate"] == "44100"
         assert meta["Channels"] == "2"
         assert meta["AudioBitrate"] == "128000"
-
-    def test_aspect_ratio(self):
-        meta, aspect = flatten(SAMPLE_FFPROBE_OUTPUT)
-        assert abs(aspect - (1920 / 1080)) < 0.001
-
-    def test_container_tags(self):
-        meta, aspect = flatten(SAMPLE_FFPROBE_OUTPUT)
-        assert meta["Tag/encoder"] == "Lavf58.29.100"
-        assert meta["Tag/creation_time"] == "2024-01-15T10:30:00.000000Z"
-
-    def test_comfyui_metadata(self):
-        meta, aspect = flatten(SAMPLE_FFPROBE_OUTPUT)
-        assert "Tag/prompt" in meta
-        assert "CheckpointLoaderSimple" in meta["Tag/prompt"]
-        assert "Tag/workflow" in meta
-
-    def test_stream_tags(self):
-        meta, aspect = flatten(SAMPLE_FFPROBE_OUTPUT)
         assert meta["VideoTag/language"] == "und"
         assert meta["AudioTag/language"] == "eng"
+        assert abs(aspect - (1920 / 1080)) < 0.001
 
     def test_empty_data(self):
         meta, aspect = flatten({})

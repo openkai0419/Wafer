@@ -73,13 +73,6 @@ class TestPendingTable:
         assert w._pending_table.rowCount() == 0
         assert w._pending_group.title() == "Edited keys (0)"
 
-    def test_uses_splitter_layout(self, qtbot):
-        w = _make_widget(qtbot)
-        assert w._content_splitter.count() == 2
-        assert w._details_splitter.count() == 2
-        assert w._content_splitter.orientation() == QtCore.Qt.Vertical
-        assert w._details_splitter.orientation() == QtCore.Qt.Horizontal
-
     def test_shows_edited_keys(self, qtbot):
         w = _make_widget(qtbot)
         row = _row_for(w, "Make")

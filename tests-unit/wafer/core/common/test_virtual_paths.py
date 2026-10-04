@@ -7,7 +7,6 @@ from wafer.core.common.virtual_paths import (
     is_virtual_path,
     leaf_extension,
     owner_extension,
-    physical_paths,
     source_path,
     unescape_member_path,
 )
@@ -32,15 +31,6 @@ def test_virtual_path_escapes_separator_and_percent():
     assert unescape_member_path(escaped) == member
     path = build_virtual_path("C:/data/archive.zip", member)
     assert child_path(path) == member
-
-
-def test_physical_paths_dedupes_virtual_sources():
-    paths = [
-        build_virtual_path("C:/data/archive.zip", "a.png"),
-        build_virtual_path("C:/data/archive.zip", "b.png"),
-        "C:/data/plain.png",
-    ]
-    assert physical_paths(paths) == ["C:/data/archive.zip", "C:/data/plain.png"]
 
 
 def test_is_virtual_path_accepts_separator_syntax_without_owner_registration():

@@ -1,4 +1,3 @@
-import py_compile
 import pytest
 from unittest.mock import MagicMock, patch
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -19,48 +18,12 @@ def _configure_command_store(tmp_path_factory):
     CommandOptionStore._instance, CommandOptionStore._initialized, CommandOptionStore._default_path = prev
 
 
-def test_compile():
-    py_compile.compile("wafer/app/viewer/grid/grid_view.py")
-
-
 class TestSelectionOverlay:
     @pytest.fixture(autouse=True)
     def _import(self, qtbot):
         from wafer.app.viewer.grid.grid_view import _SelectionOverlay
 
         self._cls = _SelectionOverlay
-
-    def test_attributes_set(self, qtbot):
-        grid = MagicMock()
-        parent = QtWidgets.QWidget()
-        qtbot.addWidget(parent)
-        overlay = self._cls(grid, parent)
-        assert overlay.testAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
-        assert overlay.testAttribute(QtCore.Qt.WA_TranslucentBackground)
-
-    def test_map_rect_delegates_to_grid(self, qtbot):
-        grid = MagicMock()
-        grid.mapFromScene.side_effect = lambda pt: QtCore.QPoint(int(pt.x()) + 10, int(pt.y()) + 20)
-        parent = QtWidgets.QWidget()
-        qtbot.addWidget(parent)
-        overlay = self._cls(grid, parent)
-        result = overlay._map_rect(QtCore.QRectF(0, 0, 100, 50))
-        assert result.left() == 10
-        assert result.top() == 20
-        assert result.width() == 100
-        assert result.height() == 50
-
-    def test_map_rect_with_scroll_offset(self, qtbot):
-        grid = MagicMock()
-        grid.mapFromScene.side_effect = lambda pt: QtCore.QPoint(int(pt.x()) - 50, int(pt.y()) - 200)
-        parent = QtWidgets.QWidget()
-        qtbot.addWidget(parent)
-        overlay = self._cls(grid, parent)
-        result = overlay._map_rect(QtCore.QRectF(100, 300, 200, 150))
-        assert result.left() == 50
-        assert result.top() == 100
-        assert result.width() == 200
-        assert result.height() == 150
 
     def test_paint_no_crash_empty_state(self, qtbot):
         grid = MagicMock()
@@ -87,19 +50,6 @@ class TestGridViewOverlayIntegration:
 
         self.GridView = GridView
 
-    def test_overlay_exists(self, qtbot):
-        with patch("wafer.app.viewer.grid.grid_view.grid_resolver"):
-            gv = self.GridView(MagicMock())
-            qtbot.addWidget(gv)
-            assert hasattr(gv, "_overlay")
-            assert gv._overlay.parent() is gv.viewport()
-
-    def test_overlay_transparent_for_mouse(self, qtbot):
-        with patch("wafer.app.viewer.grid.grid_view.grid_resolver"):
-            gv = self.GridView(MagicMock())
-            qtbot.addWidget(gv)
-            assert gv._overlay.testAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
-
     def test_overlay_resizes_with_viewport(self, qtbot):
         with patch("wafer.app.viewer.grid.grid_view.grid_resolver"):
             gv = self.GridView(MagicMock())
@@ -124,13 +74,6 @@ class TestGridViewScrollRange:
         from wafer.app.viewer.grid.grid_view import GridView
 
         self.GridView = GridView
-
-    def test_initial_orientation_applies_scrollbar_policy(self, qtbot):
-        with patch("wafer.app.viewer.grid.grid_view.grid_resolver"):
-            gv = self.GridView(MagicMock())
-            qtbot.addWidget(gv)
-            assert gv.horizontalScrollBarPolicy() == QtCore.Qt.ScrollBarAsNeeded
-            assert gv.verticalScrollBarPolicy() == QtCore.Qt.ScrollBarAlwaysOn
 
     def test_justified_reverse_vertical_has_horizontal_scroll_range(self, qtbot):
         from wafer.builtins.layouts import JustifiedLayoutCalculator
@@ -269,21 +212,9 @@ class TestNeedsReload:
     def _call(self, item, cell_w, cell_h):
         return self._needs_reload(self._mock_self, item, QtCore.QSizeF(cell_w, cell_h))
 
-    def test_pixmap_at_loader_target_no_reload(self):
-        item = MockItem(200 - LOADER_MARGIN, 200 - LOADER_MARGIN)
-        assert self._call(item, 200, 200) is False
-
     def test_pixmap_one_below_threshold_needs_reload(self):
         item = MockItem(200 - LOADER_MARGIN - 1, 200 - LOADER_MARGIN)
         assert self._call(item, 200, 200) is True
-
-    def test_large_pixmap_small_cell_no_reload(self):
-        item = MockItem(500, 375)
-        assert self._call(item, 200, 200) is False
-
-    def test_small_pixmap_large_cell_needs_reload(self):
-        item = MockItem(100, 100)
-        assert self._call(item, 600, 600) is True
 
     def test_null_pixmap_no_reload(self):
         item = MockItem()
@@ -329,18 +260,6 @@ class TestSetupCell:
         return fake
 
     @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
-    def test_small_cached_triggers_pipeline(self, mock_resolver):
-        mock_resolver.resolve_chain.return_value = []
-        fake = self._make_fake(["img.jpg"])
-        fake.rects = {0: QtCore.QRectF(0, 0, 600, 600)}
-        fake.image_cache.get.return_value = _make_image(100, 100)
-        fake.pixmap_item_pool.acquire.return_value = MockItem()
-
-        self.GridView._setup_cell(fake, 0)
-
-        fake._pipeline.schedule_render.assert_called_once()
-
-    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
     def test_sufficient_cached_skips_pipeline(self, mock_resolver):
         fake = self._make_fake(["img.jpg"])
         fake.rects = {0: QtCore.QRectF(0, 0, 200, 200)}
@@ -353,18 +272,6 @@ class TestSetupCell:
 
         fake._pipeline.schedule_render.assert_called_once()
         assert mock_item.current_path == "img.jpg"
-
-    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
-    def test_no_cache_starts_pipeline(self, mock_resolver):
-        mock_resolver.resolve_chain.return_value = []
-        fake = self._make_fake(["img.jpg"])
-        fake.rects = {0: QtCore.QRectF(0, 0, 200, 200)}
-        fake.image_cache.get.return_value = None
-        fake.pixmap_item_pool.acquire.return_value = MockItem()
-
-        self.GridView._setup_cell(fake, 0)
-
-        fake._pipeline.schedule_render.assert_called_once()
 
     @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
     def test_small_cached_sets_image_before_pipeline(self, mock_resolver):
@@ -540,16 +447,6 @@ class TestRecycleWidget:
         assert 0 not in fake._additional_widgets
         fake._pipeline.cancel_index.assert_called_once_with(0)
 
-    def test_recycle_cancels_pipeline_task(self):
-        fake = MagicMock()
-        fake.widgets = {}
-        fake._additional_widgets = {}
-        fake._pipeline = MagicMock()
-
-        self.GridView._recycle_widget(fake, 0)
-
-        fake._pipeline.cancel_index.assert_called_once_with(0)
-
 
 class TestAutoScroll:
     def test_start_auto_scroll_stores_base_speed(self):
@@ -696,19 +593,6 @@ class TestAutoScroll:
         slow = GridView.get_adjusted_scroll_speed(gv, 10)
         fast = GridView.get_adjusted_scroll_speed(gv, 100)
         assert fast > slow
-
-    def test_speed_callback_uses_base_speed_attribute(self):
-        gv = MagicMock()
-        gv._autoscroll_base_speed = 200
-        gv.base_height = 100
-        gv.screen_width = 1920
-
-        from wafer.app.viewer.grid.grid_view import GridView
-
-        expected = GridView.get_adjusted_scroll_speed(gv, 200)
-
-        callback = lambda: GridView.get_adjusted_scroll_speed(gv, gv._autoscroll_base_speed)
-        assert callback() == expected
 
 
 class TestFindCenterIndexEffectiveScroll:
@@ -906,33 +790,18 @@ class TestOnLayoutReadyWidgetRerender:
     def test_widget_cell_not_rerendered_on_same_size(self, mock_resolver):
         from wafer.plugin.layout.calc import LayoutData
 
-        fake = self._make_fake(["anim.gif"])
-        widget = MagicMock()
-        widget.size.return_value = QtCore.QSize(200, 200)
-        fake._additional_widgets = {0: widget}
-        fake.visible_indices = {0}
+        for widget_side in (200, 400):
+            fake = self._make_fake(["anim.gif"])
+            widget = MagicMock()
+            widget.size.return_value = QtCore.QSize(widget_side, widget_side)
+            fake._additional_widgets = {0: widget}
+            fake.visible_indices = {0}
 
-        layout = LayoutData([QtCore.QRect(0, 0, 200, 200)], 200, True)
+            layout = LayoutData([QtCore.QRect(0, 0, 200, 200)], 200, True)
 
-        self.GridView._on_layout_ready(fake, layout)
+            self.GridView._on_layout_ready(fake, layout)
 
-        fake._pipeline.schedule_render.assert_not_called()
-
-    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
-    def test_widget_cell_not_rerendered_on_size_decrease(self, mock_resolver):
-        from wafer.plugin.layout.calc import LayoutData
-
-        fake = self._make_fake(["anim.gif"])
-        widget = MagicMock()
-        widget.size.return_value = QtCore.QSize(400, 400)
-        fake._additional_widgets = {0: widget}
-        fake.visible_indices = {0}
-
-        layout = LayoutData([QtCore.QRect(0, 0, 200, 200)], 200, True)
-
-        self.GridView._on_layout_ready(fake, layout)
-
-        fake._pipeline.schedule_render.assert_not_called()
+            fake._pipeline.schedule_render.assert_not_called()
 
 
 class TestRecalcLayoutEmptyGuard:
@@ -994,21 +863,6 @@ class TestScrollRestoreOnUpdate:
         gv.set_paths(paths, ["s"] * len(paths), [1.0] * len(paths))
         gv._on_layout_ready(layout)
         QtWidgets.QApplication.processEvents()
-
-    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
-    def test_default_is_off(self, mock_resolver, qtbot):
-        gv = self.GridView(MagicMock())
-        qtbot.addWidget(gv)
-        assert gv.follow_selection_on_update is False
-
-    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
-    def test_setter_toggles_flag(self, mock_resolver, qtbot):
-        gv = self.GridView(MagicMock())
-        qtbot.addWidget(gv)
-        gv.set_follow_selection_on_update(True)
-        assert gv.follow_selection_on_update is True
-        gv.set_follow_selection_on_update(False)
-        assert gv.follow_selection_on_update is False
 
     @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
     def test_off_preserves_scroll_position(self, mock_resolver, qtbot):

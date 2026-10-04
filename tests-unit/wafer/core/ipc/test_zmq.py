@@ -1,4 +1,3 @@
-import py_compile
 import threading
 import time
 from types import SimpleNamespace
@@ -31,14 +30,6 @@ def fast_heartbeat(monkeypatch):
     monkeypatch.setattr("wafer.core.ipc.node.NODE_TIMEOUT", FAST_NODE_TIMEOUT)
     monkeypatch.setattr("wafer.core.ipc.node.RECONNECT_FORCE_INTERVAL", FAST_NODE_TIMEOUT)
     monkeypatch.setattr("wafer.core.ipc.transport.ZMQ_SNDTIMEO_MS", 100)
-
-
-def test_compile():
-    py_compile.compile("wafer/core/ipc/message.py")
-    py_compile.compile("wafer/core/ipc/broker.py")
-    py_compile.compile("wafer/core/ipc/node.py")
-    py_compile.compile("wafer/core/ipc/transport.py")
-    py_compile.compile("wafer/core/ipc/outbox.py")
 
 
 class TestMessage:

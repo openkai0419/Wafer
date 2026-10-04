@@ -111,13 +111,11 @@ class PluginLoader:
         plugin_dir: str,
         registries: dict[str, RegistryBase],
         *,
-        enabled: dict[str, bool] | set[str] | None = None,
-        legacy_enabled: set[str] | None = None,
+        enabled: dict[str, bool] | None = None,
     ):
         self._plugin_dir = plugin_dir
         self._registries = registries
-        self._enabled_overrides = dict(enabled) if isinstance(enabled, dict) else {}
-        self._legacy_enabled = set(enabled) if isinstance(enabled, set) else legacy_enabled
+        self._enabled_overrides = dict(enabled) if enabled else {}
 
     def load_all(self, on_progress=None) -> list[str]:
         if not os.path.isdir(self._plugin_dir):
@@ -183,8 +181,6 @@ class PluginLoader:
     def _is_enabled(self, qualified: str, cls: type) -> bool:
         if qualified in self._enabled_overrides:
             return bool(self._enabled_overrides[qualified])
-        if self._legacy_enabled is not None:
-            return qualified in self._legacy_enabled
         return bool(getattr(cls, "DEFAULT_ENABLED", False))
 
     @staticmethod
@@ -279,10 +275,7 @@ def load_plugins(*, on_progress=None) -> list[str]:
     from .settings import PluginSettings
 
     ps = PluginSettings()
-    enabled_overrides = ps.enabled_overrides()
-    legacy_enabled = None if ps.has_enabled_overrides() else ps.enabled_names()
-
-    loader = PluginLoader(get_plugin_dir(), registries, enabled=enabled_overrides, legacy_enabled=legacy_enabled)
+    loader = PluginLoader(get_plugin_dir(), registries, enabled=ps.enabled_overrides())
     result = loader.load_all(on_progress=on_progress)
 
     for key, registry in registries.items():

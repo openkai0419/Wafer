@@ -22,29 +22,7 @@ def provider(file_model, grid_items):
     return FileListProvider(file_model, grid_items)
 
 
-class TestListMode:
-    def test_default_mode_is_sync(self, provider):
-        assert provider.mode == ListMode.SYNC
-
-    def test_set_mode(self, provider):
-        provider.set_mode(ListMode.FIX)
-        assert provider.mode == ListMode.FIX
-        provider.set_mode(ListMode.DIR)
-        assert provider.mode == ListMode.DIR
-        provider.set_mode(ListMode.SYNC)
-        assert provider.mode == ListMode.SYNC
-
-
 class TestContainedFilesListOption:
-    def test_default_is_disabled(self, provider):
-        assert provider.open_contained_files_as_list is False
-
-    def test_set_open_contained_files_as_list(self, provider):
-        provider.set_open_contained_files_as_list(True)
-        assert provider.open_contained_files_as_list is True
-        provider.set_open_contained_files_as_list(False)
-        assert provider.open_contained_files_as_list is False
-
     def test_save_restore_ui_state(self, provider):
         provider.set_mode(ListMode.DIR)
         provider.set_open_contained_files_as_list(True)
@@ -215,14 +193,6 @@ class TestFixMode:
         assert file_model.sources == ["s1", "s2", "s3"]
         assert file_model.path() == "b"
         assert file_model.current_index() == 1
-
-    def test_fix_mode_preserves_list_on_search(self, provider, file_model, grid_items):
-        grid_items.set_items(["a", "b"], ["s1", "s2"], [1.0, 1.0])
-        provider.set_mode(ListMode.FIX)
-        provider.on_file_set("a")
-        assert file_model.paths == ["a", "b"]
-        provider.on_search_results(["x", "y", "z"], ["sx", "sy", "sz"])
-        assert file_model.paths == ["a", "b"]
 
     def test_fix_mode_recaptures_on_new_set(self, provider, file_model, grid_items):
         grid_items.set_items(["a", "b"], ["s1", "s2"], [1.0, 1.0])

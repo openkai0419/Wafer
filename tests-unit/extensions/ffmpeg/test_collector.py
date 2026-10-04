@@ -1,6 +1,4 @@
-import os
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from extensions.ffmpeg.collector import FfmpegCollectorPlugin
 
@@ -25,24 +23,6 @@ SAMPLE_PROBE_RESULT = {
 
 
 class TestFfmpegCollectorPlugin:
-    def test_name_and_extensions(self):
-        assert FfmpegCollectorPlugin.NAME == "ffmpeg"
-        assert ".mp4" in FfmpegCollectorPlugin.EXTENSIONS
-        assert ".mkv" in FfmpegCollectorPlugin.EXTENSIONS
-        assert ".mpg" in FfmpegCollectorPlugin.EXTENSIONS
-        assert ".mpeg" in FfmpegCollectorPlugin.EXTENSIONS
-        assert ".mp3" in FfmpegCollectorPlugin.EXTENSIONS
-        assert ".flac" in FfmpegCollectorPlugin.EXTENSIONS
-
-    def test_priority(self):
-        assert FfmpegCollectorPlugin.PRIORITY == 100
-        assert FfmpegCollectorPlugin.DEFAULT_ENABLED is True
-
-    def test_post_install_calls_ensure(self):
-        with patch("extensions.ffmpeg._downloader.ensure_ffmpeg") as mock_ensure:
-            FfmpegCollectorPlugin.post_install("/fake/dir")
-            mock_ensure.assert_called_once()
-
     def test_resolve_ffprobe_no_download(self):
         plugin = FfmpegCollectorPlugin()
         with patch("extensions.ffmpeg._downloader.get_ffprobe_path", return_value=None):

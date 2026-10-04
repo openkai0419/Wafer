@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
-from PySide6 import QtWidgets, QtGui
+from PySide6 import QtWidgets
 
 from wafer.qt.commands.command.core import (
     CommandMeta,
@@ -107,35 +107,6 @@ class TestPickerMenuNoCacheWithSelectionCallback:
         builder2 = MenuBuilder(maker, parent)
         menu2 = builder2.build_all_roots(selection_callback=None)
         assert menu1 is menu2
-
-
-class TestNoneUnsetNotAccumulated:
-    def _count_none_actions(self, menu: QtWidgets.QMenu) -> int:
-        count = 0
-        for action in menu.actions():
-            if action.text() and "None" in action.text() and "Unset" in action.text():
-                count += 1
-        return count
-
-    def test_prepare_does_not_accumulate_none_unset(self, qtbot):
-        _register(_make_id("c"), "CmdC")
-        parent = QtWidgets.QWidget()
-        qtbot.addWidget(parent)
-
-        for i in range(5):
-            maker = MenuMaker()
-            builder = MenuBuilder(maker, parent)
-            menu = builder.build_all_roots(
-                selection_callback=lambda cid: None,
-            )
-            act_none = QtGui.QAction("None (Unset)", menu)
-            first = menu.actions()[0] if menu.actions() else None
-            if first:
-                menu.insertAction(first, act_none)
-                menu.insertSeparator(first)
-            else:
-                menu.addAction(act_none)
-            assert self._count_none_actions(menu) == 1, f"iteration {i}: expected 1 'None (Unset)' but found {self._count_none_actions(menu)}"
 
 
 def _find_command_actions(menu):

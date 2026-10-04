@@ -41,7 +41,7 @@ def normalize_version(value: str | None) -> str:
     return parsed.normalized if parsed else str(value or "").strip().lstrip("v")
 
 
-def is_newer_version(current: str | None, latest: str | None, *, include_prerelease: bool = False) -> bool:
+def is_newer_version(current: str | None, latest: str | None) -> bool:
     current_parts = parse_version(current)
     latest_parts = parse_version(latest)
     if current_parts is None or latest_parts is None:

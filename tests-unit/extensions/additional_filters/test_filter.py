@@ -5,7 +5,6 @@ import os
 import sqlite3
 import time
 
-import pytest
 
 from wafer.core.db.db_utils import apply_read_pragmas, apply_write_pragmas
 
@@ -86,8 +85,6 @@ class TestIsDateKey:
         assert is_date_key("exiftool.DateTimeOriginal") is True
         assert is_date_key("exiftool.DateTime") is True
         assert is_date_key("exiftool.DateTimeDigitized") is True
-
-    def test_gps_date(self):
         assert is_date_key("exiftool.GPSDateStamp") is True
         assert is_date_key("exiftool.GPSTimeStamp") is True
 
@@ -100,21 +97,14 @@ class TestIsDateKey:
 
 
 class TestDateStrToEpoch:
-    def test_valid_date(self):
-        result = _date_str_to_epoch("2024/01/15")
-        assert isinstance(result, float)
-        assert result > 0
-
     def test_end_of_day(self):
         start = _date_str_to_epoch("2024/01/15", end_of_day=False)
         end = _date_str_to_epoch("2024/01/15", end_of_day=True)
         assert end > start
         assert end - start == 86399
 
-    def test_empty_string(self):
+    def test_empty(self):
         assert _date_str_to_epoch("") is None
-
-    def test_none(self):
         assert _date_str_to_epoch(None) is None
 
     def test_invalid_format(self):
@@ -122,23 +112,11 @@ class TestDateStrToEpoch:
 
 
 class TestPresetToEpoch:
-    def test_days(self):
-        now = time.time()
-        result = _preset_to_epoch(7, "days")
-        expected = now - 7 * 86400
-        assert abs(result - expected) < 1.0
-
-    def test_hours(self):
-        now = time.time()
-        result = _preset_to_epoch(24, "hours")
-        expected = now - 24 * 3600
-        assert abs(result - expected) < 1.0
-
-    def test_weeks(self):
-        now = time.time()
-        result = _preset_to_epoch(2, "weeks")
-        expected = now - 2 * 604800
-        assert abs(result - expected) < 1.0
+    def test_fixed_units(self):
+        for value, unit, seconds in ((7, "days", 86400), (24, "hours", 3600), (2, "weeks", 604800)):
+            now = time.time()
+            result = _preset_to_epoch(value, unit)
+            assert abs(result - (now - value * seconds)) < 1.0
 
     def test_months(self):
         result = _preset_to_epoch(1, "months")
@@ -169,11 +147,6 @@ class TestPresetToEpoch:
 
 
 class TestResolveDateValue:
-    def test_today(self):
-        result = _resolve_date_value("today")
-        assert isinstance(result, float)
-        assert result > 0
-
     def test_today_end_of_day(self):
         start = _resolve_date_value("today", end_of_day=False)
         end = _resolve_date_value("today", end_of_day=True)
@@ -187,21 +160,14 @@ class TestResolveDateValue:
 
     def test_empty(self):
         assert _resolve_date_value("") is None
-
-    def test_none_str(self):
         assert _resolve_date_value(None) is None
 
 
 class TestResolvePresetRef:
-    def test_today_string(self):
-        now = time.time()
-        result = _resolve_preset_ref("today")
-        assert abs(result - now) < 1.0
-
-    def test_empty_string(self):
-        now = time.time()
-        result = _resolve_preset_ref("")
-        assert abs(result - now) < 1.0
+    def test_today_or_empty_is_now(self):
+        for ref in ("today", ""):
+            now = time.time()
+            assert abs(_resolve_preset_ref(ref) - now) < 1.0
 
     def test_date_string(self):
         result = _resolve_preset_ref("2024/06/15")
@@ -272,12 +238,6 @@ class TestBuildPathQuery:
         params = {"target_key": "modified", "mode": "invalid"}
         sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
         assert sql is None
-
-    def test_range_today(self):
-        params = {"target_key": "modified", "mode": "range", "range_from": "today", "range_to": ""}
-        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
-        assert sql is not None
-        assert "<=" in sql
 
     def test_range_swaps_min_max(self):
         params = {

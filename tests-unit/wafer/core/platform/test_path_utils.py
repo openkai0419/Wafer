@@ -135,11 +135,3 @@ def test_validate_filename_too_long():
     assert "too_long" not in validate_filename("a" * 100)
     assert "too_long" not in validate_filename("あ" * 255)
     assert "too_long" in validate_filename("あ" * 256)
-
-
-def test_get_os_new_folder_name():
-    from wafer.core.platform.path_utils import get_os_new_folder_name
-
-    name = get_os_new_folder_name()
-    assert isinstance(name, str)
-    assert len(name) > 0

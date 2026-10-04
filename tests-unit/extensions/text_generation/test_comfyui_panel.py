@@ -1,14 +1,10 @@
 import json
 
-from PySide6 import QtWidgets
 
 from extensions.text_generation.comfyui_panel import (
     ComfyUiWorkflowPanelPlugin,
     WorkflowDragExport,
 )
-from wafer.plugin import BaseKeyValuePanelPlugin
-from wafer.qt.meta.viewer import CollapsibleCard
-from wafer.qt.meta.searchable import SearchableMetaWidget
 
 WORKFLOW = {"nodes": [{"id": 3, "type": "KSampler"}], "links": []}
 
@@ -16,20 +12,6 @@ WORKFLOW = {"nodes": [{"id": 3, "type": "KSampler"}], "links": []}
 class TestComfyUiWorkflowPanelPlugin:
     def setup_method(self):
         self.plugin = ComfyUiWorkflowPanelPlugin()
-
-    def test_inherits_base(self):
-        assert isinstance(self.plugin, BaseKeyValuePanelPlugin)
-
-    def test_prefix_and_scope(self):
-        assert self.plugin.PREFIX == "comfyui"
-        assert self.plugin.DATA_SCOPE == "meta_info"
-
-    def test_create_card_builds_composite(self, qtbot):
-        card = self.plugin.create_card(scope="meta_info")
-        qtbot.addWidget(card)
-        assert isinstance(card, CollapsibleCard)
-        assert isinstance(self.plugin._body, SearchableMetaWidget)
-        assert isinstance(self.plugin._export, WorkflowDragExport)
 
     def test_update_data_excludes_workflow_from_body(self, qtbot):
         card = self.plugin.create_card(scope="meta_info")

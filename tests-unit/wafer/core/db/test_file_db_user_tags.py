@@ -12,12 +12,8 @@ def _make_db(tmp_path):
 
 
 def _seed(db, source="src1", file_hash="h1", tag_key="rating", tag_value="5"):
-    db.upsert_batches(
-        [(source, file_hash, 100, 1.0)],
-        [(source, source, 1.5)],
-        [],
-        [(file_hash, tag_key, tag_value, None)],
-    )
+    db.upsert_basic_sources([(source, file_hash, 100, 1.0)], [(source, source, 1.5)])
+    db.upsert_collection_results([], [], [(source, tag_key, tag_value, None)], [])
 
 
 def _get_tag(db, file_hash, key):
@@ -51,7 +47,7 @@ def test_collector_upsert_respects_lock(tmp_path):
     db = _make_db(tmp_path)
     _seed(db)
     _apply(db, "src1", [("rating", "9", 9.0, 1)], [])
-    db.upsert_batches([], [], [], [("h1", "rating", "3", 3.0)])
+    db.upsert_collection_results([], [], [("src1", "rating", "3", 3.0)], [])
     val, locked = _get_tag(db, "h1", "rating")
     assert val == "9"
     assert locked == 1
@@ -106,7 +102,7 @@ def test_migrate_tags_on_hash_change_preserves_all(tmp_path):
     db = _make_db(tmp_path)
     _seed(db)
     _apply(db, "src1", [("locked_tag", "L", None, 1), ("free_tag", "F", None, 0)], [])
-    db.upsert_batches([("src1", "h2", 100, 2.0)], [("src1", "src1", 1.5)], [], [])
+    db.upsert_basic_sources([("src1", "h2", 100, 2.0)], [("src1", "src1", 1.5)])
     assert _get_tag(db, "h2", "rating") is not None
     assert _get_tag(db, "h2", "locked_tag") == ("L", 1)
     assert _get_tag(db, "h2", "free_tag") == ("F", 0)
@@ -190,11 +186,9 @@ def test_rename_unknown_old_key_no_change(tmp_path):
 
 def test_apply_user_tags_multiple_paths(tmp_path):
     db = _make_db(tmp_path)
-    db.upsert_batches(
+    db.upsert_basic_sources(
         [("p1", "h1", 100, 1.0), ("p2", "h2", 100, 1.0)],
         [("p1", "p1", 1.5), ("p2", "p2", 1.5)],
-        [],
-        [],
     )
     results = db.apply_user_kv(
         ["p1", "p2", "missing"],
@@ -217,11 +211,9 @@ def test_apply_user_tags_child_path_uses_source_hash(tmp_path):
     db = _make_db(tmp_path)
     source = "archive.zip"
     child = build_virtual_path(source, "folder/image.png")
-    db.upsert_batches(
+    db.upsert_basic_sources(
         [(source, "hash_zip", 100, 1.0)],
         [(source, source, 1.0), (child, source, 1.5)],
-        [],
-        [],
     )
     result = db.apply_user_kv([child], [("rating", "5", 5.0, 0)], [], scope="tag")
     assert result[child][0] == "hash_zip"
@@ -244,7 +236,7 @@ def test_user_meta_info_lock_blocks_collector_overwrite(tmp_path):
     db = _make_db(tmp_path)
     _seed(db)
     db.apply_user_meta_info(["src1"], [("exif.rating", "9", 9.0, 1)], [])
-    db.upsert_batches([], [], [("src1", "exif.rating", "3", 3.0)], [])
+    db.upsert_basic_sources([], [], [("src1", "exif.rating", "3", 3.0)])
     assert _get_meta(db, "src1", "exif.rating") == ("9", 1)
     db.apply_user_meta_info(["src1"], [("exif.rating", "7", 7.0, 0)], [])
     assert _get_meta(db, "src1", "exif.rating") == ("7", 0)
@@ -296,12 +288,11 @@ def test_convert_key_scope_meta_to_tag_is_rerunnable(tmp_path):
 
 def test_convert_key_scope_tag_to_meta_expands_to_paths(tmp_path):
     db = _make_db(tmp_path)
-    db.upsert_batches(
+    db.upsert_basic_sources(
         [("src1", "h1", 100, 1.0)],
         [("src1", "src1", 1.0), ("child", "src1", 1.0)],
-        [],
-        [("h1", "mark.1", "1", None)],
     )
+    db.upsert_collection_results([], [], [("src1", "mark.1", "1", None)], [])
     result = db.convert_key_scope("mark.1", "meta_info")
     assert result["from_scope"] == "tag"
     assert set(result["paths"]) == {"src1", "child"}

@@ -129,7 +129,7 @@ def test_query_db_reads_assigned_database(tmp_path, monkeypatch):
     db = FileDB(db_path)
     db.start()
     db.initialize_database()
-    db.upsert_batches([("src1", "hash1", 100, 1.0)], [("src1", "src1", 1.0)], [], [])
+    db.upsert_basic_sources([("src1", "hash1", 100, 1.0)], [("src1", "src1", 1.0)])
     db.close()
     monkeypatch.setattr(paths, "data_db_path", lambda name: str(db_path))
 

@@ -121,11 +121,9 @@ def test_delete_sources_retriggers_sources_sharing_the_hash(writer, monkeypatch)
         "wafer.app.indexer.receivers.parser_receiver.trigger_parser_pending",
         lambda source_keys, w, *a, **kw: triggered.update(source_keys),
     )
-    writer.db.upsert_batches(
+    writer.db.upsert_basic_sources(
         [("src1", "shared", 10, 1.0), ("src2", "shared", 10, 1.0)],
         [("src1", "src1", 1.0), ("src2", "src2", 1.0)],
-        [],
-        [],
     )
 
     writer.delete_sources(["src2"])
@@ -139,11 +137,9 @@ def test_delete_sources_does_not_retrigger_unique_hashes(writer, monkeypatch):
         "wafer.app.indexer.receivers.parser_receiver.trigger_parser_pending",
         lambda source_keys, w, *a, **kw: triggered.update(source_keys),
     )
-    writer.db.upsert_batches(
+    writer.db.upsert_basic_sources(
         [("src1", "one", 10, 1.0), ("src2", "two", 10, 1.0)],
         [("src1", "src1", 1.0), ("src2", "src2", 1.0)],
-        [],
-        [],
     )
 
     writer.delete_sources(["src2"])

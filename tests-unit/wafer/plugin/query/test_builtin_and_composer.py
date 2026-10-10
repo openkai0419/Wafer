@@ -40,10 +40,11 @@ def populated_db(tmp_path):
         metas.append((path, "Comment", f"photo number {i}", None))
         if i % 3 == 0:
             metas.append((path, "Artist", f"photographer_{i % 5}", None))
-        tags.append((fhash, "rating", f"{(i % 5) + 1}", float((i % 5) + 1)))
+        tags.append((source, "rating", f"{(i % 5) + 1}", float((i % 5) + 1)))
         if i % 2 == 0:
-            tags.append((fhash, "category", "landscape" if i < 100 else "office", None))
-    db.upsert_batches(sources, images, metas, tags)
+            tags.append((source, "category", "landscape" if i < 100 else "office", None))
+    db.upsert_basic_sources(sources, images, metas)
+    db.upsert_collection_results([], [], tags, [])
     db.conn.execute("ANALYZE")
     db.conn.commit()
     db.close()
@@ -71,8 +72,9 @@ def special_db(tmp_path):
         sources.append((path, fhash, 100, 1.0))
         images.append((path, path, 1.5))
         metas.append((path, "Comment", comment, None))
-        tags.append((fhash, "rating", "3", 3.0))
-    db.upsert_batches(sources, images, metas, tags)
+        tags.append((path, "rating", "3", 3.0))
+    db.upsert_basic_sources(sources, images, metas)
+    db.upsert_collection_results([], [], tags, [])
     db.conn.execute("ANALYZE")
     db.conn.commit()
     db.close()
@@ -89,7 +91,7 @@ def contained_db(tmp_path):
     child_a = build_virtual_path(archive, "a.png")
     child_b = build_virtual_path(archive, "nested/b.png")
     plain = "C:/photos/plain.png"
-    db.upsert_batches(
+    db.upsert_basic_sources(
         [
             (archive, "hash_zip", 1000, 1.0),
             (plain, "hash_plain", 2000, 2.0),
@@ -100,8 +102,6 @@ def contained_db(tmp_path):
             (child_b, archive, "b.png", 1.0, "zip"),
             (plain, plain, "plain.png", 1.0, None),
         ],
-        [],
-        [],
     )
     db.conn.execute("ANALYZE")
     db.conn.commit()
@@ -233,14 +233,12 @@ class TestFileSearchEngineSourceChildren:
         db.initialize_database()
         archive = "C:/archives/legacy.zip"
         child = build_virtual_path(archive, "legacy.png")
-        db.upsert_batches(
+        db.upsert_basic_sources(
             [(archive, "hash_zip", 1000, 1.0)],
             [
                 (archive, archive, "legacy.zip", 1.0, None),
                 (child, archive, "legacy.png", 1.0, None),
             ],
-            [],
-            [],
         )
         db.close()
 

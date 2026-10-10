@@ -132,14 +132,6 @@ _SQL_UPSERT_SOURCES = """INSERT INTO sources (source, file_hash, size, modified,
         created   = excluded.created,
         collected = COALESCE(sources.collected, excluded.collected)"""
 
-_SQL_UPSERT_FILES = """INSERT INTO files (path, source, name, aspect_ratio, source_extension)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(path) DO UPDATE SET
-        source       = excluded.source,
-        name         = excluded.name,
-        aspect_ratio = excluded.aspect_ratio,
-        source_extension = excluded.source_extension"""
-
 _SQL_UPSERT_FILES_COALESCE = """INSERT INTO files (path, source, name, aspect_ratio, source_extension)
     VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(path) DO UPDATE SET
@@ -154,13 +146,6 @@ _SQL_UPSERT_META = """INSERT INTO meta_info (path, key, value, value_num)
         value     = excluded.value,
         value_num = excluded.value_num
     WHERE meta_info.locked = 0"""
-
-_SQL_UPSERT_TAGS = """INSERT INTO tags (file_hash, key, value, value_num)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(file_hash, key) DO UPDATE SET
-        value     = excluded.value,
-        value_num = excluded.value_num
-    WHERE tags.locked = 0"""
 
 _SQL_UPSERT_SOURCE_TAGS = """INSERT INTO tags (file_hash, key, value, value_num)
     SELECT file_hash, ?, ?, ? FROM sources WHERE source = ?
@@ -543,14 +528,8 @@ class FileDB:
         return paths
 
     @staticmethod
-    def _ensure_hash_indexes(cur, source_entries, tag_entries=()):
-        file_hashes = set()
-        for _, fid, *_ in source_entries:
-            if fid:
-                file_hashes.add(fid)
-        for fid, *_ in tag_entries:
-            if fid:
-                file_hashes.add(fid)
+    def _ensure_hash_indexes(cur, source_entries):
+        file_hashes = {fid for _, fid, *_ in source_entries if fid}
         if file_hashes:
             cur.executemany(
                 "INSERT OR IGNORE INTO hash_index (file_hash) VALUES (?)",
@@ -616,25 +595,6 @@ class FileDB:
             else:
                 raise ValueError(f"source entry must be (source, file_hash, size, modified) or include (created, collected): got {entry!r}")
         return entries
-
-    @profiler.profile
-    def upsert_batches(self, source_entries, image_entries, meta_info_entries, tag_entries):
-        with self._write_lock, self.conn:
-            cur = self.conn.cursor()
-            try:
-                source_entries = self._normalize_source_entries(source_entries)
-                self._ensure_hash_indexes(cur, source_entries, tag_entries)
-                self._migrate_tags_on_hash_change(cur, source_entries)
-                cur.executemany(_SQL_UPSERT_SOURCES, source_entries)
-                image_entries = self._normalize_file_entries(image_entries)
-                if image_entries:
-                    cur.executemany(_SQL_UPSERT_FILES, image_entries)
-                if meta_info_entries:
-                    cur.executemany(_SQL_UPSERT_META, meta_info_entries)
-                if tag_entries:
-                    cur.executemany(_SQL_UPSERT_TAGS, tag_entries)
-            finally:
-                cur.close()
 
     @profiler.profile
     def update_source_hashes(self, hash_updates: Sequence[tuple[str, str]]) -> list[str]:

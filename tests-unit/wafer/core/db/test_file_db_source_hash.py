@@ -14,12 +14,8 @@ def db(tmp_path):
 
 def _seed(database, source="src1", file_hash="fast1", path=None):
     path = path or source
-    database.upsert_batches(
-        [(source, file_hash, 100, 1.0)],
-        [(path, source, 1.0)],
-        [],
-        [(file_hash, "wd14.general", "cat", None)],
-    )
+    database.upsert_basic_sources([(source, file_hash, 100, 1.0)], [(path, source, 1.0)])
+    database.upsert_collection_results([], [], [(source, "wd14.general", "cat", None)], [])
 
 
 def test_split_trigger_keys():
@@ -56,7 +52,8 @@ def test_update_source_hashes_ignores_unchanged_and_unknown(db):
 
 def test_update_source_hashes_does_not_overwrite_existing_tag_of_target_hash(db):
     _seed(db)
-    db.upsert_batches([], [], [], [("full1", "wd14.general", "dog", None)])
+    _seed(db, source="src2", file_hash="full1")
+    db.upsert_collection_results([], [], [("src2", "wd14.general", "dog", None)], [])
     db.update_source_hashes([("src1", "full1")])
 
     cur = db.get_reader_cursor()
@@ -73,7 +70,7 @@ def test_get_trigger_metadata_returns_source_columns(db):
 
 def test_get_trigger_metadata_mixes_source_columns_and_meta_keys(db):
     _seed(db)
-    db.upsert_batches([], [], [("src1", "exiftool.Comment", "hello", None)], [])
+    db.upsert_basic_sources([], [], [("src1", "exiftool.Comment", "hello", None)])
     metadata = db.get_trigger_metadata(["src1"], ("file_hash", "exiftool.Comment"))
     assert metadata["src1"] == {"file_hash": "fast1", "exiftool.Comment": "hello"}
 
@@ -122,7 +119,7 @@ def test_delete_source_trees_returns_remaining_sources_sharing_hash(db):
 
 def test_delete_meta_and_tags_by_keys_separates_scopes(db):
     _seed(db, source="src1", file_hash="hash1")
-    db.upsert_batches([], [], [("src1", "exiftool.Comment", "hello", None)], [])
+    db.upsert_basic_sources([], [], [("src1", "exiftool.Comment", "hello", None)])
 
     db.delete_meta_and_tags_by_keys([("src1", "src1", ["exiftool.Comment"], [])])
 
@@ -134,7 +131,7 @@ def test_delete_meta_and_tags_by_keys_separates_scopes(db):
 
 def test_delete_meta_and_tags_by_keys_deletes_tag_scope_only(db):
     _seed(db, source="src1", file_hash="hash1")
-    db.upsert_batches([], [], [("src1", "wd14.general", "hello", None)], [])
+    db.upsert_basic_sources([], [], [("src1", "wd14.general", "hello", None)])
 
     db.delete_meta_and_tags_by_keys([("src1", "src1", [], ["wd14.general"])])
 
@@ -155,7 +152,7 @@ def _tag_of_source(database, source, key):
 
 
 def test_collection_tags_follow_hash_replaced_while_in_flight(db):
-    db.upsert_batches([("src1", "fast1", 100, 1.0)], [("src1", "src1", 1.0)], [], [])
+    db.upsert_basic_sources([("src1", "fast1", 100, 1.0)], [("src1", "src1", 1.0)])
     db.update_source_hashes([("src1", "full1")])
 
     db.upsert_collection_results([], [], [("src1", "wd14.tags", "1girl", None)], [("src1", "wd14", "ok", 1.0)])

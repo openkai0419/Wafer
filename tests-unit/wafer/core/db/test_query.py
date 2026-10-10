@@ -34,10 +34,11 @@ def populated_db(db_path):
         metas.append((path, "Comment", f"photo number {i}", None))
         if i % 3 == 0:
             metas.append((path, "Artist", f"photographer_{i % 5}", None))
-        tags.append((fhash, "rating", f"{(i % 5) + 1}", float((i % 5) + 1)))
+        tags.append((source, "rating", f"{(i % 5) + 1}", float((i % 5) + 1)))
         if i % 2 == 0:
-            tags.append((fhash, "category", "landscape" if i < 100 else "office", None))
-    db.upsert_batches(sources, images, metas, tags)
+            tags.append((source, "category", "landscape" if i < 100 else "office", None))
+    db.upsert_basic_sources(sources, images, metas)
+    db.upsert_collection_results([], [], tags, [])
     db.conn.execute("ANALYZE")
     db.conn.commit()
     db.close()
@@ -114,12 +115,12 @@ class TestEngineLookupMethods:
         db.initialize_database()
         source = "C:/data/archive.zip"
         child = build_virtual_path(source, "folder/image.png")
-        db.upsert_batches(
+        db.upsert_basic_sources(
             [(source, "hash_zip", 100, 1.0)],
             [(source, source, 1.0), (child, source, 1.5)],
             [(child, "name", "image.png", None)],
-            [("hash_zip", "rating", "5", 5.0)],
         )
+        db.upsert_collection_results([], [], [(source, "rating", "5", 5.0)], [])
         db.close()
         engine = FileSearchEngine(db_path)
         source_rec, file_rec, file_hash, tags_with_lock, meta = engine.get_all_metadata_with_locks(child)
@@ -215,13 +216,14 @@ class TestGetKvKeysByPrefix:
             sources.append((path, fhash, 100, 1.0))
             images.append((path, path, 1.0))
             metas.append((path, "name", f"img_{i}.jpg", None))
-        tags.append(("h0", "mark.red", "1", None))
-        tags.append(("h0", "mark.blue", "1", None))
-        tags.append(("h2", "mark.green", "1", None))
-        tags.append(("h3", "rating", "5", 5.0))
+        tags.append(("C:/m/img_0.jpg", "mark.red", "1", None))
+        tags.append(("C:/m/img_0.jpg", "mark.blue", "1", None))
+        tags.append(("C:/m/img_2.jpg", "mark.green", "1", None))
+        tags.append(("C:/m/img_3.jpg", "rating", "5", 5.0))
         metas.append(("C:/m/img_1.jpg", "mark.red", "1", None))
         metas.append(("C:/m/img_4.jpg", "mark.blue", "1", None))
-        db.upsert_batches(sources, images, metas, tags)
+        db.upsert_basic_sources(sources, images, metas)
+        db.upsert_collection_results([], [], tags, [])
         db.close()
         return db_path
 

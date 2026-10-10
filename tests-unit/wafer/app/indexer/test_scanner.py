@@ -355,7 +355,7 @@ def test_backfill_parsers_covers_source_key_parsers(tmp_path):
     db = FileDB(db_path)
     db.start()
     db.initialize_database()
-    db.upsert_batches([("/a.jpg", "h1", 100, 1.0)], [("/a.jpg", "/a.jpg", 1.0)], [], [])
+    db.upsert_basic_sources([("/a.jpg", "h1", 100, 1.0)], [("/a.jpg", "/a.jpg", 1.0)])
 
     scheduler = MagicMock()
     writer = MagicMock()

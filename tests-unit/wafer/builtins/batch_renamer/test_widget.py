@@ -125,12 +125,12 @@ class TestFetchMetadataSync:
         db = FileDB(db_path)
         db.start()
         db.initialize_database()
-        db.upsert_batches(
+        db.upsert_basic_sources(
             [("c:/a.jpg", "hash-a", 2048, 1700000000.0, 1600000000.0, 1800000000.0)],
             [("c:/a.jpg", "c:/a.jpg", "actual.jpg", 1.0, None)],
             [("c:/a.jpg", "name", "stale-meta-name", None), ("c:/a.jpg", "exif.width", "100", 100.0)],
-            [("hash-a", "rating", "5", 5.0)],
         )
+        db.upsert_collection_results([], [], [("c:/a.jpg", "rating", "5", 5.0)], [])
         db.close()
 
         meta = _fetch_metadata_sync(db_path, ["c:/a.jpg"])["c:/a.jpg"]
@@ -149,11 +149,9 @@ class TestFetchMetadataSync:
         db = FileDB(db_path)
         db.start()
         db.initialize_database()
-        db.upsert_batches(
+        db.upsert_basic_sources(
             [("c:/b.jpg", "hash-b", None, None, None, None)],
             [("c:/b.jpg", "c:/b.jpg", "b.jpg", 1.0, None)],
-            [],
-            [],
         )
         db.close()
 

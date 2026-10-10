@@ -49,7 +49,6 @@ def _wait_for_condition(predicate, timeout=10.0, interval=0.02):
     return False
 
 
-
 class TestScannerSchedulerPipeline:
     def test_full_scan_registers_all_files(self, tmp_path):
         img_dir = tmp_path / "images"

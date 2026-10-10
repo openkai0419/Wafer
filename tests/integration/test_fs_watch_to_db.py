@@ -62,7 +62,6 @@ def _sources(db):
     return [row[0] for row in rows]
 
 
-
 def _build_watcher_stack(tmp_path):
     db_path = tmp_path / "test.db"
     collectors = collector_resolver.summary()

@@ -150,11 +150,11 @@ def test_enter_does_not_repeat_the_same_query(ready_page):
     assert len(posts) == 2
 
 
-def test_status_is_highlighted_while_searching(ready_page):
+def test_load_bar_is_busy_while_searching(ready_page):
     page = ready_page
     page.evaluate("""() => {
       window.__busySeen = false;
-      const el = document.querySelector('#status');
+      const el = document.querySelector('#load-bar');
       const observer = new MutationObserver(() => {
         if (el.classList.contains('busy')) window.__busySeen = true;
       });
@@ -165,7 +165,7 @@ def test_status_is_highlighted_while_searching(ready_page):
     _wait_total(page, "2")
 
     assert page.evaluate("window.__busySeen") is True
-    assert "busy" not in (page.get_attribute("#status", "class") or "")
+    assert "busy" not in (page.get_attribute("#load-bar", "class") or "")
 
 
 def test_key_catalog_groups_by_prefix(ready_page):

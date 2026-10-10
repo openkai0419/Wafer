@@ -21,7 +21,6 @@ def test_all_files_restores_full_set(ready_page):
     page.wait_for_function("document.querySelector('#status').textContent.startsWith('5 ')")
 
 
-
 def _wait_total(page, prefix):
     page.wait_for_function(f"document.querySelector('#status').textContent.startsWith('{prefix} ')")
 
@@ -62,6 +61,7 @@ def test_direct_only_survives_a_reload(ready_page):
     page.reload()
     _wait_total(page, "4")
     assert page.is_checked("#direct-only")
+
 
 def test_expander_only_on_folders_with_children(ready_page):
     page = ready_page

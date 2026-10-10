@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.7.10]
+### Added
+- WebUI: "direct-child files only" setting limits folder results to files directly inside the selected folder.
+- Search filter: "Trim spaces" option to keep or strip spaces around separated keywords.
+
+### Changed
+- WebUI layout adapts to narrow screens, stacking the sidebar and metadata panel and enlarging touch inputs.
+- WebUI grid rows fill the width evenly with matching gaps on both edges.
+- WebUI keyword matching defaults to OR.
+
+### Fixed
+- Tags from slow collectors (e.g. WD14) were lost when Full Hash updated a file's hash during collection.
+- The Explorer context menu leaked shell extension objects on each use.
+
+### Removed
+- Migration of legacy plugin enable settings and old exiftool key filter settings.
+
 ## [v0.7.9]
 ### Added
 - Database Manager: ignore patterns (e.g. `*cache*`, `*.tmp`) exclude matching files and folders in addition to explicit ignore folders.

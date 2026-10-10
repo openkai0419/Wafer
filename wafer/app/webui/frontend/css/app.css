@@ -22,6 +22,7 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  height: 100vh;
   height: 100dvh;
 }
 
@@ -249,7 +250,7 @@ button:hover, select:hover, input:hover { border-color: var(--border-hover); }
   align-items: center;
   justify-content: center;
 }
-#viewer-stage img, #viewer-stage video { max-width: 100%; max-height: 92dvh; object-fit: contain; }
+#viewer-stage img, #viewer-stage video { max-width: 100%; max-height: 92vh; max-height: 92dvh; object-fit: contain; }
 #viewer-stage a { color: var(--accent); font-size: 16px; }
 #viewer-caption {
   position: absolute;
@@ -374,8 +375,8 @@ button:hover, select:hover, input:hover { border-color: var(--border-hover); }
     border-radius: 0 0 3px 3px;
   }
   #sidebar-toggle .icon { transform: rotate(90deg); }
-  #sidebar { width: auto; max-height: 40dvh; border-right: none; border-bottom: 1px solid var(--border); }
-  #meta-panel { width: auto; max-height: 45dvh; border-left: none; border-top: 1px solid var(--border); }
+  #sidebar { width: auto; max-height: 40vh; max-height: 40dvh; border-right: none; border-bottom: 1px solid var(--border); }
+  #meta-panel { width: auto; max-height: 45vh; max-height: 45dvh; border-left: none; border-top: 1px solid var(--border); }
   #viewer-stage img, #viewer-stage video { max-height: 100%; }
 }
 

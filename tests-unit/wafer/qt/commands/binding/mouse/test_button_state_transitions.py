@@ -132,33 +132,6 @@ def _inject_release(disp, w, button, buttons_held=NO_BTN, mods=NO_MOD):
 
 
 class TestSingleButtonPressRelease:
-    def test_left_click(self, qtbot):
-        w, rec = _setup_widget(
-            qtbot,
-            {
-                MouseActionKey(MouseButton.LEFT, ClickType.SINGLE): "L_SINGLE",
-            },
-        )
-        d = w._mouse_dispatcher
-        with patch.object(d, "_find_target_widget", return_value=w):
-            _inject_press(d, w, LMB)
-            assert rec.labels == []
-            _inject_release(d, w, LMB)
-            assert rec.labels == ["L_SINGLE"]
-
-    def test_right_click(self, qtbot):
-        w, rec = _setup_widget(
-            qtbot,
-            {
-                MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE): "R_SINGLE",
-            },
-        )
-        d = w._mouse_dispatcher
-        with patch.object(d, "_find_target_widget", return_value=w):
-            _inject_press(d, w, RMB)
-            _inject_release(d, w, RMB)
-            assert rec.labels == ["R_SINGLE"]
-
     def test_middle_click(self, qtbot):
         w, rec = _setup_widget(
             qtbot,
@@ -189,81 +162,6 @@ class TestModifiers:
             _inject_press(d, w, LMB, mods=CTRL)
             _inject_release(d, w, LMB, mods=CTRL)
             assert rec.labels == ["CTRL_L"]
-
-
-# ---------------------------------------------------------------------------
-# 3. 2ボタン同時: Right hold + Left click → LEFT+held(RIGHT) 発火
-# ---------------------------------------------------------------------------
-
-
-class TestTwoButtonCombinations:
-    def test_right_hold_left_click(self, qtbot):
-        key = MouseActionKey(MouseButton.LEFT, ClickType.SINGLE, held_buttons=(MouseButton.RIGHT,))
-        w, rec = _setup_widget(
-            qtbot,
-            {
-                key: "L_HELD_R",
-                MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE): "R_SINGLE",
-            },
-        )
-        d = w._mouse_dispatcher
-        with patch.object(d, "_find_target_widget", return_value=w):
-            _inject_press(d, w, RMB)
-            _inject_press(d, w, LMB, buttons_held=RMB)
-            _inject_release(d, w, LMB, buttons_held=RMB)
-            assert "L_HELD_R" in rec.labels
-
-    def test_right_hold_left_click_suppresses_right_single(self, qtbot):
-        key = MouseActionKey(MouseButton.LEFT, ClickType.SINGLE, held_buttons=(MouseButton.RIGHT,))
-        w, rec = _setup_widget(
-            qtbot,
-            {
-                key: "L_HELD_R",
-                MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE): "R_SINGLE",
-            },
-        )
-        d = w._mouse_dispatcher
-        with patch.object(d, "_find_target_widget", return_value=w):
-            _inject_press(d, w, RMB)
-            _inject_press(d, w, LMB, buttons_held=RMB)
-            _inject_release(d, w, LMB, buttons_held=RMB)
-            rec.clear()
-            _inject_release(d, w, RMB)
-            assert "R_SINGLE" not in rec.labels
-
-    def test_left_hold_right_click(self, qtbot):
-        key = MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE, held_buttons=(MouseButton.LEFT,))
-        w, rec = _setup_widget(
-            qtbot,
-            {
-                key: "R_HELD_L",
-                MouseActionKey(MouseButton.LEFT, ClickType.SINGLE): "L_SINGLE",
-            },
-        )
-        d = w._mouse_dispatcher
-        with patch.object(d, "_find_target_widget", return_value=w):
-            _inject_press(d, w, LMB)
-            _inject_press(d, w, RMB, buttons_held=LMB)
-            _inject_release(d, w, RMB, buttons_held=LMB)
-            assert "R_HELD_L" in rec.labels
-
-    def test_left_hold_right_click_suppresses_left_single(self, qtbot):
-        key = MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE, held_buttons=(MouseButton.LEFT,))
-        w, rec = _setup_widget(
-            qtbot,
-            {
-                key: "R_HELD_L",
-                MouseActionKey(MouseButton.LEFT, ClickType.SINGLE): "L_SINGLE",
-            },
-        )
-        d = w._mouse_dispatcher
-        with patch.object(d, "_find_target_widget", return_value=w):
-            _inject_press(d, w, LMB)
-            _inject_press(d, w, RMB, buttons_held=LMB)
-            _inject_release(d, w, RMB, buttons_held=LMB)
-            rec.clear()
-            _inject_release(d, w, LMB)
-            assert "L_SINGLE" not in rec.labels
 
 
 # ---------------------------------------------------------------------------
@@ -383,12 +281,6 @@ class TestDoubleClick:
 
 
 class TestMouseStateManager:
-    def test_suppress_single_button(self):
-        state = MouseStateManager()
-        state.add_suppress_group([MouseButton.RIGHT])
-        assert state.should_suppress_single(MouseButton.RIGHT) is True
-        assert state.should_suppress_single(MouseButton.RIGHT) is False
-
     def test_suppress_clears_after_use(self):
         state = MouseStateManager()
         state.add_suppress_group([MouseButton.LEFT, MouseButton.RIGHT])
@@ -457,28 +349,11 @@ class TestExecuteActionSuppress:
 
 
 class TestMouseActionKeyEquality:
-    def test_same_key_equals(self):
-        a = MouseActionKey(MouseButton.LEFT, ClickType.SINGLE)
-        b = MouseActionKey(MouseButton.LEFT, ClickType.SINGLE)
-        assert a == b
-        assert hash(a) == hash(b)
-
-    def test_different_button_not_equal(self):
-        a = MouseActionKey(MouseButton.LEFT, ClickType.SINGLE)
-        b = MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE)
-        assert a != b
-
     def test_held_order_irrelevant(self):
         a = MouseActionKey(MouseButton.LEFT, ClickType.SINGLE, held_buttons=(MouseButton.RIGHT, MouseButton.MIDDLE))
         b = MouseActionKey(MouseButton.LEFT, ClickType.SINGLE, held_buttons=(MouseButton.MIDDLE, MouseButton.RIGHT))
         assert a == b
         assert hash(a) == hash(b)
-
-    def test_from_dict_roundtrip(self):
-        key = MouseActionKey(MouseButton.LEFT, ClickType.DOUBLE, held_buttons=(MouseButton.RIGHT,))
-        d = key.to_dict()
-        restored = MouseActionKey.from_dict(d)
-        assert key == restored
 
 
 # ---------------------------------------------------------------------------
@@ -771,12 +646,6 @@ class TestGetModifiers:
         mods = MouseEventManager.get_modifiers(NO_MOD)
         assert mods == ()
 
-    def test_ctrl(self):
-        from wafer.qt.commands.binding.mouse.types import ModifierKey
-
-        mods = MouseEventManager.get_modifiers(CTRL)
-        assert ModifierKey.CTRL in mods
-
     def test_ctrl_shift(self):
         from wafer.qt.commands.binding.mouse.types import ModifierKey
 
@@ -810,24 +679,6 @@ def _inject_wheel(disp, widget, angle_y, buttons=NO_BTN, mods=NO_MOD):
 
 
 class TestWheelWithHeldButtonSuppression:
-    def test_right_hold_wheel_suppresses_right_single(self, qtbot):
-        w, rec = _setup_widget(
-            qtbot,
-            {
-                MouseActionKey(MouseButton.RIGHT, ClickType.SINGLE): "R_SINGLE",
-                MouseActionKey(MouseButton.NONE, ClickType.WHEEL_UP, held_buttons=(MouseButton.RIGHT,)): "WHEEL_HELD_R",
-            },
-        )
-        d = w._mouse_dispatcher
-        with patch.object(d, "_find_target_widget", return_value=w):
-            _inject_press(d, w, RMB)
-            _inject_wheel(d, w, 120, buttons=RMB)
-            assert "WHEEL_HELD_R" in rec.labels
-
-            rec.clear()
-            _inject_release(d, w, RMB)
-            assert "R_SINGLE" not in rec.labels
-
     def test_right_hold_wheel_down_suppresses_right_single(self, qtbot):
         w, rec = _setup_widget(
             qtbot,

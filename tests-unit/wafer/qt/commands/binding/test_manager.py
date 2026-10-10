@@ -108,16 +108,6 @@ def test_ctx_filters_deleted_widget(qtbot):
     assert ctx.get_instances("gone") == []
 
 
-def test_resolve_node_from_mainwindow(qtbot):
-    InstanceRegistry._instance = None
-    reg = InstanceRegistry.instance()
-    mock_w = _W()
-    mock_w._node = object()
-    qtbot.addWidget(mock_w)
-    reg.register("MainWindow", mock_w)
-    assert reg.resolve_node() is mock_w._node
-
-
 def test_resolve_node_from_tray(qtbot):
     InstanceRegistry._instance = None
     reg = InstanceRegistry.instance()

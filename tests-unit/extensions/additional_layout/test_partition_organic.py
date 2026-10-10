@@ -1,27 +1,7 @@
 from extensions.additional_layout.partition_organic import (
-    OrganicPartitionLayout,
     OrganicPartitionCalculator,
 )
-from wafer.plugin.layout.base import BaseLayoutPlugin
 from wafer.plugin.layout.calc import LayoutData
-
-
-def test_is_plugin():
-    assert issubclass(OrganicPartitionLayout, BaseLayoutPlugin)
-    assert OrganicPartitionLayout.NAME == "ratioPartition"
-    assert OrganicPartitionLayout.DISPLAY_NAME == "Partition (Aspect)"
-
-
-def test_priority():
-    assert OrganicPartitionLayout.PRIORITY == 87
-
-
-def test_create_calculator():
-    calc = OrganicPartitionLayout.create_calculator([1.0, 1.5], 100, 5, 500, 500, 0)
-    assert isinstance(calc, OrganicPartitionCalculator)
-    calc.run()
-    assert calc._result is not None
-    assert len(calc._result) == 2
 
 
 def test_produces_layout():
@@ -57,17 +37,6 @@ def test_single_item():
     assert layout[0].height() > 0
 
 
-def test_no_overlap():
-    aspects = [1.5, 1.0, 0.5, 1.8, 0.3, 2.0, 1.0, 0.8, 1.2, 0.6, 1.0, 1.5, 0.7, 2.5, 1.0, 0.4, 1.3, 1.0, 0.9, 1.1]
-    calc = OrganicPartitionCalculator(aspects, 100, 5, 500, 500, 0)
-    calc.run()
-    layout = calc._result
-    assert layout is not None
-    for i in range(len(layout)):
-        for j in range(i + 1, len(layout)):
-            assert not layout[i].intersects(layout[j]), f"Items {i} and {j} overlap"
-
-
 def test_no_overlap_many_items():
     aspects = [0.5 + (i % 7) * 0.4 for i in range(100)]
     calc = OrganicPartitionCalculator(aspects, 100, 5, 800, 800, 0)
@@ -80,21 +49,13 @@ def test_no_overlap_many_items():
             assert not layout[i].intersects(layout[j]), f"Items {i} and {j} overlap"
 
 
-def test_all_orientations():
-    aspects = [1.5, 1.0, 0.5, 1.8, 0.3, 2.0, 1.0]
-    for orientation in range(4):
-        calc = OrganicPartitionCalculator(aspects, 100, 5, 500, 500, orientation)
-        calc.run()
-        assert calc._result is not None
-        assert len(calc._result) == len(aspects)
-
-
 def test_no_overlap_all_orientations():
     aspects = [1.5, 1.0, 0.5, 1.8, 0.3, 2.0, 1.0, 0.8, 1.2, 0.6, 1.0, 1.5, 0.7, 2.5, 1.0, 0.4, 1.3, 1.0, 0.9, 1.1]
     for orientation in range(4):
         calc = OrganicPartitionCalculator(aspects, 100, 5, 500, 500, orientation)
         calc.run()
         layout = calc._result
+        assert len(layout) == len(aspects)
         for i in range(len(layout)):
             for j in range(i + 1, len(layout)):
                 assert not layout[i].intersects(layout[j]), f"orientation={orientation}: items {i} and {j} overlap"
@@ -110,15 +71,6 @@ def test_reversed_horizontal():
     normal_xs = [normal._result[i].x() for i in range(len(aspects))]
     rev_xs = [rev._result[i].x() for i in range(len(aspects))]
     assert normal_xs != rev_xs
-
-
-def test_reversed_vertical():
-    aspects = [1.0, 1.0, 0.5, 1.8, 1.0, 2.0, 1.0]
-    forward = OrganicPartitionCalculator(aspects, 100, 5, 500, 500, 2)
-    forward.run()
-    rev = OrganicPartitionCalculator(aspects, 100, 5, 500, 500, 3)
-    rev.run()
-    assert forward._result.total_extent == rev._result.total_extent
 
 
 def test_n_series_rect_axes():

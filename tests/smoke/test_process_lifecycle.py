@@ -19,8 +19,21 @@ def _base_cmd():
 def _poll_until(predicate, timeout=10.0):
     deadline = time.monotonic() + timeout
     while not predicate() and time.monotonic() < deadline:
-        time.sleep(0.1)
+        time.sleep(0.02)
     return predicate()
+
+
+def _track_parent_checks(checker):
+    checks = []
+    is_parent_alive = checker._is_parent_alive
+
+    def tracked():
+        alive = is_parent_alive()
+        checks.append(alive)
+        return alive
+
+    checker._is_parent_alive = tracked
+    return checks
 
 
 def _find_procs(*args):
@@ -72,10 +85,12 @@ class TestParentProcessChecker:
         def on_orphan():
             orphan_fired.append(True)
 
-        checker = ParentProcessChecker(dummy.pid, on_orphan=on_orphan, interval=0.5)
+        checker = ParentProcessChecker(dummy.pid, on_orphan=on_orphan, interval=0.05)
+        checks = _track_parent_checks(checker)
         checker.start()
         try:
-            time.sleep(0.3)
+            assert _poll_until(lambda: len(checks) >= 1, timeout=5.0)
+            assert checks[0] is True
             dummy.kill()
             dummy.wait(timeout=5)
 
@@ -89,10 +104,12 @@ class TestParentProcessChecker:
         def on_orphan():
             orphan_fired.append(True)
 
-        checker = ParentProcessChecker(os.getpid(), on_orphan=on_orphan, interval=0.5)
+        checker = ParentProcessChecker(os.getpid(), on_orphan=on_orphan, interval=0.05)
+        checks = _track_parent_checks(checker)
         checker.start()
         try:
-            time.sleep(2.0)
+            assert _poll_until(lambda: len(checks) >= 4, timeout=5.0)
+            assert all(checks)
             assert len(orphan_fired) == 0
         finally:
             checker.stop()

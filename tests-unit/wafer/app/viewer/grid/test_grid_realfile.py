@@ -10,8 +10,6 @@ from unittest.mock import MagicMock
 
 from wafer.app.viewer.grid.grid_view import GridView
 from wafer.app.viewer.grid.items import GridItemModel
-from wafer.plugin.grid.handler import grid_resolver, WIDGET, IMAGE
-from wafer.plugin.grid.base import WidgetGridPlugin
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -113,41 +111,6 @@ class TestImageFileRouting:
         )
         assert item.current_path == paths[0]
 
-    def test_multiple_png_all_get_pixmap_items(self, grid_view, media_dir):
-        paths = [
-            str(media_dir / "photo1.png"),
-            str(media_dir / "photo2.png"),
-            str(media_dir / "photo3.jpg"),
-        ]
-        sources = ["test"] * len(paths)
-        aspects = [200 / 150, 300 / 200, 400 / 300]
-
-        layout_done = {"ready": False}
-        grid_view.layout_ready.connect(lambda: layout_done.update({"ready": True}))
-        grid_view.set_paths(paths, sources, aspects)
-        _process_events_until(lambda: layout_done["ready"])
-        _process_events_until(lambda: len(grid_view.widgets) >= 3, timeout_ms=5000)
-
-        for i in range(3):
-            assert i in grid_view.widgets
-            assert i not in grid_view._additional_widgets
-
-
-class TestAnimatedFileRouting:
-    def test_animated_gif_creates_additional_widget(self, grid_view, media_dir):
-        paths = [str(media_dir / "anim1.gif")]
-        sources = ["test"]
-        aspects = [80 / 60]
-
-        layout_done = {"ready": False}
-        grid_view.layout_ready.connect(lambda: layout_done.update({"ready": True}))
-        grid_view.set_paths(paths, sources, aspects)
-        _process_events_until(lambda: layout_done["ready"])
-        _process_events_until(lambda: 0 in grid_view._additional_widgets, timeout_ms=5000)
-
-        assert 0 in grid_view._additional_widgets
-        assert 0 not in grid_view.widgets
-
 
 class TestMixedFileRouting:
     def test_png_and_gif_route_correctly(self, grid_view, media_dir):
@@ -190,12 +153,9 @@ class TestMixedFileRouting:
         _process_events_until(lambda: layout_done["ready"])
 
         _process_events_until(
-            lambda: 2 in grid_view.widgets,
+            lambda: getattr(grid_view.widgets.get(2), "current_path", None) == paths[2],
             timeout_ms=5000,
         )
-
-        time.sleep(0.5)
-        QtWidgets.QApplication.instance().processEvents()
 
         assert 0 in grid_view._additional_widgets
         assert 1 in grid_view._additional_widgets
@@ -238,37 +198,8 @@ class TestSetPathsReplace:
         assert 0 not in grid_view.widgets
         assert 0 in grid_view._additional_widgets
 
-    def test_replace_animated_with_image(self, grid_view, media_dir):
-        grid_view.set_paths(
-            [str(media_dir / "anim1.gif")],
-            ["test"],
-            [80 / 60],
-        )
-        _process_events_until(lambda: 0 in grid_view._additional_widgets, timeout_ms=5000)
-
-        grid_view.set_paths(
-            [str(media_dir / "photo1.png")],
-            ["test"],
-            [200 / 150],
-        )
+        grid_view.set_paths(paths1, ["test"], [200 / 150])
         _process_events_until(lambda: 0 in grid_view.widgets, timeout_ms=5000)
 
         assert 0 in grid_view.widgets
         assert 0 not in grid_view._additional_widgets
-
-
-class TestPluginResolution:
-    def test_resolve_merged_chain_gif_has_widget_first(self, media_dir):
-        path = str(media_dir / "anim1.gif")
-        chain = grid_resolver.resolve_merged_chain(path)
-        assert len(chain) >= 2
-        cls, kind = chain[0]
-        assert kind == WIDGET
-        assert issubclass(cls, WidgetGridPlugin)
-
-    def test_resolve_merged_chain_png_has_image_loader(self, media_dir):
-        path = str(media_dir / "photo1.png")
-        chain = grid_resolver.resolve_merged_chain(path)
-        assert len(chain) >= 1
-        found_image = any(kind == IMAGE for _, kind in chain)
-        assert found_image

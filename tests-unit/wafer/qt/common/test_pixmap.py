@@ -1,10 +1,5 @@
-import py_compile
 from PySide6 import QtGui, QtWidgets
 import pytest
-
-
-def test_compile():
-    py_compile.compile("wafer/qt/common/pixmap.py")
 
 
 def test_error_placeholder_has_text(qtbot):

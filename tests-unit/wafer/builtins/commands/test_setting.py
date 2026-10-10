@@ -1,12 +1,5 @@
-import py_compile
-import pytest
-
 from unittest.mock import patch, MagicMock
-from wafer.plugin.grid.handler import grid_resolver, VIEWER_THUMBNAIL_DEFAULT_SIZE
-
-
-def test_compile():
-    py_compile.compile("wafer/builtins/commands/setting.py")
+from wafer.plugin.grid.handler import grid_resolver
 
 
 class TestViewerThumbnailDefaultSize:
@@ -15,42 +8,6 @@ class TestViewerThumbnailDefaultSize:
 
     def teardown_method(self):
         grid_resolver.thumbnail_size = self._original
-
-    def test_default_value(self):
-        assert VIEWER_THUMBNAIL_DEFAULT_SIZE == 512
-
-    def test_grid_handler_initial_value(self):
-        assert grid_resolver.thumbnail_size == self._original
-
-    def test_fallback_uses_thumbnail_size_when_no_size(self):
-        from wafer.plugin.imageloader.handler import image_loader_resolver
-
-        grid_resolver.thumbnail_size = 2048
-        thumbnailer = MagicMock()
-        thumbnailer.get_thumbnail.return_value = None
-        instance = image_loader_resolver.registry.instance("system_thumbnail")
-        orig = instance._thumbnailer
-        instance._thumbnailer = thumbnailer
-        try:
-            instance.load_pil("dummy.xyz", size=2048)
-            thumbnailer.get_thumbnail.assert_called_once_with("dummy.xyz", size=2048)
-        finally:
-            instance._thumbnailer = orig
-
-    def test_fallback_uses_explicit_size_when_provided(self):
-        from wafer.plugin.imageloader.handler import image_loader_resolver
-
-        grid_resolver.thumbnail_size = 2048
-        thumbnailer = MagicMock()
-        thumbnailer.get_thumbnail.return_value = None
-        instance = image_loader_resolver.registry.instance("system_thumbnail")
-        orig = instance._thumbnailer
-        instance._thumbnailer = thumbnailer
-        try:
-            instance.load_pil("dummy.xyz", size=400)
-            thumbnailer.get_thumbnail.assert_called_once_with("dummy.xyz", size=400)
-        finally:
-            instance._thumbnailer = orig
 
     def test_restore_from_setting(self):
         with patch("wafer.builtins.commands.setting.app_settings") as mock_setting:

@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
-from PySide6 import QtWidgets, QtGui
+from PySide6 import QtWidgets
 
 from wafer.qt.commands.command.core import (
     CommandMeta,
@@ -9,6 +9,7 @@ from wafer.qt.commands.command.core import (
 )
 from wafer.qt.commands.command.menu_builder import CommandMenuBuilder, MenuBuilder
 from wafer.qt.commands.command.maker import MenuMaker
+from wafer.qt.commands.command.menu import MenuHub
 from wafer.qt.commands.command.state import CommandOptionStore
 from wafer.qt.commands.command.payload import CommandPayload
 from wafer.qt.commands.binding.editors_common import (
@@ -46,6 +47,11 @@ def _menu_labels(menu):
 
 
 @pytest.fixture(autouse=True)
+def _isolated_menu_hub(monkeypatch):
+    monkeypatch.setattr(MenuHub, "_instance", None)
+
+
+@pytest.fixture(autouse=True)
 def _reset_singletons(tmp_path):
     prev_instance = CommandOptionStore._instance
     prev_default = CommandOptionStore._default_path
@@ -70,6 +76,8 @@ def _register(cmd_id, display, folder="Test"):
         func=lambda ctx: None,
     )
     register_command_defs([meta])
+    menu_path = f"{folder}/{cmd_id}"
+    MenuHub.instance().register_paths(type(f"_Menu_{cmd_id}", (), {}), {cmd_id: menu_path}, items=[menu_path])
     return meta
 
 
@@ -99,35 +107,6 @@ class TestPickerMenuNoCacheWithSelectionCallback:
         builder2 = MenuBuilder(maker, parent)
         menu2 = builder2.build_all_roots(selection_callback=None)
         assert menu1 is menu2
-
-
-class TestNoneUnsetNotAccumulated:
-    def _count_none_actions(self, menu: QtWidgets.QMenu) -> int:
-        count = 0
-        for action in menu.actions():
-            if action.text() and "None" in action.text() and "Unset" in action.text():
-                count += 1
-        return count
-
-    def test_prepare_does_not_accumulate_none_unset(self, qtbot):
-        _register(_make_id("c"), "CmdC")
-        parent = QtWidgets.QWidget()
-        qtbot.addWidget(parent)
-
-        for i in range(5):
-            maker = MenuMaker()
-            builder = MenuBuilder(maker, parent)
-            menu = builder.build_all_roots(
-                selection_callback=lambda cid: None,
-            )
-            act_none = QtGui.QAction("None (Unset)", menu)
-            first = menu.actions()[0] if menu.actions() else None
-            if first:
-                menu.insertAction(first, act_none)
-                menu.insertSeparator(first)
-            else:
-                menu.addAction(act_none)
-            assert self._count_none_actions(menu) == 1, f"iteration {i}: expected 1 'None (Unset)' but found {self._count_none_actions(menu)}"
 
 
 def _find_command_actions(menu):

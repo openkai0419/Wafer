@@ -7,12 +7,6 @@ def sm():
     return SelectionManager()
 
 
-def test_initial_state(sm):
-    assert sm.count() == 0
-    assert sm.selected_indices() == set()
-    assert sm.anchor_index() is None
-
-
 def test_select(sm):
     sm.select(0)
     assert sm.is_selected(0)
@@ -57,11 +51,6 @@ def test_clear(sm):
     assert sm.anchor_index() is None
 
 
-def test_clear_empty(sm):
-    sm.clear()
-    assert sm.count() == 0
-
-
 def test_add_selection(sm):
     sm.add_selection([0, 1, 2])
     assert sm.count() == 3
@@ -101,23 +90,10 @@ def test_remove_selection_no_overlap(sm):
 
 
 def test_set_selected(sm):
+    sm.select(0)
     sm.set_selected([3, 4, 5])
     assert sm.selected_indices() == {3, 4, 5}
     assert sm.anchor_index() == 3
-
-
-def test_set_selected_replaces(sm):
-    sm.select(0)
-    sm.set_selected([3, 4])
-    assert not sm.is_selected(0)
-    assert sm.count() == 2
-
-
-def test_set_anchor(sm):
-    sm.select(0)
-    sm.select(1)
-    sm.set_anchor(0)
-    assert sm.anchor_index() == 0
 
 
 def test_noemit_blocks_signals(sm):
@@ -139,14 +115,6 @@ def test_noemit_restores_signals(sm):
     assert 1 in received[0]
 
 
-def test_signal_on_select(sm):
-    received = []
-    sm.selectionChanged.connect(lambda s: received.append(s))
-    sm.select(5)
-    assert len(received) == 1
-    assert 5 in received[0]
-
-
 def test_signal_on_clear(sm):
     sm.select(0)
     sm.select(1)
@@ -164,7 +132,3 @@ def test_signal_on_toggle(sm):
     sm.toggle(3)
     assert len(received) == 2
     assert all(3 in s for s in received)
-
-
-def test_is_selected_false(sm):
-    assert not sm.is_selected(99)

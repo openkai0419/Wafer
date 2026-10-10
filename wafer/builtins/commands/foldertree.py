@@ -1,6 +1,6 @@
 import os
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtWidgets
 
 from ...qt.commands.bridge import ActionKit, Menu
 from ...core.lang.manager import t
@@ -27,22 +27,6 @@ def _ctx_normalized_path(ctx) -> str | None:
     if not path:
         return None
     return normalize_path(os.path.abspath(path))
-
-
-def _ctx_dir_path(ctx) -> str | None:
-    path = _ctx_path(ctx)
-    if not path:
-        return None
-    info = QtCore.QFileInfo(str(path))
-    if not info.exists():
-        return None
-    if info.isDir():
-        return normalize_path(info.absoluteFilePath())
-    if info.isFile():
-        return normalize_path(info.absolutePath())
-    p = normalize_path(str(path))
-    a = os.path.abspath(p)
-    return normalize_path(a) if os.path.isdir(a) else normalize_path(os.path.dirname(a))
 
 
 def _ctx_root(tree):

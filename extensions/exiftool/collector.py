@@ -59,9 +59,6 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
         self._last_used: float = 0.0
         self._idle_timer: threading.Timer | None = None
         self._closed = threading.Event()
-        from .settings import migrate_legacy_filter
-
-        migrate_legacy_filter()
 
     def shutdown(self):
         self._closed.set()

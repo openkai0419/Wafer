@@ -1,6 +1,9 @@
 import sqlite3
 
-from wafer.core.db.query import SearchQuery, FileSearchEngine
+from wafer.builtins.filters import TextFilter
+from wafer.builtins.sorts import NoSort
+from wafer.core.db.query import FileSearchEngine
+from wafer.plugin.query.composer import SearchComposer
 from wafer.core.db.file_db import FileDB, _TABLES, _VIEWS, _INDEXES_SQL
 from wafer.core.db.db_utils import apply_write_pragmas
 
@@ -37,36 +40,6 @@ def _setup_db(tmp_path, files=None, meta=None, tags=None):
     return str(db_path)
 
 
-class TestSearchQueryNormalize:
-    def test_string_keys_to_list(self):
-        q = SearchQuery(keys="path")
-        keys, inc, exc = q.normalize_inputs()
-        assert keys == ["path"]
-
-    def test_tuple_keys(self):
-        q = SearchQuery(keys=("path", "name"))
-        keys, inc, exc = q.normalize_inputs()
-        assert keys == ["path", "name"]
-
-    def test_exclude_keywords(self):
-        q = SearchQuery(keywords=("sunset", "-blur"))
-        _, inc, exc = q.normalize_inputs()
-        assert "sunset" in inc
-        assert "blur" in exc
-
-    def test_keyword_separator(self):
-        q = SearchQuery(keywords="a,b,c", keyword_separator=",")
-        _, inc, exc = q.normalize_inputs()
-        assert inc == ["a", "b", "c"]
-
-    def test_empty_query(self):
-        q = SearchQuery()
-        keys, inc, exc = q.normalize_inputs()
-        assert keys == []
-        assert inc == []
-        assert exc == []
-
-
 class TestFileSearchEngineSmoke:
     def test_search_by_path_keyword(self, tmp_path):
         db_path = _setup_db(
@@ -81,7 +54,7 @@ class TestFileSearchEngineSmoke:
             ],
         )
         engine = FileSearchEngine(db_path)
-        paths, sources, aspects = engine.search(SearchQuery(keys="path", keywords="alpha"))
+        paths, sources, aspects = SearchComposer().execute(engine, [(TextFilter, {"keys": ["path"], "keywords": "alpha"}, "OR")], NoSort, True)
         assert len(paths) == 1
         assert "alpha" in paths[0]
 
@@ -98,7 +71,7 @@ class TestFileSearchEngineSmoke:
             ],
         )
         engine = FileSearchEngine(db_path)
-        paths, _, _ = engine.search(SearchQuery(keys="path"))
+        paths, _, _ = SearchComposer().execute(engine, [(TextFilter, {"keys": ["path"]}, "OR")], NoSort, True)
         assert len(paths) == 2
 
     def test_search_returns_aspect_ratios(self, tmp_path):
@@ -108,14 +81,14 @@ class TestFileSearchEngineSmoke:
             meta=[("x.jpg", "path", "x.jpg")],
         )
         engine = FileSearchEngine(db_path)
-        paths, _, aspects = engine.search(SearchQuery(keys="path"))
+        paths, _, aspects = SearchComposer().execute(engine, [(TextFilter, {"keys": ["path"]}, "OR")], NoSort, True)
         assert len(aspects) == 1
         assert aspects[0] == 2.5
 
     def test_search_empty_db(self, tmp_path):
         db_path = _setup_db(tmp_path)
         engine = FileSearchEngine(db_path)
-        paths, sources, aspects = engine.search(SearchQuery(keys="path", keywords="anything"))
+        paths, sources, aspects = SearchComposer().execute(engine, [(TextFilter, {"keys": ["path"], "keywords": "anything"}, "OR")], NoSort, True)
         assert paths == []
 
     def test_search_with_exclude(self, tmp_path):
@@ -131,13 +104,13 @@ class TestFileSearchEngineSmoke:
             ],
         )
         engine = FileSearchEngine(db_path)
-        paths, _, _ = engine.search(SearchQuery(keys="exif.Comment", keywords=("cute", "-dog")))
+        paths, _, _ = SearchComposer().execute(engine, [(TextFilter, {"keys": ["exif.Comment"], "keywords": ("cute", "-dog")}, "OR")], NoSort, True)
         assert len(paths) == 1
         assert "cat" in paths[0]
 
     def test_search_nonexistent_db(self, tmp_path):
         engine = FileSearchEngine(str(tmp_path / "nonexistent.db"))
-        paths, sources, aspects = engine.search(SearchQuery(keys="path", keywords="x"))
+        paths, sources, aspects = SearchComposer().execute(engine, [(TextFilter, {"keys": ["path"], "keywords": "x"}, "OR")], NoSort, True)
         assert paths == []
 
     def test_glob_query_mode(self, tmp_path):
@@ -153,5 +126,5 @@ class TestFileSearchEngineSmoke:
             ],
         )
         engine = FileSearchEngine(db_path)
-        paths, _, _ = engine.search(SearchQuery(keys="path", keywords="sun*", query_mode="GLOB"))
+        paths, _, _ = SearchComposer().execute(engine, [(TextFilter, {"keys": ["path"], "keywords": "sun*", "query_mode": "GLOB"}, "OR")], NoSort, True)
         assert len(paths) == 2

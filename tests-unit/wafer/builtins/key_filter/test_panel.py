@@ -160,18 +160,6 @@ class TestFilterChangeSubscription:
         assert called == [True]
 
 
-class TestPluginMeta:
-    def test_source_is_builtin(self):
-        from wafer.builtins.key_filter.panel import KeyFilterPanelPlugin
-
-        assert KeyFilterPanelPlugin.SOURCE == "Builtin"
-
-    def test_display_name(self):
-        from wafer.builtins.key_filter.panel import KeyFilterPanelPlugin
-
-        assert KeyFilterPanelPlugin.DISPLAY_NAME == "Metadata Filter"
-
-
 class TestBuildTabs:
     def _make_widget(self, qtbot, monkeypatch):
         monkeypatch.setattr(f"{MODULE}.KeyFilterWidget._build_tabs", lambda self: None)

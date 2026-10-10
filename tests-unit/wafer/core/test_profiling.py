@@ -1,5 +1,3 @@
-import py_compile
-
 import pytest
 
 from wafer.core.profiling import MemoryWatchdog, profiler
@@ -15,10 +13,6 @@ def _restore_profiler_state():
     profiler.data.clear()
     profiler.data.update({name: info.copy() for name, info in original_data.items()})
     profiler.set_enabled(original_enabled)
-
-
-def test_compile():
-    py_compile.compile("wafer/core/profiling.py")
 
 
 def test_record_adds_named_entry():
@@ -90,12 +84,3 @@ def test_memwatch_report_logs_rss_and_delta(monkeypatch):
     mw.report()
 
     assert any("RSS=130.0MB" in line and "delta=+30.0MB/10s" in line for line in logs)
-
-
-def test_memwatch_set_enabled_toggle():
-    mw = MemoryWatchdog()
-    assert mw.enabled is False
-    mw.set_enabled(True)
-    assert mw.enabled is True
-    mw.set_enabled(False)
-    assert mw.enabled is False

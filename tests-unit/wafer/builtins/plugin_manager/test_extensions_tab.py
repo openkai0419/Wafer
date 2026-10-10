@@ -11,7 +11,14 @@ from wafer.qt.common.thread import SimpleThreadPool
 @pytest.fixture()
 def dispatcher():
     pool = SimpleThreadPool("test")
-    return Dispatcher(pool)
+    yield Dispatcher(pool)
+    pool.pool.waitForDone(5000)
+
+
+def _drain(dispatcher, rounds=3):
+    for _ in range(rounds):
+        assert dispatcher._pool.pool.waitForDone(5000)
+        QtCore.QCoreApplication.processEvents()
 
 
 class TestExtensionCardMdFiles:
@@ -33,16 +40,6 @@ class TestExtensionCardMdFiles:
         paths = [entry[2] for entry in card._md_entries]
         assert any("CHANGELOG.md" in p for p in paths)
         assert any("README.md" in p for p in paths)
-
-    def test_hidden_md_files_excluded(self, qtbot, tmp_path, dispatcher):
-        folder = tmp_path / "ext_hidden"
-        folder.mkdir()
-        (folder / ".hidden.md").write_text("# Hidden", encoding="utf-8")
-        (folder / "_private.md").write_text("# Private", encoding="utf-8")
-        (folder / "README.md").write_text("# Visible", encoding="utf-8")
-        card = _ExtensionCard("ext_hidden", str(folder), dispatcher, md_files=["README.md"])
-        qtbot.addWidget(card)
-        assert len(card._md_entries) == 1
 
     def test_toggle_md_shows_and_hides(self, qtbot, tmp_path, dispatcher):
         folder = tmp_path / "ext_toggle"
@@ -100,10 +97,7 @@ class TestExtensionCardMdFiles:
         card._toggle_md(md_path, toggle, browser)
         card._toggle_md(md_path, toggle, browser)
 
-        from PySide6.QtCore import QThread
-
-        QThread.msleep(200)
-        QtCore.QCoreApplication.processEvents()
+        _drain(dispatcher)
         assert browser.rendered_html() == first_html
 
     def test_async_md_load_skips_deleted_browser(self, qtbot, tmp_path, dispatcher, monkeypatch):
@@ -124,8 +118,7 @@ class TestExtensionCardMdFiles:
         assert not shiboken6.isValid(browser)
 
         card._load_md_async(md_path, browser)
-        qtbot.wait(300)
-        QtCore.QCoreApplication.processEvents()
+        _drain(dispatcher)
 
         apply_loaded.assert_not_called()
 

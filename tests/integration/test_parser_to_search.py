@@ -6,7 +6,10 @@ from PIL import Image
 
 from wafer.core.common.paths import normalize_path
 from wafer.core.db.file_db import FileDB
-from wafer.core.db.query import FileSearchEngine, SearchQuery
+from wafer.core.db.query import FileSearchEngine
+from wafer.builtins.filters import TextFilter
+from wafer.builtins.sorts import NoSort
+from wafer.plugin.query.composer import SearchComposer
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.plugin.parser.handler import parser_resolver
 from wafer.app.indexer.receivers.collector_receiver import _parse_batch as _parse_collector_batch
@@ -198,6 +201,6 @@ class TestParserToDBPipeline:
             )
 
         engine = FileSearchEngine(str(db_path))
-        result_paths, _, _ = engine.search(SearchQuery(keys=("novelai.prompt",), keywords="fantasy", require_keys=True))
+        result_paths, _, _ = SearchComposer().execute(engine, [(TextFilter, {"keys": ["novelai.prompt"], "keywords": "fantasy"}, "OR")], NoSort, True)
         assert len(result_paths) == 1
         assert result_paths[0] == norm

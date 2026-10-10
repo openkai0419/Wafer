@@ -1,4 +1,3 @@
-import py_compile
 import threading
 
 from wafer.app.indexer.runtime.progress_aggregator import ProgressAggregator
@@ -13,20 +12,6 @@ class _StubNode:
 
     def send_coalesced(self, *a, **kw):
         self.sent.append(("send_coalesced", a, kw))
-
-
-def test_compile():
-    py_compile.compile("wafer/app/indexer/runtime/progress_aggregator.py")
-
-
-def test_add_increments():
-    p = ProgressAggregator("db", _StubNode())
-    p.increment(0, 10)
-    assert p.maximum == 10
-    assert p.current == 0
-    p.increment(3, 0)
-    assert p.current == 3
-    assert p.maximum == 10
 
 
 def test_auto_reset_on_completion():
@@ -44,13 +29,6 @@ def test_explicit_reset():
     p.reset()
     assert p.current == 0
     assert p.maximum == 0
-
-
-def test_add_both_at_once():
-    p = ProgressAggregator("db", _StubNode())
-    p.increment(3, 10)
-    assert p.current == 3
-    assert p.maximum == 10
 
 
 def test_no_send_when_unchanged():
@@ -99,14 +77,6 @@ def test_accumulation_across_phases():
     assert p.maximum == 0
 
 
-def test_no_reset_when_incomplete():
-    p = ProgressAggregator("db", _StubNode())
-    p.increment(0, 10)
-    p.increment(9, 0)
-    assert p.current == 9
-    assert p.maximum == 10
-
-
 def test_send_event_uses_coalesced():
     node = _StubNode()
     p = ProgressAggregator("testdb", node)
@@ -117,12 +87,3 @@ def test_send_event_uses_coalesced():
     assert args == ("update", "")
     assert kwargs["dst"] == "viewer"
     assert kwargs["db"] == "testdb"
-
-
-def test_send_event_folderchanged_uses_coalesced():
-    node = _StubNode()
-    p = ProgressAggregator("testdb", node)
-    p.send_event("folderchanged")
-    assert len(node.sent) == 1
-    method, args, kwargs = node.sent[0]
-    assert method == "send_coalesced"

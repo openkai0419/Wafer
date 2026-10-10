@@ -60,8 +60,6 @@ def normalize_tolerance(value: int | float) -> float:
         tolerance = float(value)
     except (TypeError, ValueError):
         tolerance = 0.1
-    if tolerance > 1.0:
-        tolerance /= 100.0
     return max(0.0, min(1.0, tolerance))
 
 

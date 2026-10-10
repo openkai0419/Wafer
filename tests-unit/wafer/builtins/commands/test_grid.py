@@ -8,59 +8,19 @@ from wafer.builtins.commands.grid import (
 
 
 class TestOrientationMappings:
-    def test_cmd_to_choice_keys_match_cmd_ids(self):
+    def test_mappings_are_consistent_roundtrips(self):
         assert list(_CMD_TO_CHOICE.keys()) == _CMD_IDS
-
-    def test_choice_to_cmd_keys_match_choices(self):
         assert list(_CHOICE_TO_CMD.keys()) == ORIENTATION_CHOICES
-
-    def test_roundtrip_cmd_to_choice_to_cmd(self):
+        assert len(_CMD_IDS) == len(ORIENTATION_CHOICES)
         for cmd_id in _CMD_IDS:
             assert _CHOICE_TO_CMD[_CMD_TO_CHOICE[cmd_id]] == cmd_id
-
-    def test_roundtrip_choice_to_cmd_to_choice(self):
-        for choice in ORIENTATION_CHOICES:
+        for i, choice in enumerate(ORIENTATION_CHOICES):
             assert _CMD_TO_CHOICE[_CHOICE_TO_CMD[choice]] == choice
-
-    def test_choice_to_index_covers_all(self):
-        for i, c in enumerate(ORIENTATION_CHOICES):
-            assert _CHOICE_TO_INDEX[c] == i
-
-    def test_cmd_ids_count(self):
-        assert len(_CMD_IDS) == len(ORIENTATION_CHOICES)
+            assert _CHOICE_TO_INDEX[choice] == i
 
 
 class TestToggleAutoscrollCommand:
-    def test_command_has_expected_params_and_resolver(self):
-        from wafer.builtins.commands.grid import GridViewCommands
-
-        cmds = GridViewCommands.commands()
-        autoscroll_cmd = None
-        for c in cmds:
-            if hasattr(c, "path") and c.path == "grid.toggle_autoscroll":
-                autoscroll_cmd = c
-                break
-        assert autoscroll_cmd is not None
-        param_names = [p.name for p in autoscroll_cmd.params]
-        assert "speed" in param_names
-        assert "loop" in param_names
-        assert "query_on_loop" in param_names
-        assert autoscroll_cmd.checked is not None
-        assert autoscroll_cmd.checkable is True
-
-    def test_speed_param_has_range(self):
-        from wafer.builtins.commands.grid import GridViewCommands
-
-        cmds = GridViewCommands.commands()
-        for c in cmds:
-            if hasattr(c, "path") and c.path == "grid.toggle_autoscroll":
-                speed_param = [p for p in c.params if p.name == "speed"][0]
-                assert speed_param.min_value == 1
-                assert speed_param.max_value == 500
-                assert speed_param.default == 50
-                break
-
-    def test_toggle_autoscroll_passes_speed(self):
+    def test_toggle_autoscroll_passes_speed_and_loop_options(self):
         from unittest.mock import MagicMock, PropertyMock
         from wafer.builtins.commands.grid import GridViewCommands
 
@@ -77,20 +37,8 @@ class TestToggleAutoscrollCommand:
         view.get_adjusted_scroll_speed.assert_called_once_with(100)
         scroll.start_auto_scroll.assert_called_once_with(42.0, 100, loop=False, query_on_loop=False)
 
-    def test_toggle_autoscroll_passes_loop_options(self):
-        from unittest.mock import MagicMock, PropertyMock
-        from wafer.builtins.commands.grid import GridViewCommands
-
-        ctx = MagicMock()
-        view = MagicMock()
-        scroll = MagicMock()
-        scroll.is_scrolling.return_value = False
-        view.get_adjusted_scroll_speed.return_value = 42.0
-        type(view).parent_scroll = PropertyMock(return_value=scroll)
-        ctx.get_instance.return_value = view
-
+        scroll.start_auto_scroll.reset_mock()
         GridViewCommands.toggle_autoscroll(ctx, speed=100, loop=True, query_on_loop=True)
-
         scroll.start_auto_scroll.assert_called_once_with(42.0, 100, loop=True, query_on_loop=True)
 
     def test_toggle_autoscroll_stops_when_scrolling(self):
@@ -143,20 +91,6 @@ class TestRadioCommandsHaveResolvers:
 
 
 class TestFollowSelectionCommand:
-    def _cmd(self):
-        from wafer.builtins.commands.grid import GridViewCommands
-
-        for c in GridViewCommands.commands():
-            if getattr(c, "path", None) == "grid.toggle_scroll_follow_selection":
-                return c
-        return None
-
-    def test_command_registered_checkable_with_resolver(self):
-        cmd = self._cmd()
-        assert cmd is not None
-        assert cmd.checkable is True
-        assert cmd.checked is not None
-
     def test_toggle_flips_view_flag(self):
         from unittest.mock import MagicMock
         from wafer.builtins.commands.grid import GridViewCommands

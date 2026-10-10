@@ -384,12 +384,6 @@ def test_scan_merge_conflicts_recurses_into_dirs(tmp_path):
     assert conflicts[0].rel_path == os.path.join("sub", "c.txt")
 
 
-def test_paste_cancelled_error_importable():
-    from wafer.core.platform.file_operations import PasteCancelledError
-
-    assert issubclass(PasteCancelledError, Exception)
-
-
 def test_file_executor_merge_dir_rename_child(tmp_path):
     from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
 
@@ -448,12 +442,6 @@ def test_file_executor_merge_adds_new_files(tmp_path):
     assert (dst / "existing.txt").read_text(encoding="utf-8") == "keep"
     assert (dst / "new.txt").read_text(encoding="utf-8") == "added"
     assert res and res[0].status == "ok"
-
-
-def test_paste_executor_alias():
-    from wafer.core.platform.file_operations import FileExecutor, PasteExecutor
-
-    assert PasteExecutor is FileExecutor
 
 
 def test_execute_item_case_rename(tmp_path):

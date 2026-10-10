@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Any
-import json
 
 
 class CommandPayload:
@@ -14,21 +13,11 @@ class CommandPayload:
     def to_dict(self) -> dict[str, Any]:
         return {"id": self.id, "args": self.args}
 
-    def to_json(self) -> str:
-        return json.dumps(self.to_dict(), ensure_ascii=False, separators=(",", ":"))
-
     @staticmethod
     def from_dict(d: dict[str, Any]) -> CommandPayload:
         if not isinstance(d, dict) or "id" not in d:
             raise TypeError("payload dict must contain id")
         return CommandPayload(str(d.get("id")), d.get("args"))
-
-    @staticmethod
-    def from_json(s: str) -> CommandPayload:
-        try:
-            return CommandPayload.from_dict(json.loads(s))
-        except (TypeError, ValueError) as e:
-            raise TypeError("invalid json text") from e
 
     @staticmethod
     def from_any(v: Any) -> CommandPayload:

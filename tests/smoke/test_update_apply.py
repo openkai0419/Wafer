@@ -169,7 +169,7 @@ def test_csharp_skips_when_other_process_running(tmp_path, launcher_exe):
     build_tree(root, launcher_exe)
     holder = spawn_blocker(root)
     try:
-        proc = run_helper(root, launcher_exe, wait_seconds=1, busy_action="skip")
+        proc = run_helper(root, launcher_exe, wait_seconds=0, busy_action="skip")
 
         assert proc.returncode == 1
         assert (root / ".update/apply.plan").is_file()
@@ -241,7 +241,7 @@ def test_launcher_mode_hands_off_to_staged_helper(tmp_path, launcher_exe):
     applied = root / ".update/applied.txt"
     deadline = time.monotonic() + 20
     while not applied.exists() and time.monotonic() < deadline:
-        time.sleep(0.2)
+        time.sleep(0.02)
     log_path = root / ".update/apply.log"
     log = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else "<no log>"
     assert applied.exists(), log

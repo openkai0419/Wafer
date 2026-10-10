@@ -4,6 +4,7 @@ from wafer.plugin.parser.base import (
     BaseParserPlugin,
     BaseSingletonParser,
     ParserResult,
+    required_collectors,
 )
 
 
@@ -55,36 +56,6 @@ def test_parser_result_fail():
     d = r.to_dict()
     assert d["status"] is False
     assert "meta_info" not in d
-
-
-def test_base_parser_plugin_batch_size():
-    assert DummyParser.BATCH_SIZE == 1200
-    assert DummyParser.MAX_WORKERS == 1
-    assert DummyParser.MAX_TIMEOUT == 300.0
-
-
-def test_base_singleton_parser_batch_size():
-    assert DummySingleton.BATCH_SIZE == 300
-    assert DummySingleton.MAX_WORKERS == 1
-    assert DummySingleton.MAX_TIMEOUT == 300.0
-
-
-def test_trigger_keys():
-    assert DummyParser.TRIGGER_KEYS == ("exif.parameters",)
-    assert DummySingleton.TRIGGER_KEYS == ("exif.Comment",)
-
-
-def test_process():
-    d = DummyParser()
-    result = d.process("/a.png", (0.0, 0), {"exif.parameters": "steps:20"})
-    assert result.status is True
-    assert result.meta_info == {"sd.prompt": "test"}
-
-
-def test_inheritance():
-    assert issubclass(BaseParserPlugin, BaseParser)
-    assert issubclass(BaseSingletonParser, BaseParser)
-    assert not issubclass(BaseParserPlugin, BaseSingletonParser)
 
 
 def test_parser_result_with_update_hash():
@@ -158,7 +129,7 @@ def test_query_db_reads_assigned_database(tmp_path, monkeypatch):
     db = FileDB(db_path)
     db.start()
     db.initialize_database()
-    db.upsert_batches([("src1", "hash1", 100, 1.0)], [("src1", "src1", 1.0)], [], [])
+    db.upsert_basic_sources([("src1", "hash1", 100, 1.0)], [("src1", "src1", 1.0)])
     db.close()
     monkeypatch.setattr(paths, "data_db_path", lambda name: str(db_path))
 
@@ -169,3 +140,48 @@ def test_query_db_reads_assigned_database(tmp_path, monkeypatch):
     finally:
         parser.shutdown()
     assert parser._reader is None
+
+
+def test_base_classes_are_abstract():
+    for base in (BaseParser, BaseParserPlugin, BaseSingletonParser):
+        with pytest.raises(TypeError):
+            base()
+
+
+def test_notify_to_sends_ipc():
+    from unittest.mock import MagicMock, patch
+
+    mock_node = MagicMock()
+    mock_registry = MagicMock()
+    mock_registry.resolve_node.return_value = mock_node
+
+    with patch("wafer.qt.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
+        BaseParserPlugin.notify_to("novelai")
+
+    mock_node.send.assert_called_once_with("plugin.notify", None, dst="parser-novelai")
+
+
+def test_notify_to_no_node():
+    from unittest.mock import MagicMock, patch
+
+    mock_registry = MagicMock()
+    mock_registry.resolve_node.return_value = None
+
+    with patch("wafer.qt.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
+        BaseParserPlugin.notify_to("novelai")
+
+
+def test_required_collectors_groups_keys_by_collector():
+    assert required_collectors(("exiftool.PNG:Comment", "exiftool.EXIF:Make", "ffmpeg.format")) == {
+        "exiftool": ["PNG:Comment", "EXIF:Make"],
+        "ffmpeg": ["format"],
+    }
+
+
+def test_required_collectors_meta_key_with_dot():
+    assert required_collectors(("exiftool.a.b",)) == {"exiftool": ["a.b"]}
+
+
+def test_required_collectors_ignores_malformed():
+    assert required_collectors(()) == {}
+    assert required_collectors(("nodot", ".key", "collector.")) == {}

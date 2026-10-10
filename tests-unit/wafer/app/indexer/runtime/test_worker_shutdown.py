@@ -1,8 +1,4 @@
-from wafer.app.indexer.runtime.worker_shutdown import WORKER_SHUTDOWN_TIMEOUT, wait_worker_stopped
-
-
-def test_worker_shutdown_timeout_is_positive():
-    assert WORKER_SHUTDOWN_TIMEOUT > 0
+from wafer.app.indexer.runtime.worker_shutdown import wait_worker_stopped
 
 
 def test_wait_worker_stopped_returns_true_when_process_absent(monkeypatch):

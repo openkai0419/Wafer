@@ -8,8 +8,6 @@ from wafer.builtins.commands.content_viewer import (
     next_file,
     prev_file,
     toggle_slideshow,
-    start_slideshow,
-    stop_slideshow,
 )
 
 
@@ -47,22 +45,6 @@ class _WidgetStub:
         return self._local_pos
 
 
-def test_next_file_delegates_to_controller():
-    viewer = _make_viewer()
-
-    next_file(DummyCtx(viewer))
-
-    viewer.navigate_next.assert_called_once_with(step=1, loop=False, by_display_count=False, origin="command")
-
-
-def test_prev_file_delegates_to_controller():
-    viewer = _make_viewer()
-
-    prev_file(DummyCtx(viewer))
-
-    viewer.navigate_prev.assert_called_once_with(step=1, loop=False, by_display_count=False, origin="command")
-
-
 def test_next_prev_forward_step_and_loop_parameters():
     viewer = _make_viewer()
     ctx = DummyCtx(viewer)
@@ -72,17 +54,6 @@ def test_next_prev_forward_step_and_loop_parameters():
 
     viewer.navigate_next.assert_called_once_with(step=2, loop=True, by_display_count=False, origin="command")
     viewer.navigate_prev.assert_called_once_with(step=3, loop=True, by_display_count=False, origin="command")
-
-
-def test_next_prev_forward_by_display_count_flag():
-    viewer = _make_viewer()
-    ctx = DummyCtx(viewer)
-
-    next_file(ctx, by_display_count=True)
-    prev_file(ctx, by_display_count=True)
-
-    viewer.navigate_next.assert_called_once_with(step=1, loop=False, by_display_count=True, origin="command")
-    viewer.navigate_prev.assert_called_once_with(step=1, loop=False, by_display_count=True, origin="command")
 
 
 def test_nav_direction_defaults_to_left_right_axis():
@@ -122,7 +93,7 @@ def test_navigate_file_by_mouse_position_invokes_next_and_prev_commands():
     viewer.navigate_prev.assert_not_called()
 
 
-def test_navigate_file_by_mouse_position_honors_invert():
+def test_navigate_file_by_mouse_position_honors_invert_and_axis():
     viewer = _make_viewer()
     widget = _WidgetStub(QtCore.QRect(0, 0, 100, 100), QtCore.QPoint(90, 40))
 
@@ -136,14 +107,7 @@ def test_navigate_file_by_mouse_position_honors_invert():
         navigate_file_by_mouse_position(normal_ctx)
         mock_invoke.assert_called_once_with("fv.next_file", ctx=normal_ctx)
 
-    viewer.navigate_next.assert_not_called()
-    viewer.navigate_prev.assert_not_called()
-
-
-def test_navigate_file_by_mouse_position_honors_axis_selection():
-    viewer = _make_viewer()
     widget = _WidgetStub(QtCore.QRect(0, 0, 100, 100), QtCore.QPoint(10, 90))
-
     horizontal_ctx = DummyCtx(viewer, widget=widget, global_pos=QtCore.QPoint(0, 0))
     vertical_ctx = DummyCtx(viewer, widget=widget, global_pos=QtCore.QPoint(0, 0))
     with patch("wafer.builtins.commands.content_viewer.BridgeCommand.invoke") as mock_invoke:
@@ -202,17 +166,3 @@ def test_toggle_slideshow_starts_autoplay():
     ctx = _SlideshowCtx(fv)
     toggle_slideshow(ctx, interval=5.0, loop=True)
     fv.toggle_autoplay.assert_called_once_with(interval_ms=5000, loop=True)
-
-
-def test_start_slideshow_calls_start():
-    fv = MagicMock()
-    ctx = _SlideshowCtx(fv)
-    start_slideshow(ctx, interval=2.0, loop=False)
-    fv.start_autoplay.assert_called_once_with(interval_ms=2000, loop=False)
-
-
-def test_stop_slideshow_calls_stop():
-    fv = MagicMock()
-    ctx = _SlideshowCtx(fv)
-    stop_slideshow(ctx)
-    fv.stop_autoplay.assert_called_once()

@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import MagicMock
+
+from PySide6 import QtCore
 
 from wafer.qt.commands.command.context import (
     CommandContext,
@@ -20,13 +21,6 @@ class TestWheelStepsFromEvent:
         delta.y.return_value = 120
         ev.angleDelta.return_value = delta
         assert _wheel_steps_from_event(ev) == 1
-
-    def test_angle_delta_240_gives_2(self):
-        ev = MagicMock()
-        delta = MagicMock()
-        delta.y.return_value = 240
-        ev.angleDelta.return_value = delta
-        assert _wheel_steps_from_event(ev) == 2
 
     def test_negative_angle_delta_gives_positive_steps(self):
         ev = MagicMock()
@@ -177,21 +171,10 @@ class TestCommandContextGetMany:
 
 
 class TestCommandContextPut:
-    def test_put_returns_self(self):
-        ctx = CommandContext()
-        result = ctx.put("key", "value")
-        assert result is ctx
-
     def test_put_stores_value(self):
         ctx = CommandContext()
         ctx.put("key", "value")
         assert ctx.get("key") == "value"
-
-    def test_put_overwrites(self):
-        ctx = CommandContext()
-        ctx.put("key", "v1")
-        ctx.put("key", "v2")
-        assert ctx.get("key") == "v2"
 
 
 class TestCommandContextPutDefault:
@@ -205,11 +188,6 @@ class TestCommandContextPutDefault:
         ctx.put("key", "original")
         ctx.put_default("key", "default_val")
         assert ctx.get("key") == "original"
-
-    def test_put_default_returns_self(self):
-        ctx = CommandContext()
-        result = ctx.put_default("key", "val")
-        assert result is ctx
 
 
 class TestCommandContextMerge:
@@ -232,34 +210,8 @@ class TestCommandContextMerge:
         assert result is ctx
         assert ctx.get("a") == 1
 
-    def test_merge_empty_dict_is_noop(self):
-        ctx = CommandContext()
-        ctx.put("a", 1)
-        ctx.merge({})
-        assert ctx.get("a") == 1
-
-    def test_merge_returns_self(self):
-        ctx = CommandContext()
-        result = ctx.merge({"x": 1})
-        assert result is ctx
-
 
 class TestCommandContextBuild:
-    def test_build_stores_widget_scope_source(self):
-        w = MagicMock()
-        ctx = CommandContext.build(w, "GridView", source="keyboard")
-        assert ctx._widget is w
-        assert ctx._scope == "GridView"
-        assert ctx._source == "keyboard"
-
-    def test_build_defaults_scope_to_star(self):
-        ctx = CommandContext.build()
-        assert ctx._scope == "*"
-
-    def test_build_defaults_source_to_empty(self):
-        ctx = CommandContext.build()
-        assert ctx._source == ""
-
     def test_build_none_scope_becomes_star(self):
         ctx = CommandContext.build(scope=None)
         assert ctx._scope == "*"
@@ -272,9 +224,10 @@ class TestCommandContextBuild:
         ctx = CommandContext.build(extras=None)
         assert ctx.extras == {}
 
-    def test_build_wheel_steps_defaults_to_1(self):
-        ctx = CommandContext.build()
-        assert ctx.wheel_steps == 1
+    def test_event_always_set_in_build(self):
+        evt = object()
+        ctx = CommandContext.build(None, "*", source="mouse", event=evt)
+        assert ctx.event is evt
 
 
 class TestCommandContextCreate:
@@ -319,62 +272,33 @@ class TestMergeSeedEdgeCases:
         assert result is ctx
         assert ctx.pos == (1, 2)
 
-    def test_merge_seed_prefers_seed_scope_over_star(self):
+    def test_merge_seed_overrides_fields(self):
+        seed = CommandContext()
+        seed.pos = QtCore.QPoint(10, 10)
+        seed.global_pos = QtCore.QPoint(11, 11)
+        seed.start_pos = QtCore.QPoint(12, 12)
+        seed.start_global_pos = QtCore.QPoint(13, 13)
+        seed.wheel_steps = 3
+        seed._scope = "viewer"
+        seed.extras.update({"k": "seed", "only_seed": 1})
+
         ctx = CommandContext()
+        ctx.pos = QtCore.QPoint(1, 1)
+        ctx.global_pos = QtCore.QPoint(2, 2)
+        ctx.start_pos = QtCore.QPoint(3, 3)
+        ctx.start_global_pos = QtCore.QPoint(4, 4)
+        ctx.wheel_steps = 1
         ctx._scope = "*"
-        seed = CommandContext()
-        seed._scope = "grid"
-        CommandContext.merge_seed_prefer_ctx(ctx, seed)
-        assert ctx._scope == "grid"
+        ctx.extras.update({"k": "ctx", "only_ctx": 2})
 
-    def test_merge_seed_prefer_ctx_keeps_nonstar_scope(self):
-        ctx = CommandContext()
-        ctx._scope = "viewer"
-        seed = CommandContext()
-        seed._scope = "grid"
-        CommandContext.merge_seed_prefer_ctx(ctx, seed)
+        CommandContext.merge_seed(ctx, seed)
+
+        assert ctx.pos == seed.pos
+        assert ctx.global_pos == seed.global_pos
+        assert ctx.start_pos == seed.start_pos
+        assert ctx.start_global_pos == seed.start_global_pos
+        assert ctx.wheel_steps == 3
         assert ctx._scope == "viewer"
-
-    def test_merge_seed_prefer_seed_overwrites_pos(self):
-        ctx = CommandContext()
-        ctx.pos = (1, 1)
-        seed = CommandContext()
-        seed.pos = (10, 10)
-        CommandContext.merge_seed_prefer_seed(ctx, seed)
-        assert ctx.pos == (10, 10)
-
-    def test_merge_seed_prefer_ctx_keeps_pos_when_set(self):
-        ctx = CommandContext()
-        ctx.pos = (1, 1)
-        seed = CommandContext()
-        seed.pos = (10, 10)
-        CommandContext.merge_seed_prefer_ctx(ctx, seed)
-        assert ctx.pos == (1, 1)
-
-    def test_merge_seed_prefer_ctx_takes_seed_pos_when_none(self):
-        ctx = CommandContext()
-        ctx.pos = None
-        seed = CommandContext()
-        seed.pos = (10, 10)
-        CommandContext.merge_seed_prefer_ctx(ctx, seed)
-        assert ctx.pos == (10, 10)
-
-
-class TestCommandContextDebug:
-    def test_to_debug_dict_keys(self):
-        ctx = CommandContext.build()
-        d = ctx.to_debug_dict()
-        assert "info" in d
-        assert "pos" in d
-        assert "global_pos" in d
-        assert "extras" in d
-
-    def test_to_debug_text_returns_string(self):
-        ctx = CommandContext.build()
-        assert isinstance(ctx.to_debug_text(), str)
-
-    def test_print_debug_calls_printer(self):
-        ctx = CommandContext.build()
-        called = []
-        ctx.print_debug(printer=lambda msg: called.append(msg))
-        assert len(called) == 1
+        assert ctx.get("k") == "seed"
+        assert ctx.get("only_seed") == 1
+        assert ctx.get("only_ctx") == 2

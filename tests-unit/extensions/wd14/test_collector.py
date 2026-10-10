@@ -1,7 +1,6 @@
 import hashlib
 import time
-from collections import OrderedDict
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from PIL import Image
@@ -15,13 +14,6 @@ from extensions.wd14.settings import wd14_config
 class TestKnownModels:
     def test_default_model_in_known(self):
         assert DEFAULT_MODEL in KNOWN_MODELS
-
-    def test_all_models_have_repo_id(self):
-        for key, repo_id in KNOWN_MODELS.items():
-            assert repo_id.startswith("SmilingWolf/")
-
-    def test_eva02_large_included(self):
-        assert "wd-eva02-large-tagger-v3" in KNOWN_MODELS
 
 
 class TestBuildTags:
@@ -40,15 +32,10 @@ class TestBuildTags:
 
     # --- rating_mode="top" (default) ---
 
-    def test_top_mode_rating_key(self):
+    def test_top_mode_picks_highest_rating(self):
         tags = self.collector._build_tags(self.result, settings=self.TOP_SETTINGS)
         assert tags["rating"] == "general"
-
-    def test_top_mode_rating_score(self):
-        tags = self.collector._build_tags(self.result, settings=self.TOP_SETTINGS)
         assert tags["rating_score"] == "0.85"
-
-    def test_top_mode_sensitive_rating(self):
         self.result["ratings"] = {"sensitive": 0.90, "general": 0.05, "questionable": 0.03, "explicit": 0.02}
         tags = self.collector._build_tags(self.result, settings=self.TOP_SETTINGS)
         assert tags["rating"] == "sensitive"
@@ -101,17 +88,15 @@ class TestBuildTags:
     def test_character_comma_separated(self):
         tags = self.collector._build_tags(self.result, settings=self.TOP_SETTINGS)
         assert tags["character"] == "hatsune_miku"
+        self.result["character"] = {"hatsune_miku": 0.90, "kagamine_rin": 0.85}
+        tags = self.collector._build_tags(self.result, settings=self.TOP_SETTINGS)
+        assert "hatsune_miku" in tags["character"]
+        assert "kagamine_rin" in tags["character"]
 
     def test_empty_character(self):
         self.result["character"] = {}
         tags = self.collector._build_tags(self.result, settings=self.TOP_SETTINGS)
         assert "character" not in tags
-
-    def test_multiple_characters(self):
-        self.result["character"] = {"hatsune_miku": 0.90, "kagamine_rin": 0.85}
-        tags = self.collector._build_tags(self.result, settings=self.TOP_SETTINGS)
-        assert "hatsune_miku" in tags["character"]
-        assert "kagamine_rin" in tags["character"]
 
     def test_disable_character(self):
         tags = self.collector._build_tags(self.result, settings={"rating_mode": "top", "enable_character": False, "enable_tags": True})
@@ -129,10 +114,6 @@ class TestBuildTags:
         tags = self.collector._build_tags(self.result, settings={"rating_mode": "top", "enable_character": True, "enable_tags": True, "tag_blacklist": "1girl, blue_hair, smile"})
         assert "tags" not in tags
 
-    def test_blacklist_empty_string(self):
-        tags = self.collector._build_tags(self.result, settings={"rating_mode": "top", "enable_character": True, "enable_tags": True, "tag_blacklist": ""})
-        assert "1girl" in tags["tags"]
-
     # --- uses instance settings ---
 
     def test_uses_instance_settings_by_default(self):
@@ -147,9 +128,6 @@ class TestBuildTags:
 class TestParseBlacklist:
     def test_empty_string(self):
         assert parse_blacklist("") == []
-
-    def test_single_tag(self):
-        assert parse_blacklist("1boy") == ["1boy"]
 
     def test_multiple_tags(self):
         assert parse_blacklist("1boy, cat, simple_background") == ["1boy", "cat", "simple_background"]
@@ -172,15 +150,11 @@ class TestTwoLevelCache:
 
     def test_l1_hash_cache_hit(self):
         self.collector._hash_cache["abc123"] = self.tags
-        result = self.collector.process("/test/file.jpg", (1000.0, 500, "abc123"))
+        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
+            result = self.collector.process("/test/file.jpg", (1000.0, 500, "abc123"))
+            mock_resolver.load_pil.assert_not_called()
         assert result.status is True
         assert result.tags == self.tags
-
-    def test_l1_cache_skips_thumbnail(self):
-        self.collector._hash_cache["abc123"] = self.tags
-        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
-            self.collector.process("/test/file.jpg", (1000.0, 500, "abc123"))
-            mock_resolver.load_pil.assert_not_called()
 
     def test_l2_pixel_cache_hit(self):
         thumb = Image.new("RGB", (10, 10), (255, 0, 0))
@@ -196,22 +170,11 @@ class TestTwoLevelCache:
         assert result.status is True
         assert result.tags == self.tags
         assert self.collector._hash_cache["xyz789"] == self.tags
-
-    def test_l2_cache_skips_inference(self):
-        thumb = Image.new("RGB", (10, 10), (255, 0, 0))
-        pixel_hash = hashlib.sha256(thumb.tobytes(), usedforsecurity=False).hexdigest()[:16]
-        self.collector._pixel_cache[pixel_hash] = self.tags
-
-        self.collector._engine = MagicMock()
-        self.collector._engine.input_height = 448
-
-        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
-            mock_resolver.load_pil.return_value = thumb
-            self.collector.process("/test/file.jpg", (1000.0, 500, "xyz789"))
         self.collector._engine.predict.assert_not_called()
 
     def test_cache_miss_runs_inference(self):
         thumb = Image.new("RGB", (10, 10), (0, 255, 0))
+        pixel_hash = hashlib.sha256(thumb.tobytes(), usedforsecurity=False).hexdigest()[:16]
         mock_result = {
             "ratings": {"general": 0.85, "sensitive": 0.10, "questionable": 0.03, "explicit": 0.02},
             "general": {"1girl": 0.95},
@@ -229,24 +192,7 @@ class TestTwoLevelCache:
         assert result.tags["rating"] == "general"
         assert result.tags["tags"] == "1girl"
         self.collector._engine.predict.assert_called_once()
-
-    def test_cache_populated_after_inference(self):
-        thumb = Image.new("RGB", (10, 10), (0, 0, 255))
-        pixel_hash = hashlib.sha256(thumb.tobytes(), usedforsecurity=False).hexdigest()[:16]
-        mock_result = {
-            "ratings": {"general": 0.85, "sensitive": 0.10, "questionable": 0.03, "explicit": 0.02},
-            "general": {"1girl": 0.95},
-            "character": {},
-        }
-
-        self.collector._engine = MagicMock()
-        self.collector._engine.input_height = 448
-        self.collector._engine.predict.return_value = mock_result
-
-        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
-            mock_resolver.load_pil.return_value = thumb
-            self.collector.process("/test/file.jpg", (1000.0, 500, "hash_a"))
-        assert "hash_a" in self.collector._hash_cache
+        assert "new_hash" in self.collector._hash_cache
         assert pixel_hash in self.collector._pixel_cache
 
     def test_thumbnail_none_returns_failure(self):
@@ -272,32 +218,10 @@ class TestTwoLevelCache:
 
 
 class TestPostInstall:
-    def test_post_install_calls_ensure_model(self):
-        with patch("extensions.wd14.collector.ensure_model") as mock_model:
-            WD14TaggerCollector.post_install("/fake/dir")
-            mock_model.assert_called_once()
-
     def test_post_install_propagates_model_error(self):
         with patch("extensions.wd14.collector.ensure_model", side_effect=RuntimeError("dl failed")):
             with pytest.raises(RuntimeError, match="dl failed"):
                 WD14TaggerCollector.post_install("/fake/dir")
-
-
-class TestCollectorClassAttributes:
-    def test_name(self):
-        assert WD14TaggerCollector.NAME == "wd14"
-
-    def test_extensions_all_files(self):
-        assert WD14TaggerCollector.EXTENSIONS == ()
-
-    def test_priority(self):
-        assert WD14TaggerCollector.PRIORITY == 50
-
-    def test_default_enabled(self):
-        assert WD14TaggerCollector.DEFAULT_ENABLED is False
-
-    def test_batch_size(self):
-        assert WD14TaggerCollector.BATCH_SIZE == 150
 
 
 class TestCacheEviction:
@@ -310,25 +234,6 @@ class TestCacheEviction:
         assert "key_0" not in collector._hash_cache
         assert f"key_{_CACHE_MAX + 9}" in collector._hash_cache
 
-    def test_pixel_cache_evicts_oldest(self):
-        collector = WD14TaggerCollector()
-        tags = {"rating": "general"}
-        for i in range(_CACHE_MAX + 5):
-            WD14TaggerCollector._cache_put(collector._pixel_cache, f"px_{i}", tags)
-        assert len(collector._pixel_cache) == _CACHE_MAX
-        assert "px_0" not in collector._pixel_cache
-
-    def test_cache_hit_moves_to_end(self):
-        collector = WD14TaggerCollector()
-        tags = {"rating": "general"}
-        collector._hash_cache["oldest"] = tags
-        for i in range(_CACHE_MAX - 1):
-            WD14TaggerCollector._cache_put(collector._hash_cache, f"key_{i}", tags)
-        collector._hash_cache.move_to_end("oldest")
-        WD14TaggerCollector._cache_put(collector._hash_cache, "new_entry", tags)
-        assert "oldest" in collector._hash_cache
-        assert "key_0" not in collector._hash_cache
-
 
 class TestIdleTimeout:
     def setup_method(self):
@@ -337,14 +242,11 @@ class TestIdleTimeout:
     def teardown_method(self):
         self.collector.shutdown()
 
-    def test_touch_sets_last_used(self):
+    def test_touch_starts_timer(self):
+        assert self.collector._idle_timer is None
         assert self.collector._last_used == 0.0
         self.collector._touch()
         assert self.collector._last_used > 0.0
-
-    def test_touch_starts_timer(self):
-        assert self.collector._idle_timer is None
-        self.collector._touch()
         assert self.collector._idle_timer is not None
         assert self.collector._idle_timer.daemon is True
 
@@ -368,11 +270,6 @@ class TestIdleTimeout:
         self.collector._last_used = time.monotonic()
         self.collector._check_idle()
         assert self.collector._engine is engine
-
-    def test_check_idle_noop_when_no_engine(self):
-        self.collector._last_used = time.monotonic() - _ENGINE_IDLE_TIMEOUT - 1
-        self.collector._check_idle()
-        assert self.collector._engine is None
 
     def test_process_calls_touch(self):
         thumb = Image.new("RGB", (10, 10), (0, 255, 0))
@@ -425,10 +322,6 @@ class TestOnNotify:
         with patch.object(wd14_config, "load", return_value={**original, "general_threshold": 0.1}):
             self.collector.on_notify()
         assert self.collector._settings["general_threshold"] == 0.1
-
-    def test_on_notify_without_payload(self):
-        with patch.object(wd14_config, "load", return_value=self.collector._settings):
-            self.collector.on_notify(None)
 
 
 class TestOnRequest:
@@ -485,15 +378,6 @@ class TestOnRequest:
 
 
 class TestSettingsIntegration:
-    def test_default_settings_loaded(self):
-        collector = WD14TaggerCollector()
-        try:
-            assert "general_threshold" in collector._settings
-            assert "character_threshold" in collector._settings
-            assert "rating_mode" in collector._settings
-        finally:
-            collector.shutdown()
-
     def test_process_uses_settings_thresholds(self):
         collector = WD14TaggerCollector()
         collector._settings["general_threshold"] = 0.1

@@ -1,23 +1,12 @@
-import py_compile
+import pytest
 from PySide6 import QtCore, QtWidgets
 
-
-def test_compile():
-    py_compile.compile("wafer/app/viewer/widgets/callout_overlay.py")
+from wafer.app.viewer.widgets import callout_overlay
 
 
-def test_create_and_show(qtbot):
-    target = QtWidgets.QPushButton("Test")
-    target.show()
-    qtbot.addWidget(target)
-
-    from wafer.app.viewer.widgets.callout_overlay import CalloutOverlay
-
-    overlay = CalloutOverlay(target, "Test callout")
-    overlay.show()
-    assert overlay.isVisible()
-    assert overlay._track_timer.isActive()
-    overlay.close()
+@pytest.fixture(autouse=True)
+def fast_fade(monkeypatch):
+    monkeypatch.setattr(callout_overlay, "_FADE_DURATION_MS", 20)
 
 
 def test_dismiss_emits_signal(qtbot):

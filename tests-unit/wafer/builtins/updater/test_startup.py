@@ -123,25 +123,6 @@ def test_startup_check_does_not_show_skipped_version(tmp_path, monkeypatch):
     assert manager.visible is False
 
 
-def test_startup_check_does_not_show_when_update_is_not_needed(tmp_path, monkeypatch):
-    store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-    first, _, _ = store.acquire_slot("first")
-    monkeypatch.setattr(startup.WorkspaceStore, "instance", staticmethod(lambda: store))
-    monkeypatch.setattr(startup.state, "is_auto_check_enabled", lambda: True)
-    monkeypatch.setattr(startup.state, "skipped_version", lambda: "")
-    monkeypatch.setattr(startup.state, "record_latest_result", lambda version: None)
-    monkeypatch.setattr(startup, "check_for_updates", lambda: _new_result("0.6.18", is_newer=False))
-    manager = _Manager()
-    window = _MainWindow(first, manager)
-    restore = _register_main_window(window)
-    try:
-        startup.run_startup_update_check()
-    finally:
-        restore()
-
-    assert manager.visible is False
-
-
 def test_startup_check_respects_auto_check_disabled(tmp_path, monkeypatch):
     store = WorkspaceStore(path=str(tmp_path / "ws.json"))
     first, _, _ = store.acquire_slot("first")

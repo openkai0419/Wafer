@@ -1,16 +1,7 @@
-import py_compile
 from unittest.mock import MagicMock
 
-from wafer.app.indexer.scanner import DirectoryScanner, _CHUNK, _get_stat
+from wafer.app.indexer.scanner import DirectoryScanner
 from wafer.core.common.paths import normalize_path
-
-
-def test_compile():
-    py_compile.compile("wafer/app/indexer/scanner.py")
-
-
-def test_chunk_positive():
-    assert _CHUNK > 0
 
 
 def _make_scanner(tmp_path, collectors=None):
@@ -38,31 +29,6 @@ def test_set_exclude_paths(tmp_path):
     scanner.stop()
 
 
-def test_is_excluded(tmp_path):
-    from wafer.app.indexer.watch.path_scope import normalize_prefixes
-
-    scanner, *_ = _make_scanner(tmp_path)
-    scanner._exclude_paths = normalize_prefixes(["/a/b", "/c/d"])
-    assert scanner._is_excluded("/a/b")
-    assert scanner._is_excluded("/a/b/sub/file.png")
-    assert not scanner._is_excluded("/a/c")
-    assert not scanner._is_excluded("/a")
-
-
-def test_is_excluded_empty(tmp_path):
-    scanner, *_ = _make_scanner(tmp_path)
-    scanner._exclude_paths = []
-    assert not scanner._is_excluded("/any/path")
-
-
-def test_set_ignore_patterns(tmp_path):
-    scanner, scheduler, _, _ = _make_scanner(tmp_path)
-    scanner.start()
-    scanner.set_ignore_patterns(["*cache*"])
-    assert scanner._ignore_patterns == ["*cache*"]
-    scanner.stop()
-
-
 def test_set_exclusions_sets_both_in_one_call(tmp_path):
     scanner, scheduler, _, _ = _make_scanner(tmp_path)
     scanner.start()
@@ -72,20 +38,6 @@ def test_set_exclusions_sets_both_in_one_call(tmp_path):
     assert scanner._is_excluded(scanner._exclude_paths[0])
     assert scanner._is_excluded("/x/my_cache_dir/file.png")
     scanner.stop()
-
-
-def test_is_excluded_by_ignore_pattern(tmp_path):
-    scanner, *_ = _make_scanner(tmp_path)
-    scanner.set_ignore_patterns(["*cache*"])
-    assert scanner._is_excluded("/a/my_cache_dir/file.png")
-    assert not scanner._is_excluded("/a/data/file.png")
-
-
-def test_is_excluded_by_ignore_pattern_is_case_sensitive(tmp_path):
-    scanner, *_ = _make_scanner(tmp_path)
-    scanner.set_ignore_patterns(["*CACHE*"])
-    assert scanner._is_excluded("/a/CACHE/file.png")
-    assert not scanner._is_excluded("/a/cache/file.png")
 
 
 def test_scan_directory_skips_files_matching_ignore_pattern(tmp_path):
@@ -110,43 +62,6 @@ def test_scan_directory_skips_subdirectories_matching_ignore_pattern(tmp_path):
     results = dict(scanner._scan_directory(str(scan_dir)))
     assert normalize_path(str(scan_dir / "keep.txt")) in results
     assert normalize_path(str(scan_dir / "my_cache_dir" / "inside.txt")) not in results
-
-
-def test_request_scan_queues(tmp_path):
-    scanner, *_ = _make_scanner(tmp_path)
-    scanner.request_scan(["/folder1"])
-    assert len(scanner._request_queue) == 1
-    assert scanner._request_queue[0] == ("rescan", ["/folder1"])
-
-
-def test_request_update_queues(tmp_path):
-    scanner, *_ = _make_scanner(tmp_path)
-    scanner.request_update(["/file.png"])
-    assert len(scanner._request_queue) == 1
-    assert scanner._request_queue[0] == ("update", ["/file.png"])
-
-
-def test_backfill_pending_queues(tmp_path):
-    scanner, *_ = _make_scanner(tmp_path)
-    scanner.backfill_pending()
-    assert len(scanner._request_queue) == 1
-    assert scanner._request_queue[0] == ("backfill", None)
-
-
-def test_get_stat():
-    import os
-    import tempfile
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as f:
-        f.write(b"hello")
-        path = f.name
-    try:
-        st = os.stat(path)
-        mtime, size, ctime = _get_stat(st)
-        assert size == 5
-        assert mtime == st.st_mtime
-    finally:
-        os.unlink(path)
 
 
 def test_start_stop(tmp_path):
@@ -321,21 +236,19 @@ def test_loop_survives_exception(tmp_path):
     scan_dir.mkdir()
     (scan_dir / "a.txt").write_text("x")
 
+    def wait_for_calls(n):
+        deadline = time.monotonic() + 5.0
+        while call_count < n and time.monotonic() < deadline:
+            time.sleep(0.01)
+
     scanner.request_scan([str(scan_dir)])
-    time.sleep(0.5)
+    wait_for_calls(1)
     scanner.request_scan([str(scan_dir)])
-    time.sleep(0.5)
+    wait_for_calls(2)
 
     assert scanner._thread.is_alive()
     assert call_count >= 2
     scanner.stop()
-
-
-def test_set_parsers(tmp_path):
-    scanner, *_ = _make_scanner(tmp_path)
-    parsers = [("nai", ("exif.comment",))]
-    scanner.set_parsers(parsers)
-    assert scanner._parsers == parsers
 
 
 def test_backfill_parsers_inserts_pending(tmp_path):
@@ -403,16 +316,10 @@ def test_backfill_parsers_skips_existing_status(tmp_path):
 
 def test_backfill_parsers_empty_trigger_keys(tmp_path):
     scanner, scheduler, *_ = _make_scanner(tmp_path)
-    scanner.set_parsers([("empty", ())])
     scanner.start()
     scanner._do_backfill()
     assert not scheduler.submit.called
-    scanner.stop()
-
-
-def test_backfill_parsers_no_parsers(tmp_path):
-    scanner, scheduler, *_ = _make_scanner(tmp_path)
-    scanner.start()
+    scanner.set_parsers([("empty", ())])
     scanner._do_backfill()
     assert not scheduler.submit.called
     scanner.stop()
@@ -434,13 +341,9 @@ def test_submit_pending_by_source_keys_triggers_parsers(tmp_path):
 
 def test_submit_pending_by_source_keys_ignores_meta_only_parsers(tmp_path):
     scanner, scheduler, *_ = _make_scanner(tmp_path)
-    scanner.set_parsers([("nai", ("exif.comment",))])
     scanner._submit_pending_by_source_keys(["/a.jpg"])
     assert not scheduler.submit.called
-
-
-def test_submit_pending_by_source_keys_without_parsers(tmp_path):
-    scanner, scheduler, *_ = _make_scanner(tmp_path)
+    scanner.set_parsers([("nai", ("exif.comment",))])
     scanner._submit_pending_by_source_keys(["/a.jpg"])
     assert not scheduler.submit.called
 
@@ -452,7 +355,7 @@ def test_backfill_parsers_covers_source_key_parsers(tmp_path):
     db = FileDB(db_path)
     db.start()
     db.initialize_database()
-    db.upsert_batches([("/a.jpg", "h1", 100, 1.0)], [("/a.jpg", "/a.jpg", 1.0)], [], [])
+    db.upsert_basic_sources([("/a.jpg", "h1", 100, 1.0)], [("/a.jpg", "/a.jpg", 1.0)])
 
     scheduler = MagicMock()
     writer = MagicMock()

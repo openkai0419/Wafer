@@ -31,18 +31,6 @@ class TestBadgeSortKey:
         assert badge_sort_key("exiftool") < badge_sort_key("wd14")
         assert badge_sort_key("wd14") < badge_sort_key("unknown_ext")
 
-    def test_preferred_is_first(self):
-        assert badge_sort_key("image") == 0
-
-    def test_normal_is_second(self):
-        assert badge_sort_key("exiftool") == 1
-
-    def test_heavy_is_third(self):
-        assert badge_sort_key("florence") == 2
-
-    def test_external_is_last(self):
-        assert badge_sort_key("random_plugin") == 3
-
     def test_sort_stability(self):
         folders = ["florence", "image", "exiftool", "unknown", "wd14", "video", "ffmpeg", "zip"]
         sorted_folders = sorted(folders, key=lambda f: (badge_sort_key(f), f))

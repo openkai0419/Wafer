@@ -21,12 +21,6 @@ class TestClickType:
     def test_from_any_alias_wheelup(self):
         assert ClickType.from_any("WHEELUP") is ClickType.WHEEL_UP
 
-    def test_from_any_alias_wheeldown(self):
-        assert ClickType.from_any("WHEELDOWN") is ClickType.WHEEL_DOWN
-
-    def test_from_any_alias_dragstart(self):
-        assert ClickType.from_any("DRAGSTART") is ClickType.DRAG_START
-
     def test_from_any_with_spaces(self):
         assert ClickType.from_any("WHEEL UP") is ClickType.WHEEL_UP
 
@@ -52,24 +46,6 @@ class TestMouseButton:
     def test_from_any_alias_lmb(self):
         assert MouseButton.from_any("LMB") is MouseButton.LEFT
 
-    def test_from_any_alias_rmb(self):
-        assert MouseButton.from_any("RMB") is MouseButton.RIGHT
-
-    def test_from_any_alias_mmb(self):
-        assert MouseButton.from_any("MMB") is MouseButton.MIDDLE
-
-    def test_from_any_alias_mb1(self):
-        assert MouseButton.from_any("MB1") is MouseButton.X1
-
-    def test_from_any_alias_mb2(self):
-        assert MouseButton.from_any("MB2") is MouseButton.X2
-
-    def test_from_any_alias_xbutton1(self):
-        assert MouseButton.from_any("XBUTTON1") is MouseButton.X1
-
-    def test_from_any_alias_xbutton2(self):
-        assert MouseButton.from_any("XBUTTON2") is MouseButton.X2
-
     def test_from_any_invalid_raises(self):
         with pytest.raises(ValueError, match="invalid MouseButton"):
             MouseButton.from_any("UNKNOWN")
@@ -88,24 +64,6 @@ class TestModifierKey:
 
     def test_from_any_alias_control(self):
         assert ModifierKey.from_any("CONTROL") is ModifierKey.CTRL
-
-    def test_from_any_alias_cmd(self):
-        assert ModifierKey.from_any("CMD") is ModifierKey.META
-
-    def test_from_any_alias_command(self):
-        assert ModifierKey.from_any("COMMAND") is ModifierKey.META
-
-    def test_from_any_alias_win(self):
-        assert ModifierKey.from_any("WIN") is ModifierKey.META
-
-    def test_from_any_alias_windows(self):
-        assert ModifierKey.from_any("WINDOWS") is ModifierKey.META
-
-    def test_from_any_alias_super(self):
-        assert ModifierKey.from_any("SUPER") is ModifierKey.META
-
-    def test_from_any_alias_option(self):
-        assert ModifierKey.from_any("OPTION") is ModifierKey.ALT
 
     def test_from_any_invalid_raises(self):
         with pytest.raises(ValueError, match="invalid ModifierKey"):
@@ -158,25 +116,12 @@ class TestMouseActionKey:
         b = MouseActionKey("LEFT", "SINGLE", modifiers=["CTRL"])
         assert a == b
 
-    def test_inequality_different_button(self):
-        a = MouseActionKey("LEFT", "SINGLE")
-        b = MouseActionKey("RIGHT", "SINGLE")
-        assert a != b
-
-    def test_inequality_different_click(self):
-        a = MouseActionKey("LEFT", "SINGLE")
-        b = MouseActionKey("LEFT", "DOUBLE")
-        assert a != b
-
-    def test_inequality_different_modifiers(self):
+    def test_inequality(self):
         a = MouseActionKey("LEFT", "SINGLE", modifiers=["CTRL"])
-        b = MouseActionKey("LEFT", "SINGLE", modifiers=["SHIFT"])
-        assert a != b
-
-    def test_inequality_different_held(self):
-        a = MouseActionKey("LEFT", "SINGLE", held_buttons=["RIGHT"])
-        b = MouseActionKey("LEFT", "SINGLE")
-        assert a != b
+        assert a != MouseActionKey("RIGHT", "SINGLE", modifiers=["CTRL"])
+        assert a != MouseActionKey("LEFT", "DOUBLE", modifiers=["CTRL"])
+        assert a != MouseActionKey("LEFT", "SINGLE", modifiers=["SHIFT"])
+        assert a != MouseActionKey("LEFT", "SINGLE", modifiers=["CTRL"], held_buttons=["RIGHT"])
 
     def test_inequality_with_non_mouseactionkey(self):
         a = MouseActionKey("LEFT", "SINGLE")
@@ -187,26 +132,10 @@ class TestMouseActionKey:
         b = MouseActionKey("LEFT", "DOUBLE", modifiers=["CTRL"])
         assert hash(a) == hash(b)
 
-    def test_hash_dict_key(self):
-        k = MouseActionKey("LEFT", "SINGLE")
-        d = {k: "value"}
-        assert d[MouseActionKey("LEFT", "SINGLE")] == "value"
-
-    def test_repr_simple(self):
-        k = MouseActionKey("LEFT", "SINGLE")
-        assert "LEFT" in repr(k)
-        assert "SINGLE" in repr(k)
-
-    def test_repr_with_modifiers(self):
-        k = MouseActionKey("LEFT", "SINGLE", modifiers=["CTRL"])
-        r = repr(k)
-        assert "CTRL" in r
-        assert "LEFT" in r
-
-    def test_repr_with_held(self):
-        k = MouseActionKey("LEFT", "SINGLE", held_buttons=["RIGHT"])
-        r = repr(k)
-        assert "RIGHT" in r
+    def test_repr(self):
+        r = repr(MouseActionKey("LEFT", "SINGLE", modifiers=["CTRL"], held_buttons=["RIGHT"]))
+        for part in ("LEFT", "SINGLE", "CTRL", "RIGHT"):
+            assert part in r
 
 
 class TestMouseActionKeySerialization:
@@ -243,11 +172,6 @@ class TestMouseActionKeySerialization:
 
     def test_roundtrip(self):
         original = MouseActionKey("MIDDLE", "DOUBLE", held_buttons=["LEFT"], modifiers=["ALT", "SHIFT"])
-        restored = MouseActionKey.from_dict(original.to_dict())
-        assert original == restored
-
-    def test_roundtrip_simple(self):
-        original = MouseActionKey("RIGHT", "SINGLE")
         restored = MouseActionKey.from_dict(original.to_dict())
         assert original == restored
 

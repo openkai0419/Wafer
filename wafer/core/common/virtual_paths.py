@@ -67,11 +67,3 @@ def display_name(path: str) -> str:
         if clean:
             return clean.rsplit("/", 1)[-1]
     return os.path.basename(source_path(path))
-
-
-def physical_path(path: str) -> str:
-    return source_path(path)
-
-
-def physical_paths(paths: list[str] | tuple[str, ...]) -> list[str]:
-    return list(dict.fromkeys(physical_path(str(p)) for p in paths if p))

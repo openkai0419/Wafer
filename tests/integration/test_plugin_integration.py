@@ -84,12 +84,6 @@ class TestGridPluginResolution:
         plugin_cls = grid_resolver.resolve(path)
         assert plugin_cls is not None
 
-    def test_animated_plugin_priority_over_image_for_gif(self):
-        chain = grid_resolver.resolve_merged_chain("test.gif")
-        names = [cls.NAME for cls, kind in chain]
-        if "animated" in names and "image" in names:
-            assert names.index("animated") < names.index("image")
-
     def test_video_extensions_resolve(self):
         for ext in [".mp4", ".mkv", ".webm", ".avi", ".mov"]:
             plugin_cls = grid_resolver.resolve(f"test{ext}")

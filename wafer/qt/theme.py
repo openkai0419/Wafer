@@ -38,9 +38,6 @@ class ThemeManager:
     def toggle(self):
         self._apply(LIGHT if self.is_dark else DARK)
 
-    def sync_system(self):
-        self._apply(ThemePalette.from_system())
-
     def _apply(self, palette: ThemePalette):
         if self._palette == palette:
             return

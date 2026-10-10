@@ -1,21 +1,6 @@
-import py_compile
 import queue
 
 from wafer.app.indexer.runtime.task import CancelToken, Task, TaskPriority
-
-
-def test_compile():
-    py_compile.compile("wafer/app/indexer/runtime/task.py")
-
-
-def test_task_priority_ordering():
-    assert TaskPriority.SHUTDOWN < TaskPriority.REALTIME
-    assert TaskPriority.REALTIME < TaskPriority.USER_REQUEST
-    assert TaskPriority.USER_REQUEST < TaskPriority.SCAN
-    assert TaskPriority.SCAN < TaskPriority.COLLECTION
-    assert TaskPriority.COLLECTION < TaskPriority.DISPATCH
-    assert TaskPriority.DISPATCH < TaskPriority.RETRY
-    assert TaskPriority.RETRY < TaskPriority.MAINTENANCE
 
 
 def test_create_factory():
@@ -27,18 +12,6 @@ def test_create_factory():
     assert task.on_complete is None
     task.run()
     assert ran == [1]
-
-
-def test_create_default_priority():
-    task = Task.create("op")
-    assert task.priority == TaskPriority.SCAN
-
-
-def test_create_with_on_complete():
-    called = []
-    task = Task.create("op", on_complete=lambda: called.append(1))
-    task.on_complete()
-    assert called == [1]
 
 
 def test_priority_queue_ordering():
@@ -65,28 +38,10 @@ def test_same_priority_fifo():
     assert second.name == "op_b"
 
 
-def test_cancel_token_initial_state():
-    token = CancelToken()
-    assert not token.is_cancelled
-
-
 def test_cancel_token_cancel():
     token = CancelToken()
+    assert not token.is_cancelled
     token.cancel()
     assert token.is_cancelled
-
-
-def test_cancel_token_idempotent():
-    token = CancelToken()
-    token.cancel()
     token.cancel()
     assert token.is_cancelled
-
-
-def test_task_with_cancel_token():
-    token = CancelToken()
-    task = Task.create("op", cancel_token=token)
-    assert task.cancel_token is token
-    assert not task.cancel_token.is_cancelled
-    token.cancel()
-    assert task.cancel_token.is_cancelled

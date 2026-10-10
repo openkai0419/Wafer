@@ -1,10 +1,4 @@
-import py_compile
-
 from PySide6 import QtCore, QtWidgets
-
-
-def test_compile():
-    py_compile.compile("wafer/app/viewer/widgets/workspace_toolbar.py")
 
 
 class TestPresetItem:
@@ -38,38 +32,6 @@ class TestPresetItem:
         item.apply_requested.connect(lambda kind, pid, mode: captured.append((kind, pid, mode)))
         qtbot.mouseClick(item._text_area, QtCore.Qt.LeftButton, pos=item._text_area.rect().center())
         assert captured == [("ui", "p2", "replace")]
-
-    def test_text_area_hover_and_date_are_part_of_click_target(self, qtbot):
-        from wafer.app.viewer.widgets.workspace_toolbar import _PresetItem
-
-        item = _PresetItem("ui", "p2", "X", "2026-04-27T10:00:00+00:00")
-        qtbot.addWidget(item)
-        assert item._text_area.cursor().shape() == QtCore.Qt.PointingHandCursor
-        assert "hover" in item._text_area.styleSheet()
-        assert item._label.testAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
-        assert item._updated_label.testAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
-
-    def test_overwrite_emits_kind_and_id(self, qtbot):
-        from wafer.app.viewer.widgets.workspace_toolbar import _PresetItem
-
-        item = _PresetItem("ui", "p2", "X")
-        qtbot.addWidget(item)
-        captured = []
-        item.overwrite_requested.connect(lambda kind, pid: captured.append((kind, pid)))
-        item.overwrite_requested.emit(item.kind, item.preset_id)
-        assert captured == [("ui", "p2")]
-
-    def test_overwrite_uses_save_icon(self, qtbot):
-        from unittest.mock import patch
-
-        from wafer.app.viewer.widgets import workspace_toolbar
-        from wafer.qt.common.icon_engine import themed_icon
-
-        keys = []
-        with patch.object(workspace_toolbar, "themed_icon", side_effect=lambda key, *a, **kw: keys.append(key) or themed_icon(key, *a, **kw)):
-            item = workspace_toolbar._PresetItem("ui", "p2", "X")
-        qtbot.addWidget(item)
-        assert "save" in keys
 
 
 class TestColumn:
@@ -202,18 +164,6 @@ class TestColumn:
         assert col._save_btn not in col._list_scroll.findChildren(QtWidgets.QPushButton)
         assert col._mode_combo not in col._list_scroll.findChildren(QtWidgets.QComboBox)
 
-    def test_apply_settings_are_in_column_content(self, qtbot):
-        from wafer.app.viewer.widgets.workspace_toolbar import _Column
-
-        ui_col = _Column("ui", "UI")
-        qtbot.addWidget(ui_col)
-        assert ui_col._restore_window_cb in ui_col.findChildren(QtWidgets.QCheckBox)
-
-        q_col = _Column("query", "Filter")
-        qtbot.addWidget(q_col)
-        assert q_col._mode_combo in q_col.findChildren(QtWidgets.QComboBox)
-        assert q_col._restore_sort_cb in q_col.findChildren(QtWidgets.QCheckBox)
-
     def test_preset_list_height_is_shared(self, qtbot):
         from wafer.app.viewer.widgets.workspace_toolbar import _Column
 
@@ -254,56 +204,6 @@ class TestSectionButton:
 
 
 class TestWorkspaceToolbarWidget:
-    def test_toolbar_contains_four_compact_buttons(self, qtbot):
-        from unittest.mock import MagicMock, patch
-
-        from wafer.app.viewer.widgets import workspace_toolbar as workspace_widget
-
-        store = MagicMock()
-        store.snapshot.return_value = ([], [], [])
-        store.list_recent_slots.return_value = []
-        with patch.object(workspace_widget.WorkspaceStore, "instance", return_value=store):
-            panel = workspace_widget.WorkspaceToolbarWidget()
-        qtbot.addWidget(panel)
-        assert set(panel._section_buttons) == {"ui", "path", "query", "recent"}
-        assert [panel.layout().itemAt(i).widget().key for i in range(panel.layout().count())] == ["recent", "ui", "path", "query"]
-        assert panel._section_buttons["recent"].text() == ""
-        assert panel._section_buttons["recent"].toolTip() == "Recent"
-        assert panel._section_buttons["recent"]._icon_key == "history"
-        assert panel.sizePolicy().horizontalPolicy() == QtWidgets.QSizePolicy.Expanding
-        assert panel._section_buttons["recent"].sizePolicy().horizontalPolicy() == QtWidgets.QSizePolicy.Fixed
-        for key in ("ui", "path", "query"):
-            assert panel._section_buttons[key].sizePolicy().horizontalPolicy() == QtWidgets.QSizePolicy.Expanding
-
-    def test_only_preset_section_buttons_stretch_horizontally(self, qtbot):
-        from unittest.mock import MagicMock, patch
-
-        from wafer.app.viewer.widgets import workspace_toolbar as workspace_widget
-
-        store = MagicMock()
-        store.snapshot.return_value = ([], [], [])
-        store.list_recent_slots.return_value = []
-        with patch.object(workspace_widget.WorkspaceStore, "instance", return_value=store):
-            panel = workspace_widget.WorkspaceToolbarWidget()
-        qtbot.addWidget(panel)
-
-        layout = panel.layout()
-        assert layout.stretch(0) == 0
-        assert [layout.stretch(i) for i in range(1, 4)] == [1, 1, 1]
-
-    def test_recent_restore_uses_history_icon(self, qtbot):
-        from unittest.mock import patch
-
-        from wafer.app.viewer.widgets import workspace_toolbar
-        from wafer.qt.common.icon_engine import themed_icon
-        from wafer.core.store.workspace import WindowSlot
-
-        keys = []
-        with patch.object(workspace_toolbar, "themed_icon", side_effect=lambda key, *a, **kw: keys.append(key) or themed_icon(key, *a, **kw)):
-            item = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s1", path={"database_name": "db"}))
-        qtbot.addWidget(item)
-        assert "history" in keys
-
     def test_recent_delete_uses_trash_icon_and_emits_slot_id(self, qtbot):
         from unittest.mock import patch
 
@@ -386,31 +286,22 @@ class TestWorkspaceToolbarWidget:
         )
         assert recent.content_height_hint().height() > empty_height
 
-    def test_recent_content_propagates_delete_request(self, qtbot):
+    def test_recent_content_propagates_delete_and_rename_requests(self, qtbot):
         from wafer.app.viewer.widgets.workspace_toolbar import _RecentSectionContent, _RecentSlotItem
         from wafer.core.store.workspace import WindowSlot
 
         recent = _RecentSectionContent()
         qtbot.addWidget(recent)
         recent.populate([WindowSlot(slot_id="s1", path={"database_name": "db"})])
-        captured = []
-        recent.delete_requested.connect(captured.append)
+        deleted = []
+        renamed = []
+        recent.delete_requested.connect(deleted.append)
+        recent.rename_requested.connect(renamed.append)
         item = recent.findChild(_RecentSlotItem)
         item.delete_requested.emit("s1")
-        assert captured == ["s1"]
-
-    def test_recent_content_propagates_rename_request(self, qtbot):
-        from wafer.app.viewer.widgets.workspace_toolbar import _RecentSectionContent, _RecentSlotItem
-        from wafer.core.store.workspace import WindowSlot
-
-        recent = _RecentSectionContent()
-        qtbot.addWidget(recent)
-        recent.populate([WindowSlot(slot_id="s1", path={"database_name": "db"})])
-        captured = []
-        recent.rename_requested.connect(captured.append)
-        item = recent.findChild(_RecentSlotItem)
         item.rename_requested.emit("s1")
-        assert captured == ["s1"]
+        assert deleted == ["s1"]
+        assert renamed == ["s1"]
 
     def test_recent_content_marks_current_slot(self, qtbot):
         from wafer.app.viewer.widgets.workspace_toolbar import _RecentSectionContent, _RecentSlotItem
@@ -442,35 +333,6 @@ class TestWorkspaceToolbarWidget:
         assert labels[0].sizePolicy().horizontalPolicy() == QtWidgets.QSizePolicy.Ignored
         assert recent.minimumSizeHint().width() < 260
 
-    def test_initial_popups_are_closed(self, qtbot):
-        from unittest.mock import MagicMock, patch
-
-        from wafer.app.viewer.widgets import workspace_toolbar as workspace_widget
-
-        store = MagicMock()
-        store.snapshot.return_value = ([], [], [])
-        store.list_recent_slots.return_value = []
-        with patch.object(workspace_widget.WorkspaceStore, "instance", return_value=store):
-            panel = workspace_widget.WorkspaceToolbarWidget()
-        qtbot.addWidget(panel)
-        assert panel._active_section is None
-        assert all(not btn.expanded for btn in panel._section_buttons.values())
-        assert all(not popup.isVisible() for popup in panel._section_popups.values())
-
-    def test_recent_refresh_includes_active_slots(self, qtbot):
-        from unittest.mock import MagicMock, patch
-
-        from wafer.app.viewer.widgets import workspace_toolbar as workspace_widget
-
-        store = MagicMock()
-        store.snapshot.return_value = ([], [], [])
-        store.list_recent_slots.return_value = []
-        with patch.object(workspace_widget.WorkspaceStore, "instance", return_value=store):
-            panel = workspace_widget.WorkspaceToolbarWidget()
-        qtbot.addWidget(panel)
-        qtbot.waitUntil(lambda: store.list_recent_slots.called, timeout=2000)
-        store.list_recent_slots.assert_called_with(limit=8, include_active=True)
-
     def test_delete_recent_slot_confirms_and_invokes_command(self, qtbot):
         from unittest.mock import MagicMock, patch
 
@@ -492,37 +354,6 @@ class TestWorkspaceToolbarWidget:
 
         ask.assert_called_once()
         invoke.assert_called_once_with("ws.delete_slot", slot_id="s1")
-
-    def test_rename_recent_slot_invokes_command(self, qtbot):
-        from unittest.mock import MagicMock, patch
-
-        from wafer.app.viewer.widgets import workspace_toolbar as workspace_widget
-
-        store = MagicMock()
-        store.snapshot.return_value = ([], [], [])
-        store.list_recent_slots.return_value = []
-        with patch.object(workspace_widget.WorkspaceStore, "instance", return_value=store), patch.object(workspace_widget.Command, "invoke") as invoke:
-            panel = workspace_widget.WorkspaceToolbarWidget()
-            qtbot.addWidget(panel)
-            panel._on_rename_slot("s1")
-
-        invoke.assert_called_once_with("ws.rename_slot", slot_id="s1")
-
-    def test_restore_current_recent_slot_invokes_command(self, qtbot):
-        from unittest.mock import MagicMock, patch
-
-        from wafer.app.viewer.widgets import workspace_toolbar as workspace_widget
-
-        store = MagicMock()
-        store.snapshot.return_value = ([], [], [])
-        store.list_recent_slots.return_value = []
-        with patch.object(workspace_widget.WorkspaceStore, "instance", return_value=store), patch.object(workspace_widget.Command, "invoke") as invoke:
-            panel = workspace_widget.WorkspaceToolbarWidget()
-            panel.slot_id = "s1"
-            qtbot.addWidget(panel)
-            panel._on_restore_slot("s1")
-
-        invoke.assert_called_once_with("ws.restore_slot", slot_id="s1")
 
     def test_opening_one_popup_closes_previous(self, qtbot):
         from unittest.mock import MagicMock, patch
@@ -620,11 +451,12 @@ class TestRefreshMtimeCache:
         with patch.object(workspace_widget.WorkspaceStore, "instance", return_value=store):
             panel = workspace_widget.WorkspaceToolbarWidget()
             qtbot.addWidget(panel)
-            qtbot.waitUntil(lambda: store.snapshot.called, timeout=2000)
+            qtbot.waitUntil(lambda: panel._last_loaded_mtime == 100.0, timeout=2000)
             store.snapshot.reset_mock()
             store.list_recent_slots.reset_mock()
-            panel.refresh()
-            qtbot.wait(50)
+            with patch.object(panel._dispatcher, "post") as post:
+                panel.refresh()
+            post.assert_not_called()
             assert not store.snapshot.called
             assert not store.list_recent_slots.called
 

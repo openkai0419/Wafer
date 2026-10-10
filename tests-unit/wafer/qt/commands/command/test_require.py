@@ -78,13 +78,6 @@ class TestRequire:
 
         assert cmd(ctx, volume=80) == (sm, 80)
 
-    def test_functools_wraps_preserves_name(self):
-        @require(sm="SM")
-        def my_command(ctx, sm):
-            pass
-
-        assert my_command.__name__ == "my_command"
-
 
 class TestRequireV:
     def test_injects_value(self):
@@ -97,31 +90,12 @@ class TestRequireV:
         assert cmd(ctx) == "/a.mp4"
 
     def test_returns_none_when_falsy(self):
-        ctx = _make_ctx(values={"path": None})
-
         @require_v(path="path")
         def cmd(ctx, path):
             return path
 
-        assert cmd(ctx) is None
-
-    def test_returns_none_for_empty_string(self):
-        ctx = _make_ctx(values={"path": ""})
-
-        @require_v(path="path")
-        def cmd(ctx, path):
-            return path
-
-        assert cmd(ctx) is None
-
-    def test_returns_none_for_empty_list(self):
-        ctx = _make_ctx(values={"paths": []})
-
-        @require_v(paths="paths")
-        def cmd(ctx, paths):
-            return paths
-
-        assert cmd(ctx) is None
+        for falsy in (None, "", []):
+            assert cmd(_make_ctx(values={"path": falsy})) is None
 
     def test_multiple_values(self):
         ctx = _make_ctx(values={"path": "/a.mp4", "name": "a"})
@@ -131,10 +105,3 @@ class TestRequireV:
             return path, name
 
         assert cmd(ctx) == ("/a.mp4", "a")
-
-    def test_functools_wraps_preserves_name(self):
-        @require_v(path="path")
-        def my_command(ctx, path):
-            pass
-
-        assert my_command.__name__ == "my_command"

@@ -40,9 +40,13 @@ export class Grid {
     this.relayout();
   }
 
+  rowWidth() {
+    return this.scroll.clientWidth - 2 * GAP;
+  }
+
   relayout() {
     if (!this.aspects) return;
-    const width = this.scroll.clientWidth - GAP;
+    const width = this.rowWidth();
     if (width <= 0) return;
     const rowHeight = load('thumbSize', THUMB_SIZE_DEFAULT);
     this.rows = [];
@@ -99,14 +103,16 @@ export class Grid {
   }
 
   renderRow(row) {
-    const width = this.scroll.clientWidth - GAP;
     let sum = 0;
     for (let i = row.start; i <= row.end; i++) sum += Math.min(Math.max(this.aspects[i] || 1, 0.2), 5);
-    const avail = width - (row.end - row.start) * GAP;
-    let x = GAP;
+    const avail = this.rowWidth() - (row.end - row.start) * GAP;
+    const edge = (share) => Math.round((share / sum) * avail);
+    let before = 0;
     for (let i = row.start; i <= row.end; i++) {
       const a = Math.min(Math.max(this.aspects[i] || 1, 0.2), 5);
-      const w = Math.round((a / sum) * avail);
+      const x = GAP + (i - row.start) * GAP + edge(before);
+      const w = edge(before + a) - edge(before);
+      before += a;
       let cell = this.cells.get(i);
       if (!cell) {
         cell = document.createElement('div');
@@ -117,7 +123,6 @@ export class Grid {
       }
       cell.style.cssText = `left:${x}px;top:${row.y}px;width:${w}px;height:${row.h}px`;
       this.fillCell(cell, i, thumbStepFor(w, row.h));
-      x += w + GAP;
     }
   }
 

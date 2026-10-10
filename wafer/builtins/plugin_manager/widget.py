@@ -189,12 +189,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
         from .extensions_tab import ExtensionsTab
 
         enabled_overrides = self._settings.enabled_overrides()
-        legacy_enabled = None if self._settings.has_enabled_overrides() else self._settings.enabled_names()
-        self._ext_tab = ExtensionsTab(
-            enabled_overrides,
-            self._dispatcher,
-            legacy_enabled=legacy_enabled,
-        )
+        self._ext_tab = ExtensionsTab(enabled_overrides, self._dispatcher)
 
         self._tabs = QtWidgets.QTabWidget()
 
@@ -215,7 +210,6 @@ class PluginManagerWidget(QtWidgets.QWidget):
         self._order_tab = OrderTab(registry_data, saved_orders, builtin_command_names)
 
         self._initial_enabled_overrides = dict(enabled_overrides)
-        self._initial_legacy_enabled = legacy_enabled
         self._initial_orders = dict(saved_orders)
         self._order_scroll = self._scrollable(self._order_tab)
         self._tabs.addTab(self._order_scroll, t("Order"))
@@ -280,12 +274,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
     def _changed_plugin_classes(self) -> dict[str, type]:
         result = {}
         for qualified, plugin_cls, enabled in self._ext_tab.iter_plugin_states():
-            initial_enabled = PluginSettings.resolve_enabled(
-                qualified,
-                plugin_cls,
-                self._initial_enabled_overrides,
-                self._initial_legacy_enabled,
-            )
+            initial_enabled = PluginSettings.resolve_enabled(qualified, plugin_cls, self._initial_enabled_overrides)
             if enabled != initial_enabled:
                 result[qualified] = plugin_cls
         return result
@@ -328,7 +317,6 @@ class PluginManagerWidget(QtWidgets.QWidget):
                 self._settings.set_priority_order(key, order)
             AppLogger.info(f"[PluginManager] Saved: enabled_overrides={enabled_overrides}, orders={orders}")
             self._initial_enabled_overrides = dict(enabled_overrides)
-            self._initial_legacy_enabled = None
             self._initial_orders = dict(orders)
         self._update_restart_label()
         if has_changes:
@@ -360,7 +348,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
         orders = self._order_tab.get_orders()
         if not self._has_plugin_changes(enabled_overrides, orders) and not self._collectors_tab.has_changes():
             return
-        self._ext_tab.revert(self._initial_enabled_overrides, self._initial_legacy_enabled)
+        self._ext_tab.revert(self._initial_enabled_overrides)
         registry_data = {key: self._ext_tab.collect_enabled_plugins(key) for key in REGISTRY_KEYS}
         self._order_tab.revert(registry_data, self._compute_builtin_command_names(registry_data))
         self._collectors_tab.revert()

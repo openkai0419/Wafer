@@ -1,6 +1,3 @@
-import py_compile
-
-
 def test_file_conflict_dialog_parse_choice():
     from wafer.qt.widgets.dialogs import FileConflictDialog
 
@@ -62,7 +59,3 @@ def test_confirm_dialog_disables_named_buttons(qtbot):
     assert buttons["A"].isEnabled()
     assert not buttons["B"].isEnabled()
     assert buttons["C"].isEnabled()
-
-
-def test_compile():
-    py_compile.compile("wafer/qt/widgets/dialogs.py")

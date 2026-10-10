@@ -1,12 +1,7 @@
 import concurrent.futures
-import py_compile
 from unittest.mock import MagicMock
 
 from wafer.app.worker_lifecycle import PluginWorkerLifecycle
-
-
-def test_compile():
-    py_compile.compile("wafer/app/worker_lifecycle.py")
 
 
 def _make_lifecycle(get_plugin, registry=None, executor=None):

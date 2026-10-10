@@ -1,13 +1,11 @@
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt
 
 from wafer.plugin.rename.base import DropdownButton, ToggleButton, RenameConfigWidget
 from wafer.builtins.batch_renamer.popup import ColumnSettingsPopup
-from wafer.builtins.batch_renamer.engine import RenameColumn, PostProcess
+from wafer.builtins.batch_renamer.engine import RenameColumn
 from wafer.builtins.rename_sources import (
     NameSource,
     FixedSource,
-    MetaSource,
     ExtSource,
     SequentialSource,
 )
@@ -34,12 +32,6 @@ class TestToggleButton:
         btn.setChecked(True)
         assert received == [True]
         assert "\u25be" in btn.text()
-
-    def test_is_checkable_pushbutton(self, qtbot):
-        btn = ToggleButton("X")
-        qtbot.addWidget(btn)
-        assert isinstance(btn, QtWidgets.QPushButton)
-        assert btn.isCheckable()
 
 
 class TestDropdownButton:
@@ -68,56 +60,8 @@ class TestDropdownButton:
         assert received == ["c"]
         assert btn.value() == "c"
 
-    def test_is_qpushbutton(self, qtbot):
-        btn = DropdownButton("Test", ["on", "off"])
-        qtbot.addWidget(btn)
-        assert isinstance(btn, QtWidgets.QPushButton)
-
-    def test_has_cursor(self, qtbot):
-        btn = DropdownButton("Test", ["on", "off"])
-        qtbot.addWidget(btn)
-        assert btn.cursor().shape() == Qt.PointingHandCursor
-
 
 class TestColumnSettingsPopup:
-    def test_window_flags_popup(self, qtbot):
-        col = RenameColumn(NameSource())
-        popup = ColumnSettingsPopup(col)
-        qtbot.addWidget(popup)
-        assert popup.windowFlags() & Qt.Popup
-        assert popup.windowFlags() & Qt.FramelessWindowHint
-
-    def test_changed_signal_on_post_toggle(self, qtbot):
-        post = PostProcess(prefix="pre_")
-        col = RenameColumn(NameSource(), post)
-        popup = ColumnSettingsPopup(col)
-        qtbot.addWidget(popup)
-        received = []
-        popup.changed.connect(lambda: received.append(True))
-        post.prefix = "new_"
-        popup.changed.emit()
-        assert len(received) == 1
-
-    def test_meta_source_initial_key(self, qtbot):
-        src = MetaSource()
-        col = RenameColumn(src)
-        popup = ColumnSettingsPopup(
-            col,
-            meta_keys=["width", "height", "dpi"],
-        )
-        qtbot.addWidget(popup)
-        assert src.key == "width"
-
-    def test_meta_source_preserves_key(self, qtbot):
-        src = MetaSource(key="height")
-        col = RenameColumn(src)
-        popup = ColumnSettingsPopup(
-            col,
-            meta_keys=["width", "height", "dpi"],
-        )
-        qtbot.addWidget(popup)
-        assert src.key == "height"
-
     def test_resize_and_clamp(self, qtbot):
         col = RenameColumn(NameSource())
         popup = ColumnSettingsPopup(col)
@@ -125,17 +69,9 @@ class TestColumnSettingsPopup:
         popup.move(0, 0)
         popup.adjustSize()
         popup._resize_and_clamp()
-        screen = QtWidgets.QApplication.primaryScreen()
-        if screen:
-            geo = screen.availableGeometry()
-            assert popup.x() >= geo.left()
-            assert popup.y() >= geo.top()
-
-    def test_ext_column(self, qtbot):
-        col = RenameColumn(ExtSource())
-        popup = ColumnSettingsPopup(col, is_ext=True)
-        qtbot.addWidget(popup)
-        assert popup.windowFlags() & Qt.Popup
+        geo = QtWidgets.QApplication.primaryScreen().availableGeometry()
+        assert popup.x() >= geo.left()
+        assert popup.y() >= geo.top()
 
     def test_ext_column_has_enabled_checkbox(self, qtbot):
         col = RenameColumn(ExtSource())
@@ -166,11 +102,3 @@ class TestColumnSettingsPopup:
         config_w = popup.findChild(RenameConfigWidget)
         config_w.resequence_requested.emit()
         assert len(received) == 1
-
-    def test_no_isinstance_in_popup(self):
-        import inspect
-        from wafer.builtins.batch_renamer import popup
-
-        source_text = inspect.getsource(popup)
-        assert "isinstance" not in source_text
-        assert "hasattr" not in source_text

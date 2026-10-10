@@ -1,13 +1,18 @@
-import py_compile
 import threading
 import time
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from wafer.core.ipc.transport import NODE_TIMEOUT, Priority
+import pytest
+
+from wafer.core.ipc.transport import Priority
 from wafer.core.ipc.broker import Broker, _CoalescingQueue, _PeerInfo
 from wafer.core.ipc.message import Message
 from wafer.core.ipc.node import Node
+
+
+FAST_NODE_TIMEOUT = 1.0
+FAST_BROKER_LOST_TIMEOUT = 1.0
 
 
 def _wait_until(predicate, timeout=5.0, interval=0.05):
@@ -19,12 +24,12 @@ def _wait_until(predicate, timeout=5.0, interval=0.05):
     return predicate()
 
 
-def test_compile():
-    py_compile.compile("wafer/core/ipc/message.py")
-    py_compile.compile("wafer/core/ipc/broker.py")
-    py_compile.compile("wafer/core/ipc/node.py")
-    py_compile.compile("wafer/core/ipc/transport.py")
-    py_compile.compile("wafer/core/ipc/outbox.py")
+@pytest.fixture
+def fast_heartbeat(monkeypatch):
+    monkeypatch.setattr("wafer.core.ipc.node.HEARTBEAT_INTERVAL", FAST_NODE_TIMEOUT / 5)
+    monkeypatch.setattr("wafer.core.ipc.node.NODE_TIMEOUT", FAST_NODE_TIMEOUT)
+    monkeypatch.setattr("wafer.core.ipc.node.RECONNECT_FORCE_INTERVAL", FAST_NODE_TIMEOUT)
+    monkeypatch.setattr("wafer.core.ipc.transport.ZMQ_SNDTIMEO_MS", 100)
 
 
 class TestMessage:
@@ -112,14 +117,12 @@ class TestBrokerNode:
             node.start(broker.port)
             assert node.wait_registered(timeout=3.0)
             assert node.viewer_id == 1
-            time.sleep(0.3)
-            counts = broker.peer_counts()
-            assert counts.get("viewer", 0) >= 1
+            assert _wait_until(lambda: broker.peer_counts().get("viewer", 0) >= 1)
         finally:
             node.stop()
             broker.stop()
 
-    def test_broadcast_to_viewers(self):
+    def test_broadcast_to_viewers(self, flush_ipc):
         broker = Broker()
         broker.start()
         received = []
@@ -134,7 +137,7 @@ class TestBrokerNode:
             v.wait_registered(timeout=3.0)
 
             idx.send("db.update", {"count": 10}, dst="viewer")
-            time.sleep(0.5)
+            flush_ipc(idx, v)
             assert len(received) >= 1
             assert received[0].topic == "db.update"
             assert received[0].payload == {"count": 10}
@@ -143,7 +146,7 @@ class TestBrokerNode:
             idx.stop()
             broker.stop()
 
-    def test_on_handler(self):
+    def test_on_handler(self, flush_ipc):
         broker = Broker()
         broker.start()
         results = []
@@ -154,7 +157,8 @@ class TestBrokerNode:
             node.wait_registered(timeout=3.0)
 
             broker.dispatch(Message.build("work.assigned", "task1", dst="indexer"))
-            time.sleep(0.5)
+            assert _wait_until(lambda: results)
+            flush_ipc(node)
             assert results == ["task1"]
         finally:
             node.stop()
@@ -181,7 +185,7 @@ class TestBrokerNode:
             v1.stop()
             broker.stop()
 
-    def test_inject(self):
+    def test_inject(self, flush_ipc):
         broker = Broker()
         broker.start()
         received = []
@@ -192,14 +196,15 @@ class TestBrokerNode:
             v.wait_registered(timeout=3.0)
 
             broker.dispatch(Message.build("sys.notify", True, dst="viewer"))
-            time.sleep(0.5)
+            assert _wait_until(lambda: received)
+            flush_ipc(v)
             assert len(received) >= 1
             assert received[0].payload == True
         finally:
             v.stop()
             broker.stop()
 
-    def test_db_filter(self):
+    def test_db_filter(self, flush_ipc):
         broker = Broker()
         broker.start()
         v_msgs = []
@@ -220,7 +225,7 @@ class TestBrokerNode:
             c_all.wait_registered(timeout=3.0)
 
             idx_ill.send("db.progress", 50)
-            time.sleep(0.5)
+            flush_ipc(idx_ill, v, c_all)
 
             assert len(c_msgs) >= 1
             assert len(v_msgs) == 0
@@ -230,7 +235,7 @@ class TestBrokerNode:
             idx_ill.stop()
             broker.stop()
 
-    def test_sender_exclusion(self):
+    def test_sender_exclusion(self, flush_ipc):
         broker = Broker()
         broker.start()
         own_msgs = []
@@ -241,7 +246,7 @@ class TestBrokerNode:
             node.wait_registered(timeout=3.0)
 
             node.send("broadcast", "hello")
-            time.sleep(0.5)
+            flush_ipc(node, node)
             assert len(own_msgs) == 0
         finally:
             node.stop()
@@ -249,7 +254,7 @@ class TestBrokerNode:
 
 
 class TestQoSRouting:
-    def test_latest_coalesces(self):
+    def test_latest_coalesces(self, flush_ipc):
         broker = Broker()
         broker.start()
         received = []
@@ -265,7 +270,7 @@ class TestQoSRouting:
 
             for i in range(10):
                 sender.send_coalesced("progress", i, dst="viewer", db="photos")
-            time.sleep(0.5)
+            flush_ipc(sender, viewer)
 
             assert len(received) >= 1
             assert received[-1] >= 5
@@ -274,7 +279,7 @@ class TestQoSRouting:
             sender.stop()
             broker.stop()
 
-    def test_send_ordered_all_delivered(self):
+    def test_send_ordered_all_delivered(self, flush_ipc):
         broker = Broker()
         broker.start()
         received = []
@@ -290,7 +295,7 @@ class TestQoSRouting:
 
             for i in range(5):
                 sender.send("update", i, dst="viewer", priority=Priority.HIGH)
-            time.sleep(0.5)
+            flush_ipc(sender, viewer)
 
             assert received == [0, 1, 2, 3, 4]
         finally:
@@ -298,7 +303,7 @@ class TestQoSRouting:
             sender.stop()
             broker.stop()
 
-    def test_send_low_priority(self):
+    def test_send_low_priority(self, flush_ipc):
         broker = Broker()
         broker.start()
         received = []
@@ -314,7 +319,7 @@ class TestQoSRouting:
 
             for i in range(3):
                 sender.send("dev.log", {"n": i}, dst="viewer", priority=Priority.LOW)
-            time.sleep(0.5)
+            flush_ipc(sender, viewer)
 
             assert len(received) == 3
             assert [r["n"] for r in received] == [0, 1, 2]
@@ -324,8 +329,9 @@ class TestQoSRouting:
             broker.stop()
 
 
+@pytest.mark.usefixtures("fast_heartbeat")
 class TestReconnection:
-    def test_node_reconnects_after_broker_restart(self):
+    def test_node_reconnects_after_broker_restart(self, flush_ipc):
         broker1 = Broker()
         broker1.start()
         received = []
@@ -339,7 +345,7 @@ class TestReconnection:
             sender1.start(broker1.port)
             sender1.wait_registered(timeout=3.0)
             sender1.send("ping", "before", dst="viewer")
-            time.sleep(0.5)
+            flush_ipc(sender1, node)
             assert "before" in received
         finally:
             sender1.stop()
@@ -350,21 +356,21 @@ class TestReconnection:
             broker2.start()
             mock_read.return_value = broker2.port
             try:
-                time.sleep(NODE_TIMEOUT + 2)
+                assert _wait_until(lambda: broker2.peer_counts().get("viewer", 0) == 1, timeout=10.0)
                 assert node.wait_registered(timeout=5.0)
 
                 sender2 = Node("indexer", db="photos")
                 sender2.start(broker2.port)
                 sender2.wait_registered(timeout=3.0)
                 sender2.send("ping", "after", dst="viewer")
-                time.sleep(0.5)
+                flush_ipc(sender2, node)
                 assert "after" in received
             finally:
                 sender2.stop()
                 node.stop()
                 broker2.stop()
 
-    def test_node_reconnects_to_new_port(self):
+    def test_node_reconnects_to_new_port(self, flush_ipc):
         broker1 = Broker()
         broker1.start()
         received = []
@@ -382,7 +388,10 @@ class TestReconnection:
             broker2.start()
             mock_read.return_value = broker2.port
             try:
-                time.sleep(NODE_TIMEOUT + 2)
+                assert _wait_until(
+                    lambda: node._current_port == broker2.port and broker2.peer_counts().get("viewer", 0) == 1,
+                    timeout=10.0,
+                )
                 assert node.wait_registered(timeout=5.0)
                 assert node._current_port == broker2.port
 
@@ -390,7 +399,7 @@ class TestReconnection:
                 sender.start(broker2.port)
                 sender.wait_registered(timeout=3.0)
                 sender.send("data", "new_broker", dst="viewer")
-                time.sleep(0.5)
+                flush_ipc(sender, node)
                 assert "new_broker" in received
             finally:
                 sender.stop()
@@ -405,8 +414,12 @@ class TestReconnection:
             node.start(broker.port)
             assert node.wait_registered(timeout=3.0)
             port_at_start = node._current_port
+            connected_at = node._last_connect_time
 
-            time.sleep(3)
+            assert not _wait_until(
+                lambda: not node.is_registered or node._last_connect_time != connected_at,
+                timeout=2 * FAST_NODE_TIMEOUT,
+            )
             assert node._registered.is_set()
             assert node._current_port == port_at_start
         finally:
@@ -435,8 +448,7 @@ class TestProfileTracking:
             node.session_id = "anon-1"
             node.start(broker.port)
             assert node.wait_registered(timeout=3.0)
-            time.sleep(0.3)
-            assert broker.active_viewer_slot_ids() == ["anon-1"]
+            assert _wait_until(lambda: broker.active_viewer_slot_ids() == ["anon-1"])
         finally:
             node.stop()
             broker.stop()
@@ -449,9 +461,7 @@ class TestProfileTracking:
             node.session_id = "anon-1"
             node.start(broker.port)
             assert node.wait_registered(timeout=3.0)
-            time.sleep(0.3)
-            assert "anon-1" in store.get_restore_slot_ids()
-            assert "anon-1" in store.get_active_slot_ids()
+            assert _wait_until(lambda: "anon-1" in store.get_restore_slot_ids() and "anon-1" in store.get_active_slot_ids())
         finally:
             node.stop()
             broker.stop()
@@ -470,7 +480,7 @@ class TestProfileTracking:
             n2.session_id = "anon-2"
             n2.start(broker.port)
             n2.wait_registered(timeout=3.0)
-            time.sleep(0.3)
+            assert _wait_until(lambda: {"anon-1", "anon-2"} <= set(store.get_active_slot_ids()))
 
             n1.stop()
             assert _wait_until(
@@ -495,11 +505,11 @@ class TestProfileTracking:
             n2.session_id = "anon-2"
             n2.start(broker.port)
             n2.wait_registered(timeout=3.0)
-            time.sleep(0.3)
+            assert _wait_until(lambda: {"anon-1", "anon-2"} <= set(store.get_active_slot_ids()))
 
             n1.stop()
             n2.stop()
-            time.sleep(broker._restore_debounce_sec + 0.5)
+            assert _wait_until(lambda: store.get_active_slot_ids() == [], timeout=broker._restore_debounce_sec + 3.0)
 
             restore = store.get_restore_slot_ids()
             assert "anon-1" in restore
@@ -515,9 +525,7 @@ class TestProfileTracking:
             node.session_id = "Work"
             node.start(broker.port)
             assert node.wait_registered(timeout=3.0)
-            time.sleep(0.3)
-            sids = broker.active_viewer_slot_ids()
-            assert "Work" in sids
+            assert _wait_until(lambda: "Work" in broker.active_viewer_slot_ids())
         finally:
             node.stop()
             broker.stop()
@@ -533,8 +541,7 @@ class TestProfileTracking:
                 assert broker.peer_counts().get("viewer", 0) >= 1
 
                 node.stop()
-            time.sleep(1.5)
-            assert broker.peer_counts().get("viewer", 0) == 0
+            assert _wait_until(lambda: broker.peer_counts().get("viewer", 0) == 0, timeout=1.5)
         finally:
             broker.stop()
 
@@ -551,18 +558,22 @@ class TestProfileTracking:
         broker.start()
         try:
             broker._on_viewer_disconnected()
+            pending = broker._restore_debounce
+            assert pending is not None
             broker.stop()
-            time.sleep(broker._restore_debounce_sec + 0.2)
+            pending.join(timeout=broker._restore_debounce_sec + 2.0)
+            assert not pending.is_alive()
             assert calls == []
         finally:
             if not broker._stop.is_set():
                 broker.stop()
 
 
+@pytest.mark.usefixtures("fast_heartbeat")
 class TestBrokerLostTimeout:
     def test_fires_when_broker_unreachable(self):
         fired = threading.Event()
-        node = Node("indexer", db="photos", broker_lost_timeout=3)
+        node = Node("indexer", db="photos", broker_lost_timeout=FAST_BROKER_LOST_TIMEOUT)
         node.on_broker_lost(fired.set)
         node.start(port=59999)
         try:
@@ -578,12 +589,11 @@ class TestBrokerLostTimeout:
         broker.start()
         fired = threading.Event()
         try:
-            node = Node("indexer", db="photos", broker_lost_timeout=3)
+            node = Node("indexer", db="photos", broker_lost_timeout=FAST_BROKER_LOST_TIMEOUT)
             node.on_broker_lost(fired.set)
             node.start(broker.port)
             assert node.wait_registered(timeout=3.0)
-            time.sleep(4.0)
-            assert not fired.is_set()
+            assert not fired.wait(node._broker_lost_timeout + 1.0)
             assert not node._stop.is_set()
         finally:
             node.stop()
@@ -594,7 +604,7 @@ class TestBrokerLostTimeout:
         broker.start()
         fired = threading.Event()
         try:
-            node = Node("indexer", db="photos", broker_lost_timeout=3)
+            node = Node("indexer", db="photos", broker_lost_timeout=FAST_BROKER_LOST_TIMEOUT)
             node.on_broker_lost(fired.set)
             node.start(broker.port)
             assert node.wait_registered(timeout=3.0)
@@ -609,8 +619,7 @@ class TestBrokerLostTimeout:
         assert node._broker_lost_timeout is None
         node.start(port=59999)
         try:
-            time.sleep(2.0)
-            assert not node._stop.is_set()
+            assert not node._stop.wait(2.0)
         finally:
             node.stop()
 
@@ -636,12 +645,11 @@ class TestProfileReRegister:
             node.session_id = "p1"
             node.start(broker.port)
             assert node.wait_registered(timeout=5.0)
-            time.sleep(0.5)
-            assert "p1" in broker.active_viewer_slot_ids()
+            assert _wait_until(lambda: "p1" in broker.active_viewer_slot_ids())
 
             node.re_register("p2")
             assert node.wait_registered(timeout=5.0)
-            time.sleep(0.5)
+            assert _wait_until(lambda: "p2" in broker.active_viewer_slot_ids())
             active = broker.active_viewer_slot_ids()
             assert "p2" in active
             assert "p1" not in active
@@ -657,14 +665,11 @@ class TestProfileReRegister:
             node.session_id = "p1"
             node.start(broker.port)
             assert node.wait_registered(timeout=5.0)
-            time.sleep(0.5)
-            assert "p1" in store.get_active_slot_ids()
+            assert _wait_until(lambda: "p1" in store.get_active_slot_ids())
 
             node.re_register("p2")
             assert node.wait_registered(timeout=5.0)
-            time.sleep(0.5)
-            assert "p2" in store.get_active_slot_ids()
-            assert "p2" in store.get_restore_slot_ids()
+            assert _wait_until(lambda: "p2" in store.get_active_slot_ids() and "p2" in store.get_restore_slot_ids())
         finally:
             node.stop()
             broker.stop()

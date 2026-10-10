@@ -22,6 +22,7 @@ const state = {
   keys: load('searchKeys', []),
   keywordMode: load('keywordMode', KEYWORD_MODE_DEFAULT),
   separator: load('keywordSeparator', KEYWORD_SEPARATOR_DEFAULT),
+  directOnly: load('directOnly', false),
   sort: load('sort', 'name'),
   ascending: load('ascending', true),
 };
@@ -80,7 +81,7 @@ async function selectFolderOf(item) {
 function buildFilters() {
   const filters = [];
   if (state.folder) {
-    filters.push({ name: 'directory', params: { directories: [state.folder], include_subfolders: true } });
+    filters.push({ name: 'directory', params: { directories: [state.folder], include_subfolders: !state.directOnly } });
   }
   if (state.keywords || state.keys.length) {
     const params = {
@@ -251,6 +252,13 @@ function setupSettings() {
   thumbSelect.addEventListener('change', () => {
     save('thumbSize', Number(thumbSelect.value));
     grid.relayout();
+  });
+  const directOnly = document.getElementById('direct-only');
+  directOnly.checked = state.directOnly;
+  directOnly.addEventListener('change', () => {
+    state.directOnly = directOnly.checked;
+    save('directOnly', state.directOnly);
+    runQuery();
   });
   const scrollToggle = document.getElementById('auto-scroll-toggle');
   const speedSlider = document.getElementById('auto-scroll-speed');

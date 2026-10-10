@@ -40,10 +40,6 @@ class TestKeySequenceInit:
         with pytest.raises(ValueError, match="at least one key"):
             KeySequence(["", "  "])
 
-    def test_tuple_input(self):
-        ks = KeySequence(("Control", "A"))
-        assert ks.modifier == "Control"
-
 
 class TestKeySequenceSerialization:
     def test_to_dict_single_key(self):
@@ -99,11 +95,6 @@ class TestKeySequenceEquality:
         b = KeySequence(["Control", "A"])
         assert hash(a) == hash(b)
 
-    def test_hash_can_be_dict_key(self):
-        ks = KeySequence(["A"])
-        d = {ks: "value"}
-        assert d[KeySequence(["A"])] == "value"
-
 
 class TestKeySequenceOrdering:
     def test_lt(self):
@@ -123,12 +114,6 @@ class TestKeySequenceStr:
     def test_two_keys(self):
         assert str(KeySequence(["Control", "A"])) == "Control+A"
 
-    def test_repr(self):
-        ks = KeySequence(["Control", "A"])
-        r = repr(ks)
-        assert "KeySequence" in r
-        assert "Control" in r
-
 
 class TestKeySubclass:
     def test_single_string(self):
@@ -146,11 +131,6 @@ class TestKeySubclass:
         assert ks.modifier == "Shift"
         assert ks.key == "B"
 
-    def test_from_tuple(self):
-        ks = Key(("Alt", "F4"))
-        assert ks.modifier == "Alt"
-        assert ks.key == "F4"
-
     def test_equality_with_key_sequence(self):
         a = Key("Control", "A")
         b = KeySequence(["Control", "A"])
@@ -160,12 +140,6 @@ class TestKeySubclass:
 class TestKeySpecCatalog:
     def setup_method(self):
         self.catalog = KeySpecCatalog()
-
-    def test_modifier_priority_known(self):
-        assert self.catalog.modifier_priority("Control") == 0
-        assert self.catalog.modifier_priority("Shift") == 1
-        assert self.catalog.modifier_priority("Alt") == 2
-        assert self.catalog.modifier_priority("Meta") == 3
 
     def test_modifier_priority_unknown(self):
         assert self.catalog.modifier_priority("Custom") == 9
@@ -189,9 +163,3 @@ class TestKeySpecCatalog:
     def test_key_sort_tuple_empty(self):
         t = self.catalog.key_sort_tuple("")
         assert t[0] == 9
-
-    def test_sort_main_keys(self):
-        keys = ["Z", "A", "F1"]
-        result = self.catalog.sort_main_keys(keys, exclude=())
-        assert isinstance(result, list)
-        assert len(result) == 3

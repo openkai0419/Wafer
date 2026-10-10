@@ -49,17 +49,8 @@ def test_write_unicode():
         assert "日本語" in raw
 
 
-def test_write_indent():
-    with tempfile.TemporaryDirectory() as d:
-        p = Path(d) / "indent.json"
-        write_json_file(p, {"a": 1}, indent=4)
-        raw = p.read_text(encoding="utf-8")
-        assert "    " in raw
-
-
-def test_roundtrip_complex():
-    with tempfile.TemporaryDirectory() as d:
-        p = Path(d) / "complex.json"
-        data = {"list": [1, 2, 3], "nested": {"a": True, "b": None}}
-        write_json_file(p, data)
-        assert read_json_file(p) == data
+def test_write_overwrites_existing_with_str_path(tmp_path):
+    p = str(tmp_path / "rw.json")
+    write_json_file(p, {"v": 1})
+    write_json_file(p, {"v": 2})
+    assert read_json_file(p) == {"v": 2}

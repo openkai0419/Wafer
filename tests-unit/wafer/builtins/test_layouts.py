@@ -4,44 +4,12 @@ from wafer.builtins.layouts import (
     JustifiedLayoutCalculator,
     MasonryLayoutCalculator,
 )
-from wafer.plugin.layout.base import BaseLayoutPlugin
 from wafer.plugin.layout.calc import LayoutData
 
 
-def test_justified_layout_is_plugin():
-    assert issubclass(JustifiedLayout, BaseLayoutPlugin)
-    assert JustifiedLayout.NAME == "justified"
-    assert JustifiedLayout.DISPLAY_NAME == "Justified"
-
-
-def test_masonry_layout_is_plugin():
-    assert issubclass(MasonryLayout, BaseLayoutPlugin)
-    assert MasonryLayout.NAME == "masonry"
-    assert MasonryLayout.DISPLAY_NAME == "Masonry"
-
-
-def test_justified_create_calculator():
-    calc = JustifiedLayout.create_calculator([1.0, 1.5], 100, 5, 500, None, 0)
-    assert isinstance(calc, JustifiedLayoutCalculator)
-    calc.run()
-    assert calc._result is not None
-    assert len(calc._result) == 2
-
-
-def test_masonry_create_calculator():
-    calc = MasonryLayout.create_calculator([1.0, 1.5], 100, 5, 500, None, 0)
-    assert isinstance(calc, MasonryLayoutCalculator)
-    calc.run()
-    assert calc._result is not None
-    assert len(calc._result) == 2
-
-
-def test_justified_priority_higher_than_masonry():
-    assert JustifiedLayout.PRIORITY > MasonryLayout.PRIORITY
-
-
 def test_justified_produces_layout():
-    calc = JustifiedLayoutCalculator([1.0, 1.5, 0.8], 100, 5, 500, None, orientation=0)
+    calc = JustifiedLayout.create_calculator([1.0, 1.5, 0.8], 100, 5, 500, None, 0)
+    assert isinstance(calc, JustifiedLayoutCalculator)
     calc.run()
     assert calc._result is not None
     assert isinstance(calc._result, LayoutData)
@@ -123,14 +91,6 @@ def test_justified_empty_aspects():
     assert calc._result is None
 
 
-def test_justified_single_item():
-    calc = JustifiedLayoutCalculator([1.5], 100, 5, 500, None, orientation=0)
-    calc.run()
-    layout = calc._result
-    assert layout is not None
-    assert len(layout) == 1
-
-
 def test_justified_uniform_aspects_equal_row_heights():
     aspects = [1.5] * 12
     calc = JustifiedLayoutCalculator(aspects, 100, 5, 500, None, orientation=0)
@@ -147,7 +107,8 @@ def test_justified_uniform_aspects_equal_row_heights():
 
 
 def test_masonry_produces_layout():
-    calc = MasonryLayoutCalculator([1.0, 1.5, 0.8, 1.2], 150, 5, 500, None, orientation=0)
+    calc = MasonryLayout.create_calculator([1.0, 1.5, 0.8, 1.2], 150, 5, 500, None, 0)
+    assert isinstance(calc, MasonryLayoutCalculator)
     calc.run()
     assert calc._result is not None
     assert isinstance(calc._result, LayoutData)
@@ -201,6 +162,7 @@ def test_justified_inscribed_rendering():
     calc = JustifiedLayoutCalculator([4.0], 100, 5, 500, None, orientation=0)
     calc.run()
     assert calc._result is not None
+    assert len(calc._result) == 1
     r = calc._result[0]
     assert r.width() > 0 and r.height() > 0
 
@@ -209,12 +171,6 @@ def test_masonry_inscribed_rendering():
     calc = MasonryLayoutCalculator([0.5], 100, 5, 500, None, orientation=0)
     calc.run()
     assert calc._result is not None
+    assert len(calc._result) == 1
     r = calc._result[0]
     assert r.width() > 0 and r.height() > 0
-
-
-def test_masonry_single_item():
-    calc = MasonryLayoutCalculator([1.0], 100, 5, 500, None, orientation=0)
-    calc.run()
-    assert calc._result is not None
-    assert len(calc._result) == 1

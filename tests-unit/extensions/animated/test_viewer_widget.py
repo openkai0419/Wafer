@@ -1,32 +1,8 @@
-import pytest
-from unittest.mock import MagicMock, patch
-from PySide6 import QtCore, QtGui
+from unittest.mock import patch
+from PySide6 import QtGui
 
 
 class TestAnimatedViewerWidgetInit:
-    def test_initial_state(self, qtbot):
-        from extensions.animated.viewer_widget import AnimatedViewerWidget
-
-        w = AnimatedViewerWidget()
-        qtbot.addWidget(w)
-        assert w._path == ""
-        assert w._frames == []
-        assert w._delays == []
-        assert w._frame_index == 0
-        assert w._playing is False
-        assert w.cover_mode is False
-
-    def test_set_cover_mode(self, qtbot):
-        from extensions.animated.viewer_widget import AnimatedViewerWidget
-
-        w = AnimatedViewerWidget()
-        qtbot.addWidget(w)
-        assert w.cover_mode is False
-        w.set_cover_mode(True)
-        assert w.cover_mode is True
-        w.set_cover_mode(False)
-        assert w.cover_mode is False
-
     def test_toggle_fit_mode(self, qtbot):
         from extensions.animated.viewer_widget import AnimatedViewerWidget
 
@@ -37,12 +13,6 @@ class TestAnimatedViewerWidgetInit:
         assert w.cover_mode is True
         w.toggle_fit_mode()
         assert w.cover_mode is False
-
-    def test_has_command_mixin(self):
-        from extensions.animated.viewer_widget import AnimatedViewerWidget
-        from wafer.qt.commands.bridge import ActionKit
-
-        assert issubclass(AnimatedViewerWidget, ActionKit.UIMixin)
 
 
 class TestAnimatedViewerWidgetClear:
@@ -182,15 +152,3 @@ class TestExtendContext:
         qtbot.addWidget(w)
         ctx = w.extend_context(None, None)
         assert ctx == {"path": None, "paths": [], "source": None, "sources": [], "render_path": None, "render_paths": []}
-
-
-class TestViewerCache:
-    def test_viewer_cache_is_separate_from_grid(self):
-        from extensions.animated._common import _viewer_cache, _grid_cache
-
-        assert _viewer_cache is not _grid_cache
-
-    def test_viewer_cache_small_capacity(self):
-        from extensions.animated._common import _viewer_cache
-
-        assert _viewer_cache._max <= 16

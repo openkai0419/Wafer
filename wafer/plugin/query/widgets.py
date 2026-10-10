@@ -566,6 +566,7 @@ class TextFilterWidget(QtWidgets.QWidget):
             "query_mode": settings["query_mode"],
             "keyword_mode": settings["keyword_mode"],
             "keyword_separator": settings["keyword_separator"],
+            "trim_keywords": settings["trim_keywords"],
         }
 
     def write_params(self, params: dict):
@@ -625,16 +626,22 @@ class _TextFilterPopup(PopupBase):
         sep_layout.addWidget(self.delimiter_input)
         layout.addLayout(sep_layout)
 
+        self.trim_check = QtWidgets.QCheckBox(t("Trim spaces"))
+        self.trim_check.toggled.connect(lambda: self.changed.emit())
+        layout.addWidget(self.trim_check)
+
     def _set_defaults(self):
         self.query_type_combo.setCurrentIndex(0)
         self.and_radio.setChecked(True)
         self.delimiter_input.setText(",")
+        self.trim_check.setChecked(True)
 
     def get_settings(self) -> dict:
         return {
             "query_mode": self.query_type_combo.currentData(),
             "keyword_mode": "AND" if self.and_radio.isChecked() else "OR",
             "keyword_separator": self.delimiter_input.text() or ",",
+            "trim_keywords": self.trim_check.isChecked(),
         }
 
     def set_settings(self, params: dict):
@@ -653,3 +660,7 @@ class _TextFilterPopup(PopupBase):
             self.delimiter_input.blockSignals(True)
             self.delimiter_input.setText(params["keyword_separator"])
             self.delimiter_input.blockSignals(False)
+        if "trim_keywords" in params:
+            self.trim_check.blockSignals(True)
+            self.trim_check.setChecked(params["trim_keywords"])
+            self.trim_check.blockSignals(False)

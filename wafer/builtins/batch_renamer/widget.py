@@ -730,9 +730,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
             self._row_opacity_slider.setValue(state["row_opacity"])
         if "sel_opacity" in state:
             self._sel_opacity_slider.setValue(state["sel_opacity"])
-        if "thumb_fit_mode" in state:
-            self._set_thumb_fit_mode("row", state["thumb_fit_mode"])
-            self._set_thumb_fit_mode("sel", state["thumb_fit_mode"])
         if "row_thumb_fit_mode" in state:
             self._set_thumb_fit_mode("row", state["row_thumb_fit_mode"])
         if "sel_thumb_fit_mode" in state:

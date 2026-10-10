@@ -191,7 +191,6 @@ def show_shell_context_menu(paths: list[str], hwnd: int, x: int, y: int) -> bool
 
     full_pidls: list[int] = []
     folder_obj = 0
-    desktop_obj = 0
     cm_obj = 0
     cm3_obj = 0
     cm2_obj = 0
@@ -230,8 +229,7 @@ def show_shell_context_menu(paths: list[str], hwnd: int, x: int, y: int) -> bool
             if hr != S_OK:
                 AppLogger.warning(f"SHGetDesktopFolder failed: (0x{hr & 0xFFFFFFFF:08X})")
                 return False
-            desktop_obj = desktop_ptr.value
-            folder_obj = desktop_obj
+            folder_obj = desktop_ptr.value
 
             child_pidls = list(full_pidls)
 
@@ -356,8 +354,8 @@ def show_shell_context_menu(paths: list[str], hwnd: int, x: int, y: int) -> bool
             user32.DestroyMenu(hmenu)
         _release(cm3_obj)
         _release(cm2_obj)
-        if desktop_obj:
-            _release(desktop_obj)
+        _release(cm_obj)
+        _release(folder_obj)
         for fp in full_pidls:
             shell32.ILFree(fp)
         ole32.CoUninitialize()

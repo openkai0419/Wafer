@@ -1,14 +1,8 @@
-import py_compile
-
 from wafer.builtins.commands.query import QueryCommands
 
 
 def _command_paths(items):
     return {str(item.path) for item in items if hasattr(item, "path")}
-
-
-def test_compile():
-    py_compile.compile("wafer/builtins/commands/query.py")
 
 
 def test_commands_exclude_removed_query_option_commands():

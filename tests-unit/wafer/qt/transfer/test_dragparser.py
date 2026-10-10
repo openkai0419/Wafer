@@ -1,14 +1,9 @@
 import os
-import py_compile
 from PySide6 import QtCore
 
 from wafer.qt.transfer.dragparser import MimeDataParser, ParsedItem
 from wafer.core.platform.file_operations import FileSaver
 from wafer.core.common.virtual_paths import build_virtual_path
-
-
-def test_compile():
-    py_compile.compile("wafer/qt/transfer/dragparser.py")
 
 
 def test_mimedata_parser_parse_collects_all_local_urls(tmp_path):

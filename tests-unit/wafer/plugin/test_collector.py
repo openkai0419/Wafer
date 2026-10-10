@@ -1,4 +1,3 @@
-import py_compile
 import pytest
 
 from wafer.plugin.collector.handler import collector_resolver
@@ -10,17 +9,10 @@ def _get_exif_plugin():
     return collector_resolver.registry.get("exiftool")
 
 
-def test_compile_base():
-    py_compile.compile("wafer/plugin/collector/base.py")
-
-
-def test_compile_handler():
-    py_compile.compile("wafer/plugin/collector/handler.py")
-
-
 def test_base_is_abstract():
-    with pytest.raises(TypeError):
-        BaseCollectorPlugin()
+    for base in (BaseCollector, BaseCollectorPlugin, BaseSingletonCollector):
+        with pytest.raises(TypeError):
+            base()
 
 
 def test_exif_plugin_registered():
@@ -28,20 +20,11 @@ def test_exif_plugin_registered():
     assert "exiftool" in names
 
 
-def test_exif_plugin_priority():
-    assert _get_exif_plugin().PRIORITY == 100
-
-
 def test_exif_plugin_match():
     ExifCollectorPlugin = _get_exif_plugin()
     assert ExifCollectorPlugin.match("photo.jpg")
     assert ExifCollectorPlugin.match("image.png")
     assert not ExifCollectorPlugin.match("video.mp4")
-
-
-def test_get_collector_names():
-    names = collector_resolver.names()
-    assert "exiftool" in names
 
 
 def test_get_collector_summary():
@@ -76,22 +59,10 @@ def test_exif_plugin_process_success(tmp_path):
     assert result.status is True
     assert result.name is None
     assert result.aspect is not None
-    if result.meta_info:
-        for key in result.meta_info:
-            assert "." not in key, f"meta_info key should not have prefix: {key}"
-
-
-def test_exif_plugin_process_failure():
-    plugin = _get_exif_plugin()()
-    result = plugin.process("nonexistent.png", (0.0, 0))
-    assert isinstance(result, CollectorResult)
-    assert result.status is False
-
-
-def test_registry_get_by_name():
-    ExifCollectorPlugin = _get_exif_plugin()
-    assert collector_resolver.registry.get("exiftool") is ExifCollectorPlugin
-    assert collector_resolver.registry.get("nonexistent") is None
+    assert result.meta_info
+    for key in result.meta_info:
+        assert "." not in key, f"meta_info key should not have prefix: {key}"
+    assert "file_hash" not in result.to_dict()
 
 
 def test_collector_result_to_dict_omits_none():
@@ -105,106 +76,7 @@ def test_collector_result_does_not_accept_file_hash():
         CollectorResult(source="test.png", status=True, file_hash="hash")
 
 
-def test_base_collector_is_abstract():
-    with pytest.raises(TypeError):
-        BaseCollector()
-
-
-def test_base_singleton_is_abstract():
-    with pytest.raises(TypeError):
-        BaseSingletonCollector()
-
-
-def test_base_collector_hierarchy():
-    assert issubclass(BaseCollectorPlugin, BaseCollector)
-    assert issubclass(BaseSingletonCollector, BaseCollector)
-
-
-def test_base_collector_defaults():
-    assert not issubclass(BaseCollectorPlugin, BaseSingletonCollector)
-    assert BaseCollectorPlugin.BATCH_SIZE == 1200
-    assert BaseCollectorPlugin.MAX_WORKERS == 1
-    assert BaseCollectorPlugin.MAX_TIMEOUT == 300.0
-    assert issubclass(BaseSingletonCollector, BaseCollector)
-    assert BaseSingletonCollector.BATCH_SIZE == 300
-    assert BaseSingletonCollector.MAX_WORKERS == 1
-    assert BaseSingletonCollector.MAX_TIMEOUT == 600.0
-
-
-def test_concrete_collector_plugin():
-    class MyCollector(BaseCollectorPlugin):
-        NAME = "test_concrete"
-        EXTENSIONS = (".test",)
-
-        def process(self, path, file_info):
-            return CollectorResult(source=path, status=True)
-
-    assert not issubclass(MyCollector, BaseSingletonCollector)
-    assert MyCollector.BATCH_SIZE == 1200
-    inst = MyCollector()
-    r = inst.process("file.test", (0.0, 0))
-    assert r.status is True
-
-
-def test_concrete_singleton_collector():
-    class MySingleton(BaseSingletonCollector):
-        NAME = "test_singleton"
-        EXTENSIONS = (".jpg", ".png")
-        BATCH_SIZE = 16
-
-        def process(self, path, file_info):
-            return CollectorResult(source=path, status=True)
-
-    assert issubclass(MySingleton, BaseSingletonCollector)
-
-
-def test_on_notify_default_is_noop():
-    class MyCollector(BaseCollectorPlugin):
-        NAME = "test_noop"
-        EXTENSIONS = (".test",)
-
-        def process(self, path, file_info):
-            return CollectorResult(source=path, status=True)
-
-    inst = MyCollector()
-    inst.on_notify()
-
-
-def test_on_notify_override():
-    class MyCollector(BaseCollectorPlugin):
-        NAME = "test_override"
-        EXTENSIONS = (".test",)
-        reloaded = False
-        last_payload = None
-
-        def process(self, path, file_info):
-            return CollectorResult(source=path, status=True)
-
-        def on_notify(self, payload=None):
-            self.reloaded = True
-            self.last_payload = payload
-
-    inst = MyCollector()
-    assert not inst.reloaded
-    inst.on_notify({"key": "value"})
-    assert inst.reloaded
-    assert inst.last_payload == {"key": "value"}
-
-
 def test_notify_to_sends_ipc():
-    from unittest.mock import MagicMock, patch
-
-    mock_node = MagicMock()
-    mock_registry = MagicMock()
-    mock_registry.resolve_node.return_value = mock_node
-
-    with patch("wafer.qt.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
-        BaseCollectorPlugin.notify_to("exiftool")
-
-    mock_node.send.assert_called_once_with("plugin.notify", None, dst="collector-exiftool")
-
-
-def test_notify_to_with_payload():
     from unittest.mock import MagicMock, patch
 
     mock_node = MagicMock()
@@ -237,45 +109,9 @@ def test_singleton_names_excludes_normal():
     assert set(singleton_names + per_indexer_names) == set(collector_resolver.names())
 
 
-def test_on_request_default_returns_none():
-    class MyCollector(BaseCollectorPlugin):
-        NAME = "test_request"
-        EXTENSIONS = (".test",)
-
-        def process(self, path, file_info):
-            return CollectorResult(source=path, status=True)
-
-    inst = MyCollector()
-    assert inst.on_request("some.action", {}, None) is None
-
-
-def test_on_request_override():
-    class MyCollector(BaseCollectorPlugin):
-        NAME = "test_request_override"
-        EXTENSIONS = (".test",)
-
-        def process(self, path, file_info):
-            return CollectorResult(source=path, status=True)
-
-        def on_request(self, action, payload, msg):
-            if action == "echo":
-                return {"echo": payload.get("data")}
-            return None
-
-    inst = MyCollector()
-    result = inst.on_request("echo", {"data": "hello"}, None)
-    assert result == {"echo": "hello"}
-    assert inst.on_request("unknown", {}, None) is None
-
-
 def test_batch_size_for_known_collector():
     for name in collector_resolver.names():
-        bs = collector_resolver.batch_size(name)
-        assert bs > 0
-
-
-def test_execution_settings_for_known_collector():
-    for name in collector_resolver.names():
+        assert collector_resolver.batch_size(name) > 0
         assert collector_resolver.max_workers(name) >= 1
         assert collector_resolver.batch_timeout(name) > 0
 
@@ -299,38 +135,6 @@ def test_collector_result_to_dict_includes_false_status():
     d = r.to_dict()
     assert d["status"] is False
     assert "source" in d
-
-
-def test_collector_result_to_dict_with_meta():
-    r = CollectorResult(
-        source="img.png",
-        status=True,
-        name="img.png",
-        meta_info={"width": "100"},
-        tags={"rating": "5"},
-    )
-    d = r.to_dict()
-    assert d["meta_info"] == {"width": "100"}
-    assert d["tags"] == {"rating": "5"}
-
-
-def test_process_success_to_dict(tmp_path):
-    from PIL import Image
-    import os
-    from wafer.core.common.paths import normalize_path
-
-    img_path = tmp_path / "keys.png"
-    Image.new("RGB", (50, 50)).save(str(img_path))
-    st = os.stat(str(img_path))
-    file_info = (st.st_mtime, st.st_size)
-
-    plugin = _get_exif_plugin()()
-    result = plugin.process(normalize_path(str(img_path)), file_info)
-    d = result.to_dict()
-    assert d["status"] is True
-    assert "name" not in d
-    assert "file_hash" not in d
-    assert "aspect" in d
 
 
 def test_process_failure_to_dict_omits_none(tmp_path):

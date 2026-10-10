@@ -263,10 +263,11 @@ def test_zip_cache_sweep_lru_evicts_when_over_size_cap(tmp_path):
     _create_zip(zip_path, {"a.png": b"x" * 1000, "b.png": b"y" * 1000, "c.png": b"z" * 1000})
     cache = ZipCache(tmp_path / "cache")
     a_real = cache.materialize(build_virtual_path(str(zip_path), "a.png"))
-    time.sleep(0.01)
     b_real = cache.materialize(build_virtual_path(str(zip_path), "b.png"))
-    time.sleep(0.01)
     c_real = cache.materialize(build_virtual_path(str(zip_path), "c.png"))
+    now = time.time()
+    for age, path in ((30, a_real), (20, b_real), (10, c_real)):
+        os.utime(path, (now - age, now - age))
     idle, lru = cache.sweep(idle_seconds=3600, size_limit_bytes=2500)
     assert idle == 0
     assert lru >= 1
@@ -385,8 +386,9 @@ def test_zip_archive_index_cache_invalidates_on_archive_change(tmp_path):
     first = archive.get_archive_index(str(zip_path))
     assert archive.get_archive_index(str(zip_path)) is first
 
-    time.sleep(0.01)
+    first_mtime_ns = os.stat(zip_path).st_mtime_ns
     _create_zip(zip_path, {"b.txt": b"bb"})
+    os.utime(zip_path, ns=(first_mtime_ns + 10**9, first_mtime_ns + 10**9))
     second = archive.get_archive_index(str(zip_path))
 
     assert second is not first

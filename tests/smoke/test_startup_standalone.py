@@ -79,8 +79,8 @@ class TestUpdaterCloseFromStandalone:
         dlg = QtWidgets.QDialog()
         qtbot.addWidget(dlg)
         QtWidgets.QVBoxLayout(dlg).addWidget(widget)
-        dlg.show()
-        qtbot.wait(50)
+        with qtbot.waitExposed(dlg):
+            dlg.show()
         assert dlg.isVisible()
         widget._close_panel()
         _process_until(lambda: not dlg.isVisible())
@@ -96,8 +96,8 @@ class TestUpdaterCloseFromStandalone:
             dlg = QtWidgets.QDialog()
             qtbot.addWidget(dlg)
             QtWidgets.QVBoxLayout(dlg).addWidget(widget)
-            dlg.show()
-            qtbot.wait(50)
+            with qtbot.waitExposed(dlg):
+                dlg.show()
             widget._close_panel()
             qtbot.wait(50)
             assert dlg.isVisible()

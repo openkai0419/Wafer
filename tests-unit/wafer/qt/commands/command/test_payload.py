@@ -1,5 +1,4 @@
 import pytest
-import json
 
 from wafer.qt.commands.command.payload import (
     CommandPayload,
@@ -10,11 +9,6 @@ from wafer.qt.commands.command.payload import (
 
 
 class TestCommandPayloadInit:
-    def test_valid_creation(self):
-        p = CommandPayload("cmd.test", {"step": 5})
-        assert p.id == "cmd.test"
-        assert p.args == {"step": 5}
-
     def test_none_args_become_empty_dict(self):
         p = CommandPayload("cmd.test")
         assert p.args == {}
@@ -27,23 +21,12 @@ class TestCommandPayloadInit:
         with pytest.raises(ValueError, match="non-empty string"):
             CommandPayload(123, {})
 
-    def test_none_id_raises(self):
-        with pytest.raises(ValueError):
-            CommandPayload(None, {})
-
 
 class TestCommandPayloadSerialization:
     def test_to_dict(self):
         p = CommandPayload("cmd.x", {"a": 1})
         d = p.to_dict()
         assert d == {"id": "cmd.x", "args": {"a": 1}}
-
-    def test_to_json(self):
-        p = CommandPayload("cmd.x", {"a": 1})
-        j = p.to_json()
-        parsed = json.loads(j)
-        assert parsed["id"] == "cmd.x"
-        assert parsed["args"] == {"a": 1}
 
     def test_from_dict(self):
         p = CommandPayload.from_dict({"id": "cmd.x", "args": {"a": 1}})
@@ -63,22 +46,6 @@ class TestCommandPayloadSerialization:
         with pytest.raises(TypeError, match="must contain id"):
             CommandPayload.from_dict("not a dict")
 
-    def test_from_json(self):
-        j = json.dumps({"id": "cmd.y", "args": {"b": 2}})
-        p = CommandPayload.from_json(j)
-        assert p.id == "cmd.y"
-        assert p.args == {"b": 2}
-
-    def test_from_json_invalid_raises(self):
-        with pytest.raises(TypeError, match="invalid json"):
-            CommandPayload.from_json("not json")
-
-    def test_roundtrip(self):
-        original = CommandPayload("cmd.rt", {"x": 42, "y": "hello"})
-        restored = CommandPayload.from_json(original.to_json())
-        assert restored.id == original.id
-        assert restored.args == original.args
-
 
 class TestCommandPayloadFromAny:
     def test_from_payload_instance(self):
@@ -92,10 +59,6 @@ class TestCommandPayloadFromAny:
     def test_from_invalid_type_raises(self):
         with pytest.raises(TypeError, match="CommandPayload required"):
             CommandPayload.from_any(42)
-
-    def test_from_string_raises(self):
-        with pytest.raises(TypeError, match="CommandPayload required"):
-            CommandPayload.from_any("cmd.x")
 
 
 class TestScopedPayloads:

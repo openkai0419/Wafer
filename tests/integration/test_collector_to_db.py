@@ -6,7 +6,9 @@ from PIL import Image
 from wafer.core.common.paths import normalize_path
 from wafer.core.common.hashes import fast_signature_hash
 from wafer.core.db.file_db import FileDB
-from wafer.core.db.query import FileSearchEngine, SearchQuery
+from wafer.core.db.query import FileSearchEngine
+from wafer.builtins.sorts import NoSort
+from wafer.plugin.query.composer import SearchComposer
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.app.indexer.receivers.collector_receiver import _parse_batch
 from wafer.app.indexer.db_writer import DatabaseWriter
@@ -119,7 +121,7 @@ class TestCollectorToSearch:
             _write_results(h.db, results)
 
         engine = FileSearchEngine(str(db_path))
-        paths, _, aspects = engine.search(SearchQuery(require_keys=False))
+        paths, _, aspects = SearchComposer().execute(engine, [], NoSort, True)
         assert len(paths) == 1
         assert aspects[0] == 2.0
 
@@ -150,7 +152,7 @@ class TestCollectorToSearch:
             assert rows[0] == 3
 
         engine = FileSearchEngine(str(db_path))
-        paths, _, _ = engine.search(SearchQuery(require_keys=False))
+        paths, _, _ = SearchComposer().execute(engine, [], NoSort, True)
         assert len(paths) == 3
 
 

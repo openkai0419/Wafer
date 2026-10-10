@@ -1,15 +1,6 @@
-import py_compile
 from unittest.mock import MagicMock, patch
 
-from wafer.app.indexer.dispatch.parser_dispatcher import ParserDispatcher, _DISPATCH_INTERVAL
-
-
-def test_compile():
-    py_compile.compile("wafer/app/indexer/dispatch/parser_dispatcher.py")
-
-
-def test_constants():
-    assert _DISPATCH_INTERVAL > 0
+from wafer.app.indexer.dispatch.parser_dispatcher import ParserDispatcher
 
 
 def test_terminate_parsers_requests_shutdown_before_fallback(tmp_path):

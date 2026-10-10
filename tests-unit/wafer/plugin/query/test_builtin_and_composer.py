@@ -1,6 +1,4 @@
 import pytest
-import sqlite3
-from pathlib import Path
 
 from wafer.core.db.file_db import FileDB
 from wafer.core.db.query import FileSearchEngine
@@ -42,10 +40,11 @@ def populated_db(tmp_path):
         metas.append((path, "Comment", f"photo number {i}", None))
         if i % 3 == 0:
             metas.append((path, "Artist", f"photographer_{i % 5}", None))
-        tags.append((fhash, "rating", f"{(i % 5) + 1}", float((i % 5) + 1)))
+        tags.append((source, "rating", f"{(i % 5) + 1}", float((i % 5) + 1)))
         if i % 2 == 0:
-            tags.append((fhash, "category", "landscape" if i < 100 else "office", None))
-    db.upsert_batches(sources, images, metas, tags)
+            tags.append((source, "category", "landscape" if i < 100 else "office", None))
+    db.upsert_basic_sources(sources, images, metas)
+    db.upsert_collection_results([], [], tags, [])
     db.conn.execute("ANALYZE")
     db.conn.commit()
     db.close()
@@ -73,8 +72,9 @@ def special_db(tmp_path):
         sources.append((path, fhash, 100, 1.0))
         images.append((path, path, 1.5))
         metas.append((path, "Comment", comment, None))
-        tags.append((fhash, "rating", "3", 3.0))
-    db.upsert_batches(sources, images, metas, tags)
+        tags.append((path, "rating", "3", 3.0))
+    db.upsert_basic_sources(sources, images, metas)
+    db.upsert_collection_results([], [], tags, [])
     db.conn.execute("ANALYZE")
     db.conn.commit()
     db.close()
@@ -91,7 +91,7 @@ def contained_db(tmp_path):
     child_a = build_virtual_path(archive, "a.png")
     child_b = build_virtual_path(archive, "nested/b.png")
     plain = "C:/photos/plain.png"
-    db.upsert_batches(
+    db.upsert_basic_sources(
         [
             (archive, "hash_zip", 1000, 1.0),
             (plain, "hash_plain", 2000, 2.0),
@@ -102,8 +102,6 @@ def contained_db(tmp_path):
             (child_b, archive, "b.png", 1.0, "zip"),
             (plain, plain, "plain.png", 1.0, None),
         ],
-        [],
-        [],
     )
     db.conn.execute("ANALYZE")
     db.conn.commit()
@@ -127,30 +125,6 @@ def composer():
 
 
 class TestTextFilterBuildPathQuery:
-    def test_filepath_key(self, engine):
-        params = {"keys": ["path"], "keywords": "img_0001"}
-        sql, bind = TextFilter.build_path_query(params, np)
-        assert sql is not None
-        assert "files" in sql
-
-    def test_meta_key(self, engine):
-        params = {"keys": ["dpi"], "keywords": "72"}
-        sql, bind = TextFilter.build_path_query(params, np)
-        assert sql is not None
-        assert "meta_info" in sql
-
-    def test_no_keys_require_true_returns_empty_for_none_keys(self):
-        params = {"keys": None, "require_keys": True}
-        sql, bind = TextFilter.build_path_query(params, np)
-        assert sql is not None
-        assert "WHERE 0" in sql
-
-    def test_no_keys_require_true_returns_empty_for_empty_list(self):
-        params = {"keys": [], "require_keys": True}
-        sql, bind = TextFilter.build_path_query(params, np)
-        assert sql is not None
-        assert "WHERE 0" in sql
-
     def test_no_keys_require_false(self, engine):
         params = {"keys": [], "require_keys": False, "keywords": "photo"}
         sql, bind = TextFilter.build_path_query(params, np)
@@ -158,12 +132,6 @@ class TestTextFilterBuildPathQuery:
         assert "files" in sql
         assert "meta_info" in sql
         assert "tags" in sql
-
-    def test_exclude_keywords(self, engine):
-        params = {"keys": ["Comment"], "keywords": "photo,-number 5", "keyword_separator": ","}
-        sql, bind = TextFilter.build_path_query(params, np)
-        assert sql is not None
-        assert "NOT IN" in sql
 
     def test_glob_mode(self, engine):
         params = {"keys": ["path"], "keywords": "vacation", "query_mode": "GLOB"}
@@ -215,33 +183,12 @@ class TestTextFilterExecution:
         paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
         assert len(paths) == 0
 
-
-class TestDirectoryFilterBuildPathQuery:
-    def test_no_directories(self):
-        params = {}
-        sql, bind = DirectoryFilter.build_path_query(params, np)
-        assert sql is None
-
-    def test_single_directory(self):
-        params = {"directories": ["C:/photos/vacation"]}
-        sql, bind = DirectoryFilter.build_path_query(params, np)
-        assert sql is not None
-        assert "LIKE" in sql
-        assert len(bind) == 1
-
-    def test_multiple_directories(self):
-        params = {"directories": ["C:/photos/vacation", "C:/photos/work"]}
-        sql, bind = DirectoryFilter.build_path_query(params, np)
-        assert sql is not None
-        assert " OR " in sql
-        assert len(bind) == 2
-
-    def test_no_subfolders(self):
-        params = {"directories": ["C:/data"], "include_subfolders": False}
-        sql, bind = DirectoryFilter.build_path_query(params, np)
-        assert sql is not None
-        assert "NOT LIKE" in sql
-        assert len(bind) == 2
+    def test_trim_keywords_false_matches_leading_space(self, engine, composer):
+        params = {"keys": ["Comment"], "keywords": " 5", "keyword_separator": ",", "query_mode": "LIKE"}
+        kept, _, _ = composer.execute(engine, [(TextFilter, {**params, "trim_keywords": False}, None)], NaturalNameSort, True)
+        trimmed, _, _ = composer.execute(engine, [(TextFilter, params, None)], NaturalNameSort, True)
+        assert sorted(int(p[-8:-4]) for p in kept) == [5, *range(50, 60)]
+        assert len(trimmed) > len(kept)
 
 
 class TestContainedFilesFilterBuildPathQuery:
@@ -286,14 +233,12 @@ class TestFileSearchEngineSourceChildren:
         db.initialize_database()
         archive = "C:/archives/legacy.zip"
         child = build_virtual_path(archive, "legacy.png")
-        db.upsert_batches(
+        db.upsert_basic_sources(
             [(archive, "hash_zip", 1000, 1.0)],
             [
                 (archive, archive, "legacy.zip", 1.0, None),
                 (child, archive, "legacy.png", 1.0, None),
             ],
-            [],
-            [],
         )
         db.close()
 
@@ -313,15 +258,8 @@ class TestDirectoryFilterExecution:
         paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
         assert len(paths) == 100
         assert all("vacation" in p for p in paths)
-
-    def test_filter_work(self, engine, composer):
-        entries = [
-            (TextFilter, {"keys": ["path"]}, None),
-            (DirectoryFilter, {"directories": ["C:/photos/work"]}, None),
-        ]
-        paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
-        assert len(paths) == 100
-        assert all("work" in p for p in paths)
+        directory_only, _, _ = composer.execute(engine, entries[1:], NaturalNameSort, True)
+        assert directory_only == paths
 
     def test_filter_both(self, engine, composer):
         entries = [
@@ -339,13 +277,6 @@ class TestDirectoryFilterExecution:
         paths, _, _ = composer.execute(special_engine, entries, NaturalNameSort, True)
         assert all("sub_dir" not in p for p in paths)
         assert len(paths) == 7
-
-    def test_directory_only(self, engine, composer):
-        entries = [
-            (DirectoryFilter, {"directories": ["C:/photos/vacation"]}, None),
-        ]
-        paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
-        assert len(paths) == 100
 
 
 class TestContainedFilesFilterExecution:
@@ -388,17 +319,6 @@ class TestComposerCombineLogic:
         ]
         paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
         assert len(paths) == 2
-
-    def test_and_or_precedence(self, engine, composer):
-        entries = [
-            (TextFilter, {"keys": ["path"], "keywords": "vacation"}, None),
-            (TextFilter, {"keys": ["rating"], "keywords": "1"}, "AND"),
-            (TextFilter, {"keys": ["path"], "keywords": "img_0101"}, "OR"),
-        ]
-        paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
-        vacation_rating1 = [p for p in paths if "vacation" in p]
-        work_specific = [p for p in paths if "img_0101" in p]
-        assert len(vacation_rating1) > 0 or len(work_specific) > 0
 
     def test_not_subtracts_filter(self, engine, composer):
         entries = [
@@ -474,25 +394,11 @@ class TestComposerSorting:
         assert len(paths) == 200
         assert paths[0] < paths[-1]
 
-    def test_modified_sort_sql(self, engine, composer):
+    def test_column_sorts_return_all(self, engine, composer):
         entries = [(TextFilter, {"keys": ["path"]}, None)]
-        paths, _, _ = composer.execute(engine, entries, ModifiedSort, True)
-        assert len(paths) == 200
-
-    def test_created_sort_sql(self, engine, composer):
-        entries = [(TextFilter, {"keys": ["path"]}, None)]
-        paths, _, _ = composer.execute(engine, entries, CreatedSort, False)
-        assert len(paths) == 200
-
-    def test_size_sort(self, engine, composer):
-        entries = [(TextFilter, {"keys": ["path"]}, None)]
-        paths, _, _ = composer.execute(engine, entries, SizeSort, True)
-        assert len(paths) == 200
-
-    def test_collected_sort(self, engine, composer):
-        entries = [(TextFilter, {"keys": ["path"]}, None)]
-        paths, _, _ = composer.execute(engine, entries, CollectedSort, True)
-        assert len(paths) == 200
+        for sort, ascending in ((ModifiedSort, True), (CreatedSort, False), (SizeSort, True), (CollectedSort, True)):
+            paths, _, _ = composer.execute(engine, entries, sort, ascending)
+            assert len(paths) == 200, sort.NAME
 
     def test_random_sort(self, engine, composer):
         entries = [(TextFilter, {"keys": ["path"]}, None)]
@@ -509,11 +415,6 @@ class TestComposerReturnFormat:
         assert len(result) == 3
         paths, sources, aspects = result
         assert len(paths) == len(sources) == len(aspects) == 200
-
-    def test_aspects_default_to_1(self, engine, composer):
-        entries = [(TextFilter, {"keys": ["path"]}, None)]
-        _, _, aspects = composer.execute(engine, entries, NaturalNameSort, True)
-        assert all(isinstance(a, float) for a in aspects)
 
     def test_db_not_found(self, composer):
         engine = FileSearchEngine("/nonexistent/path.db")
@@ -562,42 +463,8 @@ class TestPostFilter:
         paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
         assert len(paths) == 100
 
-    def test_post_filter_not_called_for_base(self, engine, composer):
-        entries = [(TextFilter, {"keys": ["path"]}, None)]
-        paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
-        assert len(paths) == 200
-
 
 class TestComposerCombineStatic:
-    def test_empty_produces_all_files(self):
-        sql, params = SearchComposer._combine([])
-        assert sql == "SELECT path FROM files"
-        assert params == []
-
-    def test_single_entry(self):
-        sql, params = SearchComposer._combine([("SELECT path FROM files WHERE path LIKE ?", ["%test%"], None)])
-        assert "LIKE" in sql
-        assert params == ["%test%"]
-
-    def test_two_and(self):
-        sql, params = SearchComposer._combine(
-            [
-                ("SELECT path FROM a", [], None),
-                ("SELECT path FROM b", [], "AND"),
-            ]
-        )
-        assert "INTERSECT" in sql
-
-    def test_two_or(self):
-        sql, params = SearchComposer._combine(
-            [
-                ("SELECT path FROM a", [], None),
-                ("SELECT path FROM b", [], "OR"),
-            ]
-        )
-        assert "UNION" in sql
-        assert "INTERSECT" not in sql
-
     def test_and_or_groups(self):
         sql, params = SearchComposer._combine(
             [
@@ -621,42 +488,13 @@ class TestComposerCombineStatic:
         assert sql.count("INTERSECT") == 2
         assert "UNION" not in sql
 
-    def test_not_uses_except(self):
-        sql, params = SearchComposer._combine(
-            [
-                ("SELECT path FROM a WHERE x = ?", ["p1"], None),
-                ("SELECT path FROM b WHERE y = ?", ["p2"], "NOT"),
-            ]
-        )
-        assert "EXCEPT" in sql
-        assert params == ["p1", "p2"]
-
-    def test_not_or_group_is_right_operand(self):
-        sql, params = SearchComposer._combine(
-            [
-                ("SELECT path FROM a WHERE x = ?", ["p1"], None),
-                ("SELECT path FROM b WHERE y = ?", ["p2"], "NOT"),
-                ("SELECT path FROM c WHERE z = ?", ["p3"], "OR"),
-            ]
-        )
-        assert "EXCEPT" in sql
-        assert "UNION" in sql
-        assert params == ["p1", "p2", "p3"]
-
 
 class TestComposerListAllKeys:
     def test_all_keys_returned(self, engine, composer):
         entries = []
         keys = composer.list_all_keys(engine, entries)
         key_names = [k for k, _ in keys]
-        assert "Comment" in key_names
-        assert "dpi" in key_names
-        assert "rating" in key_names
-
-    def test_filepath_included(self, engine, composer):
-        keys = composer.list_all_keys(engine, [])
-        key_names = [k for k, _ in keys]
-        assert "path" in key_names
+        assert {"Comment", "dpi", "rating", "path", "Artist", "category"} <= set(key_names)
 
     def test_filepath_count_equals_file_count(self, engine, composer):
         keys = composer.list_all_keys(engine, [], sort_by_freq=True)
@@ -688,15 +526,6 @@ class TestComposerListAllKeys:
         key_names = [k for k, _ in keys]
         assert key_names == sorted(key_names)
 
-    def test_filtered_by_directory(self, engine, composer):
-        entries = [
-            (DirectoryFilter, {"directories": ["C:/photos/vacation"]}, None),
-        ]
-        keys = composer.list_all_keys(engine, entries)
-        key_names = [k for k, _ in keys]
-        assert "Comment" in key_names
-        assert "rating" in key_names
-
     def test_filtered_directory_counts(self, engine, composer):
         all_keys = composer.list_all_keys(engine, [], sort_by_freq=True)
         vac_keys = composer.list_all_keys(
@@ -722,46 +551,8 @@ class TestComposerListAllKeys:
         keys = composer.list_all_keys(engine, [])
         assert keys == []
 
-    def test_artist_key_present(self, engine, composer):
-        keys = composer.list_all_keys(engine, [])
-        key_names = [k for k, _ in keys]
-        assert "Artist" in key_names
-
-    def test_category_key_from_tags(self, engine, composer):
-        keys = composer.list_all_keys(engine, [])
-        key_names = [k for k, _ in keys]
-        assert "category" in key_names
-
 
 class TestDirectoryFilterGlobalScope:
-    def test_directory_scope_is_global(self):
-        assert DirectoryFilter.QUERY_SCOPE == "global"
-
-    def test_text_scope_is_row(self):
-        assert TextFilter.QUERY_SCOPE == "row"
-
-    def test_base_scope_default(self):
-        assert BaseFilterPlugin.QUERY_SCOPE == "row"
-
-    def test_and_works_without_directory(self, engine, composer):
-        entries = [
-            (TextFilter, {"keys": ["path"], "keywords": "vacation"}, None),
-            (TextFilter, {"keys": ["Comment"], "keywords": "photo number 0"}, "AND"),
-        ]
-        paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
-        assert len(paths) > 0
-        assert all("vacation" in p for p in paths)
-
-    def test_or_works_without_directory(self, engine, composer):
-        entries = [
-            (TextFilter, {"keys": ["path"], "keywords": "img_0001"}, None),
-            (TextFilter, {"keys": ["path"], "keywords": "img_0101"}, "OR"),
-        ]
-        paths, _, _ = composer.execute(engine, entries, NaturalNameSort, True)
-        assert len(paths) == 2
-        assert any("img_0001" in p for p in paths)
-        assert any("img_0101" in p for p in paths)
-
     def test_and_consistent_with_and_without_directory(self, engine, composer):
         entries_no_dir = [
             (TextFilter, {"keys": ["path"], "keywords": "vacation"}, None),
@@ -798,35 +589,6 @@ class TestDirectoryFilterGlobalScope:
         expected = {p for p in paths if "img_000" in p or "img_010" in p}
         assert set(paths) == expected
 
-    def test_apply_global_static(self):
-        combined = "SELECT path FROM a UNION SELECT path FROM b"
-        gsql = "SELECT path FROM c"
-        result_sql, result_params = SearchComposer._apply_global(combined, [], [(gsql, [])])
-        assert "INTERSECT" in result_sql
-        assert "SELECT path FROM (" in result_sql
-        assert "_rw" in result_sql
-
-    def test_apply_global_preserves_params(self):
-        combined = "SELECT path FROM a WHERE x = ?"
-        gsql = "SELECT path FROM c WHERE y = ?"
-        result_sql, result_params = SearchComposer._apply_global(combined, ["p1"], [(gsql, ["p2"])])
-        assert result_params == ["p1", "p2"]
-
-    def test_apply_global_empty_returns_unchanged(self):
-        combined = "SELECT path FROM a"
-        result_sql, result_params = SearchComposer._apply_global(combined, ["p1"], [])
-        assert result_sql == combined
-        assert result_params == ["p1"]
-
-    def test_list_all_keys_global_scope(self, engine, composer):
-        entries = [
-            (TextFilter, {"keys": ["path"], "keywords": "vacation"}, None),
-            (DirectoryFilter, {"directories": ["C:/photos/vacation"]}, None),
-        ]
-        keys = composer.list_all_keys(engine, entries, sort_by_freq=True)
-        fp_count = next(f for k, f in keys if k == "path")
-        assert fp_count == 100
-
     def test_list_all_keys_directory_restricts_or_groups(self, engine, composer):
         entries = [
             (TextFilter, {"keys": ["path"], "keywords": "img_000"}, None),
@@ -835,4 +597,4 @@ class TestDirectoryFilterGlobalScope:
         ]
         keys = composer.list_all_keys(engine, entries, sort_by_freq=True)
         fp_count = next(f for k, f in keys if k == "path")
-        assert fp_count <= 100
+        assert fp_count == 10

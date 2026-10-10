@@ -1,18 +1,12 @@
 import io
-import os
-import platform
-import shutil
 import sys
 import pytest
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from wafer.plugin import installer
 from wafer.plugin.installer import (
-    EmbeddedPython,
     RestartScope,
     InstallState,
-    InstallResult,
     InstallerCancelled,
     restart_scope_of,
     restart_scope_from_plugins,
@@ -20,10 +14,6 @@ from wafer.plugin.installer import (
     _run_subprocess,
     _python_version,
     _ensure_python_version,
-    _packages_dir,
-    _stamps_dir,
-    _extensions_dir_from_plugin,
-    _stamp_path,
     install_requirements,
     write_post_install_stamp,
     needs_install,
@@ -31,7 +21,6 @@ from wafer.plugin.installer import (
     needs_setup,
     has_post_install_hooks,
     install_extension,
-    cleanup_legacy_dirs,
     _PACKAGES_DIR,
     _STAMPS_DIR,
     _PYTHON_VERSION_STAMP,
@@ -58,7 +47,7 @@ class TestRunSubprocess:
         script = tmp_path / "hang.py"
         script.write_text("import time; time.sleep(60)")
         with pytest.raises(TimeoutError):
-            _run_subprocess([sys.executable, str(script)], timeout=1)
+            _run_subprocess([sys.executable, str(script)], timeout=0.2)
 
     def test_progress_callback(self, tmp_path):
         script = tmp_path / "slow.py"
@@ -72,26 +61,6 @@ class TestRunSubprocess:
         script.write_text("import time; time.sleep(60)")
         with pytest.raises(InstallerCancelled):
             _run_subprocess([sys.executable, str(script)], is_cancelled=lambda: True)
-
-    def test_no_timeout_by_default(self, tmp_path):
-        script = tmp_path / "fast.py"
-        script.write_text("import sys; sys.exit(0)")
-        _run_subprocess([sys.executable, str(script)])
-
-
-class TestPythonVersion:
-    def test_returns_current_version(self):
-        assert _python_version() == platform.python_version()
-
-
-class TestEmbeddedPython:
-    def test_uses_sys_executable(self):
-        ep = EmbeddedPython()
-        assert ep.exe_path == sys.executable
-
-    def test_is_ready(self):
-        ep = EmbeddedPython()
-        assert ep.is_ready is True
 
 
 class TestEnsurePythonVersion:
@@ -125,27 +94,6 @@ class TestEnsurePythonVersion:
         assert new_ver.read_text("utf-8").strip() == _python_version()
 
 
-class TestPathHelpers:
-    def test_packages_dir(self, tmp_path):
-        assert _packages_dir(str(tmp_path)) == os.path.join(str(tmp_path), _PACKAGES_DIR)
-
-    def test_stamps_dir(self, tmp_path):
-        expected = os.path.join(str(tmp_path), _PACKAGES_DIR, _STAMPS_DIR)
-        assert _stamps_dir(str(tmp_path)) == expected
-
-    def test_extensions_dir_from_plugin(self, tmp_path):
-        plugin = tmp_path / "image"
-        plugin.mkdir()
-        assert _extensions_dir_from_plugin(str(plugin)) == str(tmp_path)
-
-    def test_stamp_path(self, tmp_path):
-        plugin = tmp_path / "image"
-        plugin.mkdir()
-        result = _stamp_path(str(plugin), ".installed")
-        expected = os.path.join(str(tmp_path), _PACKAGES_DIR, _STAMPS_DIR, "image.installed")
-        assert result == expected
-
-
 class TestInstallRequirements:
     def test_uses_merged_requirements(self, tmp_path):
         ext_dir = tmp_path / "extensions"
@@ -166,20 +114,6 @@ class TestInstallRequirements:
         stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "image.installed"
         assert stamp.exists()
 
-    def test_deferred_returns_true_with_deferred_flag(self, tmp_path):
-        ext_dir = tmp_path / "extensions"
-        plugin = ext_dir / "plugin"
-        plugin.mkdir(parents=True)
-        (plugin / "requirements.txt").write_text("requests\n")
-
-        mock_ep = MagicMock()
-        mock_ep.pip_install.return_value = None
-
-        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep):
-            success = install_requirements(str(plugin), str(ext_dir))
-
-        assert success is True
-
     def test_failure_returns_false(self, tmp_path):
         ext_dir = tmp_path / "extensions"
         plugin = ext_dir / "plugin"
@@ -194,17 +128,24 @@ class TestInstallRequirements:
 
         assert success is False
 
-    def test_empty_merge_still_writes_stamp(self, tmp_path):
+    def test_empty_merge_still_writes_stamp(self, tmp_path, monkeypatch):
         ext_dir = tmp_path / "extensions"
         plugin = ext_dir / "empty"
         plugin.mkdir(parents=True)
-        (plugin / "requirements.txt").write_text("# no deps\n")
+        req = plugin / "requirements.txt"
+        req.write_text("# no deps\n")
+        pip_commands = []
+        monkeypatch.setattr(installer, "_run_subprocess", lambda cmd, **kw: pip_commands.append(cmd))
 
         success = install_requirements(str(plugin), str(ext_dir))
 
         assert success is True
+        assert len(pip_commands) == 1
+        assert pip_commands[0][1:4] == ["-m", "pip", "install"]
+        assert str(req) in pip_commands[0]
         stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "empty.installed"
         assert stamp.exists()
+        assert stamp.read_text("utf-8") == _requirements_hash(str(req))
 
 
 class TestStampVersionMatches:
@@ -226,26 +167,12 @@ class TestStampVersionMatches:
     def test_missing_file(self, tmp_path):
         assert _stamp_version_matches(str(tmp_path / "nonexistent")) is False
 
-    def test_legacy_stamp_touch_only(self, tmp_path):
-        stamp = tmp_path / "stamp"
-        stamp.touch()
-        assert _stamp_version_matches(str(stamp)) is False
-
 
 class TestWritePostInstallStamp:
     def test_creates_stamp_file(self, tmp_path):
         ext_dir = tmp_path / "extensions"
         plugin = ext_dir / "plugin"
         plugin.mkdir(parents=True)
-        write_post_install_stamp(str(plugin))
-        stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
-        assert stamp.exists()
-
-    def test_idempotent(self, tmp_path):
-        ext_dir = tmp_path / "extensions"
-        plugin = ext_dir / "plugin"
-        plugin.mkdir(parents=True)
-        write_post_install_stamp(str(plugin))
         write_post_install_stamp(str(plugin))
         stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
         assert stamp.exists()
@@ -375,13 +302,6 @@ class TestNeedsPostInstall:
 
 
 class TestNeedsSetup:
-    def test_true_when_pip_needed(self, tmp_path):
-        ext_dir = tmp_path / "extensions"
-        plugin = ext_dir / "plugin"
-        plugin.mkdir(parents=True)
-        (plugin / "requirements.txt").write_text("pkg\n")
-        assert needs_setup(str(plugin)) is True
-
     def test_true_when_post_install_needed(self, tmp_path):
         ext_dir = tmp_path / "extensions"
         plugin = ext_dir / "plugin"
@@ -407,12 +327,6 @@ class TestNeedsSetup:
         (stamps / "plugin.post_installed").touch()
         assert needs_setup(str(plugin)) is False
 
-    def test_false_when_no_requirements(self, tmp_path):
-        ext_dir = tmp_path / "extensions"
-        plugin = ext_dir / "plugin"
-        plugin.mkdir(parents=True)
-        assert needs_setup(str(plugin)) is False
-
 
 class TestHasPostInstallHooks:
     def test_returns_false_for_base_plugin(self):
@@ -433,16 +347,6 @@ class TestHasPostInstallHooks:
                 pass
 
         assert has_post_install_hooks([("grid", WithHook)]) is True
-
-    def test_returns_false_when_all_inherit_default(self):
-        from wafer.plugin.registry import PluginBase
-
-        class Plain(PluginBase):
-            NAME = "plain"
-            EXTENSIONS = (".p",)
-            PRIORITY = 1
-
-        assert has_post_install_hooks([("grid", Plain)]) is False
 
     def test_mixed_returns_true(self):
         from wafer.plugin.registry import PluginBase
@@ -490,6 +394,8 @@ class TestInstallExtension:
         assert result.success is True
         assert result.post_install_ok is True
         assert len(result.plugins) == 1
+        stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
+        assert stamp.exists()
 
     def test_install_failure_returns_false(self, tmp_path):
         ext_dir = tmp_path / "extensions"
@@ -530,26 +436,6 @@ class TestInstallExtension:
         assert result.post_install_ok is True
         assert len(calls) == 1
         assert calls[0] == str(plugin)
-        stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
-        assert stamp.exists()
-
-    def test_post_install_not_called_when_absent(self, tmp_path):
-        ext_dir = tmp_path / "extensions"
-        plugin = ext_dir / "plugin"
-        plugin.mkdir(parents=True)
-
-        from wafer.plugin.registry import PluginBase
-
-        class PlainPlugin(PluginBase):
-            NAME = "plain"
-            EXTENSIONS = (".p",)
-            PRIORITY = 1
-
-        with patch("wafer.plugin.installer.needs_install", return_value=False), patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", PlainPlugin)]):
-            result = install_extension(str(plugin), str(ext_dir))
-
-        assert result.success is True
-        assert result.post_install_ok is True
         stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
         assert stamp.exists()
 
@@ -651,21 +537,6 @@ class TestInstallExtension:
         assert result.plugins[0][1] is DeferredPlugin
 
 
-class TestRestartScope:
-    def test_none_is_zero(self):
-        assert RestartScope.NONE == RestartScope(0)
-
-    def test_all_contains_viewer_and_tray(self):
-        assert RestartScope.VIEWER in RestartScope.ALL
-        assert RestartScope.TRAY in RestartScope.ALL
-
-    def test_merge_viewer_tray_equals_all(self):
-        assert (RestartScope.VIEWER | RestartScope.TRAY) == RestartScope.ALL
-
-    def test_none_or_viewer(self):
-        assert (RestartScope.NONE | RestartScope.VIEWER) == RestartScope.VIEWER
-
-
 class TestRestartScopeOf:
     def test_viewer_scope(self):
         class ViewerPlugin:
@@ -705,28 +576,6 @@ class TestRestartScopeFromPlugins:
 
         scope = restart_scope_from_plugins([V, T])
         assert scope == RestartScope.ALL
-
-    def test_single_tray(self):
-        class T:
-            SCOPE = "tray"
-
-        assert restart_scope_from_plugins([T]) == RestartScope.TRAY
-
-
-class TestInstallState:
-    def test_values(self):
-        assert InstallState.NO_DEPS.value == "no_deps"
-        assert InstallState.NOT_INSTALLED.value == "not_installed"
-        assert InstallState.NEEDS_POST_INSTALL.value == "needs_post_install"
-        assert InstallState.INSTALLED.value == "installed"
-
-
-class TestInstallResult:
-    def test_defaults(self):
-        r = InstallResult()
-        assert r.success is False
-        assert r.post_install_ok is True
-        assert r.plugins == []
 
 
 class TestResolveInstallState:

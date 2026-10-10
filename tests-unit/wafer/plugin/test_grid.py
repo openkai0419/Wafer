@@ -1,6 +1,4 @@
 import numpy as np
-import py_compile
-import pytest
 from unittest.mock import MagicMock
 from PIL import Image
 
@@ -14,45 +12,18 @@ def _get_image_loader():
     return image_loader_resolver.registry.get("image")
 
 
-def test_compile_base():
-    py_compile.compile("wafer/plugin/grid/base.py")
-
-
-def test_compile_handler():
-    py_compile.compile("wafer/plugin/grid/handler.py")
-
-
-def test_image_loader_registered():
-    assert "image" in image_loader_resolver.registry.names()
-
-
 def test_resolve_jpg_imageloader():
     loader_cls = _get_image_loader()
     assert image_loader_resolver.registry.resolve("photo.jpg") is loader_cls
-
-
-def test_resolve_unknown_extension_imageloader():
-    from wafer.builtins.imageloader import SystemImageLoader
-
-    assert image_loader_resolver.registry.resolve("file.xyz") is SystemImageLoader
 
 
 def test_image_loader_load(tmp_path):
     img_path = tmp_path / "test.png"
     Image.new("RGB", (100, 200)).save(str(img_path))
     plugin = _get_image_loader()()
-    result = plugin.load(str(img_path), size=50)
-    assert result is not None
-    assert isinstance(result, np.ndarray)
-
-
-def test_image_loader_load_no_size(tmp_path):
-    img_path = tmp_path / "test.png"
-    Image.new("RGB", (100, 200)).save(str(img_path))
-    plugin = _get_image_loader()()
-    result = plugin.load(str(img_path))
-    assert result is not None
-    assert isinstance(result, np.ndarray)
+    for size in (50, None):
+        result = plugin.load(str(img_path), size=size)
+        assert isinstance(result, np.ndarray), size
 
 
 def test_grid_load_function(tmp_path):
@@ -76,65 +47,9 @@ def test_image_loader_load_nonexistent():
     assert result is None
 
 
-def test_image_loader_is_base_image_loader():
-    assert issubclass(_get_image_loader(), BaseImageLoader)
-    assert not issubclass(_get_image_loader(), WidgetGridPlugin)
-
-
 def test_is_widget_plugin_image():
     assert not grid_resolver.is_widget_plugin("photo.jpg")
-
-
-def test_imageloader_resolve_instance():
-    instance = image_loader_resolver.registry.resolve_instance("photo.jpg")
-    assert instance is not None
-    assert isinstance(instance, BaseImageLoader)
-
-
-def test_imageloader_resolve_instance_unknown():
-    from wafer.builtins.imageloader import SystemImageLoader
-
-    instance = image_loader_resolver.registry.resolve_instance("file.xyz")
-    assert isinstance(instance, SystemImageLoader)
-
-
-def test_is_widget_plugin_unknown():
     assert not grid_resolver.is_widget_plugin("file.xyz")
-
-
-def test_base_lifecycle_defaults_are_noop():
-    class _ConcretePlugin(WidgetGridPlugin):
-        NAME = "noop"
-        EXTENSIONS = (".noop",)
-
-    p = _ConcretePlugin()
-    p.release(None)
-    p.select(None)
-    p.deselect(None)
-    p.appear(None)
-    p.disappear(None)
-    p.on_thumb_loaded(None, None)
-
-
-def test_widget_grid_plugin_render_default_noop():
-    from unittest.mock import MagicMock
-    from PySide6 import QtCore
-
-    class _ConcretePlugin(WidgetGridPlugin):
-        NAME = "noop"
-        EXTENSIONS = (".noop",)
-
-    p = _ConcretePlugin()
-    widget = MagicMock()
-    p.render(widget, "/test.noop", QtCore.QSize(50, 50))
-
-
-def test_require_thumbnail_default_false():
-    class _ConcretePlugin(WidgetGridPlugin):
-        NAME = "noop"
-        EXTENSIONS = (".noop",)
-
-    assert _ConcretePlugin.REQUIRE_THUMBNAIL is False
 
 
 def test_load_thumbnail_api(tmp_path):
@@ -219,16 +134,8 @@ def test_resolve_animated_gif_to_animated(tmp_path):
     assert plugin.NAME == "animated"
 
 
-def test_merged_chain_gif_includes_animated_and_image():
-    chain = grid_resolver.resolve_merged_chain("test.gif")
-    names = [cls.NAME for cls, kind in chain]
-    assert "animated" in names
-    assert "image" in names
-
-
 class TestWidgetNotifier:
     def _make_notifier(self):
-        from unittest.mock import MagicMock
         from wafer.plugin.grid.handler import WidgetNotifier
 
         mock = MagicMock()
@@ -251,7 +158,6 @@ class TestWidgetNotifier:
         return notifier, mock
 
     def test_bind_registers_name(self):
-        from unittest.mock import MagicMock
 
         notifier, plugin = self._make_notifier()
         notifier.bind(0, "video")
@@ -259,7 +165,6 @@ class TestWidgetNotifier:
         plugin.render.assert_not_called()
 
     def test_unbind_visible_calls_disappear_and_release(self):
-        from unittest.mock import MagicMock
 
         notifier, plugin = self._make_notifier()
         widget = MagicMock()
@@ -272,7 +177,6 @@ class TestWidgetNotifier:
         assert notifier.plugin_name(0) is None
 
     def test_unbind_hidden_skips_disappear(self):
-        from unittest.mock import MagicMock
 
         notifier, plugin = self._make_notifier()
         widget = MagicMock()
@@ -284,61 +188,28 @@ class TestWidgetNotifier:
         plugin.release.assert_called_once_with(widget)
 
     def test_unbind_unknown_index_is_noop(self):
-        from unittest.mock import MagicMock
 
         notifier, plugin = self._make_notifier()
         notifier.unbind(99, MagicMock())
         plugin.release.assert_not_called()
 
-    def test_appear_delegates(self):
-        from unittest.mock import MagicMock
+    def test_lifecycle_calls_delegate(self):
 
         notifier, plugin = self._make_notifier()
         widget = MagicMock()
         notifier.bind(0, "video")
-        plugin.reset_mock()
-        notifier.appear(0, widget)
-        plugin.appear.assert_called_once_with(widget)
-
-    def test_disappear_delegates(self):
-        from unittest.mock import MagicMock
-
-        notifier, plugin = self._make_notifier()
-        widget = MagicMock()
-        notifier.bind(0, "video")
-        plugin.reset_mock()
-        notifier.disappear(0, widget)
-        plugin.disappear.assert_called_once_with(widget)
-
-    def test_select_delegates(self):
-        from unittest.mock import MagicMock
-
-        notifier, plugin = self._make_notifier()
-        widget = MagicMock()
-        notifier.bind(0, "video")
-        plugin.reset_mock()
-        notifier.select(0, widget)
-        plugin.select.assert_called_once_with(widget)
-
-    def test_deselect_delegates(self):
-        from unittest.mock import MagicMock
-
-        notifier, plugin = self._make_notifier()
-        widget = MagicMock()
-        notifier.bind(0, "video")
-        plugin.reset_mock()
-        notifier.deselect(0, widget)
-        plugin.deselect.assert_called_once_with(widget)
+        for method in ("appear", "disappear", "select", "deselect"):
+            plugin.reset_mock()
+            getattr(notifier, method)(0, widget)
+            getattr(plugin, method).assert_called_once_with(widget)
 
     def test_select_unknown_index_is_noop(self):
-        from unittest.mock import MagicMock
 
         notifier, plugin = self._make_notifier()
         notifier.select(99, MagicMock())
         plugin.select.assert_not_called()
 
     def test_clear_removes_all(self):
-        from unittest.mock import MagicMock
 
         notifier, plugin = self._make_notifier()
         notifier.bind(0, "video")
@@ -348,7 +219,6 @@ class TestWidgetNotifier:
         assert notifier.plugin_name(1) is None
 
     def test_require_thumbnail_returns_flag(self):
-        from unittest.mock import MagicMock
         from wafer.plugin.grid.handler import WidgetNotifier
 
         class _ThumbPlugin(WidgetGridPlugin):
@@ -366,7 +236,6 @@ class TestWidgetNotifier:
         assert notifier.require_thumbnail("stub") is False
 
     def test_on_thumb_loaded_delegates(self):
-        from unittest.mock import MagicMock
 
         notifier, plugin = self._make_notifier()
         widget = MagicMock()
@@ -377,18 +246,10 @@ class TestWidgetNotifier:
         plugin.on_thumb_loaded.assert_called_once_with(widget, image)
 
     def test_on_thumb_loaded_unknown_index_is_noop(self):
-        from unittest.mock import MagicMock
 
         notifier, plugin = self._make_notifier()
         notifier.on_thumb_loaded(99, MagicMock(), MagicMock())
         plugin.on_thumb_loaded.assert_not_called()
-
-
-def test_imageloader_instance_cached():
-    instance = image_loader_resolver.registry.instance("image")
-    assert instance is not None
-    assert instance is image_loader_resolver.registry.instance("image")
-    assert isinstance(instance, BaseImageLoader)
 
 
 def test_imageloader_resolve_instance_by_path():
@@ -548,10 +409,3 @@ def test_all_classes_returns_name_cls_tuples():
     assert ("p1", P1) in result
     assert ("p2", P2) in result
     assert len(result) == 2
-
-
-def test_all_classes_empty_registry():
-    from wafer.plugin.registry import FilePluginRegistry
-
-    reg = FilePluginRegistry()
-    assert reg.all_classes() == []

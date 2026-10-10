@@ -44,12 +44,6 @@ class TestRecollectTargetLines:
         lines = recollect_target_lines(["novelai"])
         assert lines == ["  novelai: parser (delete only)"]
 
-    def test_empty_extensions_shows_prefix_only(self, _patch_registry):
-        cls = type("C", (), {"EXTENSIONS": ()})
-        _patch_registry({"wd14": cls})
-        lines = recollect_target_lines(["wd14"])
-        assert lines == ["  wd14"]
-
     def test_multiple_prefixes(self, _patch_registry):
         cls = type("C", (), {"EXTENSIONS": (".mp4",)})
         _patch_registry({"ffmpeg": cls})

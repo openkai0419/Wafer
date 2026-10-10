@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 
 from PySide6 import QtCore, QtGui
 
@@ -56,6 +55,7 @@ class TestDateInput:
         di.set_today()
         assert di.state() == "today"
         assert di.read_value() == "today"
+        assert di._line.text() == "Today"
 
     def test_set_date(self, qtbot):
         di = _DateInput()
@@ -63,6 +63,7 @@ class TestDateInput:
         di.set_date(QtCore.QDate(2024, 6, 15))
         assert di.state() == "date"
         assert di.read_value() == "2024/06/15"
+        assert di._line.text() == "2024/06/15"
 
     def test_set_empty(self, qtbot):
         di = _DateInput()
@@ -70,6 +71,7 @@ class TestDateInput:
         di.set_empty()
         assert di.state() == "empty"
         assert di.read_value() == ""
+        assert di._line.text() == ""
 
     def test_write_today(self, qtbot):
         di = _DateInput()
@@ -106,24 +108,6 @@ class TestDateInput:
         di.set_empty()
         assert len(signals) == 3
 
-    def test_display_text_today(self, qtbot):
-        di = _DateInput()
-        qtbot.addWidget(di)
-        di.set_today()
-        assert di._line.text() == "Today"
-
-    def test_display_text_date(self, qtbot):
-        di = _DateInput()
-        qtbot.addWidget(di)
-        di.set_date(QtCore.QDate(2024, 12, 25))
-        assert di._line.text() == "2024/12/25"
-
-    def test_display_text_empty(self, qtbot):
-        di = _DateInput()
-        qtbot.addWidget(di)
-        di.set_empty()
-        assert di._line.text() == ""
-
     def test_popup_resets_button_down(self, qtbot):
         di = _DateInput()
         qtbot.addWidget(di)
@@ -135,13 +119,6 @@ class TestDateInput:
 
 
 class TestCalendarPopup:
-    def test_window_flags(self, qtbot):
-        popup = _CalendarPopup()
-        qtbot.addWidget(popup)
-        flags = popup.windowFlags()
-        assert flags & QtCore.Qt.FramelessWindowHint
-        assert flags & QtCore.Qt.Popup
-
     def test_close_on_escape(self, qtbot):
         popup = _CalendarPopup()
         qtbot.addWidget(popup)
@@ -201,27 +178,6 @@ class TestDateRangeWidget:
         assert params["range_from"] == "2024/01/15"
         assert params["range_to"] == "2024/06/30"
 
-    def test_read_params_range_today(self, qtbot):
-        w = DateRangeWidget()
-        qtbot.addWidget(w)
-        w.mode_combo.setCurrentIndex(1)
-        w.date_from.set_today()
-        w.date_to.set_empty()
-        params = w.read_params()
-        assert params["range_from"] == "today"
-        assert params["range_to"] == ""
-
-    def test_read_params_range_cleared(self, qtbot):
-        w = DateRangeWidget()
-        qtbot.addWidget(w)
-        w.target_combo.rebuild([("modified", 10)], [])
-        w.mode_combo.setCurrentIndex(1)
-        w.date_from.set_empty()
-        w.date_to.set_empty()
-        params = w.read_params()
-        assert params["range_from"] == ""
-        assert params["range_to"] == ""
-
     def test_write_params_preset(self, qtbot):
         w = DateRangeWidget()
         qtbot.addWidget(w)
@@ -273,23 +229,6 @@ class TestDateRangeWidget:
         assert params["mode"] == "range"
         assert params["range_from"] == "2024/03/01"
         assert params["range_to"] == "2024/09/30"
-
-    def test_write_params_range_today(self, qtbot):
-        w = DateRangeWidget()
-        qtbot.addWidget(w)
-        w.write_params({"mode": "range", "range_from": "today", "range_to": ""})
-        params = w.read_params()
-        assert params["range_from"] == "today"
-        assert params["range_to"] == ""
-
-    def test_write_params_range_empty(self, qtbot):
-        w = DateRangeWidget()
-        qtbot.addWidget(w)
-        w.target_combo.rebuild([("modified", 10)], [])
-        w.write_params({"mode": "range", "range_from": "", "range_to": ""})
-        params = w.read_params()
-        assert params["range_from"] == ""
-        assert params["range_to"] == ""
 
     def test_on_key_store_updated(self, qtbot):
         w = DateRangeWidget()

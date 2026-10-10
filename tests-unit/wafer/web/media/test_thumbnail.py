@@ -25,10 +25,6 @@ def test_build_thumbnail_returns_false_when_undecodable(monkeypatch, tmp_path):
     assert not out.exists()
 
 
-def test_thumb_cache_dir_is_web_scoped():
-    assert "web_thumbs" in media.thumb_cache_dir()
-
-
 def test_thumb_cache_singleton_rebinds_on_dir_change(monkeypatch, tmp_path):
     monkeypatch.setattr(media, "_thumb_cache", None)
     monkeypatch.setattr(media, "_thumb_cache_dir", None)

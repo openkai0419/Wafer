@@ -197,18 +197,6 @@ def scan_all_outbox(dst_filter: set[str] | None = None, db_filter: str | None = 
     return records
 
 
-def remove_outbox_from(db_path: str, record_id: int):
-    try:
-        conn = _connect(db_path)
-        try:
-            conn.execute("DELETE FROM outbox WHERE id = ?", (record_id,))
-            conn.commit()
-        finally:
-            conn.close()
-    except Exception as e:
-        AppLogger.warning(f"outbox remove_from failed: {db_path} id={record_id}", exc=e)
-
-
 def remove_outbox_batch_from(db_path: str, record_ids: list[int]):
     if not record_ids:
         return

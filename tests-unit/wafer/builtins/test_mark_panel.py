@@ -1,12 +1,4 @@
 from wafer.builtins.mark.panel import MarkTagPanelPlugin
-from wafer.plugin.key_value_panel.base import BaseKeyValuePanelPlugin
-
-
-def test_mark_is_meta_panel_subclass():
-    assert issubclass(MarkTagPanelPlugin, BaseKeyValuePanelPlugin)
-    assert MarkTagPanelPlugin.PREFIX == "mark"
-    assert MarkTagPanelPlugin.DATA_SCOPE == "*"
-    assert MarkTagPanelPlugin.NAME == "mark_panel"
 
 
 def test_mark_create_card_and_update(qtbot):

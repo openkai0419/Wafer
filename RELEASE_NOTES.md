@@ -2,6 +2,18 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.7.10]
+
+### Improvements
+- WebUI now adapts to smartphone screens.
+- WebUI settings add a "direct-child files only" option to hide files in subfolders.
+- Search can keep spaces around keywords via a new "Trim spaces" option.
+- WebUI search now matches keywords with OR by default.
+
+### Fixes
+- Tags from slow collectors (e.g. WD14) are no longer lost when a file's hash changes mid-collection.
+- The Explorer right-click menu no longer leaks shell extensions with repeated use.
+
 ## [v0.7.9]
 
 ### Improvements

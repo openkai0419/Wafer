@@ -1,12 +1,14 @@
 import os
-import time
 from pathlib import Path
 
 from PIL import Image
 
 from wafer.core.common.paths import normalize_path
 from wafer.core.db.file_db import FileDB
-from wafer.core.db.query import FileSearchEngine, SearchQuery
+from wafer.core.db.query import FileSearchEngine
+from wafer.builtins.filters import DirectoryFilter, TextFilter
+from wafer.builtins.sorts import NaturalNameSort, NoSort
+from wafer.plugin.query.composer import SearchComposer
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.app.indexer.receivers.collector_receiver import _parse_batch
 from test_support.scan_harness import ScanHarness
@@ -89,12 +91,7 @@ class TestIndexToSearch:
         )
 
         engine = FileSearchEngine(str(db_path))
-        result_paths, _, _ = engine.search(
-            SearchQuery(
-                keys="path",
-                keywords="alpha",
-            )
-        )
+        result_paths, _, _ = SearchComposer().execute(engine, [(TextFilter, {"keys": ["path"], "keywords": "alpha"}, "OR")], NoSort, True)
         norms = [normalize_path(str(p)) for p in paths]
         assert len(result_paths) == 1
         assert result_paths[0] == norms[0]
@@ -110,7 +107,7 @@ class TestIndexToSearch:
         )
 
         engine = FileSearchEngine(str(db_path))
-        result_paths, sources, aspects = engine.search(SearchQuery(require_keys=False))
+        result_paths, sources, aspects = SearchComposer().execute(engine, [], NoSort, True)
         assert len(result_paths) == 3
         assert len(sources) == 3
         assert all(isinstance(a, float) for a in aspects)
@@ -139,15 +136,10 @@ class TestIndexToSearch:
         meta_rows = db.read_conn.execute("SELECT key FROM meta_info WHERE path=?", (norm,)).fetchall()
         db.close()
 
-        if meta_rows:
-            key_name = meta_rows[0][0]
-            all_paths, _, _ = engine.search(
-                SearchQuery(
-                    keys=(key_name,),
-                    require_keys=True,
-                )
-            )
-            assert norm in all_paths
+        assert meta_rows
+        key_name = meta_rows[0][0]
+        all_paths, _, _ = SearchComposer().execute(engine, [(TextFilter, {"keys": [key_name]}, "OR")], NoSort, True)
+        assert norm in all_paths
 
     def test_directory_filter_after_index(self, tmp_path):
         dir_a = tmp_path / "dir_a"
@@ -166,12 +158,7 @@ class TestIndexToSearch:
         engine = FileSearchEngine(str(db_path))
         norm_a = normalize_path(str(dir_a))
 
-        filtered, _, _ = engine.search(
-            SearchQuery(
-                directories=(norm_a,),
-                require_keys=False,
-            )
-        )
+        filtered, _, _ = SearchComposer().execute(engine, [(DirectoryFilter, {"directories": [norm_a]}, "OR")], NoSort, True)
         assert len(filtered) == 1
         assert filtered[0].startswith(norm_a)
 
@@ -179,9 +166,7 @@ class TestIndexToSearch:
         img_dir = tmp_path / "photos"
         img_dir.mkdir()
         _create_test_image(img_dir / "aaa.jpg", 100, 80)
-        time.sleep(0.05)
         _create_test_image(img_dir / "zzz.jpg", 100, 80)
-        time.sleep(0.05)
         _create_test_image(img_dir / "mmm.jpg", 100, 80)
 
         collectors = collector_resolver.summary()
@@ -192,23 +177,11 @@ class TestIndexToSearch:
 
         engine = FileSearchEngine(str(db_path))
 
-        asc_paths, _, _ = engine.search(
-            SearchQuery(
-                sort_by="name",
-                ascending=True,
-                require_keys=False,
-            )
-        )
+        asc_paths, _, _ = SearchComposer().execute(engine, [], NaturalNameSort, True)
         names_asc = [os.path.basename(p) for p in asc_paths]
         assert names_asc == sorted(names_asc)
 
-        desc_paths, _, _ = engine.search(
-            SearchQuery(
-                sort_by="name",
-                ascending=False,
-                require_keys=False,
-            )
-        )
+        desc_paths, _, _ = SearchComposer().execute(engine, [], NaturalNameSort, False)
         names_desc = [os.path.basename(p) for p in desc_paths]
         assert names_desc == sorted(names_desc, reverse=True)
 
@@ -232,7 +205,7 @@ class TestIndexToSearch:
             harness.scan_and_wait(img_dir, expected=1)
 
         engine = FileSearchEngine(str(db_path))
-        result_paths, _, _ = engine.search(SearchQuery(require_keys=False))
+        result_paths, _, _ = SearchComposer().execute(engine, [], NoSort, True)
         assert len(result_paths) == 1
         assert result_paths[0] == normalize_path(str(keep))
 
@@ -253,12 +226,13 @@ class TestIndexToSearch:
             _write_results_to_db(harness.db, results)
 
         engine = FileSearchEngine(str(db_path))
-        pre_paths, _, pre_aspects = engine.search(SearchQuery(require_keys=False))
+        pre_paths, _, pre_aspects = SearchComposer().execute(engine, [], NoSort, True)
         assert len(pre_paths) == 1
         assert pre_aspects[0] != 0
 
-        time.sleep(1.1)
+        old_mtime = img_path.stat().st_mtime
         _create_test_image(img_path, 400, 100)
+        os.utime(img_path, (old_mtime + 2, old_mtime + 2))
 
         with ScanHarness(db_path, collectors=collectors) as harness:
             harness.scan(img_dir)
@@ -268,7 +242,7 @@ class TestIndexToSearch:
             _write_results_to_db(harness.db, results)
 
         engine2 = FileSearchEngine(str(db_path))
-        post_paths, _, post_aspects = engine2.search(SearchQuery(require_keys=False))
+        post_paths, _, post_aspects = SearchComposer().execute(engine2, [], NoSort, True)
         assert len(post_paths) == 1
         assert post_aspects[0] == 4.0
 
@@ -286,15 +260,10 @@ class TestIndexToSearch:
             harness.scan_and_wait(img_dir, expected=3)
 
         engine = FileSearchEngine(str(db_path))
-        all_paths, _, _ = engine.search(SearchQuery(require_keys=False))
+        all_paths, _, _ = SearchComposer().execute(engine, [], NoSort, True)
         assert len(all_paths) == 3
 
-        txt_paths, _, _ = engine.search(
-            SearchQuery(
-                keys="path",
-                keywords=".txt",
-            )
-        )
+        txt_paths, _, _ = SearchComposer().execute(engine, [(TextFilter, {"keys": ["path"], "keywords": ".txt"}, "OR")], NoSort, True)
         assert len(txt_paths) == 1
         assert txt_paths[0].endswith("readme.txt")
 
@@ -309,13 +278,7 @@ class TestIndexToSearch:
         )
 
         engine = FileSearchEngine(str(db_path))
-        result_paths, _, aspects = engine.search(
-            SearchQuery(
-                sort_by="name",
-                ascending=True,
-                require_keys=False,
-            )
-        )
+        result_paths, _, aspects = SearchComposer().execute(engine, [], NaturalNameSort, True)
         names = [os.path.basename(p) for p in result_paths]
 
         sq_idx = names.index("square.png")

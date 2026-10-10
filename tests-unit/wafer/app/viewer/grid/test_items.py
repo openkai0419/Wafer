@@ -51,16 +51,9 @@ def test_path_at(items):
     assert items.path_at(5) is None
     assert items.path_at(None) is None
     assert items.path_at(-1) is None
-
-
-def test_source_at(items):
     assert items.source_at(0) == "sa"
     assert items.source_at(None) is None
     assert items.source_at(99) is None
-
-
-def test_aspect_at(items):
-    assert items.aspect_at(0) == 1.0
     assert items.aspect_at(2) == 3.0
     assert items.aspect_at(None) is None
     assert items.aspect_at(99) is None
@@ -75,46 +68,9 @@ def test_selection_basic(items):
     assert items.last_selected_source() == "sa"
 
 
-def test_toggle_selection(items):
-    items.toggle_selection(1)
-    assert items.is_selected(1)
-    assert items.last_selected_index() == 1
-    assert items.last_selected_path() == "b"
-    items.toggle_selection(1)
-    assert not items.is_selected(1)
-
-
-def test_clear_selection(items):
-    items.set_selected([0, 1])
-    items.clear_selection()
-    assert items.selected_count() == 0
-    assert items.last_selected_index() is None
-
-
-def test_deselect(items):
-    items.set_selected([0, 1])
-    items.deselect(0)
-    assert not items.is_selected(0)
-    assert items.is_selected(1)
-
-
-def test_add_selection(items):
-    items.set_selected([0])
-    items.add_selection([1, 2], last=1)
-    assert items.selected_count() == 3
-    assert items.last_selected_index() == 2
-
-
 def test_add_selection_empty(items):
     items.add_selection([])
     assert items.selected_count() == 0
-
-
-def test_remove_selection(items):
-    items.set_selected([0, 1, 2])
-    items.remove_selection({1, 2})
-    assert items.selected_count() == 1
-    assert items.is_selected(0)
 
 
 def test_set_selected_empty_clears(items):
@@ -133,15 +89,6 @@ def test_selected_sources(items):
     items.set_selected([0, 2])
     sources = items.selected_sources()
     assert set(sources) == {"sa", "sc"}
-
-
-def test_selection_noemit(items):
-    received = []
-    items.selectionChanged.connect(lambda s: received.append(s))
-    with items.selection_noemit():
-        items.toggle_selection(0)
-        items.toggle_selection(1)
-    assert received == []
 
 
 def test_selection_cleared_on_set_items(items):
@@ -163,12 +110,17 @@ def test_selection_changed_signal():
     vi.set_items(["a", "b"], ["sa", "sb"], [1.0, 2.0])
     received = []
     vi.selectionChanged.connect(lambda s: received.append(s))
+    with vi.selection_noemit():
+        vi.toggle_selection(1)
+    assert received == []
     vi.toggle_selection(0)
-    assert len(received) == 1
+    assert received == [{0, 1}]
 
 
 def test_avg_aspect(items):
     assert items.avg_aspect == pytest.approx(2.0)
+    items.set_items(["a", "b"], ["sa", "sb"], [2.0, 6.0])
+    assert items.avg_aspect == pytest.approx(4.0)
 
 
 def test_avg_aspect_empty():
@@ -182,11 +134,3 @@ def test_avg_aspect_none_treated_as_one():
     vi = GridItemModel()
     vi.set_items(["a", "b"], ["sa", "sb"], [None, 3.0])
     assert vi.avg_aspect == pytest.approx(2.0)
-
-
-def test_avg_aspect_updated_on_set_items():
-    vi = GridItemModel()
-    vi.set_items(["a"], ["sa"], [4.0])
-    assert vi.avg_aspect == pytest.approx(4.0)
-    vi.set_items(["a", "b"], ["sa", "sb"], [2.0, 6.0])
-    assert vi.avg_aspect == pytest.approx(4.0)

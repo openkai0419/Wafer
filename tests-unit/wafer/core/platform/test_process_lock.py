@@ -1,11 +1,6 @@
 import json
-import py_compile
 
 import pytest
-
-
-def test_compile():
-    py_compile.compile("wafer/core/platform/process_lock.py")
 
 
 def test_acquire_removes_stale_lock_when_pid_reused(tmp_path, monkeypatch):
@@ -157,13 +152,6 @@ class TestFileLock:
             pass
         with file_lock(lock_path):
             pass
-
-
-def test_acquire_timeout_constant():
-    from wafer.core.platform.process_lock import _ACQUIRE_TIMEOUT
-
-    assert _ACQUIRE_TIMEOUT > 0
-    assert _ACQUIRE_TIMEOUT <= 120
 
 
 class TestReadOwnerPid:

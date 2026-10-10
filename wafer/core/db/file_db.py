@@ -132,14 +132,6 @@ _SQL_UPSERT_SOURCES = """INSERT INTO sources (source, file_hash, size, modified,
         created   = excluded.created,
         collected = COALESCE(sources.collected, excluded.collected)"""
 
-_SQL_UPSERT_FILES = """INSERT INTO files (path, source, name, aspect_ratio, source_extension)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(path) DO UPDATE SET
-        source       = excluded.source,
-        name         = excluded.name,
-        aspect_ratio = excluded.aspect_ratio,
-        source_extension = excluded.source_extension"""
-
 _SQL_UPSERT_FILES_COALESCE = """INSERT INTO files (path, source, name, aspect_ratio, source_extension)
     VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(path) DO UPDATE SET
@@ -155,8 +147,8 @@ _SQL_UPSERT_META = """INSERT INTO meta_info (path, key, value, value_num)
         value_num = excluded.value_num
     WHERE meta_info.locked = 0"""
 
-_SQL_UPSERT_TAGS = """INSERT INTO tags (file_hash, key, value, value_num)
-    VALUES (?, ?, ?, ?)
+_SQL_UPSERT_SOURCE_TAGS = """INSERT INTO tags (file_hash, key, value, value_num)
+    SELECT file_hash, ?, ?, ? FROM sources WHERE source = ?
     ON CONFLICT(file_hash, key) DO UPDATE SET
         value     = excluded.value,
         value_num = excluded.value_num
@@ -536,14 +528,8 @@ class FileDB:
         return paths
 
     @staticmethod
-    def _ensure_hash_indexes(cur, source_entries, tag_entries=()):
-        file_hashes = set()
-        for _, fid, *_ in source_entries:
-            if fid:
-                file_hashes.add(fid)
-        for fid, *_ in tag_entries:
-            if fid:
-                file_hashes.add(fid)
+    def _ensure_hash_indexes(cur, source_entries):
+        file_hashes = {fid for _, fid, *_ in source_entries if fid}
         if file_hashes:
             cur.executemany(
                 "INSERT OR IGNORE INTO hash_index (file_hash) VALUES (?)",
@@ -611,25 +597,6 @@ class FileDB:
         return entries
 
     @profiler.profile
-    def upsert_batches(self, source_entries, image_entries, meta_info_entries, tag_entries):
-        with self._write_lock, self.conn:
-            cur = self.conn.cursor()
-            try:
-                source_entries = self._normalize_source_entries(source_entries)
-                self._ensure_hash_indexes(cur, source_entries, tag_entries)
-                self._migrate_tags_on_hash_change(cur, source_entries)
-                cur.executemany(_SQL_UPSERT_SOURCES, source_entries)
-                image_entries = self._normalize_file_entries(image_entries)
-                if image_entries:
-                    cur.executemany(_SQL_UPSERT_FILES, image_entries)
-                if meta_info_entries:
-                    cur.executemany(_SQL_UPSERT_META, meta_info_entries)
-                if tag_entries:
-                    cur.executemany(_SQL_UPSERT_TAGS, tag_entries)
-            finally:
-                cur.close()
-
-    @profiler.profile
     def update_source_hashes(self, hash_updates: Sequence[tuple[str, str]]) -> list[str]:
         entries = [(source, file_hash) for source, file_hash in hash_updates or () if source and file_hash]
         if not entries:
@@ -686,9 +653,8 @@ class FileDB:
                             cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
                 if meta_info_entries:
                     cur.executemany(_SQL_UPSERT_META, meta_info_entries)
-                self._ensure_hash_indexes(cur, [], tag_entries)
                 if tag_entries:
-                    cur.executemany(_SQL_UPSERT_TAGS, tag_entries)
+                    cur.executemany(_SQL_UPSERT_SOURCE_TAGS, [(key, value, num, source) for source, key, value, num in tag_entries])
                 if collector_status_entries:
                     try:
                         cur.executemany(_SQL_UPSERT_COLLECTION_STATUS, collector_status_entries)
@@ -771,22 +737,6 @@ class FileDB:
                         )
             finally:
                 cur.close()
-
-    @profiler.profile
-    def get_sources_without_collector(self, collector):
-        cur = self.get_reader_cursor()
-        try:
-            cur.execute(
-                """SELECT s.source FROM sources s
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM collection_status cs
-                    WHERE cs.source = s.source AND cs.collector = ?
-                )""",
-                (collector,),
-            )
-            return [row[0] for row in cur.fetchall()]
-        finally:
-            cur.close()
 
     @profiler.profile
     def get_pending_sources(self, collector, limit=5000):
@@ -985,20 +935,6 @@ class FileDB:
             return f"{len(prefixes)} folders"
         return "all sources"
 
-    def delete_collection_data(self, collector: str | None = None, sources: Sequence[str] | None = None, prefixes: Sequence[str] | None = None, *, drop_status: bool = False) -> tuple[int, int, int]:
-        sources = [s for s in sources if s] or None if sources else None
-        prefixes = [p for p in prefixes if p] or None if prefixes else None
-        with self._write_lock, self.conn:
-            cur = self.conn.cursor()
-            try:
-                meta_deleted, tags_deleted, child_deleted = self._delete_collection_cur(cur, collector, sources, prefixes, drop_status=drop_status)
-            finally:
-                cur.close()
-        AppLogger.info(
-            f"[DB] Deleted collection data: collector={collector or '*'}, {self._scope_label(sources, prefixes)}, children={child_deleted}, meta={meta_deleted}, tags={tags_deleted}, drop_status={drop_status}"
-        )
-        return meta_deleted, tags_deleted, child_deleted
-
     def delete_keys(self, keys: list[str]) -> tuple[int, int]:
         if not keys:
             return 0, 0
@@ -1068,58 +1004,25 @@ class FileDB:
         AppLogger.info(f"[DB] Deleted all sources (forget whole DB): {affected}")
         return affected
 
-    def collector_data_counts(self) -> list[tuple[str, int]]:
-        cur = self.get_reader_cursor()
-        try:
-            cur.execute("SELECT collector, COUNT(*) FROM collection_status WHERE status = 'ok' GROUP BY collector")
-            return cur.fetchall()
-        finally:
-            cur.close()
-
-    def prefix_data_summary(self) -> list[tuple[str, int, int]]:
-        cur = self.get_reader_cursor()
-        try:
-            cur.execute("""
-                SELECT prefix, SUM(meta_count), SUM(tag_count) FROM (
-                    SELECT
-                        CASE WHEN INSTR(key, '.') > 0
-                             THEN SUBSTR(key, 1, INSTR(key, '.') - 1)
-                             ELSE '' END AS prefix,
-                        COUNT(*) AS meta_count,
-                        0 AS tag_count
-                    FROM meta_info GROUP BY prefix
-                    UNION ALL
-                    SELECT
-                        CASE WHEN INSTR(key, '.') > 0
-                             THEN SUBSTR(key, 1, INSTR(key, '.') - 1)
-                             ELSE '' END AS prefix,
-                        0 AS meta_count,
-                        COUNT(*) AS tag_count
-                    FROM tags GROUP BY prefix
-                ) GROUP BY prefix ORDER BY prefix
-            """)
-            return cur.fetchall()
-        finally:
-            cur.close()
-
     def delete_meta_and_tags_by_keys(self, delete_entries: list[tuple[str, str | None, list[str], list[str]]]):
         if not delete_entries:
             return
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             try:
-                for path, file_hash, meta_keys, tag_keys in delete_entries:
+                for path, source, meta_keys, tag_keys in delete_entries:
                     if meta_keys:
                         placeholders = ",".join(["?"] * len(meta_keys))
                         cur.execute(
                             f"DELETE FROM meta_info WHERE path = ? AND key IN ({placeholders}) AND locked = 0",
                             [path] + list(meta_keys),
                         )
-                    if file_hash and tag_keys:
+                    if source and tag_keys:
                         placeholders = ",".join(["?"] * len(tag_keys))
                         cur.execute(
-                            f"DELETE FROM tags WHERE file_hash = ? AND key IN ({placeholders}) AND locked = 0",
-                            [file_hash] + list(tag_keys),
+                            f"""DELETE FROM tags WHERE file_hash = (SELECT file_hash FROM sources WHERE source = ?)
+                            AND key IN ({placeholders}) AND locked = 0""",
+                            [source] + list(tag_keys),
                         )
             finally:
                 cur.close()

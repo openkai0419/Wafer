@@ -7,7 +7,6 @@ from wafer.qt.commands.command.core import (
     CommandRegistry,
     create_command_from_meta,
     register_command_defs,
-    validate_command_args,
 )
 from wafer.qt.commands.command.menu import normalize_command_meta
 from wafer.qt.commands.command.state import CommandOptionStore
@@ -28,87 +27,10 @@ def _isolate_option_store(tmp_path):
     store._reconfigure(tmp_path / "opts.json")
 
 
-def _make_meta(path="test.cmd", params=None, **kw):
-    return CommandMeta(path=path, display="Test", params=params or [], func=lambda ctx: "ok", **kw)
-
-
 def _register(meta):
     normalize_command_meta([], meta)
     register_command_defs([meta])
     return meta
-
-
-class TestValidateCommandArgs:
-    def test_empty_params_empty_args(self):
-        meta = _make_meta()
-        meta.id = "test.cmd"
-        validate_command_args(meta, {}, require_all=True)
-
-    def test_require_all_missing(self):
-        meta = _make_meta(params=[CommandParam(name="step", value=1)])
-        meta.id = "test.cmd"
-        with pytest.raises(ValueError, match="Missing args"):
-            validate_command_args(meta, {}, require_all=True)
-
-    def test_require_all_ok(self):
-        meta = _make_meta(params=[CommandParam(name="step", value=1)])
-        meta.id = "test.cmd"
-        validate_command_args(meta, {"step": 5}, require_all=True)
-
-    def test_extra_args(self):
-        meta = _make_meta()
-        meta.id = "test.cmd"
-        with pytest.raises(ValueError, match="Unknown args"):
-            validate_command_args(meta, {"bogus": 1})
-
-    def test_type_mismatch(self):
-        meta = _make_meta(params=[CommandParam(name="step", value=1)])
-        meta.id = "test.cmd"
-        with pytest.raises(TypeError, match="expected int"):
-            validate_command_args(meta, {"step": "bad"})
-
-    def test_int_accepted_for_float(self):
-        meta = _make_meta(params=[CommandParam(name="ratio", value=1.0)])
-        meta.id = "test.cmd"
-        validate_command_args(meta, {"ratio": 2})
-
-    def test_choices_violation(self):
-        meta = _make_meta(params=[CommandParam(name="mode", value=("a", "b"))])
-        meta.id = "test.cmd"
-        with pytest.raises(ValueError, match="not in"):
-            validate_command_args(meta, {"mode": "c"})
-
-    def test_choices_ok(self):
-        meta = _make_meta(params=[CommandParam(name="mode", value=("a", "b"))])
-        meta.id = "test.cmd"
-        validate_command_args(meta, {"mode": "a"})
-
-    def test_min_violation(self):
-        meta = _make_meta(params=[CommandParam(name="n", value=10, min_value=0)])
-        meta.id = "test.cmd"
-        with pytest.raises(ValueError, match="< min"):
-            validate_command_args(meta, {"n": -1})
-
-    def test_max_violation(self):
-        meta = _make_meta(params=[CommandParam(name="n", value=10, max_value=100)])
-        meta.id = "test.cmd"
-        with pytest.raises(ValueError, match="> max"):
-            validate_command_args(meta, {"n": 200})
-
-    def test_none_value_skips_checks(self):
-        meta = _make_meta(params=[CommandParam(name="mode", value=("a", "b"), default=None)])
-        meta.id = "test.cmd"
-        validate_command_args(meta, {"mode": None})
-
-    def test_partial_ok(self):
-        meta = _make_meta(
-            params=[
-                CommandParam(name="a", value=1),
-                CommandParam(name="b", value=2),
-            ]
-        )
-        meta.id = "test.cmd"
-        validate_command_args(meta, {"a": 10})
 
 
 class TestBridgeCommand:
@@ -279,14 +201,6 @@ class TestBridgeCommand:
         assert captured["foo"] == "bar"
         assert captured["source"] == "run"
 
-    def test_run_extras_none(self):
-        called = {}
-        meta = CommandMeta(path="t.noext", display="NE", func=lambda ctx: called.update(ran=True))
-        _register(meta)
-        Command, _ = self._import_bridge()
-        Command.run("t.noext")
-        assert called.get("ran")
-
     def test_run_drag_command_without_event_raises(self):
         meta = CommandMeta(
             path="t.dragcmd",
@@ -312,60 +226,6 @@ class TestBridgeCommand:
         Command, _ = self._import_bridge()
         with pytest.raises(ValueError, match="requires event"):
             Command.run("t.dropcmd")
-
-
-class TestCommandContextInfo:
-    def test_private_fields_not_accessible_via_get(self):
-        from wafer.qt.commands.command.context import CommandContext
-
-        ctx = CommandContext.build(None, "*", source="test")
-        assert ctx.get("_widget") is None
-        assert ctx.get("_scope") is None
-        assert ctx.get("_source") is None
-
-    def test_build_stores_widget_scope_source(self):
-        from wafer.qt.commands.command.context import CommandContext
-
-        widget = object()
-        ctx = CommandContext.build(widget, "myscope", source="mouse")
-        assert ctx._widget is widget
-        assert ctx._scope == "myscope"
-        assert ctx._source == "mouse"
-
-    def test_get_public_fields_accessible(self):
-        from wafer.qt.commands.command.context import CommandContext
-
-        ctx = CommandContext()
-        ctx.wheel_steps = 5
-        assert ctx.get("wheel_steps") == 5
-
-    def test_get_event_accessible(self):
-        from wafer.qt.commands.command.context import CommandContext
-
-        evt = object()
-        ctx = CommandContext()
-        ctx.event = evt
-        assert ctx.get("event") is evt
-
-    def test_widget_cache_not_accessible_via_get(self):
-        from wafer.qt.commands.command.context import CommandContext
-
-        ctx = CommandContext()
-        assert ctx.get("_widget_cache") is None
-
-    def test_event_always_set_in_build(self):
-        from wafer.qt.commands.command.context import CommandContext
-
-        evt = object()
-        ctx = CommandContext.build(None, "*", source="mouse", event=evt)
-        assert ctx.event is evt
-
-    def test_event_set_for_drop_source(self):
-        from wafer.qt.commands.command.context import CommandContext
-
-        evt = object()
-        ctx = CommandContext.build(None, "*", source="drop", event=evt)
-        assert ctx.event is evt
 
 
 class TestInvokeRequiredParams:
@@ -405,11 +265,6 @@ class TestInvokeRequiredParams:
         Command, _ = self._import_bridge()
         Command.invoke("t.reqfill", session="A")
         assert captured["session"] == "A"
-
-    def test_validate_skips_dynamic_choices(self):
-        meta = _make_meta(params=[CommandParam(name="x", value=lambda: ["a", "b"])])
-        meta.id = "t.dyn"
-        validate_command_args(meta, {"x": "z"})
 
 
 class TestIsValueSatisfied:

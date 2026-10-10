@@ -1,7 +1,6 @@
 import json
 
 from extensions.text_generation.comfyui_parser import ComfyUiParser
-from wafer.plugin.parser.base import BaseSingletonParser, ParserResult
 
 PROMPT = {
     "3": {"class_type": "KSampler", "inputs": {"seed": 42, "steps": 20, "model": ["4", 0]}},
@@ -13,23 +12,6 @@ WORKFLOW = {"nodes": [{"id": 3, "type": "KSampler"}], "links": []}
 class TestComfyUiParser:
     def setup_method(self):
         self.parser = ComfyUiParser()
-
-    def test_inherits_singleton(self):
-        assert isinstance(self.parser, BaseSingletonParser)
-
-    def test_name_matches_prefix(self):
-        assert self.parser.NAME == "comfyui"
-
-    def test_trigger_keys(self):
-        assert self.parser.TRIGGER_KEYS == (
-            "exiftool.PNG:Prompt",
-            "exiftool.PNG:Workflow",
-            "exiftool.IFD0:Model",
-            "exiftool.IFD0:Make",
-            "ffmpeg.Tag/prompt",
-            "ffmpeg.Tag/workflow",
-            "ffmpeg.Tag/comment",
-        )
 
     def test_png_prompt_and_workflow(self):
         metadata = {"exiftool.PNG:Prompt": json.dumps(PROMPT), "exiftool.PNG:Workflow": json.dumps(WORKFLOW)}
@@ -115,8 +97,3 @@ class TestComfyUiParser:
         metadata = {"exiftool.PNG:Prompt": "not json"}
         result = self.parser.process("a.png", (100, 1.0), metadata)
         assert result.status is False
-
-    def test_result_type(self):
-        metadata = {"exiftool.PNG:Prompt": json.dumps(PROMPT)}
-        result = self.parser.process("a.png", (100, 1.0), metadata)
-        assert isinstance(result, ParserResult)

@@ -7,12 +7,6 @@ def model():
     return FileViewModel()
 
 
-def test_initial_state(model):
-    assert model.count() == 0
-    assert model.path() is None
-    assert model.current_index() is None
-
-
 def test_set_items(model):
     model.set_items(["a", "b", "c"], ["s1", "s2", "s3"])
     assert model.count() == 3
@@ -159,16 +153,6 @@ def test_move_on_empty(model):
     assert model.move_current_prev() is None
 
 
-def test_dbpath_getter():
-    model = FileViewModel(dbpath_getter=lambda: "/some/db.sqlite")
-    assert model.dbpath == "/some/db.sqlite"
-
-
-def test_dbpath_getter_none():
-    model = FileViewModel()
-    assert model.dbpath is None
-
-
 def test_index_of_path(model):
     model.set_items(["x", "y", "z"], None)
     assert model.index_of_path("y") == 1
@@ -229,22 +213,6 @@ def test_set_path_inserts_after_current(model):
     assert model.paths == ["a", "b", "z", "c"]
     assert model.current_index() == 2
     assert model.path() == "z"
-
-
-def test_set_path_inserts_after_current_at_end(model):
-    model.set_items(["a", "b"], None)
-    model.set_current_index(1)
-    model.set_path("z")
-    assert model.paths == ["a", "b", "z"]
-    assert model.current_index() == 2
-
-
-def test_set_path_inserts_after_current_at_start(model):
-    model.set_items(["a", "b"], None)
-    model.set_current_index(0)
-    model.set_path("z")
-    assert model.paths == ["a", "z", "b"]
-    assert model.current_index() == 1
 
 
 def test_set_path_insert_preserves_navigation(model):

@@ -750,11 +750,6 @@ class GridViewDropCommands(ActionKit.DragMenuBase):
         return MimeDataParser().parse(mime)
 
     @staticmethod
-    def _drop_target_dir(ctx, view) -> str | None:
-        source = ctx.get("source")
-        return GridViewDropCommands._directory_from_source(str(source)) if source else None
-
-    @staticmethod
     def _hover_index(ctx, view) -> int | None:
         idx = view.index_at_pos(ctx.pos)
         return int(idx) if idx is not None else None
@@ -767,14 +762,6 @@ class GridViewDropCommands(ActionKit.DragMenuBase):
             return None
         directory = GridViewDropCommands._directory_from_source(str(source))
         return GridDropTarget(directory, kind, idx) if directory else None
-
-    @staticmethod
-    def _drop_target_dir_from_hover(ctx, view, items) -> str | None:
-        idx = GridViewDropCommands._hover_index(ctx, view)
-        if idx is not None:
-            target = GridViewDropCommands._target_from_index(items, idx, "hover")
-            return target.directory if target else None
-        return GridViewDropCommands._drop_target_dir(ctx, view)
 
     @staticmethod
     def _nearest_index(ctx, view) -> int | None:

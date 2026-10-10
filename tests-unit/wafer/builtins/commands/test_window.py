@@ -178,3 +178,30 @@ class TestWebUI:
         window_commands.open_webui()
 
         assert spawned == [("--webui",)]
+
+
+class TestWindowRestartCommands:
+    def test_restart_commands_registered(self):
+        cmds = window_commands.WindowRestartCommands.commands()
+        paths = [c.path for c in cmds if hasattr(c, "path")]
+        assert "win.restart_all" in paths
+        assert "win.restart_tray" in paths
+        assert "win.restart_viewer" in paths
+
+    def test_restart_tray_calls_process(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr("wafer.builtins.commands.window.installer_queue.has_pending_queue", lambda _dir: False)
+        monkeypatch.setattr(
+            "wafer.builtins.commands.window.AppProcess",
+            type(
+                "",
+                (),
+                {
+                    "terminate_cmd": staticmethod(lambda *a, **kw: calls.append(("terminate", a))),
+                    "new_main": staticmethod(lambda *a: calls.append(("new_main", a))),
+                },
+            )(),
+        )
+        window_commands.restart_tray(MagicMock())
+        assert ("terminate", ("--tray",)) in calls
+        assert ("new_main", ("--tray",)) in calls

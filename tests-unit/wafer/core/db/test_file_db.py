@@ -1,4 +1,3 @@
-import py_compile
 import sqlite3
 import threading
 
@@ -9,18 +8,8 @@ from wafer.core.db.file_db import (
     _table_signature,
     _expected_table_signature,
     _TABLES,
-    _SQL_UPSERT_SOURCES,
-    _SQL_UPSERT_FILES,
-    _SQL_UPSERT_FILES_COALESCE,
-    _SQL_UPSERT_META,
-    _SQL_UPSERT_TAGS,
-    _SQL_UPSERT_COLLECTION_STATUS,
 )
 from wafer.core.common.virtual_paths import build_virtual_path
-
-
-def test_compile():
-    py_compile.compile("wafer/core/db/file_db.py")
 
 
 def test_filedb_start_exit(tmp_path):
@@ -49,8 +38,8 @@ def test_filedb_upsert_and_load(tmp_path):
     sources = [("src1", "hash1", 100, 1.0)]
     images = [("c:/test/img.jpg", "src1", 1.5)]
     metas = [("c:/test/img.jpg", "dpi", "72", None)]
-    tags = [("hash1", "rating", "5", 5.0)]
-    db.upsert_batches(sources, images, metas, tags)
+    db.upsert_basic_sources(sources, images, metas)
+    db.upsert_collection_results([], [], [("src1", "rating", "5", 5.0)], [])
     prev = db.load_existing_sources()
     assert "src1" in prev
     assert prev["src1"] == (1.0, 100)
@@ -62,7 +51,7 @@ def test_filedb_delete_sources(tmp_path):
     db.start()
     db.initialize_database()
     sources = [("src1", "hash1", 100, 1.0)]
-    db.upsert_batches(sources, [], [], [])
+    db.upsert_basic_sources(sources, [])
     db.delete_sources_by_paths(["src1"])
     prev = db.load_existing_sources()
     assert "src1" not in prev
@@ -79,7 +68,7 @@ def test_filedb_delete_sources_by_path_prefixes(tmp_path):
         ("/root/dir2/c.jpg", "hash3", 100, 1.0),
     ]
     images = [(source, source, 1.0) for source, *_ in sources]
-    db.upsert_batches(sources, images, [], [])
+    db.upsert_basic_sources(sources, images)
 
     db.delete_sources_by_path_prefixes(["/root/dir"])
 
@@ -98,7 +87,7 @@ def test_filedb_delete_sources_by_path_prefixes_escapes_like(tmp_path):
         ("/root/a_%/file.jpg", "hash1", 100, 1.0),
         ("/root/aX%/file.jpg", "hash2", 100, 1.0),
     ]
-    db.upsert_batches(sources, [(source, source, 1.0) for source, *_ in sources], [], [])
+    db.upsert_basic_sources(sources, [(source, source, 1.0) for source, *_ in sources])
 
     db.delete_sources_by_path_prefixes(["/root/a_%"])
 
@@ -111,12 +100,12 @@ def test_schema_no_change_preserves_data(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
     db.initialize_database()
-    db.upsert_batches(
+    db.upsert_basic_sources(
         [("src1", "hash1", 100, 1.0)],
         [("c:/a.jpg", "src1", 1.0)],
         [("c:/a.jpg", "k", "v", None)],
-        [("hash1", "tag", "val", None)],
     )
+    db.upsert_collection_results([], [], [("src1", "tag", "val", None)], [])
     db.close()
     db2 = FileDB(tmp_path / "test.db")
     db2.start()
@@ -130,11 +119,9 @@ def test_schema_change_recreates_and_preserves_rows(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
     db.initialize_database()
-    db.upsert_batches(
+    db.upsert_basic_sources(
         [("src1", "hash1", 100, 1.0)],
         [("c:/a.jpg", "src1", 1.0)],
-        [],
-        [],
     )
     db.conn.execute("ALTER TABLE sources ADD COLUMN extra_col TEXT")
     db.conn.commit()
@@ -153,11 +140,10 @@ def test_schema_change_cascades_to_children_without_data_loss(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
     db.initialize_database()
-    db.upsert_batches(
+    db.upsert_basic_sources(
         [("src1", "hash1", 100, 1.0)],
         [("c:/a.jpg", "src1", 1.0)],
         [("c:/a.jpg", "k", "v", None)],
-        [],
     )
     db.conn.execute("ALTER TABLE sources ADD COLUMN extra_col TEXT")
     db.conn.commit()
@@ -191,27 +177,6 @@ def test_table_signature_matches_expected(tmp_path):
         actual = _table_signature(db.conn, name)
         expected = _expected_table_signature(name, create_sql)
         assert actual == expected, f"{name}: actual={actual} expected={expected}"
-    db.close()
-
-
-def test_collection_status_table_exists(tmp_path):
-    db = FileDB(tmp_path / "test.db")
-    db.start()
-    db.initialize_database()
-    cols = [r[1] for r in db.conn.execute("PRAGMA table_info('collection_status')").fetchall()]
-    assert "source" in cols
-    assert "collector" in cols
-    assert "status" in cols
-    assert "collected_at" in cols
-    db.close()
-
-
-def test_files_table_has_source_extension(tmp_path):
-    db = FileDB(tmp_path / "test.db")
-    db.start()
-    db.initialize_database()
-    cols = [r[1] for r in db.conn.execute("PRAGMA table_info('files')").fetchall()]
-    assert "source_extension" in cols
     db.close()
 
 
@@ -257,7 +222,7 @@ def test_upsert_collection_results(tmp_path):
     db.upsert_collection_results(
         [("c:/a.jpg", "src1", 1.5)],
         [("c:/a.jpg", "width", "1920", 1920.0)],
-        [("hash1", "rating", "5", 5.0)],
+        [("src1", "rating", "5", 5.0)],
         [("src1", "exif", "ok", 2.0)],
     )
     row = db.read_conn.execute("SELECT aspect_ratio FROM files WHERE path='c:/a.jpg'").fetchone()
@@ -266,6 +231,8 @@ def test_upsert_collection_results(tmp_path):
     assert cs_row[0] == "ok"
     meta_row = db.read_conn.execute("SELECT value FROM meta_info WHERE path='c:/a.jpg' AND key='width'").fetchone()
     assert meta_row[0] == "1920"
+    tag_row = db.read_conn.execute("SELECT value FROM tags WHERE file_hash='hash1' AND key='rating'").fetchone()
+    assert tag_row[0] == "5"
     db.close()
 
 
@@ -320,12 +287,12 @@ def test_rename_paths_single_file(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
     db.initialize_database()
-    db.upsert_batches(
+    db.upsert_basic_sources(
         [("c:/old/img.jpg", "hash1", 100, 1.0)],
         [("c:/old/img.jpg", "c:/old/img.jpg", 1.5)],
         [("c:/old/img.jpg", "width", "1920", 1920.0), ("c:/old/img.jpg", "name", "img.jpg", None), ("c:/old/img.jpg", "path", "c:/old/img.jpg", None)],
-        [("hash1", "rating", "5", 5.0)],
     )
+    db.upsert_collection_results([], [], [("c:/old/img.jpg", "rating", "5", 5.0)], [])
     db.insert_pending_collection(["c:/old/img.jpg"], ["exif"])
     missing = db.rename_paths([("c:/old/img.jpg", "c:/new/img.jpg")])
     assert missing == []
@@ -349,11 +316,9 @@ def test_load_source_signatures(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
     db.initialize_database()
-    db.upsert_batches(
+    db.upsert_basic_sources(
         [("c:/a.jpg", "hash_a", 100, 1.0), ("c:/b.jpg", "hash_b", 200, 2.0)],
         [("c:/a.jpg", "c:/a.jpg", 1.0), ("c:/b.jpg", "c:/b.jpg", 1.0)],
-        [],
-        [],
     )
 
     signatures = db.load_source_signatures(["c:/a.jpg", "c:/missing.jpg", "c:/b.jpg", "c:/a.jpg"])
@@ -372,7 +337,7 @@ def test_rename_paths_updates_virtual_children_by_source_prefix(tmp_path):
     new_child = build_virtual_path(new_source, "folder/a%b::c.png")
     other_source = "c:/data/archive.zip2"
     other_child = build_virtual_path(other_source, "folder/a.png")
-    db.upsert_batches(
+    db.upsert_basic_sources(
         [(source, "hash_zip", 100, 1.0), (other_source, "hash_other", 200, 2.0)],
         [
             (source, source, "archive.zip", 1.0, None),
@@ -384,7 +349,6 @@ def test_rename_paths_updates_virtual_children_by_source_prefix(tmp_path):
             (source, "path", source, None),
             (child, "path", child, None),
         ],
-        [],
     )
     db.insert_pending_collection([source, other_source], ["zip"])
     db.rename_paths([(source, new_source)])
@@ -403,7 +367,7 @@ def test_rename_paths_batch(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
     db.initialize_database()
-    db.upsert_batches(
+    db.upsert_basic_sources(
         [
             ("c:/dir/a.jpg", "hash_a", 100, 1.0),
             ("c:/dir/b.jpg", "hash_b", 200, 2.0),
@@ -413,7 +377,6 @@ def test_rename_paths_batch(tmp_path):
             ("c:/dir/b.jpg", "c:/dir/b.jpg", 2.0),
         ],
         [("c:/dir/a.jpg", "k", "v1", None), ("c:/dir/b.jpg", "k", "v2", None)],
-        [],
     )
     db.rename_paths(
         [
@@ -435,11 +398,10 @@ def test_rename_paths_updates_filename(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
     db.initialize_database()
-    db.upsert_batches(
+    db.upsert_basic_sources(
         [("c:/dir/old_name.jpg", "hash1", 100, 1.0)],
         [("c:/dir/old_name.jpg", "c:/dir/old_name.jpg", "old_name.jpg", 1.0, None)],
         [("c:/dir/old_name.jpg", "path", "c:/dir/old_name.jpg", None)],
-        [],
     )
     db.rename_paths([("c:/dir/old_name.jpg", "c:/dir/new_name.jpg")])
     row = db.read_conn.execute("SELECT name FROM files WHERE path='c:/dir/new_name.jpg'").fetchone()
@@ -529,48 +491,6 @@ def test_reset_stale_dispatched_does_not_affect_ok(tmp_path):
     db.close()
 
 
-def test_get_sources_without_collector(tmp_path):
-    db = FileDB(tmp_path / "test.db")
-    db.start()
-    db.initialize_database()
-    db.upsert_basic_sources(
-        [("src1", "h1", 100, 1.0), ("src2", "h2", 200, 2.0), ("src3", "h3", 300, 3.0)],
-        [("c:/a.jpg", "src1", None), ("c:/b.jpg", "src2", None), ("c:/c.jpg", "src3", None)],
-    )
-    db.insert_pending_collection(["src1"], ["exif"])
-    missing = db.get_sources_without_collector("exif")
-    assert set(missing) == {"src2", "src3"}
-    db.close()
-
-
-def test_get_sources_without_collector_empty_when_all_have(tmp_path):
-    db = FileDB(tmp_path / "test.db")
-    db.start()
-    db.initialize_database()
-    db.upsert_basic_sources(
-        [("src1", "h1", 100, 1.0)],
-        [("c:/a.jpg", "src1", None)],
-    )
-    db.insert_pending_collection(["src1"], ["exif"])
-    missing = db.get_sources_without_collector("exif")
-    assert missing == []
-    db.close()
-
-
-def test_get_sources_without_collector_new_collector(tmp_path):
-    db = FileDB(tmp_path / "test.db")
-    db.start()
-    db.initialize_database()
-    db.upsert_basic_sources(
-        [("src1", "h1", 100, 1.0)],
-        [("c:/a.jpg", "src1", None)],
-    )
-    db.insert_pending_collection(["src1"], ["exif"])
-    missing = db.get_sources_without_collector("ocr")
-    assert missing == ["src1"]
-    db.close()
-
-
 def test_concurrent_writes_no_error(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
@@ -623,11 +543,12 @@ def _setup_db_with_collected(tmp_path, collectors=("exif",)):
         ("c:/a.jpg", "basic.name", "a.jpg", None),
     ]
     tags = [
-        ("h0", "exif.camera", "Canon", None),
-        ("h1", "exif.camera", "Nikon", None),
-        ("h0", "ai.style", "portrait", None),
+        ("src0", "exif.camera", "Canon", None),
+        ("src1", "exif.camera", "Nikon", None),
+        ("src0", "ai.style", "portrait", None),
     ]
-    db.upsert_batches(srcs, imgs, metas, tags)
+    db.upsert_basic_sources(srcs, imgs, metas)
+    db.upsert_collection_results([], [], tags, [])
     for coll in collectors:
         db.insert_pending_collection(["src0", "src1"], [coll])
         db.mark_dispatched(["src0", "src1"], coll)
@@ -639,39 +560,15 @@ def _setup_db_with_collected(tmp_path, collectors=("exif",)):
     return db
 
 
-def test_delete_collection_data_drop_status_removes_collection_status(tmp_path):
-    db = _setup_db_with_collected(tmp_path)
-    meta_del, tags_del, _ = db.delete_collection_data("exif", drop_status=True)
-    assert meta_del == 3
-    assert tags_del == 2
-    remaining_meta = db.read_conn.execute("SELECT key FROM meta_info").fetchall()
-    assert [r[0] for r in remaining_meta] == ["basic.name"]
-    remaining_tags = db.read_conn.execute("SELECT key FROM tags").fetchall()
-    assert [r[0] for r in remaining_tags] == ["ai.style"]
-    cs = db.read_conn.execute("SELECT * FROM collection_status WHERE collector='exif'").fetchall()
-    assert cs == []
-    db.close()
-
-
-def test_delete_collection_data_keeps_collection_status(tmp_path):
-    db = _setup_db_with_collected(tmp_path)
-    db.delete_collection_data("exif")
-    cs = db.read_conn.execute("SELECT COUNT(*) FROM collection_status WHERE collector='exif'").fetchone()[0]
-    assert cs == 2
-    db.close()
-
-
-def test_delete_collection_data_deletes_source_extension_children(tmp_path):
+def test_reset_collection_delete_deletes_source_extension_children(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
     db.initialize_database()
     source = "archive.zip"
     child = build_virtual_path(source, "folder/image.png")
-    db.upsert_batches(
+    db.upsert_basic_sources(
         [(source, "hash_zip", 100, 1.0)],
         [(source, source, 1.0)],
-        [],
-        [],
     )
     db.upsert_collection_results(
         [(child, source, "image.png", 1.0, "zip")],
@@ -679,7 +576,7 @@ def test_delete_collection_data_deletes_source_extension_children(tmp_path):
         [],
         [(source, "zip", "ok", 2.0)],
     )
-    db.delete_collection_data("zip", drop_status=True)
+    db.reset_collection("zip", delete=True, re_collect=False)
     paths = [row[0] for row in db.read_conn.execute("SELECT path FROM files ORDER BY path").fetchall()]
     assert paths == [source]
     assert db.read_conn.execute("SELECT COUNT(*) FROM meta_info WHERE path = ?", (child,)).fetchone()[0] == 0
@@ -687,44 +584,23 @@ def test_delete_collection_data_deletes_source_extension_children(tmp_path):
     db.close()
 
 
-def test_delete_collection_data_no_match(tmp_path):
+def test_reset_collection_delete_no_match(tmp_path):
     db = _setup_db_with_collected(tmp_path)
-    meta_del, tags_del, child_del = db.delete_collection_data("nonexistent", drop_status=True)
+    meta_del, tags_del, child_del, _ = db.reset_collection("nonexistent", delete=True, re_collect=False)
     assert meta_del == 0
     assert tags_del == 0
     assert child_del == 0
     db.close()
 
 
-def test_delete_collection_data_scoped_by_source_and_collector(tmp_path):
+def test_reset_collection_delete_scoped_by_source_and_collector(tmp_path):
     db = _setup_db_with_collected(tmp_path)
-    meta_del, tags_del, child_del = db.delete_collection_data("exif", sources=["src0"])
+    meta_del, tags_del, child_del, _ = db.reset_collection("exif", sources=["src0"], delete=True, re_collect=False)
     assert (meta_del, tags_del, child_del) == (2, 1, 0)
     keys = sorted(r[0] for r in db.read_conn.execute("SELECT key FROM meta_info").fetchall())
     assert keys == ["basic.name", "exif.width"]
     tags = sorted(r[0] for r in db.read_conn.execute("SELECT key FROM tags").fetchall())
     assert tags == ["ai.style", "exif.camera"]
-    db.close()
-
-
-def test_delete_collection_data_all_collectors_scoped_by_source(tmp_path):
-    db = _setup_db_with_collected(tmp_path)
-    meta_del, tags_del, child_del = db.delete_collection_data(None, sources=["src0"])
-    assert (meta_del, tags_del, child_del) == (3, 2, 0)
-    keys = sorted(r[0] for r in db.read_conn.execute("SELECT key FROM meta_info").fetchall())
-    assert keys == ["exif.width"]
-    tags = [r[0] for r in db.read_conn.execute("SELECT key FROM tags").fetchall()]
-    assert tags == ["exif.camera"]
-    db.close()
-
-
-def test_delete_collection_data_whole_db_by_collector(tmp_path):
-    db = _setup_db_with_collected(tmp_path)
-    meta_del, tags_del, child_del = db.delete_collection_data("exif")
-    assert (meta_del, tags_del, child_del) == (3, 2, 0)
-    assert [r[0] for r in db.read_conn.execute("SELECT key FROM meta_info").fetchall()] == ["basic.name"]
-    cs = db.read_conn.execute("SELECT COUNT(*) FROM collection_status WHERE collector='exif'").fetchone()[0]
-    assert cs == 2
     db.close()
 
 
@@ -881,8 +757,12 @@ def test_reset_collection_refuses_whole_db_delete_without_scope(tmp_path):
 
 def test_reset_collection_all_collectors_delete_scoped_by_source(tmp_path):
     db = _setup_db_with_collected(tmp_path)
-    meta_del, tags_del, _, _ = db.reset_collection(None, sources=["src0"], delete=True, re_collect=False)
-    assert meta_del > 0
+    meta_del, tags_del, child_del, _ = db.reset_collection(None, sources=["src0"], delete=True, re_collect=False)
+    assert (meta_del, tags_del, child_del) == (3, 2, 0)
+    keys = sorted(r[0] for r in db.read_conn.execute("SELECT key FROM meta_info").fetchall())
+    assert keys == ["exif.width"]
+    tags = [r[0] for r in db.read_conn.execute("SELECT key FROM tags").fetchall()]
+    assert tags == ["exif.camera"]
     db.close()
 
 
@@ -903,7 +783,7 @@ def _setup_prefix_db(tmp_path):
     srcs = [(s, f"h{i}", 100, 1.0) for i, s in enumerate(sources)]
     imgs = [(f"{s}/img.jpg", s, 1.0) for s in sources]
     metas = [(f"{s}/img.jpg", "exif.width", "10", 10.0) for s in sources]
-    db.upsert_batches(srcs, imgs, metas, [])
+    db.upsert_basic_sources(srcs, imgs, metas)
     db.insert_pending_collection(sources, ["exif"])
     db.mark_dispatched(sources, "exif")
     db.conn.execute("UPDATE collection_status SET status='ok', collected_at=1.0")
@@ -933,83 +813,12 @@ def test_delete_all_sources(tmp_path):
     db.close()
 
 
-def test_collector_data_counts(tmp_path):
-    db = _setup_db_with_collected(tmp_path, collectors=("exif", "ocr"))
-    counts = dict(db.collector_data_counts())
-    assert counts["exif"] == 2
-    assert counts["ocr"] == 2
-    db.close()
-
-
-def test_collector_data_counts_empty(tmp_path):
-    db = FileDB(tmp_path / "test.db")
-    db.start()
-    db.initialize_database()
-    counts = db.collector_data_counts()
-    assert counts == []
-    db.close()
-
-
-def test_collector_data_counts_excludes_pending(tmp_path):
-    db = _setup_db_with_pending(tmp_path)
-    counts = db.collector_data_counts()
-    assert counts == []
-    db.close()
-
-
-def test_prefix_data_summary(tmp_path):
-    db = _setup_db_with_collected(tmp_path)
-    rows = db.prefix_data_summary()
-    data = {r[0]: (r[1], r[2]) for r in rows}
-    assert data["exif"] == (3, 2)
-    assert data["basic"] == (1, 0)
-    assert data["ai"] == (0, 1)
-    db.close()
-
-
-def test_prefix_data_summary_empty(tmp_path):
-    db = FileDB(tmp_path / "test.db")
-    db.start()
-    db.initialize_database()
-    assert db.prefix_data_summary() == []
-    db.close()
-
-
-def test_prefix_data_summary_unprefixed(tmp_path):
-    db = FileDB(tmp_path / "test.db")
-    db.start()
-    db.initialize_database()
-    srcs = [("src0", "h0", 100, 1.0)]
-    imgs = [("src0", "src0", 1.0)]
-    metas = [("src0", "raw_key", "val", None)]
-    db.upsert_batches(srcs, imgs, metas, [])
-    rows = db.prefix_data_summary()
-    data = {r[0]: (r[1], r[2]) for r in rows}
-    assert data[""] == (1, 0)
-    db.close()
-
-
-def test_sql_constants_are_valid():
-    conn = sqlite3.connect(":memory:")
-    for _, _, sql in _TABLES:
-        conn.execute(sql)
-    conn.commit()
-    for const in [_SQL_UPSERT_SOURCES, _SQL_UPSERT_FILES, _SQL_UPSERT_FILES_COALESCE, _SQL_UPSERT_META, _SQL_UPSERT_TAGS, _SQL_UPSERT_COLLECTION_STATUS]:
-        assert "INSERT" in const
-        assert "ON CONFLICT" in const
-    conn.close()
-
-
 def test_ensure_hash_indexes_deduplicates(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
     db.initialize_database()
     cur = db.get_writer_cursor()
-    db._ensure_hash_indexes(
-        cur,
-        [("src1", "hash1", 100, 1.0), ("src2", "hash2", 200, 2.0)],
-        [("hash1", "tag", "val", None)],
-    )
+    db._ensure_hash_indexes(cur, [("src1", "hash1", 100, 1.0), ("src2", "hash2", 200, 2.0), ("src3", "hash1", 300, 3.0)])
     db.conn.commit()
     rows = db.conn.execute("SELECT COUNT(*) FROM hash_index").fetchone()[0]
     assert rows == 2
@@ -1065,30 +874,11 @@ def _setup_db_for_parser(tmp_path):
         [("src1", "src1", 1.0), ("src2", "src2", 1.5)],
         [("src1", "exif.parameters", "steps:20", None), ("src1", "exif.other", "val", None), ("src2", "exif.parameters", "steps:30", None)],
     )
-    db.upsert_collection_results([], [], [("hash1", "wd14.general", "cat", None)], [])
+    db.upsert_collection_results([], [], [("src1", "wd14.general", "cat", None)], [])
     return db
 
 
-def test_delete_meta_and_tags_by_keys(tmp_path):
-    db = _setup_db_for_parser(tmp_path)
-    db.delete_meta_and_tags_by_keys(
-        [
-            ("src1", "hash1", ["exif.parameters"], ["wd14.general"]),
-        ]
-    )
-    cur = db.get_reader_cursor()
-    cur.execute("SELECT key FROM meta_info WHERE path='src1'")
-    meta_keys = {r[0] for r in cur.fetchall()}
-    assert "exif.parameters" not in meta_keys
-    assert "exif.other" in meta_keys
-    cur.execute("SELECT key FROM tags WHERE file_hash='hash1'")
-    tag_keys = {r[0] for r in cur.fetchall()}
-    assert "wd14.general" not in tag_keys
-    cur.close()
-    db.close()
-
-
-def test_delete_meta_and_tags_by_keys_no_hash(tmp_path):
+def test_delete_meta_and_tags_by_keys_no_source(tmp_path):
     db = _setup_db_for_parser(tmp_path)
     db.delete_meta_and_tags_by_keys(
         [

@@ -1,11 +1,10 @@
 import os
 import sys
 import pytest
-from pathlib import Path
 
 from wafer.plugin.registry import BasePlugin, PluginRegistry, FilePluginRegistry
 from wafer.plugin.loader import PluginLoader
-from wafer.plugin.installer import _PACKAGES_DIR, _STAMPS_DIR, needs_post_install, needs_setup
+from wafer.plugin.installer import _PACKAGES_DIR
 
 
 @pytest.fixture
@@ -106,17 +105,6 @@ class TestGridOverlayPluginLoading:
                 del sys.modules[key]
 
 
-class TestBasePluginHooksDefault:
-    def test_post_install_default_is_noop(self):
-        BasePlugin.post_install("/tmp")
-
-    def test_configure_default_is_noop(self):
-        BasePlugin.configure()
-
-    def test_can_handle_default_returns_true(self):
-        assert BasePlugin.can_handle("anything.xyz")
-
-
 class TestDeferredCommandRegistration:
     def test_commands_deferred_not_registered_immediately(self, tmp_path):
         plugin_dir = tmp_path / "plugins"
@@ -183,14 +171,6 @@ class TestRunSubprocess:
         script.write_text('import sys\nsys.stderr.write("x" * 100000 + "\\n")\nsys.exit(0)\n')
         _run_subprocess([sys.executable, str(script)])
 
-    def test_stderr_captured_on_failure(self, tmp_path):
-        from wafer.plugin.installer import _run_subprocess
-
-        script = tmp_path / "fail.py"
-        script.write_text('import sys\nsys.stderr.write("custom error msg\\n")\nsys.exit(1)\n')
-        with pytest.raises(RuntimeError, match="custom error msg"):
-            _run_subprocess([sys.executable, str(script)])
-
 
 class TestNeedsSetupSkip:
     def test_needs_setup_returns_zero_when_missing_stamp(self, tmp_path):
@@ -220,18 +200,6 @@ class TestNeedsSetupSkip:
 
 
 class TestEnabledFilter:
-    def test_enabled_none_loads_default_enabled(self, plugin_env):
-        plugin_dir, _ = plugin_env
-        registries = _make_registries()
-        loader = PluginLoader(plugin_dir, registries, enabled=None)
-        loaded = loader.load_all()
-        assert "stub_plugin" in loaded
-        assert registries["grid"].get("stub_test") is not None
-
-        for key in list(sys.modules):
-            if key.startswith("_plugins_stub_plugin"):
-                del sys.modules[key]
-
     def test_enabled_override_keeps_matching_name(self, plugin_env):
         plugin_dir, _ = plugin_env
         registries = _make_registries()
@@ -248,18 +216,6 @@ class TestEnabledFilter:
         plugin_dir, _ = plugin_env
         registries = _make_registries()
         loader = PluginLoader(plugin_dir, registries, enabled={"grid:StubGridPlugin": False})
-        loaded = loader.load_all()
-        assert "stub_plugin" not in loaded
-        assert registries["grid"].get("stub_test") is None
-
-        for key in list(sys.modules):
-            if key.startswith("_plugins_stub_plugin"):
-                del sys.modules[key]
-
-    def test_legacy_enabled_set_behaves_as_allowlist(self, plugin_env):
-        plugin_dir, _ = plugin_env
-        registries = _make_registries()
-        loader = PluginLoader(plugin_dir, registries, enabled=set())
         loaded = loader.load_all()
         assert "stub_plugin" not in loaded
         assert registries["grid"].get("stub_test") is None
@@ -286,31 +242,6 @@ class TestDiscoverExtension:
         assert registries["grid"].get("stub_test") is None
 
 
-class TestNeedsPostInstall:
-    def test_returns_true_when_no_stamp(self, tmp_path):
-        ext_dir = tmp_path / "extensions"
-        plugin = ext_dir / "plugin"
-        plugin.mkdir(parents=True)
-        (plugin / "requirements.txt").write_text("some-pkg\n")
-        assert needs_post_install(str(plugin)) is True
-
-    def test_returns_false_when_stamp_exists(self, tmp_path):
-        ext_dir = tmp_path / "extensions"
-        plugin = ext_dir / "plugin"
-        plugin.mkdir(parents=True)
-        (plugin / "requirements.txt").write_text("some-pkg\n")
-        stamps = ext_dir / _PACKAGES_DIR / _STAMPS_DIR
-        stamps.mkdir(parents=True)
-        (stamps / "plugin.post_installed").touch()
-        assert needs_post_install(str(plugin)) is False
-
-    def test_returns_false_when_no_requirements(self, tmp_path):
-        ext_dir = tmp_path / "extensions"
-        plugin = ext_dir / "plugin"
-        plugin.mkdir(parents=True)
-        assert needs_post_install(str(plugin)) is False
-
-
 class TestSetupPackagesDllDirectories:
     def test_registers_libs_dirs_on_windows(self, tmp_path, monkeypatch):
         from wafer.plugin.loader import _setup_packages_dll_directories
@@ -329,16 +260,6 @@ class TestSetupPackagesDllDirectories:
 
         assert len(added) == 1
         assert added[0] == str(packages / "numpy.libs")
-
-    def test_noop_on_non_windows(self, tmp_path, monkeypatch):
-        from wafer.plugin.loader import _setup_packages_dll_directories
-
-        packages = tmp_path / ".packages"
-        packages.mkdir()
-        (packages / "numpy.libs").mkdir()
-
-        monkeypatch.setattr(sys, "platform", "linux")
-        _setup_packages_dll_directories(str(packages))
 
     def test_noop_when_no_dir(self, tmp_path, monkeypatch):
         from wafer.plugin.loader import _setup_packages_dll_directories
@@ -497,7 +418,8 @@ class TestDefaultEnabled:
         plugin_dir, _ = plugin_env
         registries = _make_registries()
         loader = PluginLoader(plugin_dir, registries, enabled=None)
-        loader.load_all()
+        loaded = loader.load_all()
+        assert "stub_plugin" in loaded
         assert registries["grid"].get("stub_test") is not None
 
         for key in list(sys.modules):

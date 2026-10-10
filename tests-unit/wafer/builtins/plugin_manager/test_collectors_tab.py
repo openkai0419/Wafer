@@ -177,6 +177,17 @@ class TestCollectorsTab:
         per_db = tab.get_per_db_collectors()
         assert set(per_db["db1"]) == {"exif", "nai"}
 
+    def test_get_newly_disabled_no_changes(self, qtbot, _patch_paths):
+        setup, _ = _patch_paths
+        setup({"db1": ["exif"]})
+
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+
+        tab = CollectorsTab(collector_names=["exif"], parser_names=[])
+        qtbot.addWidget(tab)
+
+        assert tab.get_newly_disabled() == []
+
     def test_parser_only(self, qtbot, _patch_paths):
         setup, _ = _patch_paths
         setup({"db1": ["nai"]})

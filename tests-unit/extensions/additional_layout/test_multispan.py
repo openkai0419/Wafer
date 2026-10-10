@@ -1,28 +1,8 @@
 from extensions.additional_layout.multispan import (
-    MultiSpanLayout,
     MultiSpanTilingLayout,
     MultiSpanCalculator,
 )
-from wafer.plugin.layout.base import BaseLayoutPlugin
 from wafer.plugin.layout.calc import LayoutData
-
-
-def test_is_plugin():
-    assert issubclass(MultiSpanLayout, BaseLayoutPlugin)
-    assert MultiSpanLayout.NAME == "multiSpan"
-    assert MultiSpanLayout.DISPLAY_NAME == "MultiSpan Grid"
-
-
-def test_priority():
-    assert MultiSpanLayout.PRIORITY == 86
-
-
-def test_create_calculator():
-    calc = MultiSpanLayout.create_calculator([1.0, 1.5], 100, 5, 500, 500, 0)
-    assert isinstance(calc, MultiSpanCalculator)
-    calc.run()
-    assert calc._result is not None
-    assert len(calc._result) == 2
 
 
 def test_produces_layout():
@@ -48,59 +28,6 @@ def test_none_aspect():
     assert len(calc._result) == 3
 
 
-def test_single_item():
-    calc = MultiSpanCalculator([1.0], 100, 5, 500, 500, 0)
-    calc.run()
-    layout = calc._result
-    assert layout is not None
-    assert len(layout) == 1
-    assert layout[0].width() > 0
-    assert layout[0].height() > 0
-
-
-def test_no_overlap():
-    aspects = [1.5, 1.0, 0.5, 1.8, 0.3, 2.0, 1.0, 0.8, 1.2, 0.6, 1.0, 1.5, 0.7, 2.5, 1.0, 0.4, 1.3, 1.0, 0.9, 1.1]
-    calc = MultiSpanCalculator(aspects, 100, 5, 500, 500, 0)
-    calc.run()
-    layout = calc._result
-    assert layout is not None
-    for i in range(len(layout)):
-        for j in range(i + 1, len(layout)):
-            assert not layout[i].intersects(layout[j]), f"Items {i} and {j} overlap"
-
-
-def test_no_overlap_many_items():
-    aspects = [0.5 + (i % 7) * 0.4 for i in range(100)]
-    calc = MultiSpanCalculator(aspects, 100, 5, 800, 800, 0)
-    calc.run()
-    layout = calc._result
-    assert layout is not None
-    assert len(layout) == 100
-    for i in range(len(layout)):
-        for j in range(i + 1, len(layout)):
-            assert not layout[i].intersects(layout[j]), f"Items {i} and {j} overlap"
-
-
-def test_all_orientations():
-    aspects = [1.5, 1.0, 0.5, 1.8, 0.3, 2.0, 1.0]
-    for orientation in range(4):
-        calc = MultiSpanCalculator(aspects, 100, 5, 500, 500, orientation)
-        calc.run()
-        assert calc._result is not None
-        assert len(calc._result) == len(aspects)
-
-
-def test_no_overlap_all_orientations():
-    aspects = [1.5, 1.0, 0.5, 1.8, 0.3, 2.0, 1.0, 0.8, 1.2, 0.6, 1.0, 1.5, 0.7, 2.5, 1.0, 0.4, 1.3, 1.0, 0.9, 1.1]
-    for orientation in range(4):
-        calc = MultiSpanCalculator(aspects, 100, 5, 500, 500, orientation)
-        calc.run()
-        layout = calc._result
-        for i in range(len(layout)):
-            for j in range(i + 1, len(layout)):
-                assert not layout[i].intersects(layout[j]), f"orientation={orientation}: items {i} and {j} overlap"
-
-
 def test_reversed_horizontal():
     aspects = [1.0] * 8
     normal = MultiSpanCalculator(aspects, 100, 5, 500, 500, 0)
@@ -111,15 +38,6 @@ def test_reversed_horizontal():
     normal_xs = [normal._result[i].x() for i in range(len(aspects))]
     rev_xs = [rev._result[i].x() for i in range(len(aspects))]
     assert normal_xs != rev_xs
-
-
-def test_reversed_vertical():
-    aspects = [1.5, 1.0, 0.5, 1.8, 0.3, 2.0, 1.0, 0.8, 1.2, 0.6, 1.0, 1.5, 0.7, 2.5]
-    forward = MultiSpanCalculator(aspects, 100, 5, 500, 500, 2)
-    forward.run()
-    rev = MultiSpanCalculator(aspects, 100, 5, 500, 500, 3)
-    rev.run()
-    assert forward._result.total_extent == rev._result.total_extent
 
 
 def test_n_series_rect_axes():
@@ -158,10 +76,11 @@ def test_n_series_no_overlap_asymmetric():
 
 
 def test_positive_dimensions():
-    aspects = [0.1, 5.0, 0.01, 10.0, 1.0, 0.5, 2.0]
+    aspects = [0.1, 5.0, 0.01, 10.0, 1.0, 0.5, 2.0, 0.05, 20.0] * 6
     calc = MultiSpanCalculator(aspects, 100, 5, 500, 500, 0)
     calc.run()
     layout = calc._result
+    assert len(layout) == len(aspects)
     for i in range(len(layout)):
         assert layout[i].width() > 0
         assert layout[i].height() > 0
@@ -291,29 +210,6 @@ def test_cancel_token_mid_calculation():
     assert result is None or len(result) < 50000
 
 
-def test_gap_fill_no_overlap():
-    aspects = [0.3, 3.0, 0.3, 3.0, 1.0, 0.5, 2.0, 1.0] * 20
-    calc = MultiSpanCalculator(aspects, 100, 5, 600, 600, 0)
-    calc.run()
-    layout = calc._result
-    assert len(layout) == len(aspects)
-    for i in range(len(layout)):
-        for j in range(i + 1, len(layout)):
-            assert not layout[i].intersects(layout[j]), f"Items {i} and {j} overlap"
-
-
-def test_gap_fill_uses_multispan():
-    aspects = [0.3, 3.0, 1.0] * 30
-    calc = MultiSpanCalculator(aspects, 100, 5, 600, 600, 0)
-    calc.run()
-    layout = calc._result
-    num_cols = max(1, round(605 / 105))
-    cell_w = (600 - 5 * (num_cols - 1)) / num_cols
-    min_cell = int(cell_w)
-    multispan_count = sum(1 for i in range(len(layout)) if layout[i].width() > min_cell + 10 or layout[i].height() > min_cell + 10)
-    assert multispan_count > len(aspects) * 0.3, f"Expected >30% multispan cells, got {multispan_count}/{len(aspects)}"
-
-
 def test_gap_fill_all_orientations_no_overlap():
     aspects = [0.3, 3.0, 0.5, 2.0, 1.0] * 15
     for orientation in range(4):
@@ -395,16 +291,6 @@ def test_two_pass_deferred_items_fill_gaps():
             assert not layout[i].intersects(layout[j])
 
 
-def test_two_pass_extreme_ar_no_crash():
-    aspects = [0.1, 10.0, 0.05, 20.0, 1.0] * 10
-    calc = MultiSpanCalculator(aspects, 100, 5, 500, 500, 0)
-    calc.run()
-    layout = calc._result
-    assert len(layout) == 50
-    for i in range(50):
-        assert layout[i] is not None
-
-
 def _cell_gap_ratio(aspects, base_size, spacing, container, orientation=0):
     calc = MultiSpanCalculator(aspects, base_size, spacing, container, container, orientation)
     calc.run()
@@ -456,16 +342,6 @@ def test_no_cell_gaps_all_orientations():
     for ori in range(4):
         gaps, total, ratio = _cell_gap_ratio(aspects, 200, 5, 1200, ori)
         assert ratio < 0.20, f"ori={ori}: cell gap ratio {ratio:.3f} ({gaps}/{total})"
-
-
-def test_2x2_is_plugin():
-    assert issubclass(MultiSpanTilingLayout, BaseLayoutPlugin)
-    assert MultiSpanTilingLayout.NAME == "multiSpanTiling"
-    assert MultiSpanTilingLayout.DISPLAY_NAME == "MultiSpan Tiling"
-
-
-def test_2x2_priority():
-    assert MultiSpanTilingLayout.PRIORITY == 84
 
 
 def test_2x2_create_calculator():

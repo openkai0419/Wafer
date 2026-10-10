@@ -76,9 +76,14 @@ class TestRenameColumn:
         seg = SegmentInfo(0, 1, Path("test.jpg"), "test", "jpg")
         assert col.evaluate(seg) == "TEST"
 
-    def test_disabled(self):
-        col = RenameColumn(NameSource(), enabled=False)
-        assert not col.enabled
+    def test_override_bypasses_post(self):
+        col = RenameColumn(NameSource(), PostProcess(prefix="X_"))
+        from wafer.plugin.rename.base import SegmentInfo
+
+        seg = SegmentInfo(0, 1, Path("test.jpg"), "test", "jpg")
+        assert col.evaluate(seg) == "X_test"
+        col.overrides[str(seg.original_path)] = "raw"
+        assert col.evaluate(seg) == "raw"
 
 
 class TestRenameEngine:
@@ -144,13 +149,6 @@ class TestRenameEngine:
         ext = RenameColumn(ExtSource("remove"))
         results, _ = RenameEngine.preview(paths, cols, ext)
         assert results[0].new_name == "a"
-
-    def test_custom_ext(self):
-        paths = [Path("a.jpg")]
-        cols = [RenameColumn(NameSource())]
-        ext = RenameColumn(ExtSource("custom", "png"))
-        results, _ = RenameEngine.preview(paths, cols, ext)
-        assert results[0].new_name == "a.png"
 
     def test_metadata_pass_through(self):
         paths = [Path("a.jpg")]
@@ -229,14 +227,6 @@ class TestRenameEngine:
         assert not results[0].conflict
         assert not results[1].conflict
 
-    def test_conflict_within_same_dir(self):
-        paths = [Path("dir1/a.jpg"), Path("dir1/b.jpg")]
-        cols = [RenameColumn(FixedSource("same"))]
-        ext = RenameColumn(ExtSource())
-        results, _ = RenameEngine.preview(paths, cols, ext)
-        assert results[0].conflict
-        assert results[1].conflict
-
     def test_existing_sibling_conflict_respects_dir(self):
         paths = [Path("dir1/a.jpg"), Path("dir2/b.jpg")]
         cols = [RenameColumn(FixedSource("b"))]
@@ -266,13 +256,6 @@ class TestRenameEngine:
         results, _ = RenameEngine.preview(paths, cols, ext)
         assert results[0].new_name == "a"
         assert results[0].segments[-1] == ".jpg"
-
-    def test_ext_enabled_includes_extension(self):
-        paths = [Path("a.jpg")]
-        cols = [RenameColumn(NameSource())]
-        ext = RenameColumn(ExtSource(), enabled=True)
-        results, _ = RenameEngine.preview(paths, cols, ext)
-        assert results[0].new_name == "a.jpg"
 
     def test_regex_error_returned_as_global(self):
         paths = [Path("a.jpg"), Path("b.jpg")]

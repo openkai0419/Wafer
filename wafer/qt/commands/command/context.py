@@ -142,43 +142,28 @@ class CommandContext:
         return self.event if self.event is not None else default
 
     @staticmethod
-    def _merge_seed(ctx: CommandContext, seed: CommandContext | None, *, prefer_seed: bool) -> CommandContext:
+    def merge_seed(ctx: CommandContext, seed: CommandContext | None) -> CommandContext:
         if seed is None:
             return ctx
         try:
             for attr in ("pos", "global_pos", "start_pos", "start_global_pos"):
                 sv = getattr(seed, attr, None)
-                if sv is not None and (prefer_seed or getattr(ctx, attr) is None):
+                if sv is not None:
                     setattr(ctx, attr, sv)
             sw = getattr(seed, "wheel_steps", None)
-            if sw and (prefer_seed or not getattr(ctx, "wheel_steps", None)):
+            if sw:
                 ctx.wheel_steps = int(sw)
             seed_widget = getattr(seed, "_widget", None)
-            if seed_widget is not None and (prefer_seed or ctx._widget is None):
+            if seed_widget is not None:
                 ctx._widget = seed_widget
             seed_scope = getattr(seed, "_scope", "*")
-            if seed_scope and seed_scope != "*" and (prefer_seed or ctx._scope == "*"):
+            if seed_scope and seed_scope != "*":
                 ctx._scope = seed_scope
             for k, v in (getattr(seed, "extras", None) or {}).items():
-                if prefer_seed:
-                    ctx.extras[str(k)] = v
-                else:
-                    ctx.put_default(str(k), v)
+                ctx.extras[str(k)] = v
         except Exception as e:
-            AppLogger.warning("CommandContext._merge_seed failed", exc=e)
+            AppLogger.warning("CommandContext.merge_seed failed", exc=e)
         return ctx
-
-    @staticmethod
-    def merge_seed_prefer_seed(ctx: CommandContext, seed: CommandContext | None) -> CommandContext:
-        return CommandContext._merge_seed(ctx, seed, prefer_seed=True)
-
-    @staticmethod
-    def merge_seed_prefer_ctx(ctx: CommandContext, seed: CommandContext | None) -> CommandContext:
-        return CommandContext._merge_seed(ctx, seed, prefer_seed=False)
-
-    @staticmethod
-    def merge_seed(ctx: CommandContext, seed: CommandContext | None) -> CommandContext:
-        return CommandContext.merge_seed_prefer_seed(ctx, seed)
 
     @classmethod
     def create(

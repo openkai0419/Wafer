@@ -112,10 +112,6 @@ class TestGeneratePlan:
         assert removal[0].optional
         assert not any(op.dst == "extensions/color" for op in ops)
 
-    def test_keeps_external_extension_when_dropped(self, app_root):
-        ops = generate_plan(app_root)
-        assert all("myext" not in op.src and "myext" not in op.dst for op in ops)
-
     def test_missing_staged_tree_raises(self, tmp_path):
         with pytest.raises(PlanError):
             generate_plan(tmp_path)

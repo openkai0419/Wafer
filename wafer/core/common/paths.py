@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from natsort import natsorted, ns
 from platformdirs import PlatformDirs
 from ...constants import APP_DATA_DIR_NAME
 
@@ -44,10 +43,6 @@ def safe_getsize(p) -> int | None:
         return os.path.getsize(p)
     except OSError:
         return None
-
-
-def natural_sort(files):
-    return natsorted(files, alg=ns.LOCALE | ns.IGNORECASE)
 
 
 def data_db_path(name):

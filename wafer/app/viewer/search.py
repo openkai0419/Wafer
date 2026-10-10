@@ -21,6 +21,7 @@ _DEFAULTS = {
     "sort_by": "none",
     "ascending": True,
     "keyword_separator": ",",
+    "trim_keywords": True,
     "include_subfolders": True,
     "include_contained_files": True,
     "auto_execute": True,
@@ -116,6 +117,7 @@ class SearchService(QtCore.QObject):
             "query_mode": self._params.get("query_mode", "GLOB"),
             "keyword_mode": self._params.get("keyword_mode", "AND"),
             "keyword_separator": self._params.get("keyword_separator", ","),
+            "trim_keywords": self._params.get("trim_keywords", True),
         }
         entries = []
         entries.append((TextFilter, text_params, None))

@@ -9,7 +9,10 @@ from unittest.mock import MagicMock
 
 from wafer.core.common.paths import normalize_path
 from wafer.core.db.file_db import FileDB
-from wafer.core.db.query import FileSearchEngine, SearchQuery
+from wafer.core.db.query import FileSearchEngine
+from wafer.builtins.filters import TextFilter
+from wafer.builtins.sorts import NaturalNameSort, NoSort
+from wafer.plugin.query.composer import SearchComposer
 from wafer.plugin.collector.handler import collector_resolver
 from wafer.app.indexer.receivers.collector_receiver import _parse_batch
 from wafer.app.viewer.grid.items import GridItemModel
@@ -94,13 +97,7 @@ class TestSearchToGrid:
         )
 
         engine = FileSearchEngine(str(db_path))
-        paths, sources, aspects = engine.search(
-            SearchQuery(
-                sort_by="name",
-                ascending=True,
-                require_keys=False,
-            )
-        )
+        paths, sources, aspects = SearchComposer().execute(engine, [], NaturalNameSort, True)
         assert len(paths) == 3
 
         model = GridItemModel()
@@ -123,13 +120,7 @@ class TestSearchToGrid:
         )
 
         engine = FileSearchEngine(str(db_path))
-        paths, sources, aspects = engine.search(
-            SearchQuery(
-                sort_by="name",
-                ascending=True,
-                require_keys=False,
-            )
-        )
+        paths, sources, aspects = SearchComposer().execute(engine, [], NaturalNameSort, True)
 
         model = GridItemModel()
         model.set_items(paths, sources, aspects)
@@ -150,24 +141,13 @@ class TestSearchToGrid:
         )
 
         engine = FileSearchEngine(str(db_path))
-        paths, sources, aspects = engine.search(
-            SearchQuery(
-                sort_by="name",
-                ascending=True,
-                require_keys=False,
-            )
-        )
+        paths, sources, aspects = SearchComposer().execute(engine, [], NaturalNameSort, True)
 
         model = GridItemModel()
         model.set_items(paths, sources, aspects)
         assert model.count() == 1
 
-        no_paths, no_sources, no_aspects = engine.search(
-            SearchQuery(
-                keys="path",
-                keywords="nonexistent_file_xyz",
-            )
-        )
+        no_paths, no_sources, no_aspects = SearchComposer().execute(engine, [(TextFilter, {"keys": ["path"], "keywords": "nonexistent_file_xyz"}, "OR")], NoSort, True)
         model.set_items(no_paths, no_sources, no_aspects)
         assert model.count() == 0
         assert model.selected_count() == 0
@@ -234,13 +214,7 @@ class TestSearchToGrid:
         )
 
         engine = FileSearchEngine(str(db_path))
-        paths, sources, aspects = engine.search(
-            SearchQuery(
-                sort_by="name",
-                ascending=True,
-                require_keys=False,
-            )
-        )
+        paths, sources, aspects = SearchComposer().execute(engine, [], NaturalNameSort, True)
 
         model = GridItemModel()
         model.set_items(paths, sources, aspects)
@@ -260,13 +234,7 @@ class TestSearchToGrid:
         )
 
         engine = FileSearchEngine(str(db_path))
-        paths, sources, aspects = engine.search(
-            SearchQuery(
-                sort_by="name",
-                ascending=True,
-                require_keys=False,
-            )
-        )
+        paths, sources, aspects = SearchComposer().execute(engine, [], NaturalNameSort, True)
 
         model = GridItemModel()
         model.set_items(paths, sources, aspects)

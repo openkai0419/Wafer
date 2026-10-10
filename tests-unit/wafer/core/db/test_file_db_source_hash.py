@@ -14,12 +14,8 @@ def db(tmp_path):
 
 def _seed(database, source="src1", file_hash="fast1", path=None):
     path = path or source
-    database.upsert_batches(
-        [(source, file_hash, 100, 1.0)],
-        [(path, source, 1.0)],
-        [],
-        [(file_hash, "wd14.general", "cat", None)],
-    )
+    database.upsert_basic_sources([(source, file_hash, 100, 1.0)], [(path, source, 1.0)])
+    database.upsert_collection_results([], [], [(source, "wd14.general", "cat", None)], [])
 
 
 def test_split_trigger_keys():
@@ -56,7 +52,8 @@ def test_update_source_hashes_ignores_unchanged_and_unknown(db):
 
 def test_update_source_hashes_does_not_overwrite_existing_tag_of_target_hash(db):
     _seed(db)
-    db.upsert_batches([], [], [], [("full1", "wd14.general", "dog", None)])
+    _seed(db, source="src2", file_hash="full1")
+    db.upsert_collection_results([], [], [("src2", "wd14.general", "dog", None)], [])
     db.update_source_hashes([("src1", "full1")])
 
     cur = db.get_reader_cursor()
@@ -73,7 +70,7 @@ def test_get_trigger_metadata_returns_source_columns(db):
 
 def test_get_trigger_metadata_mixes_source_columns_and_meta_keys(db):
     _seed(db)
-    db.upsert_batches([], [], [("src1", "exiftool.Comment", "hello", None)], [])
+    db.upsert_basic_sources([], [], [("src1", "exiftool.Comment", "hello", None)])
     metadata = db.get_trigger_metadata(["src1"], ("file_hash", "exiftool.Comment"))
     assert metadata["src1"] == {"file_hash": "fast1", "exiftool.Comment": "hello"}
 
@@ -122,9 +119,9 @@ def test_delete_source_trees_returns_remaining_sources_sharing_hash(db):
 
 def test_delete_meta_and_tags_by_keys_separates_scopes(db):
     _seed(db, source="src1", file_hash="hash1")
-    db.upsert_batches([], [], [("src1", "exiftool.Comment", "hello", None)], [])
+    db.upsert_basic_sources([], [], [("src1", "exiftool.Comment", "hello", None)])
 
-    db.delete_meta_and_tags_by_keys([("src1", "hash1", ["exiftool.Comment"], [])])
+    db.delete_meta_and_tags_by_keys([("src1", "src1", ["exiftool.Comment"], [])])
 
     cur = db.get_reader_cursor()
     assert cur.execute("SELECT COUNT(*) FROM meta_info WHERE key = 'exiftool.Comment'").fetchone()[0] == 0
@@ -134,11 +131,59 @@ def test_delete_meta_and_tags_by_keys_separates_scopes(db):
 
 def test_delete_meta_and_tags_by_keys_deletes_tag_scope_only(db):
     _seed(db, source="src1", file_hash="hash1")
-    db.upsert_batches([], [], [("src1", "wd14.general", "hello", None)], [])
+    db.upsert_basic_sources([], [], [("src1", "wd14.general", "hello", None)])
 
-    db.delete_meta_and_tags_by_keys([("src1", "hash1", [], ["wd14.general"])])
+    db.delete_meta_and_tags_by_keys([("src1", "src1", [], ["wd14.general"])])
 
     cur = db.get_reader_cursor()
     assert cur.execute("SELECT COUNT(*) FROM tags WHERE key = 'wd14.general'").fetchone()[0] == 0
     assert cur.execute("SELECT COUNT(*) FROM meta_info WHERE key = 'wd14.general'").fetchone()[0] == 1
     cur.close()
+
+
+def _tag_of_source(database, source, key):
+    cur = database.get_reader_cursor()
+    row = cur.execute(
+        "SELECT t.value FROM tags t JOIN sources s ON s.file_hash = t.file_hash WHERE s.source = ? AND t.key = ?",
+        (source, key),
+    ).fetchone()
+    cur.close()
+    return row[0] if row else None
+
+
+def test_collection_tags_follow_hash_replaced_while_in_flight(db):
+    db.upsert_basic_sources([("src1", "fast1", 100, 1.0)], [("src1", "src1", 1.0)])
+    db.update_source_hashes([("src1", "full1")])
+
+    db.upsert_collection_results([], [], [("src1", "wd14.tags", "1girl", None)], [("src1", "wd14", "ok", 1.0)])
+
+    assert _tag_of_source(db, "src1", "wd14.tags") == "1girl"
+    cur = db.get_reader_cursor()
+    assert cur.execute("SELECT COUNT(*) FROM tags WHERE file_hash = 'fast1'").fetchone()[0] == 0
+    cur.close()
+
+
+def test_collection_tags_for_unknown_source_are_dropped(db):
+    db.upsert_collection_results([], [], [("missing", "wd14.tags", "1girl", None)], [])
+
+    cur = db.get_reader_cursor()
+    assert cur.execute("SELECT COUNT(*) FROM tags").fetchone()[0] == 0
+    cur.close()
+
+
+def test_collection_tags_keep_locked_value(db):
+    _seed(db)
+    db.apply_user_kv(["src1"], [("wd14.general", "dog", None, 1)], [])
+
+    db.upsert_collection_results([], [], [("src1", "wd14.general", "cat", None)], [])
+
+    assert _tag_of_source(db, "src1", "wd14.general") == "dog"
+
+
+def test_delete_tags_follow_hash_replaced_while_in_flight(db):
+    _seed(db)
+    db.update_source_hashes([("src1", "full1")])
+
+    db.delete_meta_and_tags_by_keys([("src1", "src1", [], ["wd14.general"])])
+
+    assert _tag_of_source(db, "src1", "wd14.general") is None

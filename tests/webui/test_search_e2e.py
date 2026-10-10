@@ -73,41 +73,38 @@ def _wait_total(page, prefix):
     page.wait_for_function(f"document.querySelector('#status').textContent.startsWith('{prefix} ')")
 
 
-def test_keywords_split_by_comma_with_and(ready_page):
+def test_keywords_split_by_comma_with_or_by_default(ready_page):
     page = ready_page
+    page.fill("#search-input", "cat,dog")
+    page.press("#search-input", "Enter")
+    _wait_total(page, "3")
+
+
+def test_keyword_mode_and_narrows_results(ready_page):
+    page = ready_page
+    page.fill("#search-input", "cat,dog")
+    page.press("#search-input", "Enter")
+    _wait_total(page, "3")
+
+    _open_search_options(page)
+    page.click("#keyword-mode button[data-mode='AND']")
+    _wait_total(page, "0")
+
     page.fill("#search-input", "cat,picture")
     page.press("#search-input", "Enter")
     _wait_total(page, "2")
 
-    page.fill("#search-input", "cat,dog")
-    page.press("#search-input", "Enter")
-    _wait_total(page, "0")
-
-
-def test_keyword_mode_or_widens_results(ready_page):
-    page = ready_page
-    page.fill("#search-input", "cat,dog")
-    page.press("#search-input", "Enter")
-    _wait_total(page, "0")
-
-    _open_search_options(page)
-    page.click("#keyword-mode button[data-mode='OR']")
-    _wait_total(page, "3")
-
-    page.click("#keyword-mode button[data-mode='AND']")
-    _wait_total(page, "0")
-
 
 def test_keyword_separator_is_configurable(ready_page):
     page = ready_page
-    page.fill("#search-input", "cat;picture")
+    page.fill("#search-input", "cat;dog")
     page.press("#search-input", "Enter")
     _wait_total(page, "0")
 
     _open_search_options(page)
     page.fill("#keyword-separator", ";")
     page.press("#keyword-separator", "Enter")
-    _wait_total(page, "2")
+    _wait_total(page, "3")
 
 
 def _count_query_posts(page):
@@ -153,11 +150,11 @@ def test_enter_does_not_repeat_the_same_query(ready_page):
     assert len(posts) == 2
 
 
-def test_status_is_highlighted_while_searching(ready_page):
+def test_load_bar_is_busy_while_searching(ready_page):
     page = ready_page
     page.evaluate("""() => {
       window.__busySeen = false;
-      const el = document.querySelector('#status');
+      const el = document.querySelector('#load-bar');
       const observer = new MutationObserver(() => {
         if (el.classList.contains('busy')) window.__busySeen = true;
       });
@@ -168,7 +165,7 @@ def test_status_is_highlighted_while_searching(ready_page):
     _wait_total(page, "2")
 
     assert page.evaluate("window.__busySeen") is True
-    assert "busy" not in (page.get_attribute("#status", "class") or "")
+    assert "busy" not in (page.get_attribute("#load-bar", "class") or "")
 
 
 def test_key_catalog_groups_by_prefix(ready_page):

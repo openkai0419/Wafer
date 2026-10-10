@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from PySide6 import QtWidgets
 
-from wafer.builtins.commands.panel import PanelCommands, reset_floating_position, reset_panel_layout, solo_current_panel, solo_panel
+from wafer.builtins.commands.panel import PanelCommands, open_panel, solo_current_panel, solo_panel
 from wafer.plugin.panel.base import BasePanelPlugin
 from wafer.qt.layout.manager import LayoutManager
 
@@ -43,52 +43,6 @@ class _Ctx:
 
 
 class TestPanelCommandsCategories:
-    def test_workspace_is_not_a_core_panel(self):
-        assert "Workspace" not in PanelCommands._CORE_PANELS
-
-    def test_commands_contains_param_based_solo_commands(self):
-        items = PanelCommands.commands()
-        solo = next(x for x in items if getattr(x, "path", "") == "panel.solo")
-        current = next(x for x in items if getattr(x, "path", "") == "panel.solo_current")
-        reset = next(x for x in items if getattr(x, "path", "") == "panel.reset_layout")
-
-        assert ":Solo" in items
-        assert solo.params[0].name == "name"
-        assert solo.params[0].required is True
-        assert callable(solo.params[0].choices_fn)
-        assert current.params == []
-        assert reset.hidden is False
-
-    def test_reset_panel_layout_calls_mainwindow_reset(self):
-        win = MagicMock()
-        win.slot_id = "slot1"
-        ctx = _Ctx(win)
-
-        with patch("wafer.builtins.commands.panel.AppLogger.info") as log:
-            reset_panel_layout(ctx)
-
-        win.reset_panel_layout_to_default.assert_called_once_with()
-        log.assert_called_once()
-
-    def test_commands_contains_reset_floating(self):
-        items = PanelCommands.commands()
-        reset_floating = next(x for x in items if getattr(x, "path", "") == "panel.reset_floating")
-
-        assert reset_floating.func is reset_floating_position
-        assert reset_floating.hidden is False
-
-    def test_reset_floating_position_calls_mainwindow(self):
-        win = MagicMock()
-        win.slot_id = "slot1"
-        win.reset_floating_positions.return_value = 2
-        ctx = _Ctx(win)
-
-        with patch("wafer.builtins.commands.panel.AppLogger.info") as log:
-            reset_floating_position(ctx)
-
-        win.reset_floating_positions.assert_called_once_with()
-        log.assert_called_once()
-
     def test_commands_separates_core_builtin_plugin(self):
         from wafer.plugin.registry import PluginRegistry
 
@@ -179,3 +133,58 @@ class TestPanelCommandsCategories:
             solo_panel(ctx, "Dormant")
 
         warning.assert_called_once()
+
+
+class TestOpenPanel:
+    def _swap_instance(self, name, value):
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
+
+        registry = InstanceRegistry.instance()
+        previous = list(registry._by_name.get(name, []))
+        if value is None:
+            registry._by_name.pop(name, None)
+        else:
+            registry._by_name[name] = [value]
+
+        def restore():
+            if previous:
+                registry._by_name[name] = previous
+            else:
+                registry._by_name.pop(name, None)
+
+        return restore
+
+    def test_open_panel_toggles_panel_with_mainwindow(self):
+        mock_w = MagicMock()
+        mock_w._layout_manager.panel_names.return_value = ["Batch Renamer"]
+        restore = self._swap_instance("MainWindow", mock_w)
+        try:
+            open_panel(name="Batch Renamer")
+        finally:
+            restore()
+        mock_w._layout_manager.toggle_panel.assert_called_once_with("Batch Renamer")
+
+    def test_open_panel_standalone_without_mainwindow(self, monkeypatch):
+        from wafer.builtins.batch_renamer.widget import BatchRenamerPlugin
+        from wafer.plugin.panel.handler import panel_registry
+
+        captured = {}
+
+        def fake_open(factory, title, key, size=None, parent=None):
+            captured.update(title=title, key=key)
+            return object()
+
+        monkeypatch.setattr("wafer.qt.layout.standalone.open_standalone", fake_open)
+        had = panel_registry.get(BatchRenamerPlugin.NAME) is not None
+        if not had:
+            panel_registry.register(BatchRenamerPlugin)
+        restore = self._swap_instance("MainWindow", None)
+        try:
+            open_panel(name="Batch Renamer")
+        finally:
+            restore()
+            if not had:
+                panel_registry._plugins.pop(BatchRenamerPlugin.NAME, None)
+                panel_registry._instances.pop(BatchRenamerPlugin.NAME, None)
+        assert captured["key"] == "batch_renamer"
+        assert captured["title"] == "Batch Renamer"

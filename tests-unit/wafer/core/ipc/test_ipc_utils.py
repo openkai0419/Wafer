@@ -1,13 +1,8 @@
 import json
-import py_compile
 from queue import Queue
 from unittest.mock import patch
 
 from wafer.core.ipc.transport import read_broker_port, remove_broker_port, write_broker_port, try_put
-
-
-def test_compile():
-    py_compile.compile("wafer/core/ipc/transport.py")
 
 
 def test_write_and_read():

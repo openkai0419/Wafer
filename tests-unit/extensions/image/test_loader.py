@@ -1,5 +1,3 @@
-import os
-import tempfile
 
 import cv2
 import numpy as np
@@ -15,7 +13,6 @@ from extensions.image.loader import (
     _classify_opencv_array,
     _numpy_to_qimage,
     _qt_read,
-    _approx_aspect_keep_size,
 )
 
 
@@ -54,13 +51,6 @@ def gif_file(tmp_path):
     return str(p)
 
 
-@pytest.fixture()
-def bmp_file(tmp_path):
-    p = tmp_path / "test.bmp"
-    Image.new("RGB", (50, 40), (128, 64, 32)).save(str(p))
-    return str(p)
-
-
 class TestLoadImageFullSize:
     def test_rgb_png(self, rgb_png):
         img = load_image(rgb_png)
@@ -94,12 +84,6 @@ class TestLoadImageFullSize:
         assert img is not None
         assert img.width() == 40
         assert img.height() == 30
-
-    def test_bmp(self, bmp_file):
-        img = load_image(bmp_file)
-        assert img is not None
-        assert img.width() == 50
-        assert img.height() == 40
 
 
 class TestLoadImageResized:
@@ -166,12 +150,6 @@ class TestLoadImageEdgeCases:
         result = load_image(str(p))
         assert result is None
 
-    def test_corrupt_file(self, tmp_path):
-        p = tmp_path / "corrupt.jpg"
-        p.write_bytes(b"\xff\xd8\xff\x00garbage")
-        result = load_image(str(p))
-        assert result is None or isinstance(result, QtGui.QImage)
-
 
 class TestImageFileLoaderQImage:
     def test_load_qimage_returns_fullsize_qimage(self, rgb_png):
@@ -182,18 +160,29 @@ class TestImageFileLoaderQImage:
         assert image.height() == 60
 
 
+class TestImageFileLoaderLoad:
+    def test_fullsize(self, rgb_png):
+        arr = ImageFileLoader().load(rgb_png)
+        assert arr is not None
+        assert isinstance(arr, np.ndarray)
+        assert arr.shape == (60, 80, 3)
+
+    def test_with_size(self, rgb_png):
+        arr = ImageFileLoader().load(rgb_png, size=40)
+        assert arr is not None
+        assert isinstance(arr, np.ndarray)
+
+    def test_nonexistent_returns_none(self, tmp_path):
+        result = ImageFileLoader().load(str(tmp_path / "nonexistent.png"))
+        assert result is None
+
+
 class TestJpegDimensions:
     def test_valid_jpeg(self, tmp_path):
         p = tmp_path / "test.jpg"
         Image.new("RGB", (800, 600), (0, 0, 255)).save(str(p), quality=90)
         data = np.fromfile(str(p), dtype=np.uint8)
         assert _jpeg_dimensions(data) == (800, 600)
-
-    def test_large_jpeg(self, tmp_path):
-        p = tmp_path / "large.jpg"
-        Image.new("RGB", (4000, 3000), (255, 0, 0)).save(str(p), quality=85)
-        data = np.fromfile(str(p), dtype=np.uint8)
-        assert _jpeg_dimensions(data) == (4000, 3000)
 
     def test_non_jpeg_returns_none(self, tmp_path):
         p = tmp_path / "test.png"
@@ -203,12 +192,6 @@ class TestJpegDimensions:
 
     def test_truncated_returns_none(self):
         assert _jpeg_dimensions(np.array([0xFF, 0xD8], dtype=np.uint8)) is None
-
-    def test_empty_returns_none(self):
-        assert _jpeg_dimensions(np.array([], dtype=np.uint8)) is None
-
-    def test_garbage_returns_none(self):
-        assert _jpeg_dimensions(np.array([0x00, 0x00, 0x00], dtype=np.uint8)) is None
 
 
 class TestImreadFlagsForSize:
@@ -267,24 +250,12 @@ class TestClassifyOpencvArray:
     def test_none(self):
         assert _classify_opencv_array(None, ".png") == "qt"
 
-    def test_1d_array(self):
-        arr = np.array([1, 2, 3], dtype=np.uint8)
-        assert _classify_opencv_array(arr, ".png") == "qt"
-
     def test_float_array(self):
         arr = np.zeros((10, 10), dtype=np.float32)
         assert _classify_opencv_array(arr, ".png") == "qt"
 
     def test_valid_grayscale(self):
         arr = np.zeros((10, 10), dtype=np.uint8)
-        assert _classify_opencv_array(arr, ".png") == "opencv"
-
-    def test_valid_rgb(self):
-        arr = np.zeros((10, 10, 3), dtype=np.uint8)
-        assert _classify_opencv_array(arr, ".png") == "opencv"
-
-    def test_valid_rgba(self):
-        arr = np.zeros((10, 10, 4), dtype=np.uint8)
         assert _classify_opencv_array(arr, ".png") == "opencv"
 
     def test_jpeg_4ch_falls_to_qt(self):

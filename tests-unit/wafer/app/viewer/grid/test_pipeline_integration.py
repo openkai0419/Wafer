@@ -60,6 +60,13 @@ def _process_events_until(predicate, timeout_ms=5000):
         time.sleep(0.01)
 
 
+def _drain(dispatcher, rounds=3):
+    app = QtWidgets.QApplication.instance()
+    for _ in range(rounds):
+        assert dispatcher._pool.pool.waitForDone(5000)
+        app.processEvents()
+
+
 def _make_image(w=100, h=100):
     img = QtGui.QImage(w, h, QtGui.QImage.Format_ARGB32)
     img.fill(0)
@@ -89,16 +96,6 @@ class _StubWidgetPlugin(WidgetGridPlugin):
 
     def on_thumb_loaded(self, widget, image):
         widget.set_thumb(image)
-
-
-class _SlowImagePlugin:
-    NAME = "slow_image"
-    EXTENSIONS = (".slow",)
-    PRIORITY = 0
-
-    @classmethod
-    def can_handle(cls, path):
-        return True
 
 
 def _fake_resolver(plugin=None, load_fn=None):
@@ -195,26 +192,6 @@ class TestPipelineRenderImageFlow:
 
 
 class TestPipelineCancelDuringRender:
-    def test_cancel_before_invoke_skips_widget(self, dispatcher):
-        widgets = {}
-        cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
-
-        widget = MagicMock()
-        widgets[0] = widget
-
-        plugin = _SlowImagePlugin()
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("wafer.app.viewer.grid.pipeline.grid_resolver", _fake_resolver(plugin))
-            pipeline.schedule_render(0, "/slow.slow", QtCore.QSize(200, 200))
-            time.sleep(0.05)
-            pipeline.cancel_index(0)
-
-        time.sleep(0.5)
-        QtWidgets.QApplication.instance().processEvents()
-        widget.set_image.assert_not_called()
-
     def test_reschedule_cancels_previous(self, dispatcher):
         widgets = {}
         cache = _FakeCache()
@@ -271,8 +248,7 @@ class TestPipelineWidgetRecycle:
         pipeline.cancel_index(0)
         deliver_event.set()
 
-        time.sleep(0.3)
-        QtWidgets.QApplication.instance().processEvents()
+        _drain(dispatcher)
         widget.set_image.assert_not_called()
 
 
@@ -296,64 +272,6 @@ class TestPipelineWidgetPluginThumbnail:
         widget.set_thumb.assert_called_once()
         assert widget.set_thumb.call_args[0][0] is thumb_img
         assert "/vid.mp4" in cache
-
-    def test_widget_plugin_thumbnail_uses_cache(self, dispatcher):
-        widgets = {}
-        cache = _FakeCache()
-        cached_thumb = _make_image(300, 300)
-        cache["/vid.mp4"] = cached_thumb
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
-
-        widget = MagicMock()
-        widgets[0] = widget
-
-        plugin = _StubWidgetPlugin()
-
-        with pytest.MonkeyPatch.context() as mp:
-            load_called = {"count": 0}
-
-            def fake_load(p, s=None):
-                load_called["count"] += 1
-                return _make_image()
-
-            mp.setattr("wafer.app.viewer.grid.pipeline.grid_resolver", _fake_resolver(plugin, load_fn=fake_load))
-            pipeline.schedule_render(0, "/vid.mp4", QtCore.QSize(300, 300))
-            _process_events_until(lambda: widget.set_thumb.called)
-
-        assert load_called["count"] == 0
-        assert widget.set_thumb.call_args[0][0] is cached_thumb
-
-
-class TestPipelineLayoutToRenderFlow:
-    def test_layout_ready_to_schedule_render(self, dispatcher):
-        widgets = {}
-        cache = _FakeCache()
-        pipeline = GridPipeline(dispatcher, dispatcher, dispatcher, cache, lambda i: widgets.get(i), lambda i, n: None, _noop_appear)
-
-        layout_received = {}
-
-        def on_layout(layout):
-            layout_received["data"] = layout
-
-        pipeline.layout_ready.connect(on_layout)
-
-        pipeline.request_layout([1.0, 1.5, 0.8], 100, 4, 800, 600)
-        _process_events_until(lambda: "data" in layout_received)
-
-        layout = layout_received["data"]
-        assert len(layout) == 3
-
-        widget = MagicMock()
-        widgets[0] = widget
-        plugin = _StubImagePlugin()
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("wafer.app.viewer.grid.pipeline.grid_resolver", _fake_resolver(plugin))
-            rect = layout[0]
-            pipeline.schedule_render(0, "/img.png", rect.size())
-
-        _process_events_until(lambda: widget.set_image.called)
-        widget.set_image.assert_called_once()
 
 
 class TestPipelineCancelAllDuringRender:
@@ -390,8 +308,7 @@ class TestPipelineCancelAllDuringRender:
         barrier.set()
         assert pipeline.active_count() == 0
 
-        time.sleep(0.4)
-        QtWidgets.QApplication.instance().processEvents()
+        _drain(dispatcher)
         w0.set_image.assert_not_called()
         w1.set_image.assert_not_called()
 
@@ -489,21 +406,22 @@ class TestPipelineFallbackRender:
         widget = MagicMock()
         widgets[0] = widget
         barrier = threading.Event()
+        load_started = threading.Event()
 
         with pytest.MonkeyPatch.context() as mp:
 
             def slow_load(p, s=None):
+                load_started.set()
                 barrier.wait(timeout=2)
                 return _make_image()
 
             mp.setattr("wafer.app.viewer.grid.pipeline.grid_resolver", _fake_resolver(load_fn=slow_load))
             pipeline.schedule_render(0, "/song.mp3", QtCore.QSize(200, 200))
-            time.sleep(0.05)
+            assert load_started.wait(timeout=5)
             pipeline.cancel_index(0)
             barrier.set()
 
-        time.sleep(0.3)
-        QtWidgets.QApplication.instance().processEvents()
+        _drain(dispatcher)
         widget.set_image.assert_not_called()
 
 

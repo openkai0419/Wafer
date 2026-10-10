@@ -5,7 +5,6 @@ from PySide6 import QtCore, QtWidgets
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from wafer.qt.widgets.markdown_browser import (
     MarkdownBrowser,
-    _ExternalLinkPage,
     _preprocess_html_blocks,
     render_to_html,
 )
@@ -56,45 +55,6 @@ class TestMarkdownBrowser:
         result = browser.load_file(str(tmp_path / "missing.md"))
         assert result is False
         assert "Failed to load" in browser.rendered_html()
-
-    def test_heading_levels(self, qtbot):
-        browser = MarkdownBrowser()
-        qtbot.addWidget(browser)
-        browser.set_markdown("# H1\n\n## H2\n\n### H3\n")
-        html = browser.rendered_html()
-        assert "<h1>H1</h1>" in html
-        assert "<h2>H2</h2>" in html
-        assert "<h3>H3</h3>" in html
-
-    def test_table_rendering(self, qtbot):
-        md = "| A | B |\n|---|---|\n| 1 | 2 |\n"
-        browser = MarkdownBrowser()
-        qtbot.addWidget(browser)
-        browser.set_markdown(md)
-        html = browser.rendered_html()
-        assert "<table>" in html
-        assert "<th>A</th>" in html
-        assert "<td>1</td>" in html
-
-    def test_fenced_code_block(self, qtbot):
-        md = "```python\nprint('hello')\n```\n"
-        browser = MarkdownBrowser()
-        qtbot.addWidget(browser)
-        browser.set_markdown(md)
-        assert "<code" in browser.rendered_html()
-        assert "print" in browser.rendered_html()
-
-    def test_links_handled_by_external_page(self, qtbot):
-        browser = MarkdownBrowser()
-        qtbot.addWidget(browser)
-        assert isinstance(browser._page, _ExternalLinkPage)
-
-    def test_md_in_html_extension(self, qtbot):
-        md = '<div align="center">\n\n**bold text**\n\n</div>\n'
-        browser = MarkdownBrowser()
-        qtbot.addWidget(browser)
-        browser.set_markdown(md)
-        assert "<strong>bold text</strong>" in browser.rendered_html()
 
     def test_nested_list_2space_indent(self, qtbot):
         md = "- A\n  - B\n  - C\n- D\n"

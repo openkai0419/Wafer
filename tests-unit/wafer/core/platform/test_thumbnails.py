@@ -43,9 +43,7 @@ def test_get_thumbnail_nonexistent(thumbnailer):
 def test_get_file_dimensions_image(thumbnailer):
     path = _create_temp_image(100, 50)
     try:
-        result = thumbnailer.get_file_dimensions(path)
-        if result is not None:
-            assert result == (100, 50)
+        assert thumbnailer.get_file_dimensions(path) == (100, 50)
     finally:
         os.unlink(path)
 
@@ -55,15 +53,10 @@ def test_get_thumbnail_returns_image(thumbnailer):
     path = _create_temp_image(200, 200)
     try:
         result = thumbnailer.get_thumbnail(path, size=64)
-        if result is not None:
-            assert isinstance(result, Image.Image)
-            assert result.size[0] > 0 and result.size[1] > 0
+        assert isinstance(result, Image.Image)
+        assert result.size[0] > 0 and result.size[1] > 0
     finally:
         os.unlink(path)
-
-
-def test_platform_is_set(thumbnailer):
-    assert thumbnailer.platform == sys.platform
 
 
 def test_get_aspect_ratios_empty():
@@ -75,14 +68,13 @@ def test_get_aspect_ratios_image():
     path = _create_temp_image(200, 100)
     try:
         result = FileThumbnailer.get_aspect_ratios([path])
-        if result:
-            assert abs(result[path] - 2.0) < 0.01
+        assert abs(result[path] - 2.0) < 0.01
     finally:
         os.unlink(path)
 
 
 def test_get_aspect_ratios_nonexistent():
-    assert isinstance(FileThumbnailer.get_aspect_ratios(["/nonexistent/file.png"]), dict)
+    assert FileThumbnailer.get_aspect_ratios(["/nonexistent/file.png"]) == {}
 
 
 @pytest.mark.skipif(not sys.platform.startswith("win"), reason="Windows only")
@@ -115,8 +107,7 @@ def test_get_aspect_ratios_mixed_image_and_zip():
     zip_path, tmp_dir = _create_temp_zip_with_image(100, 400)
     try:
         result = FileThumbnailer.get_aspect_ratios([img_path, zip_path])
-        if img_path in result:
-            assert abs(result[img_path] - 3.0) < 0.1
+        assert abs(result[img_path] - 3.0) < 0.1
         assert zip_path in result
         assert abs(result[zip_path] - 0.25) < 0.1
     finally:

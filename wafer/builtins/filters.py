@@ -4,7 +4,7 @@ from pathlib import Path
 
 from ..constants import VIRTUAL_PATH_SEPARATOR
 from ..core.db.db_utils import build_like_condition, escape_like
-from ..core.db.query import SYSTEM_FILE_HASH_KEY, STANDARD_KEYS, standard_key_columns
+from ..core.db.query import SYSTEM_FILE_HASH_KEY, STANDARD_KEYS, parse_keywords, standard_key_columns
 from ..plugin.query.base import BaseFilterPlugin
 from ..core.profiling import profiler
 
@@ -15,14 +15,11 @@ def _normalize_text_inputs(params):
         keys = [keys]
     else:
         keys = list(keys)
-    keywords = params.get("keywords")
-    separator = params.get("keyword_separator")
-    if isinstance(keywords, str):
-        keywords = [w.strip() for w in keywords.split(separator)] if separator else [keywords]
-    elif isinstance(keywords, (list, tuple)):
-        keywords = list(keywords)
-    include = [kw for kw in (keywords or []) if kw and not kw.startswith("-")]
-    exclude = [kw[1:] for kw in (keywords or []) if kw and kw.startswith("-") and len(kw) > 1]
+    include, exclude = parse_keywords(
+        params.get("keywords"),
+        params.get("keyword_separator"),
+        params.get("trim_keywords", True),
+    )
     return keys, include, exclude
 
 
@@ -87,7 +84,7 @@ class TextFilter(BaseFilterPlugin):
 
     @classmethod
     def inheritable_params(cls, params):
-        return {k: params[k] for k in ("keys", "query_mode", "keyword_mode", "keyword_separator") if k in params}
+        return {k: params[k] for k in ("keys", "query_mode", "keyword_mode", "keyword_separator", "trim_keywords") if k in params}
 
     @classmethod
     @profiler.profile

@@ -1,7 +1,6 @@
 from __future__ import annotations
-import inspect
 from typing import Any
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from ....core.profiling import profiler
 from .core import register_command_defs, CommandMeta
 from ....core.logs import AppLogger
@@ -41,26 +40,6 @@ def section_parts(s: str) -> list[str]:
     head = parts[:-1]
     label = parts[-1][1:] if parts[-1].startswith(MENU_SECTION_PREFIX) else parts[-1]
     return head + [label]
-
-
-@profiler.profile
-def merge_dict_providers(*providers: Callable[[], dict[str, Any]] | None) -> Callable[[], dict[str, Any]] | None:
-    ps = [p for p in providers if callable(p)]
-    if not ps:
-        return None
-
-    def _p():
-        r: dict[str, Any] = {}
-        for fn in ps:
-            try:
-                v = fn() or {}
-                if isinstance(v, dict):
-                    r.update(v)
-            except Exception as e:
-                AppLogger.warning(f"merge_dict_providers failed: {getattr(fn, '__name__', str(fn))}", exc=e)
-        return r
-
-    return _p
 
 
 def prefixed_path(base_parts: list[str], p: str) -> str:
@@ -203,23 +182,6 @@ def register_menu_classes(menu_classes: Sequence[type[MenuGroup]]) -> None:
             cls.register()
         except Exception as e:
             AppLogger.warning(f"register_menu_classes failed: {getattr(cls, '__name__', str(cls))}", exc=e)
-
-
-def discover_command_classes(*modules) -> list[type]:
-    bases = (MenuGroup, DragMenuGroup)
-    found = []
-    seen = set()
-    for mod in modules:
-        for _, obj in inspect.getmembers(mod, inspect.isclass):
-            if any(obj is b for b in bases):
-                continue
-            if not issubclass(obj, bases):
-                continue
-            if id(obj) in seen:
-                continue
-            seen.add(id(obj))
-            found.append(obj)
-    return found
 
 
 class MenuHub:

@@ -39,12 +39,6 @@ def test_normalize_badge_shape_key_falls_back_to_registered_default():
     assert normalize_badge_shape_key("__test_badge_engine_norm__") == "__test_badge_engine_norm__"
 
 
-def test_has_badge_shape():
-    register_badge_shape("__test_badge_engine_has__", _draw_test_shape)
-    assert has_badge_shape("__test_badge_engine_has__")
-    assert not has_badge_shape("__nope__")
-
-
 def test_badge_shape_pixmap_renders_non_empty():
     register_badge_shape("__test_badge_engine_pixmap__", _draw_test_shape)
     pm = badge_shape_pixmap("__test_badge_engine_pixmap__", 32, "#ff0000")

@@ -1,4 +1,3 @@
-import py_compile
 from unittest.mock import Mock, patch
 
 
@@ -110,7 +109,3 @@ def test_prepare_tray_attaches_when_install_in_progress():
     ):
         assert waiter._prepare_tray(parent=None) == 123
     ask.assert_not_called()
-
-
-def test_compile():
-    py_compile.compile("wafer/qt/install/waiter.py")

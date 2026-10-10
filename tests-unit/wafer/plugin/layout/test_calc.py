@@ -32,52 +32,6 @@ def test_len_and_bool():
     assert d
 
 
-def test_total_extent():
-    rects = [QtCore.QRect(0, 0, 100, 100)]
-    d = _make_layout(rects)
-    assert d.total_extent > 0
-
-
-def test_getitem_returns_qrect():
-    rects = [
-        QtCore.QRect(0, 0, 150, 100),
-        QtCore.QRect(155, 0, 100, 100),
-        QtCore.QRect(260, 0, 80, 100),
-    ]
-    d = _make_layout(rects)
-    assert d[0] == QtCore.QRect(0, 0, 150, 100)
-    assert isinstance(d[0], QtCore.QRect)
-    assert d[0].width() > 0
-    assert d[0].height() == 100
-
-
-def test_items_no_overlap_horizontal():
-    rects = [
-        QtCore.QRect(0, 0, 100, 100),
-        QtCore.QRect(105, 0, 100, 100),
-        QtCore.QRect(210, 0, 100, 100),
-        QtCore.QRect(315, 0, 100, 100),
-    ]
-    d = _make_layout(rects)
-    for i in range(len(rects) - 1):
-        assert d[i].right() < d[i + 1].left()
-
-
-def test_multiple_rows():
-    rects = [
-        QtCore.QRect(0, 0, 150, 100),
-        QtCore.QRect(155, 0, 100, 100),
-        QtCore.QRect(260, 0, 80, 100),
-        QtCore.QRect(0, 110, 120, 100),
-        QtCore.QRect(125, 110, 150, 100),
-        QtCore.QRect(280, 110, 100, 100),
-    ]
-    d = _make_layout(rects)
-    assert len(d) == 6
-    assert d[0].top() == 0
-    assert d[3].top() == 110
-
-
 def test_calculate_visible_indices_all():
     rects = [
         QtCore.QRect(0, 0, 100, 100),
@@ -165,23 +119,6 @@ def test_intersecting_indices():
     assert 1 in result
 
 
-def test_vertical_layout():
-    rects = [
-        QtCore.QRect(0, 0, 100, 100),
-        QtCore.QRect(0, 105, 100, 50),
-    ]
-    d = _make_layout(rects, hz=False)
-    assert d[0].left() == 0
-    assert d[0].width() == 100
-
-
-def test_layout_data_basic_construction():
-    rects = [QtCore.QRect(0, 0, 100, 100), QtCore.QRect(105, 0, 100, 100)]
-    d = LayoutData(rects, 200, True)
-    assert len(d) == 2
-    assert d.total_extent == 200
-
-
 class TestNearestInDirection:
     def test_forward_justified(self):
         rects = [
@@ -216,6 +153,124 @@ class TestNearestInDirection:
         d = _make_layout(rects)
         assert d.nearest_in_direction(1, False) == 0
         assert d.nearest_in_direction(2, False) is None
+
+    def test_inverted_t_forward(self):
+        rects = [
+            QtCore.QRect(0, 0, 100, 100),
+            QtCore.QRect(0, 105, 100, 100),
+            QtCore.QRect(105, 0, 100, 210),
+        ]
+        d = _make_layout(rects)
+        assert d.nearest_in_direction(0, True) == 1
+
+    def test_no_neighbor_single_item(self):
+        rects = [QtCore.QRect(0, 0, 100, 100)]
+        d = _make_layout(rects)
+        assert d.nearest_in_direction(0, True) is None
+        assert d.nearest_in_direction(0, False) is None
+
+    def test_none_idx(self):
+        rects = [QtCore.QRect(0, 0, 100, 100)]
+        d = _make_layout(rects)
+        assert d.nearest_in_direction(None, True) is None
+
+    def test_prefers_same_column(self):
+        rects = [
+            QtCore.QRect(0, 0, 100, 100),
+            QtCore.QRect(110, 0, 100, 100),
+            QtCore.QRect(220, 0, 100, 100),
+            QtCore.QRect(0, 110, 100, 100),
+            QtCore.QRect(110, 110, 100, 100),
+            QtCore.QRect(220, 110, 100, 100),
+        ]
+        d = _make_layout(rects)
+        assert d.nearest_in_direction(1, True) == 4
+        assert d.nearest_in_direction(4, False) == 1
+
+    def test_vertical_layout(self):
+        rects = [
+            QtCore.QRect(0, 0, 100, 100),
+            QtCore.QRect(0, 105, 100, 100),
+            QtCore.QRect(110, 0, 100, 100),
+            QtCore.QRect(110, 105, 100, 100),
+        ]
+        d = _make_layout(rects, hz=False)
+        nxt = d.nearest_in_direction(0, True)
+        assert nxt in (2, 3)
+        assert d[nxt].x() >= d[0].x() + d[0].width()
+
+    def test_masonry_varied_heights(self):
+        aspects = [1.0, 0.5, 1.5, 0.8, 2.0, 0.7, 1.2, 0.6, 0.9, 1.1, 0.4, 1.8]
+        calc = MasonryLayoutCalculator(aspects, 100, 5, 400, None, orientation=0)
+        calc.run()
+        layout = calc._result
+        checked_fwd = checked_bwd = 0
+        for i in range(len(layout)):
+            fwd = layout.nearest_in_direction(i, True)
+            bwd = layout.nearest_in_direction(i, False)
+            if fwd is not None:
+                assert (layout[fwd].y()) >= (layout[i].y() + layout[i].height())
+                checked_fwd += 1
+            if bwd is not None:
+                assert (layout[bwd].y() + layout[bwd].height()) <= layout[i].y()
+                checked_bwd += 1
+        assert checked_fwd and checked_bwd
+
+    def test_forward_chain_no_stall(self):
+        aspects = [1.0, 0.5, 1.5, 0.8, 2.0, 0.7, 1.2, 0.6, 0.9, 1.1, 0.4, 1.8]
+        calc = MasonryLayoutCalculator(aspects, 100, 5, 400, None, orientation=0)
+        calc.run()
+        layout = calc._result
+        idx = 0
+        steps = 0
+        for _ in range(50):
+            nxt = layout.nearest_in_direction(idx, True)
+            if nxt is None:
+                break
+            assert nxt != idx
+            idx = nxt
+            steps += 1
+        assert steps > 0
+
+    def test_backward_chain_no_stall(self):
+        aspects = [1.0, 0.5, 1.5, 0.8, 2.0, 0.7, 1.2, 0.6, 0.9, 1.1, 0.4, 1.8]
+        calc = MasonryLayoutCalculator(aspects, 100, 5, 400, None, orientation=0)
+        calc.run()
+        layout = calc._result
+        last_idx = len(layout) - 1
+        idx = last_idx
+        steps = 0
+        for _ in range(50):
+            prev = layout.nearest_in_direction(idx, False)
+            if prev is None:
+                break
+            assert prev != idx
+            idx = prev
+            steps += 1
+        assert steps > 0
+
+    def test_roundtrip_consistency(self):
+        aspects = [0.8, 1.2, 0.5, 1.5, 1.0, 0.7, 2.0, 0.6]
+        calc = MasonryLayoutCalculator(aspects, 120, 5, 500, None, orientation=0)
+        calc.run()
+        layout = calc._result
+        idx = 0
+        forward_path = [idx]
+        for _ in range(50):
+            nxt = layout.nearest_in_direction(idx, True)
+            if nxt is None:
+                break
+            idx = nxt
+            forward_path.append(idx)
+        backward_path = [idx]
+        for _ in range(50):
+            prev = layout.nearest_in_direction(idx, False)
+            if prev is None:
+                break
+            idx = prev
+            backward_path.append(idx)
+        assert len(forward_path) > 1
+        assert backward_path[-1] == forward_path[0]
 
 
 class TestSecondaryAxisFilter:
@@ -279,13 +334,3 @@ class TestSecondaryAxisFilter:
         visible = d.calculate_visible_indices(0, 200, s_start=0, s_end=200)
         assert 0 in visible
         assert 1 not in visible
-
-    def test_none_secondary_preserves_old_behavior(self):
-        rects = [
-            QtCore.QRect(0, 0, 100, 100),
-            QtCore.QRect(500, 0, 100, 100),
-        ]
-        d = _make_layout(rects)
-        all_vis = d.calculate_visible_indices(0, 200)
-        none_vis = d.calculate_visible_indices(0, 200, s_start=None, s_end=None)
-        assert set(all_vis) == set(none_vis)

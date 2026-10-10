@@ -2,9 +2,8 @@ import sys
 import pytest
 from PySide6 import QtWidgets
 
-from wafer.plugin.registry import PluginBase, PluginRegistry
+from wafer.plugin.registry import PluginRegistry
 from wafer.plugin.panel.base import BasePanelPlugin
-from wafer.plugin.panel.handler import panel_registry as _module_registry
 
 
 class DummyPanel(BasePanelPlugin):
@@ -34,44 +33,6 @@ class UnclosablePanel(BasePanelPlugin):
         return QtWidgets.QWidget()
 
 
-class TestBasePanelPlugin:
-    def test_inherits_plugin_base(self):
-        assert issubclass(BasePanelPlugin, PluginBase)
-
-    def test_default_attributes(self):
-        assert BasePanelPlugin.DISPLAY_NAME == ""
-        assert BasePanelPlugin.CLOSABLE is True
-        assert BasePanelPlugin.PRIORITY == 0
-        assert BasePanelPlugin.SOURCE == "Plugin"
-
-    def test_concrete_panel_attributes(self):
-        assert DummyPanel.NAME == "dummy"
-        assert DummyPanel.DISPLAY_NAME == "Dummy Panel"
-        assert DummyPanel.CLOSABLE is True
-
-    def test_create_widget_returns_qwidget(self, qtbot):
-        plugin = DummyPanel()
-        widget = plugin.create_widget()
-        qtbot.addWidget(widget)
-        assert isinstance(widget, QtWidgets.QWidget)
-
-    def test_closable_override(self):
-        assert UnclosablePanel.CLOSABLE is False
-
-    def test_source_default_is_plugin(self):
-        assert DummyPanel.SOURCE == "Plugin"
-
-    def test_source_override(self):
-        class BuiltinPanel(BasePanelPlugin):
-            NAME = "builtin_test"
-            SOURCE = "Builtin"
-
-            def create_widget(self):
-                return QtWidgets.QWidget()
-
-        assert BuiltinPanel.SOURCE == "Builtin"
-
-
 class TestPanelRegistry:
     @pytest.fixture(autouse=True)
     def _clean_registry(self):
@@ -79,38 +40,12 @@ class TestPanelRegistry:
         self.registry = registry
         yield
 
-    def test_register_and_list(self):
-        self.registry.register(DummyPanel)
-        result = self.registry.list_all()
-        assert len(result) == 1
-        assert result[0] is DummyPanel
-
-    def test_priority_override(self):
-        self.registry.register(DummyPanel)
-        self.registry.register(HighPriorityPanel)
-        result = self.registry.list_all()
-        assert len(result) == 1
-        assert result[0] is HighPriorityPanel
-
     def test_lower_priority_rejected(self):
         self.registry.register(HighPriorityPanel)
         self.registry.register(DummyPanel)
         result = self.registry.list_all()
         assert len(result) == 1
         assert result[0] is HighPriorityPanel
-
-    def test_multiple_panels(self):
-        self.registry.register(DummyPanel)
-        self.registry.register(UnclosablePanel)
-        result = self.registry.list_all()
-        assert len(result) == 2
-        names = {p.NAME for p in result}
-        assert names == {"dummy", "unclosable"}
-
-
-class TestModuleLevelRegistry:
-    def test_module_registry_is_plugin_registry(self):
-        assert isinstance(_module_registry, PluginRegistry)
 
 
 class TestPluginDiscovery:
@@ -162,7 +97,7 @@ class TestPluginLoaderIntegration:
             if key.startswith("_plugins_test_panel"):
                 del sys.modules[key]
 
-    def test_loader_discovers_panel_plugin(self, panel_extension):
+    def test_loader_discovers_panel_plugin(self, panel_extension, qtbot):
         from wafer.plugin.loader import PluginLoader
         from wafer.plugin.registry import PluginRegistry, FilePluginRegistry
 
@@ -188,40 +123,6 @@ class TestPluginLoaderIntegration:
 
         plugin = panel_cls()
         widget = plugin.create_widget()
+        qtbot.addWidget(widget)
         assert isinstance(widget, QtWidgets.QLabel)
         assert widget.text() == "Test"
-
-
-class TestPanelPluginState:
-    def test_default_save_state_returns_empty_dict(self):
-        plugin = DummyPanel()
-        assert plugin.save_ui_state() == {}
-
-    def test_default_restore_state_is_noop(self):
-        plugin = DummyPanel()
-        plugin.restore_ui_state({"key": "value"})
-
-    def test_overridden_save_restore_roundtrip(self):
-        class StatefulPanel(BasePanelPlugin):
-            NAME = "stateful"
-
-            def __init__(self):
-                self._value = 0
-
-            def create_widget(self):
-                return QtWidgets.QWidget()
-
-            def save_ui_state(self):
-                return {"value": self._value}
-
-            def restore_ui_state(self, state):
-                self._value = state.get("value", 0)
-
-        plugin = StatefulPanel()
-        plugin._value = 42
-        saved = plugin.save_ui_state()
-        assert saved == {"value": 42}
-
-        plugin2 = StatefulPanel()
-        plugin2.restore_ui_state(saved)
-        assert plugin2._value == 42

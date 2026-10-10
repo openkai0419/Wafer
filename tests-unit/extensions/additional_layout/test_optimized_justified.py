@@ -1,27 +1,7 @@
 from extensions.additional_layout.optimized_justified import (
-    OptimizedJustifiedLayout,
     OptimizedJustifiedLayoutCalculator,
 )
-from wafer.plugin.layout.base import BaseLayoutPlugin
 from wafer.plugin.layout.calc import LayoutData
-
-
-def test_optimized_justified_layout_is_plugin():
-    assert issubclass(OptimizedJustifiedLayout, BaseLayoutPlugin)
-    assert OptimizedJustifiedLayout.NAME == "optimizedJustified"
-    assert OptimizedJustifiedLayout.DISPLAY_NAME == "Justified (Optimized)"
-
-
-def test_optimized_justified_create_calculator():
-    calc = OptimizedJustifiedLayout.create_calculator([1.0, 1.5], 100, 5, 500, None, 0)
-    assert isinstance(calc, OptimizedJustifiedLayoutCalculator)
-    calc.run()
-    assert calc._result is not None
-    assert len(calc._result) == 2
-
-
-def test_optimized_justified_priority():
-    assert OptimizedJustifiedLayout.PRIORITY == 95
 
 
 def test_optimized_justified_produces_layout():

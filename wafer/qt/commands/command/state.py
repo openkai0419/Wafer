@@ -123,7 +123,6 @@ class ActionGroupStateManager:
         if cls._instance is None:
             inst = object.__new__(cls)
             inst._group_members = {}
-            inst._command_to_group = {}
             cls._instance = inst
         return cls._instance
 
@@ -132,13 +131,9 @@ class ActionGroupStateManager:
             self._group_members[group_name] = []
         if command_id not in self._group_members[group_name]:
             self._group_members[group_name].append(command_id)
-        self._command_to_group[command_id] = group_name
 
     def get_members(self, group_name: str) -> list[str]:
         return self._group_members.get(group_name, [])
-
-    def get_group_for_command(self, command_id: str) -> str | None:
-        return self._command_to_group.get(command_id)
 
     @profiler.profile
     def find_current(self, group_name: str, registry) -> str | None:

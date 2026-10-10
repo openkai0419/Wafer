@@ -12,20 +12,7 @@ from wafer.qt.layout.tree import (
 )
 
 
-class TestLeafNode:
-    def test_panel_name(self):
-        node = LeafNode("a")
-        assert node.panel_name == "a"
-
-
 class TestSplitNode:
-    def test_panel_names_flat(self):
-        node = SplitNode(
-            Orientation.HORIZONTAL,
-            [LeafNode("a"), LeafNode("b"), LeafNode("c")],
-        )
-        assert node.panel_names() == ["a", "b", "c"]
-
     def test_panel_names_nested(self):
         node = SplitNode(
             Orientation.HORIZONTAL,

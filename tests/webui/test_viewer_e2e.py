@@ -124,3 +124,33 @@ def test_meta_panel_falls_back_to_item_name_for_unindexed_file(ready_page):
     assert headings == ["File"]
     keys = page.locator("#meta-content dt").all_inner_texts()
     assert keys == ["name", "path"]
+
+
+def test_viewer_stops_loading_once_the_image_arrives(ready_page):
+    page = ready_page
+    _open_first(page)
+    page.wait_for_selector("#viewer-stage img")
+    page.wait_for_selector("#viewer:not(.loading)")
+
+
+def test_viewer_reports_an_image_that_fails_to_load(ready_page):
+    page = ready_page
+    page.route("**/api/file*", lambda route: route.fulfill(status=404))
+    _open_first(page)
+    page.wait_for_function("document.querySelector('#viewer-caption').textContent.includes('failed to load')")
+    assert "loading" not in page.get_attribute("#viewer", "class")
+
+
+def test_meta_panel_reuses_the_answer_for_a_revisited_item(ready_page):
+    page = ready_page
+    requests = []
+    page.on("request", lambda request: "/api/meta" in request.url and requests.append(request.url))
+    _open_first(page)
+    page.click("#viewer-info")
+    page.wait_for_function("document.querySelector('#meta-content').textContent.includes('File')")
+    page.click("#viewer-next")
+    page.wait_for_function("!document.querySelector('#meta-panel').classList.contains('pending')")
+    page.click("#viewer-prev")
+    page.wait_for_function("document.querySelector('#viewer-caption').textContent.startsWith('1/')")
+    page.wait_for_function("!document.querySelector('#meta-panel').classList.contains('pending')")
+    assert len(requests) == 2

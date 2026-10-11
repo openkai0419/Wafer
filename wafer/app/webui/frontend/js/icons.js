@@ -16,3 +16,8 @@ export function icon(name) {
 export function setIcon(el, name) {
   el.innerHTML = icon(name);
 }
+
+export function setTip(el, text) {
+  el.title = text;
+  el.setAttribute('aria-label', text);
+}

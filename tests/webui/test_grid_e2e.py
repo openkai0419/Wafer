@@ -149,3 +149,36 @@ def test_thumbnail_request_covers_displayed_rect(ready_page):
     for cell in measured["cells"]:
         needed = min(cell["longest"] * measured["dpr"], THUMB_SIZE_MAX)
         assert cell["requested"] >= needed, f"thumbnail is upscaled: {cell} dpr={measured['dpr']}"
+
+
+def test_grid_does_not_refetch_items_the_server_left_out(page, webui_base_url):
+    calls = []
+
+    def drop_first_item(route):
+        response = route.fetch()
+        data = response.json()
+        data["items"] = data["items"][1:]
+        calls.append(route.request.url)
+        route.fulfill(response=response, json=data)
+
+    page.route("**/api/query/*/items*", drop_first_item)
+    page.goto(webui_base_url)
+    page.wait_for_selector("#grid-canvas .cell img")
+    for _ in range(3):
+        page.evaluate("""() => new Promise((resolve) => {
+          document.querySelector('#grid-scroll').dispatchEvent(new Event('scroll'));
+          requestAnimationFrame(() => requestAnimationFrame(resolve));
+        })""")
+    assert len(calls) == 1
+
+
+def test_settings_rows_match_the_viewer_menu_rows(ready_page):
+    page = ready_page
+    page.click("#settings-btn")
+    page.wait_for_selector("#settings-modal:not(.hidden)")
+    settings_row = page.eval_on_selector(".settings-row", "el => el.offsetHeight")
+    _close_settings(page)
+    page.query_selector_all("#grid-canvas .cell")[0].click()
+    page.click("#viewer-menu")
+    menu_row = page.eval_on_selector("#viewer-menu-popup .menu-item", "el => el.offsetHeight")
+    assert settings_row == menu_row

@@ -36,3 +36,13 @@ def test_settings_thumb_size_persists_across_reload(ready_page):
     page.wait_for_function("h => (document.querySelector('#grid-canvas .cell')?.offsetHeight || 0) > h", arg=before)
     page.click("#settings-btn")
     assert page.input_value("#thumb-size") == "512"
+
+
+def test_sidebar_toggle_tip_follows_its_state(ready_page):
+    page = ready_page
+    assert page.get_attribute("#sidebar-toggle", "title") == "hide sidebar"
+    assert page.get_attribute("#sidebar-toggle", "aria-label") == "hide sidebar"
+
+    page.click("#sidebar-toggle")
+    page.wait_for_function("document.querySelector('#sidebar-toggle').title === 'show sidebar'")
+    assert page.get_attribute("#sidebar-toggle", "aria-label") == "show sidebar"

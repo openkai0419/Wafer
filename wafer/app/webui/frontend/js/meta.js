@@ -10,18 +10,35 @@ export const DEFAULT_LABELS = {
   loadError: (message) => `failed to load metadata: ${message}`,
 };
 
+const CACHE_LIMIT = 20;
+
 export class MetaPanel {
   constructor(labels = {}) {
     this.labels = { ...DEFAULT_LABELS, ...labels };
     this.el = document.getElementById('meta-panel');
     this.content = document.getElementById('meta-content');
+    this.token = 0;
+    this.cache = new Map();
+  }
+
+  async load(key, db, path) {
+    const data = this.cache.get(key) ?? (await getJson('/api/meta', { db, path }));
+    this.remember(key, data);
+    return data;
   }
 
   async show(db, item) {
     this.el.classList.remove('hidden');
-    this.content.textContent = this.labels.loading;
+    const token = ++this.token;
+    const key = `${db}:${item.path}`;
+    if (!this.cache.has(key)) {
+      if (!this.content.hasChildNodes()) this.content.textContent = this.labels.loading;
+      this.el.classList.add('pending');
+    }
     try {
-      const data = await getJson('/api/meta', { db, path: item.path });
+      const data = await this.load(key, db, item.path);
+      if (token !== this.token) return;
+      this.el.classList.remove('pending');
       const entries = [...valueEntries(data.meta), ...valueEntries(data.tags)];
       const source = [...data.source];
       if (data.collectors.length) source.push([this.labels.collectedBy, collectorList(data.collectors)]);
@@ -31,11 +48,25 @@ export class MetaPanel {
       for (const [prefix, group] of groupEntriesByPrefix(entries)) sections.push(section(`${prefix || this.labels.noPrefix} (${group.length})`, group));
       this.content.replaceChildren(...sections);
     } catch (e) {
+      if (token !== this.token) return;
+      this.el.classList.remove('pending');
       this.content.textContent = this.labels.loadError(e.message);
     }
   }
 
+  remember(key, data) {
+    this.cache.delete(key);
+    this.cache.set(key, data);
+    if (this.cache.size > CACHE_LIMIT) this.cache.delete(this.cache.keys().next().value);
+  }
+
+  invalidate() {
+    this.cache.clear();
+  }
+
   hide() {
+    this.token++;
+    this.el.classList.remove('pending');
     this.el.classList.add('hidden');
   }
 

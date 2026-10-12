@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 
 from ..constants import VIRTUAL_PATH_SEPARATOR
 from ..core.db.db_utils import build_like_condition, escape_like
@@ -217,7 +216,7 @@ class DirectoryFilter(BaseFilterPlugin):
         for d in directories:
             if not isinstance(d, str) or not d:
                 continue
-            nd = normalize_path(str(Path(d).resolve()))
+            nd = normalize_path(d)
             prefix = (nd + "/") if nd else ""
             esc_p = escape_like(prefix)
             if not include_subfolders:

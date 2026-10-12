@@ -2,6 +2,8 @@ import os
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from wafer.constants import APP_DATA_DIR_NAME
 from wafer.core.common.paths import (
     containing_dir,
@@ -40,6 +42,32 @@ def test_normalize_path_makes_relative_absolute():
 
 def test_normalize_path_resolves_parent_segments(tmp_path):
     assert ".." not in normalize_path(str(tmp_path / "sub" / ".." / "file.txt"))
+
+
+def test_normalize_path_does_not_resolve_through_filesystem(monkeypatch):
+    def fail(*args, **kwargs):
+        raise AssertionError("normalize_path must be a pure string operation")
+
+    monkeypatch.setattr(Path, "resolve", fail)
+    monkeypatch.setattr(os.path, "realpath", fail)
+    assert normalize_path("C:/data/a.png") == "C:/data/a.png"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows drive letters")
+def test_normalize_path_uppercases_drive_letter_only():
+    assert normalize_path(r"b:\Data\Foo.PNG") == "B:/Data/Foo.PNG"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows drive letters")
+def test_normalize_path_collapses_redundant_segments():
+    assert normalize_path("B:/a//b/./c/../d.zip") == "B:/a/b/d.zip"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows drive letters")
+def test_normalize_path_is_idempotent():
+    for raw in (r"b:\x\..\Y.png", "B:/ダウン/a b.zip", "M:/x/", "C:/"):
+        once = normalize_path(raw)
+        assert normalize_path(once) == once
 
 
 def test_safe_exists(tmp_path):

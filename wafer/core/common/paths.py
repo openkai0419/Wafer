@@ -5,11 +5,10 @@ from ...constants import APP_DATA_DIR_NAME
 
 
 def normalize_path(p):
-    try:
-        path = str(Path(p).resolve(strict=False))
-    except (OSError, ValueError):
-        path = str(Path(p).absolute())
-    return path.replace("\\", "/")
+    path = os.path.abspath(p).replace("\\", "/")
+    if path[1:2] == ":":
+        return path[0].upper() + path[1:]
+    return path
 
 
 def safe_exists(p) -> bool:

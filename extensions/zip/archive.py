@@ -26,6 +26,7 @@ _RAW_SUPPORTED_METHODS = {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}
 _INDEX_CACHE_MAX = 16
 _EOCD_SIGNATURE = b"PK\x05\x06"
 _EOCD = struct.Struct("<4s4H2LH")
+_FLAG_ENCRYPTED = 0x1
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,10 @@ class ZipMemberRecord:
     @property
     def size(self) -> int:
         return int(self.file_size or 0)
+
+    @property
+    def encrypted(self) -> bool:
+        return bool(self.flag_bits & _FLAG_ENCRYPTED)
 
     @property
     def member_id(self) -> str:

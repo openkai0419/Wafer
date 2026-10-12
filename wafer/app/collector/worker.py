@@ -4,7 +4,6 @@ import signal
 import threading
 
 from ...core.logs import AppLogger
-from ...core.common.paths import normalize_path
 from ...core.ipc.node import Node
 from ...core.ipc.transport import BROKER_LOST_TIMEOUT
 from ...plugin.collector.handler import collector_resolver
@@ -108,7 +107,7 @@ class CollectorWorker:
             def process_one(p):
                 try:
                     info = file_info.get(p, (0.0, 0))
-                    result = self._plugin.process(normalize_path(p), info)
+                    result = self._plugin.process(p, info)
                     items = result if isinstance(result, list) else [result]
                     return [r.to_dict() if isinstance(r, CollectorResult) else r for r in items if r is not None]
                 except Exception as e:

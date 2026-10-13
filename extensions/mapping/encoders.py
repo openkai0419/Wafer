@@ -11,9 +11,11 @@ from typing import Any, ClassVar, Literal
 import numpy as np
 
 from wafer.core.db.path_values import PathValue
+from wafer.core.lang.manager import t
 from wafer.core.logs import AppLogger
 
 from .params import MapParams
+from .projection import median_pair_distance
 
 SEPARATORS = {"comma": r",", "newline": r"[\r\n]+", "semicolon": r";", "pipe": r"\|", "space": r"\s+"}
 AUTO_SEPARATORS = ("comma", "newline", "semicolon", "pipe")
@@ -276,7 +278,95 @@ class CategoryEncoder(BaseEncoder):
         return [counts.most_common(1)[0][0]] if counts else []
 
 
-ENCODERS: dict[str, type[BaseEncoder]] = {cls.NAME: cls for cls in (NumericEncoder, TokenSetEncoder, TextEncoder, CategoryEncoder)}
+HIST_BINS = (4, 8, 8)
+HIST_RANGE = ((0.0, 100.0), (-80.0, 80.0), (-80.0, 80.0))
+LAB_SCALE = np.array([100.0, 128.0, 128.0], dtype=np.float32)
+BRIGHT_L, DARK_L = 65.0, 35.0
+COLOR_NAMES = (
+    ("red", (53.0, 80.0, 67.0)),
+    ("orange", (67.0, 43.0, 74.0)),
+    ("yellow", (97.0, -21.0, 94.0)),
+    ("green", (46.0, -52.0, 50.0)),
+    ("cyan", (91.0, -48.0, -14.0)),
+    ("blue", (32.0, 79.0, -108.0)),
+    ("purple", (30.0, 58.0, -36.0)),
+    ("pink", (84.0, 24.0, 4.0)),
+    ("brown", (37.0, 24.0, 43.0)),
+    ("white", (100.0, 0.0, 0.0)),
+    ("gray", (54.0, 0.0, 0.0)),
+    ("black", (0.0, 0.0, 0.0)),
+)
+_RGB_TO_XYZ = np.array(
+    [[0.4124564, 0.3575761, 0.1804375], [0.2126729, 0.7151522, 0.0721750], [0.0193339, 0.1191920, 0.9503041]],
+    dtype=np.float32,
+)
+_WHITE = np.array([0.95047, 1.0, 1.08883], dtype=np.float32)
+
+
+def rgb_to_lab(rgb: np.ndarray) -> np.ndarray:
+    color = rgb.astype(np.float32) / 255.0
+    linear = np.where(color <= 0.04045, color / 12.92, ((color + 0.055) / 1.055) ** 2.4)
+    xyz = linear @ _RGB_TO_XYZ.T / _WHITE
+    f = np.where(xyz > 0.008856, np.cbrt(xyz), 7.787 * xyz + 16.0 / 116.0)
+    return np.stack([116.0 * f[..., 1] - 16.0, 500.0 * (f[..., 0] - f[..., 1]), 200.0 * (f[..., 1] - f[..., 2])], axis=-1)
+
+
+def block_mean(image: np.ndarray, grid: int) -> np.ndarray:
+    height, width = image.shape[:2]
+    if height < grid or width < grid:
+        image = np.repeat(np.repeat(image, -(-grid // height), axis=0), -(-grid // width), axis=1)
+        height, width = image.shape[:2]
+    rows = np.linspace(0, height, grid + 1).astype(int)
+    columns = np.linspace(0, width, grid + 1).astype(int)
+    sums = np.add.reduceat(np.add.reduceat(image.astype(np.float64), rows[:-1], axis=0), columns[:-1], axis=1)
+    return sums / np.outer(np.diff(rows), np.diff(columns))[..., None]
+
+
+def lab_histogram(lab: np.ndarray) -> np.ndarray:
+    pixels = lab.reshape(-1, 3)
+    low = [r[0] for r in HIST_RANGE]
+    high = [r[1] - 1e-3 for r in HIST_RANGE]
+    histogram, _ = np.histogramdd(np.clip(pixels, low, high), bins=HIST_BINS, range=HIST_RANGE)
+    return np.sqrt(histogram.ravel() / max(len(pixels), 1))
+
+
+class ImageColorEncoder(BaseEncoder):
+    NAME = "image_color"
+    DISPLAY_NAME = "Image color & layout"
+    DESCRIPTION = "Compares the colors and rough layout of the images."
+    INPUT = "image"
+
+    def encode(self, inputs, params):
+        count, grid = len(inputs), params.image_grid
+        layout = np.zeros((count, grid * grid * 3), dtype=np.float32)
+        histogram = np.zeros((count, int(np.prod(HIST_BINS))), dtype=np.float32)
+        self._means = np.zeros((count, 3), dtype=np.float32)
+        for i, image in enumerate(inputs):
+            if image is None:
+                continue
+            lab = rgb_to_lab(image[..., :3])
+            layout[i] = (block_mean(lab, grid) / LAB_SCALE).ravel()
+            histogram[i] = lab_histogram(lab)
+            self._means[i] = lab.reshape(-1, 3).mean(axis=0)
+        present = self.present(inputs)
+        layout /= median_pair_distance(layout[present])
+        histogram /= median_pair_distance(histogram[present])
+        return np.hstack([layout * params.image_balance, histogram * (1.0 - params.image_balance)])
+
+    def describe(self, members, params):
+        if len(members) == 0:
+            return []
+        mean = self._means[members].mean(axis=0)
+        name = min(COLOR_NAMES, key=lambda item: float(np.sum((np.array(item[1]) - mean) ** 2)))[0]
+        terms = [t(name)]
+        if mean[0] >= BRIGHT_L:
+            terms.append(t("bright"))
+        elif mean[0] <= DARK_L:
+            terms.append(t("dark"))
+        return terms
+
+
+ENCODERS: dict[str, type[BaseEncoder]] = {cls.NAME: cls for cls in (NumericEncoder, TokenSetEncoder, TextEncoder, CategoryEncoder, ImageColorEncoder)}
 
 
 def value_encoders() -> list[type[BaseEncoder]]:

@@ -2,14 +2,18 @@ import numpy as np
 import pytest
 
 from extensions.mapping.encoders import (
+    HIST_BINS,
     CategoryEncoder,
+    ImageColorEncoder,
     NumericEncoder,
     TextEncoder,
     TokenSetEncoder,
     ENCODERS,
     detect_encoder,
     detect_separator,
+    block_mean,
     normalize_token,
+    rgb_to_lab,
 )
 from extensions.mapping.params import MapParams
 from wafer.core.db.path_values import PathValue
@@ -123,3 +127,49 @@ def test_category_one_hot_and_describe():
     matrix = encoder.encode(values("a", "a", "b"), PARAMS).toarray()
     assert (matrix[0] == matrix[1]).all() and not (matrix[0] == matrix[2]).all()
     assert encoder.describe(np.array([0, 1, 2]), PARAMS) == ["a"]
+
+
+def solid(rgb, size=16):
+    return np.full((size, size, 3), rgb, dtype=np.uint8)
+
+
+def split(left, right, size=16):
+    image = solid(left, size)
+    image[:, size // 2 :] = right
+    return image
+
+
+def test_rgb_to_lab_reference_points():
+    assert rgb_to_lab(np.array([[255, 255, 255]], dtype=np.uint8))[0] == pytest.approx([100, 0, 0], abs=0.5)
+    assert rgb_to_lab(np.array([[0, 0, 0]], dtype=np.uint8))[0] == pytest.approx([0, 0, 0], abs=0.5)
+
+
+def test_block_mean_handles_small_and_uneven_images():
+    image = np.arange(5 * 3 * 3, dtype=np.float32).reshape(5, 3, 3)
+    assert block_mean(image, 8).shape == (8, 8, 3)
+    assert block_mean(np.ones((64, 40, 3)), 8).shape == (8, 8, 3)
+
+
+def test_image_color_dimensions_and_distances():
+    encoder = ImageColorEncoder()
+    inputs = [solid((250, 10, 10)), solid((250, 10, 10)), solid((230, 30, 30)), solid((10, 10, 250)), None]
+    matrix = encoder.encode(inputs, MapParams())
+    assert matrix.shape == (5, 8 * 8 * 3 + int(np.prod(HIST_BINS)))
+    assert np.linalg.norm(matrix[0] - matrix[1]) == pytest.approx(0.0)
+    assert np.linalg.norm(matrix[0] - matrix[2]) < np.linalg.norm(matrix[0] - matrix[3])
+    assert encoder.present(inputs).tolist() == [True, True, True, True, False]
+
+
+def test_image_color_balance_switches_parts():
+    inputs = [split((255, 0, 0), (0, 0, 255)), split((0, 0, 255), (255, 0, 0))]
+    color_only = ImageColorEncoder().encode(inputs, MapParams(image_balance=0.0))
+    layout_only = ImageColorEncoder().encode(inputs, MapParams(image_balance=1.0))
+    assert np.linalg.norm(color_only[0] - color_only[1]) == pytest.approx(0.0, abs=1e-5)
+    assert np.linalg.norm(layout_only[0] - layout_only[1]) > 0.1
+
+
+def test_image_color_describe_names_color():
+    encoder = ImageColorEncoder()
+    encoder.encode([solid((20, 40, 230)), solid((240, 240, 240))], MapParams())
+    assert encoder.describe(np.array([0]), MapParams())[0] == "blue"
+    assert encoder.describe(np.array([1]), MapParams()) == ["white", "bright"]

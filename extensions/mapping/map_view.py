@@ -64,6 +64,9 @@ class GroupLabelItem(QtWidgets.QGraphicsItem):
         painter.drawText(self.rect, Qt.AlignCenter, self.text)
 
     def mousePressEvent(self, event):
+        if event.button() != Qt.LeftButton:
+            event.ignore()
+            return
         self.view.select_group(self.group)
         event.accept()
 
@@ -246,6 +249,11 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             event.accept()
             return
         position = event.position().toPoint()
+        if event.button() == Qt.RightButton:
+            self.press_pos = None
+            self.select_for_context(position)
+            event.accept()
+            return
         on_label = isinstance(self.itemAt(position), GroupLabelItem)
         tracking = event.button() == Qt.LeftButton and not on_label
         self.press_pos = position if tracking else None
@@ -255,6 +263,13 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             super().mousePressEvent(event)
         finally:
             self.syncing = False
+
+    def select_for_context(self, position: QtCore.QPoint):
+        item = self.itemAt(position)
+        if isinstance(item, MapPointItem) and not item.isSelected():
+            self.select_rows([item.row])
+            self.press_rows = self.selected_rows()
+            self.selection_changed.emit()
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent):
         if self.pan_origin is not None:

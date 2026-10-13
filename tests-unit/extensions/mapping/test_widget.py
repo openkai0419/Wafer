@@ -6,6 +6,7 @@ from PySide6 import QtCore
 
 from extensions.mapping import projection
 from extensions.mapping import widget as widget_module
+from extensions.mapping.map_view import MapPointItem
 from extensions.mapping.session import FeatureSpec
 from extensions.mapping.widget import MappingWidget
 from wafer.core.db.path_values import PathValue
@@ -109,12 +110,101 @@ def test_drill_down_needs_three(mapping):
     mapping.map_view.select_rows([0])
     mapping.drill_down()
     assert len(mapping.current_result().paths) == 30
-    assert mapping.message_text()
+    assert mapping.message_text() == "Select at least 3 files."
 
 
 def test_remove_files(mapping, qtbot):
     mapping.remove_files(["c:/0.png"])
     qtbot.waitUntil(lambda: mapping.current_result() is not None and len(mapping.current_result().paths) == 29, timeout=5000)
+
+
+def test_remove_unknown_files_is_a_noop(mapping, qtbot):
+    result = mapping.current_result()
+    pipeline = mapping.levels[0].pipeline
+    mapping.remove_files(["c:/unknown.png"])
+    qtbot.wait(100)
+    assert mapping.current_result() is result
+    assert mapping.levels[0].pipeline is pipeline
+
+
+def test_remove_keeps_results_of_untouched_levels(mapping, qtbot):
+    mapping.map_view.select_rows(range(10))
+    mapping.map_view.selection_changed.emit()
+    mapping.drill_down()
+    qtbot.waitUntil(lambda: mapping.current_result() is not None and len(mapping.current_result().paths) == 10, timeout=5000)
+    sub = mapping.current_result()
+    mapping.remove_files(["c:/25.png"])
+    qtbot.wait(100)
+    assert mapping.current_result() is sub
+    assert mapping.levels[0].result is None
+    assert len(mapping.levels[0].paths) == 29
+
+
+def test_remove_all_files_returns_to_empty_state(mapping):
+    mapping.remove_files(list(mapping.paths))
+    assert mapping.stack.currentIndex() == 0
+    assert mapping.current_result() is None
+
+
+def test_drill_down_before_values_loaded_is_ignored(qtbot):
+    w = MappingWidget()
+    qtbot.addWidget(w)
+    w.drill_down()
+    assert w.levels == []
+    w.close()
+
+
+def test_fetch_failure_shows_error(qtbot, monkeypatch):
+    def fail(db, ps):
+        raise OSError("boom")
+
+    errors = []
+    monkeypatch.setattr(widget_module, "fetch_path_values", fail)
+    monkeypatch.setattr(widget_module.AppLogger, "error", lambda *args, **kwargs: errors.append(args))
+    w = MappingWidget()
+    qtbot.addWidget(w)
+    w.set_files(["a", "b", "c"], "db")
+    qtbot.waitUntil(lambda: w.message_text() == "Mapping failed. See the log for details.", timeout=5000)
+    assert errors
+    w.close()
+
+
+def without_labels(mapping, qtbot):
+    previous = mapping.current_result()
+    mapping.set_grouping(False)
+    qtbot.waitUntil(lambda: mapping.current_result() is not previous, timeout=5000)
+    return mapping.map_view
+
+
+def clickable_point(view):
+    for item in view.point_items():
+        pos = view.mapFromScene(item.pos())
+        hit = view.itemAt(pos)
+        if isinstance(hit, MapPointItem):
+            return pos, hit.row
+    raise AssertionError("no clickable point")
+
+
+def test_right_click_on_selected_point_keeps_selection(mapping, qtbot):
+    view = without_labels(mapping, qtbot)
+    pos, hit = clickable_point(view)
+    other = (hit + 1) % 30
+    view.select_rows([hit, other])
+    view.selection_changed.emit()
+    expected = mapping.selected_paths()
+    qtbot.mouseClick(view.viewport(), QtCore.Qt.RightButton, pos=pos)
+    assert mapping.context_for_selection()["paths"] == expected
+    assert len(expected) == 2
+
+
+def test_right_click_on_unselected_point_selects_only_it(mapping, qtbot):
+    view = without_labels(mapping, qtbot)
+    pos, hit = clickable_point(view)
+    view.select_rows([(hit + 1) % 30])
+    view.selection_changed.emit()
+    qtbot.mouseClick(view.viewport(), QtCore.Qt.RightButton, pos=pos)
+    assert mapping.context_for_selection()["paths"] == [f"c:/{hit}.png"]
+    assert mapping.file_list.selected_rows() == [hit]
 
 
 def test_state_roundtrip(mapping):

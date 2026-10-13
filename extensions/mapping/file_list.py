@@ -64,6 +64,7 @@ class FileList(QtWidgets.QListView, ActionKit.UIMixin):
         self.owner = owner
         self.file_model = FileListModel(owner, self)
         self.positions: dict[int, int] = {}
+        self.path_positions: dict[str, int] = {}
         self.syncing = False
         self.setModel(self.file_model)
         self.setItemDelegate(ColorBarDelegate(self))
@@ -80,6 +81,7 @@ class FileList(QtWidgets.QListView, ActionKit.UIMixin):
         self.file_model.colors = colors
         self.file_model.endResetModel()
         self.positions = {row: position for position, row in enumerate(self.file_model.order)}
+        self.path_positions = {self.file_model.paths[row]: position for row, position in self.positions.items()}
 
     def clear_rows(self):
         self.set_rows([], np.zeros(0, dtype=np.int64), [])
@@ -105,11 +107,10 @@ class FileList(QtWidgets.QListView, ActionKit.UIMixin):
             self.syncing = False
 
     def update_path(self, path: str):
-        for position, row in enumerate(self.file_model.order):
-            if self.file_model.paths[row] == path:
-                index = self.file_model.index(position, 0)
-                self.file_model.dataChanged.emit(index, index, [Qt.DecorationRole])
-                return
+        position = self.path_positions.get(path)
+        if position is not None:
+            index = self.file_model.index(position, 0)
+            self.file_model.dataChanged.emit(index, index, [Qt.DecorationRole])
 
     def on_selection(self, *_):
         if not self.syncing:

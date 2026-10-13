@@ -197,14 +197,24 @@ class MappingWidget(QtWidgets.QWidget):
         self.set_files(self.paths + [p for p in paths if p not in known], db_path)
 
     def remove_files(self, paths: list[str]) -> None:
-        removed = set(paths)
+        removed = set(paths) & set(self.paths)
+        if not removed:
+            return
         self.paths = [p for p in self.paths if p not in removed]
+        if not self.paths:
+            self.reset()
+            return
+        changed = []
         for level in self.levels:
-            level.paths = [p for p in level.paths if p not in removed]
-            level.pipeline = MapPipeline(load_pixels, self.pixels)
-            level.result = None
+            kept = [p for p in level.paths if p not in removed]
+            if len(kept) != len(level.paths):
+                level.paths = kept
+                level.pipeline = MapPipeline(load_pixels, self.pixels)
+                level.result = None
+                changed.append(level)
         self.update_crumbs()
-        self.recompute()
+        if self.levels and self.levels[-1] in changed:
+            self.recompute()
 
     def reset(self) -> None:
         cancel_work(self.fetch_cancel, self.compute_cancel, self.thumbs)
@@ -225,8 +235,13 @@ class MappingWidget(QtWidgets.QWidget):
         self.set_message(t("Loading values") + ELLIPSIS)
 
         def task():
-            values = fetch_path_values(db_path, paths)
-            sources = fetch_sources(db_path, paths)
+            try:
+                values = fetch_path_values(db_path, paths)
+                sources = fetch_sources(db_path, paths)
+            except Exception as e:
+                AppLogger.error("[Mapping] Loading values failed", exc=e)
+                self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.finish(t("Mapping failed. See the log for details.")))
+                return
             self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.on_values(values, sources))
 
         self.dispatcher.post(task, cancel=cancel)
@@ -256,6 +271,7 @@ class MappingWidget(QtWidgets.QWidget):
             self.compute_cancel.cancel()
             self.finish(t("Add a key to start."))
             return
+        pipeline = level.pipeline
         request = MapRequest(list(level.paths), self.values, features, self.params, self.grouping_enabled)
         cancel = self.compute_cancel.renew()
         self.cancel_button.show()
@@ -267,7 +283,7 @@ class MappingWidget(QtWidgets.QWidget):
 
         def task():
             try:
-                result = level.pipeline.run(request, cancelled=cancel.is_cancelled, progress=progress)
+                result = pipeline.run(request, cancelled=cancel.is_cancelled, progress=progress)
             except MapError as e:
                 self.dispatcher.invoke(lambda m=str(e): cancel.is_cancelled() or self.finish(t(m)))
                 return
@@ -381,6 +397,8 @@ class MappingWidget(QtWidgets.QWidget):
         self.map_view.viewport().update()
 
     def drill_down(self) -> None:
+        if not self.levels:
+            return
         paths = self.selected_paths()
         if len(paths) < MIN_DRILL_FILES:
             self.set_message(t("Select at least 3 files."))

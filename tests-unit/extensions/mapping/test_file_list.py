@@ -26,3 +26,14 @@ def test_rows_follow_order_and_selection_roundtrip(qtbot):
     widget.selectionModel().select(model.index(0, 0), QtCore.QItemSelectionModel.ClearAndSelect)
     assert widget.selected_rows() == [2] and emitted
     assert widget.extend_context(None, None) == {"paths": ["y"]}
+
+
+def test_update_path_emits_data_changed_for_the_row(qtbot):
+    widget = FileList(Owner())
+    qtbot.addWidget(widget)
+    widget.set_rows(["c:/a.png", "c:/b.png", "c:/c.png"], np.array([2, 0, 1]), [QtGui.QColor("red")] * 3)
+    changed = []
+    widget.file_model.dataChanged.connect(lambda top, bottom, roles: changed.append(top.row()))
+    widget.update_path("c:/a.png")
+    widget.update_path("c:/missing.png")
+    assert changed == [1]

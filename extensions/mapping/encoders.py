@@ -20,7 +20,7 @@ AUTO_SEPARATORS = ("comma", "newline", "semicolon", "pipe")
 TIMESTAMP_RANGE = (9.0e8, 4.2e9)
 _WEIGHTED_TOKEN = re.compile(r"^\((.+):\s*([0-9]*\.?[0-9]+)\)$")
 _WRAPPERS = str.maketrans("", "", "{}[]()")
-_WORD_SPLIT = re.compile(r"[\s,.;:!?、。，．・/|()\[\]{}\"'「」『』【】]+")
+_WORD_SPLIT = re.compile(r"[\s,.;:!?、。\uff0c\uff0e・/|()\[\]{}\"'「」『』【】]+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,8 +118,8 @@ class NumericEncoder(BaseEncoder):
         if TIMESTAMP_RANGE[0] <= low and high <= TIMESTAMP_RANGE[1]:
             start = datetime.fromtimestamp(low).strftime("%Y-%m-%d")
             end = datetime.fromtimestamp(high).strftime("%Y-%m-%d")
-            return [start if start == end else f"{start} – {end}"]
-        return [f"{low:g}" if low == high else f"{low:g} – {high:g}"]
+            return [start if start == end else f"{start} \u2013 {end}"]
+        return [f"{low:g}" if low == high else f"{low:g} \u2013 {high:g}"]
 
 
 def detect_separator(texts: Sequence[str]) -> str:

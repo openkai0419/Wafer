@@ -77,7 +77,7 @@ def test_numeric_describe_timestamps_and_plain():
     encoder.encode([PathValue("", 1700000000.0), PathValue("", 1700090000.0)], PARAMS)
     assert encoder.describe(np.array([0, 1]), PARAMS)[0].count("-") == 4
     encoder.encode([PathValue("", 2.0), PathValue("", 5.0)], PARAMS)
-    assert encoder.describe(np.array([0, 1]), PARAMS) == ["2 – 5"]
+    assert encoder.describe(np.array([0, 1]), PARAMS) == ["2 \u2013 5"]
 
 
 def test_token_set_overlap_and_describe():

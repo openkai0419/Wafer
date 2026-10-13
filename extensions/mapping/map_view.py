@@ -28,6 +28,7 @@ class MapPointItem(QtWidgets.QGraphicsItem):
         self.view = view
         self.row = row
         self.setFlags(QtWidgets.QGraphicsItem.ItemIsSelectable | QtWidgets.QGraphicsItem.ItemIgnoresTransformations)
+        self.setAcceptedMouseButtons(Qt.NoButton)
 
     def boundingRect(self) -> QtCore.QRectF:
         half = self.view.item_extent() / 2
@@ -92,6 +93,8 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.thumbnails = False
         self.syncing = False
         self.pan_origin: QtCore.QPoint | None = None
+        self.press_pos: QtCore.QPoint | None = None
+        self.press_rows: list[int] = []
         self.scene().selectionChanged.connect(self.on_scene_selection)
 
     @property
@@ -182,10 +185,11 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             painter.setPen(Qt.NoPen)
             painter.setBrush(color)
             painter.drawEllipse(frame)
-        if not (item.isSelected() or self.thumbnails):
+        outlier = self.outliers.size > item.row and bool(self.outliers[item.row])
+        if not (item.isSelected() or self.thumbnails or outlier):
             return
         pen = QtGui.QPen(QtGui.QColor(palette.accent) if item.isSelected() else color, dpix(2))
-        if self.outliers.size > item.row and self.outliers[item.row]:
+        if outlier:
             pen.setStyle(Qt.DashLine)
         painter.setPen(pen)
         painter.setBrush(Qt.NoBrush)
@@ -221,6 +225,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
 
     def on_scene_selection(self):
         if not self.syncing:
+            self.press_rows = self.selected_rows()
             self.selection_changed.emit()
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
@@ -240,7 +245,16 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self.viewport().setCursor(Qt.ClosedHandCursor)
             event.accept()
             return
-        super().mousePressEvent(event)
+        position = event.position().toPoint()
+        on_label = isinstance(self.itemAt(position), GroupLabelItem)
+        tracking = event.button() == Qt.LeftButton and not on_label
+        self.press_pos = position if tracking else None
+        self.press_rows = self.selected_rows()
+        self.syncing = tracking
+        try:
+            super().mousePressEvent(event)
+        finally:
+            self.syncing = False
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent):
         if self.pan_origin is not None:
@@ -259,7 +273,29 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self.viewport().unsetCursor()
             event.accept()
             return
+        press_pos, self.press_pos = self.press_pos, None
         super().mouseReleaseEvent(event)
+        if press_pos is None or event.button() != Qt.LeftButton:
+            return
+        position = event.position().toPoint()
+        if (position - press_pos).manhattanLength() < QtWidgets.QApplication.startDragDistance():
+            self.apply_click(position, event.modifiers())
+        rows = self.selected_rows()
+        if rows != self.press_rows:
+            self.press_rows = rows
+            self.selection_changed.emit()
+
+    def apply_click(self, position: QtCore.QPoint, modifiers: Qt.KeyboardModifier):
+        item = self.itemAt(position)
+        row = item.row if isinstance(item, MapPointItem) else None
+        selected = set(self.selected_rows())
+        if modifiers & Qt.ControlModifier:
+            if row is None:
+                return
+            selected ^= {row}
+        else:
+            selected = set() if row is None else {row}
+        self.select_rows(selected)
 
     def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent):
         item = self.itemAt(event.position().toPoint())

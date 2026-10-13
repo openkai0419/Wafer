@@ -22,6 +22,7 @@ from ...core.common.formatting import natural_key
 from ...qt.common.dpi import dpix
 from ...core.logs import AppLogger
 from ...core.common.paths import safe_is_file
+from ...core.db.path_values import fetch_path_values
 from .engine import RenameColumn, RenameEngine, RenameResult
 from .overlay import ThumbnailOverlay
 from .layout import OrientedSplitter, DIRECTIONS, DIRECTION_ICONS
@@ -39,58 +40,9 @@ from ...core.lang.manager import t
 from ...qt.commands.bridge import ActionKit, Context, Menu
 
 
-_SQL_CHUNK_SIZE = 4000
-
-
 def _fetch_metadata_sync(db_path, paths_str):
-    import sqlite3
-
-    result: dict[str, dict[str, str]] = {}
-    if not db_path or not os.path.isfile(str(db_path)):
-        return result
-    try:
-        uri = Path(db_path).resolve().as_uri()
-        conn = sqlite3.connect(f"{uri}?mode=ro", uri=True, timeout=1.0)
-        try:
-            for start in range(0, len(paths_str), _SQL_CHUNK_SIZE):
-                chunk = paths_str[start : start + _SQL_CHUNK_SIZE]
-                placeholders = ",".join("?" * len(chunk))
-                rows = conn.execute(
-                    f"SELECT path, key, value FROM meta_info WHERE path IN ({placeholders})",
-                    chunk,
-                ).fetchall()
-                for path, key, value in rows:
-                    result.setdefault(path, {})[key] = value or ""
-                rows = conn.execute(
-                    f"SELECT i.path, t.key, t.value FROM tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source WHERE i.path IN ({placeholders})",
-                    chunk,
-                ).fetchall()
-                for path, key, value in rows:
-                    result.setdefault(path, {})[key] = value or ""
-                rows = conn.execute(
-                    f"""SELECT i.path, i.name, s.size, s.modified, s.created, s.collected
-                    FROM files AS i JOIN sources AS s ON s.source = i.source
-                    WHERE i.path IN ({placeholders})""",
-                    chunk,
-                ).fetchall()
-                for path, name, size, modified, created, collected in rows:
-                    entry = result.setdefault(path, {})
-                    entry["path"] = path or ""
-                    if name is not None:
-                        entry["name"] = str(name)
-                    for key, value in (
-                        ("size", size),
-                        ("modified", modified),
-                        ("created", created),
-                        ("collected", collected),
-                    ):
-                        if value is not None:
-                            entry[key] = str(value)
-        finally:
-            conn.close()
-    except Exception as e:
-        AppLogger.warning("Failed to fetch metadata for rename", exc=e)
-    return result
+    values = fetch_path_values(db_path, list(paths_str))
+    return {path: {key: value.text for key, value in entry.items()} for path, entry in values.items()}
 
 
 def _fill_fs_timestamps(paths, keys, metadata):

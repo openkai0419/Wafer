@@ -40,5 +40,5 @@ class TestBadgeSortKey:
 
 class TestKnownExtensions:
     def test_all_known_entries_present(self):
-        expected = {"image", "video", "animated", "color", "duplicate", "exiftool", "ffmpeg", "text_generation", "additional_filters", "additional_layout", "wd14", "florence", "zip"}
+        expected = {"image", "video", "animated", "color", "duplicate", "exiftool", "ffmpeg", "text_generation", "additional_filters", "additional_layout", "mapping", "wd14", "florence", "zip"}
         assert set(KNOWN_EXTENSIONS.keys()) == expected

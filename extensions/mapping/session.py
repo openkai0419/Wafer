@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import threading
 import time
 from collections.abc import Callable
@@ -43,16 +44,23 @@ class FeatureSpec:
         return {"key": self.key, "encoder": self.encoder, "weight": self.weight, "options": dict(self.options)}
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> FeatureSpec | None:
+    def from_dict(cls, data: Any) -> FeatureSpec | None:
+        if not isinstance(data, dict):
+            return None
         encoder = ENCODERS.get(str(data.get("encoder")))
         key = data.get("key")
         if encoder is None or (encoder.INPUT == "image") != (key is None):
             return None
         try:
             weight = float(data.get("weight", 1.0))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             weight = 1.0
-        options = {str(k): str(v) for k, v in dict(data.get("options") or {}).items()}
+        weight = min(max(weight, 0.0), 3.0) if math.isfinite(weight) else 1.0
+        raw_options = data.get("options") or {}
+        if not isinstance(raw_options, dict):
+            AppLogger.warning(f"[Mapping] Ignored invalid saved options {raw_options!r}")
+            raw_options = {}
+        options = {str(k): str(v) for k, v in raw_options.items()}
         return cls(None if key is None else str(key), encoder.NAME, weight, options)
 
 
@@ -135,6 +143,8 @@ class MapPipeline:
             return self._run(request, request.params.normalized(), cancelled, progress)
 
     def _run(self, request, params, cancelled, progress) -> MapResult | None:
+        if cancelled():
+            return None
         diagnostics = MapDiagnostics()
         count = len(request.paths)
         blocks = self._encode(request, params, cancelled, progress, diagnostics)
@@ -198,6 +208,8 @@ class MapPipeline:
         for key in [key for key in self._blocks if key not in wanted]:
             del self._blocks[key]
         for feature in request.features:
+            if cancelled():
+                return None
             if feature.cache_key in self._blocks:
                 continue
             encoder = ENCODERS[feature.encoder](feature.options)
@@ -208,8 +220,6 @@ class MapPipeline:
             with timed(diagnostics, "encode"):
                 raw = encoder.encode(inputs, params)
             self._blocks[feature.cache_key] = _Block(feature, encoder, raw, encoder.present(inputs))
-            if cancelled():
-                return None
         for feature in request.features:
             self._blocks[feature.cache_key].feature = feature
         return [self._blocks[feature.cache_key] for feature in request.features]

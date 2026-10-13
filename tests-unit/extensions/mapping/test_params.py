@@ -1,3 +1,5 @@
+import pytest
+
 from extensions.mapping.params import STAGES, MapParams, changed_stage, param_specs
 
 
@@ -43,3 +45,17 @@ def test_auto_cluster_size():
     assert params.resolved_min_cluster_size(3000) == 30
     assert params.resolved_min_samples(3000) == 30
     assert MapParams(min_samples=4).resolved_min_samples(3000) == 4
+
+
+@pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan"), 10**400, "inf", "nan"])
+def test_from_dict_ignores_non_finite_values(bad):
+    params = MapParams.from_dict({"seed": bad, "min_dist": bad, "n_neighbors": bad})
+    assert params.seed == MapParams().seed
+    assert params.min_dist == MapParams().min_dist
+    assert params.n_neighbors == MapParams().n_neighbors
+
+
+def test_normalized_resets_non_finite_fields_to_default():
+    params = MapParams(seed=float("nan"), min_dist=float("inf"), svd_dims=float("-inf")).normalized()
+    defaults = MapParams()
+    assert (params.seed, params.min_dist, params.svd_dims) == (defaults.seed, defaults.min_dist, defaults.svd_dims)

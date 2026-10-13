@@ -17,6 +17,7 @@ from extensions.mapping.encoders import (
 )
 from extensions.mapping.params import MapParams
 from wafer.core.db.path_values import PathValue
+from wafer.core.logs import AppLogger
 
 PARAMS = MapParams()
 
@@ -120,6 +121,22 @@ def test_text_handles_japanese_variants():
     matrix = encoder.encode(values("青い髪の少女", "青髪の少女", "夜の街と雨"), PARAMS).toarray()
     assert np.linalg.norm(matrix[0] - matrix[1]) < np.linalg.norm(matrix[0] - matrix[2])
     assert encoder.describe(np.array([2]), PARAMS)
+
+
+def test_text_without_words_logs_once_and_returns_no_terms(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(AppLogger, "warning", lambda message, **kwargs: warnings.append(message))
+    encoder = TextEncoder()
+    encoder.encode(values("a b", "c d", "e"), PARAMS)
+    assert encoder.describe(np.array([0]), PARAMS) == []
+    assert encoder.describe(np.array([1, 2]), PARAMS) == []
+    assert [w for w in warnings if "no words" in w] == ["[Mapping] Text key has no words to label groups"]
+
+
+def test_token_set_custom_regex_with_capture_group_drops_empty_pieces():
+    encoder = TokenSetEncoder({"separator": "custom", "pattern": r",|(;)"})
+    matrix = encoder.encode(values("a,b;c", "b;c,d"), PARAMS)
+    assert matrix.shape[1] == 5
 
 
 def test_category_one_hot_and_describe():

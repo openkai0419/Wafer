@@ -44,9 +44,7 @@ def test_combine_blocks_scales_each_block_to_unit_median():
 def test_combine_blocks_missing_rows_use_column_mean_and_all_missing_block():
     dense = np.array([[0.0], [2.0], [9.0]])
     present = np.array([True, True, False])
-    combined, stats = projection.combine_blocks(
-        [("a", dense, present, 1.0), ("b", np.zeros((3, 2)), np.zeros(3, dtype=bool), 1.0)], seed=0
-    )
+    combined, stats = projection.combine_blocks([("a", dense, present, 1.0), ("b", np.zeros((3, 2)), np.zeros(3, dtype=bool), 1.0)], seed=0)
     assert combined[2, 0] == pytest.approx(combined[:2, 0].mean())
     assert stats[0].missing == 1 and stats[1].missing == 3
     assert np.isfinite(combined).all()

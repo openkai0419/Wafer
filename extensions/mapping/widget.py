@@ -27,13 +27,13 @@ from wafer.qt.widgets.popup import PopupBase
 from .encoders import detect_encoder
 from .feature_bar import FeatureBar
 from .file_list import FileList
-from .map_view import MapView
+from .map_view import THUMB_SIZE, MapView
 from .params import MapParams
 from .session import FeatureSpec, MapError, MapPipeline, MapRequest, MapResult, value_input
 from .tuning import TuningPanel
 
 PIXEL_SIZE = 64
-THUMB_SIZE = 96
+COMPUTE_PRIORITY = 7
 THUMB_CACHE = 3000
 RECOMPUTE_DELAY_MS = 300
 MIN_DRILL_FILES = 3
@@ -53,7 +53,7 @@ def qimage_to_rgb(image: QtGui.QImage) -> np.ndarray:
 def load_pixels(path: str) -> np.ndarray | None:
     try:
         image = load_thumbnail(path, QtCore.QSize(PIXEL_SIZE, PIXEL_SIZE))
-    except (OSError, RuntimeError) as e:
+    except Exception as e:
         AppLogger.warning(f"[Mapping] Thumbnail failed: {path}", exc=e)
         return None
     if image is None or image.isNull():
@@ -186,6 +186,8 @@ class MappingWidget(QtWidgets.QWidget):
         self.db_path = db_path
         self.paths = list(dict.fromkeys(paths))
         self.levels = []
+        keep = set(self.paths)
+        self.pixels = {path: pixels for path, pixels in self.pixels.items() if path in keep}
         self.stack.setCurrentWidget(self.page)
         self.fetch()
 
@@ -244,7 +246,7 @@ class MappingWidget(QtWidgets.QWidget):
                 return
             self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.on_values(values, sources))
 
-        self.dispatcher.post(task, cancel=cancel)
+        self.dispatcher.post(task, priority=COMPUTE_PRIORITY, cancel=cancel)
 
     def on_values(self, values, sources):
         self.values, self.sources = values, sources
@@ -294,7 +296,7 @@ class MappingWidget(QtWidgets.QWidget):
             if result is not None:
                 self.dispatcher.invoke(lambda: cancel.is_cancelled() or self._apply_result(level, result))
 
-        self.dispatcher.post(task, cancel=cancel)
+        self.dispatcher.post(task, priority=COMPUTE_PRIORITY, cancel=cancel)
 
     def cancel_compute(self):
         self.compute_cancel.cancel()
@@ -312,6 +314,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.show_result(result)
 
     def show_result(self, result: MapResult):
+        self.thumbs.cache_limit = max(THUMB_CACHE, len(result.paths))
         selected = set(self.selected_paths())
         keep_view = self.shown is not None and self.shown.paths == result.paths
         colors = self.colors_for(result)

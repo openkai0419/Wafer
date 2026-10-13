@@ -5,6 +5,7 @@ import pytest
 from PySide6 import QtCore
 
 from extensions.mapping import projection
+from extensions.mapping import map_view as map_view_module
 from extensions.mapping import widget as widget_module
 from extensions.mapping.map_view import MapPointItem
 from extensions.mapping.session import FeatureSpec
@@ -258,3 +259,49 @@ def test_drop_without_files_is_ignored(mapping):
     event = DropEvent(QtCore.QMimeData())
     mapping.handle_drag_enter(event)
     assert event.accepted is False
+
+
+def test_load_pixels_failure_is_a_missing_value(monkeypatch):
+    def broken(path, size):
+        raise ValueError("bad image")
+
+    monkeypatch.setattr(widget_module, "load_thumbnail", broken)
+    assert widget_module.load_pixels("c:/broken.png") is None
+
+
+def test_thumbnail_cache_grows_to_hold_every_point(mapping, monkeypatch):
+    monkeypatch.setattr(widget_module, "THUMB_CACHE", 5)
+    mapping.show_result(mapping.current_result())
+    assert mapping.thumbs.cache_limit == 30
+    monkeypatch.setattr(widget_module, "THUMB_CACHE", 100)
+    mapping.show_result(mapping.current_result())
+    assert mapping.thumbs.cache_limit == 100
+
+
+def test_thumbnail_size_matches_map_view():
+    assert widget_module.THUMB_SIZE == map_view_module.THUMB_SIZE
+
+
+def test_set_files_keeps_only_pixels_of_new_paths(mapping, qtbot):
+    old = mapping.pixels
+    mapping.pixels.update({"c:/0.png": None, "c:/1.png": None, "c:/gone.png": None})
+    mapping.set_files(["c:/0.png", "c:/1.png", "c:/2.png"], "db")
+    assert mapping.pixels is not old
+    assert set(mapping.pixels) == {"c:/0.png", "c:/1.png"}
+    assert "c:/gone.png" in old
+    qtbot.waitUntil(lambda: mapping.current_result() is not None and len(mapping.current_result().paths) == 3, timeout=5000)
+
+
+def test_add_files_keeps_existing_pixels(mapping, qtbot):
+    mapping.pixels.update({"c:/0.png": None, "c:/1.png": None})
+    mapping.add_files(["c:/new.png"], "db")
+    assert {"c:/0.png", "c:/1.png"} <= set(mapping.pixels)
+    qtbot.waitUntil(lambda: mapping.current_result() is not None and len(mapping.current_result().paths) == 31, timeout=5000)
+
+
+def test_computation_outranks_thumbnail_requests(mapping):
+    with patch.object(mapping.dispatcher, "post") as post:
+        mapping.recompute()
+        mapping.fetch()
+    assert [call.kwargs["priority"] for call in post.call_args_list] == [widget_module.COMPUTE_PRIORITY] * 2
+    assert widget_module.COMPUTE_PRIORITY > 5

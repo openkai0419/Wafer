@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from extensions.mapping import projection, session
+from extensions.mapping.encoders import ENCODERS
 from extensions.mapping.params import MapParams
 from extensions.mapping.session import FeatureSpec, MapError, MapPipeline, MapRequest
 from wafer.core.db.path_values import PathValue
@@ -133,3 +134,34 @@ def test_feature_spec_roundtrip_and_validation():
     assert FeatureSpec.from_dict({"key": "x", "encoder": "nope"}) is None
     assert FeatureSpec.from_dict({"key": "x", "encoder": "image_color"}) is None
     assert FeatureSpec.from_dict({"key": None, "encoder": "text"}) is None
+
+
+@pytest.mark.parametrize("weight, expected", [(float("inf"), 1.0), (float("nan"), 1.0), (10**400, 1.0), (99, 3.0), (-2, 0.0), ("x", 1.0)])
+def test_feature_spec_sanitizes_weight(weight, expected):
+    spec = FeatureSpec.from_dict({"key": "tags", "encoder": "token_set", "weight": weight})
+    assert spec.weight == expected
+
+
+def test_feature_spec_ignores_non_dict_options_and_data():
+    spec = FeatureSpec.from_dict({"key": "tags", "encoder": "token_set", "options": "space"})
+    assert spec is not None and spec.options == {}
+    assert FeatureSpec.from_dict("garbage") is None
+    assert FeatureSpec.from_dict(None) is None
+    assert FeatureSpec.from_dict([1, 2]) is None
+
+
+def test_cancelled_before_start_encodes_nothing(monkeypatch):
+    calls = []
+    original = ENCODERS["token_set"].encode
+    monkeypatch.setattr(ENCODERS["token_set"], "encode", lambda self, inputs, params: calls.append(1) or original(self, inputs, params))
+    assert pipeline().run(make_request(), cancelled=lambda: True) is None
+    assert calls == []
+
+
+def test_cancel_between_features_skips_remaining_encodes(monkeypatch):
+    calls = []
+    original = ENCODERS["token_set"].encode
+    monkeypatch.setattr(ENCODERS["token_set"], "encode", lambda self, inputs, params: calls.append(1) or original(self, inputs, params))
+    features = [FeatureSpec("tags", "token_set"), FeatureSpec("tags", "token_set", options={"separator": "comma"})]
+    assert pipeline().run(make_request(features=features), cancelled=lambda: len(calls) >= 1) is None
+    assert calls == [1]

@@ -192,6 +192,8 @@ class TokenSetEncoder(BaseEncoder):
         for text in texts:
             tokens: dict[str, float] = {}
             for raw in re.split(pattern, text):
+                if not raw:
+                    continue
                 token, weight = normalize_token(raw)
                 if token:
                     tokens[token] = max(tokens.get(token, 0.0), weight)
@@ -240,6 +242,7 @@ class TextEncoder(BaseEncoder):
             return np.zeros((len(inputs), 1), dtype=np.float32)
 
     def describe(self, members, params):
+        from scipy import sparse
         from sklearn.feature_extraction.text import CountVectorizer
 
         if self._words_matrix is None:
@@ -247,8 +250,10 @@ class TextEncoder(BaseEncoder):
             try:
                 self._words_matrix = vectorizer.fit_transform(self._texts).tocsr()
                 self._word_names = vectorizer.get_feature_names_out()
-            except ValueError:
-                return []
+            except ValueError as e:
+                AppLogger.warning("[Mapping] Text key has no words to label groups", exc=e)
+                self._words_matrix = sparse.csr_matrix((len(self._texts), 0), dtype=np.float32)
+                self._word_names = []
         return top_lift_terms(self._words_matrix, members, self._word_names, params.label_terms)
 
 

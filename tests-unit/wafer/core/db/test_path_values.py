@@ -1,4 +1,4 @@
-import pytest
+import sqlite3
 
 from wafer.core.db import path_values
 from wafer.core.db.file_db import FileDB
@@ -58,6 +58,17 @@ def test_chunk_boundary(tmp_path, monkeypatch):
     values = fetch_path_values(_make_db(tmp_path, 5), paths)
     assert sorted(values) == paths
     assert all(values[p]["name"].text == p[3:] for p in paths)
+
+
+def test_non_numeric_source_column_keeps_text_without_number(tmp_path):
+    db_path = _make_db(tmp_path)
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE sources SET size = 'broken' WHERE source = 'c:/0.jpg'")
+    conn.commit()
+    conn.close()
+    values = fetch_path_values(db_path, ["c:/0.jpg"])["c:/0.jpg"]
+    assert values["size"] == PathValue("broken", None)
+    assert values["name"] == PathValue("0.jpg")
 
 
 def test_fetch_sources(tmp_path):

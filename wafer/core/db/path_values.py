@@ -45,7 +45,7 @@ def fetch_path_values(db_path: str | Path | None, paths: list[str]) -> dict[str,
                 entry["name"] = PathValue(str(name))
             for key, value in zip(SOURCE_COLUMNS, numbers):
                 if value is not None:
-                    entry[key] = PathValue(str(value), float(value))
+                    entry[key] = PathValue(str(value), float(value) if isinstance(value, (int, float)) else None)
 
     _read_chunks(db_path, paths, read, "path values")
     return result

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+
 
 from ..logs import AppLogger
 from .db_utils import open_readonly
@@ -23,20 +24,15 @@ def fetch_path_values(db_path: str | Path | None, paths: list[str]) -> dict[str,
     result: dict[str, dict[str, PathValue]] = {}
 
     def read(conn: sqlite3.Connection, chunk: list[str], placeholders: str) -> None:
-        for path, key, value, number in conn.execute(
-            f"SELECT path, key, value, value_num FROM meta_info WHERE path IN ({placeholders})", chunk
-        ):
+        for path, key, value, number in conn.execute(f"SELECT path, key, value, value_num FROM meta_info WHERE path IN ({placeholders})", chunk):
             result.setdefault(path, {})[key] = PathValue(value or "", number)
         for path, key, value, number in conn.execute(
-            f"SELECT i.path, t.key, t.value, t.value_num FROM tags AS t "
-            f"JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source "
-            f"WHERE i.path IN ({placeholders})",
+            f"SELECT i.path, t.key, t.value, t.value_num FROM tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source WHERE i.path IN ({placeholders})",
             chunk,
         ):
             result.setdefault(path, {})[key] = PathValue(value or "", number)
         for path, name, *numbers in conn.execute(
-            f"SELECT i.path, i.name, s.size, s.modified, s.created, s.collected "
-            f"FROM files AS i JOIN sources AS s ON s.source = i.source WHERE i.path IN ({placeholders})",
+            f"SELECT i.path, i.name, s.size, s.modified, s.created, s.collected FROM files AS i JOIN sources AS s ON s.source = i.source WHERE i.path IN ({placeholders})",
             chunk,
         ):
             entry = result.setdefault(path, {})

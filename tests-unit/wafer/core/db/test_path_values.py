@@ -13,14 +13,12 @@ def _make_db(tmp_path, count=1):
     db.upsert_basic_sources(
         [(f"c:/{i}.jpg", f"hash-{i}", 100 + i, 1700000000.0 + i, 1600000000.0, 1800000000.0) for i in range(count)],
         [(f"c:/{i}.jpg", f"c:/{i}.jpg", f"{i}.jpg", 1.0, None) for i in range(count)],
-        [(f"c:/{i}.jpg", "exif.width", str(10 * i), 10.0 * i) for i in range(count)]
-        + [(f"c:/{i}.jpg", "rating", "1", 1.0) for i in range(count)],
+        [(f"c:/{i}.jpg", "exif.width", str(10 * i), 10.0 * i) for i in range(count)] + [(f"c:/{i}.jpg", "rating", "1", 1.0) for i in range(count)],
     )
     db.upsert_collection_results(
         [],
         [],
-        [(f"c:/{i}.jpg", "wd14.tags", f"tag{i}, common", None) for i in range(count)]
-        + [(f"c:/{i}.jpg", "rating", "5", 5.0) for i in range(count)],
+        [(f"c:/{i}.jpg", "wd14.tags", f"tag{i}, common", None) for i in range(count)] + [(f"c:/{i}.jpg", "rating", "5", 5.0) for i in range(count)],
         [],
     )
     db.close()

@@ -83,6 +83,22 @@ def test_cancel_prevents_store(qtbot, monkeypatch):
     assert loaded == [] and "a" not in loader
 
 
+def test_failed_load_does_not_strand_other_paths(qtbot, monkeypatch):
+    def fake_load(path, size):
+        if path == "bad":
+            raise ValueError("decoder failed")
+        return _image()
+
+    monkeypatch.setattr(thumbnail_loader, "load_thumbnail", fake_load)
+    loaded = []
+    loader = ThumbnailLoader(loaded.append, size=32, cache_limit=10)
+    loader.request(["bad", "good"])
+    qtbot.waitUntil(lambda: sorted(loaded) == ["bad", "good"], timeout=3000)
+    assert loader.get("bad").isNull()
+    assert not loader.get("good").isNull()
+    assert not loader.pending("bad") and not loader.pending("good")
+
+
 def test_set_size_clears_cache(qtbot):
     loader = ThumbnailLoader(lambda _p: None, size=32, cache_limit=10)
     loader.store("a", _image())

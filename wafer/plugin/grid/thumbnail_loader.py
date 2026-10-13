@@ -64,7 +64,7 @@ class ThumbnailLoader:
                     continue
                 try:
                     image = load_thumbnail(path, size)
-                except (OSError, RuntimeError) as e:
+                except Exception as e:
                     AppLogger.warning(f"Thumbnail load failed: {path}", exc=e)
                     image = None
                 if token.is_cancelled():

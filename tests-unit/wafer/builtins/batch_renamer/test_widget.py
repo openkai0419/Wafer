@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -23,7 +23,6 @@ from wafer.builtins.rename_sources import (
     SequentialSource,
 )
 from wafer.builtins.batch_renamer.widget import BatchRenamerPlugin
-from wafer.qt.common.dispatcher import CancelToken
 from wafer.core.db.file_db import FileDB
 from wafer.qt.common.dpi import dpix
 
@@ -528,9 +527,7 @@ class TestRenameStaysOpen:
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
-        qtbot.addWidget(dlg)
-
-        dlg._thumb_cache["fake"] = MagicMock()
+        dlg._thumbs.store("fake", None)
         dlg._thumb_visible.add(0)
 
         mock_execute.return_value = [_ok_result(tmp_files[0], tmp_files[0].parent / "x.jpg")]
@@ -538,7 +535,7 @@ class TestRenameStaysOpen:
         rename_map = {str(tmp_files[0]): str(tmp_files[0].parent / "x.jpg")}
         with patch.object(dlg, "_refresh"):
             dlg._do_rename(rename_map)
-        assert len(dlg._thumb_cache) == 0
+        assert len(dlg._thumbs) == 0
         assert len(dlg._thumb_visible) == 0
         dlg.close()
 
@@ -705,12 +702,9 @@ class TestProgressiveThumbnailLoading:
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
-        qtbot.addWidget(dlg)
         key = str(tmp_files[0])
-        img = QtGui.QImage(10, 10, QtGui.QImage.Format_RGB32)
-        dlg._on_thumbnail_loaded(0, key, img)
-        assert key in dlg._thumb_cache
-        assert not dlg._thumb_cache[key].isNull()
+        dlg._thumbs.store(key, QtGui.QImage(10, 10, QtGui.QImage.Format_RGB32))
+        assert not dlg._thumbs.get(key).isNull()
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
@@ -718,11 +712,9 @@ class TestProgressiveThumbnailLoading:
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
-        qtbot.addWidget(dlg)
         key = str(tmp_files[0])
-        dlg._on_thumbnail_loaded(0, key, None)
-        assert key in dlg._thumb_cache
-        assert dlg._thumb_cache[key].isNull()
+        dlg._thumbs.store(key, None)
+        assert dlg._thumbs.get(key).isNull()
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
@@ -730,12 +722,10 @@ class TestProgressiveThumbnailLoading:
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
-        qtbot.addWidget(dlg)
         excluded_key = str(tmp_files[1])
         dlg._exclude_rows([1])
-        img = QtGui.QImage(10, 10, QtGui.QImage.Format_RGB32)
-        dlg._on_thumbnail_loaded(-1, excluded_key, img)
-        assert excluded_key in dlg._thumb_cache
+        dlg._thumbs.store(excluded_key, QtGui.QImage(10, 10, QtGui.QImage.Format_RGB32))
+        assert excluded_key in dlg._thumbs
         assert len(dlg._paths) == 2
         dlg.close()
 
@@ -745,11 +735,9 @@ class TestProgressiveThumbnailLoading:
         qtbot.addWidget(dlg)
         dlg.show()
         dlg.set_files(tmp_files)
-        token = CancelToken()
-        dlg._thumb_tokens[0] = token
-        assert not token.is_cancelled()
-        dlg.close()
-        assert token.is_cancelled()
+        with patch.object(dlg._thumbs, "cancel_all", wraps=dlg._thumbs.cancel_all) as spy:
+            dlg.close()
+        spy.assert_called()
 
 
 class TestSegTableSelectionSync:
@@ -1420,10 +1408,11 @@ class TestThumbnailResolution:
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
-        dlg._thumb_cache[str(tmp_files[0])] = QtGui.QPixmap()
+        dlg._thumbs.store(str(tmp_files[0]), None)
         dlg._thumb_res_slider.setValue(BatchRenameWidget.THUMB_RESOLUTIONS.index(1024))
         assert dlg._thumb_resolution == 1024
-        assert len(dlg._thumb_cache) == 0
+        assert dlg._thumbs.size == 1024
+        assert len(dlg._thumbs) == 0
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
@@ -1743,13 +1732,11 @@ class TestSort:
         dlg.set_files(tmp_files)
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
-        token = MagicMock()
-        dlg._thumb_tokens[0] = token
         dlg._thumb_visible.add(0)
-        dlg._reorder_rows([0], 3)
-        qtbot.waitUntil(lambda: [p.name for p in dlg._paths] == ["b.jpg", "c.jpg", "a.jpg"], timeout=5000)
-        token.cancel.assert_called_once()
-        assert dlg._thumb_tokens == {}
+        with patch.object(dlg._thumbs, "cancel_all", wraps=dlg._thumbs.cancel_all) as spy:
+            dlg._reorder_rows([0], 3)
+            qtbot.waitUntil(lambda: [p.name for p in dlg._paths] == ["b.jpg", "c.jpg", "a.jpg"], timeout=5000)
+        spy.assert_called()
         assert dlg._thumb_visible == set()
         dlg.close()
 
@@ -1760,14 +1747,12 @@ class TestSort:
         dlg.set_files(tmp_files)
         dlg._rebuild()
         qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
-        token = MagicMock()
-        dlg._thumb_tokens[0] = token
         dlg._thumb_visible.add(0)
-        dlg._apply_sort("segment", 0, False)
-        qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["c", "b", "a"], timeout=5000)
+        with patch.object(dlg._thumbs, "cancel_all", wraps=dlg._thumbs.cancel_all) as spy:
+            dlg._apply_sort("segment", 0, False)
+            qtbot.waitUntil(lambda: [r.segments[0] for r in dlg._results] == ["c", "b", "a"], timeout=5000)
         assert [p.name for p in dlg._paths] == ["c.jpg", "b.jpg", "a.jpg"]
-        token.cancel.assert_called_once()
-        assert dlg._thumb_tokens == {}
+        spy.assert_called()
         assert dlg._thumb_visible == set()
         dlg.close()
 
@@ -1801,14 +1786,12 @@ class TestThumbCacheLRU:
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
-        qtbot.addWidget(dlg)
-        dlg.THUMB_CACHE_LIMIT = 5
+        dlg._thumbs.cache_limit = 5
         img = QtGui.QImage(4, 4, QtGui.QImage.Format_RGB32)
         for i in range(10):
-            dlg._on_thumbnail_loaded(-1, f"key_{i}", img)
-        assert len(dlg._thumb_cache) == 5
-        assert "key_0" not in dlg._thumb_cache
-        assert "key_9" in dlg._thumb_cache
+            dlg._thumbs.store(f"key_{i}", img)
+        assert len(dlg._thumbs) == 5
+        assert "key_0" not in dlg._thumbs and "key_9" in dlg._thumbs
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
@@ -1816,16 +1799,14 @@ class TestThumbCacheLRU:
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
-        qtbot.addWidget(dlg)
-        dlg.THUMB_CACHE_LIMIT = 3
+        dlg._thumbs.cache_limit = 3
         img = QtGui.QImage(4, 4, QtGui.QImage.Format_RGB32)
         for p in tmp_files:
-            dlg._on_thumbnail_loaded(-1, str(p), img)
-        assert len(dlg._thumb_cache) == 3
+            dlg._thumbs.store(str(p), img)
         dlg.thumb_for_row(0)
-        first_key = str(tmp_files[0])
-        keys = list(dlg._thumb_cache.keys())
-        assert keys[-1] == first_key
+        dlg._thumbs.store("extra", img)
+        assert str(tmp_files[0]) in dlg._thumbs
+        assert str(tmp_files[1]) not in dlg._thumbs
         dlg.close()
 
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import collections
 import os
 from pathlib import Path
 from typing import Any
@@ -34,6 +33,7 @@ from .table import (
     SyncedView,
     ColorSet,
 )
+from ...plugin.grid.thumbnail_loader import ThumbnailLoader
 from ...plugin.rename.handler import rename_source_registry
 from ...plugin.panel.base import BasePanelPlugin
 from ...core.lang.manager import t
@@ -78,7 +78,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
 
         self._dispatcher = Dispatcher(pool=utility_pool)
         self._init_cancel: CancelToken | None = None
-        self._thumb_tokens: dict[int, CancelToken] = {}
         self._thumb_visible: set[int] = set()
 
         self._paths: list[Path] = []
@@ -106,10 +105,10 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._pending_update_scheduled = False
         self._selected_row = -1
         self._pending_select_rows: list[int] | None = None
-        self._thumb_cache: collections.OrderedDict[str, QtGui.QPixmap] = collections.OrderedDict()
         self._row_thumb_fit_mode = self.THUMB_FIT_COVER
         self._sel_thumb_fit_mode = self.THUMB_FIT_COVER
         self._thumb_resolution = 512
+        self._thumbs = ThumbnailLoader(lambda _path: self._refresh_overlays(), size=self._thumb_resolution, cache_limit=self.THUMB_CACHE_LIMIT, dispatcher=self._dispatcher)
         self._scroll_sync_enabled = True
         self._display_offset = 0
         self._thumb_settings_popup: PopupBase | None = None
@@ -212,7 +211,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._initial_keys = list(self._keys)
         self._initial_paths = list(self._paths)
         self._metadata = {}
-        self._thumb_cache.clear()
+        self._thumbs.clear()
         self._thumb_visible.clear()
         self._reset_columns()
         self._title.setText(self._title_text())
@@ -251,7 +250,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._metadata.clear()
         self._results.clear()
         self._global_errors.clear()
-        self._thumb_cache.clear()
+        self._thumbs.clear()
         self._thumb_visible.clear()
         self._reset_columns()
         self._close_popup()
@@ -270,9 +269,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         if self._refresh_cancel:
             self._refresh_cancel.cancel()
             self._refresh_cancel = None
-        for token in self._thumb_tokens.values():
-            token.cancel()
-        self._thumb_tokens.clear()
+        self._thumbs.cancel_all()
         self._clear_deferred_updates()
 
     def _frame_stylesheet(self):
@@ -751,12 +748,9 @@ class BatchRenameWidget(QtWidgets.QWidget):
         new_visible = set(self._visible_row_range())
         leaving = self._thumb_visible - new_visible
         entering = new_visible - self._thumb_visible
-        for row in leaving:
-            token = self._thumb_tokens.pop(row, None)
-            if token:
-                token.cancel()
+        self._thumbs.cancel(str(self._paths[r]) for r in leaving if 0 <= r < len(self._paths))
         self._thumb_visible = new_visible
-        entering_need_load = [r for r in entering if 0 <= r < len(self._paths) and str(self._paths[r]) not in self._thumb_cache]
+        entering_need_load = [r for r in entering if 0 <= r < len(self._paths) and str(self._paths[r]) not in self._thumbs]
         if not entering_need_load:
             return
         visible = self._visible_row_range()
@@ -765,52 +759,11 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._request_thumbs(entering_need_load)
 
     def _reset_thumb_requests(self):
-        for token in self._thumb_tokens.values():
-            token.cancel()
-        self._thumb_tokens.clear()
+        self._thumbs.cancel_all()
         self._thumb_visible = set()
 
     def _request_thumbs(self, rows):
-        rows_tokens = []
-        for r in rows:
-            if not (0 <= r < len(self._paths)):
-                continue
-            old = self._thumb_tokens.pop(r, None)
-            if old:
-                old.cancel()
-            token = CancelToken()
-            self._thumb_tokens[r] = token
-            rows_tokens.append((r, self._paths[r], token))
-        if not rows_tokens:
-            return
-        thumb_size = QtCore.QSize(dpix(self._thumb_resolution), dpix(self._thumb_resolution))
-
-        def task():
-            from ...plugin.grid.handler import load_thumbnail
-
-            for _r, p, tok in rows_tokens:
-                if tok.is_cancelled():
-                    continue
-                key = str(p)
-                if key in self._thumb_cache:
-                    continue
-                try:
-                    img = load_thumbnail(key, thumb_size)
-                except (OSError, RuntimeError):
-                    img = None
-                if tok.is_cancelled():
-                    continue
-                self._dispatcher.invoke(lambda r=_r, k=key, im=img, t=tok: t.is_cancelled() or self._on_thumbnail_loaded(r, k, im))
-
-        self._dispatcher.post(task)
-
-    def _on_thumbnail_loaded(self, row, key, img):
-        if 0 <= row < len(self._paths) and str(self._paths[row]) == key:
-            self._thumb_tokens.pop(row, None)
-        self._thumb_cache[key] = QtGui.QPixmap.fromImage(img) if img and not img.isNull() else QtGui.QPixmap()
-        while len(self._thumb_cache) > self.THUMB_CACHE_LIMIT:
-            self._thumb_cache.popitem(last=False)
-        self._refresh_overlays()
+        self._thumbs.request(str(self._paths[r]) for r in rows if 0 <= r < len(self._paths))
 
     def _refresh_overlays(self):
         for overlay in self._overlays:
@@ -941,15 +894,13 @@ class BatchRenameWidget(QtWidgets.QWidget):
         selection_model.setCurrentIndex(index, QtCore.QItemSelectionModel.NoUpdate)
 
     def thumb_for_row(self, row):
-        if 0 <= row < len(self._paths):
-            key = str(self._paths[row])
-            pix = self._thumb_cache.get(key)
-            if pix is not None:
-                self._thumb_cache.move_to_end(key)
-            elif row not in self._thumb_tokens:
-                self._request_thumbs([row])
-            return pix
-        return None
+        if not 0 <= row < len(self._paths):
+            return None
+        key = str(self._paths[row])
+        pix = self._thumbs.get(key)
+        if pix is None:
+            self._thumbs.request([key])
+        return pix
 
     def _on_view_selection(self, source):
         if self._syncing_selection:
@@ -1078,10 +1029,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
             return
         self._thumb_resolution = res
         self._thumb_res_value.setText(f"{res}px")
-        for token in self._thumb_tokens.values():
-            token.cancel()
-        self._thumb_tokens.clear()
-        self._thumb_cache.clear()
+        self._thumbs.set_size(res)
         self._thumb_visible.clear()
         self._update_visible_thumbnails()
         self._refresh_overlays()
@@ -1801,7 +1749,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
             else:
                 new_meta[key] = meta
         self._metadata = new_meta
-        self._thumb_cache.clear()
+        self._thumbs.clear()
         self._thumb_visible.clear()
         self._title.setText(self._title_text())
         self._status.setText(f"Renamed {len(succeeded)} file(s)")

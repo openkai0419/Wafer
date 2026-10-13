@@ -31,6 +31,10 @@
         "*": {
           "id": "grid.select_all",
           "args": {}
+        },
+        "MappingView": {
+          "id": "mapping.select_all",
+          "args": {}
         }
       }
     },

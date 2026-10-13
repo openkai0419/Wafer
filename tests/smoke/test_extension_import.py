@@ -116,6 +116,11 @@ EXPECTED_PLUGINS = {
         ("grid", "ZipGridPlugin"),
         ("imageloader", "ZipImageLoader"),
     },
+    "mapping": {
+        ("panel", "MappingPlugin"),
+        ("command", "MappingGridCommands"),
+        ("command", "MappingViewCommands"),
+    },
 }
 
 

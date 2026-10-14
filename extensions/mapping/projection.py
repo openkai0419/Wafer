@@ -127,6 +127,7 @@ def embed(matrix: np.ndarray, n_components: int, n_neighbors: int, min_dist: flo
         metric="euclidean",
         random_state=seed,
         n_jobs=1,
+        force_approximation_algorithm=True,
         init="spectral" if count >= SPECTRAL_INIT_MIN else "random",
     )
     output[:, :components] = reducer.fit_transform(matrix)

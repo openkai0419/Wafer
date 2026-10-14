@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections import Counter
 from dataclasses import dataclass
 from functools import partial
@@ -13,8 +14,6 @@ from wafer.core.common.paths import normalize_path, safe_is_file
 from wafer.core.db.path_values import PathValue, fetch_path_values, fetch_sources
 from wafer.core.lang.manager import t
 from wafer.core.logs import AppLogger
-from wafer.plugin.grid.handler import load_thumbnail
-from wafer.plugin.grid.thumbnail_loader import ThumbnailLoader
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 from wafer.qt.common.dispatcher import CancelSlot, Dispatcher
 from wafer.qt.common.dpi import dpix
@@ -27,13 +26,13 @@ from wafer.qt.widgets.popup import PopupBase
 from .encoders import detect_encoder, value_input
 from .feature_bar import FeatureBar
 from .file_list import FileList
-from .map_view import THUMB_SIZE, MapView
+from .map_host import THUMB_CACHE, MapHost
+from .map_view import MapView
 from .params import MapParams
 from .session import FeatureSpec, MapError, MapPipeline, MapRequest, MapResult
 from .tuning import TuningPanel
 
 COMPUTE_PRIORITY = 7
-THUMB_CACHE = 3000
 RECOMPUTE_DELAY_MS = 300
 MIN_DRILL_FILES = 3
 ELLIPSIS = "\N{HORIZONTAL ELLIPSIS}"
@@ -52,10 +51,9 @@ def group_color(group: int) -> QtGui.QColor:
     return QtGui.QColor.fromHsvF((group * 0.618034) % 1.0, 0.55, 0.92)
 
 
-def cancel_work(fetch_cancel: CancelSlot, compute_cancel: CancelSlot, thumbs: ThumbnailLoader) -> None:
+def cancel_work(fetch_cancel: CancelSlot, compute_cancel: CancelSlot) -> None:
     fetch_cancel.cancel()
     compute_cancel.cancel()
-    thumbs.cancel_all()
 
 
 @dataclass
@@ -76,16 +74,16 @@ class MappingWidget(QtWidgets.QWidget):
         self.db_path = None
         self.paths: list[str] = []
         self.values: dict[str, dict[str, PathValue]] = {}
-        self.sources: dict[str, str] = {}
         self.params = MapParams()
         self.grouping_enabled = True
         self.levels: list[MapLevel] = []
         self.shown: MapResult | None = None
-        self.thumbs = ThumbnailLoader(self.on_thumbnail, size=THUMB_SIZE, cache_limit=THUMB_CACHE, dispatcher=self.dispatcher)
+        self.host = MapHost(self)
         self.tuning_popup: PopupBase | None = None
         self.build_ui()
+        self.host.views = [self.map_view, self.file_list]
         self.setAcceptDrops(True)
-        self.destroyed.connect(partial(cancel_work, self.fetch_cancel, self.compute_cancel, self.thumbs))
+        self.destroyed.connect(partial(cancel_work, self.fetch_cancel, self.compute_cancel))
 
     @classmethod
     def instance(cls) -> MappingWidget | None:
@@ -113,6 +111,18 @@ class MappingWidget(QtWidgets.QWidget):
         self.group_check.setToolTip(t("Show group colors and labels."))
         self.group_check.toggled.connect(self.set_grouping)
         toolbar.addWidget(self.group_check)
+        self.mode_buttons = {}
+        mode_group = QtWidgets.QButtonGroup(self)
+        for mode, text in (("single", t("Single")), ("group", t("Group"))):
+            button = QtWidgets.QToolButton()
+            button.setText(text)
+            button.setCheckable(True)
+            button.setChecked(mode == "single")
+            button.setToolTip(t("Select one file at a time.") if mode == "single" else t("Select whole groups."))
+            button.toggled.connect(partial(self.on_mode_toggled, mode))
+            mode_group.addButton(button)
+            toolbar.addWidget(button)
+            self.mode_buttons[mode] = button
         self.tuning_button = QtWidgets.QToolButton()
         self.tuning_button.setIcon(themed_icon("gear_small"))
         self.tuning_button.setToolTip(t("Tuning"))
@@ -197,9 +207,9 @@ class MappingWidget(QtWidgets.QWidget):
             self.recompute()
 
     def reset(self) -> None:
-        cancel_work(self.fetch_cancel, self.compute_cancel, self.thumbs)
-        self.paths, self.values, self.sources, self.levels, self.shown = [], {}, {}, [], None
-        self.thumbs.clear()
+        cancel_work(self.fetch_cancel, self.compute_cancel)
+        self.paths, self.values, self.levels, self.shown = [], {}, [], None
+        self.host.clear()
         self.map_view.clear_map()
         self.file_list.clear_rows()
         self.update_crumbs()
@@ -226,7 +236,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.dispatcher.post(task, priority=COMPUTE_PRIORITY, cancel=cancel)
 
     def on_values(self, values, sources):
-        self.values, self.sources = values, sources
+        self.values, self.host.sources = values, sources
         counts = Counter(key for entry in values.values() for key, value in entry.items() if value_input(value) is not None)
         self.feature_bar.set_keys(counts.most_common())
         self.levels = [MapLevel(list(self.paths), MapPipeline())]
@@ -291,7 +301,9 @@ class MappingWidget(QtWidgets.QWidget):
         self.show_result(result)
 
     def show_result(self, result: MapResult):
-        self.thumbs.cache_limit = max(THUMB_CACHE, len(result.paths))
+        self.host.thumbs.cache_limit = max(THUMB_CACHE, len(result.paths))
+        self.host.set_display_size(self.map_view.display_size())
+        self.host.set_hover_size(self.params.hover_size)
         selected = set(self.selected_paths())
         keep_view = self.shown is not None and self.shown.paths == result.paths
         colors = self.colors_for(result)
@@ -324,10 +336,12 @@ class MappingWidget(QtWidgets.QWidget):
         if self.group_check.isChecked() != self.grouping_enabled:
             self.group_check.setChecked(self.grouping_enabled)
             return
+        self.mode_buttons["group"].setEnabled(self.grouping_enabled)
         self.recompute()
 
     def on_params(self, params: MapParams):
         self.params = params
+        self.host.set_hover_size(params.hover_size)
         self.schedule_recompute()
 
     def toggle_tuning(self):
@@ -353,11 +367,7 @@ class MappingWidget(QtWidgets.QWidget):
         return [self.shown.paths[row] for row in self.map_view.selected_rows()]
 
     def context_for_selection(self) -> dict:
-        paths = self.selected_paths()
-        if not paths:
-            return {}
-        sources = list(dict.fromkeys(self.sources.get(path, path) for path in paths))
-        return {"path": paths[-1], "paths": paths, "source": sources[-1], "sources": sources}
+        return self.host.context_for(self.selected_paths())
 
     def select_all(self) -> None:
         if self.shown is None:
@@ -371,6 +381,11 @@ class MappingWidget(QtWidgets.QWidget):
 
     def on_list_selection(self):
         rows = self.file_list.selected_rows()
+        if self.selection_mode == "group":
+            expanded = self.map_view.expand_to_groups(rows)
+            if expanded != rows:
+                rows = expanded
+                self.file_list.select_rows(rows)
         self.map_view.select_rows(rows)
         if rows:
             self.map_view.reveal(rows[-1])
@@ -417,20 +432,39 @@ class MappingWidget(QtWidgets.QWidget):
             self.crumbs.addWidget(button)
 
     def thumbnail(self, path: str) -> QtGui.QPixmap | None:
-        pixmap = self.thumbs.get(path)
-        if pixmap is None:
-            self.thumbs.request([path])
-        return pixmap
+        return self.host.thumbnail(path)
 
     def show_hover(self, path: str, global_pos: QtCore.QPoint) -> None:
-        return None
+        self.host.show_hover(path, global_pos)
 
     def hide_hover(self) -> None:
-        return None
+        self.host.hide_hover()
 
-    def on_thumbnail(self, path: str):
-        self.map_view.update_path(path)
-        self.file_list.update_path(path)
+    def set_image_scale(self, scale: float) -> None:
+        self.map_view.set_image_scale(scale)
+        self.host.set_display_size(self.map_view.display_size())
+
+    def image_scale_up(self, ratio: float = 1.1) -> None:
+        self.set_image_scale(self.map_view.image_scale * ratio)
+
+    def image_scale_down(self, ratio: float = 1.1) -> None:
+        self.set_image_scale(self.map_view.image_scale / ratio)
+
+    @property
+    def selection_mode(self) -> str:
+        return self.map_view.selection_mode
+
+    def set_selection_mode(self, mode: str) -> None:
+        self.map_view.set_selection_mode(mode)
+        button = self.mode_buttons[self.map_view.selection_mode]
+        if not button.isChecked():
+            button.blockSignals(True)
+            button.setChecked(True)
+            button.blockSignals(False)
+
+    def on_mode_toggled(self, mode: str, checked: bool) -> None:
+        if checked:
+            self.set_selection_mode(mode)
 
     def handle_drag_enter(self, event):
         if local_file_paths(event.mimeData()):
@@ -463,6 +497,8 @@ class MappingWidget(QtWidgets.QWidget):
             "features": [feature.to_dict() for feature in self.feature_bar.features()],
             "params": self.params.to_dict(),
             "grouping": self.grouping_enabled,
+            "image_scale": self.map_view.image_scale,
+            "selection_mode": self.selection_mode,
             "splitter": bytes(self.splitter.saveState().toHex()).decode("ascii"),
         }
 
@@ -475,6 +511,11 @@ class MappingWidget(QtWidgets.QWidget):
         self.group_check.blockSignals(True)
         self.group_check.setChecked(self.grouping_enabled)
         self.group_check.blockSignals(False)
+        self.mode_buttons["group"].setEnabled(self.grouping_enabled)
+        scale = state.get("image_scale", 1.0)
+        self.set_image_scale(float(scale) if isinstance(scale, (int, float)) and math.isfinite(scale) else 1.0)
+        mode = state.get("selection_mode")
+        self.set_selection_mode(mode if mode in ("single", "group") else "single")
         splitter = state.get("splitter")
         if isinstance(splitter, str) and splitter:
             self.splitter.restoreState(QtCore.QByteArray.fromHex(splitter.encode("ascii")))

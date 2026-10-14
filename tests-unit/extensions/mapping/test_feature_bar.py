@@ -1,5 +1,6 @@
 from extensions.mapping.feature_bar import FeatureBar
 from extensions.mapping.session import FeatureSpec
+from wafer.plugin.query.widgets import KeyPickerPopup
 
 
 def test_add_feature_uses_detected_encoder_and_emits(qtbot):
@@ -69,42 +70,67 @@ def test_chip_encoder_choices_are_key_encoders(qtbot):
     assert combo.isEnabled()
 
 
-def test_add_menu_lists_unused_keys_and_adds_on_pick(qtbot, monkeypatch):
-    from extensions.mapping import feature_bar
-
-    shown = []
-
-    class FakeSpec:
-        def __init__(self, items):
-            self.items = items
-
-        def exec(self):
-            shown.append(self.items)
-
-    class FakeSession:
-        def menu(self, items):
-            return FakeSpec(items)
-
-    monkeypatch.setattr(feature_bar.Menu, "session", lambda parent, pos=None: FakeSession())
-    bar = FeatureBar(lambda key: "text")
-    qtbot.addWidget(bar)
-    bar.set_keys([("prompt", 12), ("tags", 7)])
-    bar.add_feature("prompt")
+def open_picker(bar, qtbot):
     bar.add_button.click()
-    items = shown[0]
-    actions = [item for item in items if not isinstance(item, str)]
-    assert [action.display for action in actions] == ["tags  (7)"]
-    actions[0].func(None)
-    assert [spec.key for spec in bar.features()] == ["prompt", "tags"]
+    popup = bar.key_picker
+    qtbot.addWidget(popup)
+    return popup
 
 
-def test_add_menu_builds_with_real_menu_session(qtbot):
-    from wafer.qt.commands.bridge import ActionKit, Menu
-
+def test_add_button_opens_key_picker_with_palette_extra(qtbot, monkeypatch):
     bar = FeatureBar(lambda key: "text")
     qtbot.addWidget(bar)
-    items = [":Keys", ActionKit.Action(path="inline.mapping.add_key.1", display="tags  (7)", translate=False, func=lambda ctx: None)]
-    assert Menu.session(bar).menu(items).build() is not None
+    bar.set_keys([("color.palette.1", 5), ("path", 9)])
+    catalogs = []
+    monkeypatch.setattr(KeyPickerPopup, "set_catalog", lambda self, datas, *, extras=(): catalogs.append((list(datas), list(extras))))
+    monkeypatch.setattr(KeyPickerPopup, "open_below", lambda self, anchor: None)
+    bar.add_button.click()
+    datas, extras = catalogs[0]
+    assert datas == [("path", 9)]
+    assert extras[0][0] == "color.palette"
+
+
+def test_picker_omits_palette_extra_without_palette_keys(qtbot, monkeypatch):
+    bar = FeatureBar(lambda key: "text")
+    qtbot.addWidget(bar)
+    bar.set_keys([("path", 9)])
+    catalogs = []
+    monkeypatch.setattr(KeyPickerPopup, "set_catalog", lambda self, datas, *, extras=(): catalogs.append(list(extras)))
+    monkeypatch.setattr(KeyPickerPopup, "open_below", lambda self, anchor: None)
+    bar.add_button.click()
+    assert catalogs == [[]]
+
+
+def test_picked_key_adds_a_feature(qtbot):
+    bar = FeatureBar(lambda key: "text")
+    qtbot.addWidget(bar)
+    bar.set_keys([("color.palette.1", 5), ("path", 9)])
+    popup = open_picker(bar, qtbot)
+    popup.picked.emit("path")
+    popup.picked.emit("color.palette")
+    assert bar.features() == [FeatureSpec("path", "text"), FeatureSpec("color.palette", "palette")]
+
+
+def test_picker_is_reused_and_marks_used_keys(qtbot, monkeypatch):
+    bar = FeatureBar(lambda key: "text")
+    qtbot.addWidget(bar)
+    bar.set_keys([("path", 9)])
+    bar.add_feature("path")
+    used = []
+    monkeypatch.setattr(KeyPickerPopup, "set_used", lambda self, keys: used.append(set(keys)))
+    first = open_picker(bar, qtbot)
+    second = open_picker(bar, qtbot)
+    assert first is second and used == [{"path"}, {"path"}]
+
+
+def test_set_read_only_disables_chips_and_add_button(qtbot):
+    bar = FeatureBar(lambda key: "text")
+    qtbot.addWidget(bar)
+    bar.set_features([FeatureSpec("tags", "token_set")])
+    bar.set_read_only(True)
+    assert not bar.add_button.isEnabled() and not bar.chips()[0].isEnabled()
+    bar.set_read_only(False)
+    assert bar.add_button.isEnabled() and bar.chips()[0].isEnabled()
 
 
 def test_palette_key_uses_palette_encoder_without_detect(qtbot):

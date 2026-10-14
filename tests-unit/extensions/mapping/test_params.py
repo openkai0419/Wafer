@@ -59,3 +59,12 @@ def test_normalized_resets_non_finite_fields_to_default():
     params = MapParams(seed=float("nan"), min_dist=float("inf"), svd_dims=float("-inf")).normalized()
     defaults = MapParams()
     assert (params.seed, params.min_dist, params.svd_dims) == (defaults.seed, defaults.min_dist, defaults.svd_dims)
+
+
+def test_hover_size_is_a_view_param_clamped_to_range():
+    spec = next(spec for name, spec, _ in param_specs() if name == "hover_size")
+    assert (spec.stage, spec.minimum, spec.maximum, spec.step) == ("view", 0, 1024, 32)
+    assert MapParams().hover_size == 256
+    assert MapParams(hover_size=5000).normalized().hover_size == 1024
+    assert MapParams(hover_size=-3).normalized().hover_size == 0
+    assert changed_stage(MapParams(), MapParams(hover_size=0)) == "view"

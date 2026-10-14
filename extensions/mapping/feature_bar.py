@@ -5,7 +5,7 @@ from collections.abc import Callable
 from PySide6 import QtCore, QtWidgets
 
 from wafer.core.lang.manager import t
-from wafer.qt.commands.bridge import ActionKit, Menu
+from wafer.plugin.query.widgets import KeyPickerPopup
 from wafer.qt.common.dpi import dpix
 from wafer.qt.common.icon_engine import themed_icon
 from wafer.qt.theme import ThemeManager
@@ -14,7 +14,6 @@ from wafer.qt.widgets import FlowLayout
 from .encoders import ENCODERS, PALETTE_KEY
 from .session import FeatureSpec
 
-MAX_MENU_KEYS = 100
 WEIGHT_PREFIX = "\N{MULTIPLICATION SIGN}"
 
 
@@ -115,6 +114,7 @@ class FeatureBar(QtWidgets.QWidget):
         super().__init__(parent)
         self.detect = detect
         self.keys: list[tuple[str, int]] = []
+        self.key_picker: KeyPickerPopup | None = None
         self.feature_chips: list[FeatureChip] = []
         self.flow = FlowLayout(self)
         self.add_button = QtWidgets.QToolButton()
@@ -166,11 +166,21 @@ class FeatureBar(QtWidgets.QWidget):
         self.features_changed.emit()
 
     def show_add_menu(self):
+        popup = self.picker()
         used = {chip.key for chip in self.feature_chips}
-        items = [":" + t("Keys")]
-        for key, count in [entry for entry in self.keys if entry[0] not in used][:MAX_MENU_KEYS]:
-            items.append(ActionKit.Action(path=f"inline.mapping.add_key.{len(items)}", display=f"{key}  ({count})", translate=False, func=lambda ctx, k=key: self.add_feature(k)))
-        pos = self.add_button.mapToGlobal(QtCore.QPoint(0, self.add_button.height()))
-        spec = Menu.session(self, pos=pos).menu(items)
-        if spec is not None:
-            spec.exec()
+        has_palette = any(key.startswith(PALETTE_KEY + ".") for key, _ in self.keys)
+        extras = [(PALETTE_KEY, t("[Color] Palette"))] if has_palette and PALETTE_KEY not in used else []
+        popup.set_catalog([(key, count) for key, count in self.keys if not key.startswith(PALETTE_KEY + ".")], extras=extras)
+        popup.set_used(used)
+        popup.open_below(self.add_button)
+
+    def picker(self) -> KeyPickerPopup:
+        if self.key_picker is None:
+            self.key_picker = KeyPickerPopup(self)
+            self.key_picker.picked.connect(self.add_feature)
+        return self.key_picker
+
+    def set_read_only(self, read_only: bool):
+        self.add_button.setEnabled(not read_only)
+        for chip in self.feature_chips:
+            chip.setEnabled(not read_only)

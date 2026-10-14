@@ -5,9 +5,11 @@ import pytest
 from PySide6 import QtCore
 
 from extensions.mapping import projection
+from extensions.mapping import map_host as map_host_module
 from extensions.mapping import map_view as map_view_module
 from extensions.mapping import widget as widget_module
 from extensions.mapping.map_view import MapPointItem
+from extensions.mapping.params import MapParams
 from extensions.mapping.session import FeatureSpec
 from extensions.mapping.widget import MappingWidget
 from wafer.core.db.path_values import PathValue
@@ -263,14 +265,102 @@ def test_drop_without_files_is_ignored(mapping):
 def test_thumbnail_cache_grows_to_hold_every_point(mapping, monkeypatch):
     monkeypatch.setattr(widget_module, "THUMB_CACHE", 5)
     mapping.show_result(mapping.current_result())
-    assert mapping.thumbs.cache_limit == 30
+    assert mapping.host.thumbs.cache_limit == 30
     monkeypatch.setattr(widget_module, "THUMB_CACHE", 100)
     mapping.show_result(mapping.current_result())
-    assert mapping.thumbs.cache_limit == 100
+    assert mapping.host.thumbs.cache_limit == 100
 
 
-def test_thumbnail_size_matches_map_view():
-    assert widget_module.THUMB_SIZE == map_view_module.THUMB_SIZE
+def test_smallest_thumbnail_bucket_matches_map_view():
+    assert map_host_module.THUMB_BUCKETS[0] == map_view_module.THUMB_SIZE
+
+
+def test_image_scale_resizes_thumbnails_and_persists(mapping):
+    mapping.set_image_scale(2.0)
+    assert mapping.map_view.image_scale == 2.0
+    assert mapping.host.thumbs.size == 128
+    state = mapping.save_state()
+    assert state["image_scale"] == 2.0
+    mapping.set_image_scale(1.0)
+    mapping.restore_state(state)
+    assert mapping.map_view.image_scale == 2.0
+
+
+def test_image_scale_up_and_down_use_ratio(mapping):
+    mapping.image_scale_up(2.0)
+    assert mapping.map_view.image_scale == 2.0
+    mapping.image_scale_down(4.0)
+    assert mapping.map_view.image_scale == 0.5
+
+
+@pytest.mark.parametrize("bad", ["x", None, float("nan"), float("inf")])
+def test_restore_state_ignores_bad_image_scale(mapping, bad):
+    mapping.restore_state({"image_scale": bad, "selection_mode": "weird"})
+    assert mapping.map_view.image_scale == 1.0
+    assert mapping.selection_mode == "single"
+
+
+def test_restore_state_clamps_image_scale(mapping):
+    mapping.restore_state({"image_scale": 99})
+    assert mapping.map_view.image_scale == map_view_module.MAX_IMAGE_SCALE
+
+
+def test_selection_mode_syncs_toolbar_and_persists(mapping):
+    mapping.set_selection_mode("group")
+    assert mapping.selection_mode == "group" and mapping.mode_buttons["group"].isChecked()
+    state = mapping.save_state()
+    assert state["selection_mode"] == "group"
+    mapping.mode_buttons["single"].click()
+    assert mapping.selection_mode == "single"
+    mapping.restore_state(state)
+    assert mapping.selection_mode == "group" and mapping.mode_buttons["group"].isChecked()
+
+
+def test_group_button_follows_grouping(mapping):
+    mapping.set_grouping(False)
+    assert not mapping.mode_buttons["group"].isEnabled()
+    mapping.set_grouping(True)
+    assert mapping.mode_buttons["group"].isEnabled()
+
+
+def test_list_selection_expands_to_whole_group(mapping):
+    labels = mapping.current_result().labels
+    row = int(np.flatnonzero(labels >= 0)[0])
+    members = np.flatnonzero(labels == labels[row]).tolist()
+    assert len(members) > 1
+    mapping.set_selection_mode("group")
+    mapping.file_list.select_rows([row])
+    mapping.file_list.selection_changed.emit()
+    assert mapping.map_view.selected_rows() == members
+    assert mapping.file_list.selected_rows() == members
+
+
+def test_list_selection_stays_single_in_single_mode(mapping):
+    labels = mapping.current_result().labels
+    row = int(np.flatnonzero(labels >= 0)[0])
+    mapping.file_list.select_rows([row])
+    mapping.file_list.selection_changed.emit()
+    assert mapping.file_list.selected_rows() == [row]
+
+
+def test_hover_goes_through_host(mapping):
+    mapping.show_hover("c:/1.png", QtCore.QPoint(300, 300))
+    assert mapping.host.preview.isVisible()
+    mapping.hide_hover()
+    assert not mapping.host.preview.isVisible()
+
+
+def test_hover_size_param_reaches_host(mapping):
+    mapping.on_params(MapParams(hover_size=0))
+    assert mapping.host.hover_size == 0
+    mapping.show_hover("c:/1.png", QtCore.QPoint(300, 300))
+    assert not mapping.host.preview.isVisible()
+
+
+def test_sources_live_in_host(mapping):
+    assert mapping.host.sources["c:/0.png"] == "c:/0.zip"
+    mapping.reset()
+    assert mapping.host.sources == {}
 
 
 def test_computation_outranks_thumbnail_requests(mapping):

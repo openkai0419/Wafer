@@ -27,6 +27,8 @@ AUTO_SEPARATORS = ("comma", "newline", "semicolon", "pipe")
 TIMESTAMP_RANGE = (9.0e8, 4.2e9)
 _WEIGHTED_TOKEN = re.compile(r"^\((.+):\s*([0-9]*\.?[0-9]+)\)$")
 _WRAPPERS = str.maketrans("", "", "{}[]()")
+_PATH_SPLIT = re.compile(r"[\\/]+")
+FOLDER_LABEL_PARTS = 2
 _WORD_SPLIT = re.compile(r"[\s,.;:!?、。\uff0c\uff0e・/|()\[\]{}\"'「」『』【】]+")
 
 
@@ -295,6 +297,40 @@ class TokenSetEncoder(BaseEncoder):
         return top_lift_terms(self.matrix, members, self.names, params.label_terms)
 
 
+@lru_cache(maxsize=65536)
+def folder_prefixes(text: str) -> tuple[str, ...]:
+    parts = [part for part in _PATH_SPLIT.split(text.strip()) if part][:-1]
+    return tuple("/".join(parts[: depth + 1]) for depth in range(len(parts)))
+
+
+def folder_label(prefix: str) -> str:
+    return "/".join(prefix.split("/")[-FOLDER_LABEL_PARTS:])
+
+
+class PathEncoder(TokenSetEncoder):
+    NAME = "path"
+    DISPLAY_NAME = "Folders"
+    DESCRIPTION = "Compares the folders in a path, ignoring the file name. Files in the same or nearby folders come closer."
+    OPTIONS = ()
+
+    @classmethod
+    def detect(cls, values):
+        texts = [value.text.strip() for value in values if value.text.strip()]
+        nested = sum(1 for text in texts if _PATH_SPLIT.search(text) and "," not in text and "\n" not in text)
+        return 0.85 if texts and nested >= len(texts) * 0.9 else 0.0
+
+    def separator_pattern(self, texts):
+        return _PATH_SPLIT.pattern
+
+    def documents(self, texts):
+        return [dict.fromkeys(folder_prefixes(text), 1.0) for text in texts]
+
+    def describe(self, members, params):
+        terms = top_lift_terms(self.matrix, members, self.names, params.label_terms)
+        deepest = [term for term in terms if not any(other.startswith(term + "/") for other in terms)]
+        return [folder_label(term) for term in deepest]
+
+
 def _words(text: str) -> list[str]:
     return [word.lower() for word in _WORD_SPLIT.split(text) if len(word) > 1]
 
@@ -518,7 +554,7 @@ class PaletteEncoder(BaseEncoder):
         return terms
 
 
-ENCODERS: dict[str, type[BaseEncoder]] = {cls.NAME: cls for cls in (NumericEncoder, TokenSetEncoder, TextEncoder, CategoryEncoder, PaletteEncoder)}
+ENCODERS: dict[str, type[BaseEncoder]] = {cls.NAME: cls for cls in (NumericEncoder, TokenSetEncoder, PathEncoder, TextEncoder, CategoryEncoder, PaletteEncoder)}
 
 
 def auto_encoders() -> list[type[BaseEncoder]]:

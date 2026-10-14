@@ -66,7 +66,7 @@ def test_chip_encoder_choices_are_key_encoders(qtbot):
     qtbot.addWidget(bar)
     bar.add_feature("tags")
     combo = bar.chips()[0].encoder_combo
-    assert [combo.itemData(i) for i in range(combo.count())] == ["numeric", "token_set", "text", "category"]
+    assert [combo.itemData(i) for i in range(combo.count())] == ["numeric", "token_set", "path", "text", "category"]
     assert combo.isEnabled()
 
 

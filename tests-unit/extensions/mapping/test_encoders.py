@@ -10,6 +10,7 @@ from extensions.mapping.encoders import (
     CategoryEncoder,
     NumericEncoder,
     PaletteEncoder,
+    PathEncoder,
     TextEncoder,
     TokenSetEncoder,
     auto_encoders,
@@ -17,6 +18,7 @@ from extensions.mapping.encoders import (
     detect_separator,
     expand_group_keys,
     feature_input,
+    folder_prefixes,
     group_values,
     normalize_token,
     rgb_to_lab,
@@ -131,6 +133,31 @@ def test_token_set_all_empty():
     assert encoder.describe(np.array([0, 1]), PARAMS) == []
 
 
+def test_folder_prefixes_ignore_the_file_name_and_mixed_separators():
+    assert folder_prefixes(r"c:\a/b\x.png") ==("c:", "c:/a", "c:/a/b")
+    assert folder_prefixes("//server/share/x.png") == ("server", "server/share")
+    assert folder_prefixes("x.png") == ()
+
+
+def test_path_places_files_by_folder_distance():
+    encoder = PathEncoder()
+    matrix = encoder.fit_transform(values("c:/a/b/1.png", "c:/a/b/2.png", "c:/a/c/3.png", "d:/x/4.png"), PARAMS).toarray()
+    distance = lambda i, j: np.linalg.norm(matrix[i] - matrix[j])
+    assert distance(0, 1) == pytest.approx(0.0)
+    assert distance(0, 1) < distance(0, 2) < distance(0, 3)
+
+
+def test_path_labels_show_the_deepest_shared_folder():
+    encoder = PathEncoder()
+    encoder.fit_transform(values("c:/root/a/b/1.png", "c:/root/a/b/2.png", "c:/root/a/c/3.png", "d:/x/4.png"), PARAMS)
+    assert encoder.describe(np.array([0, 1]), MapParams(label_terms=3)) == ["a/b"]
+
+
+def test_path_is_detected_for_paths_but_not_tag_lists():
+    assert detect_encoder([PathValue(f"c:/pics/{i}/x.png") for i in range(10)]) == "path"
+    assert detect_encoder([PathValue("cat, sky/blue, sea") for _ in range(10)]) == "token_set"
+
+
 def test_text_handles_japanese_variants():
     encoder = TextEncoder()
     matrix = encoder.fit_transform(values("青い髪の少女", "青髪の少女", "夜の街と雨"), PARAMS).toarray()
@@ -204,6 +231,7 @@ def test_image_encoder_is_gone_and_auto_encoders_exclude_non_auto():
     [
         (NumericEncoder(), [PathValue("1", 1.0), PathValue("5", 5.0)]),
         (TokenSetEncoder(), values("cat, sky", "dog, sea")),
+        (PathEncoder(), values("c:/a/1.png", "c:/b/2.png")),
         (TextEncoder(), values("青い髪の少女", "夜の街")),
         (CategoryEncoder(), values("a", "b")),
     ],
@@ -234,6 +262,7 @@ COMPACT_CASES = [
     (NumericEncoder(), [PathValue("1", 1.0), PathValue("5", 5.0), PathValue("9", 9.0)]),
     (NumericEncoder({"scale": "log"}), [PathValue("1", 1.0), PathValue("10", 10.0)]),
     (TokenSetEncoder(), values("cat, sky", "dog, sea", "cat, sea")),
+    (PathEncoder(), values("c:/a/1.png", "c:/b/2.png", "c:/a/3.png")),
     (TextEncoder(), values("青い髪の少女", "夜の街", "猫が寝ている")),
     (CategoryEncoder(), values("a", "b", "a")),
     (PaletteEncoder(), [palette((250, 10, 10), (20, 20, 20)), palette((10, 10, 250)), None]),

@@ -1,5 +1,8 @@
 from contextlib import closing
 
+import threading
+import time
+
 import pytest
 from PySide6 import QtCore
 
@@ -7,7 +10,7 @@ from extensions.mapping import space, space_panel
 from extensions.mapping.params import MapParams
 from extensions.mapping.session import FeatureSpec
 from extensions.mapping.space import Preset, SpaceStatus, save_preset, write_status
-from extensions.mapping.space_panel import MappingSpacePlugin, MappingSpaceWidget, current_status, read_snapshot, status_text
+from extensions.mapping.space_panel import MappingSpacePlugin, MappingSpaceWidget, SpaceSnapshot, current_status, read_snapshot, status_text
 from wafer.core.db.db_utils import open_readonly
 from wafer.core.db.file_db import FileDB
 
@@ -356,3 +359,87 @@ def test_status_refresh_reads_counts_without_the_preview(widget, database, monke
     qtbot.waitUntil(lambda: w.total == 12, timeout=10000)
     assert w.placed == 10 and "10 of 12" in w.status_label.text()
     assert w.shown is None and w.map_view.paths == []
+
+
+def test_preview_reloads_when_training_finishes_and_while_files_are_placed(widget, monkeypatch):
+    w, _saved, _resets = widget
+    reloads = []
+    monkeypatch.setattr(MappingSpaceWidget, "refresh", lambda self: reloads.append(1))
+    preset = Preset([FeatureSpec("tags", "token_set")], MapParams(), 2)
+    snapshot = lambda placed, waiting, state="ready": SpaceSnapshot(preset, SpaceStatus(state, 2), total=100, placed=placed, waiting=waiting)
+    w.preview_mark, w.preview_placed = ("training", 2), 0
+    w.on_status(snapshot(5, 90))
+    assert reloads == [1]
+    w.shown = object()
+    w.preview_mark, w.preview_placed, w.preview_loaded_at = ("ready", 2), 5, time.monotonic()
+    w.on_status(snapshot(5, 90))
+    w.on_status(snapshot(6, 89))
+    assert reloads == [1]
+    w.preview_loaded_at -= space_panel.PREVIEW_RELOAD_SECONDS
+    w.on_status(snapshot(6, 89))
+    assert reloads == [1, 1]
+    w.preview_loaded_at = time.monotonic()
+    w.on_status(snapshot(95, 0))
+    assert reloads == [1, 1, 1]
+    w.preview_loading = True
+    w.on_status(snapshot(96, 0))
+    w.preview_loading, w.showing_quick = False, True
+    w.on_status(snapshot(97, 0))
+    assert reloads == [1, 1, 1]
+    w.shown = None
+
+
+def test_quick_train_shows_a_sample_without_saving_and_reuses_it(widget, database, monkeypatch, qtbot):
+    w, saved, resets = widget
+    reads = []
+    original = space_panel.read_quick_train_sample
+    monkeypatch.setattr(space_panel, "read_quick_train_sample", lambda *args: reads.append(args) or original(*args))
+    w.db_name = "map"
+    w.apply_preset(Preset([FeatureSpec("wd14.tags", "token_set")], MapParams(), 1))
+    w.quick_size.setValue(100)
+    w.toggle_quick_train()
+    assert w.quick_button.text() == "Cancel"
+    qtbot.waitUntil(lambda: w.showing_quick, timeout=30000)
+    assert len(w.map_view.paths) == 12 and "not saved" in w.count_label.text()
+    assert w.quick_button.text() == "Quick Train" and not saved and not resets
+    w.tuning.controls["n_neighbors"].setValue(5)
+    w.showing_quick = False
+    w.toggle_quick_train()
+    qtbot.waitUntil(lambda: w.showing_quick, timeout=30000)
+    assert len(reads) == 1
+    w.on_status(SpaceSnapshot(w.saved, SpaceStatus("ready", 9), placed=1))
+    assert w.showing_quick
+    w.show_space()
+    assert not w.showing_quick
+
+
+def test_cancelling_quick_train_keeps_the_space_preview(widget, monkeypatch, qtbot):
+    w, _saved, _resets = widget
+    release = threading.Event()
+    runs = []
+
+    class RecordingPipeline:
+        def run(self, request, cancelled, progress):
+            runs.append(cancelled())
+
+    sample = space_panel.QuickTrainSample("db1", 100, frozenset(), [], {}, {}, RecordingPipeline())
+    started = threading.Event()
+    monkeypatch.setattr(space_panel, "read_quick_train_sample", lambda *args: started.set() or (release.wait(10) and sample))
+    w.toggle_quick_train()
+    assert w.quick_running
+    qtbot.waitUntil(started.is_set, timeout=5000)
+    w.toggle_quick_train()
+    assert not w.quick_running and w.quick_button.text() == "Quick Train" and w.count_label.text() == "Cancelled"
+    release.set()
+    qtbot.waitUntil(lambda: runs == [True], timeout=5000)
+    qtbot.wait(50)
+    assert not w.showing_quick and w.quick_sample is None and w.count_label.text() == "Cancelled"
+
+
+def test_quick_train_size_is_kept_in_the_panel_state(widget):
+    w, _saved, _resets = widget
+    w.quick_size.setValue(8000)
+    state = w.save_state()
+    w.quick_size.setValue(space_panel.QUICK_TRAIN_FILES)
+    w.restore_state(state)
+    assert w.quick_size.value() == 8000

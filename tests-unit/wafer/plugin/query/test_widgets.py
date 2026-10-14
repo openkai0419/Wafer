@@ -2,9 +2,10 @@ import pytest
 from PySide6 import QtGui, QtWidgets
 
 from wafer.builtins.filters import TextFilter
+from wafer.qt.palette import DARK
 from wafer.qt.theme import ThemeManager
 from wafer.core.store.state import StateStore
-from wafer.plugin.query.widgets import CheckableCombo, _CATALOG_KEY_ROLE, _KeySelectorPopup
+from wafer.plugin.query.widgets import CheckableCombo, KeyCatalogTree, KeyPickerPopup, _CATALOG_KEY_ROLE, _KeySelectorPopup
 
 
 def _active_key_set():
@@ -16,7 +17,7 @@ def _catalog_keys():
 
 
 def _tree_item_for_key(popup, key):
-    root = popup._catalog_tree.invisibleRootItem()
+    root = popup.catalog.tree.invisibleRootItem()
     for i in range(root.childCount()):
         top_item = root.child(i)
         if top_item.data(0, _CATALOG_KEY_ROLE) == key:
@@ -29,7 +30,7 @@ def _tree_item_for_key(popup, key):
 
 
 def _group_item(popup, prefix):
-    root = popup._catalog_tree.invisibleRootItem()
+    root = popup.catalog.tree.invisibleRootItem()
     for i in range(root.childCount()):
         item = root.child(i)
         if item.text(0).split("  (")[0] == prefix:
@@ -179,7 +180,7 @@ class TestKeySelectorPopupGroups:
             ]
         )
         popup = _KeySelectorPopup.instance()
-        tree = popup._catalog_tree
+        tree = popup.catalog.tree
         root = tree.invisibleRootItem()
         group_labels = []
         for i in range(root.childCount()):
@@ -198,8 +199,8 @@ class TestKeySelectorPopupGroups:
             ]
         )
         popup = _KeySelectorPopup.instance()
-        popup._search_input.setText("exif")
-        root = popup._catalog_tree.invisibleRootItem()
+        popup.catalog.search.setText("exif")
+        root = popup.catalog.tree.invisibleRootItem()
         visible = []
         for i in range(root.childCount()):
             item = root.child(i)
@@ -280,7 +281,7 @@ class TestKeySelectorPopupGroups:
         qapp.processEvents()
 
         prompt_item = _tree_item_for_key(popup, "prompt")
-        popup._on_catalog_clicked(prompt_item, 0)
+        popup.catalog.on_item_clicked(prompt_item, 0)
 
         assert "prompt" in combo_a.checked_items()
         assert "prompt" in combo_b.active_keys
@@ -289,3 +290,66 @@ class TestKeySelectorPopupGroups:
         popup.open_for(combo_b)
         qapp.processEvents()
         assert not popup._active_items["prompt"].checked
+
+
+def test_catalog_tree_groups_by_prefix_and_filters(qtbot):
+    tree = KeyCatalogTree()
+    qtbot.addWidget(tree)
+    tree.set_catalog([("path", 10), ("exif.width", 5), ("exif.height", 5), ("wd14.tags", 3)])
+    root = tree.tree.invisibleRootItem()
+    labels = [root.child(i).text(0) for i in range(root.childCount())]
+    assert labels[0].startswith("path") and any(text.startswith("exif") for text in labels)
+    tree.search.setText("wd14")
+    visible = [root.child(i).text(0) for i in range(root.childCount()) if not root.child(i).isHidden()]
+    assert len(visible) == 1 and visible[0].startswith("wd14")
+
+
+def test_picker_emits_picked_key_and_extras_come_first(qtbot):
+    popup = KeyPickerPopup()
+    qtbot.addWidget(popup)
+    popup.set_catalog([("path", 10), ("file_hash", 10)], extras=[("color.palette", "[Color] Palette")])
+    root = popup.catalog.tree.invisibleRootItem()
+    assert root.child(0).text(0) == "[Color] Palette"
+    picked = []
+    popup.picked.connect(picked.append)
+    popup.catalog.key_clicked.emit("file_hash", 10)
+    assert picked == ["file_hash"]
+    assert not popup.isVisible()
+
+
+@pytest.fixture()
+def dark_theme(monkeypatch):
+    monkeypatch.setattr(ThemeManager.instance(), "_palette", DARK)
+
+
+def test_picker_marks_used_keys(qtbot, dark_theme):
+    popup = KeyPickerPopup()
+    qtbot.addWidget(popup)
+    popup.set_catalog([("path", 10), ("name", 10)])
+    popup.set_used({"path"})
+    root = popup.catalog.tree.invisibleRootItem()
+    colors = {root.child(i).text(0).split(" (")[0]: root.child(i).foreground(0).color().name() for i in range(root.childCount())}
+    assert colors["path"] != colors["name"]
+
+
+def test_catalog_tree_keeps_expansion_and_highlight_across_rebuild(qtbot, dark_theme):
+    tree = KeyCatalogTree()
+    qtbot.addWidget(tree)
+    tree.set_expanded_prefixes({"exif"})
+    tree.set_highlighted({"exif.width"})
+    tree.set_catalog([("exif.width", 5), ("nai.prompt", 3)])
+    assert tree.expanded_prefixes() == {"exif"}
+    tree.set_catalog([("exif.width", 5), ("nai.prompt", 3)])
+    assert tree.expanded_prefixes() == {"exif"}
+    exif = tree.tree.invisibleRootItem().child(0)
+    nai = tree.tree.invisibleRootItem().child(1)
+    assert exif.child(0).foreground(0).color().name() != nai.child(0).foreground(0).color().name()
+
+
+def test_catalog_tree_click_emits_key_and_count(qtbot):
+    tree = KeyCatalogTree()
+    qtbot.addWidget(tree)
+    tree.set_catalog([("exif.width", 5)])
+    with qtbot.waitSignal(tree.key_clicked) as blocker:
+        tree.tree.itemClicked.emit(tree.tree.invisibleRootItem().child(0).child(0), 0)
+    assert blocker.args == ["exif.width", 5]

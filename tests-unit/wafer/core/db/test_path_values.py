@@ -71,3 +71,25 @@ def test_non_numeric_source_column_keeps_text_without_number(tmp_path):
 
 def test_fetch_sources(tmp_path):
     assert fetch_sources(_make_db(tmp_path, 2), ["c:/0.jpg", "c:/1.jpg"]) == {"c:/0.jpg": "c:/0.jpg", "c:/1.jpg": "c:/1.jpg"}
+
+
+def test_file_hash_is_included(tmp_path):
+    values = fetch_path_values(_make_db(tmp_path), ["c:/0.jpg"])["c:/0.jpg"]
+    assert values["file_hash"] == PathValue("hash-0")
+
+
+def test_keys_filter_limits_meta_and_tags_but_keeps_standard(tmp_path):
+    values = fetch_path_values(_make_db(tmp_path), ["c:/0.jpg"], keys=["wd14.tags"])["c:/0.jpg"]
+    assert "wd14.tags" in values and "exif.width" not in values and "rating" not in values
+    assert {"path", "name", "size", "file_hash"} <= set(values)
+
+
+def test_empty_keys_returns_only_standard(tmp_path):
+    values = fetch_path_values(_make_db(tmp_path), ["c:/0.jpg"], keys=[])["c:/0.jpg"]
+    assert set(values) == {"path", "name", "size", "modified", "created", "collected", "file_hash"}
+
+
+def test_too_many_keys_reads_everything(tmp_path, monkeypatch):
+    monkeypatch.setattr(path_values, "MAX_FILTER_KEYS", 1)
+    values = fetch_path_values(_make_db(tmp_path), ["c:/0.jpg"], keys=["wd14.tags", "rating"])["c:/0.jpg"]
+    assert "exif.width" in values and "wd14.tags" in values

@@ -98,7 +98,8 @@ class MappingWidget(QtWidgets.QWidget):
         self.host = MapHost(self)
         self.tuning_popup: PopupBase | None = None
         self.build_ui()
-        self.host.views = [self.map_view, self.file_list]
+        self.host.map_views = [self.map_view]
+        self.host.list_views = [self.file_list]
         self.setAcceptDrops(True)
         self.destroyed.connect(partial(cancel_work, self.fetch_cancel, self.compute_cancel))
 
@@ -415,6 +416,7 @@ class MappingWidget(QtWidgets.QWidget):
         keep_view = self.shown is not None and self.shown.paths == result.paths
         colors = self.colors_for(result)
         self.map_view.set_thumbnail_zoom(self.params.thumbnail_zoom)
+        self.map_view.set_image_limit(self.params.max_images)
         self.map_view.show_result(result, colors, self.grouping_enabled, keep_view)
         self.file_list.set_rows(result.paths, result.order, colors)
         self.shown = result
@@ -555,6 +557,9 @@ class MappingWidget(QtWidgets.QWidget):
 
     def thumbnail(self, path: str) -> QtGui.QPixmap | None:
         return self.host.thumbnail(path)
+
+    def map_thumbnails(self, paths: list[str]) -> list[QtGui.QPixmap | None]:
+        return self.host.map_thumbnails(paths)
 
     def show_hover(self, path: str, global_pos: QtCore.QPoint) -> None:
         self.host.show_hover(path, global_pos)

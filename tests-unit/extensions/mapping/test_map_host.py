@@ -89,3 +89,43 @@ def test_cache_limits_follow_the_pixel_budget(qtbot, monkeypatch):
     host.set_hover_size(1024)
     assert host.hover_thumbs.cache_limit == map_host.HOVER_BUDGET // (2048 * 2048 * 4)
     assert map_host.cache_limit(1, 1024) == 1
+
+
+def test_list_and_map_use_separate_loaders(qtbot, monkeypatch):
+    host = make_host(qtbot)
+    requested = {"map": [], "list": []}
+    monkeypatch.setattr(host.thumbs, "request", lambda paths: requested["map"].extend(paths))
+    monkeypatch.setattr(host.list_thumbs, "request", lambda paths: requested["list"].extend(paths))
+    assert host.thumbnail("a.png") is None
+    assert host.map_thumbnails(["b.png", "c.png"]) == [None, None]
+    assert requested == {"map": ["b.png", "c.png"], "list": ["a.png"]}
+    assert host.list_thumbs.size == map_host.LIST_BUCKET
+
+
+def test_map_thumbnails_cancel_paths_no_longer_wanted(qtbot, monkeypatch):
+    host = make_host(qtbot)
+    host.thumbs.store("a.png", QtGui.QImage(8, 8, QtGui.QImage.Format_RGB32))
+    cancelled = []
+    monkeypatch.setattr(host.thumbs, "request", lambda paths: None)
+    monkeypatch.setattr(host.thumbs, "cancel", lambda paths: cancelled.extend(paths))
+    host.map_thumbnails(["a.png", "b.png"])
+    pixmaps = host.map_thumbnails(["a.png", "c.png"])
+    assert cancelled == ["b.png"]
+    assert pixmaps[0] is not None and pixmaps[1] is None
+
+
+def test_loaded_thumbnails_reach_their_own_views(qtbot):
+    host = make_host(qtbot)
+
+    class View:
+        def __init__(self):
+            self.paths = []
+
+        def update_path(self, path):
+            self.paths.append(path)
+
+    map_view, list_view = View(), View()
+    host.map_views, host.list_views = [map_view], [list_view]
+    host.thumbs.store("a.png", QtGui.QImage(8, 8, QtGui.QImage.Format_RGB32))
+    host.list_thumbs.store("b.png", QtGui.QImage(8, 8, QtGui.QImage.Format_RGB32))
+    assert map_view.paths == ["a.png"] and list_view.paths == ["b.png"]

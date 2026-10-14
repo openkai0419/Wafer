@@ -21,8 +21,9 @@ class FileListModel(QtCore.QAbstractListModel):
         super().__init__(parent)
         self.owner = owner
         self.paths: list[str] = []
-        self.order: list[int] = []
+        self.order = np.zeros(0, dtype=np.int64)
         self.colors: list[QtGui.QColor] = []
+        self.selected = np.zeros(0, dtype=bool)
 
     def rowCount(self, parent=QtCore.QModelIndex()):
         return 0 if parent.isValid() else len(self.order)
@@ -30,7 +31,7 @@ class FileListModel(QtCore.QAbstractListModel):
     def data(self, index, role=Qt.DisplayRole):
         if not index.isValid():
             return None
-        row = self.order[index.row()]
+        row = int(self.order[index.row()])
         path = self.paths[row]
         if role == Qt.DisplayRole:
             return os.path.basename(path.split("::")[-1])
@@ -46,6 +47,10 @@ class FileListModel(QtCore.QAbstractListModel):
 
 
 class ColorBarDelegate(QtWidgets.QStyledItemDelegate):
+    def __init__(self, model: FileListModel, parent=None):
+        super().__init__(parent)
+        self.file_model = model
+
     def paint(self, painter, option, index):
         color = index.data(COLOR_ROLE)
         bar = dpix(COLOR_BAR)
@@ -53,6 +58,10 @@ class ColorBarDelegate(QtWidgets.QStyledItemDelegate):
             painter.fillRect(QtCore.QRect(option.rect.left(), option.rect.top(), bar, option.rect.height()), color)
         shifted = QtWidgets.QStyleOptionViewItem(option)
         shifted.rect = option.rect.adjusted(bar + dpix(2), 0, 0, 0)
+        if self.file_model.selected[self.file_model.order[index.row()]]:
+            shifted.state |= QtWidgets.QStyle.State_Selected
+        else:
+            shifted.state &= ~QtWidgets.QStyle.State_Selected
         super().paint(painter, shifted, index)
 
 
@@ -63,58 +72,124 @@ class FileList(QtWidgets.QListView, ActionKit.UIMixin):
         super().__init__(parent)
         self.owner = owner
         self.file_model = FileListModel(owner, self)
-        self.positions: dict[int, int] = {}
         self.path_positions: dict[str, int] = {}
-        self.syncing = False
+        self.anchor: int | None = None
+        self.drag_base = np.zeros(0, dtype=bool)
+        self.pointing = False
         self.setModel(self.file_model)
-        self.setItemDelegate(ColorBarDelegate(self))
-        self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.setItemDelegate(ColorBarDelegate(self.file_model, self))
+        self.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         self.setUniformItemSizes(True)
         self.setIconSize(QtCore.QSize(dpix(ICON_SIZE), dpix(ICON_SIZE)))
         self.init_command_binding("MappingView", use_existing_events=True)
-        self.selectionModel().selectionChanged.connect(self.on_selection)
 
     def set_rows(self, paths: list[str], order: np.ndarray, colors: list[QtGui.QColor]):
-        self.file_model.beginResetModel()
-        self.file_model.paths = list(paths)
-        self.file_model.order = [int(row) for row in order]
-        self.file_model.colors = colors
-        self.file_model.endResetModel()
-        self.positions = {row: position for position, row in enumerate(self.file_model.order)}
-        self.path_positions = {self.file_model.paths[row]: position for row, position in self.positions.items()}
+        model = self.file_model
+        model.beginResetModel()
+        model.paths = list(paths)
+        model.order = np.asarray(order, dtype=np.int64).reshape(-1)
+        model.colors = colors
+        model.selected = np.zeros(len(model.paths), dtype=bool)
+        model.endResetModel()
+        self.path_positions = {model.paths[row]: position for position, row in enumerate(model.order.tolist())}
+        self.anchor = None
 
     def clear_rows(self):
         self.set_rows([], np.zeros(0, dtype=np.int64), [])
 
     def selected_rows(self) -> list[int]:
-        return sorted(self.file_model.order[index.row()] for index in self.selectionModel().selectedRows())
+        return np.flatnonzero(self.file_model.selected).tolist()
 
     def select_rows(self, rows: Iterable[int]):
-        positions = sorted(self.positions[row] for row in rows if row in self.positions)
-        selection = QtCore.QItemSelection()
-        start = previous = None
-        for position in [*positions, None]:
-            if start is not None and position != previous + 1:
-                selection.select(self.file_model.index(start, 0), self.file_model.index(previous, 0))
-                start = None
-            if position is not None and start is None:
-                start = position
-            previous = position
-        self.syncing = True
+        wanted = np.fromiter(rows, dtype=np.int64)
+        mask = np.zeros(len(self.file_model.paths), dtype=bool)
+        mask[wanted[(wanted >= 0) & (wanted < mask.size)]] = True
+        self.set_selection(mask)
+
+    def set_selection(self, mask: np.ndarray) -> None:
+        self.file_model.selected = mask
+        self.viewport().update()
+
+    def apply_selection(self, mask: np.ndarray) -> None:
+        if np.array_equal(mask, self.file_model.selected):
+            return
+        self.set_selection(mask)
+        self.selection_changed.emit()
+
+    def span(self, start: int, end: int) -> np.ndarray:
+        low, high = sorted((start, end))
+        mask = np.zeros(len(self.file_model.paths), dtype=bool)
+        mask[self.file_model.order[low : high + 1]] = True
+        return mask
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent):
+        index = self.indexAt(event.position().toPoint())
+        if event.button() in (Qt.LeftButton, Qt.RightButton):
+            self.press(index, event.button(), event.modifiers())
+        self.pass_pointer(super().mousePressEvent, event)
+
+    def pass_pointer(self, handler, event: QtGui.QMouseEvent) -> None:
+        self.pointing = True
         try:
-            self.selectionModel().select(selection, QtCore.QItemSelectionModel.ClearAndSelect)
+            handler(event)
         finally:
-            self.syncing = False
+            self.pointing = False
+
+    def press(self, index: QtCore.QModelIndex, button: Qt.MouseButton, modifiers: Qt.KeyboardModifier) -> None:
+        selected = self.file_model.selected
+        if not index.isValid():
+            self.drag_base = np.zeros(0, dtype=bool)
+            if button == Qt.LeftButton and not modifiers & (Qt.ControlModifier | Qt.ShiftModifier):
+                self.apply_selection(np.zeros_like(selected))
+            return
+        position = index.row()
+        row = int(self.file_model.order[position])
+        if button == Qt.RightButton:
+            self.drag_base = np.zeros(0, dtype=bool)
+            if not selected[row]:
+                self.anchor = position
+                self.apply_selection(self.span(position, position))
+            return
+        if modifiers & Qt.ShiftModifier and self.anchor is not None:
+            base = selected.copy() if modifiers & Qt.ControlModifier else np.zeros_like(selected)
+            self.apply_selection(base | self.span(self.anchor, position))
+        elif modifiers & Qt.ControlModifier:
+            mask = selected.copy()
+            mask[row] = not mask[row]
+            self.anchor = position
+            self.apply_selection(mask)
+        else:
+            self.anchor = position
+            self.apply_selection(self.span(position, position))
+        self.drag_base = selected.copy() if modifiers & Qt.ControlModifier else np.zeros_like(selected)
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent):
+        if event.buttons() & Qt.LeftButton and self.anchor is not None and self.drag_base.size == len(self.file_model.paths):
+            index = self.indexAt(event.position().toPoint())
+            if index.isValid():
+                self.apply_selection(self.drag_base | self.span(self.anchor, index.row()))
+        self.pass_pointer(super().mouseMoveEvent, event)
+
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
+        self.pass_pointer(super().mouseReleaseEvent, event)
+
+    def currentChanged(self, current: QtCore.QModelIndex, previous: QtCore.QModelIndex):
+        super().currentChanged(current, previous)
+        if self.pointing or not current.isValid():
+            return
+        modifiers = QtWidgets.QApplication.keyboardModifiers()
+        position = current.row()
+        if modifiers & Qt.ShiftModifier and self.anchor is not None:
+            self.apply_selection(self.span(self.anchor, position))
+        elif not modifiers & Qt.ControlModifier:
+            self.anchor = position
+            self.apply_selection(self.span(position, position))
 
     def update_path(self, path: str):
         position = self.path_positions.get(path)
         if position is not None:
             index = self.file_model.index(position, 0)
             self.file_model.dataChanged.emit(index, index, [Qt.DecorationRole])
-
-    def on_selection(self, *_):
-        if not self.syncing:
-            self.selection_changed.emit()
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
         return self.owner.context_for_selection()

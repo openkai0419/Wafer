@@ -8,7 +8,6 @@ from extensions.mapping import commands, projection
 from extensions.mapping import map_host as map_host_module
 from extensions.mapping import map_view as map_view_module
 from extensions.mapping import widget as widget_module
-from extensions.mapping.map_view import MapPointItem
 from extensions.mapping.params import MapParams
 from extensions.mapping.session import FeatureSpec, MapPipeline
 from extensions.mapping.space import Preset
@@ -193,11 +192,11 @@ def without_labels(mapping, qtbot):
 
 
 def clickable_point(view):
-    for item in view.point_items():
-        pos = view.mapFromScene(item.pos())
-        hit = view.itemAt(pos)
-        if isinstance(hit, MapPointItem):
-            return pos, hit.row
+    for row, (x, y) in enumerate(view.positions):
+        pos = view.mapFromScene(QtCore.QPointF(x, y))
+        hit = view.row_at(pos)
+        if hit is not None and view.viewport().rect().contains(pos):
+            return pos, hit
     raise AssertionError("no clickable point")
 
 

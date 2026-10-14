@@ -10,10 +10,11 @@ class Owner:
     def __init__(self):
         self.requested = []
         self.hovers = []
+        self.pixmaps = {}
 
-    def thumbnail(self, path):
-        self.requested.append(path)
-        return None
+    def map_thumbnails(self, paths):
+        self.requested.append(list(paths))
+        return [self.pixmaps.get(path) for path in paths]
 
     def context_for_selection(self):
         return {"paths": ["x"]}
@@ -64,9 +65,10 @@ def colors(count):
     return [QtGui.QColor.fromHsvF(i / count, 0.5, 0.9) for i in range(count)]
 
 
-def test_show_result_creates_items_and_labels(view):
+def test_show_result_keeps_points_as_arrays_and_labels_as_items(view):
     view.show_result(result(), colors(6), show_groups=True, keep_view=False)
-    assert len(view.point_items()) == 6
+    assert view.positions.shape == (6, 2)
+    assert [type(item).__name__ for item in view.scene().items()] == ["GroupLabelItem"] * 2
     assert [label.text for label in view.label_items()] == ["cat", "dog"]
     view.show_result(result(), colors(6), show_groups=False, keep_view=True)
     assert view.label_items() == []
@@ -108,7 +110,7 @@ def test_extend_context_delegates_to_owner(view):
 
 
 def point_pos(view, row):
-    return view.mapFromScene(view.point_items()[row].pos())
+    return view.mapFromScene(QtCore.QPointF(*view.positions[row]))
 
 
 def test_drag_starting_on_a_point_selects_several(view, qtbot):
@@ -116,7 +118,7 @@ def test_drag_starting_on_a_point_selects_several(view, qtbot):
     viewport = view.viewport()
     start = point_pos(view, 0)
     end = view.mapFromScene(QtCore.QPointF(400, 1000)) + QtCore.QPoint(15, 15)
-    assert view.itemAt(start) is view.point_items()[0]
+    assert view.row_at(start) == 0
     emitted = []
     view.selection_changed.connect(lambda: emitted.append(view.selected_rows()))
     qtbot.mousePress(viewport, QtCore.Qt.LeftButton, pos=start)
@@ -157,17 +159,16 @@ def test_clicking_a_group_label_selects_the_group(view, qtbot):
 
 
 def render_point(view, row):
-    image = QtGui.QImage(48, 48, QtGui.QImage.Format_ARGB32)
-    image.fill(QtCore.Qt.transparent)
-    painter = QtGui.QPainter(image)
-    painter.translate(24, 24)
-    view.paint_point(painter, view.point_items()[row])
-    painter.end()
-    return image
+    view.viewport().repaint()
+    center = point_pos(view, row)
+    return view.current_layer().toImage().copy(center.x() - 48, center.y() - 48, 96, 96)
 
 
 @pytest.mark.parametrize("thumbnail_zoom", [2.0, 0.5])
 def test_outlier_is_drawn_with_a_ring_even_when_unselected(view, thumbnail_zoom):
+    image = QtGui.QPixmap(32, 32)
+    image.fill(QtGui.QColor("white"))
+    view.owner.pixmaps = {f"c:/{i}.png": image for i in range(6)}
     view.set_thumbnail_zoom(thumbnail_zoom)
     view.show_result(result(), colors(6), show_groups=False, keep_view=False)
     plain = render_point(view, 1)
@@ -265,3 +266,99 @@ def test_labels_sit_below_lowest_member(view):
     lowest = max(point_pos(view, row).y() for row in (0, 1, 2))
     label_top = view.mapFromScene(label.scenePos()).y() + label.boundingRect().top()
     assert label_top > lowest + view.item_extent() / 2
+
+
+def image_result(count, spread=1.0):
+    rng = np.random.default_rng(1)
+    return MapResult(
+        [f"c:/{i}.png" for i in range(count)],
+        (rng.random((count, 2)) * spread).astype(np.float32),
+        np.zeros(count, dtype=bool),
+        np.zeros(count, dtype=bool),
+        None,
+        {},
+        np.arange(count),
+        MapDiagnostics(),
+    )
+
+
+def loaded_owner(view, count):
+    pixmap = QtGui.QPixmap(16, 16)
+    pixmap.fill(QtGui.QColor("white"))
+    view.owner.pixmaps = {f"c:/{i}.png": pixmap for i in range(count)}
+
+
+def test_images_are_capped_one_per_cell_and_the_rest_stay_dots(view):
+    loaded_owner(view, 2000)
+    view.set_thumbnail_zoom(0.5)
+    view.show_result(image_result(2000), colors(2000), show_groups=False, keep_view=False)
+    view.set_image_limit(50)
+    view.viewport().repaint()
+    assert 0 < len(view.image_rows) <= 50
+    view.set_image_limit(10_000)
+    view.viewport().repaint()
+    cells = np.floor(view.device_positions()[view.image_rows] / view.item_extent()).astype(int)
+    assert len({tuple(cell) for cell in cells}) == len(view.image_rows) < 2000
+
+
+def test_selected_files_get_images_first(view):
+    loaded_owner(view, 2000)
+    view.set_thumbnail_zoom(0.5)
+    view.show_result(image_result(2000, spread=0.01), colors(2000), show_groups=False, keep_view=False)
+    view.set_image_limit(1)
+    view.select_rows([1234])
+    view.viewport().repaint()
+    assert view.image_rows.tolist() == [1234]
+
+
+def test_image_choice_is_stable_across_repaints(view):
+    loaded_owner(view, 500)
+    view.set_thumbnail_zoom(0.5)
+    view.show_result(image_result(500), colors(500), show_groups=False, keep_view=False)
+    view.viewport().repaint()
+    first = sorted(view.image_rows.tolist())
+    view.invalidate()
+    view.viewport().repaint()
+    assert sorted(view.image_rows.tolist()) == first
+
+
+def test_hover_and_click_reach_points_drawn_as_dots(view):
+    loaded_owner(view, 2000)
+    view.set_thumbnail_zoom(0.5)
+    view.show_result(image_result(2000), colors(2000), show_groups=False, keep_view=False)
+    view.set_image_limit(0)
+    view.viewport().repaint()
+    assert len(view.image_rows) == 0
+    row = view.row_at(point_pos(view, 7))
+    assert row is not None
+    hover_at(view, point_pos(view, 7))
+    assert view.owner.hovers[-1] == view.paths[row]
+
+
+def test_hit_test_prefers_the_image_under_the_cursor(view):
+    loaded_owner(view, 6)
+    view.set_thumbnail_zoom(0.5)
+    view.show_result(result(labels=False), colors(6), show_groups=False, keep_view=False)
+    view.viewport().repaint()
+    row = int(view.image_rows[-1])
+    left, top, right, bottom = view.image_rects[-1]
+    assert view.row_at(QtCore.QPoint(int(left) + 2, int(top) + 2)) == row
+
+
+def test_arrived_thumbnail_repaints_once_after_a_short_wait(view, qtbot):
+    view.set_thumbnail_zoom(0.5)
+    view.show_result(result(labels=False), colors(6), show_groups=False, keep_view=False)
+    view.viewport().repaint()
+    version = view.version
+    view.update_path("c:/0.png")
+    view.update_path("c:/1.png")
+    view.update_path("c:/unknown.png")
+    assert view.version == version and view.image_timer.isActive()
+    qtbot.waitUntil(lambda: view.version == version + 1, timeout=2000)
+
+
+def test_rows_in_rect_uses_viewport_pixels(view):
+    view.show_result(result(labels=False), colors(6), show_groups=False, keep_view=False)
+    pos = point_pos(view, 2)
+    rect = QtCore.QRectF(pos.x() - 1, pos.y() - 1, 2, 2)
+    assert 2 in view.rows_in_rect(rect).tolist()

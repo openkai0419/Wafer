@@ -218,8 +218,8 @@ class PreviewOwner:
         self.host = host
         self.selected_paths = selected_paths
 
-    def thumbnail(self, path: str) -> QtGui.QPixmap | None:
-        return self.host.thumbnail(path)
+    def map_thumbnails(self, paths: list[str]) -> list[QtGui.QPixmap | None]:
+        return self.host.map_thumbnails(paths)
 
     def show_hover(self, path: str, global_pos: QtCore.QPoint) -> None:
         self.host.show_hover(path, global_pos)
@@ -268,7 +268,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.preview_loaded_at = 0.0
         self.host = MapHost(self)
         self.build_ui()
-        self.host.views = [self.map_view]
+        self.host.map_views = [self.map_view]
         self.sync_host()
         self.update_buttons()
         self.destroyed.connect(partial(cancel_work, self.refresh_cancel, self.keys_cancel, self.status_cancel, self.quick_cancel))
@@ -635,6 +635,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.host.set_hover_size(params.hover_size)
         keep_view = self.shown is not None and self.shown.paths == result.paths
         self.map_view.set_thumbnail_zoom(params.thumbnail_zoom)
+        self.map_view.set_image_limit(params.max_images)
         self.map_view.show_result(result, result_colors(result, self.palette_colors), True, keep_view)
         self.shown = result
         self.count_label.setText(caption)

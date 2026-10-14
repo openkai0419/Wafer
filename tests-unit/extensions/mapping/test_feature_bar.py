@@ -164,3 +164,15 @@ def test_read_only_applies_to_chips_added_later(qtbot):
     assert [chip.isEnabled() for chip in bar.chips()] == [True, True]
     bar.add_feature("path")
     assert bar.chips()[-1].isEnabled()
+
+
+def test_set_encoder_updates_the_matching_chip_and_emits(qtbot):
+    bar = FeatureBar(lambda key: "text")
+    qtbot.addWidget(bar)
+    bar.set_features([FeatureSpec("score", "text"), FeatureSpec("tags", "text")])
+    emitted = []
+    bar.features_changed.connect(lambda: emitted.append(1))
+    bar.set_encoder("score", "numeric")
+    bar.set_encoder("missing", "numeric")
+    assert bar.features() == [FeatureSpec("score", "numeric"), FeatureSpec("tags", "text")]
+    assert emitted == [1]

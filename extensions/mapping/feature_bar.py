@@ -97,6 +97,11 @@ class FeatureChip(QtWidgets.QFrame):
         self.sync_pattern_visibility()
         self.changed.emit()
 
+    def set_encoder(self, name: str) -> None:
+        index = self.encoder_combo.findData(name)
+        if index >= 0:
+            self.encoder_combo.setCurrentIndex(index)
+
     def option_default(self, name: str) -> str:
         return next(option.default for option in ENCODERS[self.encoder_combo.currentData()].OPTIONS if option.name == name)
 
@@ -145,6 +150,11 @@ class FeatureBar(QtWidgets.QWidget):
             return
         self.insert_chip(FeatureSpec(key, "palette" if key == PALETTE_KEY else self.detect(key)))
         self.features_changed.emit()
+
+    def set_encoder(self, key: str, encoder: str):
+        for chip in self.feature_chips:
+            if chip.key == key:
+                chip.set_encoder(encoder)
 
     def insert_chip(self, spec: FeatureSpec):
         chip = FeatureChip(spec, self)

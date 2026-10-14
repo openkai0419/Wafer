@@ -12,7 +12,7 @@ from PySide6.QtCore import Qt
 from wafer.core.common.paths import data_db_path, safe_getsize, setting_db_path
 from wafer.core.db.db_utils import open_readonly
 from wafer.core.db.path_values import PathValue, fetch_path_values, fetch_sources
-from wafer.core.db.query import FileSearchEngine
+from wafer.core.db.query import STANDARD_KEYS, SYSTEM_FILE_HASH_KEY, FileSearchEngine
 from wafer.core.db.recollect import Recollect
 from wafer.core.db.setting_db import SettingDB
 from wafer.core.lang.manager import t
@@ -21,7 +21,7 @@ from wafer.plugin import BasePanelPlugin
 from wafer.plugin.query.composer import SearchComposer
 from wafer.plugin.settings import PluginSettings
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
-from wafer.qt.common.dispatcher import CancelSlot, Dispatcher
+from wafer.qt.common.dispatcher import CancelSlot, CancelToken, Dispatcher
 from wafer.qt.common.dpi import dpix
 from wafer.qt.common.thread import utility_pool
 from wafer.qt.theme import ThemeManager
@@ -45,6 +45,8 @@ TUNING_STAGES = ("encode", "reduce", "layout")
 MODEL_KEY = SPACE_KEYS[2]
 ELLIPSIS = "\N{HORIZONTAL ELLIPSIS}"
 SEPARATOR = "\N{MIDDLE DOT}"
+PROVISIONAL_ENCODER = "text"
+FILE_KEYS = frozenset((*STANDARD_KEYS, SYSTEM_FILE_HASH_KEY))
 
 
 def status_text(status: SpaceStatus, total: int, placed: int, model_bytes: int = 0) -> str:
@@ -96,7 +98,6 @@ class SpaceSnapshot:
     placed: int = 0
     model_bytes: int = 0
     parser_enabled: bool = True
-    detect_paths: list[str] = field(default_factory=list)
     result: MapResult | None = None
     sources: dict[str, str] = field(default_factory=dict)
     problem: str = ""
@@ -114,7 +115,6 @@ def read_snapshot(db_name: str) -> SpaceSnapshot:
     sample: list[str] = []
     with closing(open_readonly(db_path)) as conn:
         snapshot.total = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
-        snapshot.detect_paths = [row[0] for row in conn.execute("SELECT path FROM files LIMIT ?", (DETECT_SAMPLE,))]
         if preset.version and preset.features:
             version = str(preset.version)
             snapshot.placed = conn.execute("SELECT COUNT(*) FROM meta_info WHERE key = ? AND value = ?", (MODEL_KEY, version)).fetchone()[0]
@@ -137,6 +137,35 @@ def read_key_catalog(db_name: str) -> list[tuple[str, int]]:
     finally:
         engine.close()
     return [(key, count) for key, count in results if key not in SPACE_KEYS]
+
+
+def sample_paths_with_key(conn, key: str, limit: int) -> list[str]:
+    if key in FILE_KEYS:
+        return [row[0] for row in conn.execute("SELECT path FROM files LIMIT ?", (limit,))]
+    paths = [row[0] for row in conn.execute("SELECT path FROM meta_info WHERE key = ? LIMIT ?", (key, limit))]
+    if len(paths) < limit:
+        tagged = conn.execute(
+            "SELECT f.path FROM tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS f ON f.source = s.source WHERE t.key = ? LIMIT ?",
+            (key, limit - len(paths)),
+        )
+        paths += [row[0] for row in tagged]
+    return list(dict.fromkeys(paths))
+
+
+def detect_key_encoder(db_name: str, key: str) -> str | None:
+    db_path = data_db_path(db_name)
+    if not os.path.isfile(db_path):
+        return None
+    with closing(open_readonly(db_path)) as conn:
+        paths = sample_paths_with_key(conn, key, DETECT_SAMPLE)
+    values = fetch_path_values(db_path, paths, keys=[key])
+    present = [value for value in (value_input(entry.get(key)) for entry in values.values()) if value is not None]
+    return detect_encoder(present) if present else None
+
+
+def cancel_tokens(tokens: dict[str, CancelToken]) -> None:
+    for token in tokens.values():
+        token.cancel()
 
 
 class PreviewOwner:
@@ -179,7 +208,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.placed = 0
         self.model_bytes = 0
         self.parser_on = True
-        self.detect_paths: list[str] = []
+        self.detecting: dict[str, CancelToken] = {}
         self.shown: MapResult | None = None
         self.host = MapHost(self)
         self.build_ui()
@@ -187,6 +216,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.sync_host()
         self.update_buttons()
         self.destroyed.connect(partial(cancel_work, self.refresh_cancel, self.keys_cancel))
+        self.destroyed.connect(partial(cancel_tokens, self.detecting))
 
     @classmethod
     def instance(cls) -> MappingSpaceWidget | None:
@@ -253,10 +283,33 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         return [self.shown.paths[row] for row in self.map_view.selected_rows()]
 
     def detect(self, key: str) -> str:
-        path = data_db_path(self.db_name) if self.db_name else None
-        values = fetch_path_values(path, self.detect_paths, keys=[key])
-        inputs = [value_input(entry.get(key)) for entry in values.values()]
-        return detect_encoder([value for value in inputs if value is not None])
+        if self.db_name:
+            self.detect_later(self.db_name, key)
+        return PROVISIONAL_ENCODER
+
+    def detect_later(self, db_name: str, key: str) -> None:
+        previous = self.detecting.get(key)
+        if previous is not None:
+            previous.cancel()
+        cancel = self.detecting[key] = CancelToken()
+        self.update_buttons()
+
+        def task():
+            try:
+                encoder = detect_key_encoder(db_name, key)
+            except Exception as e:
+                AppLogger.warning(f"[Mapping] Detecting how to compare {key} in {db_name} failed; using {PROVISIONAL_ENCODER}", exc=e)
+                encoder = None
+            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.on_detected(db_name, key, encoder, cancel))
+
+        self.dispatcher.post(task, priority=LOAD_PRIORITY, cancel=cancel)
+
+    def on_detected(self, db_name: str, key: str, encoder: str | None, cancel: CancelToken) -> None:
+        if self.detecting.get(key) is cancel:
+            del self.detecting[key]
+        if encoder is not None and db_name == self.db_name:
+            self.feature_bar.set_encoder(key, encoder)
+        self.update_buttons()
 
     def apply_preset(self, preset: Preset) -> None:
         self.saved = preset
@@ -271,7 +324,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         return any(edited.values_for(stage) != self.saved.params.values_for(stage) for stage in TUNING_STAGES)
 
     def update_buttons(self) -> None:
-        self.save_button.setEnabled(bool(self.db_name) and bool(self.feature_bar.features()))
+        self.save_button.setEnabled(bool(self.db_name) and bool(self.feature_bar.features()) and not self.detecting)
         self.revert_button.setEnabled(self.is_dirty())
 
     def revert(self) -> None:
@@ -341,7 +394,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         else:
             self.apply_preset(snapshot.preset)
         self.status, self.total, self.placed = snapshot.status, snapshot.total, snapshot.placed
-        self.model_bytes, self.parser_on, self.detect_paths = snapshot.model_bytes, snapshot.parser_enabled, snapshot.detect_paths
+        self.model_bytes, self.parser_on = snapshot.model_bytes, snapshot.parser_enabled
         self.render_status()
         self.update_buttons()
         if snapshot.result is None:

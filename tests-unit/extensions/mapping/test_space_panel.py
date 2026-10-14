@@ -1,3 +1,5 @@
+from contextlib import closing
+
 import pytest
 
 from extensions.mapping import space, space_panel
@@ -5,6 +7,7 @@ from extensions.mapping.params import MapParams
 from extensions.mapping.session import FeatureSpec
 from extensions.mapping.space import Preset, SpaceStatus, save_preset, write_status
 from extensions.mapping.space_panel import MappingSpacePlugin, MappingSpaceWidget, current_status, read_snapshot, status_text
+from wafer.core.db.db_utils import open_readonly
 from wafer.core.db.file_db import FileDB
 
 
@@ -137,7 +140,7 @@ def database(tmp_path, monkeypatch):
     save_preset("map", Preset([FeatureSpec("wd14.tags", "token_set")], MapParams(), 1))
     write_status(tmp_path / "cache" / "mapping" / "map", SpaceStatus("ready", 1, trained=10))
     (tmp_path / "cache" / "mapping" / "map" / "model-v1.npz").write_bytes(b"x" * 2048)
-    yield tmp_path
+    yield db
     db.close()
 
 
@@ -148,7 +151,7 @@ def test_snapshot_reads_counts_status_and_preview(database):
     assert snapshot.model_bytes == 2048
     assert not snapshot.parser_enabled
     assert snapshot.result is not None and len(snapshot.result.paths) == 10 and not snapshot.result.unset.any()
-    assert len(snapshot.detect_paths) == 12 and set(snapshot.sources) == set(snapshot.result.paths)
+    assert set(snapshot.sources) == set(snapshot.result.paths)
 
 
 def test_snapshot_without_a_saved_preset_has_no_preview(database, monkeypatch):
@@ -199,3 +202,44 @@ def test_refresh_loads_preview_and_key_catalog_in_background(qtbot, database):
     keys = dict(w.feature_bar.keys)
     assert "wd14.tags" in keys and not set(keys) & set(space_panel.SPACE_KEYS)
     w.close()
+
+
+def add_sparse_files(db):
+    paths = [f"c:/sparse/{i}.png" for i in range(20)]
+    db.upsert_basic_sources([(path, f"s{i}", 100 + i, 1.0, 1.0, 1.0) for i, path in enumerate(paths)], [(path, path, f"{i}.png", 1.0, None) for i, path in enumerate(paths)])
+    db.upsert_collection_results([], [(path, "sparse.score", str(i), float(i)) for i, path in enumerate(paths[-4:])], [(path, "sparse.tags", "cat, sky, sea", None) for path in paths[-4:]], [])
+
+
+def test_detect_samples_files_that_have_the_key(database, monkeypatch):
+    add_sparse_files(database)
+    monkeypatch.setattr(space_panel, "DETECT_SAMPLE", 5)
+    assert space_panel.detect_key_encoder("map", "sparse.score") == "numeric"
+    assert space_panel.detect_key_encoder("map", "sparse.tags") == "token_set"
+    assert space_panel.detect_key_encoder("map", "size") == "numeric"
+    assert space_panel.detect_key_encoder("map", "missing.key") is None
+
+
+def test_sampled_paths_mix_meta_and_tag_files(database):
+    add_sparse_files(database)
+    with closing(open_readonly(str(database.db_path))) as conn:
+        assert len(space_panel.sample_paths_with_key(conn, "sparse.score", 3)) == 3
+        assert set(space_panel.sample_paths_with_key(conn, "sparse.tags", 10)) == {f"c:/sparse/{i}.png" for i in range(16, 20)}
+        assert len(space_panel.sample_paths_with_key(conn, "path", 7)) == 7
+
+
+def test_added_key_is_detected_in_the_background(widget, database, qtbot, monkeypatch):
+    w, _saved, _resets = widget
+    add_sparse_files(database)
+    monkeypatch.setattr(space_panel, "DETECT_SAMPLE", 5)
+    w.feature_bar.add_feature("sparse.score")
+    chip = w.feature_bar.chips()[-1]
+    assert chip.spec().encoder == space_panel.PROVISIONAL_ENCODER and not w.save_button.isEnabled()
+    qtbot.waitUntil(lambda: not w.detecting, timeout=10000)
+    assert chip.spec().encoder == "numeric" and w.save_button.isEnabled()
+
+
+def test_unknown_key_keeps_the_provisional_encoder(widget, database, qtbot):
+    w, _saved, _resets = widget
+    w.feature_bar.add_feature("missing.key")
+    qtbot.waitUntil(lambda: not w.detecting, timeout=10000)
+    assert w.feature_bar.chips()[-1].spec().encoder == space_panel.PROVISIONAL_ENCODER

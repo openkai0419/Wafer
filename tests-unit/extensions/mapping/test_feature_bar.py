@@ -151,3 +151,29 @@ def test_regular_chip_excludes_key_group_encoders(qtbot):
     bar.add_feature("prompt")
     combo = bar.chips()[0].encoder_combo
     assert combo.findData("palette") == -1 and combo.isEnabled()
+
+
+def test_read_only_applies_to_chips_added_later(qtbot):
+    bar = FeatureBar(lambda key: "text")
+    qtbot.addWidget(bar)
+    bar.set_read_only(True)
+    bar.set_features([FeatureSpec("tags", "token_set")])
+    bar.insert_chip(FeatureSpec("prompt", "text"))
+    assert [chip.isEnabled() for chip in bar.chips()] == [False, False]
+    bar.set_read_only(False)
+    assert [chip.isEnabled() for chip in bar.chips()] == [True, True]
+    bar.add_feature("path")
+    assert bar.chips()[-1].isEnabled()
+
+
+def test_read_only_applies_to_chips_added_later(qtbot):
+    bar = FeatureBar(lambda key: "text")
+    qtbot.addWidget(bar)
+    bar.set_read_only(True)
+    bar.set_features([FeatureSpec("tags", "token_set")])
+    bar.insert_chip(FeatureSpec("prompt", "text"))
+    assert [chip.isEnabled() for chip in bar.chips()] == [False, False]
+    bar.set_read_only(False)
+    assert [chip.isEnabled() for chip in bar.chips()] == [True, True]
+    bar.add_feature("path")
+    assert bar.chips()[-1].isEnabled()

@@ -4,7 +4,8 @@ import pytest
 from extensions.mapping import projection, session
 from extensions.mapping.encoders import ENCODERS
 from extensions.mapping.params import MapParams
-from extensions.mapping.session import FeatureSpec, MapError, MapPipeline, MapRequest
+from extensions.mapping.session import FeatureSpec, MapError, MapPipeline, MapRequest, layout_from_space
+from extensions.mapping.space import Preset
 from wafer.core.db.path_values import PathValue
 
 
@@ -157,3 +158,119 @@ def test_cancel_between_features_skips_remaining_encodes(monkeypatch):
     features = [FeatureSpec("tags", "token_set"), FeatureSpec("tags", "token_set", options={"separator": "comma"})]
     assert pipeline().run(make_request(features=features), cancelled=lambda: len(calls) >= 1) is None
     assert calls == [1]
+
+
+def space_values(count=12, version="2"):
+    values = {}
+    for i in range(count):
+        x = 0.0 if i < count // 2 else 10.0
+        values[f"c:/{i}.png"] = {
+            "tags": PathValue("cat" if i < count // 2 else "dog"),
+            "mapping.x": PathValue(str(x + i * 0.01), x + i * 0.01),
+            "mapping.y": PathValue("0", 0.0),
+            "mapping.model": PathValue(version, float(version)),
+        }
+    return values
+
+
+def space_preset(version=2):
+    return Preset([FeatureSpec("tags", "token_set")], MapParams(), version)
+
+
+def test_layout_from_space_uses_current_version_only():
+    values = space_values()
+    values["c:/0.png"]["mapping.model"] = PathValue("1", 1.0)
+    values["c:/archive.zip::m.png"] = {"tags": PathValue("cat")}
+    paths = list(values)
+    result = layout_from_space(paths, values, space_preset(), MapParams(min_cluster_size=3), grouping=True)
+    assert result.unset[paths.index("c:/0.png")] and result.unset[paths.index("c:/archive.zip::m.png")]
+    assert np.isfinite(result.positions[~result.unset]).all()
+    assert result.diagnostics.unset == 2
+    assert result.labels is not None and len(set(result.labels[~result.unset].tolist()) - {-1}) == 2
+    assert any("cat" in words for words in result.group_terms.values())
+    assert sorted(result.order.tolist()) == list(range(len(paths)))
+    assert set(result.order[-2:].tolist()) == {paths.index("c:/0.png"), paths.index("c:/archive.zip::m.png")}
+
+
+def test_layout_from_space_without_placed_files_raises():
+    with pytest.raises(MapError):
+        layout_from_space(["a", "b"], {"a": {}, "b": {}}, space_preset(), MapParams(), grouping=False)
+
+
+def test_layout_from_space_grouping_off():
+    values = space_values()
+    result = layout_from_space(list(values), values, space_preset(), MapParams(), grouping=False)
+    assert result.labels is None and result.group_terms == {}
+
+
+def test_layout_from_space_ignores_other_versions_and_missing_numbers():
+    values = space_values(count=6)
+    values["c:/0.png"]["mapping.model"] = PathValue("3", 3.0)
+    values["c:/1.png"]["mapping.x"] = PathValue("n/a")
+    result = layout_from_space(list(values), values, space_preset(), MapParams(), grouping=False)
+    assert result.unset.tolist() == [True, True, False, False, False, False]
+
+
+def test_layout_from_space_with_one_placed_file_still_lays_out():
+    values = {"a": space_values(count=1)["c:/0.png"], "b": {}}
+    result = layout_from_space(["a", "b"], values, space_preset(), MapParams(), grouping=True)
+    assert result.unset.tolist() == [False, True]
+    assert result.labels is None and result.order.tolist() == [0, 1]
+
+
+def space_values(count=12, version="2"):
+    values = {}
+    for i in range(count):
+        x = 0.0 if i < count // 2 else 10.0
+        values[f"c:/{i}.png"] = {
+            "tags": PathValue("cat" if i < count // 2 else "dog"),
+            "mapping.x": PathValue(str(x + i * 0.01), x + i * 0.01),
+            "mapping.y": PathValue("0", 0.0),
+            "mapping.model": PathValue(version, float(version)),
+        }
+    return values
+
+
+def space_preset(version=2):
+    return Preset([FeatureSpec("tags", "token_set")], MapParams(), version)
+
+
+def test_layout_from_space_uses_current_version_only():
+    values = space_values()
+    values["c:/0.png"]["mapping.model"] = PathValue("1", 1.0)
+    values["c:/archive.zip::m.png"] = {"tags": PathValue("cat")}
+    paths = list(values)
+    result = layout_from_space(paths, values, space_preset(), MapParams(min_cluster_size=3), grouping=True)
+    assert result.unset[paths.index("c:/0.png")] and result.unset[paths.index("c:/archive.zip::m.png")]
+    assert np.isfinite(result.positions[~result.unset]).all()
+    assert result.diagnostics.unset == 2
+    assert result.labels is not None and len(set(result.labels[~result.unset].tolist()) - {-1}) == 2
+    assert any("cat" in words for words in result.group_terms.values())
+    assert sorted(result.order.tolist()) == list(range(len(paths)))
+    assert set(result.order[-2:].tolist()) == {paths.index("c:/0.png"), paths.index("c:/archive.zip::m.png")}
+
+
+def test_layout_from_space_without_placed_files_raises():
+    with pytest.raises(MapError):
+        layout_from_space(["a", "b"], {"a": {}, "b": {}}, space_preset(), MapParams(), grouping=False)
+
+
+def test_layout_from_space_grouping_off():
+    values = space_values()
+    result = layout_from_space(list(values), values, space_preset(), MapParams(), grouping=False)
+    assert result.labels is None and result.group_terms == {}
+
+
+def test_layout_from_space_ignores_other_versions_and_missing_numbers():
+    values = space_values(count=6)
+    values["c:/0.png"]["mapping.model"] = PathValue("3", 3.0)
+    values["c:/1.png"]["mapping.x"] = PathValue("n/a")
+    result = layout_from_space(list(values), values, space_preset(), MapParams(), grouping=False)
+    assert result.unset.tolist() == [True, True, False, False, False, False]
+
+
+def test_layout_from_space_with_one_placed_file_still_lays_out():
+    values = {"a": space_values(count=1)["c:/0.png"], "b": {}}
+    result = layout_from_space(["a", "b"], values, space_preset(), MapParams(), grouping=True)
+    assert result.unset.tolist() == [False, True]
+    assert result.labels is None and result.order.tolist() == [0, 1]

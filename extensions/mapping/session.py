@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -17,6 +17,12 @@ from wafer.core.logs import AppLogger
 from . import projection
 from .encoders import ENCODERS, BaseEncoder, feature_input
 from .params import MapParams
+
+if TYPE_CHECKING:
+    from .space import Preset
+
+OUTPUT_PREFIX = "mapping"
+SPACE_KEYS = (f"{OUTPUT_PREFIX}.x", f"{OUTPUT_PREFIX}.y", f"{OUTPUT_PREFIX}.model")
 
 
 class MapError(Exception):
@@ -246,6 +252,70 @@ class MapPipeline:
                         words.append(word)
             terms[group] = words[: params.label_terms]
         return terms
+
+
+def layout_from_space(paths: list[str], values: dict[str, dict[str, PathValue]], preset: Preset, params: MapParams, grouping: bool) -> MapResult:
+    params = params.normalized()
+    diagnostics = MapDiagnostics()
+    count = len(paths)
+    raw = np.full((count, 2), np.nan, dtype=np.float64)
+    version = str(preset.version)
+    key_x, key_y, key_model = SPACE_KEYS
+    for row, path in enumerate(paths):
+        entry = values.get(path, {})
+        model, x, y = entry.get(key_model), entry.get(key_x), entry.get(key_y)
+        if model is None or model.text != version or x is None or y is None or x.number is None or y.number is None:
+            continue
+        raw[row] = (x.number, y.number)
+    placed = np.isfinite(raw).all(axis=1)
+    active = np.flatnonzero(placed)
+    if active.size == 0:
+        raise MapError("No files have been placed yet. Wait for the Mapping parser or retrain in Mapping Space.")
+    unit, active_outliers = projection.clip_to_unit(raw[active], params.clip_percent)
+    positions = np.full((count, 2), np.nan, dtype=np.float32)
+    positions[active] = unit
+    outliers = np.zeros(count, dtype=bool)
+    outliers[active] = active_outliers
+    labels = None
+    terms: dict[int, list[str]] = {}
+    active_labels = np.zeros(active.size, dtype=np.int32)
+    if grouping and active.size >= 3:
+        with timed(diagnostics, "cluster"):
+            active_labels = projection.cluster(unit, params.resolved_min_cluster_size(active.size), params.resolved_min_samples(active.size))
+        labels = np.full(count, -1, dtype=np.int32)
+        labels[active] = active_labels
+        with timed(diagnostics, "describe"):
+            terms = describe_space_groups([paths[i] for i in active], values, preset, active_labels, params)
+        sizes = np.bincount(active_labels[active_labels >= 0]) if (active_labels >= 0).any() else np.zeros(0, dtype=np.int64)
+        diagnostics.groups = int(sizes.size)
+        diagnostics.noise_ratio = float((active_labels < 0).mean())
+        diagnostics.largest = int(sizes.max()) if sizes.size else 0
+        diagnostics.smallest = int(sizes.min()) if sizes.size else 0
+    order = np.concatenate([active[projection.order_rows(unit, active_labels)], np.flatnonzero(~placed)])
+    diagnostics.outliers = int(active_outliers.sum())
+    diagnostics.unset = int((~placed).sum())
+    AppLogger.info(diagnostics.summary())
+    return MapResult(list(paths), positions, outliers, ~placed, labels, terms, order, diagnostics)
+
+
+def describe_space_groups(paths: list[str], values: dict[str, dict[str, PathValue]], preset: Preset, labels: np.ndarray, params: MapParams) -> dict[int, list[str]]:
+    described = []
+    for feature in preset.features:
+        encoder_cls = ENCODERS[feature.encoder]
+        encoder = encoder_cls(feature.options)
+        inputs = [feature_input(values.get(path, {}), feature.key, encoder_cls) for path in paths]
+        encoder.fit_transform(inputs, params)
+        described.append((encoder, encoder.present(inputs)))
+    terms: dict[int, list[str]] = {}
+    for group in sorted(set(labels.tolist()) - {-1}):
+        members = np.flatnonzero(labels == group)
+        words: list[str] = []
+        for encoder, present in described:
+            for word in encoder.describe(members[present[members]], params):
+                if word not in words:
+                    words.append(word)
+        terms[group] = words[: params.label_terms]
+    return terms
 
 
 @contextmanager

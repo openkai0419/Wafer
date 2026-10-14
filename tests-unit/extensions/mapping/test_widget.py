@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -10,7 +10,8 @@ from extensions.mapping import map_view as map_view_module
 from extensions.mapping import widget as widget_module
 from extensions.mapping.map_view import MapPointItem
 from extensions.mapping.params import MapParams
-from extensions.mapping.session import FeatureSpec
+from extensions.mapping.session import FeatureSpec, MapPipeline
+from extensions.mapping.space import Preset
 from extensions.mapping.widget import MappingWidget
 from wafer.core.db.path_values import PathValue
 
@@ -38,6 +39,11 @@ class DropEvent:
 
     def ignore(self):
         self.accepted = False
+
+
+@pytest.fixture(autouse=True)
+def no_preset(monkeypatch):
+    monkeypatch.setattr(widget_module, "load_preset", lambda db_name: None)
 
 
 @pytest.fixture()
@@ -369,3 +375,162 @@ def test_computation_outranks_thumbnail_requests(mapping):
         mapping.fetch()
     assert [call.kwargs["priority"] for call in post.call_args_list] == [widget_module.COMPUTE_PRIORITY] * 2
     assert widget_module.COMPUTE_PRIORITY > 5
+
+
+SPACE_UNSET = ("c:/27.png", "c:/28.png", "c:/29.png")
+
+
+def make_space_widget(qtbot, monkeypatch, version=2):
+    monkeypatch.setattr(projection, "embed", fake_embed)
+    paths = [f"c:/{i}.png" for i in range(30)]
+    values = {}
+    for i, p in enumerate(paths):
+        entry = {"tags": PathValue("cat, sky" if i < 15 else "dog, sea")}
+        if p not in SPACE_UNSET:
+            x = float(i // 15) * 10 + i * 0.01
+            entry.update({"mapping.x": PathValue(str(x), x), "mapping.y": PathValue("0", 0.0), "mapping.model": PathValue("2", 2.0)})
+        values[p] = entry
+    preset = Preset([FeatureSpec("tags", "token_set")], MapParams(), version)
+    monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps: {p: values[p] for p in ps if p in values})
+    monkeypatch.setattr(widget_module, "fetch_sources", lambda db, ps: {p: p for p in ps})
+    monkeypatch.setattr(widget_module, "load_preset", lambda db_name: preset)
+    w = MappingWidget()
+    qtbot.addWidget(w)
+    w.resize(900, 600)
+    w.show()
+    w.restore_state({"features": [FeatureSpec("tags", "token_set").to_dict()]})
+    w.set_files(paths, "db")
+    return w
+
+
+@pytest.fixture()
+def space_widget(qtbot, monkeypatch):
+    w = make_space_widget(qtbot, monkeypatch)
+    qtbot.waitUntil(lambda: w.current_result() is not None, timeout=5000)
+    yield w
+    w.close()
+
+
+def test_precomputed_mode_places_files_and_counts_waiting(space_widget):
+    result = space_widget.current_result()
+    assert space_widget.effective_mode() == "space" and space_widget.levels[0].mode == "space"
+    assert [result.paths[row] for row in np.flatnonzero(result.unset)] == list(SPACE_UNSET)
+    assert result.diagnostics.unset == 3
+    assert "3 waiting for placement" in space_widget.message_text()
+    assert space_widget.db_name == "db"
+
+
+def test_precomputed_mode_shows_read_only_preset_keys(space_widget):
+    assert space_widget.feature_bar.read_only
+    assert [chip.key for chip in space_widget.feature_bar.chips()] == ["tags"]
+    assert not space_widget.feature_bar.add_button.isEnabled()
+    assert space_widget.edit_space_button.isVisibleTo(space_widget)
+    assert space_widget.precomputed_button.isEnabled() and space_widget.precomputed_button.isChecked()
+
+
+def test_precomputed_mode_skips_the_pipeline(qtbot, monkeypatch):
+    with patch.object(MapPipeline, "run") as run:
+        w = make_space_widget(qtbot, monkeypatch)
+        qtbot.waitUntil(lambda: w.current_result() is not None, timeout=5000)
+        w.close()
+    run.assert_not_called()
+
+
+def test_no_preset_pins_live_mode(mapping):
+    assert mapping.effective_mode() == "live"
+    assert not mapping.precomputed_button.isEnabled()
+    assert mapping.levels[0].mode == "live"
+    assert not mapping.feature_bar.read_only and not mapping.edit_space_button.isVisibleTo(mapping)
+
+
+def test_preset_without_a_trained_version_pins_live_mode(qtbot, monkeypatch):
+    w = make_space_widget(qtbot, monkeypatch, version=0)
+    qtbot.waitUntil(lambda: w.current_result() is not None, timeout=5000)
+    assert w.effective_mode() == "live" and not w.precomputed_button.isEnabled()
+    assert w.space_mode == "space"
+    w.close()
+
+
+def test_set_space_mode_switches_between_space_and_live(space_widget, qtbot):
+    space_widget.set_space_mode("live")
+    qtbot.waitUntil(lambda: space_widget.levels[0].mode == "live" and space_widget.current_result() is not None, timeout=5000)
+    assert space_widget.space_buttons["live"].isChecked() and not space_widget.feature_bar.read_only
+    assert [chip.key for chip in space_widget.feature_bar.chips()] == ["tags"]
+    assert space_widget.current_result().diagnostics.unset == 0
+    space_widget.space_buttons["space"].click()
+    qtbot.waitUntil(lambda: space_widget.levels[0].mode == "space" and space_widget.current_result() is not None, timeout=5000)
+    assert space_widget.space_mode == "space" and space_widget.feature_bar.read_only
+    assert space_widget.current_result().diagnostics.unset == 3
+
+
+def test_drill_down_keeps_the_level_mode(space_widget, qtbot):
+    space_widget.map_view.select_rows(range(10))
+    space_widget.map_view.selection_changed.emit()
+    space_widget.drill_down()
+    qtbot.waitUntil(lambda: space_widget.current_result() is not None and len(space_widget.current_result().paths) == 10, timeout=5000)
+    assert space_widget.levels[-1].mode == "space"
+
+
+def test_relayout_selection_runs_the_live_pipeline(space_widget, qtbot):
+    space_widget.map_view.select_rows(range(10))
+    space_widget.map_view.selection_changed.emit()
+    with patch.object(MapPipeline, "run", autospec=True, side_effect=MapPipeline.run) as run:
+        space_widget.relayout_selection()
+        qtbot.waitUntil(lambda: space_widget.current_result() is not None and len(space_widget.current_result().paths) == 10, timeout=5000)
+    run.assert_called_once()
+    assert space_widget.levels[-1].mode == "live" and space_widget.levels[0].mode == "space"
+    assert not space_widget.feature_bar.read_only
+    assert not space_widget.edit_space_button.isVisibleTo(space_widget)
+    crumbs = [space_widget.crumbs.itemAt(i).widget().text() for i in range(space_widget.crumbs.count())]
+    assert any(text.startswith("Selection (live)") for text in crumbs)
+    space_widget.drill_up()
+    assert space_widget.feature_bar.read_only and space_widget.edit_space_button.isVisibleTo(space_widget)
+
+
+def test_relayout_selection_needs_three(space_widget):
+    space_widget.map_view.select_rows([0])
+    space_widget.relayout_selection()
+    assert len(space_widget.levels) == 1
+    assert space_widget.message_text() == "Select at least 3 files."
+
+
+def test_space_mode_persists(space_widget):
+    space_widget.space_mode = "live"
+    state = space_widget.save_state()
+    assert state["space_mode"] == "live"
+    space_widget.restore_state(state)
+    assert space_widget.space_mode == "live" and space_widget.effective_mode() == "live"
+    space_widget.restore_state({"space_mode": "weird"})
+    assert space_widget.space_mode == "space"
+
+
+def test_saved_features_are_the_live_features(space_widget):
+    assert [feature["key"] for feature in space_widget.save_state()["features"]] == ["tags"]
+    space_widget.live_features = [FeatureSpec("prompt", "text", 2.0)]
+    assert space_widget.save_state()["features"][0]["weight"] == 2.0
+
+
+def test_edit_in_space_opens_the_space_panel(space_widget):
+    manager = MagicMock()
+    manager.panel_names.return_value = ["Mapping", "Mapping Space"]
+    space_widget._layout_manager = manager
+    space_widget.edit_space_button.click()
+    manager.ensure_panel_visible.assert_called_once_with("Mapping Space")
+
+
+def test_edit_in_space_ignores_a_missing_panel(space_widget):
+    manager = MagicMock()
+    manager.panel_names.return_value = ["Mapping"]
+    space_widget._layout_manager = manager
+    space_widget.open_space_panel()
+    manager.ensure_panel_visible.assert_not_called()
+    del space_widget._layout_manager
+    space_widget.open_space_panel()
+
+
+def test_nothing_placed_shows_the_hint(qtbot, monkeypatch):
+    w = make_space_widget(qtbot, monkeypatch)
+    monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps: {p: {"tags": PathValue("cat")} for p in ps})
+    w.set_files([f"c:/{i}.png" for i in range(5)], "db")
+    qtbot.waitUntil(lambda: w.message_text().startswith("No files have been placed yet"), timeout=5000)
+    w.close()

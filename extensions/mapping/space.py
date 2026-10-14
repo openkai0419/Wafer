@@ -19,10 +19,9 @@ from wafer.core.logs import AppLogger
 from . import projection
 from .encoders import ENCODERS, BaseEncoder, expand_group_keys, feature_input
 from .params import MapParams
-from .session import FeatureSpec, MapError
+from .session import OUTPUT_PREFIX, FeatureSpec, MapError
 
 PRESET_KEY = "mapping.preset"
-OUTPUT_PREFIX = "mapping"
 K_NEIGHBORS = 10
 STATUS_FILE = "status.json"
 PATH_SEPARATOR = "\n"

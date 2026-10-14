@@ -129,7 +129,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         return (dpix(THUMB_SIZE) if self.thumbnails else dpix(POINT_SIZE + 4)) * self.image_scale
 
     def display_size(self) -> float:
-        return dpix(THUMB_SIZE) * self.image_scale
+        return THUMB_SIZE * self.image_scale
 
     def set_image_scale(self, scale: float):
         scale = min(max(float(scale), MIN_IMAGE_SCALE), MAX_IMAGE_SCALE)

@@ -112,14 +112,15 @@ def image_scale_down(ctx, m, ratio: float = 1.1):
 
 @require(m="MappingWidget")
 def toggle_selection_mode(ctx, m):
-    m.set_selection_mode("single" if m.selection_mode == "group" else "group")
+    if m.grouping:
+        m.set_selection_mode("single" if m.selection_mode == "group" else "group")
 
 
 def _group_mode_checked() -> bool:
     from .widget import MappingWidget
 
     widget = MappingWidget.instance()
-    return bool(widget is not None and widget.selection_mode == "group")
+    return bool(widget is not None and widget.grouping and widget.selection_mode == "group")
 
 
 class MappingGridCommands(MenuGroup):

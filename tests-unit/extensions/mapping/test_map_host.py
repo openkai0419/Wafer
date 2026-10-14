@@ -78,3 +78,14 @@ def test_hover_size_zero_hides_preview(qtbot):
     assert not host.preview.isVisible()
     host.set_hover_size(512)
     assert host.hover_thumbs.size == 512
+
+
+def test_cache_limits_follow_the_pixel_budget(qtbot, monkeypatch):
+    monkeypatch.setattr(map_host, "dpix", lambda value: value * 2)
+    host = make_host(qtbot)
+    assert host.thumbs.cache_limit == map_host.THUMB_BUDGET // (128 * 128 * 4)
+    host.set_display_size(200)
+    assert host.thumbs.size == 256 and host.thumbs.cache_limit == map_host.THUMB_BUDGET // (512 * 512 * 4)
+    host.set_hover_size(1024)
+    assert host.hover_thumbs.cache_limit == map_host.HOVER_BUDGET // (2048 * 2048 * 4)
+    assert map_host.cache_limit(1, 1024) == 1

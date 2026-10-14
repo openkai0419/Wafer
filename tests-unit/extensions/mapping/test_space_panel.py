@@ -1,6 +1,7 @@
 from contextlib import closing
 
 import pytest
+from PySide6 import QtCore
 
 from extensions.mapping import space, space_panel
 from extensions.mapping.params import MapParams
@@ -303,3 +304,12 @@ def test_snapshot_keeps_counts_when_the_preview_fails(database, monkeypatch):
     snapshot = read_snapshot("map")
     assert snapshot.result is None and snapshot.problem == "bad layout"
     assert snapshot.total == 12 and snapshot.placed == 10 and snapshot.status.state == "ready"
+
+
+def test_hiding_the_space_panel_hides_the_hover(widget):
+    w, _saved, _resets = widget
+    w.show()
+    w.host.show_hover("c:/1.png", QtCore.QPoint(300, 300))
+    assert w.host.preview.isVisible()
+    w.hide()
+    assert not w.host.preview.isVisible()

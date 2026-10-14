@@ -26,7 +26,7 @@ from wafer.qt.widgets.popup import PopupBase
 from .encoders import detect_encoder, value_input
 from .feature_bar import FeatureBar
 from .file_list import FileList
-from .map_host import THUMB_CACHE, MapHost
+from .map_host import MapHost
 from .map_view import MapView
 from .params import MapParams
 from .session import SPACE_KEYS, FeatureSpec, MapError, MapPipeline, MapRequest, MapResult, layout_from_space
@@ -409,7 +409,6 @@ class MappingWidget(QtWidgets.QWidget):
         self.show_result(result)
 
     def show_result(self, result: MapResult):
-        self.host.thumbs.cache_limit = max(THUMB_CACHE, len(result.paths))
         self.host.set_display_size(self.map_view.display_size())
         self.host.set_hover_size(self.params.hover_size)
         selected = set(self.selected_paths())
@@ -562,6 +561,10 @@ class MappingWidget(QtWidgets.QWidget):
 
     def hide_hover(self) -> None:
         self.host.hide_hover()
+
+    def hideEvent(self, event: QtGui.QHideEvent) -> None:
+        self.host.hide_hover()
+        super().hideEvent(event)
 
     def set_image_scale(self, scale: float) -> None:
         self.map_view.set_image_scale(scale)

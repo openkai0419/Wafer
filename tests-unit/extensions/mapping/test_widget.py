@@ -276,13 +276,19 @@ def test_drop_without_files_is_ignored(mapping):
     assert event.accepted is False
 
 
-def test_thumbnail_cache_grows_to_hold_every_point(mapping, monkeypatch):
-    monkeypatch.setattr(widget_module, "THUMB_CACHE", 5)
-    mapping.show_result(mapping.current_result())
-    assert mapping.host.thumbs.cache_limit == 30
-    monkeypatch.setattr(widget_module, "THUMB_CACHE", 100)
-    mapping.show_result(mapping.current_result())
-    assert mapping.host.thumbs.cache_limit == 100
+def test_thumbnail_bucket_uses_the_logical_size(mapping, monkeypatch):
+    monkeypatch.setattr(map_view_module, "dpix", lambda value: value * 2)
+    mapping.set_image_scale(1.5)
+    assert mapping.map_view.display_size() == map_view_module.THUMB_SIZE * 1.5
+    assert mapping.host.thumbs.size == 128
+    assert mapping.host.thumbs.cache_limit == map_host_module.cache_limit(map_host_module.THUMB_BUDGET, 128)
+
+
+def test_hiding_the_panel_hides_the_hover(mapping):
+    mapping.show_hover("c:/1.png", QtCore.QPoint(300, 300))
+    assert mapping.host.preview.isVisible()
+    mapping.hide()
+    assert not mapping.host.preview.isVisible()
 
 
 def test_smallest_thumbnail_bucket_matches_map_view():

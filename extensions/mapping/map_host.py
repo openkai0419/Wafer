@@ -6,22 +6,35 @@ from PySide6 import QtCore, QtGui
 
 from wafer.plugin.grid.thumbnail_loader import ThumbnailLoader
 from wafer.qt.common.dispatcher import Dispatcher
+from wafer.qt.common.dpi import dpix
 from wafer.qt.common.thread import utility_pool
 
 from .hover_preview import HoverPreview
 
 THUMB_BUCKETS = (64, 128, 256)
 HOVER_BUCKETS = (128, 256, 512, 1024)
-THUMB_CACHE = 3000
-HOVER_CACHE = 64
+MEGABYTE = 1024 * 1024
+THUMB_BUDGET = 256 * MEGABYTE
+HOVER_BUDGET = 64 * MEGABYTE
+BYTES_PER_PIXEL = 4
 
 
-def thumb_bucket(px: float) -> int:
-    return next((size for size in THUMB_BUCKETS if size >= px), THUMB_BUCKETS[-1])
+def thumb_bucket(size: float) -> int:
+    return next((bucket for bucket in THUMB_BUCKETS if bucket >= size), THUMB_BUCKETS[-1])
 
 
 def hover_bucket(size: int) -> int:
     return next((bucket for bucket in HOVER_BUCKETS if bucket >= size), HOVER_BUCKETS[-1])
+
+
+def cache_limit(budget: int, bucket: int) -> int:
+    side = dpix(bucket)
+    return max(1, budget // (side * side * BYTES_PER_PIXEL))
+
+
+def resize_loader(loader: ThumbnailLoader, bucket: int, budget: int) -> None:
+    loader.set_size(bucket)
+    loader.cache_limit = cache_limit(budget, bucket)
 
 
 def cancel_loaders(thumbs: ThumbnailLoader, hover: ThumbnailLoader) -> None:
@@ -33,8 +46,9 @@ class MapHost(QtCore.QObject):
     def __init__(self, parent):
         super().__init__(parent)
         self.dispatcher = Dispatcher(pool=utility_pool, parent=self)
-        self.thumbs = ThumbnailLoader(self.on_thumbnail, size=THUMB_BUCKETS[0], cache_limit=THUMB_CACHE, dispatcher=self.dispatcher)
-        self.hover_thumbs = ThumbnailLoader(self.on_hover_thumbnail, size=hover_bucket(256), cache_limit=HOVER_CACHE, dispatcher=self.dispatcher)
+        thumb_size, hover_size = THUMB_BUCKETS[0], hover_bucket(256)
+        self.thumbs = ThumbnailLoader(self.on_thumbnail, size=thumb_size, cache_limit=cache_limit(THUMB_BUDGET, thumb_size), dispatcher=self.dispatcher)
+        self.hover_thumbs = ThumbnailLoader(self.on_hover_thumbnail, size=hover_size, cache_limit=cache_limit(HOVER_BUDGET, hover_size), dispatcher=self.dispatcher)
         self.preview = HoverPreview()
         self.sources: dict[str, str] = {}
         self.views: list = []
@@ -51,13 +65,13 @@ class MapHost(QtCore.QObject):
             self.thumbs.request([path])
         return pixmap
 
-    def set_display_size(self, px: float) -> None:
-        self.thumbs.set_size(thumb_bucket(px))
+    def set_display_size(self, size: float) -> None:
+        resize_loader(self.thumbs, thumb_bucket(size), THUMB_BUDGET)
 
     def set_hover_size(self, size: int) -> None:
         self.hover_size = size
         if size:
-            self.hover_thumbs.set_size(hover_bucket(size))
+            resize_loader(self.hover_thumbs, hover_bucket(size), HOVER_BUDGET)
         else:
             self.hide_hover()
 

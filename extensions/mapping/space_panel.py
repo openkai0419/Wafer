@@ -28,7 +28,7 @@ from wafer.qt.theme import ThemeManager
 
 from .encoders import detect_encoder, value_input
 from .feature_bar import FeatureBar
-from .map_host import THUMB_CACHE, MapHost
+from .map_host import MapHost
 from .map_view import MapView
 from .params import MapParams
 from .session import OUTPUT_PREFIX, SPACE_KEYS, MapError, MapResult, layout_from_space
@@ -437,7 +437,6 @@ class MappingSpaceWidget(QtWidgets.QWidget):
     def show_preview(self, result: MapResult, sources: dict[str, str]) -> None:
         params = MapParams()
         self.host.sources = sources
-        self.host.thumbs.cache_limit = max(THUMB_CACHE, len(result.paths))
         self.host.set_display_size(self.map_view.display_size())
         self.host.set_hover_size(params.hover_size)
         keep_view = self.shown is not None and self.shown.paths == result.paths
@@ -450,6 +449,10 @@ class MappingSpaceWidget(QtWidgets.QWidget):
     def showEvent(self, event: QtGui.QShowEvent) -> None:
         super().showEvent(event)
         self.refresh()
+
+    def hideEvent(self, event: QtGui.QHideEvent) -> None:
+        self.host.hide_hover()
+        super().hideEvent(event)
 
     def save_state(self) -> dict[str, Any]:
         return {"splitter": bytes(self.splitter.saveState().toHex()).decode("ascii")}

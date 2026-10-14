@@ -1,6 +1,7 @@
 import os
+from types import SimpleNamespace
 import pytest
-from wafer.plugin.settings import PluginSettings, _write_ini_value
+from wafer.plugin.settings import PluginSettings, _write_ini_value, default_enabled_per_db
 from wafer.plugin.installer import RestartScope
 from wafer.plugin.kinds import PLUGIN_KINDS
 import wafer.plugin.settings as settings_mod
@@ -12,6 +13,16 @@ class DefaultEnabledPlugin:
 
 class DefaultDisabledPlugin:
     DEFAULT_ENABLED = False
+
+
+class LoadedButOffPerDb:
+    DEFAULT_ENABLED = True
+    DEFAULT_ENABLED_PER_DB = False
+
+
+class OnPerDbOnly:
+    DEFAULT_ENABLED = False
+    DEFAULT_ENABLED_PER_DB = True
 
 
 @pytest.fixture(autouse=True)
@@ -67,6 +78,33 @@ class TestPluginSettingsEnabledOverrides:
             "viewer:DefaultEnabledPlugin",
             False,
         )
+
+
+class TestDefaultEnabledPerDb:
+    def test_follows_default_enabled_when_unset(self):
+        assert default_enabled_per_db(DefaultEnabledPlugin) is True
+        assert default_enabled_per_db(DefaultDisabledPlugin) is False
+
+    def test_per_db_overrides_default_enabled(self):
+        assert default_enabled_per_db(LoadedButOffPerDb) is False
+        assert default_enabled_per_db(OnPerDbOnly) is True
+
+    def test_per_db_does_not_change_plugin_loading(self):
+        assert PluginSettings().is_plugin_enabled("parser:LoadedButOffPerDb", LoadedButOffPerDb)
+
+    @pytest.mark.parametrize("kind", ["collector", "parser"])
+    def test_resolve_default_collectors(self, kind, monkeypatch):
+        classes = {"loaded_off": LoadedButOffPerDb, "plain_on": DefaultEnabledPlugin, "per_db_on": OnPerDbOnly, "plain_off": DefaultDisabledPlugin}
+        resolver = SimpleNamespace(names=lambda: list(classes), registry=classes)
+        empty = SimpleNamespace(names=lambda: [], registry={})
+        monkeypatch.setattr("wafer.plugin.collector.handler.collector_resolver", resolver if kind == "collector" else empty)
+        monkeypatch.setattr("wafer.plugin.parser.handler.parser_resolver", resolver if kind == "parser" else empty)
+        assert PluginSettings().resolve_default_collectors() == ["plain_on", "per_db_on"]
+
+    def test_saved_defaults_win(self):
+        ps = PluginSettings()
+        ps.set_default_enabled_collectors(["loaded_off"])
+        assert ps.resolve_default_collectors() == ["loaded_off"]
 
 
 class TestPluginSettingsPriorityOrder:

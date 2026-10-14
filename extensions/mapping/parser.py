@@ -23,6 +23,7 @@ class MappingParser(BaseParserPlugin):
     DISPLAY_NAME = "Mapping"
     PRIORITY = 10
     DEFAULT_ENABLED = True
+    DEFAULT_ENABLED_PER_DB = False
     TRIGGER_KEYS = ("file_hash",)
     BATCH_SIZE = 600
     MAX_WORKERS = 1

@@ -24,6 +24,14 @@ from .watch.setting_watcher import SettingWatcher
 _IDLE_GRACE_SECONDS = 60.0
 
 
+def saved_parser_names(all_parsers, collector_names, enabled) -> list[str]:
+    from ...plugin.settings import default_enabled_per_db
+
+    enabled_set = set(enabled)
+    all_known = set(collector_names) | enabled_set
+    return [n for n in all_parsers if n in enabled_set or (n not in all_known and default_enabled_per_db(parser_resolver.registry.get(n)))]
+
+
 class IndexerProcess:
     def __init__(self, name, stop_event=None, tray_pid=None):
         self.db_name = name
@@ -78,8 +86,7 @@ class IndexerProcess:
 
         all_parsers = parser_resolver.names()
         if enabled is not None:
-            all_known = {c[0] for c in all_collectors} | set(enabled)
-            parser_names = [n for n in all_parsers if n in enabled_set or (n not in all_known and getattr(parser_resolver.registry.get(n), "DEFAULT_ENABLED", False))]
+            parser_names = saved_parser_names(all_parsers, {c[0] for c in all_collectors}, enabled)
         else:
             parser_names = [n for n in all_parsers if n in default_set]
 

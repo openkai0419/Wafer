@@ -193,3 +193,8 @@ def test_failed_read_keeps_coordinates(env, monkeypatch):
     monkeypatch.setattr(parser_module, "fetch_path_values", lambda *a, **k: {})
     result = run(plugin, "c:/new.png")
     assert result.status is False and not result.delete_meta_keys
+
+
+def test_default_enabled_loads_class_but_not_per_database():
+    assert MappingParser.DEFAULT_ENABLED is True
+    assert MappingParser.DEFAULT_ENABLED_PER_DB is False

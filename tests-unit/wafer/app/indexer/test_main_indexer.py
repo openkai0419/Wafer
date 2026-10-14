@@ -1,7 +1,9 @@
 import threading
 from unittest.mock import MagicMock, patch
 
-from wafer.app.indexer.main_indexer import IndexerProcess
+from types import SimpleNamespace
+
+from wafer.app.indexer.main_indexer import IndexerProcess, saved_parser_names
 from wafer.app.indexer.runtime.task import TaskPriority
 
 
@@ -359,3 +361,27 @@ class TestOnKvConvertScope:
             },
             dst="viewer",
         )
+
+
+class TestSavedParserNames:
+    @patch("wafer.app.indexer.main_indexer.parser_resolver")
+    def test_unknown_parser_follows_per_db_default(self, mock_resolver):
+        registry = {
+            "plain": SimpleNamespace(DEFAULT_ENABLED=True),
+            "off_per_db": SimpleNamespace(DEFAULT_ENABLED=True, DEFAULT_ENABLED_PER_DB=False),
+            "on_per_db": SimpleNamespace(DEFAULT_ENABLED=False, DEFAULT_ENABLED_PER_DB=True),
+            "off": SimpleNamespace(DEFAULT_ENABLED=False),
+        }
+        mock_resolver.registry = registry
+        assert saved_parser_names(list(registry), {"collector_a"}, ["collector_a"]) == ["plain", "on_per_db"]
+
+    @patch("wafer.app.indexer.main_indexer.parser_resolver")
+    def test_saved_or_known_parsers_are_not_auto_enabled(self, mock_resolver):
+        registry = {
+            "saved": SimpleNamespace(DEFAULT_ENABLED=False),
+            "known": SimpleNamespace(DEFAULT_ENABLED=True),
+            "off_per_db": SimpleNamespace(DEFAULT_ENABLED=True, DEFAULT_ENABLED_PER_DB=False),
+        }
+        mock_resolver.registry = registry
+        assert saved_parser_names(list(registry), {"known"}, ["saved"]) == ["saved"]
+        assert saved_parser_names(list(registry), {"known"}, ["saved", "off_per_db"]) == ["saved", "off_per_db"]

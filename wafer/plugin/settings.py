@@ -52,6 +52,13 @@ def _write_ini_value(key: str, value):
             cp.write(f)
 
 
+def default_enabled_per_db(cls) -> bool:
+    per_db = getattr(cls, "DEFAULT_ENABLED_PER_DB", None)
+    if per_db is not None:
+        return bool(per_db)
+    return bool(getattr(cls, "DEFAULT_ENABLED", False))
+
+
 class PluginSettings:
     def enabled_overrides(self) -> dict[str, bool]:
         val = _read_ini_value("plugins/enabled_overrides")
@@ -158,10 +165,10 @@ class PluginSettings:
         defaults = []
         for name in collector_resolver.names():
             cls = collector_resolver.registry.get(name)
-            if getattr(cls, "DEFAULT_ENABLED", False):
+            if default_enabled_per_db(cls):
                 defaults.append(name)
         for name in parser_resolver.names():
             cls = parser_resolver.registry.get(name)
-            if getattr(cls, "DEFAULT_ENABLED", False):
+            if default_enabled_per_db(cls):
                 defaults.append(name)
         return defaults

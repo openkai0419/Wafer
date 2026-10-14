@@ -1,3 +1,5 @@
+import sqlite3
+import threading
 import time
 
 import numpy as np
@@ -7,7 +9,7 @@ from extensions.mapping import parser as parser_module
 from extensions.mapping import projection, space
 from extensions.mapping.params import MapParams
 from extensions.mapping.parser import MappingParser
-from extensions.mapping.session import FeatureSpec
+from extensions.mapping.session import FeatureSpec, MapError
 from extensions.mapping.space import Preset, SpaceStatus, read_status, save_preset, write_status
 from wafer.core.db.file_db import FileDB
 
@@ -124,3 +126,70 @@ def test_model_is_released_after_idle(env, monkeypatch):
     while plugin.model is not None and time.monotonic() < deadline:
         time.sleep(0.02)
     assert plugin.model is None
+
+
+def test_first_call_values_equal_training_coordinates(env):
+    plugin, _db, _tmp = env
+    meta = run(plugin, "c:/3.png").meta_info
+    expected = plugin.model.coords_for("c:/3.png")
+    assert (float(meta["x"]), float(meta["y"])) == pytest.approx(expected)
+
+
+def test_current_version_file_is_placed_by_neighbours(env):
+    plugin, db, _tmp = env
+    run(plugin, "c:/0.png")
+    trained = plugin.model.coords_for("c:/0.png")
+    db.upsert_collection_results([], [("c:/0.png", "mapping.model", "1", None)], [("c:/0.png", "wd14.tags", "dog, sea", None)], [])
+    meta = run(plugin, "c:/0.png").meta_info
+    point = np.array([float(meta["x"]), float(meta["y"])])
+    dog = np.array(plugin.model.coords_for("c:/20.png"))
+    assert np.linalg.norm(point - dog) < np.linalg.norm(point - np.array(trained))
+
+
+@pytest.mark.parametrize("error", [sqlite3.OperationalError("locked"), RuntimeError("numba")])
+def test_unexpected_training_error_marks_failed_once(env, monkeypatch, error):
+    plugin, _db, tmp = env
+    calls = []
+
+    def broken(cls, *a, **k):
+        calls.append(1)
+        raise error
+
+    monkeypatch.setattr(space.SpaceModel, "fit", classmethod(broken))
+    assert run(plugin, "c:/0.png").status is False
+    assert run(plugin, "c:/1.png").status is False
+    assert calls == [1]
+    assert read_status(tmp / "cache" / "mapping" / "map").state == "failed"
+
+
+def test_shutdown_interrupts_training_without_blocking(env, monkeypatch):
+    plugin, _db, tmp = env
+    started = threading.Event()
+
+    def waiting(cls, preset, values, *, cancelled=lambda: False):
+        started.set()
+        deadline = time.monotonic() + 5
+        while not cancelled() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        raise MapError("Cancelled")
+
+    monkeypatch.setattr(space.SpaceModel, "fit", classmethod(waiting))
+    results = []
+    worker = threading.Thread(target=lambda: results.append(run(plugin, "c:/0.png")))
+    worker.start()
+    assert started.wait(5)
+    plugin.shutdown()
+    worker.join(5)
+    assert not worker.is_alive()
+    assert results[0].status is False
+    assert read_status(tmp / "cache" / "mapping" / "map").state == "training"
+    assert plugin.blocked is None
+    assert plugin.idle_timer is None
+
+
+def test_failed_read_keeps_coordinates(env, monkeypatch):
+    plugin, _db, _tmp = env
+    run(plugin, "c:/0.png")
+    monkeypatch.setattr(parser_module, "fetch_path_values", lambda *a, **k: {})
+    result = run(plugin, "c:/new.png")
+    assert result.status is False and not result.delete_meta_keys

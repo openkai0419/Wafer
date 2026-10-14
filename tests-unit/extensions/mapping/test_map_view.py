@@ -362,3 +362,16 @@ def test_rows_in_rect_uses_viewport_pixels(view):
     pos = point_pos(view, 2)
     rect = QtCore.QRectF(pos.x() - 1, pos.y() - 1, 2, 2)
     assert 2 in view.rows_in_rect(rect).tolist()
+
+
+def test_hover_follows_points_not_image_rectangles(view):
+    loaded_owner(view, 6)
+    view.set_thumbnail_zoom(0.5)
+    view.show_result(result(labels=False), colors(6), show_groups=False, keep_view=False)
+    view.viewport().repaint()
+    row = int(view.image_rows[-1])
+    left, top, right, bottom = view.image_rects[-1]
+    hover_at(view, QtCore.QPoint(int(left) + 2, int(top) + 2))
+    assert view.owner.hovers == [] or view.owner.hovers[-1] is None
+    hover_at(view, point_pos(view, row))
+    assert view.owner.hovers[-1] == view.paths[row]

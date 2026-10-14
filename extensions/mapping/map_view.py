@@ -372,7 +372,12 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             inside = np.flatnonzero((rects[:, 0] <= x) & (x <= rects[:, 2]) & (rects[:, 1] <= y) & (y <= rects[:, 3]))
             if inside.size:
                 return int(self.image_rows[inside[-1]])
-        distance = ((self.device_positions() - (x, y)) ** 2).sum(axis=1)
+        return self.point_at(position)
+
+    def point_at(self, position: QtCore.QPoint) -> int | None:
+        if not self.paths:
+            return None
+        distance = ((self.device_positions() - (position.x(), position.y())) ** 2).sum(axis=1)
         row = int(np.argmin(distance))
         radius = self.dot_size() * self.image_scale / 2
         return row if distance[row] <= radius * radius else None
@@ -485,7 +490,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         super().mouseMoveEvent(event)
 
     def report_hover(self, position: QtCore.QPoint):
-        row = self.row_at(position)
+        row = self.point_at(position)
         if row is not None:
             path = self.paths[row]
             self.hover_path = path

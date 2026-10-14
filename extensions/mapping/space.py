@@ -25,6 +25,7 @@ PRESET_KEY = "mapping.preset"
 OUTPUT_PREFIX = "mapping"
 K_NEIGHBORS = 10
 STATUS_FILE = "status.json"
+PATH_SEPARATOR = "\n"
 
 
 class SpaceLoadError(Exception):
@@ -108,6 +109,15 @@ def write_status(directory: Path, status: SpaceStatus) -> None:
     write_atomic(directory / STATUS_FILE, json.dumps(asdict(status)).encode("utf-8"))
 
 
+def encode_paths(paths: list[str]) -> np.ndarray:
+    return np.frombuffer(PATH_SEPARATOR.join(paths).encode("utf-8"), dtype=np.uint8)
+
+
+def decode_paths(blob: np.ndarray) -> list[str]:
+    text = blob.tobytes().decode("utf-8")
+    return text.split(PATH_SEPARATOR) if text else []
+
+
 class SpaceModel:
     def __init__(self, preset, encoders, reducers, scales, train_paths, matrix, coords, built_at):
         self.preset = preset
@@ -182,13 +192,17 @@ class SpaceModel:
         stem = f"model-v{self.version}"
         arrays = directory / f"{stem}.npz.tmp"
         with open(arrays, "wb") as handle:
-            np.savez(handle, train_paths=np.array(self.train_paths, dtype=str), matrix=self.matrix, coords=self.coords)
+            np.savez(handle, train_paths=encode_paths(self.train_paths), matrix=self.matrix, coords=self.coords)
         os.replace(arrays, directory / f"{stem}.npz")
         state = {"preset": self.preset.to_dict(), "encoders": self.encoders, "reducers": self.reducers, "scales": self.scales, "built_at": self.built_at}
         write_atomic(directory / f"{stem}.pkl", pickle.dumps(state))
         for stale in directory.glob("model-v*.*"):
-            if not stale.name.startswith(stem + "."):
+            if stale.name.startswith(stem + "."):
+                continue
+            try:
                 stale.unlink(missing_ok=True)
+            except OSError as e:
+                AppLogger.warning(f"[Mapping] Could not remove old model file {stale}", exc=e)
 
     @classmethod
     def load(cls, directory: Path, version: int) -> SpaceModel | None:
@@ -198,11 +212,16 @@ class SpaceModel:
         try:
             state = pickle.loads(stem.with_suffix(".pkl").read_bytes())
             with np.load(stem.with_suffix(".npz")) as arrays:
-                train_paths = arrays["train_paths"].tolist()
+                train_paths = decode_paths(arrays["train_paths"])
                 matrix, coords = arrays["matrix"], arrays["coords"]
             preset = Preset.from_dict(state["preset"])
             if preset is None:
                 raise ValueError("invalid preset in model")
-            return cls(preset, state["encoders"], state["reducers"], state["scales"], train_paths, matrix, coords, float(state["built_at"]))
-        except (OSError, zipfile.BadZipFile, pickle.UnpicklingError, EOFError, AttributeError, ImportError, KeyError, ValueError, TypeError) as e:
+            encoders, reducers, scales = state["encoders"], state["reducers"], state["scales"]
+            if not len(train_paths) == len(matrix) == len(coords):
+                raise ValueError("model arrays have different row counts")
+            if not len(preset.features) == len(encoders) == len(reducers) == len(scales):
+                raise ValueError("model blocks do not match the preset features")
+            return cls(preset, encoders, reducers, scales, train_paths, matrix, coords, float(state["built_at"]))
+        except (OSError, zipfile.BadZipFile, pickle.UnpicklingError, EOFError, AttributeError, ImportError, IndexError, KeyError, ValueError, TypeError, MemoryError) as e:
             raise SpaceLoadError(str(e)) from e

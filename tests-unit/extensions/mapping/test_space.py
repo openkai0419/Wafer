@@ -101,3 +101,88 @@ def test_saved_model_drops_training_texts_and_still_places(tmp_path):
     loaded = SpaceModel.load(tmp_path, 1)
     after = loaded.place([{"tags": PathValue("cat, sky"), "prompt": PathValue("a long prompt number 3")}])
     assert np.allclose(before, after)
+
+
+def colored_values(count=40):
+    values = {}
+    for i in range(count):
+        cat = i < count // 2
+        values[f"c:/{i}.png"] = {
+            "tags": PathValue("cat, sky" if cat else "dog, sea"),
+            "color.palette.1": PathValue("", float(0xFF0000 if cat else 0x0000FF)),
+        }
+    return values
+
+
+def test_place_with_only_some_features():
+    model = SpaceModel.fit(preset(), colored_values())
+    cat = np.array(model.coords_for("c:/0.png"))
+    dog = np.array(model.coords_for("c:/39.png"))
+    by_tags, by_color = model.place([{"tags": PathValue("dog, sea")}, {"color.palette.1": PathValue("", float(0xFF0000))}])
+    assert np.linalg.norm(by_tags - dog) < np.linalg.norm(by_tags - cat)
+    assert np.linalg.norm(by_color - cat) < np.linalg.norm(by_color - dog)
+
+
+@pytest.mark.parametrize("count", [3, 5, 9])
+def test_place_with_fewer_rows_than_neighbours(count):
+    model = SpaceModel.fit(preset(), tag_values(count))
+    placed = model.place([{"tags": PathValue("cat, sky")}])
+    assert placed.shape == (1, 2) and np.isfinite(placed).all()
+
+
+def test_cleanup_matches_whole_version_only(tmp_path):
+    values = tag_values()
+    SpaceModel.fit(preset(10), values).save(tmp_path)
+    SpaceModel.fit(preset(1), values).save(tmp_path)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["model-v1.npz", "model-v1.pkl"]
+    SpaceModel.fit(preset(10), values).save(tmp_path)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["model-v10.npz", "model-v10.pkl"]
+
+
+def test_save_leaves_no_temp_files_and_keeps_status(tmp_path):
+    write_status(tmp_path, SpaceStatus("ready", 1))
+    SpaceModel.fit(preset(1), tag_values()).save(tmp_path)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["model-v1.npz", "model-v1.pkl", "status.json"]
+
+
+def test_save_survives_undeletable_stale_file(tmp_path, monkeypatch):
+    SpaceModel.fit(preset(1), tag_values()).save(tmp_path)
+
+    def deny(self, missing_ok=False):
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(type(tmp_path), "unlink", deny)
+    SpaceModel.fit(preset(2), tag_values()).save(tmp_path)
+    assert SpaceModel.load(tmp_path, 2) is not None
+
+
+def test_npz_stores_paths_compactly(tmp_path):
+    values = {f"c:/folder/{i:05d}.png": {"tags": PathValue("cat, sky" if i % 2 else "dog, sea")} for i in range(1000)}
+    long_path = "c:/" + "x" * 300 + ".png"
+    values[long_path] = {"tags": PathValue("cat, sky")}
+    model = SpaceModel.fit(preset(1), values)
+    model.save(tmp_path)
+    raw = len("\n".join(model.train_paths).encode("utf-8")) + model.matrix.nbytes + model.coords.nbytes
+    assert (tmp_path / "model-v1.npz").stat().st_size < raw + 2048
+    assert SpaceModel.load(tmp_path, 1).train_paths == model.train_paths
+
+
+def test_mismatched_model_raises_load_error(tmp_path):
+    import pickle
+
+    SpaceModel.fit(preset(1), tag_values()).save(tmp_path)
+    pkl = tmp_path / "model-v1.pkl"
+    state = pickle.loads(pkl.read_bytes())
+    state["encoders"] = state["encoders"][:1]
+    pkl.write_bytes(pickle.dumps(state))
+    with pytest.raises(SpaceLoadError):
+        SpaceModel.load(tmp_path, 1)
+
+    SpaceModel.fit(preset(2), tag_values()).save(tmp_path)
+    path = tmp_path / "model-v2.npz"
+    with np.load(path) as arrays:
+        data = {k: arrays[k] for k in arrays.files}
+    data["coords"] = data["coords"][:-1]
+    np.savez(path, **data)
+    with pytest.raises(SpaceLoadError):
+        SpaceModel.load(tmp_path, 2)

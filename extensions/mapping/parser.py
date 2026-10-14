@@ -121,7 +121,8 @@ class MappingParser(BaseParserPlugin):
 
     def touch(self):
         self.last_used = time.monotonic()
-        self.arm(IDLE_TIMEOUT)
+        if self.idle_timer is None:
+            self.arm(IDLE_TIMEOUT)
 
     def arm(self, delay: float):
         if self.stopping.is_set():
@@ -139,6 +140,8 @@ class MappingParser(BaseParserPlugin):
                 if self.idle_timer is threading.current_thread():
                     self.arm(remaining)
                 return
+            if self.idle_timer is threading.current_thread():
+                self.idle_timer = None
             if self.model is None:
                 return
             self.model = None

@@ -224,3 +224,24 @@ def test_loaded_model_is_dropped_when_the_preset_changes_without_a_new_version(e
     monkeypatch.setattr(parser_module, "PRESET_TTL", 0.0)
     run(plugin, "c:/0.png")
     assert plugin.model.preset.features[0].encoder == "text"
+
+
+def test_processing_reuses_the_live_idle_timer(env, monkeypatch):
+    plugin, _db, _tmp = env
+    run(plugin, "c:/0.png")
+    timer = plugin.idle_timer
+    run(plugin, "c:/1.png")
+    run(plugin, "c:/2.png")
+    assert plugin.idle_timer is timer and timer.is_alive()
+
+
+def test_timer_is_armed_again_after_a_release(env, monkeypatch):
+    plugin, _db, _tmp = env
+    monkeypatch.setattr(parser_module, "IDLE_TIMEOUT", 0.05)
+    run(plugin, "c:/0.png")
+    deadline = time.monotonic() + 2
+    while (plugin.model is not None or plugin.idle_timer is not None) and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert plugin.model is None and plugin.idle_timer is None
+    run(plugin, "c:/1.png")
+    assert plugin.model is not None and plugin.idle_timer is not None

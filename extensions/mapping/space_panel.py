@@ -106,7 +106,7 @@ class SpaceSnapshot:
     problem: str = ""
 
 
-def is_trained(preset: Preset) -> bool:
+def has_saved_space(preset: Preset) -> bool:
     return bool(preset.version and preset.features)
 
 
@@ -122,7 +122,7 @@ def read_space_status(db_name: str) -> SpaceSnapshot:
     with closing(open_readonly(db_path)) as conn:
         snapshot.total = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
         snapshot.waiting = conn.execute(WAITING_SQL, (OUTPUT_PREFIX,)).fetchone()[0]
-        if is_trained(preset):
+        if has_saved_space(preset):
             snapshot.placed = conn.execute("SELECT COUNT(*) FROM meta_info WHERE key = ? AND value = ?", (MODEL_KEY, str(preset.version))).fetchone()[0]
     return snapshot
 
@@ -131,7 +131,7 @@ def read_snapshot(db_name: str) -> SpaceSnapshot:
     snapshot = read_space_status(db_name)
     preset = snapshot.preset
     db_path = data_db_path(db_name)
-    if not is_trained(preset) or not snapshot.placed:
+    if not has_saved_space(preset) or not snapshot.placed:
         return snapshot
     with closing(open_readonly(db_path)) as conn:
         sample = [row[0] for row in conn.execute("SELECT path FROM meta_info WHERE key = ? AND value = ? ORDER BY RANDOM() LIMIT ?", (MODEL_KEY, str(preset.version), PREVIEW_SAMPLE))]

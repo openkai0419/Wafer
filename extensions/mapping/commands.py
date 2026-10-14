@@ -78,7 +78,7 @@ def relayout_selection(ctx, m):
 
 @require(m="MappingWidget")
 def toggle_space_mode(ctx, m):
-    m.set_space_mode("live" if m.space_mode == "space" else "space")
+    m.set_space_mode("live" if m.effective_mode() == "space" else "space")
 
 
 def _space_mode_checked() -> bool:

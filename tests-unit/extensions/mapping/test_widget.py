@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from PySide6 import QtCore
 
-from extensions.mapping import projection
+from extensions.mapping import commands, projection
 from extensions.mapping import map_host as map_host_module
 from extensions.mapping import map_view as map_view_module
 from extensions.mapping import widget as widget_module
@@ -385,7 +385,7 @@ def make_space_widget(qtbot, monkeypatch, version=2):
     paths = [f"c:/{i}.png" for i in range(30)]
     values = {}
     for i, p in enumerate(paths):
-        entry = {"tags": PathValue("cat, sky" if i < 15 else "dog, sea")}
+        entry = {"tags": PathValue("cat, sky" if i < 15 else "dog, sea"), "prompt": PathValue("a cat" if i < 15 else "a dog")}
         if p not in SPACE_UNSET:
             x = float(i // 15) * 10 + i * 0.01
             entry.update({"mapping.x": PathValue(str(x), x), "mapping.y": PathValue("0", 0.0), "mapping.model": PathValue("2", 2.0)})
@@ -534,3 +534,57 @@ def test_nothing_placed_shows_the_hint(qtbot, monkeypatch):
     w.set_files([f"c:/{i}.png" for i in range(5)], "db")
     qtbot.waitUntil(lambda: w.message_text().startswith("No files have been placed yet"), timeout=5000)
     w.close()
+
+
+class InstanceCtx(dict):
+    def get_instance(self, name, default=None):
+        return self.get(f"instance:{name}", default)
+
+
+def test_preset_keys_follow_the_database(space_widget, qtbot, monkeypatch):
+    assert [chip.key for chip in space_widget.feature_bar.chips()] == ["tags"]
+    other = Preset([FeatureSpec("prompt", "text")], MapParams(), 2)
+    monkeypatch.setattr(widget_module, "load_preset", lambda db_name: other)
+    previous = space_widget.current_result()
+    space_widget.set_files(list(space_widget.paths), "b")
+    qtbot.waitUntil(lambda: space_widget.current_result() is not previous and space_widget.current_result() is not None, timeout=5000)
+    assert [chip.key for chip in space_widget.feature_bar.chips()] == ["prompt"]
+    assert space_widget.feature_bar.read_only
+
+
+def test_retrained_preset_replaces_the_shown_keys(space_widget, qtbot, monkeypatch):
+    retrained = Preset([FeatureSpec("tags", "token_set"), FeatureSpec("prompt", "text")], MapParams(), 2)
+    monkeypatch.setattr(widget_module, "load_preset", lambda db_name: retrained)
+    previous = space_widget.current_result()
+    space_widget.fetch()
+    qtbot.waitUntil(lambda: space_widget.current_result() is not previous and space_widget.current_result() is not None, timeout=5000)
+    assert [chip.key for chip in space_widget.feature_bar.chips()] == ["tags", "prompt"]
+
+
+def test_space_keys_are_not_offered_as_live_keys(space_widget):
+    assert not {key for key, _ in space_widget.feature_bar.keys} & {"mapping.x", "mapping.y", "mapping.model"}
+    assert ("tags", 30) in space_widget.feature_bar.keys
+
+
+def test_toggle_without_a_preset_does_nothing(mapping):
+    root = mapping.levels[0]
+    ctx = InstanceCtx(**{"instance:MappingWidget": mapping})
+    with patch.object(MappingWidget, "recompute") as recompute:
+        commands.toggle_space_mode(ctx)
+        commands.toggle_space_mode(ctx)
+    recompute.assert_not_called()
+    assert mapping.space_mode == "space" and mapping.effective_mode() == "live"
+    assert mapping.levels[0] is root
+
+
+def test_relayout_from_a_space_level_seeds_live_keys_from_the_preset(space_widget, qtbot):
+    space_widget.live_features = []
+    space_widget.map_view.select_rows(range(10))
+    space_widget.map_view.selection_changed.emit()
+    with patch.object(MapPipeline, "run", autospec=True, side_effect=MapPipeline.run) as run:
+        space_widget.relayout_selection()
+        qtbot.waitUntil(lambda: space_widget.current_result() is not None and len(space_widget.current_result().paths) == 10, timeout=5000)
+    run.assert_called_once()
+    assert space_widget.live_features == space_widget.preset.features
+    assert [chip.key for chip in space_widget.feature_bar.chips()] == ["tags"]
+    assert not space_widget.feature_bar.read_only

@@ -29,7 +29,7 @@ from .file_list import FileList
 from .map_host import THUMB_CACHE, MapHost
 from .map_view import MapView
 from .params import MapParams
-from .session import FeatureSpec, MapError, MapPipeline, MapRequest, MapResult, layout_from_space
+from .session import SPACE_KEYS, FeatureSpec, MapError, MapPipeline, MapRequest, MapResult, layout_from_space
 from .space import Preset, load_preset
 from .tuning import TuningPanel
 
@@ -80,7 +80,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.preset: Preset | None = None
         self.space_mode = "space"
         self.live_features: list[FeatureSpec] = []
-        self.bar_mode = ""
+        self.bar_state: tuple[bool, list[FeatureSpec] | None] | None = None
         self.paths: list[str] = []
         self.values: dict[str, dict[str, PathValue]] = {}
         self.params = MapParams()
@@ -271,7 +271,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.values, self.host.sources = values, sources
         self.preset = preset if preset is not None and preset.features and preset.version > 0 else None
         self.sync_space_buttons()
-        counts = Counter(key for entry in values.values() for key, value in entry.items() if value_input(value) is not None)
+        counts = Counter(key for entry in values.values() for key, value in entry.items() if key not in SPACE_KEYS and value_input(value) is not None)
         self.feature_bar.set_keys(counts.most_common())
         self.levels = [MapLevel(list(self.paths), MapPipeline(), mode=self.effective_mode())]
         self.update_crumbs()
@@ -295,8 +295,11 @@ class MappingWidget(QtWidgets.QWidget):
     def set_space_mode(self, mode: str) -> None:
         if mode not in SPACE_MODES:
             return
+        previous = self.effective_mode()
         self.space_mode = mode
         self.sync_space_buttons()
+        if self.effective_mode() == previous:
+            return
         if not self.levels:
             self.sync_features(self.effective_mode())
             return
@@ -305,11 +308,12 @@ class MappingWidget(QtWidgets.QWidget):
         self.recompute()
 
     def sync_features(self, mode: str) -> None:
-        if mode == self.bar_mode:
-            return
-        self.bar_mode = mode
         read_only = mode == "space" and self.preset is not None
-        self.feature_bar.set_features(self.preset.features if read_only else self.live_features)
+        shown = list(self.preset.features) if read_only else None
+        if self.bar_state == (read_only, shown):
+            return
+        self.bar_state = (read_only, shown)
+        self.feature_bar.set_features(shown if read_only else self.live_features)
         self.feature_bar.set_read_only(read_only)
         self.edit_space_button.setVisible(read_only)
 
@@ -497,6 +501,8 @@ class MappingWidget(QtWidgets.QWidget):
         if len(paths) < MIN_DRILL_FILES:
             self.set_message(t("Select at least 3 files."))
             return
+        if self.levels[-1].mode == "space" and self.preset is not None and not self.live_features:
+            self.live_features = list(self.preset.features)
         self.levels.append(MapLevel(paths, MapPipeline(), mode="live"))
         self.update_crumbs()
         self.recompute()
@@ -610,7 +616,7 @@ class MappingWidget(QtWidgets.QWidget):
         features = [FeatureSpec.from_dict(item) for item in state.get("features", []) if isinstance(item, dict)]
         self.live_features = [feature for feature in features if feature is not None]
         self.space_mode = "live" if state.get("space_mode") == "live" else "space"
-        self.bar_mode = ""
+        self.bar_state = None
         self.sync_features(self.effective_mode())
         self.sync_space_buttons()
         self.params = MapParams.from_dict(state.get("params") or {})

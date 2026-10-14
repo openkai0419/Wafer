@@ -55,9 +55,7 @@ def test_command_ids():
         "mapping.drill_down",
         "mapping.drill_up",
         "mapping.relayout_selection",
-        "mapping.relayout_selection",
         "mapping.recompute",
-        "mapping.space_mode",
         "mapping.space_mode",
         "mapping.toggle_grouping",
         "mapping.image_scale_up",
@@ -99,40 +97,12 @@ def test_relayout_selection_command_calls_widget():
 
 
 def test_space_mode_command_toggles():
-    widget = MagicMock(space_mode="space")
-    ctx = Ctx(**{"instance:MappingWidget": widget})
-    commands.toggle_space_mode(ctx)
-    widget.set_space_mode.assert_called_once_with("live")
-    widget.space_mode = "live"
-    commands.toggle_space_mode(ctx)
-    widget.set_space_mode.assert_called_with("space")
-
-
-def test_space_mode_checked_follows_effective_mode(monkeypatch):
-    from extensions.mapping.widget import MappingWidget
-
     widget = MagicMock()
-    monkeypatch.setattr(MappingWidget, "instance", classmethod(lambda cls: widget))
     widget.effective_mode.return_value = "space"
-    assert commands._space_mode_checked() is True
-    widget.effective_mode.return_value = "live"
-    assert commands._space_mode_checked() is False
-    monkeypatch.setattr(MappingWidget, "instance", classmethod(lambda cls: None))
-    assert commands._space_mode_checked() is False
-
-
-def test_relayout_selection_command_calls_widget():
-    widget = MagicMock()
-    commands.relayout_selection(Ctx(**{"instance:MappingWidget": widget}))
-    widget.relayout_selection.assert_called_once_with()
-
-
-def test_space_mode_command_toggles():
-    widget = MagicMock(space_mode="space")
     ctx = Ctx(**{"instance:MappingWidget": widget})
     commands.toggle_space_mode(ctx)
     widget.set_space_mode.assert_called_once_with("live")
-    widget.space_mode = "live"
+    widget.effective_mode.return_value = "live"
     commands.toggle_space_mode(ctx)
     widget.set_space_mode.assert_called_with("space")
 

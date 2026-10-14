@@ -10,11 +10,11 @@ from wafer.core.db.path_values import fetch_path_values
 from wafer.core.logs import AppLogger
 from wafer.plugin import BaseParserPlugin, ParserResult
 
+from .session import SPACE_KEYS
 from .space import OUTPUT_PREFIX, Preset, SpaceLoadError, SpaceModel, SpaceStatus, load_preset, model_dir, write_status
 
 IDLE_TIMEOUT = 60.0
 PRESET_TTL = 5.0
-OUTPUT_KEYS = [f"{OUTPUT_PREFIX}.x", f"{OUTPUT_PREFIX}.y", f"{OUTPUT_PREFIX}.model"]
 UNREAD = object()
 
 
@@ -64,7 +64,7 @@ class MappingParser(BaseParserPlugin):
         if point is UNREAD:
             return ParserResult(source=path, status=False)
         if point is None:
-            return ParserResult(source=path, status=True, delete_meta_keys=list(OUTPUT_KEYS))
+            return ParserResult(source=path, status=True, delete_meta_keys=list(SPACE_KEYS))
         return ParserResult(source=path, status=True, meta_info={"x": repr(point[0]), "y": repr(point[1]), "model": str(model.version)})
 
     def ensure_model(self, preset: Preset) -> SpaceModel | None:

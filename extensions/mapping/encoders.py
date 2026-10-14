@@ -60,6 +60,9 @@ class BaseEncoder(ABC):
     @abstractmethod
     def describe(self, members: np.ndarray, params: MapParams) -> list[str]: ...
 
+    def compact(self) -> None:
+        return None
+
 
 def value_input(value: PathValue | None) -> PathValue | None:
     if value is None or (not value.text.strip() and value.number is None):
@@ -98,6 +101,7 @@ class NumericEncoder(BaseEncoder):
         super().__init__(options)
         self.numbers = np.zeros(0, dtype=np.float64)
         self.reference = np.zeros(0, dtype=np.float64)
+        self.positions = np.zeros(0, dtype=np.float64)
         self.low, self.high = 0.0, 1.0
 
     @classmethod
@@ -114,8 +118,10 @@ class NumericEncoder(BaseEncoder):
         present = self.present(inputs)
         self.numbers = np.array([item.number if ok else np.nan for item, ok in zip(inputs, present)], dtype=np.float64)
         values = self.scaled(self.numbers[present])
-        self.reference = np.unique(values)
-        if self.options["scale"] != "rank" and self.reference.size:
+        self.reference, counts = np.unique(values, return_counts=True)
+        average_rank = np.cumsum(counts) - (counts - 1) / 2
+        self.positions = (average_rank - 1) / max(values.size - 1, 1)
+        if self.reference.size:
             self.low, self.high = float(self.reference[0]), float(self.reference[-1])
         return self.transform(inputs)
 
@@ -130,15 +136,20 @@ class NumericEncoder(BaseEncoder):
         if not present.any() or self.reference.size == 0:
             return output
         values = self.scaled(np.array([item.number for item, ok in zip(inputs, present) if ok], dtype=np.float64))
-        if self.reference.size == 1:
+        if self.options["scale"] == "rank":
+            output[present, 0] = np.interp(values, self.reference, self.positions)
+        elif self.reference.size == 1:
             output[present, 0] = 0.0
-        elif self.options["scale"] == "rank":
-            output[present, 0] = np.interp(values, self.reference, np.linspace(0.0, 1.0, self.reference.size))
         else:
             output[present, 0] = np.clip((values - self.low) / (self.high - self.low), 0.0, 1.0)
         return output
 
+    def compact(self):
+        self.numbers = np.zeros(0, dtype=np.float64)
+
     def describe(self, members, params):
+        if self.numbers.size == 0:
+            return []
         numbers = self.numbers[members]
         numbers = numbers[np.isfinite(numbers)]
         if numbers.size == 0:
@@ -252,6 +263,9 @@ class TokenSetEncoder(BaseEncoder):
         texts = [item.text if item is not None else "" for item in inputs]
         return self.tfidf.transform(self.vectorizer.transform(self.documents(texts))).tocsr()
 
+    def compact(self):
+        self.matrix, self.names = None, []
+
     def describe(self, members, params):
         return top_lift_terms(self.matrix, members, self.names, params.label_terms)
 
@@ -302,10 +316,16 @@ class TextEncoder(BaseEncoder):
             return np.zeros((len(inputs), 1), dtype=np.float32)
         return self.vectorizer.transform([item.text if item is not None else "" for item in inputs]).tocsr()
 
+    def compact(self):
+        self.texts = []
+        self.words_matrix, self.word_names = None, []
+
     def describe(self, members, params):
         from scipy import sparse
         from sklearn.feature_extraction.text import CountVectorizer
 
+        if not self.texts:
+            return []
         if self.words_matrix is None:
             vectorizer = CountVectorizer(analyzer=_words, binary=True, dtype=np.float32)
             try:
@@ -348,7 +368,12 @@ class CategoryEncoder(BaseEncoder):
         columns = [self.codes[values[i]] for i in rows]
         return sparse.csr_matrix((np.ones(len(rows), dtype=np.float32), (rows, columns)), shape=(len(inputs), max(len(self.codes), 1)))
 
+    def compact(self):
+        self.values = []
+
     def describe(self, members, params):
+        if not self.values:
+            return []
         counts = Counter(self.values[i] for i in members if self.values[i])
         return [counts.most_common(1)[0][0]] if counts else []
 

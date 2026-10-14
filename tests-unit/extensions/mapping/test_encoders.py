@@ -198,3 +198,47 @@ def test_fitted_encoders_are_picklable(encoder, fit_inputs):
     restored = pickle.loads(pickle.dumps(encoder))
     assert np.allclose(dense(restored.transform(fit_inputs)), dense(encoder.transform(fit_inputs)))
     assert restored.describe(np.array([0]), PARAMS) == encoder.describe(np.array([0]), PARAMS)
+
+
+def test_numeric_rank_ties_use_average_rank():
+    encoder = NumericEncoder()
+    fitted = encoder.fit_transform([PathValue("", 1.0), PathValue("", 1.0), PathValue("", 1.0), PathValue("", 5.0)], PARAMS)[:, 0]
+    assert fitted == pytest.approx([1 / 3, 1 / 3, 1 / 3, 1.0])
+    assert encoder.transform([PathValue("", 1.0), PathValue("", 5.0)])[:, 0] == pytest.approx([1 / 3, 1.0])
+
+
+def test_numeric_rank_matches_scipy_rankdata_with_ties():
+    from scipy.stats import rankdata
+
+    numbers = [3.0, 1.0, 3.0, 2.0, 2.0, 2.0, 9.0]
+    fitted = NumericEncoder().fit_transform([PathValue("", n) for n in numbers], PARAMS)[:, 0]
+    assert fitted == pytest.approx((rankdata(numbers) - 1) / (len(numbers) - 1))
+
+
+COMPACT_CASES = [
+    (NumericEncoder(), [PathValue("1", 1.0), PathValue("5", 5.0), PathValue("9", 9.0)]),
+    (NumericEncoder({"scale": "log"}), [PathValue("1", 1.0), PathValue("10", 10.0)]),
+    (TokenSetEncoder(), values("cat, sky", "dog, sea", "cat, sea")),
+    (TextEncoder(), values("青い髪の少女", "夜の街", "猫が寝ている")),
+    (CategoryEncoder(), values("a", "b", "a")),
+]
+
+
+@pytest.mark.parametrize("encoder, fit_inputs", COMPACT_CASES)
+def test_compact_keeps_transform_and_describe_is_safe(encoder, fit_inputs):
+    encoder.fit_transform(fit_inputs, PARAMS)
+    before = dense(encoder.transform(fit_inputs))
+    encoder.compact()
+    assert np.allclose(before, dense(encoder.transform(fit_inputs)))
+    assert encoder.describe(np.array([0, 1]), PARAMS) == []
+    assert np.allclose(before, dense(pickle.loads(pickle.dumps(encoder)).transform(fit_inputs)))
+
+
+def test_compact_shrinks_pickled_text_encoder():
+    texts = values(*[f"sample prompt number {i} with some words about subject {i % 17}" for i in range(200)])
+    encoder = TextEncoder()
+    encoder.fit_transform(texts, PARAMS)
+    encoder.describe(np.array([0, 1]), PARAMS)
+    before = len(pickle.dumps(encoder))
+    encoder.compact()
+    assert len(pickle.dumps(encoder)) < before

@@ -37,6 +37,7 @@ from .tuning import TuningPanel
 from .widget import cancel_work, result_colors
 
 LOAD_PRIORITY = 7
+STATUS_REFRESH_MS = 1000
 PREVIEW_SAMPLE = 5000
 DETECT_SAMPLE = 300
 RETRAIN_RATIO = 0.2
@@ -105,7 +106,11 @@ class SpaceSnapshot:
     problem: str = ""
 
 
-def read_snapshot(db_name: str) -> SpaceSnapshot:
+def is_trained(preset: Preset) -> bool:
+    return bool(preset.version and preset.features)
+
+
+def read_space_status(db_name: str) -> SpaceSnapshot:
     preset = load_preset(db_name) or Preset([], MapParams(), 0)
     directory = model_dir(db_name)
     status = current_status(read_status(directory), preset.version)
@@ -114,14 +119,22 @@ def read_snapshot(db_name: str) -> SpaceSnapshot:
     db_path = data_db_path(db_name)
     if not os.path.isfile(db_path):
         return snapshot
-    sample: list[str] = []
     with closing(open_readonly(db_path)) as conn:
         snapshot.total = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
         snapshot.waiting = conn.execute(WAITING_SQL, (OUTPUT_PREFIX,)).fetchone()[0]
-        if preset.version and preset.features:
-            version = str(preset.version)
-            snapshot.placed = conn.execute("SELECT COUNT(*) FROM meta_info WHERE key = ? AND value = ?", (MODEL_KEY, version)).fetchone()[0]
-            sample = [row[0] for row in conn.execute("SELECT path FROM meta_info WHERE key = ? AND value = ? ORDER BY RANDOM() LIMIT ?", (MODEL_KEY, version, PREVIEW_SAMPLE))]
+        if is_trained(preset):
+            snapshot.placed = conn.execute("SELECT COUNT(*) FROM meta_info WHERE key = ? AND value = ?", (MODEL_KEY, str(preset.version))).fetchone()[0]
+    return snapshot
+
+
+def read_snapshot(db_name: str) -> SpaceSnapshot:
+    snapshot = read_space_status(db_name)
+    preset = snapshot.preset
+    db_path = data_db_path(db_name)
+    if not is_trained(preset) or not snapshot.placed:
+        return snapshot
+    with closing(open_readonly(db_path)) as conn:
+        sample = [row[0] for row in conn.execute("SELECT path FROM meta_info WHERE key = ? AND value = ? ORDER BY RANDOM() LIMIT ?", (MODEL_KEY, str(preset.version), PREVIEW_SAMPLE))]
     if not sample:
         return snapshot
     values = fetch_path_values(db_path, sample, keys=[*preset.value_keys(), *SPACE_KEYS])
@@ -206,6 +219,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.dispatcher = Dispatcher(pool=utility_pool, parent=self)
         self.refresh_cancel = CancelSlot()
         self.keys_cancel = CancelSlot()
+        self.status_cancel = CancelSlot()
         self.db_name = ""
         self.keys_db: str | None = None
         self.saved = Preset([], MapParams(), 0)
@@ -223,8 +237,13 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.host.views = [self.map_view]
         self.sync_host()
         self.update_buttons()
-        self.destroyed.connect(partial(cancel_work, self.refresh_cancel, self.keys_cancel))
+        self.destroyed.connect(partial(cancel_work, self.refresh_cancel, self.keys_cancel, self.status_cancel))
         self.destroyed.connect(partial(cancel_tokens, self.detecting))
+        self.status_timer = QtCore.QTimer(self)
+        self.status_timer.setSingleShot(True)
+        self.status_timer.setInterval(STATUS_REFRESH_MS)
+        self.status_timer.timeout.connect(self.refresh_status)
+        self.connect_indexer_updates()
 
     @classmethod
     def instance(cls) -> MappingSpaceWidget | None:
@@ -284,6 +303,39 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         name = getattr(host, "database_name", None)
         if name:
             self.db_name = name
+
+    def connect_indexer_updates(self) -> None:
+        from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
+
+        bridge = ViewerIpcBridge.instance()
+        if bridge is not None:
+            bridge.db_content_updated.connect(self.on_db_updated)
+
+    def on_db_updated(self, db: str) -> None:
+        if (db and db != self.db_name) or not self.isVisible() or self.status_timer.isActive():
+            return
+        self.status_timer.start()
+
+    def refresh_status(self) -> None:
+        if not self.db_name:
+            return
+        db_name = self.db_name
+        cancel = self.status_cancel.renew()
+
+        def task():
+            try:
+                snapshot = read_space_status(db_name)
+            except Exception as e:
+                AppLogger.warning(f"[Mapping] Reading the space status of {db_name} failed", exc=e)
+                return
+            self.dispatcher.invoke(lambda: cancel.is_cancelled() or db_name != self.db_name or self.apply_status(snapshot))
+
+        self.dispatcher.post(task, priority=LOAD_PRIORITY, cancel=cancel)
+
+    def apply_status(self, snapshot: SpaceSnapshot) -> None:
+        self.status, self.total, self.placed, self.waiting = snapshot.status, snapshot.total, snapshot.placed, snapshot.waiting
+        self.model_bytes, self.parser_on = snapshot.model_bytes, snapshot.parser_enabled
+        self.render_status()
 
     def selected_paths(self) -> list[str]:
         if self.shown is None:
@@ -419,9 +471,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
             self.saved = snapshot.preset
         else:
             self.apply_preset(snapshot.preset)
-        self.status, self.total, self.placed, self.waiting = snapshot.status, snapshot.total, snapshot.placed, snapshot.waiting
-        self.model_bytes, self.parser_on = snapshot.model_bytes, snapshot.parser_enabled
-        self.render_status()
+        self.apply_status(snapshot)
         self.update_buttons()
         if snapshot.result is None:
             self.clear_preview()
@@ -451,6 +501,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.refresh()
 
     def hideEvent(self, event: QtGui.QHideEvent) -> None:
+        self.status_timer.stop()
         self.host.hide_hover()
         super().hideEvent(event)
 

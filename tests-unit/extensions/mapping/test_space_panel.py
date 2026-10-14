@@ -313,3 +313,46 @@ def test_hiding_the_space_panel_hides_the_hover(widget):
     assert w.host.preview.isVisible()
     w.hide()
     assert not w.host.preview.isVisible()
+
+
+class FakeBridge(QtCore.QObject):
+    db_content_updated = QtCore.Signal(str)
+
+
+def test_indexer_updates_for_this_database_refresh_the_status_once_per_interval(qtbot, monkeypatch):
+    from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
+
+    bridge = FakeBridge()
+    monkeypatch.setattr(ViewerIpcBridge, "instance", classmethod(lambda cls: bridge))
+    monkeypatch.setattr(MappingSpaceWidget, "refresh", lambda self: None)
+    refreshed = []
+    monkeypatch.setattr(MappingSpaceWidget, "refresh_status", lambda self: refreshed.append(self.db_name))
+    w = MappingSpaceWidget()
+    qtbot.addWidget(w)
+    w.db_name = "db1"
+    bridge.db_content_updated.emit("db1")
+    assert not w.status_timer.isActive()
+    w.show()
+    w.status_timer.setInterval(10)
+    bridge.db_content_updated.emit("db2")
+    assert not w.status_timer.isActive()
+    bridge.db_content_updated.emit("db1")
+    bridge.db_content_updated.emit("")
+    assert w.status_timer.isActive()
+    qtbot.waitUntil(lambda: refreshed == ["db1"], timeout=5000)
+    qtbot.wait(50)
+    assert refreshed == ["db1"]
+    w.hide()
+    assert not w.status_timer.isActive()
+    w.close()
+
+
+def test_status_refresh_reads_counts_without_the_preview(widget, database, monkeypatch, qtbot):
+    w, _saved, _resets = widget
+    monkeypatch.setattr(space_panel, "load_preset", space.load_preset)
+    monkeypatch.setattr(space_panel, "layout_from_space", lambda *args, **kwargs: pytest.fail("the status refresh must not lay out the preview"))
+    w.db_name = "map"
+    w.refresh_status()
+    qtbot.waitUntil(lambda: w.total == 12, timeout=10000)
+    assert w.placed == 10 and "10 of 12" in w.status_label.text()
+    assert w.shown is None and w.map_view.paths == []

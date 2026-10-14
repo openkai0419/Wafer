@@ -62,9 +62,9 @@ def result_colors(result: MapResult, palette) -> list[QtGui.QColor]:
     return [group_color(int(label)) if label >= 0 else noise for label in result.labels]
 
 
-def cancel_work(fetch_cancel: CancelSlot, compute_cancel: CancelSlot) -> None:
-    fetch_cancel.cancel()
-    compute_cancel.cancel()
+def cancel_work(*slots: CancelSlot) -> None:
+    for slot in slots:
+        slot.cancel()
 
 
 @dataclass

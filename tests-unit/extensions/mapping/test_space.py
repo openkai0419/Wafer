@@ -82,8 +82,8 @@ def test_corrupt_model_raises_load_error(tmp_path):
 
 def test_status_roundtrip(tmp_path):
     assert read_status(tmp_path).state == "none"
-    write_status(tmp_path, SpaceStatus("ready", 2, trained=40, built_at=1.0))
-    assert read_status(tmp_path) == SpaceStatus("ready", 2, trained=40, built_at=1.0)
+    write_status(tmp_path, SpaceStatus("ready", 2, trained=40, built_at=1.0, sources_at_training=55))
+    assert read_status(tmp_path) == SpaceStatus("ready", 2, trained=40, built_at=1.0, sources_at_training=55)
 
 
 def test_saved_model_drops_training_texts_and_still_places(tmp_path):

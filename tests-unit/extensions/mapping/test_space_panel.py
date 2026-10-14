@@ -13,15 +13,20 @@ from wafer.core.db.file_db import FileDB
 
 def test_status_text_states():
     assert "cannot be read" in status_text(SpaceStatus("unreadable", 2), total=10, placed=0)
-    assert "recommended" in status_text(SpaceStatus("ready", 2, trained=100), total=130, placed=100)
-    assert "recommended" not in status_text(SpaceStatus("ready", 2, trained=100), total=110, placed=100)
+    assert "recommended" in status_text(SpaceStatus("ready", 2, trained=60, sources_at_training=100), total=130, placed=100)
+    assert "recommended" not in status_text(SpaceStatus("ready", 2, trained=60, sources_at_training=100), total=110, placed=100)
     assert "boom" in status_text(SpaceStatus("failed", 2, error="boom"), total=10, placed=0)
 
 
 def test_status_text_counts_and_model_size():
-    text = status_text(SpaceStatus("ready", 3, trained=100), total=130, placed=90, model_bytes=3 * 1024 * 1024)
-    assert "v3" in text and "90 of 130" in text and "40 waiting" in text and "30 files added" in text and "3.0 MB" in text
-    assert "MB" not in status_text(SpaceStatus("ready", 3, trained=100), total=100, placed=100)
+    text = status_text(SpaceStatus("ready", 3, trained=100, sources_at_training=100), total=130, placed=90, waiting=25, model_bytes=3 * 1024 * 1024)
+    assert "v3" in text and "90 of 130" in text and "25 waiting" in text and "30 files added" in text and "3.0 MB" in text
+    assert "MB" not in status_text(SpaceStatus("ready", 3, trained=100, sources_at_training=100), total=100, placed=100)
+
+
+def test_files_without_values_are_not_counted_as_added_or_waiting():
+    text = status_text(SpaceStatus("ready", 2, trained=40, sources_at_training=100), total=100, placed=40)
+    assert "added" not in text and "waiting" not in text and "recommended" not in text
 
 
 def test_stale_status_reads_as_training():
@@ -147,7 +152,7 @@ def database(tmp_path, monkeypatch):
 def test_snapshot_reads_counts_status_and_preview(database):
     snapshot = read_snapshot("map")
     assert snapshot.preset.version == 1 and snapshot.status.state == "ready"
-    assert snapshot.total == 12 and snapshot.placed == 10
+    assert snapshot.total == 12 and snapshot.placed == 10 and snapshot.waiting == 0
     assert snapshot.model_bytes == 2048
     assert not snapshot.parser_enabled
     assert snapshot.result is not None and len(snapshot.result.paths) == 10 and not snapshot.result.unset.any()
@@ -243,3 +248,10 @@ def test_unknown_key_keeps_the_provisional_encoder(widget, database, qtbot):
     w.feature_bar.add_feature("missing.key")
     qtbot.waitUntil(lambda: not w.detecting, timeout=10000)
     assert w.feature_bar.chips()[-1].spec().encoder == space_panel.PROVISIONAL_ENCODER
+
+
+def test_snapshot_counts_waiting_from_mapping_collection_status(database):
+    database.upsert_collection_results(
+        [], [], [], [("c:/0.png", "mapping", "pending", None), ("c:/1.png", "mapping", "dispatched", None), ("c:/2.png", "mapping", "done", 1.0), ("c:/3.png", "wd14", "pending", None)]
+    )
+    assert read_snapshot("map").waiting == 2

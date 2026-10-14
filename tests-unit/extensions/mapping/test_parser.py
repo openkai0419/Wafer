@@ -54,7 +54,8 @@ def test_first_call_trains_and_writes_training_coordinates(env):
     result = run(plugin, "c:/0.png")
     assert result.status and set(result.meta_info) == {"x", "y", "model"}
     assert result.meta_info["model"] == "1"
-    assert read_status(tmp / "cache" / "mapping" / "map").state == "ready"
+    status = read_status(tmp / "cache" / "mapping" / "map")
+    assert status.state == "ready" and status.trained == 30 and status.sources_at_training == 30
 
 
 def test_new_file_is_placed_near_similar_files(env):

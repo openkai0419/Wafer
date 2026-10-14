@@ -5,7 +5,7 @@ import os
 import pickle
 import time
 import zipfile
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -84,12 +84,13 @@ class SpaceStatus:
     trained: int = 0
     built_at: float = 0.0
     error: str = ""
+    sources_at_training: int = 0
 
 
 def read_status(directory: Path) -> SpaceStatus:
     try:
         data = json.loads((directory / STATUS_FILE).read_text("utf-8"))
-        return SpaceStatus(**{k: data[k] for k in ("state", "version", "trained", "built_at", "error") if k in data})
+        return SpaceStatus(**{f.name: data[f.name] for f in fields(SpaceStatus) if f.name in data})
     except FileNotFoundError:
         return SpaceStatus("none", 0)
     except (OSError, ValueError, TypeError) as e:

@@ -87,6 +87,7 @@ class MappingParser(BaseParserPlugin):
 
     def train(self, preset: Preset, directory) -> SpaceModel | None:
         started = time.perf_counter()
+        paths: list[str] = []
         try:
             write_status(directory, SpaceStatus("training", preset.version))
             paths = [row[0] for row in self.query_db("SELECT source FROM sources")]
@@ -101,7 +102,7 @@ class MappingParser(BaseParserPlugin):
             self.blocked = (preset.version, False)
             write_status(directory, SpaceStatus("failed", preset.version, error=str(e)))
             return None
-        write_status(directory, SpaceStatus("ready", preset.version, trained=len(model.train_paths), built_at=model.built_at))
+        write_status(directory, SpaceStatus("ready", preset.version, trained=len(model.train_paths), built_at=model.built_at, sources_at_training=len(paths)))
         AppLogger.info(f"[Mapping] Trained space v{preset.version} for {self.db_name}: {len(model.train_paths)} files in {time.perf_counter() - started:.1f}s")
         return model
 

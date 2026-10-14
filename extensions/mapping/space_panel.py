@@ -46,10 +46,11 @@ MODEL_KEY = SPACE_KEYS[2]
 ELLIPSIS = "\N{HORIZONTAL ELLIPSIS}"
 SEPARATOR = "\N{MIDDLE DOT}"
 PROVISIONAL_ENCODER = "text"
+WAITING_SQL = "SELECT COUNT(*) FROM collection_status WHERE collector = ? AND status IN ('pending', 'dispatched')"
 FILE_KEYS = frozenset((*STANDARD_KEYS, SYSTEM_FILE_HASH_KEY))
 
 
-def status_text(status: SpaceStatus, total: int, placed: int, model_bytes: int = 0) -> str:
+def status_text(status: SpaceStatus, total: int, placed: int, waiting: int = 0, model_bytes: int = 0) -> str:
     if status.state == "ready":
         state = t("Ready")
     elif status.state == "training":
@@ -65,12 +66,12 @@ def status_text(status: SpaceStatus, total: int, placed: int, model_bytes: int =
         lines.append(t("Trained on {count} files", count=f"{status.trained:,}"))
     if status.version:
         lines.append(t("{placed} of {total} files placed", placed=f"{placed:,}", total=f"{total:,}"))
-        if total > placed:
-            lines.append(t("{count} waiting for placement", count=f"{total - placed:,}"))
-    added = max(total - status.trained, 0)
-    if status.state == "ready" and status.trained and added:
+        if waiting:
+            lines.append(t("{count} waiting for placement", count=f"{waiting:,}"))
+    added = max(total - status.sources_at_training, 0)
+    if status.state == "ready" and status.sources_at_training and added:
         lines.append(t("{count} files added since training", count=f"{added:,}"))
-        if added > status.trained * RETRAIN_RATIO:
+        if added > status.sources_at_training * RETRAIN_RATIO:
             lines.append(t("Retraining is recommended."))
     if model_bytes > 0:
         lines.append(t("Model size: {size} MB", size=f"{model_bytes / MEGABYTE:.1f}"))
@@ -96,6 +97,7 @@ class SpaceSnapshot:
     status: SpaceStatus
     total: int = 0
     placed: int = 0
+    waiting: int = 0
     model_bytes: int = 0
     parser_enabled: bool = True
     result: MapResult | None = None
@@ -115,6 +117,7 @@ def read_snapshot(db_name: str) -> SpaceSnapshot:
     sample: list[str] = []
     with closing(open_readonly(db_path)) as conn:
         snapshot.total = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
+        snapshot.waiting = conn.execute(WAITING_SQL, (OUTPUT_PREFIX,)).fetchone()[0]
         if preset.version and preset.features:
             version = str(preset.version)
             snapshot.placed = conn.execute("SELECT COUNT(*) FROM meta_info WHERE key = ? AND value = ?", (MODEL_KEY, version)).fetchone()[0]
@@ -206,6 +209,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.status = SpaceStatus("none", 0)
         self.total = 0
         self.placed = 0
+        self.waiting = 0
         self.model_bytes = 0
         self.parser_on = True
         self.detecting: dict[str, CancelToken] = {}
@@ -344,7 +348,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.refresh()
 
     def render_status(self) -> None:
-        text = status_text(self.status, self.total, self.placed, self.model_bytes)
+        text = status_text(self.status, self.total, self.placed, self.waiting, self.model_bytes)
         if self.db_name and not self.parser_on:
             text += "\n" + t("Enable the Mapping parser for this database in Plugin Manager.")
         self.status_label.setText(text if self.db_name else t("No database is open."))
@@ -393,7 +397,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
             self.saved = snapshot.preset
         else:
             self.apply_preset(snapshot.preset)
-        self.status, self.total, self.placed = snapshot.status, snapshot.total, snapshot.placed
+        self.status, self.total, self.placed, self.waiting = snapshot.status, snapshot.total, snapshot.placed, snapshot.waiting
         self.model_bytes, self.parser_on = snapshot.model_bytes, snapshot.parser_enabled
         self.render_status()
         self.update_buttons()

@@ -274,6 +274,39 @@ class TestOnRecollect:
         proc.scheduler.submit.assert_not_called()
 
 
+class TestRecollectDispatch:
+    @patch("wafer.app.indexer.main_indexer.parser_resolver")
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_rereads_trigger_keys_before_backfill(self, mock_node_cls, mock_resolver):
+        mock_node_cls.return_value = MagicMock()
+        mock_resolver.status_name.side_effect = lambda n: f"status_{n}"
+        mock_resolver.trigger_keys.side_effect = lambda n: (f"{n}.k",)
+        order = MagicMock()
+        order.attach_mock(mock_resolver.refresh_trigger_keys, "refresh")
+        proc = IndexerProcess("test")
+        proc.scanner = MagicMock()
+        proc._progress = MagicMock()
+        proc.parser_names = ["p1", "p2"]
+        order.attach_mock(proc.scanner.set_parsers, "set_parsers")
+        order.attach_mock(proc.scanner.backfill_pending, "backfill")
+        proc._recollect_dispatch()
+        assert [c[0] for c in order.mock_calls] == ["refresh", "set_parsers", "backfill"]
+        proc.scanner.set_parsers.assert_called_once_with([("status_p1", ("p1.k",)), ("status_p2", ("p2.k",))])
+        proc._progress.send_event.assert_called_with("update")
+
+    @patch("wafer.app.indexer.main_indexer.parser_resolver")
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_without_parsers_only_backfills(self, mock_node_cls, mock_resolver):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        proc.scanner = MagicMock()
+        proc._progress = MagicMock()
+        proc._recollect_dispatch()
+        mock_resolver.refresh_trigger_keys.assert_not_called()
+        proc.scanner.set_parsers.assert_not_called()
+        proc.scanner.backfill_pending.assert_called_once_with()
+
+
 class TestOnKvConvertScope:
     @patch("wafer.app.indexer.main_indexer.Node")
     def test_invalid_payload_returns_true(self, mock_node_cls):

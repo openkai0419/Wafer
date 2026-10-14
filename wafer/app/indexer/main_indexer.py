@@ -40,6 +40,7 @@ class IndexerProcess:
         self.parser_dispatcher = None
         self.parser_receiver = None
         self._progress = None
+        self.parser_names: list[str] = []
         self.zmq = Node("indexer", db=name, consumer=True, broker_lost_timeout=BROKER_LOST_TIMEOUT)
         self.zmq.subscribe("cleanup", lambda msg: self.cleanup() or True)
         self.zmq.subscribe("rescan", lambda msg: self.rescan() or True)
@@ -82,6 +83,7 @@ class IndexerProcess:
         else:
             parser_names = [n for n in all_parsers if n in default_set]
 
+        self.parser_names = parser_names
         self.scheduler = TaskScheduler()
         self._register_periodic_tasks(collector_names, parser_names)
         self.scheduler.start()
@@ -107,6 +109,7 @@ class IndexerProcess:
         self.dispatcher.start(self.zmq)
 
         if parser_names:
+            parser_resolver.bind_db(self.db_name)
             self.parser_receiver = ParserReceiver(self.scheduler, self.writer, progress)
             self.zmq.subscribe("parse.result", self.parser_receiver.handle_result)
             self.parser_dispatcher = ParserDispatcher(
@@ -124,7 +127,7 @@ class IndexerProcess:
                 self.parser_dispatcher.request_dispatch,
                 self.writer,
             )
-            self.scanner.set_parsers([(parser_resolver.status_name(n), parser_resolver.trigger_keys(n)) for n in parser_names])
+            self.refresh_parser_triggers()
 
         self.scanner.backfill_pending()
 
@@ -330,7 +333,14 @@ class IndexerProcess:
             )
         )
 
+    def refresh_parser_triggers(self):
+        if not self.scanner or not self.parser_names:
+            return
+        parser_resolver.refresh_trigger_keys()
+        self.scanner.set_parsers([(parser_resolver.status_name(n), parser_resolver.trigger_keys(n)) for n in self.parser_names])
+
     def _recollect_dispatch(self):
+        self.refresh_parser_triggers()
         self._progress.send_event("update")
         self._request_backfill()
 

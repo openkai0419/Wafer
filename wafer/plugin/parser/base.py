@@ -43,6 +43,10 @@ class BaseParser(BasePlugin):
     _reader: sqlite3.Connection | None = None
     _reader_lock: threading.Lock | None = None
 
+    @classmethod
+    def trigger_keys(cls, db_name: str) -> tuple[str, ...]:
+        return cls.TRIGGER_KEYS
+
     @abstractmethod
     def process(self, path: str, file_info: tuple, metadata: dict) -> ParserResult: ...
 

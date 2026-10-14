@@ -1,3 +1,4 @@
+from ...core.logs import AppLogger
 from ..registry import PluginRegistry
 from .base import BaseSingletonParser, required_collectors
 
@@ -5,6 +6,15 @@ from .base import BaseSingletonParser, required_collectors
 class ParserResolver:
     def __init__(self):
         self.registry = PluginRegistry()
+        self.db_name = ""
+        self.trigger_cache: dict[str, tuple[str, ...]] = {}
+
+    def bind_db(self, db_name: str) -> None:
+        self.db_name = db_name
+        self.trigger_cache.clear()
+
+    def refresh_trigger_keys(self) -> None:
+        self.trigger_cache.clear()
 
     def names(self):
         return self.registry.names()
@@ -32,18 +42,24 @@ class ParserResolver:
 
     def trigger_keys(self, name: str) -> tuple[str, ...]:
         cls = self.registry.get(name)
-        return getattr(cls, "TRIGGER_KEYS", ()) if cls else ()
+        if cls is None:
+            return ()
+        cached = self.trigger_cache.get(name)
+        if cached is not None:
+            return cached
+        try:
+            keys = tuple(cls.trigger_keys(self.db_name))
+        except Exception as e:
+            AppLogger.warning(f"[ParserResolver] trigger_keys failed for {name}; using TRIGGER_KEYS", exc=e)
+            keys = tuple(getattr(cls, "TRIGGER_KEYS", ()))
+        self.trigger_cache[name] = keys
+        return keys
 
     def required_collectors(self, name: str) -> dict[str, list[str]]:
         return required_collectors(self.trigger_keys(name))
 
     def parsers_for_keys(self, keys: set[str]) -> list[str]:
-        result = []
-        for cls in self.registry.list_all():
-            tk = getattr(cls, "TRIGGER_KEYS", ())
-            if tk and keys & set(tk):
-                result.append(cls.NAME)
-        return result
+        return [cls.NAME for cls in self.registry.list_all() if keys & set(self.trigger_keys(cls.NAME))]
 
     def status_name(self, name: str) -> str:
         return name

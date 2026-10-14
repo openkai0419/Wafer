@@ -120,6 +120,7 @@ EXPECTED_PLUGINS = {
         ("panel", "MappingPlugin"),
         ("command", "MappingGridCommands"),
         ("command", "MappingViewCommands"),
+        ("parser", "MappingParser"),
     },
 }
 

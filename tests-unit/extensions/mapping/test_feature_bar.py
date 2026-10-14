@@ -105,3 +105,23 @@ def test_add_menu_builds_with_real_menu_session(qtbot):
     qtbot.addWidget(bar)
     items = [":Keys", ActionKit.Action(path="inline.mapping.add_key.1", display="tags  (7)", translate=False, func=lambda ctx: None)]
     assert Menu.session(bar).menu(items).build() is not None
+
+
+def test_palette_key_uses_palette_encoder_without_detect(qtbot):
+    def fail(key):
+        raise AssertionError("detect must not be called")
+
+    bar = FeatureBar(fail)
+    qtbot.addWidget(bar)
+    bar.add_feature("color.palette")
+    assert bar.features() == [FeatureSpec("color.palette", "palette")]
+    chip = bar.chips()[0]
+    assert chip.encoder_combo.count() == 1 and not chip.encoder_combo.isEnabled()
+
+
+def test_regular_chip_excludes_key_group_encoders(qtbot):
+    bar = FeatureBar(lambda key: "text")
+    qtbot.addWidget(bar)
+    bar.add_feature("prompt")
+    combo = bar.chips()[0].encoder_combo
+    assert combo.findData("palette") == -1 and combo.isEnabled()

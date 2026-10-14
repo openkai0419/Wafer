@@ -5,15 +5,22 @@ import pytest
 
 from extensions.mapping.encoders import (
     ENCODERS,
+    PALETTE_KEY,
+    PALETTE_MAX_SLOTS,
     CategoryEncoder,
     NumericEncoder,
+    PaletteEncoder,
     TextEncoder,
     TokenSetEncoder,
     auto_encoders,
     detect_encoder,
     detect_separator,
+    expand_group_keys,
+    feature_input,
+    group_values,
     normalize_token,
     rgb_to_lab,
+    unpack_rgb,
 )
 from extensions.mapping.params import MapParams
 from wafer.core.db.path_values import PathValue
@@ -24,6 +31,14 @@ PARAMS = MapParams()
 
 def values(*texts):
     return [PathValue(t) for t in texts]
+
+
+def packed(r, g, b):
+    return float((r << 16) | (g << 8) | b)
+
+
+def palette(*colors):
+    return [PathValue(str(int(packed(*c))), packed(*c)) for c in colors]
 
 
 def test_every_encoder_and_option_has_description():
@@ -221,6 +236,7 @@ COMPACT_CASES = [
     (TokenSetEncoder(), values("cat, sky", "dog, sea", "cat, sea")),
     (TextEncoder(), values("青い髪の少女", "夜の街", "猫が寝ている")),
     (CategoryEncoder(), values("a", "b", "a")),
+    (PaletteEncoder(), [palette((250, 10, 10), (20, 20, 20)), palette((10, 10, 250)), None]),
 ]
 
 
@@ -242,3 +258,65 @@ def test_compact_shrinks_pickled_text_encoder():
     before = len(pickle.dumps(encoder))
     encoder.compact()
     assert len(pickle.dumps(encoder)) < before
+
+
+def test_unpack_rgb():
+    assert unpack_rgb(packed(1, 2, 3)) == (1, 2, 3)
+
+
+def test_group_values_orders_slots_and_skips_missing():
+    entry = {
+        "color.palette.2": PathValue("x", packed(0, 0, 255)),
+        "color.palette.1": PathValue("y", packed(255, 0, 0)),
+        "color.palette.3": PathValue(""),
+        "color.palette.x": PathValue("w", packed(1, 1, 1)),
+        "other": PathValue("z", 1.0),
+    }
+    slots = group_values(entry, PALETTE_KEY)
+    assert [unpack_rgb(v.number) for v in slots] == [(255, 0, 0), (0, 0, 255)]
+    assert group_values({}, PALETTE_KEY) is None
+    assert feature_input(entry, PALETTE_KEY, PaletteEncoder) == slots
+    assert feature_input(entry, "other", NumericEncoder) == entry["other"]
+
+
+def test_group_values_sorts_numerically_and_skips_non_finite():
+    entry = {f"color.palette.{n}": PathValue(str(n), float(n)) for n in (10, 2, 1)}
+    entry["color.palette.4"] = PathValue("nan", float("nan"))
+    assert [v.number for v in group_values(entry, PALETTE_KEY)] == [1.0, 2.0, 10.0]
+
+
+def test_expand_group_keys():
+    keys = expand_group_keys(PALETTE_KEY)
+    assert keys[0] == "color.palette.1" and keys[-1] == f"color.palette.{PALETTE_MAX_SLOTS}"
+    assert len(keys) == PALETTE_MAX_SLOTS
+
+
+def test_palette_distances_follow_dominant_colors():
+    encoder = PaletteEncoder()
+    inputs = [palette((250, 10, 10), (20, 20, 20)), palette((240, 20, 20), (20, 20, 20)), palette((10, 10, 250), (20, 20, 20)), None]
+    matrix = encoder.fit_transform(inputs, MapParams())
+    assert np.linalg.norm(matrix[0] - matrix[1]) < np.linalg.norm(matrix[0] - matrix[2])
+    assert encoder.present(inputs).tolist() == [True, True, True, False]
+    assert np.allclose(encoder.transform(inputs[:2]), matrix[:2])
+    assert not matrix[3].any()
+
+
+def test_palette_rank_weighting():
+    encoder = PaletteEncoder()
+    red_first = palette((250, 0, 0), (0, 0, 250))
+    blue_first = palette((0, 0, 250), (250, 0, 0))
+    red_only = palette((250, 0, 0))
+    matrix = encoder.fit_transform([red_first, blue_first, red_only], MapParams())
+    assert np.linalg.norm(matrix[0] - matrix[2]) < np.linalg.norm(matrix[1] - matrix[2])
+
+
+def test_palette_describe_names_dominant_color():
+    encoder = PaletteEncoder()
+    encoder.fit_transform([palette((20, 40, 230)), palette((240, 240, 240))], MapParams())
+    assert encoder.describe(np.array([0]), MapParams())[0] == "blue"
+    assert encoder.describe(np.array([1]), MapParams()) == ["white", "bright"]
+
+
+def test_palette_is_not_auto_detected_and_is_the_only_key_group():
+    assert "palette" in ENCODERS and PaletteEncoder not in auto_encoders()
+    assert [cls.NAME for cls in ENCODERS.values() if cls.KEY_GROUP] == ["palette"]

@@ -11,7 +11,7 @@ from wafer.qt.common.icon_engine import themed_icon
 from wafer.qt.theme import ThemeManager
 from wafer.qt.widgets import FlowLayout
 
-from .encoders import ENCODERS
+from .encoders import ENCODERS, PALETTE_KEY
 from .session import FeatureSpec
 
 MAX_MENU_KEYS = 100
@@ -142,7 +142,7 @@ class FeatureBar(QtWidgets.QWidget):
     def add_feature(self, key: str):
         if any(chip.key == key for chip in self.feature_chips):
             return
-        self.insert_chip(FeatureSpec(key, self.detect(key)))
+        self.insert_chip(FeatureSpec(key, "palette" if key == PALETTE_KEY else self.detect(key)))
         self.features_changed.emit()
 
     def insert_chip(self, spec: FeatureSpec):

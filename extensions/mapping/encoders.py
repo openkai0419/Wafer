@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from abc import ABC, abstractmethod
 from collections import Counter
@@ -11,10 +12,15 @@ from typing import Any, ClassVar
 import numpy as np
 
 from wafer.core.db.path_values import PathValue
+from wafer.core.lang.manager import t
 from wafer.core.logs import AppLogger
 
 from .params import MapParams
 
+PALETTE_KEY = "color.palette"
+PALETTE_MAX_SLOTS = 30
+PALETTE_BINS = (4, 8, 8)
+PALETTE_RANGE = ((0.0, 100.0), (-80.0, 80.0), (-80.0, 80.0))
 SEPARATORS = {"comma": r",", "newline": r"[\r\n]+", "semicolon": r";", "pipe": r"\|", "space": r"\s+"}
 AUTO_SEPARATORS = ("comma", "newline", "semicolon", "pipe")
 TIMESTAMP_RANGE = (9.0e8, 4.2e9)
@@ -70,8 +76,22 @@ def value_input(value: PathValue | None) -> PathValue | None:
     return value
 
 
+def group_values(entry: dict[str, PathValue], prefix: str) -> list[PathValue] | None:
+    marker = prefix + "."
+    slots = []
+    for key, value in entry.items():
+        suffix = key[len(marker) :] if key.startswith(marker) else ""
+        if suffix.isdigit() and value.number is not None and math.isfinite(value.number):
+            slots.append((int(suffix), value))
+    return [value for _, value in sorted(slots, key=lambda slot: slot[0])] or None
+
+
+def expand_group_keys(prefix: str) -> list[str]:
+    return [f"{prefix}.{n}" for n in range(1, PALETTE_MAX_SLOTS + 1)]
+
+
 def feature_input(entry: dict[str, PathValue], key: str, encoder: type[BaseEncoder]):
-    return value_input(entry.get(key))
+    return group_values(entry, key) if encoder.KEY_GROUP else value_input(entry.get(key))
 
 
 def top_lift_terms(matrix, members: np.ndarray, names, count: int) -> list[str]:
@@ -408,7 +428,79 @@ def rgb_to_lab(rgb: np.ndarray) -> np.ndarray:
     return np.stack([116.0 * f[..., 1] - 16.0, 500.0 * (f[..., 0] - f[..., 1]), 200.0 * (f[..., 1] - f[..., 2])], axis=-1)
 
 
-ENCODERS: dict[str, type[BaseEncoder]] = {cls.NAME: cls for cls in (NumericEncoder, TokenSetEncoder, TextEncoder, CategoryEncoder)}
+def unpack_rgb(value: float) -> tuple[int, int, int]:
+    packed = int(value) & 0xFFFFFF
+    return (packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF
+
+
+def soft_bin_weights(lab: np.ndarray) -> list[tuple[int, float]]:
+    coords = []
+    for value, (low, high), bins in zip(lab, PALETTE_RANGE, PALETTE_BINS):
+        position = (min(max(float(value), low), high) - low) / (high - low) * bins - 0.5
+        base = math.floor(position)
+        fraction = position - base
+        coords.append([(min(max(base, 0), bins - 1), 1.0 - fraction), (min(max(base + 1, 0), bins - 1), fraction)])
+    weights = []
+    for i, wi in coords[0]:
+        for j, wj in coords[1]:
+            for k, wk in coords[2]:
+                weights.append(((i * PALETTE_BINS[1] + j) * PALETTE_BINS[2] + k, wi * wj * wk))
+    return weights
+
+
+class PaletteEncoder(BaseEncoder):
+    NAME = "palette"
+    DISPLAY_NAME = "Color palette"
+    DESCRIPTION = "Compares the dominant colors found by the Color collector."
+    KEY_GROUP = True
+    AUTO_DETECT = False
+
+    def __init__(self, options: dict[str, str] | None = None):
+        super().__init__(options)
+        self.first_colors = np.zeros((0, 3), dtype=np.float32)
+
+    def fit_transform(self, inputs, params):
+        nan = (np.nan, np.nan, np.nan)
+        self.first_colors = np.array(
+            [rgb_to_lab(np.array([unpack_rgb(slots[0].number)], dtype=np.uint8))[0] if slots else nan for slots in inputs],
+            dtype=np.float32,
+        ).reshape(-1, 3)
+        return self.transform(inputs)
+
+    def transform(self, inputs):
+        output = np.zeros((len(inputs), int(np.prod(PALETTE_BINS))), dtype=np.float32)
+        for row, slots in enumerate(inputs):
+            if not slots:
+                continue
+            ranks = np.array([1.0 / (i + 1) for i in range(len(slots))])
+            ranks /= ranks.sum()
+            labs = rgb_to_lab(np.array([unpack_rgb(slot.number) for slot in slots], dtype=np.uint8))
+            for lab, weight in zip(labs, ranks):
+                for index, share in soft_bin_weights(lab):
+                    output[row, index] += weight * share
+        return np.sqrt(output)
+
+    def compact(self):
+        self.first_colors = np.zeros((0, 3), dtype=np.float32)
+
+    def describe(self, members, params):
+        if self.first_colors.shape[0] == 0:
+            return []
+        colors = self.first_colors[members]
+        colors = colors[np.isfinite(colors).all(axis=1)]
+        if colors.size == 0:
+            return []
+        mean = colors.mean(axis=0)
+        name = min(COLOR_NAMES, key=lambda item: float(np.sum((np.array(item[1]) - mean) ** 2)))[0]
+        terms = [t(name)]
+        if mean[0] >= BRIGHT_L:
+            terms.append(t("bright"))
+        elif mean[0] <= DARK_L:
+            terms.append(t("dark"))
+        return terms
+
+
+ENCODERS: dict[str, type[BaseEncoder]] = {cls.NAME: cls for cls in (NumericEncoder, TokenSetEncoder, TextEncoder, CategoryEncoder, PaletteEncoder)}
 
 
 def auto_encoders() -> list[type[BaseEncoder]]:

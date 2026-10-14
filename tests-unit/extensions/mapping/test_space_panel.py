@@ -45,6 +45,7 @@ def widget(qtbot, monkeypatch, tmp_path):
     monkeypatch.setattr(space_panel, "data_db_path", lambda name: str(tmp_path / f"{name}.db"))
     monkeypatch.setattr(space_panel.Recollect, "reset", staticmethod(lambda **kw: resets.append(kw) or 1))
     monkeypatch.setattr(MappingSpaceWidget, "refresh", lambda self: None)
+    monkeypatch.setattr(MappingSpaceWidget, "sync_host", lambda self: None)
     w = MappingSpaceWidget()
     qtbot.addWidget(w)
     w.db_name = "db1"
@@ -255,3 +256,45 @@ def test_snapshot_counts_waiting_from_mapping_collection_status(database):
         [], [], [], [("c:/0.png", "mapping", "pending", None), ("c:/1.png", "mapping", "dispatched", None), ("c:/2.png", "mapping", "done", 1.0), ("c:/3.png", "wd14", "pending", None)]
     )
     assert read_snapshot("map").waiting == 2
+
+
+def test_save_after_the_database_changed_only_refreshes(widget, monkeypatch):
+    w, saved, resets = widget
+    refreshed = []
+    monkeypatch.setattr(MappingSpaceWidget, "sync_host", lambda self: setattr(self, "db_name", "db2"))
+    monkeypatch.setattr(MappingSpaceWidget, "refresh", lambda self: refreshed.append(self.db_name))
+    w.feature_bar.add_feature("path")
+    w.save_and_retrain()
+    assert saved == {} and resets == [] and refreshed == ["db2"]
+
+
+def test_save_failure_is_reported_and_keeps_the_edits(widget, monkeypatch):
+    w, _saved, resets = widget
+
+    def broken(name, preset):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(space_panel, "save_preset", broken)
+    w.feature_bar.add_feature("path")
+    w.save_and_retrain()
+    assert resets == [] and w.is_dirty() and w.saved.version == 1
+    assert "Could not save the settings" in w.status_label.text()
+
+
+def test_unreached_indexer_is_reported(widget, monkeypatch):
+    w, saved, _resets = widget
+    monkeypatch.setattr(space_panel.Recollect, "reset", staticmethod(lambda **kw: 0))
+    w.feature_bar.add_feature("path")
+    w.save_and_retrain()
+    assert saved["db1"].version == 2
+    assert "Could not reach the indexer; try again." in w.status_label.text()
+
+
+def test_snapshot_keeps_counts_when_the_preview_fails(database, monkeypatch):
+    def broken(*args, **kwargs):
+        raise ValueError("bad layout")
+
+    monkeypatch.setattr(space_panel, "layout_from_space", broken)
+    snapshot = read_snapshot("map")
+    assert snapshot.result is None and snapshot.problem == "bad layout"
+    assert snapshot.total == 12 and snapshot.placed == 10 and snapshot.status.state == "ready"

@@ -130,6 +130,9 @@ def read_snapshot(db_name: str) -> SpaceSnapshot:
         snapshot.result = layout_from_space(sample, values, preset, MapParams(), grouping=True)
     except MapError as e:
         snapshot.problem = str(e)
+    except Exception as e:
+        AppLogger.warning(f"[Mapping] Laying out the Mapping Space preview of {db_name} failed", exc=e)
+        snapshot.problem = str(e) or type(e).__name__
     return snapshot
 
 
@@ -212,6 +215,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.waiting = 0
         self.model_bytes = 0
         self.parser_on = True
+        self.notice = ""
         self.detecting: dict[str, CancelToken] = {}
         self.shown: MapResult | None = None
         self.host = MapHost(self)
@@ -335,15 +339,31 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.apply_preset(self.saved)
 
     def save_and_retrain(self) -> None:
+        db_name = self.db_name
+        self.sync_host()
+        if self.db_name != db_name:
+            AppLogger.info(f"[Mapping] The open database changed from {db_name} to {self.db_name}; reloading Mapping Space without saving")
+            self.refresh()
+            return
         features = self.feature_bar.features()
-        if not self.db_name or not features:
+        if not db_name or not features:
             return
         preset = Preset(features, self.tuning.params(), self.saved.version + 1)
-        save_preset(self.db_name, preset)
-        Recollect.reset(collector=OUTPUT_PREFIX, db_scope=self.db_name)
-        AppLogger.info(f"[Mapping] Saved space preset v{preset.version} for {self.db_name} and requested retraining")
+        try:
+            save_preset(db_name, preset)
+        except Exception as e:
+            AppLogger.error(f"[Mapping] Saving the space settings for {db_name} failed", exc=e)
+            self.notice = t("Could not save the settings. See the log for details.")
+            self.render_status()
+            return
         self.apply_preset(preset)
         self.status = SpaceStatus("training", preset.version)
+        if Recollect.reset(collector=OUTPUT_PREFIX, db_scope=db_name) == 0:
+            AppLogger.warning(f"[Mapping] Saved space preset v{preset.version} for {db_name}, but no indexer received the retraining request; save again to retry")
+            self.notice = t("Could not reach the indexer; try again.")
+        else:
+            AppLogger.info(f"[Mapping] Saved space preset v{preset.version} for {db_name} and requested retraining")
+            self.notice = ""
         self.render_status()
         self.refresh()
 
@@ -351,6 +371,8 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         text = status_text(self.status, self.total, self.placed, self.waiting, self.model_bytes)
         if self.db_name and not self.parser_on:
             text += "\n" + t("Enable the Mapping parser for this database in Plugin Manager.")
+        if self.db_name and self.notice:
+            text += "\n" + self.notice
         self.status_label.setText(text if self.db_name else t("No database is open."))
 
     def refresh(self) -> None:

@@ -320,3 +320,37 @@ def test_palette_describe_names_dominant_color():
 def test_palette_is_not_auto_detected_and_is_the_only_key_group():
     assert "palette" in ENCODERS and PaletteEncoder not in auto_encoders()
     assert [cls.NAME for cls in ENCODERS.values() if cls.KEY_GROUP] == ["palette"]
+
+
+DESCRIBE_CASES = [
+    (NumericEncoder, [PathValue("1", 1.0), PathValue("5", 5.0), None, PathValue("9", 9.0)]),
+    (TokenSetEncoder, values("cat, sky", "dog, sea", "cat, sea", "(cat:1.2), [sky]")),
+    (TextEncoder, values("blue hair girl", "night city street", "blue sky", "")),
+    (CategoryEncoder, values("a", "b", "a", "")),
+    (PaletteEncoder, [palette((250, 10, 10), (20, 20, 20)), palette((10, 10, 250)), None, palette((240, 240, 240))]),
+]
+
+
+@pytest.mark.parametrize("encoder_cls, inputs", DESCRIBE_CASES)
+def test_fit_describe_labels_match_fit_transform(encoder_cls, inputs):
+    params = MapParams(label_terms=3)
+    fitted, described = encoder_cls(), encoder_cls()
+    fitted.fit_transform(inputs, params)
+    assert described.fit_describe(inputs, params) is None
+    for members in ([0], [1], [0, 2], [1, 3], [0, 1, 2, 3]):
+        assert described.describe(np.array(members), params) == fitted.describe(np.array(members), params)
+
+
+def test_palette_first_colors_match_per_row_lab():
+    inputs = [palette((250, 10, 10), (20, 20, 20)), None, palette((0, 128, 255)), []]
+    encoder = PaletteEncoder()
+    encoder.fit_describe(inputs, PARAMS)
+    expected = rgb_to_lab(np.array([[250, 10, 10], [0, 128, 255]], dtype=np.uint8))
+    assert np.allclose(encoder.first_colors[[0, 2]], expected)
+    assert np.isnan(encoder.first_colors[[1, 3]]).all()
+
+
+def test_normalize_token_is_memoised():
+    normalize_token.cache_clear()
+    assert normalize_token("(Cat_Ears:1.2)") == normalize_token("(Cat_Ears:1.2)")
+    assert normalize_token.cache_info().hits == 1

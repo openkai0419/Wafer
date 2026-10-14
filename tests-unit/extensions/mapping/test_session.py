@@ -216,3 +216,23 @@ def test_layout_from_space_with_one_placed_file_still_lays_out():
     result = layout_from_space(["a", "b"], values, space_preset(), MapParams(), grouping=True)
     assert result.unset.tolist() == [False, True]
     assert result.labels is None and result.order.tolist() == [0, 1]
+
+
+def test_describe_space_groups_uses_fit_describe_and_matches_fit_transform(monkeypatch):
+    values = space_values()
+    for i, path in enumerate(values):
+        values[path]["color.palette.1"] = PathValue("", float(0xFF0000 if i % 2 else 0x0000FF))
+    preset = Preset([FeatureSpec("tags", "token_set"), FeatureSpec("color.palette", "palette")], MapParams(), 2)
+    paths = list(values)
+    labels = np.array([0] * 6 + [1] * 6, dtype=np.int32)
+    calls = []
+    for cls in ENCODERS.values():
+        monkeypatch.setattr(cls, "fit_transform", lambda self, inputs, params, original=cls.fit_transform: calls.append(self.NAME) or original(self, inputs, params))
+    fast = session.describe_space_groups(paths, values, preset, labels, MapParams())
+    assert calls == ["token_set"]
+    calls.clear()
+    for cls in ENCODERS.values():
+        monkeypatch.setattr(cls, "fit_describe", lambda self, inputs, params: self.fit_transform(inputs, params))
+    assert session.describe_space_groups(paths, values, preset, labels, MapParams()) == fast
+    assert sorted(calls) == ["palette", "token_set"]
+    assert "cat" in fast[0] and "dog" in fast[1]

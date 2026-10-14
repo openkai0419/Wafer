@@ -7,6 +7,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from functools import lru_cache
 from typing import Any, ClassVar
 
 import numpy as np
@@ -62,6 +63,9 @@ class BaseEncoder(ABC):
 
     @abstractmethod
     def transform(self, inputs: Sequence[Any]): ...
+
+    def fit_describe(self, inputs: Sequence[Any], params: MapParams) -> None:
+        self.fit_transform(inputs, params)
 
     @abstractmethod
     def describe(self, members: np.ndarray, params: MapParams) -> list[str]: ...
@@ -193,6 +197,7 @@ def detect_separator(texts: Sequence[str]) -> str:
     return "space"
 
 
+@lru_cache(maxsize=65536)
 def normalize_token(raw: str) -> tuple[str, float]:
     token = raw.strip()
     weight = 1.0
@@ -331,6 +336,10 @@ class TextEncoder(BaseEncoder):
         self.vectorizer = vectorizer
         return matrix
 
+    def fit_describe(self, inputs, params):
+        self.texts = [item.text if item is not None else "" for item in inputs]
+        self.words_matrix, self.word_names = None, []
+
     def transform(self, inputs):
         if self.vectorizer is None:
             return np.zeros((len(inputs), 1), dtype=np.float32)
@@ -433,6 +442,16 @@ def unpack_rgb(value: float) -> tuple[int, int, int]:
     return (packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF
 
 
+def first_slot_lab(inputs: Sequence[list[PathValue] | None]) -> np.ndarray:
+    output = np.full((len(inputs), 3), np.nan, dtype=np.float32)
+    rows = [row for row, slots in enumerate(inputs) if slots]
+    if rows:
+        packed = np.array([inputs[row][0].number for row in rows], dtype=np.float64).astype(np.int64) & 0xFFFFFF
+        rgb = np.stack([(packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF], axis=-1).astype(np.uint8)
+        output[rows] = rgb_to_lab(rgb)
+    return output
+
+
 def soft_bin_weights(lab: np.ndarray) -> list[tuple[int, float]]:
     coords = []
     for value, (low, high), bins in zip(lab, PALETTE_RANGE, PALETTE_BINS):
@@ -460,12 +479,11 @@ class PaletteEncoder(BaseEncoder):
         self.first_colors = np.zeros((0, 3), dtype=np.float32)
 
     def fit_transform(self, inputs, params):
-        nan = (np.nan, np.nan, np.nan)
-        self.first_colors = np.array(
-            [rgb_to_lab(np.array([unpack_rgb(slots[0].number)], dtype=np.uint8))[0] if slots else nan for slots in inputs],
-            dtype=np.float32,
-        ).reshape(-1, 3)
+        self.first_colors = first_slot_lab(inputs)
         return self.transform(inputs)
+
+    def fit_describe(self, inputs, params):
+        self.first_colors = first_slot_lab(inputs)
 
     def transform(self, inputs):
         output = np.zeros((len(inputs), int(np.prod(PALETTE_BINS))), dtype=np.float32)

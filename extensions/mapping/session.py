@@ -304,7 +304,7 @@ def describe_space_groups(paths: list[str], values: dict[str, dict[str, PathValu
         encoder_cls = ENCODERS[feature.encoder]
         encoder = encoder_cls(feature.options)
         inputs = [feature_input(values.get(path, {}), feature.key, encoder_cls) for path in paths]
-        encoder.fit_transform(inputs, params)
+        encoder.fit_describe(inputs, params)
         described.append((encoder, encoder.present(inputs)))
     terms: dict[int, list[str]] = {}
     for group in sorted(set(labels.tolist()) - {-1}):

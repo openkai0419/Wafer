@@ -174,6 +174,7 @@ class TestBuildTabs:
 
     def test_populate_tabs_alphabetical(self, qtbot, monkeypatch):
         monkeypatch.setattr(f"{MODULE}.collector_resolver.names", lambda: ["exif"])
+        monkeypatch.setattr(f"{MODULE}.parser_resolver.names", lambda: [])
         widget = self._make_widget(qtbot, monkeypatch)
         widget._populate_tabs(["zebra", "alpha"])
         labels = [widget._tabs.tabText(i) for i in range(widget._tabs.count())]
@@ -181,6 +182,7 @@ class TestBuildTabs:
 
     def test_populate_tabs_dedupes(self, qtbot, monkeypatch):
         monkeypatch.setattr(f"{MODULE}.collector_resolver.names", lambda: ["exif"])
+        monkeypatch.setattr(f"{MODULE}.parser_resolver.names", lambda: [])
         widget = self._make_widget(qtbot, monkeypatch)
         widget._populate_tabs(["exif", "wd14"])
         labels = [widget._tabs.tabText(i) for i in range(widget._tabs.count())]

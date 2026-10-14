@@ -588,3 +588,34 @@ def test_relayout_from_a_space_level_seeds_live_keys_from_the_preset(space_widge
     assert space_widget.live_features == space_widget.preset.features
     assert [chip.key for chip in space_widget.feature_bar.chips()] == ["tags"]
     assert not space_widget.feature_bar.read_only
+
+
+def test_refresh_in_precomputed_mode_refetches_and_keeps_the_level(space_widget, qtbot, monkeypatch):
+    space_widget.map_view.select_rows(range(10))
+    space_widget.map_view.selection_changed.emit()
+    space_widget.drill_down()
+    qtbot.waitUntil(lambda: space_widget.current_result() is not None and len(space_widget.current_result().paths) == 10, timeout=5000)
+    drilled = list(space_widget.levels[-1].paths)
+    retrained = Preset([FeatureSpec("tags", "token_set"), FeatureSpec("prompt", "text")], MapParams(), 2)
+    monkeypatch.setattr(widget_module, "load_preset", lambda db_name: retrained)
+    previous = space_widget.current_result()
+    space_widget.refresh()
+    qtbot.waitUntil(lambda: space_widget.current_result() is not previous and space_widget.current_result() is not None, timeout=5000)
+    assert len(space_widget.levels) == 2 and space_widget.levels[-1].paths == drilled
+    assert space_widget.current_result().paths == drilled
+    assert space_widget.preset is retrained
+    assert [chip.key for chip in space_widget.feature_bar.chips()] == ["tags", "prompt"]
+
+
+def test_refresh_in_live_mode_only_recomputes(mapping):
+    with patch.object(MappingWidget, "fetch") as fetch, patch.object(MappingWidget, "recompute") as recompute:
+        mapping.refresh()
+    fetch.assert_not_called()
+    recompute.assert_called_once()
+
+
+def test_recompute_command_refreshes(space_widget):
+    ctx = InstanceCtx(**{"instance:MappingWidget": space_widget})
+    with patch.object(MappingWidget, "fetch") as fetch:
+        commands.recompute(ctx)
+    fetch.assert_called_once_with(keep_levels=True)

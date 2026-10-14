@@ -169,7 +169,7 @@ class MappingWidget(QtWidgets.QWidget):
         refresh = QtWidgets.QToolButton()
         refresh.setIcon(themed_icon("refresh"))
         refresh.setToolTip(t("Recompute"))
-        refresh.clicked.connect(self.recompute)
+        refresh.clicked.connect(self.refresh)
         toolbar.addWidget(refresh)
         layout.addLayout(toolbar)
         status = QtWidgets.QHBoxLayout()
@@ -256,7 +256,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.set_message("")
         self.stack.setCurrentIndex(0)
 
-    def fetch(self):
+    def fetch(self, keep_levels: bool = False):
         cancel = self.fetch_cancel.renew()
         self.compute_cancel.cancel()
         paths, db_path, db_name = list(self.paths), self.db_path, self.db_name
@@ -271,19 +271,29 @@ class MappingWidget(QtWidgets.QWidget):
                 AppLogger.error("[Mapping] Loading values failed", exc=e)
                 self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.finish(t("Mapping failed. See the log for details.")))
                 return
-            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.on_values(values, sources, preset))
+            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.on_values(values, sources, preset, keep_levels))
 
         self.dispatcher.post(task, priority=COMPUTE_PRIORITY, cancel=cancel)
 
-    def on_values(self, values, sources, preset: Preset | None = None):
+    def on_values(self, values, sources, preset: Preset | None = None, keep_levels: bool = False):
         self.values, self.host.sources = values, sources
         self.preset = preset if preset is not None and preset.features and preset.version > 0 else None
         self.sync_space_buttons()
         counts = Counter(key for entry in values.values() for key, value in entry.items() if key not in SPACE_KEYS and value_input(value) is not None)
         self.feature_bar.set_keys(counts.most_common())
-        self.levels = [MapLevel(list(self.paths), MapPipeline(), mode=self.effective_mode())]
+        if keep_levels and self.levels and self.effective_mode() == "space":
+            for level in self.levels:
+                level.pipeline, level.result = MapPipeline(), None
+        else:
+            self.levels = [MapLevel(list(self.paths), MapPipeline(), mode=self.effective_mode())]
         self.update_crumbs()
         self.recompute()
+
+    def refresh(self) -> None:
+        if self.levels and self.levels[-1].mode == "space":
+            self.fetch(keep_levels=True)
+        else:
+            self.recompute()
 
     def effective_mode(self) -> str:
         return "space" if self.space_mode == "space" and self.preset is not None else "live"

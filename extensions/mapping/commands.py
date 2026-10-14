@@ -68,7 +68,7 @@ def drill_up(ctx, m):
 
 @require(m="MappingWidget")
 def recompute(ctx, m):
-    m.recompute()
+    m.refresh()
 
 
 @require(m="MappingWidget")

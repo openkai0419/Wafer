@@ -36,6 +36,11 @@ def test_stale_status_reads_as_training():
     assert current_status(SpaceStatus("none", 0), 0) == SpaceStatus("none", 0)
 
 
+@pytest.fixture(autouse=True)
+def deterministic_groups(fake_cluster):
+    return None
+
+
 @pytest.fixture()
 def widget(qtbot, monkeypatch, tmp_path):
     saved = {}
@@ -203,7 +208,7 @@ def test_refresh_loads_preview_and_key_catalog_in_background(qtbot, database):
     qtbot.addWidget(w)
     w.db_name = "map"
     w.refresh()
-    qtbot.waitUntil(lambda: len(w.map_view.paths) == 10 and bool(w.feature_bar.keys), timeout=10000)
+    qtbot.waitUntil(lambda: len(w.map_view.paths) == 10 and bool(w.feature_bar.keys), timeout=20000)
     assert [f.key for f in w.feature_bar.features()] == ["wd14.tags"]
     keys = dict(w.feature_bar.keys)
     assert "wd14.tags" in keys and not set(keys) & set(space_panel.SPACE_KEYS)

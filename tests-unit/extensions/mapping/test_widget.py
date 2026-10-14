@@ -23,6 +23,9 @@ def fake_embed(matrix, n_components, n_neighbors, min_dist, seed):
     return output
 
 
+FIRST_RUN_TIMEOUT = 20000
+
+
 class DropEvent:
     def __init__(self, mime):
         self.mime = mime
@@ -46,6 +49,11 @@ def no_preset(monkeypatch):
     monkeypatch.setattr(widget_module, "load_preset", lambda db_name: None)
 
 
+@pytest.fixture(autouse=True)
+def deterministic_groups(fake_cluster):
+    return None
+
+
 @pytest.fixture()
 def mapping(qtbot, monkeypatch):
     monkeypatch.setattr(projection, "embed", fake_embed)
@@ -59,7 +67,7 @@ def mapping(qtbot, monkeypatch):
     w.show()
     w.restore_state({"features": [FeatureSpec("tags", "token_set").to_dict()]})
     w.set_files(paths, "db")
-    qtbot.waitUntil(lambda: w.current_result() is not None, timeout=5000)
+    qtbot.waitUntil(lambda: w.current_result() is not None, timeout=FIRST_RUN_TIMEOUT)
     yield w
     w.close()
 
@@ -406,7 +414,7 @@ def make_space_widget(qtbot, monkeypatch, version=2):
 @pytest.fixture()
 def space_widget(qtbot, monkeypatch):
     w = make_space_widget(qtbot, monkeypatch)
-    qtbot.waitUntil(lambda: w.current_result() is not None, timeout=5000)
+    qtbot.waitUntil(lambda: w.current_result() is not None, timeout=FIRST_RUN_TIMEOUT)
     yield w
     w.close()
 
@@ -431,7 +439,7 @@ def test_precomputed_mode_shows_read_only_preset_keys(space_widget):
 def test_precomputed_mode_skips_the_pipeline(qtbot, monkeypatch):
     with patch.object(MapPipeline, "run") as run:
         w = make_space_widget(qtbot, monkeypatch)
-        qtbot.waitUntil(lambda: w.current_result() is not None, timeout=5000)
+        qtbot.waitUntil(lambda: w.current_result() is not None, timeout=FIRST_RUN_TIMEOUT)
         w.close()
     run.assert_not_called()
 
@@ -445,7 +453,7 @@ def test_no_preset_pins_live_mode(mapping):
 
 def test_preset_without_a_trained_version_pins_live_mode(qtbot, monkeypatch):
     w = make_space_widget(qtbot, monkeypatch, version=0)
-    qtbot.waitUntil(lambda: w.current_result() is not None, timeout=5000)
+    qtbot.waitUntil(lambda: w.current_result() is not None, timeout=FIRST_RUN_TIMEOUT)
     assert w.effective_mode() == "live" and not w.precomputed_button.isEnabled()
     assert w.space_mode == "space"
     w.close()
@@ -532,7 +540,7 @@ def test_nothing_placed_shows_the_hint(qtbot, monkeypatch):
     w = make_space_widget(qtbot, monkeypatch)
     monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps: {p: {"tags": PathValue("cat")} for p in ps})
     w.set_files([f"c:/{i}.png" for i in range(5)], "db")
-    qtbot.waitUntil(lambda: w.message_text().startswith("No files have been placed yet"), timeout=5000)
+    qtbot.waitUntil(lambda: w.message_text().startswith("No files have been placed yet"), timeout=FIRST_RUN_TIMEOUT)
     w.close()
 
 

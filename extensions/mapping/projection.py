@@ -34,41 +34,76 @@ def median_pair_distance(matrix, *, samples: int = 2000, seed: int = 0) -> float
     return float(np.median(nonzero)) if nonzero.size else 1.0
 
 
-def reduce_block(matrix, svd_dims: int, seed: int) -> np.ndarray:
-    if not hasattr(matrix, "tocsr"):
-        return np.asarray(matrix, dtype=np.float32)
-    from sklearn.preprocessing import normalize
-
-    matrix = normalize(matrix.tocsr())
-    components = min(svd_dims, matrix.shape[1] - 1, matrix.shape[0] - 1)
-    if matrix.shape[1] <= svd_dims or components < 2:
-        return matrix.toarray().astype(np.float32)
-    from sklearn.decomposition import TruncatedSVD
-
-    return TruncatedSVD(n_components=components, random_state=seed).fit_transform(matrix).astype(np.float32)
+@dataclass
+class BlockScale:
+    mean: np.ndarray
+    scale: float
+    weight: float
 
 
-def fill_missing(dense: np.ndarray, present: np.ndarray) -> np.ndarray:
-    if present.all():
-        return dense
-    filled = dense.copy()
-    filled[~present] = dense[present].mean(axis=0) if present.any() else 0.0
-    return filled
+class BlockReducer:
+    def __init__(self, svd_dims: int, seed: int):
+        self.svd_dims = svd_dims
+        self.seed = seed
+        self.sparse = False
+        self.svd = None
+
+    def fit_transform(self, matrix) -> np.ndarray:
+        self.sparse = hasattr(matrix, "tocsr")
+        if not self.sparse:
+            return np.asarray(matrix, dtype=np.float32)
+        from sklearn.preprocessing import normalize
+
+        normalized = normalize(matrix.tocsr())
+        components = min(self.svd_dims, normalized.shape[1] - 1, normalized.shape[0] - 1)
+        if normalized.shape[1] <= self.svd_dims or components < 2:
+            self.svd = None
+            return normalized.toarray().astype(np.float32)
+        from sklearn.decomposition import TruncatedSVD
+
+        self.svd = TruncatedSVD(n_components=components, random_state=self.seed).fit(normalized)
+        return self.svd.transform(normalized).astype(np.float32)
+
+    def transform(self, matrix) -> np.ndarray:
+        if not self.sparse:
+            return np.asarray(matrix, dtype=np.float32)
+        from sklearn.preprocessing import normalize
+
+        normalized = normalize(matrix.tocsr())
+        if self.svd is None:
+            return normalized.toarray().astype(np.float32)
+        return self.svd.transform(normalized).astype(np.float32)
 
 
-def combine_blocks(blocks: list[tuple[str, np.ndarray, np.ndarray, float]], seed: int) -> tuple[np.ndarray, list[BlockStats]]:
+def combine_blocks(blocks: list[tuple[str, np.ndarray, np.ndarray, float]], seed: int) -> tuple[np.ndarray, list[BlockStats], list[BlockScale]]:
     parts: list[np.ndarray] = []
     stats: list[BlockStats] = []
+    scales: list[BlockScale] = []
     for label, dense, present, weight in blocks:
-        filled = fill_missing(dense, present)
+        mean = dense[present].mean(axis=0) if present.any() else np.zeros(dense.shape[1], dtype=np.float32)
+        filled = dense
+        if not present.all():
+            filled = dense.copy()
+            filled[~present] = mean
         scale = median_pair_distance(filled[present], seed=seed)
         parts.append(filled / scale * weight)
         stats.append(BlockStats(label, dense.shape[1], scale, int((~present).sum())))
+        scales.append(BlockScale(np.asarray(mean, dtype=np.float32), scale, weight))
     variances = [float(part.var(axis=0).sum()) for part in parts]
     total = sum(variances)
     for stat, variance in zip(stats, variances):
         stat.contribution = variance / total if total > 0 else 0.0
-    return np.hstack(parts).astype(np.float32), stats
+    return np.hstack(parts).astype(np.float32), stats, scales
+
+
+def apply_block_scales(parts: list[tuple[np.ndarray, np.ndarray]], scales: list[BlockScale]) -> np.ndarray:
+    columns = []
+    for (dense, present), block in zip(parts, scales):
+        filled = np.array(dense, dtype=np.float32, copy=True)
+        if not present.all():
+            filled[~present] = block.mean
+        columns.append(filled / block.scale * block.weight)
+    return np.hstack(columns).astype(np.float32)
 
 
 def embed(matrix: np.ndarray, n_components: int, n_neighbors: int, min_dist: float, seed: int) -> np.ndarray:

@@ -6,16 +6,14 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar
 
 import numpy as np
 
 from wafer.core.db.path_values import PathValue
-from wafer.core.lang.manager import t
 from wafer.core.logs import AppLogger
 
 from .params import MapParams
-from .projection import median_pair_distance
 
 SEPARATORS = {"comma": r",", "newline": r"[\r\n]+", "semicolon": r";", "pipe": r"\|", "space": r"\s+"}
 AUTO_SEPARATORS = ("comma", "newline", "semicolon", "pipe")
@@ -38,8 +36,9 @@ class BaseEncoder(ABC):
     NAME: ClassVar[str]
     DISPLAY_NAME: ClassVar[str]
     DESCRIPTION: ClassVar[str]
-    INPUT: ClassVar[Literal["value", "image"]] = "value"
     OPTIONS: ClassVar[tuple[OptionSpec, ...]] = ()
+    KEY_GROUP: ClassVar[bool] = False
+    AUTO_DETECT: ClassVar[bool] = True
 
     def __init__(self, options: dict[str, str] | None = None):
         self.options = {spec.name: spec.default for spec in self.OPTIONS}
@@ -53,10 +52,23 @@ class BaseEncoder(ABC):
         return np.array([item is not None for item in inputs], dtype=bool)
 
     @abstractmethod
-    def encode(self, inputs: Sequence[Any], params: MapParams): ...
+    def fit_transform(self, inputs: Sequence[Any], params: MapParams): ...
+
+    @abstractmethod
+    def transform(self, inputs: Sequence[Any]): ...
 
     @abstractmethod
     def describe(self, members: np.ndarray, params: MapParams) -> list[str]: ...
+
+
+def value_input(value: PathValue | None) -> PathValue | None:
+    if value is None or (not value.text.strip() and value.number is None):
+        return None
+    return value
+
+
+def feature_input(entry: dict[str, PathValue], key: str, encoder: type[BaseEncoder]):
+    return value_input(entry.get(key))
 
 
 def top_lift_terms(matrix, members: np.ndarray, names, count: int) -> list[str]:
@@ -82,6 +94,12 @@ class NumericEncoder(BaseEncoder):
         ),
     )
 
+    def __init__(self, options: dict[str, str] | None = None):
+        super().__init__(options)
+        self.numbers = np.zeros(0, dtype=np.float64)
+        self.reference = np.zeros(0, dtype=np.float64)
+        self.low, self.high = 0.0, 1.0
+
     @classmethod
     def detect(cls, values):
         if not values:
@@ -92,27 +110,36 @@ class NumericEncoder(BaseEncoder):
     def present(self, inputs):
         return np.array([item is not None and item.number is not None and np.isfinite(item.number) for item in inputs], dtype=bool)
 
-    def encode(self, inputs, params):
+    def fit_transform(self, inputs, params):
         present = self.present(inputs)
-        self._numbers = np.array([item.number if ok else np.nan for item, ok in zip(inputs, present)], dtype=np.float64)
-        output = np.zeros((len(inputs), 1), dtype=np.float32)
-        numbers = self._numbers[present]
-        if numbers.size == 0:
-            return output
-        scale = self.options["scale"]
-        if scale == "rank":
-            from scipy.stats import rankdata
+        self.numbers = np.array([item.number if ok else np.nan for item, ok in zip(inputs, present)], dtype=np.float64)
+        values = self.scaled(self.numbers[present])
+        self.reference = np.unique(values)
+        if self.options["scale"] != "rank" and self.reference.size:
+            self.low, self.high = float(self.reference[0]), float(self.reference[-1])
+        return self.transform(inputs)
 
-            output[present, 0] = (rankdata(numbers) - 1) / max(numbers.size - 1, 1)
+    def scaled(self, numbers: np.ndarray) -> np.ndarray:
+        if self.options["scale"] == "log":
+            return np.sign(numbers) * np.log1p(np.abs(numbers))
+        return numbers
+
+    def transform(self, inputs):
+        present = self.present(inputs)
+        output = np.zeros((len(inputs), 1), dtype=np.float32)
+        if not present.any() or self.reference.size == 0:
             return output
-        if scale == "log":
-            numbers = np.sign(numbers) * np.log1p(np.abs(numbers))
-        low, high = numbers.min(), numbers.max()
-        output[present, 0] = (numbers - low) / (high - low) if high > low else 0.0
+        values = self.scaled(np.array([item.number for item, ok in zip(inputs, present) if ok], dtype=np.float64))
+        if self.reference.size == 1:
+            output[present, 0] = 0.0
+        elif self.options["scale"] == "rank":
+            output[present, 0] = np.interp(values, self.reference, np.linspace(0.0, 1.0, self.reference.size))
+        else:
+            output[present, 0] = np.clip((values - self.low) / (self.high - self.low), 0.0, 1.0)
         return output
 
     def describe(self, members, params):
-        numbers = self._numbers[members]
+        numbers = self.numbers[members]
         numbers = numbers[np.isfinite(numbers)]
         if numbers.size == 0:
             return []
@@ -161,6 +188,14 @@ class TokenSetEncoder(BaseEncoder):
         OptionSpec("pattern", "Regex", "Regular expression used when the separator is Regex.", ""),
     )
 
+    def __init__(self, options: dict[str, str] | None = None):
+        super().__init__(options)
+        self.pattern = SEPARATORS["comma"]
+        self.vectorizer = None
+        self.tfidf = None
+        self.matrix = None
+        self.names = []
+
     @classmethod
     def detect(cls, values):
         texts = [value.text for value in values if value.text.strip()]
@@ -182,32 +217,43 @@ class TokenSetEncoder(BaseEncoder):
             name = detect_separator(texts)
         return SEPARATORS[name]
 
-    def encode(self, inputs, params):
-        from sklearn.feature_extraction import DictVectorizer
-        from sklearn.feature_extraction.text import TfidfTransformer
-
-        texts = [item.text if item is not None else "" for item in inputs]
-        pattern = self.separator_pattern(texts)
+    def documents(self, texts: Sequence[str]) -> list[dict[str, float]]:
         documents = []
         for text in texts:
             tokens: dict[str, float] = {}
-            for raw in re.split(pattern, text):
+            for raw in re.split(self.pattern, text):
                 if not raw:
                     continue
                 token, weight = normalize_token(raw)
                 if token:
                     tokens[token] = max(tokens.get(token, 0.0), weight)
             documents.append(tokens)
+        return documents
+
+    def fit_transform(self, inputs, params):
+        from sklearn.feature_extraction import DictVectorizer
+        from sklearn.feature_extraction.text import TfidfTransformer
+
+        texts = [item.text if item is not None else "" for item in inputs]
+        self.pattern = self.separator_pattern(texts)
+        documents = self.documents(texts)
         if not any(documents):
-            self._matrix, self._names = None, []
+            self.vectorizer, self.tfidf, self.matrix, self.names = None, None, None, []
             return np.zeros((len(inputs), 1), dtype=np.float32)
-        vectorizer = DictVectorizer(dtype=np.float32)
-        self._matrix = TfidfTransformer().fit_transform(vectorizer.fit_transform(documents)).tocsr()
-        self._names = vectorizer.get_feature_names_out()
-        return self._matrix
+        self.vectorizer = DictVectorizer(dtype=np.float32)
+        self.tfidf = TfidfTransformer()
+        self.matrix = self.tfidf.fit_transform(self.vectorizer.fit_transform(documents)).tocsr()
+        self.names = self.vectorizer.get_feature_names_out()
+        return self.matrix
+
+    def transform(self, inputs):
+        if self.vectorizer is None:
+            return np.zeros((len(inputs), 1), dtype=np.float32)
+        texts = [item.text if item is not None else "" for item in inputs]
+        return self.tfidf.transform(self.vectorizer.transform(self.documents(texts))).tocsr()
 
     def describe(self, members, params):
-        return top_lift_terms(self._matrix, members, self._names, params.label_terms)
+        return top_lift_terms(self.matrix, members, self.names, params.label_terms)
 
 
 def _words(text: str) -> list[str]:
@@ -219,15 +265,22 @@ class TextEncoder(BaseEncoder):
     DISPLAY_NAME = "Text"
     DESCRIPTION = "Compares how similar the character sequences are. Works with any language or separator."
 
+    def __init__(self, options: dict[str, str] | None = None):
+        super().__init__(options)
+        self.texts: list[str] = []
+        self.vectorizer = None
+        self.words_matrix = None
+        self.word_names = []
+
     @classmethod
     def detect(cls, values):
         return 0.5 if any(value.text.strip() for value in values) else 0.0
 
-    def encode(self, inputs, params):
+    def fit_transform(self, inputs, params):
         from sklearn.feature_extraction.text import TfidfVectorizer
 
-        self._texts = [item.text if item is not None else "" for item in inputs]
-        self._words_matrix = None
+        self.texts = [item.text if item is not None else "" for item in inputs]
+        self.words_matrix = None
         vectorizer = TfidfVectorizer(
             analyzer="char_wb",
             ngram_range=(params.ngram_min, params.ngram_max),
@@ -236,31 +289,44 @@ class TextEncoder(BaseEncoder):
             dtype=np.float32,
         )
         try:
-            return vectorizer.fit_transform(self._texts).tocsr()
+            matrix = vectorizer.fit_transform(self.texts).tocsr()
         except ValueError as e:
             AppLogger.warning("[Mapping] Text key has no usable characters", exc=e)
+            self.vectorizer = None
             return np.zeros((len(inputs), 1), dtype=np.float32)
+        self.vectorizer = vectorizer
+        return matrix
+
+    def transform(self, inputs):
+        if self.vectorizer is None:
+            return np.zeros((len(inputs), 1), dtype=np.float32)
+        return self.vectorizer.transform([item.text if item is not None else "" for item in inputs]).tocsr()
 
     def describe(self, members, params):
         from scipy import sparse
         from sklearn.feature_extraction.text import CountVectorizer
 
-        if self._words_matrix is None:
+        if self.words_matrix is None:
             vectorizer = CountVectorizer(analyzer=_words, binary=True, dtype=np.float32)
             try:
-                self._words_matrix = vectorizer.fit_transform(self._texts).tocsr()
-                self._word_names = vectorizer.get_feature_names_out()
+                self.words_matrix = vectorizer.fit_transform(self.texts).tocsr()
+                self.word_names = vectorizer.get_feature_names_out()
             except ValueError as e:
                 AppLogger.warning("[Mapping] Text key has no words to label groups", exc=e)
-                self._words_matrix = sparse.csr_matrix((len(self._texts), 0), dtype=np.float32)
-                self._word_names = []
-        return top_lift_terms(self._words_matrix, members, self._word_names, params.label_terms)
+                self.words_matrix = sparse.csr_matrix((len(self.texts), 0), dtype=np.float32)
+                self.word_names = []
+        return top_lift_terms(self.words_matrix, members, self.word_names, params.label_terms)
 
 
 class CategoryEncoder(BaseEncoder):
     NAME = "category"
     DISPLAY_NAME = "Category"
     DESCRIPTION = "Only checks whether the values are exactly the same."
+
+    def __init__(self, options: dict[str, str] | None = None):
+        super().__init__(options)
+        self.values: list[str] = []
+        self.codes: dict[str, int] = {}
 
     @classmethod
     def detect(cls, values):
@@ -269,23 +335,24 @@ class CategoryEncoder(BaseEncoder):
             return 0.0
         return 0.7 if len(set(texts)) <= max(2, len(texts) * 0.2) else 0.0
 
-    def encode(self, inputs, params):
+    def fit_transform(self, inputs, params):
+        self.values = [item.text.strip() if item is not None else "" for item in inputs]
+        self.codes = {value: i for i, value in enumerate(sorted({v for v in self.values if v}))}
+        return self.transform(inputs)
+
+    def transform(self, inputs):
         from scipy import sparse
 
-        self._values = [item.text.strip() if item is not None else "" for item in inputs]
-        codes = {value: i for i, value in enumerate(sorted({v for v in self._values if v}))}
-        rows = [i for i, value in enumerate(self._values) if value]
-        columns = [codes[self._values[i]] for i in rows]
-        return sparse.csr_matrix((np.ones(len(rows), dtype=np.float32), (rows, columns)), shape=(len(inputs), max(len(codes), 1)))
+        values = [item.text.strip() if item is not None else "" for item in inputs]
+        rows = [i for i, value in enumerate(values) if value in self.codes]
+        columns = [self.codes[values[i]] for i in rows]
+        return sparse.csr_matrix((np.ones(len(rows), dtype=np.float32), (rows, columns)), shape=(len(inputs), max(len(self.codes), 1)))
 
     def describe(self, members, params):
-        counts = Counter(self._values[i] for i in members if self._values[i])
+        counts = Counter(self.values[i] for i in members if self.values[i])
         return [counts.most_common(1)[0][0]] if counts else []
 
 
-HIST_BINS = (4, 8, 8)
-HIST_RANGE = ((0.0, 100.0), (-80.0, 80.0), (-80.0, 80.0))
-LAB_SCALE = np.array([100.0, 128.0, 128.0], dtype=np.float32)
 BRIGHT_L, DARK_L = 65.0, 35.0
 COLOR_NAMES = (
     ("red", (53.0, 80.0, 67.0)),
@@ -316,67 +383,12 @@ def rgb_to_lab(rgb: np.ndarray) -> np.ndarray:
     return np.stack([116.0 * f[..., 1] - 16.0, 500.0 * (f[..., 0] - f[..., 1]), 200.0 * (f[..., 1] - f[..., 2])], axis=-1)
 
 
-def block_mean(image: np.ndarray, grid: int) -> np.ndarray:
-    height, width = image.shape[:2]
-    if height < grid or width < grid:
-        image = np.repeat(np.repeat(image, -(-grid // height), axis=0), -(-grid // width), axis=1)
-        height, width = image.shape[:2]
-    rows = np.linspace(0, height, grid + 1).astype(int)
-    columns = np.linspace(0, width, grid + 1).astype(int)
-    sums = np.add.reduceat(np.add.reduceat(image.astype(np.float64), rows[:-1], axis=0), columns[:-1], axis=1)
-    return sums / np.outer(np.diff(rows), np.diff(columns))[..., None]
+ENCODERS: dict[str, type[BaseEncoder]] = {cls.NAME: cls for cls in (NumericEncoder, TokenSetEncoder, TextEncoder, CategoryEncoder)}
 
 
-def lab_histogram(lab: np.ndarray) -> np.ndarray:
-    pixels = lab.reshape(-1, 3)
-    low = [r[0] for r in HIST_RANGE]
-    high = [r[1] - 1e-3 for r in HIST_RANGE]
-    histogram, _ = np.histogramdd(np.clip(pixels, low, high), bins=HIST_BINS, range=HIST_RANGE)
-    return np.sqrt(histogram.ravel() / max(len(pixels), 1))
-
-
-class ImageColorEncoder(BaseEncoder):
-    NAME = "image_color"
-    DISPLAY_NAME = "Image color & layout"
-    DESCRIPTION = "Compares the colors and rough layout of the images."
-    INPUT = "image"
-
-    def encode(self, inputs, params):
-        count, grid = len(inputs), params.image_grid
-        layout = np.zeros((count, grid * grid * 3), dtype=np.float32)
-        histogram = np.zeros((count, int(np.prod(HIST_BINS))), dtype=np.float32)
-        self._means = np.zeros((count, 3), dtype=np.float32)
-        for i, image in enumerate(inputs):
-            if image is None:
-                continue
-            lab = rgb_to_lab(image[..., :3])
-            layout[i] = (block_mean(lab, grid) / LAB_SCALE).ravel()
-            histogram[i] = lab_histogram(lab)
-            self._means[i] = lab.reshape(-1, 3).mean(axis=0)
-        present = self.present(inputs)
-        layout /= median_pair_distance(layout[present])
-        histogram /= median_pair_distance(histogram[present])
-        return np.hstack([layout * params.image_balance, histogram * (1.0 - params.image_balance)])
-
-    def describe(self, members, params):
-        if len(members) == 0:
-            return []
-        mean = self._means[members].mean(axis=0)
-        name = min(COLOR_NAMES, key=lambda item: float(np.sum((np.array(item[1]) - mean) ** 2)))[0]
-        terms = [t(name)]
-        if mean[0] >= BRIGHT_L:
-            terms.append(t("bright"))
-        elif mean[0] <= DARK_L:
-            terms.append(t("dark"))
-        return terms
-
-
-ENCODERS: dict[str, type[BaseEncoder]] = {cls.NAME: cls for cls in (NumericEncoder, TokenSetEncoder, TextEncoder, CategoryEncoder, ImageColorEncoder)}
-
-
-def value_encoders() -> list[type[BaseEncoder]]:
-    return [cls for cls in ENCODERS.values() if cls.INPUT == "value"]
+def auto_encoders() -> list[type[BaseEncoder]]:
+    return [cls for cls in ENCODERS.values() if cls.AUTO_DETECT]
 
 
 def detect_encoder(values: Sequence[PathValue]) -> str:
-    return max(value_encoders(), key=lambda cls: cls.detect(values)).NAME
+    return max(auto_encoders(), key=lambda cls: cls.detect(values)).NAME

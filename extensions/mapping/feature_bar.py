@@ -31,11 +31,11 @@ class FeatureChip(QtWidgets.QFrame):
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(dpix(6), dpix(2), dpix(2), dpix(2))
         layout.setSpacing(dpix(4))
-        layout.addWidget(QtWidgets.QLabel(spec.key if spec.key is not None else t(ENCODERS[spec.encoder].DISPLAY_NAME)))
+        layout.addWidget(QtWidgets.QLabel(spec.key))
         self.encoder_combo = QtWidgets.QComboBox()
-        input_kind = ENCODERS[spec.encoder].INPUT
+        key_group = ENCODERS[spec.encoder].KEY_GROUP
         for cls in ENCODERS.values():
-            if input_kind == cls.INPUT:
+            if key_group == cls.KEY_GROUP:
                 self.encoder_combo.addItem(t(cls.DISPLAY_NAME), cls.NAME)
                 self.encoder_combo.setItemData(self.encoder_combo.count() - 1, t(cls.DESCRIPTION), QtCore.Qt.ToolTipRole)
         self.encoder_combo.setCurrentIndex(self.encoder_combo.findData(spec.encoder))
@@ -139,11 +139,10 @@ class FeatureBar(QtWidgets.QWidget):
         for spec in features:
             self.insert_chip(spec)
 
-    def add_feature(self, key: str | None):
+    def add_feature(self, key: str):
         if any(chip.key == key for chip in self.feature_chips):
             return
-        encoder = "image_color" if key is None else self.detect(key)
-        self.insert_chip(FeatureSpec(key, encoder))
+        self.insert_chip(FeatureSpec(key, self.detect(key)))
         self.features_changed.emit()
 
     def insert_chip(self, spec: FeatureSpec):
@@ -168,11 +167,7 @@ class FeatureBar(QtWidgets.QWidget):
 
     def show_add_menu(self):
         used = {chip.key for chip in self.feature_chips}
-        items = [
-            ":" + t("Image"),
-            ActionKit.Action(path="inline.mapping.add_image", display=t(ENCODERS["image_color"].DISPLAY_NAME), translate=False, func=lambda ctx: self.add_feature(None)),
-            ":" + t("Keys"),
-        ]
+        items = [":" + t("Keys")]
         for key, count in [entry for entry in self.keys if entry[0] not in used][:MAX_MENU_KEYS]:
             items.append(ActionKit.Action(path=f"inline.mapping.add_key.{len(items)}", display=f"{key}  ({count})", translate=False, func=lambda ctx, k=key: self.add_feature(k)))
         pos = self.add_button.mapToGlobal(QtCore.QPoint(0, self.add_button.height()))

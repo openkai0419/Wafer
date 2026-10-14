@@ -1,3 +1,5 @@
+import pickle
+
 import numpy as np
 import pytest
 from scipy import sparse
@@ -20,13 +22,38 @@ def test_median_pair_distance_sparse_matches_dense():
     assert projection.median_pair_distance(sparse.csr_matrix(dense)) == pytest.approx(projection.median_pair_distance(dense))
 
 
-def test_reduce_block_sparse_svd_and_small_vocab():
+def test_block_reducer_sparse_svd_and_small_vocab():
     rng = np.random.default_rng(0)
     wide = sparse.random(40, 200, density=0.05, random_state=0, format="csr")
-    assert projection.reduce_block(wide, 10, 0).shape == (40, 10)
+    assert projection.BlockReducer(10, 0).fit_transform(wide).shape == (40, 10)
     narrow = sparse.csr_matrix(rng.random((40, 3)))
-    assert projection.reduce_block(narrow, 10, 0).shape == (40, 3)
-    assert projection.reduce_block(np.ones((4, 2)), 10, 0).dtype == np.float32
+    assert projection.BlockReducer(10, 0).fit_transform(narrow).shape == (40, 3)
+    assert projection.BlockReducer(10, 0).fit_transform(np.ones((4, 2))).dtype == np.float32
+
+
+def test_block_reducer_transform_matches_fit():
+    wide = sparse.random(40, 200, density=0.05, random_state=0, format="csr")
+    reducer = projection.BlockReducer(10, 0)
+    fitted = reducer.fit_transform(wide)
+    assert np.allclose(fitted, reducer.transform(wide), atol=1e-5)
+    assert reducer.transform(wide[:3]).shape == (3, 10)
+
+
+def test_block_reducer_transform_without_svd_and_dense():
+    rng = np.random.default_rng(0)
+    narrow = sparse.csr_matrix(rng.random((40, 3)))
+    reducer = projection.BlockReducer(10, 0)
+    assert np.allclose(reducer.fit_transform(narrow), reducer.transform(narrow))
+    dense = np.ones((4, 2))
+    dense_reducer = projection.BlockReducer(10, 0)
+    assert np.allclose(dense_reducer.fit_transform(dense), dense_reducer.transform(dense))
+
+
+def test_block_reducer_is_picklable():
+    wide = sparse.random(40, 200, density=0.05, random_state=0, format="csr")
+    reducer = projection.BlockReducer(10, 0)
+    fitted = reducer.fit_transform(wide)
+    assert np.allclose(pickle.loads(pickle.dumps(reducer)).transform(wide), fitted, atol=1e-5)
 
 
 def test_combine_blocks_scales_each_block_to_unit_median():
@@ -34,7 +61,7 @@ def test_combine_blocks_scales_each_block_to_unit_median():
     big = rng.random((50, 4)) * 1000
     small = rng.random((50, 2)) * 0.001
     present = np.ones(50, dtype=bool)
-    combined, stats = projection.combine_blocks([("big", big, present, 1.0), ("small", small, present, 1.0)], seed=0)
+    combined, stats, _scales = projection.combine_blocks([("big", big, present, 1.0), ("small", small, present, 1.0)], seed=0)
     assert projection.median_pair_distance(combined[:, :4]) == pytest.approx(1.0, rel=0.05)
     assert projection.median_pair_distance(combined[:, 4:]) == pytest.approx(1.0, rel=0.05)
     assert 0.2 < stats[0].contribution < 0.8
@@ -44,10 +71,29 @@ def test_combine_blocks_scales_each_block_to_unit_median():
 def test_combine_blocks_missing_rows_use_column_mean_and_all_missing_block():
     dense = np.array([[0.0], [2.0], [9.0]])
     present = np.array([True, True, False])
-    combined, stats = projection.combine_blocks([("a", dense, present, 1.0), ("b", np.zeros((3, 2)), np.zeros(3, dtype=bool), 1.0)], seed=0)
+    combined, stats, _scales = projection.combine_blocks([("a", dense, present, 1.0), ("b", np.zeros((3, 2)), np.zeros(3, dtype=bool), 1.0)], seed=0)
     assert combined[2, 0] == pytest.approx(combined[:2, 0].mean())
     assert stats[0].missing == 1 and stats[1].missing == 3
     assert np.isfinite(combined).all()
+
+
+def test_apply_block_scales_reproduces_combined_rows():
+    rng = np.random.default_rng(0)
+    dense = rng.random((30, 3))
+    present = np.ones(30, dtype=bool)
+    present[0] = False
+    combined, _stats, scales = projection.combine_blocks([("a", dense, present, 2.0)], seed=0)
+    again = projection.apply_block_scales([(dense, present)], scales)
+    assert np.allclose(combined, again)
+    assert len(scales) == 1 and scales[0].weight == 2.0
+
+
+def test_apply_block_scales_fills_new_missing_rows_with_fit_mean():
+    dense = np.array([[0.0], [2.0], [4.0]])
+    present = np.ones(3, dtype=bool)
+    _combined, _stats, scales = projection.combine_blocks([("a", dense, present, 1.0)], seed=0)
+    out = projection.apply_block_scales([(np.array([[9.0], [0.0]]), np.array([False, True]))], scales)
+    assert out[0, 0] == pytest.approx(scales[0].mean[0] / scales[0].scale)
 
 
 @pytest.mark.parametrize("count", [1, 2, 3, pytest.param(5, marks=pytest.mark.slow), pytest.param(8, marks=pytest.mark.slow)])

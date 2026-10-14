@@ -45,7 +45,6 @@ def mapping(qtbot, monkeypatch):
     values = {p: {"tags": PathValue("cat, sky" if i < 15 else "dog, sea")} for i, p in enumerate(paths)}
     monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps: {p: values[p] for p in ps if p in values})
     monkeypatch.setattr(widget_module, "fetch_sources", lambda db, ps: {p: p.replace(".png", ".zip") for p in ps})
-    monkeypatch.setattr(widget_module, "load_pixels", lambda path: None)
     w = MappingWidget()
     qtbot.addWidget(w)
     w.resize(900, 600)
@@ -261,14 +260,6 @@ def test_drop_without_files_is_ignored(mapping):
     assert event.accepted is False
 
 
-def test_load_pixels_failure_is_a_missing_value(monkeypatch):
-    def broken(path, size):
-        raise ValueError("bad image")
-
-    monkeypatch.setattr(widget_module, "load_thumbnail", broken)
-    assert widget_module.load_pixels("c:/broken.png") is None
-
-
 def test_thumbnail_cache_grows_to_hold_every_point(mapping, monkeypatch):
     monkeypatch.setattr(widget_module, "THUMB_CACHE", 5)
     mapping.show_result(mapping.current_result())
@@ -280,23 +271,6 @@ def test_thumbnail_cache_grows_to_hold_every_point(mapping, monkeypatch):
 
 def test_thumbnail_size_matches_map_view():
     assert widget_module.THUMB_SIZE == map_view_module.THUMB_SIZE
-
-
-def test_set_files_keeps_only_pixels_of_new_paths(mapping, qtbot):
-    old = mapping.pixels
-    mapping.pixels.update({"c:/0.png": None, "c:/1.png": None, "c:/gone.png": None})
-    mapping.set_files(["c:/0.png", "c:/1.png", "c:/2.png"], "db")
-    assert mapping.pixels is not old
-    assert set(mapping.pixels) == {"c:/0.png", "c:/1.png"}
-    assert "c:/gone.png" in old
-    qtbot.waitUntil(lambda: mapping.current_result() is not None and len(mapping.current_result().paths) == 3, timeout=5000)
-
-
-def test_add_files_keeps_existing_pixels(mapping, qtbot):
-    mapping.pixels.update({"c:/0.png": None, "c:/1.png": None})
-    mapping.add_files(["c:/new.png"], "db")
-    assert {"c:/0.png", "c:/1.png"} <= set(mapping.pixels)
-    qtbot.waitUntil(lambda: mapping.current_result() is not None and len(mapping.current_result().paths) == 31, timeout=5000)
 
 
 def test_computation_outranks_thumbnail_requests(mapping):

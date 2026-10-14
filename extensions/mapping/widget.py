@@ -24,15 +24,14 @@ from wafer.qt.common.thread import utility_pool
 from wafer.qt.theme import ThemeManager
 from wafer.qt.widgets.popup import PopupBase
 
-from .encoders import detect_encoder
+from .encoders import detect_encoder, value_input
 from .feature_bar import FeatureBar
 from .file_list import FileList
 from .map_view import THUMB_SIZE, MapView
 from .params import MapParams
-from .session import FeatureSpec, MapError, MapPipeline, MapRequest, MapResult, value_input
+from .session import FeatureSpec, MapError, MapPipeline, MapRequest, MapResult
 from .tuning import TuningPanel
 
-PIXEL_SIZE = 64
 COMPUTE_PRIORITY = 7
 THUMB_CACHE = 3000
 RECOMPUTE_DELAY_MS = 300
@@ -40,25 +39,7 @@ MIN_DRILL_FILES = 3
 ELLIPSIS = "\N{HORIZONTAL ELLIPSIS}"
 SEPARATOR = "\N{MIDDLE DOT}"
 CRUMB_ARROW = "\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}"
-STAGE_NAMES = {"images": "Loading images", "encode": "Encoding", "layout": "Laying out (the first run takes longer)", "cluster": "Grouping"}
-
-
-def qimage_to_rgb(image: QtGui.QImage) -> np.ndarray:
-    image = image.convertToFormat(QtGui.QImage.Format_RGB888)
-    width, height, stride = image.width(), image.height(), image.bytesPerLine()
-    data = np.frombuffer(image.constBits(), dtype=np.uint8, count=stride * height).reshape(height, stride)
-    return data[:, : width * 3].reshape(height, width, 3).copy()
-
-
-def load_pixels(path: str) -> np.ndarray | None:
-    try:
-        image = load_thumbnail(path, QtCore.QSize(PIXEL_SIZE, PIXEL_SIZE))
-    except Exception as e:
-        AppLogger.warning(f"[Mapping] Thumbnail failed: {path}", exc=e)
-        return None
-    if image is None or image.isNull():
-        return None
-    return qimage_to_rgb(image)
+STAGE_NAMES = {"encode": "Encoding", "layout": "Laying out (the first run takes longer)", "cluster": "Grouping"}
 
 
 def local_file_paths(mime: QtCore.QMimeData | None) -> list[str]:
@@ -98,7 +79,6 @@ class MappingWidget(QtWidgets.QWidget):
         self.sources: dict[str, str] = {}
         self.params = MapParams()
         self.grouping_enabled = True
-        self.pixels: dict[str, np.ndarray | None] = {}
         self.levels: list[MapLevel] = []
         self.shown: MapResult | None = None
         self.thumbs = ThumbnailLoader(self.on_thumbnail, size=THUMB_SIZE, cache_limit=THUMB_CACHE, dispatcher=self.dispatcher)
@@ -186,8 +166,6 @@ class MappingWidget(QtWidgets.QWidget):
         self.db_path = db_path
         self.paths = list(dict.fromkeys(paths))
         self.levels = []
-        keep = set(self.paths)
-        self.pixels = {path: pixels for path, pixels in self.pixels.items() if path in keep}
         self.stack.setCurrentWidget(self.page)
         self.fetch()
 
@@ -211,7 +189,7 @@ class MappingWidget(QtWidgets.QWidget):
             kept = [p for p in level.paths if p not in removed]
             if len(kept) != len(level.paths):
                 level.paths = kept
-                level.pipeline = MapPipeline(load_pixels, self.pixels)
+                level.pipeline = MapPipeline()
                 level.result = None
                 changed.append(level)
         self.update_crumbs()
@@ -221,7 +199,6 @@ class MappingWidget(QtWidgets.QWidget):
     def reset(self) -> None:
         cancel_work(self.fetch_cancel, self.compute_cancel, self.thumbs)
         self.paths, self.values, self.sources, self.levels, self.shown = [], {}, {}, [], None
-        self.pixels = {}
         self.thumbs.clear()
         self.map_view.clear_map()
         self.file_list.clear_rows()
@@ -252,7 +229,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.values, self.sources = values, sources
         counts = Counter(key for entry in values.values() for key, value in entry.items() if value_input(value) is not None)
         self.feature_bar.set_keys(counts.most_common())
-        self.levels = [MapLevel(list(self.paths), MapPipeline(load_pixels, self.pixels))]
+        self.levels = [MapLevel(list(self.paths), MapPipeline())]
         self.update_crumbs()
         self.recompute()
 
@@ -406,7 +383,7 @@ class MappingWidget(QtWidgets.QWidget):
         if len(paths) < MIN_DRILL_FILES:
             self.set_message(t("Select at least 3 files."))
             return
-        self.levels.append(MapLevel(paths, MapPipeline(load_pixels, self.pixels)))
+        self.levels.append(MapLevel(paths, MapPipeline()))
         self.update_crumbs()
         self.recompute()
 

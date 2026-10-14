@@ -31,10 +31,6 @@ class MapParams:
     ngram_max: int = param(
         4, stage="encode", label="Text: max characters", description="Compare text in chunks of at most this many characters. Higher is more sensitive to word differences.", minimum=1, maximum=8
     )
-    image_grid: int = param(
-        8, stage="encode", label="Image: grid size", description="Shrink images to this many cells per side before comparing. Higher looks at finer composition.", minimum=2, maximum=16
-    )
-    image_balance: float = param(0.5, stage="encode", label="Image: layout vs color", description="0 compares only overall color, 1 only where colors are placed.", minimum=0.0, maximum=1.0, step=0.05)
     svd_dims: int = param(
         50, stage="reduce", label="Text summary size", description="How many dimensions text is summarized into. Higher keeps finer differences but is slower.", minimum=2, maximum=300
     )

@@ -8,8 +8,8 @@ def test_add_feature_uses_detected_encoder_and_emits(qtbot):
     emitted = []
     bar.features_changed.connect(lambda: emitted.append(1))
     bar.add_feature("modified")
-    bar.add_feature(None)
-    assert bar.features() == [FeatureSpec("modified", "numeric"), FeatureSpec(None, "image_color")]
+    bar.add_feature("tags")
+    assert bar.features() == [FeatureSpec("modified", "numeric"), FeatureSpec("tags", "token_set")]
     assert len(emitted) == 2
 
 
@@ -53,20 +53,20 @@ def test_set_features_round_trips_without_emitting(qtbot):
     qtbot.addWidget(bar)
     emitted = []
     bar.features_changed.connect(lambda: emitted.append(1))
-    features = [FeatureSpec("tags", "token_set", 1.5, {"separator": "custom", "pattern": ","}), FeatureSpec(None, "image_color", 0.5)]
+    features = [FeatureSpec("tags", "token_set", 1.5, {"separator": "custom", "pattern": ","}), FeatureSpec("prompt", "text", 0.5)]
     bar.set_features(features)
     assert bar.features() == features
     bar.set_features([])
     assert bar.features() == [] and emitted == []
 
 
-def test_image_chip_encoder_choices_are_image_only(qtbot):
+def test_chip_encoder_choices_are_key_encoders(qtbot):
     bar = FeatureBar(lambda key: "token_set")
     qtbot.addWidget(bar)
-    bar.add_feature(None)
+    bar.add_feature("tags")
     combo = bar.chips()[0].encoder_combo
-    assert [combo.itemData(i) for i in range(combo.count())] == ["image_color"]
-    assert not combo.isEnabled()
+    assert [combo.itemData(i) for i in range(combo.count())] == ["numeric", "token_set", "text", "category"]
+    assert combo.isEnabled()
 
 
 def test_add_menu_lists_unused_keys_and_adds_on_pick(qtbot, monkeypatch):
@@ -93,10 +93,9 @@ def test_add_menu_lists_unused_keys_and_adds_on_pick(qtbot, monkeypatch):
     bar.add_button.click()
     items = shown[0]
     actions = [item for item in items if not isinstance(item, str)]
-    assert [action.display for action in actions] == ["Image color & layout", "tags  (7)"]
-    actions[1].func(None)
+    assert [action.display for action in actions] == ["tags  (7)"]
     actions[0].func(None)
-    assert [spec.key for spec in bar.features()] == ["prompt", "tags", None]
+    assert [spec.key for spec in bar.features()] == ["prompt", "tags"]
 
 
 def test_add_menu_builds_with_real_menu_session(qtbot):

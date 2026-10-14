@@ -42,7 +42,7 @@ def make_request(count=40, grouping=True, features=None, params=None):
 
 
 def pipeline():
-    return MapPipeline(lambda path: np.full((8, 8, 3), 128, dtype=np.uint8))
+    return MapPipeline()
 
 
 def test_run_produces_positions_groups_and_terms(embed_calls):
@@ -80,8 +80,8 @@ def test_weight_change_reruns_layout_but_not_encoding(embed_calls, monkeypatch):
     runner = pipeline()
     runner.run(make_request())
     encoded = []
-    original = session.ENCODERS["token_set"].encode
-    monkeypatch.setattr(session.ENCODERS["token_set"], "encode", lambda self, *a: encoded.append(1) or original(self, *a))
+    original = session.ENCODERS["token_set"].fit_transform
+    monkeypatch.setattr(session.ENCODERS["token_set"], "fit_transform", lambda self, *a: encoded.append(1) or original(self, *a))
     embed_calls.clear()
     runner.run(make_request(features=[FeatureSpec("tags", "token_set", weight=2.0)]))
     assert embed_calls and encoded == []
@@ -115,15 +115,6 @@ def test_three_files_work():
     assert np.isfinite(result.positions).all()
 
 
-def test_image_feature_uses_pixel_cache(embed_calls):
-    loads = []
-    runner = MapPipeline(lambda path: loads.append(path) or np.full((8, 8, 3), 100, dtype=np.uint8))
-    request = make_request(count=5, features=[FeatureSpec(None, "image_color")])
-    runner.run(request)
-    runner.run(make_request(count=5, features=[FeatureSpec(None, "image_color")], params=MapParams(image_grid=4)))
-    assert len(loads) == 5
-
-
 def test_cancelled_returns_none():
     assert pipeline().run(make_request(), cancelled=lambda: True) is None
 
@@ -134,6 +125,7 @@ def test_feature_spec_roundtrip_and_validation():
     assert FeatureSpec.from_dict({"key": "x", "encoder": "nope"}) is None
     assert FeatureSpec.from_dict({"key": "x", "encoder": "image_color"}) is None
     assert FeatureSpec.from_dict({"key": None, "encoder": "text"}) is None
+    assert FeatureSpec.from_dict({"encoder": "text"}) is None
 
 
 @pytest.mark.parametrize("weight, expected", [(float("inf"), 1.0), (float("nan"), 1.0), (10**400, 1.0), (99, 3.0), (-2, 0.0), ("x", 1.0)])
@@ -152,16 +144,16 @@ def test_feature_spec_ignores_non_dict_options_and_data():
 
 def test_cancelled_before_start_encodes_nothing(monkeypatch):
     calls = []
-    original = ENCODERS["token_set"].encode
-    monkeypatch.setattr(ENCODERS["token_set"], "encode", lambda self, inputs, params: calls.append(1) or original(self, inputs, params))
+    original = ENCODERS["token_set"].fit_transform
+    monkeypatch.setattr(ENCODERS["token_set"], "fit_transform", lambda self, inputs, params: calls.append(1) or original(self, inputs, params))
     assert pipeline().run(make_request(), cancelled=lambda: True) is None
     assert calls == []
 
 
 def test_cancel_between_features_skips_remaining_encodes(monkeypatch):
     calls = []
-    original = ENCODERS["token_set"].encode
-    monkeypatch.setattr(ENCODERS["token_set"], "encode", lambda self, inputs, params: calls.append(1) or original(self, inputs, params))
+    original = ENCODERS["token_set"].fit_transform
+    monkeypatch.setattr(ENCODERS["token_set"], "fit_transform", lambda self, inputs, params: calls.append(1) or original(self, inputs, params))
     features = [FeatureSpec("tags", "token_set"), FeatureSpec("tags", "token_set", options={"separator": "comma"})]
     assert pipeline().run(make_request(features=features), cancelled=lambda: len(calls) >= 1) is None
     assert calls == [1]

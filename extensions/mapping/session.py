@@ -15,11 +15,8 @@ from wafer.core.db.path_values import PathValue
 from wafer.core.logs import AppLogger
 
 from . import projection
-from .encoders import ENCODERS, BaseEncoder
+from .encoders import ENCODERS, BaseEncoder, feature_input
 from .params import MapParams
-
-PixelLoader = Callable[[str], "np.ndarray | None"]
-IMAGE_PROGRESS_STEP = 50
 
 
 class MapError(Exception):
@@ -28,7 +25,7 @@ class MapError(Exception):
 
 @dataclass
 class FeatureSpec:
-    key: str | None
+    key: str
     encoder: str
     weight: float = 1.0
     options: dict[str, str] = field(default_factory=dict)
@@ -38,7 +35,7 @@ class FeatureSpec:
         return json.dumps([self.key, self.encoder, sorted(self.options.items())])
 
     def label(self) -> str:
-        return self.key if self.key is not None else ENCODERS[self.encoder].DISPLAY_NAME
+        return self.key
 
     def to_dict(self) -> dict[str, Any]:
         return {"key": self.key, "encoder": self.encoder, "weight": self.weight, "options": dict(self.options)}
@@ -49,7 +46,7 @@ class FeatureSpec:
             return None
         encoder = ENCODERS.get(str(data.get("encoder")))
         key = data.get("key")
-        if encoder is None or (encoder.INPUT == "image") != (key is None):
+        if encoder is None or key is None:
             return None
         try:
             weight = float(data.get("weight", 1.0))
@@ -61,7 +58,7 @@ class FeatureSpec:
             AppLogger.warning(f"[Mapping] Ignored invalid saved options {raw_options!r}")
             raw_options = {}
         options = {str(k): str(v) for k, v in raw_options.items()}
-        return cls(None if key is None else str(key), encoder.NAME, weight, options)
+        return cls(str(key), encoder.NAME, weight, options)
 
 
 @dataclass
@@ -112,16 +109,8 @@ class _Block:
     reduced_key: tuple | None = None
 
 
-def value_input(value: PathValue | None) -> PathValue | None:
-    if value is None or (not value.text.strip() and value.number is None):
-        return None
-    return value
-
-
 class MapPipeline:
-    def __init__(self, load_pixels: PixelLoader, pixel_cache: dict[str, np.ndarray | None] | None = None):
-        self._load_pixels = load_pixels
-        self._pixels = pixel_cache if pixel_cache is not None else {}
+    def __init__(self):
         self._lock = threading.Lock()
         self._blocks: dict[str, _Block] = {}
         self._encode_key: tuple | None = None
@@ -154,7 +143,7 @@ class MapPipeline:
             for block in blocks:
                 key = params.values_for("reduce") + (params.seed,)
                 if block.reduced_key != key:
-                    block.reduced = projection.reduce_block(block.raw, params.svd_dims, params.seed)
+                    block.reduced = projection.BlockReducer(params.svd_dims, params.seed).fit_transform(block.raw)
                     block.reduced_key = key
         if cancelled():
             return None
@@ -173,7 +162,7 @@ class MapPipeline:
         if layout_key != self._layout_key:
             progress("layout", 0.0)
             with timed(diagnostics, "layout"):
-                self._combined, self._stats = projection.combine_blocks([(b.feature.label(), b.reduced[active], b.present[active], b.feature.weight) for b in blocks], params.seed)
+                self._combined, self._stats, _scales = projection.combine_blocks([(b.feature.label(), b.reduced[active], b.present[active], b.feature.weight) for b in blocks], params.seed)
                 self._points = projection.embed(self._combined, 2, params.n_neighbors, params.min_dist, params.seed)
             self._active, self._layout_key = active, layout_key
             self._cluster_space, self._cluster_key, self._labels = None, None, None
@@ -213,31 +202,17 @@ class MapPipeline:
             if feature.cache_key in self._blocks:
                 continue
             encoder = ENCODERS[feature.encoder](feature.options)
-            inputs = self._inputs(feature, encoder, request, cancelled, progress, diagnostics)
-            if inputs is None:
-                return None
+            inputs = self.inputs(feature, request)
             progress("encode", 0.0)
             with timed(diagnostics, "encode"):
-                raw = encoder.encode(inputs, params)
+                raw = encoder.fit_transform(inputs, params)
             self._blocks[feature.cache_key] = _Block(feature, encoder, raw, encoder.present(inputs))
         for feature in request.features:
             self._blocks[feature.cache_key].feature = feature
         return [self._blocks[feature.cache_key] for feature in request.features]
 
-    def _inputs(self, feature, encoder, request, cancelled, progress, diagnostics) -> list | None:
-        if encoder.INPUT != "image":
-            return [value_input(request.values.get(path, {}).get(feature.key)) for path in request.paths]
-        images = []
-        with timed(diagnostics, "images"):
-            for i, path in enumerate(request.paths):
-                if cancelled():
-                    return None
-                if path not in self._pixels:
-                    self._pixels[path] = self._load_pixels(path)
-                images.append(self._pixels[path])
-                if i % IMAGE_PROGRESS_STEP == 0:
-                    progress("images", i / len(request.paths))
-        return images
+    def inputs(self, feature, request) -> list:
+        return [feature_input(request.values.get(path, {}), feature.key, ENCODERS[feature.encoder]) for path in request.paths]
 
     def _group(self, params, layout_key, count, progress, diagnostics) -> np.ndarray:
         if self._cluster_space is None:

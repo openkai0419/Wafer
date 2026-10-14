@@ -67,17 +67,17 @@ def test_save_load_roundtrip_and_old_versions_removed(tmp_path):
     second = SpaceModel.fit(preset(2), tag_values())
     second.save(tmp_path)
     assert not list(tmp_path.glob("model-v1.*"))
-    loaded = SpaceModel.load(tmp_path, 2)
+    loaded = SpaceModel.load(tmp_path, preset(2))
     assert loaded.train_paths == second.train_paths
     assert np.allclose(loaded.place([{"tags": PathValue("cat, sky")}]), second.place([{"tags": PathValue("cat, sky")}]))
-    assert SpaceModel.load(tmp_path, 9) is None
+    assert SpaceModel.load(tmp_path, preset(9)) is None
 
 
 def test_corrupt_model_raises_load_error(tmp_path):
     SpaceModel.fit(preset(1), tag_values()).save(tmp_path)
     (tmp_path / "model-v1.pkl").write_bytes(b"not a pickle")
     with pytest.raises(SpaceLoadError):
-        SpaceModel.load(tmp_path, 1)
+        SpaceModel.load(tmp_path, preset(1))
 
 
 def test_status_roundtrip(tmp_path):
@@ -98,7 +98,7 @@ def test_saved_model_drops_training_texts_and_still_places(tmp_path):
     tag_encoder, text_encoder = state["encoders"]
     assert tag_encoder.matrix is None and tag_encoder.names == []
     assert text_encoder.texts == []
-    loaded = SpaceModel.load(tmp_path, 1)
+    loaded = SpaceModel.load(tmp_path, features)
     after = loaded.place([{"tags": PathValue("cat, sky"), "prompt": PathValue("a long prompt number 3")}])
     assert np.allclose(before, after)
 
@@ -153,7 +153,7 @@ def test_save_survives_undeletable_stale_file(tmp_path, monkeypatch):
 
     monkeypatch.setattr(type(tmp_path), "unlink", deny)
     SpaceModel.fit(preset(2), tag_values()).save(tmp_path)
-    assert SpaceModel.load(tmp_path, 2) is not None
+    assert SpaceModel.load(tmp_path, preset(2)) is not None
 
 
 def test_npz_stores_paths_compactly(tmp_path):
@@ -164,7 +164,7 @@ def test_npz_stores_paths_compactly(tmp_path):
     model.save(tmp_path)
     raw = len("\n".join(model.train_paths).encode("utf-8")) + model.matrix.nbytes + model.coords.nbytes
     assert (tmp_path / "model-v1.npz").stat().st_size < raw + 2048
-    assert SpaceModel.load(tmp_path, 1).train_paths == model.train_paths
+    assert SpaceModel.load(tmp_path, preset(1)).train_paths == model.train_paths
 
 
 def test_mismatched_model_raises_load_error(tmp_path):
@@ -176,7 +176,7 @@ def test_mismatched_model_raises_load_error(tmp_path):
     state["encoders"] = state["encoders"][:1]
     pkl.write_bytes(pickle.dumps(state))
     with pytest.raises(SpaceLoadError):
-        SpaceModel.load(tmp_path, 1)
+        SpaceModel.load(tmp_path, preset(1))
 
     SpaceModel.fit(preset(2), tag_values()).save(tmp_path)
     path = tmp_path / "model-v2.npz"
@@ -185,4 +185,13 @@ def test_mismatched_model_raises_load_error(tmp_path):
     data["coords"] = data["coords"][:-1]
     np.savez(path, **data)
     with pytest.raises(SpaceLoadError):
-        SpaceModel.load(tmp_path, 2)
+        SpaceModel.load(tmp_path, preset(2))
+
+
+def test_load_ignores_a_model_built_from_another_preset(tmp_path):
+    SpaceModel.fit(preset(1), tag_values()).save(tmp_path)
+    other = Preset([FeatureSpec("tags", "text")], MapParams(), 1)
+    assert SpaceModel.load(tmp_path, other) is None
+    retuned = Preset(preset(1).features, MapParams(n_neighbors=30), 1)
+    assert SpaceModel.load(tmp_path, retuned) is None
+    assert SpaceModel.load(tmp_path, preset(1)) is not None

@@ -69,13 +69,13 @@ class MappingParser(BaseParserPlugin):
         return ParserResult(source=path, status=True, meta_info={"x": repr(point[0]), "y": repr(point[1]), "model": str(model.version)})
 
     def ensure_model(self, preset: Preset) -> SpaceModel | None:
-        if self.model is not None and self.model.version == preset.version:
+        if self.model is not None and self.model.preset.to_dict() == preset.to_dict():
             return self.model
         if self.blocked is not None and self.blocked[0] == preset.version:
             return None
         directory = model_dir(self.db_name)
         try:
-            self.model = SpaceModel.load(directory, preset.version)
+            self.model = SpaceModel.load(directory, preset)
         except SpaceLoadError as e:
             AppLogger.warning(f"[Mapping] Cannot read the space model for {self.db_name}; retrain from Mapping Space", exc=e)
             write_status(directory, SpaceStatus("unreadable", preset.version, error=str(e)))

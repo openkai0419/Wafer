@@ -204,18 +204,21 @@ class SpaceModel:
                 AppLogger.warning(f"[Mapping] Could not remove old model file {stale}", exc=e)
 
     @classmethod
-    def load(cls, directory: Path, version: int) -> SpaceModel | None:
-        stem = directory / f"model-v{version}"
+    def load(cls, directory: Path, current: Preset) -> SpaceModel | None:
+        stem = directory / f"model-v{current.version}"
         if not stem.with_suffix(".pkl").exists() or not stem.with_suffix(".npz").exists():
             return None
         try:
             state = pickle.loads(stem.with_suffix(".pkl").read_bytes())
-            with np.load(stem.with_suffix(".npz")) as arrays:
-                train_paths = decode_paths(arrays["train_paths"])
-                matrix, coords = arrays["matrix"], arrays["coords"]
             preset = Preset.from_dict(state["preset"])
             if preset is None:
                 raise ValueError("invalid preset in model")
+            if preset.to_dict() != current.to_dict():
+                AppLogger.info(f"[Mapping] The saved space model v{current.version} in {directory} was built from other settings; it will be retrained")
+                return None
+            with np.load(stem.with_suffix(".npz")) as arrays:
+                train_paths = decode_paths(arrays["train_paths"])
+                matrix, coords = arrays["matrix"], arrays["coords"]
             encoders, reducers, scales = state["encoders"], state["reducers"], state["scales"]
             if not len(train_paths) == len(matrix) == len(coords):
                 raise ValueError("model arrays have different row counts")

@@ -198,3 +198,28 @@ def test_failed_read_keeps_coordinates(env, monkeypatch):
 def test_default_enabled_loads_class_but_not_per_database():
     assert MappingParser.DEFAULT_ENABLED is True
     assert MappingParser.DEFAULT_ENABLED_PER_DB is False
+
+
+def test_model_of_another_preset_with_the_same_version_is_retrained(env, monkeypatch):
+    plugin, _db, _tmp = env
+    run(plugin, "c:/0.png")
+    recreated = Preset([FeatureSpec("wd14.tags", "text")], MapParams(), 1)
+    save_preset("map", recreated)
+    calls = []
+    original = space.SpaceModel.fit
+    monkeypatch.setattr(space.SpaceModel, "fit", classmethod(lambda cls, *a, **k: calls.append(1) or original.__func__(cls, *a, **k)))
+    fresh = MappingParser()
+    fresh.db_name = "map"
+    assert run(fresh, "c:/0.png").meta_info["model"] == "1"
+    assert calls == [1]
+    assert fresh.model.preset.to_dict() == recreated.to_dict()
+    fresh.shutdown()
+
+
+def test_loaded_model_is_dropped_when_the_preset_changes_without_a_new_version(env, monkeypatch):
+    plugin, _db, _tmp = env
+    run(plugin, "c:/0.png")
+    save_preset("map", Preset([FeatureSpec("wd14.tags", "text")], MapParams(), 1))
+    monkeypatch.setattr(parser_module, "PRESET_TTL", 0.0)
+    run(plugin, "c:/0.png")
+    assert plugin.model.preset.features[0].encoder == "text"

@@ -41,3 +41,15 @@ def test_diagnostics_text(qtbot):
     assert "layout" in text and "tags" in text and "60%" in text
     panel.set_diagnostics(None)
     assert panel.diagnostics_label.text() == ""
+
+
+def test_stages_limit_the_form_but_not_the_params(qtbot):
+    panel = TuningPanel(stages=("layout",))
+    qtbot.addWidget(panel)
+    layout_names = {name for name, spec, _default in param_specs() if spec.stage == "layout"}
+    assert set(panel.controls) == layout_names
+    assert panel.params() == MapParams()
+    panel.controls["seed"].setValue(7)
+    assert panel.params() == MapParams(seed=7)
+    panel.set_params(MapParams(seed=3, svd_dims=80))
+    assert panel.controls["seed"].value() == 3 and panel.params().svd_dims == 80

@@ -54,6 +54,14 @@ def group_color(group: int) -> QtGui.QColor:
     return QtGui.QColor.fromHsvF((group * 0.618034) % 1.0, 0.55, 0.92)
 
 
+def result_colors(result: MapResult, palette) -> list[QtGui.QColor]:
+    neutral = QtGui.QColor(palette.text_secondary)
+    if result.labels is None:
+        return [neutral] * len(result.paths)
+    noise = QtGui.QColor(palette.text_muted)
+    return [group_color(int(label)) if label >= 0 else noise for label in result.labels]
+
+
 def cancel_work(fetch_cancel: CancelSlot, compute_cancel: CancelSlot) -> None:
     fetch_cancel.cancel()
     compute_cancel.cancel()
@@ -414,11 +422,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.set_message(f" {SEPARATOR} ".join(parts))
 
     def colors_for(self, result: MapResult) -> list[QtGui.QColor]:
-        neutral = QtGui.QColor(self.palette_colors.text_secondary)
-        if result.labels is None:
-            return [neutral] * len(result.paths)
-        noise = QtGui.QColor(self.palette_colors.text_muted)
-        return [group_color(int(label)) if label >= 0 else noise for label in result.labels]
+        return result_colors(result, self.palette_colors)
 
     def set_message(self, text: str):
         self.message.setText(text)

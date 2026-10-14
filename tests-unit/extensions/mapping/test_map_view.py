@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from PySide6 import QtCore, QtGui
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from extensions.mapping.map_view import MapView
 from extensions.mapping.session import MapDiagnostics, MapResult
@@ -9,6 +9,7 @@ from extensions.mapping.session import MapDiagnostics, MapResult
 class Owner:
     def __init__(self):
         self.requested = []
+        self.hovers = []
 
     def thumbnail(self, path):
         self.requested.append(path)
@@ -22,6 +23,12 @@ class Owner:
 
     def handle_drop(self, event):
         event.ignore()
+
+    def show_hover(self, path, global_pos):
+        self.hovers.append(path)
+
+    def hide_hover(self):
+        self.hovers.append(None)
 
 
 def result(count=6, labels=True, outlier_rows=()):
@@ -145,7 +152,7 @@ def test_ctrl_click_toggles_a_point(view, qtbot):
 def test_clicking_a_group_label_selects_the_group(view, qtbot):
     view.show_result(result(), colors(6), show_groups=True, keep_view=False)
     label = view.label_items()[1]
-    qtbot.mouseClick(view.viewport(), QtCore.Qt.LeftButton, pos=view.mapFromScene(label.pos()))
+    qtbot.mouseClick(view.viewport(), QtCore.Qt.LeftButton, pos=view.mapFromScene(label.pos()) + QtCore.QPoint(0, int(label.offset())))
     assert view.selected_rows() == [3, 4]
 
 
@@ -166,3 +173,95 @@ def test_outlier_is_drawn_with_a_ring_even_when_unselected(view, thumbnail_zoom)
     plain = render_point(view, 1)
     view.show_result(result(outlier_rows=[1]), colors(6), show_groups=False, keep_view=True)
     assert render_point(view, 1) != plain
+
+
+def test_image_scale_changes_extent_and_clamps(view):
+    view.show_result(result(), colors(6), show_groups=False, keep_view=False)
+    base = view.item_extent()
+    view.set_image_scale(2.0)
+    assert view.item_extent() == pytest.approx(base * 2)
+    view.set_image_scale(99)
+    assert view.image_scale == 4.0
+    view.set_image_scale(0)
+    assert view.image_scale == 0.5
+
+
+def test_ctrl_wheel_does_not_zoom_map(view):
+    view.show_result(result(), colors(6), show_groups=False, keep_view=False)
+    before = view.transform().m11()
+    position = QtCore.QPointF(10, 10)
+    event = QtGui.QWheelEvent(position, position, QtCore.QPoint(), QtCore.QPoint(0, 120), QtCore.Qt.NoButton, QtCore.Qt.ControlModifier, QtCore.Qt.NoScrollPhase, False)
+    view.wheelEvent(event)
+    assert view.transform().m11() == before
+
+
+def test_plain_wheel_zooms_map(view):
+    view.show_result(result(), colors(6), show_groups=False, keep_view=False)
+    before = view.transform().m11()
+    position = QtCore.QPointF(10, 10)
+    event = QtGui.QWheelEvent(position, position, QtCore.QPoint(), QtCore.QPoint(0, 120), QtCore.Qt.NoButton, QtCore.Qt.NoModifier, QtCore.Qt.NoScrollPhase, False)
+    view.wheelEvent(event)
+    assert view.transform().m11() > before
+
+
+def test_group_mode_expands_click_and_rows(view, qtbot):
+    view.show_result(result(), colors(6), show_groups=True, keep_view=False)
+    view.set_selection_mode("group")
+    qtbot.mouseClick(view.viewport(), QtCore.Qt.LeftButton, pos=point_pos(view, 0))
+    assert view.selected_rows() == [0, 1, 2]
+    assert view.expand_to_groups([3, 5]) == [3, 4, 5]
+
+
+def test_group_mode_ctrl_click_toggles_whole_group(view, qtbot):
+    view.show_result(result(), colors(6), show_groups=True, keep_view=False)
+    view.set_selection_mode("group")
+    view.select_rows([0, 1, 2])
+    ctrl = QtCore.Qt.ControlModifier
+    qtbot.mouseClick(view.viewport(), QtCore.Qt.LeftButton, ctrl, point_pos(view, 3))
+    assert view.selected_rows() == [0, 1, 2, 3, 4]
+    qtbot.mouseClick(view.viewport(), QtCore.Qt.LeftButton, ctrl, point_pos(view, 1))
+    assert view.selected_rows() == [3, 4]
+
+
+def test_single_mode_click_does_not_expand(view, qtbot):
+    view.show_result(result(), colors(6), show_groups=True, keep_view=False)
+    qtbot.mouseClick(view.viewport(), QtCore.Qt.LeftButton, pos=point_pos(view, 0))
+    assert view.selected_rows() == [0]
+
+
+def hover_at(view, position):
+    viewport = view.viewport()
+    event = QtGui.QMouseEvent(
+        QtCore.QEvent.MouseMove,
+        QtCore.QPointF(position),
+        QtCore.QPointF(viewport.mapToGlobal(position)),
+        QtCore.Qt.NoButton,
+        QtCore.Qt.NoButton,
+        QtCore.Qt.NoModifier,
+    )
+    QtWidgets.QApplication.sendEvent(viewport, event)
+
+
+def test_hover_reports_point_under_cursor(view):
+    view.show_result(result(), colors(6), show_groups=False, keep_view=False)
+    hover_at(view, point_pos(view, 1))
+    assert view.owner.hovers[-1] == "c:/1.png"
+    hover_at(view, QtCore.QPoint(1, 1))
+    assert view.owner.hovers[-1] is None
+
+
+def test_press_hides_hover(view, qtbot):
+    view.show_result(result(), colors(6), show_groups=False, keep_view=False)
+    hover_at(view, point_pos(view, 1))
+    assert view.owner.hovers[-1] == "c:/1.png"
+    qtbot.mousePress(view.viewport(), QtCore.Qt.LeftButton, pos=point_pos(view, 1))
+    assert view.owner.hovers[-1] is None
+    qtbot.mouseRelease(view.viewport(), QtCore.Qt.LeftButton, pos=point_pos(view, 1))
+
+
+def test_labels_sit_below_lowest_member(view):
+    view.show_result(result(), colors(6), show_groups=True, keep_view=False)
+    label = view.label_items()[0]
+    lowest = max(point_pos(view, row).y() for row in (0, 1, 2))
+    label_top = view.mapFromScene(label.scenePos()).y() + label.boundingRect().top()
+    assert label_top > lowest + view.item_extent() / 2

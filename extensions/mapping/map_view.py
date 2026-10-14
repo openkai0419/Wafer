@@ -20,6 +20,9 @@ UNSET_PER_ROW = 50
 POINT_SIZE = 8
 THUMB_SIZE = 64
 ZOOM_STEP = 1.25
+MIN_IMAGE_SCALE = 0.5
+MAX_IMAGE_SCALE = 4.0
+LABEL_GAP = 4
 
 
 class MapPointItem(QtWidgets.QGraphicsItem):
@@ -39,12 +42,13 @@ class MapPointItem(QtWidgets.QGraphicsItem):
 
 
 class GroupLabelItem(QtWidgets.QGraphicsItem):
-    def __init__(self, view: MapView, group: int, text: str):
+    def __init__(self, view: MapView, group: int, text: str, anchor: QtCore.QPointF):
         super().__init__()
         self.view = view
         self.group = group
         self.text = text
         self.setFlag(QtWidgets.QGraphicsItem.ItemIgnoresTransformations)
+        self.setPos(anchor)
         self.setZValue(10)
         metrics = QtGui.QFontMetrics(view.font())
         pad = dpix(4)
@@ -52,16 +56,23 @@ class GroupLabelItem(QtWidgets.QGraphicsItem):
         height = metrics.height() + pad
         self.rect = QtCore.QRectF(-width / 2, -height / 2, width, height)
 
+    def offset(self) -> float:
+        return self.view.item_extent() / 2 + dpix(LABEL_GAP) + self.rect.height() / 2
+
+    def placed_rect(self) -> QtCore.QRectF:
+        return self.rect.translated(0, self.offset())
+
     def boundingRect(self) -> QtCore.QRectF:
-        return self.rect
+        return self.placed_rect()
 
     def paint(self, painter, option, widget=None):
         palette = ThemeManager.instance().palette
+        rect = self.placed_rect()
         painter.setPen(QtGui.QPen(QtGui.QColor(palette.border_default)))
         painter.setBrush(QtGui.QColor(palette.bg_elevated))
-        painter.drawRoundedRect(self.rect, dpix(4), dpix(4))
+        painter.drawRoundedRect(rect, dpix(4), dpix(4))
         painter.setPen(QtGui.QColor(palette.text_primary))
-        painter.drawText(self.rect, Qt.AlignCenter, self.text)
+        painter.drawText(rect, Qt.AlignCenter, self.text)
 
     def mousePressEvent(self, event):
         if event.button() != Qt.LeftButton:
@@ -94,10 +105,14 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.fit_scale = 1.0
         self.thumbnail_zoom = 2.0
         self.thumbnails = False
+        self.image_scale = 1.0
+        self.selection_mode = "single"
+        self.hover_path: str | None = None
         self.syncing = False
         self.pan_origin: QtCore.QPoint | None = None
         self.press_pos: QtCore.QPoint | None = None
         self.press_rows: list[int] = []
+        self.viewport().setMouseTracking(True)
         self.scene().selectionChanged.connect(self.on_scene_selection)
 
     @property
@@ -111,7 +126,33 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         return list(self.labels)
 
     def item_extent(self) -> float:
-        return dpix(THUMB_SIZE) if self.thumbnails else dpix(POINT_SIZE + 4)
+        return (dpix(THUMB_SIZE) if self.thumbnails else dpix(POINT_SIZE + 4)) * self.image_scale
+
+    def display_size(self) -> float:
+        return dpix(THUMB_SIZE) * self.image_scale
+
+    def set_image_scale(self, scale: float):
+        scale = min(max(float(scale), MIN_IMAGE_SCALE), MAX_IMAGE_SCALE)
+        if scale == self.image_scale:
+            return
+        self.begin_geometry_change()
+        self.image_scale = scale
+        self.viewport().update()
+
+    def begin_geometry_change(self):
+        for item in (*self.items_by_row, *self.labels):
+            item.prepareGeometryChange()
+
+    def set_selection_mode(self, mode: str):
+        self.selection_mode = "group" if mode == "group" else "single"
+
+    def expand_to_groups(self, rows: Iterable[int]) -> list[int]:
+        wanted = set(rows)
+        if not wanted or not (self.group_of >= 0).any():
+            return sorted(wanted)
+        groups = {int(self.group_of[row]) for row in wanted if row < self.group_of.size} - {-1}
+        members = np.flatnonzero(np.isin(self.group_of, list(groups)))
+        return sorted(wanted | set(members.tolist()))
 
     def clear_map(self):
         self.syncing = True
@@ -145,9 +186,12 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 members = np.flatnonzero(self.group_of == group)
                 if not words or members.size == 0:
                     continue
-                label = GroupLabelItem(self, group, ", ".join(words))
-                center = np.median(result.positions[members], axis=0)
-                label.setPos(float(center[0]) * SCENE_SIZE, float(center[1]) * SCENE_SIZE)
+                coords = result.positions[members]
+                coords = coords[~np.isnan(coords).any(axis=1)]
+                if coords.size == 0:
+                    continue
+                anchor = QtCore.QPointF(float(np.median(coords[:, 0])) * SCENE_SIZE, float(np.max(coords[:, 1])) * SCENE_SIZE)
+                label = GroupLabelItem(self, group, ", ".join(words), anchor)
                 scene.addItem(label)
                 self.labels.append(label)
         rect = scene.itemsBoundingRect()
@@ -166,8 +210,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         enabled = self.zoom >= self.thumbnail_zoom
         if enabled == self.thumbnails:
             return
-        for item in self.items_by_row:
-            item.prepareGeometryChange()
+        self.begin_geometry_change()
         self.thumbnails = enabled
         self.viewport().update()
 
@@ -183,7 +226,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             painter.drawPixmap(target.toRect(), scaled)
             frame = target
         else:
-            size = dpix(POINT_SIZE)
+            size = dpix(POINT_SIZE) * self.image_scale
             frame = QtCore.QRectF(-size / 2, -size / 2, size, size)
             painter.setPen(Qt.NoPen)
             painter.setBrush(color)
@@ -235,6 +278,10 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         return self.owner.context_for_selection()
 
     def wheelEvent(self, event: QtGui.QWheelEvent):
+        self.owner.hide_hover()
+        if event.modifiers() & Qt.ControlModifier:
+            event.accept()
+            return
         steps = event.angleDelta().y() / 120
         if steps:
             factor = ZOOM_STEP**steps
@@ -242,7 +289,14 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self.sync_thumbnail_mode()
         event.accept()
 
+    def leaveEvent(self, event):
+        self.hover_path = None
+        self.owner.hide_hover()
+        super().leaveEvent(event)
+
     def mousePressEvent(self, event: QtGui.QMouseEvent):
+        self.hover_path = None
+        self.owner.hide_hover()
         if event.button() == Qt.MiddleButton:
             self.pan_origin = event.position().toPoint()
             self.viewport().setCursor(Qt.ClosedHandCursor)
@@ -280,7 +334,19 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
             event.accept()
             return
+        if event.buttons() == Qt.NoButton:
+            self.report_hover(event.position().toPoint())
         super().mouseMoveEvent(event)
+
+    def report_hover(self, position: QtCore.QPoint):
+        item = self.itemAt(position)
+        if isinstance(item, MapPointItem):
+            path = self.paths[item.row]
+            self.hover_path = path
+            self.owner.show_hover(path, self.viewport().mapToGlobal(position))
+        elif self.hover_path is not None:
+            self.hover_path = None
+            self.owner.hide_hover()
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
         if event.button() == Qt.MiddleButton and self.pan_origin is not None:
@@ -295,6 +361,8 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         position = event.position().toPoint()
         if (position - press_pos).manhattanLength() < QtWidgets.QApplication.startDragDistance():
             self.apply_click(position, event.modifiers())
+        if self.selection_mode == "group" and (self.group_of >= 0).any():
+            self.select_rows(self.expand_to_groups(self.selected_rows()))
         rows = self.selected_rows()
         if rows != self.press_rows:
             self.press_rows = rows
@@ -307,7 +375,8 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if modifiers & Qt.ControlModifier:
             if row is None:
                 return
-            selected ^= {row}
+            target = set(self.expand_to_groups([row])) if self.selection_mode == "group" else {row}
+            selected = selected - target if target <= selected else selected | target
         else:
             selected = set() if row is None else {row}
         self.select_rows(selected)

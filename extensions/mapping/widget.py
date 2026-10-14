@@ -422,6 +422,12 @@ class MappingWidget(QtWidgets.QWidget):
             self.thumbs.request([path])
         return pixmap
 
+    def show_hover(self, path: str, global_pos: QtCore.QPoint) -> None:
+        return None
+
+    def hide_hover(self) -> None:
+        return None
+
     def on_thumbnail(self, path: str):
         self.map_view.update_path(path)
         self.file_list.update_path(path)

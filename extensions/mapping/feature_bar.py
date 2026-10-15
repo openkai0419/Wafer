@@ -121,7 +121,6 @@ class FeatureBar(QtWidgets.QWidget):
         self.keys: list[tuple[str, int]] = []
         self.key_picker: KeyPickerPopup | None = None
         self.feature_chips: list[FeatureChip] = []
-        self.read_only = False
         self.flow = FlowLayout(self)
         self.add_button = QtWidgets.QToolButton()
         self.add_button.setIcon(themed_icon("plus"))
@@ -158,7 +157,6 @@ class FeatureBar(QtWidgets.QWidget):
 
     def insert_chip(self, spec: FeatureSpec):
         chip = FeatureChip(spec, self)
-        chip.setEnabled(not self.read_only)
         chip.changed.connect(self.features_changed.emit)
         chip.removed.connect(self.remove_chip)
         self.flow.removeWidget(self.add_button)
@@ -191,9 +189,3 @@ class FeatureBar(QtWidgets.QWidget):
             self.key_picker = KeyPickerPopup(self)
             self.key_picker.picked.connect(self.add_feature)
         return self.key_picker
-
-    def set_read_only(self, read_only: bool):
-        self.read_only = read_only
-        self.add_button.setEnabled(not read_only)
-        for chip in self.feature_chips:
-            chip.setEnabled(not read_only)

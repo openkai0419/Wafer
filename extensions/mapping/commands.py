@@ -72,23 +72,6 @@ def recompute(ctx, m):
 
 
 @require(m="MappingWidget")
-def relayout_selection(ctx, m):
-    m.relayout_selection()
-
-
-@require(m="MappingWidget")
-def toggle_space_mode(ctx, m):
-    m.set_space_mode("live" if m.effective_mode() == "space" else "space")
-
-
-def _space_mode_checked() -> bool:
-    from .widget import MappingWidget
-
-    widget = MappingWidget.instance()
-    return bool(widget is not None and widget.effective_mode() == "space")
-
-
-@require(m="MappingWidget")
 def toggle_labels(ctx, m):
     m.set_labels_shown(not m.labels_shown)
 
@@ -123,7 +106,7 @@ def _group_mode_checked() -> bool:
 
 
 class MappingGridCommands(MenuGroup):
-    NAME = "Mapping"
+    NAME = "File"
     PRIORITY = 1000
     DEFAULT_ENABLED = True
 
@@ -149,9 +132,7 @@ class MappingViewCommands(MenuGroup):
             CommandMeta(path="mapping.select_all", display="Select All", func=select_all),
             CommandMeta(path="mapping.drill_down", display="Map Selection Only", func=drill_down),
             CommandMeta(path="mapping.drill_up", display="Back", func=drill_up),
-            CommandMeta(path="mapping.relayout_selection", display="Relayout Selection", func=relayout_selection),
             CommandMeta(path="mapping.recompute", display="Recompute", func=recompute),
-            CommandMeta(path="mapping.space_mode", display="Use Precomputed Space", func=toggle_space_mode, checked=_space_mode_checked),
             CommandMeta(path="mapping.toggle_labels", display="Show Labels", func=toggle_labels, checked=_labels_checked),
             CommandMeta(path="mapping.image_scale_up", display="Larger Images", func=image_scale_up, params=[CommandParam(name="ratio", value=1.1, min_value=1.01, max_value=4.0)]),
             CommandMeta(path="mapping.image_scale_down", display="Smaller Images", func=image_scale_down, params=[CommandParam(name="ratio", value=1.1, min_value=1.01, max_value=4.0)]),

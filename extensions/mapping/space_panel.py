@@ -638,6 +638,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.map_view.set_image_limit(params.max_images)
         self.map_view.set_image_spacing(params.image_spacing)
         self.map_view.set_image_cap(params.hover_size)
+        self.map_view.set_point_size(params.point_size)
         self.map_view.show_result(result, result_colors(result, self.palette_colors), keep_view)
         self.shown = result
         self.count_label.setText(caption)

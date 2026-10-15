@@ -123,16 +123,6 @@ def test_picker_is_reused_and_marks_used_keys(qtbot, monkeypatch):
     assert first is second and used == [{"path"}, {"path"}]
 
 
-def test_set_read_only_disables_chips_and_add_button(qtbot):
-    bar = FeatureBar(lambda key: "text")
-    qtbot.addWidget(bar)
-    bar.set_features([FeatureSpec("tags", "token_set")])
-    bar.set_read_only(True)
-    assert not bar.add_button.isEnabled() and not bar.chips()[0].isEnabled()
-    bar.set_read_only(False)
-    assert bar.add_button.isEnabled() and bar.chips()[0].isEnabled()
-
-
 def test_palette_key_uses_palette_encoder_without_detect(qtbot):
     def fail(key):
         raise AssertionError("detect must not be called")
@@ -151,19 +141,6 @@ def test_regular_chip_excludes_key_group_encoders(qtbot):
     bar.add_feature("prompt")
     combo = bar.chips()[0].encoder_combo
     assert combo.findData("palette") == -1 and combo.isEnabled()
-
-
-def test_read_only_applies_to_chips_added_later(qtbot):
-    bar = FeatureBar(lambda key: "text")
-    qtbot.addWidget(bar)
-    bar.set_read_only(True)
-    bar.set_features([FeatureSpec("tags", "token_set")])
-    bar.insert_chip(FeatureSpec("prompt", "text"))
-    assert [chip.isEnabled() for chip in bar.chips()] == [False, False]
-    bar.set_read_only(False)
-    assert [chip.isEnabled() for chip in bar.chips()] == [True, True]
-    bar.add_feature("path")
-    assert bar.chips()[-1].isEnabled()
 
 
 def test_set_encoder_updates_the_matching_chip_and_emits(qtbot):

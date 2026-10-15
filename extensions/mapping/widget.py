@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import math
-from collections import Counter
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
-import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
 from wafer.core.common.paths import db_name_from_path, normalize_path, safe_is_file
 from wafer.core.db.path_values import PathValue, fetch_path_values, fetch_sources
 from wafer.core.lang.manager import t
+from wafer.builtins.commands.panel import open_panel
 from wafer.core.logs import AppLogger
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 from wafer.qt.common.dispatcher import CancelSlot, Dispatcher
@@ -24,13 +23,11 @@ from wafer.qt.theme import ThemeManager
 from wafer.qt.widgets.popup import PopupBase
 
 from . import projection
-from .encoders import detect_encoder, value_input
-from .feature_bar import FeatureBar
 from .file_list import FileList
 from .map_host import MapHost
 from .map_view import MapView
 from .params import MapParams
-from .session import SPACE_KEYS, FeatureSpec, MapError, MapPipeline, MapRequest, MapResult, layout_from_space
+from .session import MapError, MapResult, layout_from_space
 from .space import Preset, load_preset
 from .tuning import TuningPanel
 
@@ -42,7 +39,7 @@ ELLIPSIS = "\N{HORIZONTAL ELLIPSIS}"
 SEPARATOR = "\N{MIDDLE DOT}"
 CRUMB_ARROW = "\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}"
 SPACE_PANEL_NAME = "Mapping Space"
-SPACE_MODES = ("space", "live")
+VIEW_STAGES = ("view",)
 STAGE_NAMES = {"encode": "Encoding", "layout": "Laying out (the first run takes longer)", "cluster": "Grouping"}
 
 
@@ -76,9 +73,7 @@ def cancel_work(*slots: CancelSlot) -> None:
 @dataclass
 class MapLevel:
     paths: list[str]
-    pipeline: MapPipeline
     result: MapResult | None = None
-    mode: str = "live"
 
 
 class MappingWidget(QtWidgets.QWidget):
@@ -93,9 +88,6 @@ class MappingWidget(QtWidgets.QWidget):
         self.db_path = None
         self.db_name = ""
         self.preset: Preset | None = None
-        self.space_mode = "space"
-        self.live_features: list[FeatureSpec] = []
-        self.bar_state: tuple[bool, list[FeatureSpec] | None] | None = None
         self.paths: list[str] = []
         self.values: dict[str, dict[str, PathValue]] = {}
         self.params = MapParams()
@@ -128,30 +120,12 @@ class MappingWidget(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self.page)
         layout.setContentsMargins(dpix(6), dpix(6), dpix(6), dpix(6))
         toolbar = QtWidgets.QHBoxLayout()
-        self.feature_bar = FeatureBar(self.detect)
-        self.feature_bar.features_changed.connect(self.on_features_changed)
-        toolbar.addWidget(self.feature_bar, stretch=1)
         self.edit_space_button = QtWidgets.QToolButton()
         self.edit_space_button.setText(t("Edit in Mapping Space"))
         self.edit_space_button.setToolTip(t("Change the keys and retrain in the Mapping Space panel."))
         self.edit_space_button.clicked.connect(self.open_space_panel)
-        self.edit_space_button.hide()
         toolbar.addWidget(self.edit_space_button)
-        self.space_buttons = {}
-        space_group = QtWidgets.QButtonGroup(self)
-        for mode, text in (("space", t("Precomputed")), ("live", t("Live"))):
-            button = QtWidgets.QToolButton()
-            button.setText(text)
-            button.setCheckable(True)
-            button.setToolTip(t("Use the saved space. Fast.") if mode == "space" else t("Lay out these files from scratch."))
-            space_group.addButton(button)
-            toolbar.addWidget(button)
-            self.space_buttons[mode] = button
-        self.precomputed_button = self.space_buttons["space"]
-        self.space_buttons["live"].setChecked(True)
-        for mode, button in self.space_buttons.items():
-            button.toggled.connect(partial(self.on_space_toggled, mode))
-        self.precomputed_button.setEnabled(False)
+        toolbar.addStretch(1)
         self.label_check = QtWidgets.QCheckBox(t("Labels"))
         self.label_check.setChecked(True)
         self.label_check.setToolTip(t("Show group labels."))
@@ -203,7 +177,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.splitter.setStretchFactor(1, 3)
         layout.addWidget(self.splitter, stretch=1)
         self.stack.addWidget(self.page)
-        self.tuning = TuningPanel()
+        self.tuning = TuningPanel(stages=VIEW_STAGES)
         self.tuning.params_changed.connect(self.on_params)
         self.map_view.selection_changed.connect(self.on_map_selection)
         self.file_list.selection_changed.connect(self.on_list_selection)
@@ -241,9 +215,7 @@ class MappingWidget(QtWidgets.QWidget):
         for level in self.levels:
             kept = [p for p in level.paths if p not in removed]
             if len(kept) != len(level.paths):
-                level.paths = kept
-                level.pipeline = MapPipeline()
-                level.result = None
+                level.paths, level.result = kept, None
                 changed.append(level)
         self.update_crumbs()
         if self.levels and self.levels[-1] in changed:
@@ -282,75 +254,20 @@ class MappingWidget(QtWidgets.QWidget):
     def on_values(self, values, sources, preset: Preset | None = None, keep_levels: bool = False):
         self.values, self.host.sources = values, sources
         self.preset = preset if preset is not None and preset.features and preset.version > 0 else None
-        self.sync_space_buttons()
-        counts = Counter(key for entry in values.values() for key, value in entry.items() if key not in SPACE_KEYS and value_input(value) is not None)
-        self.feature_bar.set_keys(counts.most_common())
-        if keep_levels and self.levels and self.effective_mode() == "space":
+        if keep_levels and self.levels:
             for level in self.levels:
-                level.pipeline, level.result = MapPipeline(), None
+                level.result = None
         else:
-            self.levels = [MapLevel(list(self.paths), MapPipeline(), mode=self.effective_mode())]
+            self.levels = [MapLevel(list(self.paths))]
         self.update_crumbs()
         self.recompute()
 
     def refresh(self) -> None:
-        if self.levels and self.levels[-1].mode == "space":
+        if self.levels:
             self.fetch(keep_levels=True)
-        else:
-            self.recompute()
-
-    def effective_mode(self) -> str:
-        return "space" if self.space_mode == "space" and self.preset is not None else "live"
-
-    def sync_space_buttons(self) -> None:
-        self.precomputed_button.setEnabled(self.preset is not None)
-        button = self.space_buttons[self.effective_mode()]
-        if not button.isChecked():
-            button.blockSignals(True)
-            button.setChecked(True)
-            button.blockSignals(False)
-
-    def on_space_toggled(self, mode: str, checked: bool) -> None:
-        if checked:
-            self.set_space_mode(mode)
-
-    def set_space_mode(self, mode: str) -> None:
-        if mode not in SPACE_MODES:
-            return
-        previous = self.effective_mode()
-        self.space_mode = mode
-        self.sync_space_buttons()
-        if self.effective_mode() == previous:
-            return
-        if not self.levels:
-            self.sync_features(self.effective_mode())
-            return
-        self.levels = [MapLevel(list(self.paths), MapPipeline(), mode=self.effective_mode())]
-        self.update_crumbs()
-        self.recompute()
-
-    def sync_features(self, mode: str) -> None:
-        read_only = mode == "space" and self.preset is not None
-        shown = list(self.preset.features) if read_only else None
-        if self.bar_state == (read_only, shown):
-            return
-        self.bar_state = (read_only, shown)
-        self.feature_bar.set_features(shown if read_only else self.live_features)
-        self.feature_bar.set_read_only(read_only)
-        self.edit_space_button.setVisible(read_only)
-
-    def on_features_changed(self) -> None:
-        self.live_features = self.feature_bar.features()
-        self.schedule_recompute()
 
     def open_space_panel(self) -> None:
-        manager = getattr(self.window(), "_layout_manager", None)
-        if manager is not None and SPACE_PANEL_NAME in manager.panel_names():
-            manager.ensure_panel_visible(SPACE_PANEL_NAME)
-
-    def detect(self, key: str) -> str:
-        values = [value_input(self.values.get(path, {}).get(key)) for path in self.paths]
-        return detect_encoder([value for value in values if value is not None])
+        open_panel(name=SPACE_PANEL_NAME, toggle=False)
 
     @qt_debounce(RECOMPUTE_DELAY_MS)
     def schedule_recompute(self):
@@ -359,32 +276,18 @@ class MappingWidget(QtWidgets.QWidget):
     def recompute(self) -> None:
         if not self.levels:
             return
-        level = self.levels[-1]
-        preset = self.preset if level.mode == "space" else None
-        self.sync_features("space" if preset is not None else "live")
-        features = preset.features if preset is not None else self.feature_bar.features()
-        if not features:
+        if self.preset is None:
             self.compute_cancel.cancel()
-            self.finish(t("Add a key to start."))
+            self.finish(t("This database has no Mapping Space yet. Train one in Mapping Space."))
             return
-        paths, values, params = list(level.paths), self.values, self.params
+        level, preset, values, params = self.levels[-1], self.preset, self.values, self.params
+        paths = list(level.paths)
         cancel = self.compute_cancel.renew()
         self.cancel_button.show()
 
-        def progress(stage, fraction):
-            name = t(STAGE_NAMES.get(stage, stage)) + ELLIPSIS
-            text = f"{name} {fraction:.0%}" if fraction else name
-            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.set_message(text))
-
-        def compute():
-            if preset is not None:
-                return layout_from_space(paths, values, preset, params)
-            request = MapRequest(paths, values, features, params)
-            return level.pipeline.run(request, cancelled=cancel.is_cancelled, progress=progress)
-
         def task():
             try:
-                result = compute()
+                result = layout_from_space(paths, values, preset, params)
             except MapError as e:
                 self.dispatcher.invoke(lambda m=str(e): cancel.is_cancelled() or self.finish(t(m)))
                 return
@@ -392,8 +295,7 @@ class MappingWidget(QtWidgets.QWidget):
                 AppLogger.error("[Mapping] Map computation failed", exc=e)
                 self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.finish(t("Mapping failed. See the log for details.")))
                 return
-            if result is not None:
-                self.dispatcher.invoke(lambda: cancel.is_cancelled() or self._apply_result(level, result))
+            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self._apply_result(level, result))
 
         self.dispatcher.post(task, priority=COMPUTE_PRIORITY, cancel=cancel)
 
@@ -421,6 +323,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.map_view.set_image_limit(self.params.max_images)
         self.map_view.set_image_spacing(self.params.image_spacing)
         self.map_view.set_image_cap(self.params.hover_size)
+        self.map_view.set_point_size(self.params.point_size)
         self.map_view.show_result(result, colors, keep_view)
         self.file_list.set_rows(result.paths, result.order, colors)
         self.shown = result
@@ -430,7 +333,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.tuning.set_diagnostics(result.diagnostics)
         self.cancel_button.hide()
         parts = [t("{count} files", count=len(result.paths)), t("{count} groups", count=result.diagnostics.groups)]
-        if result.diagnostics.unset and self.levels and self.levels[-1].mode == "space":
+        if result.diagnostics.unset:
             parts.append(t("{count} waiting for placement", count=result.diagnostics.unset))
         self.set_message(f" {SEPARATOR} ".join(parts))
 
@@ -507,20 +410,7 @@ class MappingWidget(QtWidgets.QWidget):
         if len(paths) < MIN_DRILL_FILES:
             self.set_message(t("Select at least 3 files."))
             return
-        self.levels.append(MapLevel(paths, MapPipeline(), mode=self.levels[-1].mode))
-        self.update_crumbs()
-        self.recompute()
-
-    def relayout_selection(self) -> None:
-        if not self.levels:
-            return
-        paths = self.selected_paths()
-        if len(paths) < MIN_DRILL_FILES:
-            self.set_message(t("Select at least 3 files."))
-            return
-        if self.levels[-1].mode == "space" and self.preset is not None and not self.live_features:
-            self.live_features = list(self.preset.features)
-        self.levels.append(MapLevel(paths, MapPipeline(), mode="live"))
+        self.levels.append(MapLevel(paths))
         self.update_crumbs()
         self.recompute()
 
@@ -535,7 +425,6 @@ class MappingWidget(QtWidgets.QWidget):
         if result is None:
             self.recompute()
         else:
-            self.sync_features(self.levels[-1].mode)
             self.show_result(result)
 
     def update_crumbs(self):
@@ -546,10 +435,7 @@ class MappingWidget(QtWidgets.QWidget):
         for index, level in enumerate(self.levels):
             if index:
                 self.crumbs.addWidget(QtWidgets.QLabel(CRUMB_ARROW))
-            if index == 0:
-                name = t("All")
-            else:
-                name = t("Selection (live)") if level.mode != self.levels[0].mode else t("Selection")
+            name = t("All") if index == 0 else t("Selection")
             button = QtWidgets.QToolButton()
             button.setText(f"{name} ({len(level.paths):,})")
             button.setAutoRaise(True)
@@ -607,7 +493,7 @@ class MappingWidget(QtWidgets.QWidget):
 
     def handle_drop(self, event):
         paths = local_file_paths(event.mimeData())
-        db_path = getattr(self.window(), "database_path", None) or self.db_path
+        db_path = getattr(InstanceRegistry.instance().get_host_window(), "database_path", None) or self.db_path
         if not paths or db_path is None:
             event.ignore()
             return
@@ -626,8 +512,6 @@ class MappingWidget(QtWidgets.QWidget):
 
     def save_state(self) -> dict:
         return {
-            "features": [feature.to_dict() for feature in self.live_features],
-            "space_mode": self.space_mode,
             "params": self.params.to_dict(),
             "labels": self.labels_shown,
             "image_scale": self.map_view.image_scale,
@@ -636,12 +520,6 @@ class MappingWidget(QtWidgets.QWidget):
         }
 
     def restore_state(self, state: dict) -> None:
-        features = [FeatureSpec.from_dict(item) for item in state.get("features", []) if isinstance(item, dict)]
-        self.live_features = [feature for feature in features if feature is not None]
-        self.space_mode = "live" if state.get("space_mode") == "live" else "space"
-        self.bar_state = None
-        self.sync_features(self.effective_mode())
-        self.sync_space_buttons()
         self.params = MapParams.from_dict(state.get("params") or {})
         self.tuning.set_params(self.params)
         self.set_labels_shown(state.get("labels", True) is not False)

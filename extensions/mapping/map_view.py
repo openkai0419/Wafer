@@ -18,7 +18,7 @@ SCENE_SIZE = 1000.0
 UNSET_GAP = SCENE_SIZE * 0.08
 UNSET_SPACING = 20.0
 UNSET_PER_ROW = 50
-POINT_SIZE = 8
+POINT_SIZE = 1.0
 MIN_POINT_SIZE = 1.0
 ROUND_POINT_SIZE = 3.0
 THUMB_SIZE = 64
@@ -122,6 +122,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.image_limit = IMAGE_LIMIT
         self.image_spacing = IMAGE_SPACING
         self.image_cap = 0.0
+        self.point_base = POINT_SIZE
         self.labels_visible = True
         self.fit_scale = 1.0
         self.thumbnail_zoom = 2.0
@@ -151,7 +152,14 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         return dpix(self.display_size()) if self.thumbnails else self.dot_size()
 
     def point_size(self) -> float:
-        return max(dpix(POINT_SIZE) * self.zoom, MIN_POINT_SIZE)
+        return MIN_POINT_SIZE if self.point_base <= MIN_POINT_SIZE else float(dpix(self.point_base))
+
+    def set_point_size(self, size: float) -> None:
+        size = max(float(size), MIN_POINT_SIZE)
+        if size != self.point_base:
+            self.begin_geometry_change()
+            self.point_base = size
+            self.invalidate()
 
     def dot_size(self) -> float:
         return self.point_size() + dpix(RING) * 2

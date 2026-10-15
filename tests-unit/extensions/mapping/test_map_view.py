@@ -389,13 +389,13 @@ def test_hover_follows_points_not_image_rectangles(view):
     assert view.owner.hovers[-1] == view.paths[row]
 
 
-def test_wheel_zoom_grows_points_and_images_with_the_plane(view):
+def test_wheel_zoom_grows_images_but_points_keep_their_set_size(view):
     view.show_result(result(labels=False), colors(6), keep_view=False)
     point, display = view.point_size(), view.display_size()
     position = QtCore.QPointF(200, 200)
     event = QtGui.QWheelEvent(position, position, QtCore.QPoint(), QtCore.QPoint(0, 240), QtCore.Qt.NoButton, QtCore.Qt.NoModifier, QtCore.Qt.NoScrollPhase, False)
     view.wheelEvent(event)
-    assert view.point_size() == pytest.approx(point * view.zoom)
+    assert view.point_size() == pytest.approx(point)
     assert view.display_size() == pytest.approx(display * view.zoom)
 
 
@@ -443,3 +443,11 @@ def test_images_stop_growing_at_the_hover_size(view):
     assert view.display_size() == pytest.approx(100.0)
     view.set_image_cap(0)
     assert view.display_size() > 100.0
+
+
+def test_point_size_setting_is_clamped_to_one_pixel(view):
+    view.show_result(result(labels=False), colors(6), keep_view=False)
+    view.set_point_size(0)
+    assert view.point_size() == map_view_module.MIN_POINT_SIZE
+    view.set_point_size(6)
+    assert view.point_size() == pytest.approx(map_view_module.dpix(6))

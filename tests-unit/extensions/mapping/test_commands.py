@@ -50,13 +50,12 @@ def test_command_ids():
     grid = {c.path.split("/")[-1] for c in MappingGridCommands.commands() if not isinstance(c, str)}
     view = {c.path for c in MappingViewCommands.commands() if not isinstance(c, str)}
     assert grid == {"mapping.set", "mapping.add", "mapping.remove"}
+    assert MappingGridCommands.NAME == "File"
     assert view == {
         "mapping.select_all",
         "mapping.drill_down",
         "mapping.drill_up",
-        "mapping.relayout_selection",
         "mapping.recompute",
-        "mapping.space_mode",
         "mapping.toggle_labels",
         "mapping.image_scale_up",
         "mapping.image_scale_down",
@@ -88,36 +87,6 @@ def test_selection_mode_command_toggles():
     widget.selection_mode = "group"
     commands.toggle_selection_mode(ctx)
     widget.set_selection_mode.assert_called_with("single")
-
-
-def test_relayout_selection_command_calls_widget():
-    widget = MagicMock()
-    commands.relayout_selection(Ctx(**{"instance:MappingWidget": widget}))
-    widget.relayout_selection.assert_called_once_with()
-
-
-def test_space_mode_command_toggles():
-    widget = MagicMock()
-    widget.effective_mode.return_value = "space"
-    ctx = Ctx(**{"instance:MappingWidget": widget})
-    commands.toggle_space_mode(ctx)
-    widget.set_space_mode.assert_called_once_with("live")
-    widget.effective_mode.return_value = "live"
-    commands.toggle_space_mode(ctx)
-    widget.set_space_mode.assert_called_with("space")
-
-
-def test_space_mode_checked_follows_effective_mode(monkeypatch):
-    from extensions.mapping.widget import MappingWidget
-
-    widget = MagicMock()
-    monkeypatch.setattr(MappingWidget, "instance", classmethod(lambda cls: widget))
-    widget.effective_mode.return_value = "space"
-    assert commands._space_mode_checked() is True
-    widget.effective_mode.return_value = "live"
-    assert commands._space_mode_checked() is False
-    monkeypatch.setattr(MappingWidget, "instance", classmethod(lambda cls: None))
-    assert commands._space_mode_checked() is False
 
 
 def test_labels_command_toggles_and_reports_state(monkeypatch):

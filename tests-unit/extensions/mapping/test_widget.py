@@ -1,28 +1,24 @@
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 import pytest
 from PySide6 import QtCore
 
-from extensions.mapping import commands, projection
+from extensions.mapping import commands
 from extensions.mapping import map_host as map_host_module
 from extensions.mapping import map_view as map_view_module
 from extensions.mapping import widget as widget_module
-from extensions.mapping.params import MapParams
-from extensions.mapping.session import FeatureSpec, MapPipeline
+from extensions.mapping.params import MapParams, param_specs
+from extensions.mapping.session import FeatureSpec
 from extensions.mapping.space import Preset
 from extensions.mapping.widget import MappingWidget
 from wafer.core.db.path_values import PathValue
-
-
-def fake_embed(matrix, n_components, n_neighbors, min_dist, seed):
-    output = np.zeros((matrix.shape[0], n_components), dtype=np.float32)
-    width = min(n_components, matrix.shape[1])
-    output[:, :width] = matrix[:, :width] + np.random.default_rng(0).normal(0, 1e-3, (matrix.shape[0], width))
-    return output
-
+from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
 FIRST_RUN_TIMEOUT = 20000
+PATHS = [f"c:/{i}.png" for i in range(30)]
+UNSET = ("c:/27.png", "c:/28.png", "c:/29.png")
 
 
 class DropEvent:
@@ -43,9 +39,20 @@ class DropEvent:
         self.accepted = False
 
 
-@pytest.fixture(autouse=True)
-def no_preset(monkeypatch):
-    monkeypatch.setattr(widget_module, "load_preset", lambda db_name: None)
+class InstanceCtx(dict):
+    def get_instance(self, name, default=None):
+        return self.get(f"instance:{name}", default)
+
+
+def space_values() -> dict:
+    values = {}
+    for i, path in enumerate(PATHS):
+        entry = {"tags": PathValue("cat, sky" if i < 15 else "dog, sea")}
+        if path not in UNSET:
+            x = float(i // 15) * 10 + i * 0.01
+            entry.update({"mapping.x": PathValue(str(x), x), "mapping.y": PathValue("0", 0.0), "mapping.model": PathValue("2", 2.0)})
+        values[path] = entry
+    return values
 
 
 @pytest.fixture(autouse=True)
@@ -54,28 +61,75 @@ def deterministic_groups(fake_cluster):
 
 
 @pytest.fixture()
-def mapping(qtbot, monkeypatch):
-    monkeypatch.setattr(projection, "embed", fake_embed)
-    paths = [f"c:/{i}.png" for i in range(30)]
-    values = {p: {"tags": PathValue("cat, sky" if i < 15 else "dog, sea")} for i, p in enumerate(paths)}
-    monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps: {p: values[p] for p in ps if p in values})
+def space_data(monkeypatch):
+    values = space_values()
+    state = SimpleNamespace(preset=Preset([FeatureSpec("tags", "token_set")], MapParams(), 2), values=values)
+    monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps: {p: state.values[p] for p in ps if p in state.values})
     monkeypatch.setattr(widget_module, "fetch_sources", lambda db, ps: {p: p.replace(".png", ".zip") for p in ps})
+    monkeypatch.setattr(widget_module, "load_preset", lambda db_name: state.preset)
+    return state
+
+
+def open_widget(qtbot, paths=PATHS, wait=True):
     w = MappingWidget()
     qtbot.addWidget(w)
     w.resize(900, 600)
     w.show()
-    w.restore_state({"features": [FeatureSpec("tags", "token_set").to_dict()]})
-    w.set_files(paths, "db")
-    qtbot.waitUntil(lambda: w.current_result() is not None, timeout=FIRST_RUN_TIMEOUT)
+    w.set_files(list(paths), "db")
+    if wait:
+        qtbot.waitUntil(lambda: w.current_result() is not None, timeout=FIRST_RUN_TIMEOUT)
+    return w
+
+
+@pytest.fixture()
+def mapping(qtbot, space_data):
+    w = open_widget(qtbot)
     yield w
     w.close()
 
 
-def test_set_files_computes_map(mapping):
-    assert len(mapping.current_result().paths) == 30
+def wait_for_new_result(qtbot, widget, previous):
+    qtbot.waitUntil(lambda: widget.current_result() is not None and widget.current_result() is not previous, timeout=5000)
 
 
-def test_selection_sync_and_context(mapping, qtbot):
+def test_set_files_places_files_from_the_space(mapping):
+    result = mapping.current_result()
+    assert len(result.paths) == 30
+    assert [result.paths[row] for row in np.flatnonzero(result.unset)] == list(UNSET)
+    assert "3 waiting for placement" in mapping.message_text()
+    assert mapping.db_name == "db"
+
+
+def test_only_view_settings_and_no_keys_are_shown(mapping):
+    view_params = {name for name, spec, _ in param_specs() if spec.stage == "view"}
+    assert set(mapping.tuning.controls) == view_params
+    assert not hasattr(mapping, "feature_bar")
+    assert mapping.edit_space_button.isVisibleTo(mapping)
+
+
+@pytest.mark.parametrize("preset", [None, Preset([FeatureSpec("tags", "token_set")], MapParams(), 0)])
+def test_without_a_trained_space_it_points_to_mapping_space(qtbot, space_data, preset):
+    space_data.preset = preset
+    w = open_widget(qtbot, wait=False)
+    qtbot.waitUntil(lambda: w.message_text().startswith("This database has no Mapping Space yet"), timeout=5000)
+    assert w.current_result() is None and w.edit_space_button.isVisibleTo(w)
+    w.close()
+
+
+def test_nothing_placed_shows_the_hint(qtbot, space_data):
+    space_data.values = {p: {"tags": PathValue("cat")} for p in PATHS}
+    w = open_widget(qtbot, wait=False)
+    qtbot.waitUntil(lambda: w.message_text().startswith("No files have been placed yet"), timeout=FIRST_RUN_TIMEOUT)
+    w.close()
+
+
+def test_edit_in_space_opens_the_space_panel(mapping):
+    with patch.object(widget_module, "open_panel") as open_panel:
+        mapping.edit_space_button.click()
+    open_panel.assert_called_once_with(name="Mapping Space", toggle=False)
+
+
+def test_selection_sync_and_context(mapping):
     mapping.map_view.select_rows([0, 1])
     mapping.map_view.selection_changed.emit()
     assert mapping.file_list.selected_rows() == [0, 1]
@@ -96,7 +150,7 @@ def test_selection_survives_recompute(mapping, qtbot):
     mapping.map_view.selection_changed.emit()
     previous = mapping.current_result()
     mapping.recompute()
-    qtbot.waitUntil(lambda: mapping.current_result() is not previous, timeout=5000)
+    wait_for_new_result(qtbot, mapping, previous)
     assert mapping.selected_paths() == ["c:/3.png", "c:/4.png"]
 
 
@@ -105,17 +159,23 @@ def test_stale_result_is_not_applied(mapping, qtbot):
     with patch.object(MappingWidget, "_apply_result", wraps=mapping._apply_result) as apply:
         mapping.recompute()
         mapping.recompute()
-        qtbot.waitUntil(lambda: mapping.current_result() is not first, timeout=5000)
+        wait_for_new_result(qtbot, mapping, first)
         qtbot.wait(200)
     assert apply.call_count == 1
 
 
-def test_drill_down_and_back(mapping, qtbot):
-    mapping.map_view.select_rows(range(10))
+def drill(mapping, qtbot, rows):
+    mapping.map_view.select_rows(rows)
     mapping.map_view.selection_changed.emit()
-    root = mapping.current_result()
     mapping.drill_down()
-    qtbot.waitUntil(lambda: mapping.current_result() is not None and len(mapping.current_result().paths) == 10, timeout=5000)
+    qtbot.waitUntil(lambda: mapping.current_result() is not None and len(mapping.current_result().paths) == len(rows), timeout=5000)
+
+
+def test_drill_down_and_back(mapping, qtbot):
+    root = mapping.current_result()
+    drill(mapping, qtbot, range(10))
+    crumbs = [mapping.crumbs.itemAt(i).widget().text() for i in range(mapping.crumbs.count())]
+    assert any(text.startswith("Selection") for text in crumbs)
     mapping.drill_up()
     assert mapping.current_result() is root
     assert len(mapping.levels) == 1
@@ -134,19 +194,14 @@ def test_remove_files(mapping, qtbot):
 
 
 def test_remove_unknown_files_is_a_noop(mapping, qtbot):
-    result = mapping.current_result()
-    pipeline = mapping.levels[0].pipeline
+    result, level = mapping.current_result(), mapping.levels[0]
     mapping.remove_files(["c:/unknown.png"])
     qtbot.wait(100)
-    assert mapping.current_result() is result
-    assert mapping.levels[0].pipeline is pipeline
+    assert mapping.current_result() is result and mapping.levels[0] is level
 
 
 def test_remove_keeps_results_of_untouched_levels(mapping, qtbot):
-    mapping.map_view.select_rows(range(10))
-    mapping.map_view.selection_changed.emit()
-    mapping.drill_down()
-    qtbot.waitUntil(lambda: mapping.current_result() is not None and len(mapping.current_result().paths) == 10, timeout=5000)
+    drill(mapping, qtbot, range(10))
     sub = mapping.current_result()
     mapping.remove_files(["c:/25.png"])
     qtbot.wait(100)
@@ -184,11 +239,6 @@ def test_fetch_failure_shows_error(qtbot, monkeypatch):
     w.close()
 
 
-def without_labels(mapping, qtbot):
-    mapping.set_labels_shown(False)
-    return mapping.map_view
-
-
 def clickable_point(view):
     for row, (x, y) in enumerate(view.positions):
         pos = view.mapFromScene(QtCore.QPointF(x, y))
@@ -199,10 +249,10 @@ def clickable_point(view):
 
 
 def test_right_click_on_selected_point_keeps_selection(mapping, qtbot):
-    view = without_labels(mapping, qtbot)
+    mapping.set_labels_shown(False)
+    view = mapping.map_view
     pos, hit = clickable_point(view)
-    other = (hit + 1) % 30
-    view.select_rows([hit, other])
+    view.select_rows([hit, (hit + 1) % 27])
     view.selection_changed.emit()
     expected = mapping.selected_paths()
     qtbot.mouseClick(view.viewport(), QtCore.Qt.RightButton, pos=pos)
@@ -211,9 +261,10 @@ def test_right_click_on_selected_point_keeps_selection(mapping, qtbot):
 
 
 def test_right_click_on_unselected_point_selects_only_it(mapping, qtbot):
-    view = without_labels(mapping, qtbot)
+    mapping.set_labels_shown(False)
+    view = mapping.map_view
     pos, hit = clickable_point(view)
-    view.select_rows([(hit + 1) % 30])
+    view.select_rows([(hit + 1) % 27])
     view.selection_changed.emit()
     qtbot.mouseClick(view.viewport(), QtCore.Qt.RightButton, pos=pos)
     assert mapping.context_for_selection()["paths"] == [f"c:/{hit}.png"]
@@ -222,8 +273,8 @@ def test_right_click_on_unselected_point_selects_only_it(mapping, qtbot):
 
 def test_state_roundtrip(mapping):
     state = mapping.save_state()
-    assert state["features"][0]["key"] == "tags"
-    assert "params" in state and state["labels"] is True
+    assert set(state) == {"params", "labels", "image_scale", "selection_mode", "splitter"}
+    assert state["labels"] is True
 
 
 def test_restore_state_applies_labels(mapping):
@@ -243,17 +294,7 @@ def test_label_checkbox_hides_labels_without_recomputing(mapping):
     assert mapping.current_result().labels is not None
 
 
-def test_no_features_shows_message(qtbot, monkeypatch):
-    monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps: {})
-    monkeypatch.setattr(widget_module, "fetch_sources", lambda db, ps: {})
-    w = MappingWidget()
-    qtbot.addWidget(w)
-    w.set_files(["a", "b", "c"], "db")
-    qtbot.waitUntil(lambda: w.message_text() == "Add a key to start.", timeout=5000)
-    w.close()
-
-
-def test_cancel_button_stops_computation(mapping, qtbot):
+def test_cancel_button_stops_computation(mapping):
     mapping.recompute()
     assert mapping.cancel_button.isVisible()
     mapping.cancel_button.click()
@@ -261,11 +302,16 @@ def test_cancel_button_stops_computation(mapping, qtbot):
     assert mapping.message_text() == "Cancelled"
 
 
-def test_drop_adds_files(mapping, tmp_path):
+def dropped_file(tmp_path):
     dropped = tmp_path / "new.png"
     dropped.write_bytes(b"x")
     mime = QtCore.QMimeData()
     mime.setUrls([QtCore.QUrl.fromLocalFile(str(dropped))])
+    return dropped, mime
+
+
+def test_drop_adds_files(mapping, tmp_path):
+    dropped, mime = dropped_file(tmp_path)
     enter = DropEvent(mime)
     mapping.handle_drag_enter(enter)
     assert enter.accepted is True
@@ -274,6 +320,19 @@ def test_drop_adds_files(mapping, tmp_path):
         mapping.handle_drop(drop)
     assert drop.accepted is True
     add.assert_called_once_with([widget_module.normalize_path(str(dropped))], "db")
+
+
+def test_drop_on_a_floating_panel_uses_the_main_window_database(qtbot, tmp_path, monkeypatch):
+    dropped, mime = dropped_file(tmp_path)
+    monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: SimpleNamespace(database_path="main.db"))
+    w = MappingWidget()
+    qtbot.addWidget(w)
+    drop = DropEvent(mime)
+    with patch.object(MappingWidget, "add_files") as add:
+        w.handle_drop(drop)
+    assert drop.accepted is True
+    add.assert_called_once_with([widget_module.normalize_path(str(dropped))], "main.db")
+    w.close()
 
 
 def test_drop_without_files_is_ignored(mapping):
@@ -293,20 +352,22 @@ def test_thumbnail_bucket_uses_the_logical_size(mapping, monkeypatch):
     assert mapping.host.thumbs.cache_limit == map_host_module.cache_limit(map_host_module.THUMB_BUDGET, 128)
 
 
-def test_hiding_the_panel_hides_the_hover(mapping):
-    mapping.show_hover("c:/1.png", QtCore.QPoint(300, 300))
-    assert mapping.host.preview.isVisible()
-    mapping.hide()
-    assert not mapping.host.preview.isVisible()
-
-
 def test_smallest_thumbnail_bucket_matches_map_view():
     assert map_host_module.THUMB_BUCKETS[0] == map_view_module.THUMB_SIZE
 
 
-def test_image_scale_resizes_thumbnails_and_persists(mapping):
+def test_point_size_comes_from_the_settings(mapping, qtbot):
+    assert mapping.map_view.point_size() == map_view_module.MIN_POINT_SIZE
+    previous = mapping.current_result()
+    mapping.on_params(MapParams(point_size=6))
+    wait_for_new_result(qtbot, mapping, previous)
+    assert mapping.map_view.point_base == 6
+    mapping.set_image_scale(3.0)
+    assert mapping.map_view.point_base == 6
+
+
+def test_image_scale_persists(mapping):
     mapping.set_image_scale(2.0)
-    assert mapping.map_view.image_scale == 2.0
     state = mapping.save_state()
     assert state["image_scale"] == 2.0
     mapping.set_image_scale(1.0)
@@ -371,10 +432,13 @@ def test_list_selection_stays_single_in_single_mode(mapping):
     assert mapping.file_list.selected_rows() == [row]
 
 
-def test_hover_goes_through_host(mapping):
+def test_hover_goes_through_host_and_hides_with_the_panel(mapping):
     mapping.show_hover("c:/1.png", QtCore.QPoint(300, 300))
     assert mapping.host.preview.isVisible()
     mapping.hide_hover()
+    assert not mapping.host.preview.isVisible()
+    mapping.show_hover("c:/1.png", QtCore.QPoint(300, 300))
+    mapping.hide()
     assert not mapping.host.preview.isVisible()
 
 
@@ -399,245 +463,21 @@ def test_computation_outranks_thumbnail_requests(mapping):
     assert widget_module.COMPUTE_PRIORITY > 5
 
 
-SPACE_UNSET = ("c:/27.png", "c:/28.png", "c:/29.png")
-
-
-def make_space_widget(qtbot, monkeypatch, version=2):
-    monkeypatch.setattr(projection, "embed", fake_embed)
-    paths = [f"c:/{i}.png" for i in range(30)]
-    values = {}
-    for i, p in enumerate(paths):
-        entry = {"tags": PathValue("cat, sky" if i < 15 else "dog, sea"), "prompt": PathValue("a cat" if i < 15 else "a dog")}
-        if p not in SPACE_UNSET:
-            x = float(i // 15) * 10 + i * 0.01
-            entry.update({"mapping.x": PathValue(str(x), x), "mapping.y": PathValue("0", 0.0), "mapping.model": PathValue("2", 2.0)})
-        values[p] = entry
-    preset = Preset([FeatureSpec("tags", "token_set")], MapParams(), version)
-    monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps: {p: values[p] for p in ps if p in values})
-    monkeypatch.setattr(widget_module, "fetch_sources", lambda db, ps: {p: p for p in ps})
-    monkeypatch.setattr(widget_module, "load_preset", lambda db_name: preset)
-    w = MappingWidget()
-    qtbot.addWidget(w)
-    w.resize(900, 600)
-    w.show()
-    w.restore_state({"features": [FeatureSpec("tags", "token_set").to_dict()]})
-    w.set_files(paths, "db")
-    return w
-
-
-@pytest.fixture()
-def space_widget(qtbot, monkeypatch):
-    w = make_space_widget(qtbot, monkeypatch)
-    qtbot.waitUntil(lambda: w.current_result() is not None, timeout=FIRST_RUN_TIMEOUT)
-    yield w
-    w.close()
-
-
-def test_precomputed_mode_places_files_and_counts_waiting(space_widget):
-    result = space_widget.current_result()
-    assert space_widget.effective_mode() == "space" and space_widget.levels[0].mode == "space"
-    assert [result.paths[row] for row in np.flatnonzero(result.unset)] == list(SPACE_UNSET)
-    assert result.diagnostics.unset == 3
-    assert "3 waiting for placement" in space_widget.message_text()
-    assert space_widget.db_name == "db"
-
-
-def test_precomputed_mode_shows_read_only_preset_keys(space_widget):
-    assert space_widget.feature_bar.read_only
-    assert [chip.key for chip in space_widget.feature_bar.chips()] == ["tags"]
-    assert not space_widget.feature_bar.add_button.isEnabled()
-    assert space_widget.edit_space_button.isVisibleTo(space_widget)
-    assert space_widget.precomputed_button.isEnabled() and space_widget.precomputed_button.isChecked()
-
-
-def test_precomputed_mode_skips_the_pipeline(qtbot, monkeypatch):
-    with patch.object(MapPipeline, "run") as run:
-        w = make_space_widget(qtbot, monkeypatch)
-        qtbot.waitUntil(lambda: w.current_result() is not None, timeout=FIRST_RUN_TIMEOUT)
-        w.close()
-    run.assert_not_called()
-
-
-def test_no_preset_pins_live_mode(mapping):
-    assert mapping.effective_mode() == "live"
-    assert not mapping.precomputed_button.isEnabled()
-    assert mapping.levels[0].mode == "live"
-    assert not mapping.feature_bar.read_only and not mapping.edit_space_button.isVisibleTo(mapping)
-
-
-def test_preset_without_a_trained_version_pins_live_mode(qtbot, monkeypatch):
-    w = make_space_widget(qtbot, monkeypatch, version=0)
-    qtbot.waitUntil(lambda: w.current_result() is not None, timeout=FIRST_RUN_TIMEOUT)
-    assert w.effective_mode() == "live" and not w.precomputed_button.isEnabled()
-    assert w.space_mode == "space"
-    w.close()
-
-
-def test_set_space_mode_switches_between_space_and_live(space_widget, qtbot):
-    space_widget.set_space_mode("live")
-    qtbot.waitUntil(lambda: space_widget.levels[0].mode == "live" and space_widget.current_result() is not None, timeout=5000)
-    assert space_widget.space_buttons["live"].isChecked() and not space_widget.feature_bar.read_only
-    assert [chip.key for chip in space_widget.feature_bar.chips()] == ["tags"]
-    assert space_widget.current_result().diagnostics.unset == 0
-    space_widget.space_buttons["space"].click()
-    qtbot.waitUntil(lambda: space_widget.levels[0].mode == "space" and space_widget.current_result() is not None, timeout=5000)
-    assert space_widget.space_mode == "space" and space_widget.feature_bar.read_only
-    assert space_widget.current_result().diagnostics.unset == 3
-
-
-def test_drill_down_keeps_the_level_mode(space_widget, qtbot):
-    space_widget.map_view.select_rows(range(10))
-    space_widget.map_view.selection_changed.emit()
-    space_widget.drill_down()
-    qtbot.waitUntil(lambda: space_widget.current_result() is not None and len(space_widget.current_result().paths) == 10, timeout=5000)
-    assert space_widget.levels[-1].mode == "space"
-
-
-def test_relayout_selection_runs_the_live_pipeline(space_widget, qtbot):
-    space_widget.map_view.select_rows(range(10))
-    space_widget.map_view.selection_changed.emit()
-    with patch.object(MapPipeline, "run", autospec=True, side_effect=MapPipeline.run) as run:
-        space_widget.relayout_selection()
-        qtbot.waitUntil(lambda: space_widget.current_result() is not None and len(space_widget.current_result().paths) == 10, timeout=5000)
-    run.assert_called_once()
-    assert space_widget.levels[-1].mode == "live" and space_widget.levels[0].mode == "space"
-    assert not space_widget.feature_bar.read_only
-    assert not space_widget.edit_space_button.isVisibleTo(space_widget)
-    crumbs = [space_widget.crumbs.itemAt(i).widget().text() for i in range(space_widget.crumbs.count())]
-    assert any(text.startswith("Selection (live)") for text in crumbs)
-    space_widget.drill_up()
-    assert space_widget.feature_bar.read_only and space_widget.edit_space_button.isVisibleTo(space_widget)
-
-
-def test_relayout_selection_needs_three(space_widget):
-    space_widget.map_view.select_rows([0])
-    space_widget.relayout_selection()
-    assert len(space_widget.levels) == 1
-    assert space_widget.message_text() == "Select at least 3 files."
-
-
-def test_space_mode_persists(space_widget):
-    space_widget.space_mode = "live"
-    state = space_widget.save_state()
-    assert state["space_mode"] == "live"
-    space_widget.restore_state(state)
-    assert space_widget.space_mode == "live" and space_widget.effective_mode() == "live"
-    space_widget.restore_state({"space_mode": "weird"})
-    assert space_widget.space_mode == "space"
-
-
-def test_saved_features_are_the_live_features(space_widget):
-    assert [feature["key"] for feature in space_widget.save_state()["features"]] == ["tags"]
-    space_widget.live_features = [FeatureSpec("prompt", "text", 2.0)]
-    assert space_widget.save_state()["features"][0]["weight"] == 2.0
-
-
-def test_edit_in_space_opens_the_space_panel(space_widget):
-    manager = MagicMock()
-    manager.panel_names.return_value = ["Mapping", "Mapping Space"]
-    space_widget._layout_manager = manager
-    space_widget.edit_space_button.click()
-    manager.ensure_panel_visible.assert_called_once_with("Mapping Space")
-
-
-def test_edit_in_space_ignores_a_missing_panel(space_widget):
-    manager = MagicMock()
-    manager.panel_names.return_value = ["Mapping"]
-    space_widget._layout_manager = manager
-    space_widget.open_space_panel()
-    manager.ensure_panel_visible.assert_not_called()
-    del space_widget._layout_manager
-    space_widget.open_space_panel()
-
-
-def test_nothing_placed_shows_the_hint(qtbot, monkeypatch):
-    w = make_space_widget(qtbot, monkeypatch)
-    monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps: {p: {"tags": PathValue("cat")} for p in ps})
-    w.set_files([f"c:/{i}.png" for i in range(5)], "db")
-    qtbot.waitUntil(lambda: w.message_text().startswith("No files have been placed yet"), timeout=FIRST_RUN_TIMEOUT)
-    w.close()
-
-
-class InstanceCtx(dict):
-    def get_instance(self, name, default=None):
-        return self.get(f"instance:{name}", default)
-
-
-def test_preset_keys_follow_the_database(space_widget, qtbot, monkeypatch):
-    assert [chip.key for chip in space_widget.feature_bar.chips()] == ["tags"]
-    other = Preset([FeatureSpec("prompt", "text")], MapParams(), 2)
-    monkeypatch.setattr(widget_module, "load_preset", lambda db_name: other)
-    previous = space_widget.current_result()
-    space_widget.set_files(list(space_widget.paths), "b")
-    qtbot.waitUntil(lambda: space_widget.current_result() is not previous and space_widget.current_result() is not None, timeout=5000)
-    assert [chip.key for chip in space_widget.feature_bar.chips()] == ["prompt"]
-    assert space_widget.feature_bar.read_only
-
-
-def test_retrained_preset_replaces_the_shown_keys(space_widget, qtbot, monkeypatch):
+def test_retrained_preset_is_picked_up_on_refresh(mapping, qtbot, space_data):
+    drill(mapping, qtbot, range(10))
+    drilled = list(mapping.levels[-1].paths)
     retrained = Preset([FeatureSpec("tags", "token_set"), FeatureSpec("prompt", "text")], MapParams(), 2)
-    monkeypatch.setattr(widget_module, "load_preset", lambda db_name: retrained)
-    previous = space_widget.current_result()
-    space_widget.fetch()
-    qtbot.waitUntil(lambda: space_widget.current_result() is not previous and space_widget.current_result() is not None, timeout=5000)
-    assert [chip.key for chip in space_widget.feature_bar.chips()] == ["tags", "prompt"]
+    space_data.preset = retrained
+    previous = mapping.current_result()
+    mapping.refresh()
+    wait_for_new_result(qtbot, mapping, previous)
+    assert len(mapping.levels) == 2 and mapping.levels[-1].paths == drilled
+    assert mapping.current_result().paths == drilled
+    assert mapping.preset is retrained
 
 
-def test_space_keys_are_not_offered_as_live_keys(space_widget):
-    assert not {key for key, _ in space_widget.feature_bar.keys} & {"mapping.x", "mapping.y", "mapping.model"}
-    assert ("tags", 30) in space_widget.feature_bar.keys
-
-
-def test_toggle_without_a_preset_does_nothing(mapping):
-    root = mapping.levels[0]
+def test_recompute_command_refreshes(mapping):
     ctx = InstanceCtx(**{"instance:MappingWidget": mapping})
-    with patch.object(MappingWidget, "recompute") as recompute:
-        commands.toggle_space_mode(ctx)
-        commands.toggle_space_mode(ctx)
-    recompute.assert_not_called()
-    assert mapping.space_mode == "space" and mapping.effective_mode() == "live"
-    assert mapping.levels[0] is root
-
-
-def test_relayout_from_a_space_level_seeds_live_keys_from_the_preset(space_widget, qtbot):
-    space_widget.live_features = []
-    space_widget.map_view.select_rows(range(10))
-    space_widget.map_view.selection_changed.emit()
-    with patch.object(MapPipeline, "run", autospec=True, side_effect=MapPipeline.run) as run:
-        space_widget.relayout_selection()
-        qtbot.waitUntil(lambda: space_widget.current_result() is not None and len(space_widget.current_result().paths) == 10, timeout=5000)
-    run.assert_called_once()
-    assert space_widget.live_features == space_widget.preset.features
-    assert [chip.key for chip in space_widget.feature_bar.chips()] == ["tags"]
-    assert not space_widget.feature_bar.read_only
-
-
-def test_refresh_in_precomputed_mode_refetches_and_keeps_the_level(space_widget, qtbot, monkeypatch):
-    space_widget.map_view.select_rows(range(10))
-    space_widget.map_view.selection_changed.emit()
-    space_widget.drill_down()
-    qtbot.waitUntil(lambda: space_widget.current_result() is not None and len(space_widget.current_result().paths) == 10, timeout=5000)
-    drilled = list(space_widget.levels[-1].paths)
-    retrained = Preset([FeatureSpec("tags", "token_set"), FeatureSpec("prompt", "text")], MapParams(), 2)
-    monkeypatch.setattr(widget_module, "load_preset", lambda db_name: retrained)
-    previous = space_widget.current_result()
-    space_widget.refresh()
-    qtbot.waitUntil(lambda: space_widget.current_result() is not previous and space_widget.current_result() is not None, timeout=5000)
-    assert len(space_widget.levels) == 2 and space_widget.levels[-1].paths == drilled
-    assert space_widget.current_result().paths == drilled
-    assert space_widget.preset is retrained
-    assert [chip.key for chip in space_widget.feature_bar.chips()] == ["tags", "prompt"]
-
-
-def test_refresh_in_live_mode_only_recomputes(mapping):
-    with patch.object(MappingWidget, "fetch") as fetch, patch.object(MappingWidget, "recompute") as recompute:
-        mapping.refresh()
-    fetch.assert_not_called()
-    recompute.assert_called_once()
-
-
-def test_recompute_command_refreshes(space_widget):
-    ctx = InstanceCtx(**{"instance:MappingWidget": space_widget})
     with patch.object(MappingWidget, "fetch") as fetch:
         commands.recompute(ctx)
     fetch.assert_called_once_with(keep_levels=True)

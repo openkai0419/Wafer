@@ -11,7 +11,7 @@ from wafer.qt.common.thread import utility_pool
 
 from .hover_preview import HoverPreview
 
-THUMB_BUCKETS = (64, 128, 256)
+THUMB_BUCKETS = (64, 128, 256, 512)
 HOVER_BUCKETS = (128, 256, 512, 1024)
 LIST_BUCKET = 64
 MEGABYTE = 1024 * 1024
@@ -65,23 +65,16 @@ class MapHost(QtCore.QObject):
         self.destroyed.connect(self.preview.deleteLater)
 
     def thumbnail(self, path: str) -> QtGui.QPixmap | None:
-        pixmap = self.list_thumbs.get(path)
-        if pixmap is None:
-            self.list_thumbs.request([path])
-        return pixmap
+        self.list_thumbs.request([path])
+        return self.list_thumbs.get(path)
 
-    def map_thumbnails(self, paths: list[str]) -> list[QtGui.QPixmap | None]:
+    def map_thumbnails(self, paths: list[str], size: float) -> list[QtGui.QPixmap | None]:
+        resize_loader(self.thumbs, thumb_bucket(size), THUMB_BUDGET)
         wanted = set(paths)
         self.thumbs.cancel([path for path in self.map_wanted if path not in wanted])
         self.map_wanted = list(paths)
-        pixmaps = [self.thumbs.get(path) for path in paths]
-        missing = [path for path, pixmap in zip(paths, pixmaps) if pixmap is None]
-        if missing:
-            self.thumbs.request(missing)
-        return pixmaps
-
-    def set_display_size(self, size: float) -> None:
-        resize_loader(self.thumbs, thumb_bucket(size), THUMB_BUDGET)
+        self.thumbs.request(paths)
+        return [self.thumbs.get(path) for path in paths]
 
     def set_hover_size(self, size: int) -> None:
         self.hover_size = size
@@ -93,10 +86,8 @@ class MapHost(QtCore.QObject):
     def show_hover(self, path: str, global_pos: QtCore.QPoint) -> None:
         if not self.hover_size:
             return
-        pixmap = self.hover_thumbs.get(path)
-        if pixmap is None:
-            self.hover_thumbs.request([path])
-            pixmap = self.thumbs.get(path) or self.list_thumbs.get(path) or QtGui.QPixmap()
+        self.hover_thumbs.request([path])
+        pixmap = self.hover_thumbs.get(path) or self.thumbs.get(path) or self.list_thumbs.get(path) or QtGui.QPixmap()
         same = path == self.hover_path and pixmap.cacheKey() == self.hover_key and self.preview.isVisible()
         self.hover_path, self.hover_cursor, self.hover_key = path, global_pos, pixmap.cacheKey()
         if same:

@@ -19,6 +19,7 @@ UNSET_TOP = SCENE_SIZE * 1.08
 UNSET_SPACING = 20.0
 UNSET_PER_ROW = 50
 POINT_SIZE = 8
+MIN_POINT_SIZE = 2
 THUMB_SIZE = 64
 RING = 2
 ZOOM_STEP = 1.25
@@ -108,6 +109,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.color_keys = NO_ROWS
         self.color_ids = NO_ROWS
         self.sprites: dict[int, QtGui.QPixmap] = {}
+        self.sprite_size = 0.0
         self.layer: QtGui.QPixmap | None = None
         self.layer_key: tuple | None = None
         self.version = 0
@@ -141,13 +143,19 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         return list(self.labels)
 
     def item_extent(self) -> float:
-        return (dpix(THUMB_SIZE) if self.thumbnails else self.dot_size()) * self.image_scale
+        return dpix(self.display_size()) if self.thumbnails else self.dot_size()
+
+    def point_size(self) -> float:
+        return max(dpix(POINT_SIZE) * self.image_scale * self.zoom, dpix(MIN_POINT_SIZE))
 
     def dot_size(self) -> float:
-        return dpix(POINT_SIZE) + dpix(RING) * 2
+        return self.point_size() + dpix(RING) * 2
+
+    def sprite_side(self) -> float:
+        return self.dot_size() + dpix(RING) * 2
 
     def display_size(self) -> float:
-        return THUMB_SIZE * self.image_scale
+        return THUMB_SIZE * self.image_scale * self.zoom / max(self.thumbnail_zoom, 1e-6)
 
     def invalidate(self) -> None:
         self.version += 1
@@ -159,7 +167,6 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             return
         self.begin_geometry_change()
         self.image_scale = scale
-        self.sprites = {}
         self.invalidate()
 
     def set_image_limit(self, limit: int) -> None:
@@ -220,6 +227,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         margin = SCENE_SIZE * 0.05
         self.scene().setSceneRect(rect.adjusted(-margin, -margin, margin, margin))
         if not keep_view:
+            self.begin_geometry_change()
             self.fitInView(self.scene().sceneRect(), Qt.KeepAspectRatio)
             self.fit_scale = self.transform().m11()
         self.sync_thumbnail_mode()
@@ -240,7 +248,10 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self.labels.append(label)
 
     def set_thumbnail_zoom(self, zoom: float):
-        self.thumbnail_zoom = zoom
+        if zoom != self.thumbnail_zoom:
+            self.begin_geometry_change()
+            self.thumbnail_zoom = zoom
+            self.invalidate()
         self.sync_thumbnail_mode()
 
     def sync_thumbnail_mode(self):
@@ -286,7 +297,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         chosen = self.choose_image_rows(device, visible, size) if self.thumbnails else NO_ROWS
         paths = [self.paths[row] for row in chosen.tolist()]
         self.wanted_paths = set(paths)
-        pixmaps = self.owner.map_thumbnails(paths) if paths else []
+        pixmaps = self.owner.map_thumbnails(paths, self.display_size()) if paths else []
         loaded = [(row, pixmap) for row, pixmap in zip(chosen.tolist(), pixmaps) if pixmap is not None and not pixmap.isNull()]
         dots = np.setdiff1d(visible, np.array([row for row, _ in loaded], dtype=np.int64), assume_unique=True)
         painter = QtGui.QPainter(layer)
@@ -312,20 +323,22 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         return chosen[np.argsort(((device[chosen] - center) ** 2).sum(axis=1), kind="stable")]
 
     def sprite(self, index: int) -> QtGui.QPixmap:
+        if self.sprite_size != self.point_size():
+            self.sprites, self.sprite_size = {}, self.point_size()
         sprite = self.sprites.get(index)
         if sprite is None:
             sprite = self.sprites[index] = self.build_sprite(QtGui.QColor.fromRgba(int(self.color_keys[index >> 2])), bool(index & 1), bool(index & 2))
         return sprite
 
     def build_sprite(self, color: QtGui.QColor, selected: bool, outlier: bool) -> QtGui.QPixmap:
-        side = self.dot_size() * self.image_scale + dpix(RING) * 2
+        side = self.sprite_side()
         ratio = self.devicePixelRatioF()
         sprite = QtGui.QPixmap(math.ceil(side * ratio), math.ceil(side * ratio))
         sprite.setDevicePixelRatio(ratio)
         sprite.fill(Qt.transparent)
         painter = QtGui.QPainter(sprite)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        size = dpix(POINT_SIZE) * self.image_scale
+        size = self.point_size()
         frame = QtCore.QRectF((side - size) / 2, (side - size) / 2, size, size)
         painter.setPen(Qt.NoPen)
         painter.setBrush(color)
@@ -348,7 +361,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             return
         indexes = (self.color_ids[rows] << 2) | self.selected[rows].astype(np.int64) | (self.outliers[rows].astype(np.int64) << 1)
         sprites = {index: self.sprite(index) for index in np.unique(indexes).tolist()}
-        corners = np.rint(device[rows] - (self.dot_size() * self.image_scale + dpix(RING) * 2) / 2).astype(np.int64)
+        corners = np.rint(device[rows] - self.sprite_side() / 2).astype(np.int64)
         draw = painter.drawPixmap
         for index, x, y in zip(indexes.tolist(), corners[:, 0].tolist(), corners[:, 1].tolist()):
             draw(x, y, sprites[index])
@@ -386,7 +399,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             return None
         distance = ((self.device_positions() - (position.x(), position.y())) ** 2).sum(axis=1)
         row = int(np.argmin(distance))
-        radius = self.dot_size() * self.image_scale / 2
+        radius = self.dot_size() / 2
         return row if distance[row] <= radius * radius else None
 
     def rows_in_rect(self, rect: QtCore.QRectF) -> np.ndarray:
@@ -445,6 +458,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         steps = event.angleDelta().y() / 120
         if steps:
             factor = ZOOM_STEP**steps
+            self.begin_geometry_change()
             self.scale(factor, factor)
             self.sync_thumbnail_mode()
         event.accept()

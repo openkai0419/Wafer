@@ -410,7 +410,6 @@ class MappingWidget(QtWidgets.QWidget):
         self.show_result(result)
 
     def show_result(self, result: MapResult):
-        self.host.set_display_size(self.map_view.display_size())
         self.host.set_hover_size(self.params.hover_size)
         selected = set(self.selected_paths())
         keep_view = self.shown is not None and self.shown.paths == result.paths
@@ -559,8 +558,8 @@ class MappingWidget(QtWidgets.QWidget):
     def thumbnail(self, path: str) -> QtGui.QPixmap | None:
         return self.host.thumbnail(path)
 
-    def map_thumbnails(self, paths: list[str]) -> list[QtGui.QPixmap | None]:
-        return self.host.map_thumbnails(paths)
+    def map_thumbnails(self, paths: list[str], size: float) -> list[QtGui.QPixmap | None]:
+        return self.host.map_thumbnails(paths, size)
 
     def show_hover(self, path: str, global_pos: QtCore.QPoint) -> None:
         self.host.show_hover(path, global_pos)
@@ -574,7 +573,6 @@ class MappingWidget(QtWidgets.QWidget):
 
     def set_image_scale(self, scale: float) -> None:
         self.map_view.set_image_scale(scale)
-        self.host.set_display_size(self.map_view.display_size())
 
     def image_scale_up(self, ratio: float = 1.1) -> None:
         self.set_image_scale(self.map_view.image_scale * ratio)

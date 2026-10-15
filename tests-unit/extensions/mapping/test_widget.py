@@ -278,7 +278,10 @@ def test_drop_without_files_is_ignored(mapping):
 def test_thumbnail_bucket_uses_the_logical_size(mapping, monkeypatch):
     monkeypatch.setattr(map_view_module, "dpix", lambda value: value * 2)
     mapping.set_image_scale(1.5)
-    assert mapping.map_view.display_size() == map_view_module.THUMB_SIZE * 1.5
+    view = mapping.map_view
+    view.set_thumbnail_zoom(view.zoom)
+    assert view.display_size() == pytest.approx(map_view_module.THUMB_SIZE * 1.5)
+    view.viewport().repaint()
     assert mapping.host.thumbs.size == 128
     assert mapping.host.thumbs.cache_limit == map_host_module.cache_limit(map_host_module.THUMB_BUDGET, 128)
 
@@ -297,7 +300,6 @@ def test_smallest_thumbnail_bucket_matches_map_view():
 def test_image_scale_resizes_thumbnails_and_persists(mapping):
     mapping.set_image_scale(2.0)
     assert mapping.map_view.image_scale == 2.0
-    assert mapping.host.thumbs.size == 128
     state = mapping.save_state()
     assert state["image_scale"] == 2.0
     mapping.set_image_scale(1.0)

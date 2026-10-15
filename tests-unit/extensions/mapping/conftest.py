@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from extensions.mapping import projection
+from wafer.plugin.grid.thumbnail_loader import shared_image_cache
 
 
 def split_by_x(space, min_cluster_size, min_samples):
@@ -14,3 +15,10 @@ def split_by_x(space, min_cluster_size, min_samples):
 @pytest.fixture()
 def fake_cluster(monkeypatch):
     monkeypatch.setattr(projection, "cluster", split_by_x)
+
+
+@pytest.fixture(autouse=True)
+def empty_shared_image_cache():
+    shared_image_cache().clear()
+    yield
+    shared_image_cache().clear()

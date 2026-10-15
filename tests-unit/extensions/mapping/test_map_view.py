@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from extensions.mapping import map_view as map_view_module
 from extensions.mapping.map_view import MapView
 from extensions.mapping.session import MapDiagnostics, MapResult
 
@@ -12,7 +13,7 @@ class Owner:
         self.hovers = []
         self.pixmaps = {}
 
-    def map_thumbnails(self, paths):
+    def map_thumbnails(self, paths, size):
         self.requested.append(list(paths))
         return [self.pixmaps.get(path) for path in paths]
 
@@ -161,7 +162,8 @@ def test_clicking_a_group_label_selects_the_group(view, qtbot):
 def render_point(view, row):
     view.viewport().repaint()
     center = point_pos(view, row)
-    return view.current_layer().toImage().copy(center.x() - 48, center.y() - 48, 96, 96)
+    side = int(view.item_extent()) + 32
+    return view.current_layer().toImage().copy(center.x() - side // 2, center.y() - side // 2, side, side)
 
 
 @pytest.mark.parametrize("thumbnail_zoom", [2.0, 0.5])
@@ -178,9 +180,9 @@ def test_outlier_is_drawn_with_a_ring_even_when_unselected(view, thumbnail_zoom)
 
 def test_image_scale_changes_extent_and_clamps(view):
     view.show_result(result(), colors(6), show_groups=False, keep_view=False)
-    base = view.item_extent()
+    base = view.point_size()
     view.set_image_scale(2.0)
-    assert view.item_extent() == pytest.approx(base * 2)
+    assert view.point_size() == pytest.approx(base * 2)
     view.set_image_scale(99)
     assert view.image_scale == 4.0
     view.set_image_scale(0)
@@ -380,3 +382,26 @@ def test_hover_follows_points_not_image_rectangles(view):
     assert view.owner.hovers == [] or view.owner.hovers[-1] is None
     hover_at(view, point_pos(view, row))
     assert view.owner.hovers[-1] == view.paths[row]
+
+
+def test_wheel_zoom_grows_points_and_images_with_the_plane(view):
+    view.show_result(result(labels=False), colors(6), show_groups=False, keep_view=False)
+    point, display = view.point_size(), view.display_size()
+    position = QtCore.QPointF(200, 200)
+    event = QtGui.QWheelEvent(position, position, QtCore.QPoint(), QtCore.QPoint(0, 240), QtCore.Qt.NoButton, QtCore.Qt.NoModifier, QtCore.Qt.NoScrollPhase, False)
+    view.wheelEvent(event)
+    assert view.point_size() == pytest.approx(point * view.zoom)
+    assert view.display_size() == pytest.approx(display * view.zoom)
+
+
+def test_images_start_at_the_thumbnail_size_where_they_switch_on(view):
+    view.show_result(result(labels=False), colors(6), show_groups=False, keep_view=False)
+    view.set_thumbnail_zoom(view.zoom)
+    assert view.thumbnails
+    assert view.display_size() == pytest.approx(64.0)
+
+
+def test_zoomed_out_points_keep_a_minimum_size(view):
+    view.show_result(result(labels=False), colors(6), show_groups=False, keep_view=False)
+    view.scale(0.01, 0.01)
+    assert view.point_size() >= map_view_module.dpix(map_view_module.MIN_POINT_SIZE)

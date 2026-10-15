@@ -218,8 +218,8 @@ class PreviewOwner:
         self.host = host
         self.selected_paths = selected_paths
 
-    def map_thumbnails(self, paths: list[str]) -> list[QtGui.QPixmap | None]:
-        return self.host.map_thumbnails(paths)
+    def map_thumbnails(self, paths: list[str], size: float) -> list[QtGui.QPixmap | None]:
+        return self.host.map_thumbnails(paths, size)
 
     def show_hover(self, path: str, global_pos: QtCore.QPoint) -> None:
         self.host.show_hover(path, global_pos)
@@ -631,7 +631,6 @@ class MappingSpaceWidget(QtWidgets.QWidget):
     def show_preview(self, result: MapResult, sources: dict[str, str], caption: str) -> None:
         params = MapParams()
         self.host.sources = sources
-        self.host.set_display_size(self.map_view.display_size())
         self.host.set_hover_size(params.hover_size)
         keep_view = self.shown is not None and self.shown.paths == result.paths
         self.map_view.set_thumbnail_zoom(params.thumbnail_zoom)

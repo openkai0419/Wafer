@@ -78,6 +78,12 @@ def drill_up(ctx, m):
     m.drill_up()
 
 
+def frame_selection(ctx):
+    panel = map_panel(ctx)
+    if panel is not None:
+        panel.map_view.frame_selection()
+
+
 def recompute(ctx):
     panel = map_panel(ctx)
     if panel is not None:
@@ -137,6 +143,7 @@ class MappingViewCommands(MenuGroup):
         return [
             ":Mapping",
             CommandMeta(path="mapping.select_all", display="Select All", func=select_all),
+            CommandMeta(path="mapping.frame_selection", display="Frame Selection", func=frame_selection),
             CommandMeta(path="mapping.drill_down", display="Map Selection Only", func=drill_down),
             CommandMeta(path="mapping.drill_up", display="Back", func=drill_up),
             CommandMeta(path="mapping.recompute", display="Recompute", func=recompute),

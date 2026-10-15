@@ -485,3 +485,33 @@ def test_group_mode_applies_to_rubber_band_operations(view, qtbot):
     drag_over(view, qtbot, 0, 100, QtCore.Qt.ControlModifier)
     assert view.selected_rows() == [3, 4]
 
+
+def scene_view_rect(view):
+    return view.mapToScene(view.viewport().rect()).boundingRect()
+
+
+def test_frame_selection_fits_the_selected_points(view):
+    view.show_result(result(labels=False), colors(6), keep_view=False)
+    view.select_rows([2, 4])
+    view.frame_selection()
+    shown = scene_view_rect(view)
+    assert all(shown.contains(QtCore.QPointF(*view.positions[row])) for row in (2, 4))
+    assert not shown.contains(QtCore.QPointF(*view.positions[0]))
+    assert view.zoom > 1.5
+
+
+def test_frame_without_selection_fits_every_point(view):
+    view.show_result(result(labels=False), colors(6), keep_view=False)
+    view.scale(8, 8)
+    view.frame_selection()
+    shown = scene_view_rect(view)
+    assert all(shown.contains(QtCore.QPointF(*point)) for point in view.positions)
+
+
+def test_frame_on_a_single_point_zooms_in_around_it(view):
+    view.show_result(result(labels=False), colors(6), keep_view=False)
+    view.select_rows([2])
+    view.frame_selection()
+    shown = scene_view_rect(view)
+    assert shown.contains(QtCore.QPointF(*view.positions[2])) and shown.width() < 100
+

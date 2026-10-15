@@ -53,6 +53,7 @@ def test_command_ids():
     assert MappingGridCommands.NAME == "File"
     assert view == {
         "mapping.select_all",
+        "mapping.frame_selection",
         "mapping.drill_down",
         "mapping.drill_up",
         "mapping.recompute",
@@ -91,6 +92,8 @@ def test_panel_commands_target_the_panel_the_command_came_from(monkeypatch):
     space, mapping = MagicMock(), MagicMock()
     monkeypatch.setattr(MappingWidget, "instance", classmethod(lambda cls: mapping))
     commands.select_all(Ctx(map_panel=space))
+    commands.frame_selection(Ctx(map_panel=space))
+    space.map_view.frame_selection.assert_called_once_with()
     commands.recompute(Ctx(map_panel=space))
     space.select_all.assert_called_once_with()
     space.refresh.assert_called_once_with()

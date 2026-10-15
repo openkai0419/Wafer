@@ -184,6 +184,17 @@
           "args": {}
         }
       }
+    },
+    {
+      "key": {
+        "key": "F"
+      },
+      "scopes": {
+        "MappingView": {
+          "id": "mapping.frame_selection",
+          "args": {}
+        }
+      }
     }
   ]
 }

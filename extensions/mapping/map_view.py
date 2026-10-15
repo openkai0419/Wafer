@@ -27,6 +27,8 @@ ZOOM_STEP = 1.25
 MIN_IMAGE_SCALE = 0.02
 MAX_IMAGE_SCALE = 4.0
 LABEL_GAP = 4
+FRAME_MARGIN = 0.05
+FRAME_MIN_SPAN = SCENE_SIZE * 0.02
 IMAGE_LIMIT = 300
 IMAGE_SPACING = 0.01
 IMAGE_REFRESH_MS = 50
@@ -480,6 +482,17 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     def select_group(self, group: int):
         self.select_rows(np.flatnonzero(self.group_of == group).tolist())
         self.selection_changed.emit()
+
+    def frame_selection(self) -> None:
+        if not self.paths:
+            return
+        points = self.positions[self.selected] if self.selected.any() else self.positions
+        low, high = points.min(axis=0), points.max(axis=0)
+        center, span = (low + high) / 2, np.maximum(high - low, FRAME_MIN_SPAN) * (1 + FRAME_MARGIN * 2)
+        self.begin_geometry_change()
+        self.fitInView(QtCore.QRectF(center[0] - span[0] / 2, center[1] - span[1] / 2, span[0], span[1]), Qt.KeepAspectRatio)
+        self.sync_thumbnail_mode()
+        self.invalidate()
 
     def reveal(self, row: int):
         if 0 <= row < len(self.paths):

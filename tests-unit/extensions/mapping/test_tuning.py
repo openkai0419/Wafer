@@ -51,5 +51,5 @@ def test_stages_limit_the_form_but_not_the_params(qtbot):
     assert panel.params() == MapParams()
     panel.controls["seed"].setValue(7)
     assert panel.params() == MapParams(seed=7)
-    panel.set_params(MapParams(seed=3, svd_dims=80))
-    assert panel.controls["seed"].value() == 3 and panel.params().svd_dims == 80
+    panel.set_params(MapParams(seed=3, label_terms=7))
+    assert panel.controls["seed"].value() == 3 and panel.params().label_terms == 7

@@ -10,6 +10,8 @@ from extensions.mapping.encoders import (
     CategoryEncoder,
     NumericEncoder,
     PaletteEncoder,
+    SUMMARY_DIMS,
+    TEXT_MAX_CHARS,
     PathEncoder,
     TextEncoder,
     TokenSetEncoder,
@@ -383,3 +385,26 @@ def test_normalize_token_is_memoised():
     normalize_token.cache_clear()
     assert normalize_token("(Cat_Ears:1.2)") == normalize_token("(Cat_Ears:1.2)")
     assert normalize_token.cache_info().hits == 1
+
+
+def test_text_chunk_sizes_are_per_key_options():
+    texts = values("blue hair girl", "blue eyes girl", "red car")
+    short = TextEncoder({"min_chars": "2", "max_chars": "2"})
+    long = TextEncoder({"min_chars": "5", "max_chars": "3"})
+    assert short.ngram_range() == (2, 2) and long.ngram_range() == (3, 5)
+    short.fit_transform(texts, PARAMS)
+    long.fit_transform(texts, PARAMS)
+    assert set(short.vectorizer.get_feature_names_out()) != set(long.vectorizer.get_feature_names_out())
+
+
+def test_number_options_are_clamped_and_fall_back_on_bad_values():
+    assert TextEncoder({"max_chars": "999"}).number_option("max_chars") == TEXT_MAX_CHARS
+    assert TokenSetEncoder({"summary": "bad"}).summary_dims() == SUMMARY_DIMS
+    assert PathEncoder({"summary": "1"}).summary_dims() == 2
+    assert NumericEncoder().summary_dims() == SUMMARY_DIMS
+
+
+@pytest.mark.parametrize("encoder", [TokenSetEncoder, PathEncoder, TextEncoder, CategoryEncoder])
+def test_sparse_encoders_offer_a_detail_option(encoder):
+    assert any(option.name == "summary" and option.numeric for option in encoder.OPTIONS)
+    assert encoder({"summary": "120"}).summary_dims() == 120

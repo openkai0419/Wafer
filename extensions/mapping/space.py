@@ -145,7 +145,7 @@ class SpaceModel:
             encoder = encoder_cls(feature.options)
             inputs = [feature_input(values[path], feature.key, encoder_cls) for path in paths]
             raw = encoder.fit_transform(inputs, params)
-            reducer = projection.BlockReducer(params.svd_dims, params.seed)
+            reducer = projection.BlockReducer(encoder.summary_dims(), params.seed)
             present = encoder.present(inputs)
             blocks.append((feature.label(), reducer.fit_transform(raw), present, feature.weight))
             encoders.append(encoder)

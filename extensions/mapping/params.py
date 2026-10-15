@@ -6,7 +6,7 @@ from typing import Any
 
 from wafer.core.logs import AppLogger
 
-STAGES = ("encode", "reduce", "layout", "cluster", "view")
+STAGES = ("layout", "cluster", "view")
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,15 +31,6 @@ AUTO_STRICTNESS_MAX = 10
 
 @dataclass(frozen=True)
 class MapParams:
-    ngram_min: int = param(
-        2, stage="encode", label="Text: min characters", description="Compare text in chunks of at least this many characters. Lower tolerates spelling variations.", minimum=1, maximum=6
-    )
-    ngram_max: int = param(
-        4, stage="encode", label="Text: max characters", description="Compare text in chunks of at most this many characters. Higher is more sensitive to word differences.", minimum=1, maximum=8
-    )
-    svd_dims: int = param(
-        50, stage="reduce", label="Text summary size", description="How many dimensions text is summarized into. Higher keeps finer differences but is slower.", minimum=2, maximum=300
-    )
     n_neighbors: int = param(
         15, stage="layout", label="Neighbors", description="How many nearby files shape the layout. Lower shows small clusters, higher the overall structure.", minimum=2, maximum=200
     )
@@ -74,7 +65,6 @@ class MapParams:
                 continue
             value = min(max(current, spec.minimum), spec.maximum)
             changes[f.name] = round(value) if isinstance(f.default, int) else float(value)
-        changes["ngram_max"] = max(changes["ngram_max"], changes["ngram_min"])
         return replace(self, **changes)
 
     def to_dict(self) -> dict[str, Any]:

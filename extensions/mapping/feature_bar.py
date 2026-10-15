@@ -11,7 +11,7 @@ from wafer.qt.common.icon_engine import themed_icon
 from wafer.qt.theme import ThemeManager
 from wafer.qt.widgets import FlowLayout
 
-from .encoders import ENCODERS, PALETTE_KEY
+from .encoders import ENCODERS, PALETTE_KEY, OptionSpec
 from .session import FeatureSpec
 
 WEIGHT_PREFIX = "\N{MULTIPLICATION SIGN}"
@@ -45,6 +45,7 @@ class FeatureChip(QtWidgets.QFrame):
         self.options_box.setSpacing(dpix(4))
         layout.addLayout(self.options_box)
         self.option_combos: dict[str, QtWidgets.QComboBox] = {}
+        self.option_spins: dict[str, QtWidgets.QSpinBox] = {}
         self.pattern_edit = QtWidgets.QLineEdit()
         self.pattern_edit.setPlaceholderText(t("Regex"))
         self.pattern_edit.editingFinished.connect(self.changed.emit)
@@ -70,7 +71,11 @@ class FeatureChip(QtWidgets.QFrame):
                 widget.hide()
                 widget.deleteLater()
         self.option_combos.clear()
+        self.option_spins.clear()
         for option in ENCODERS[self.encoder_combo.currentData()].OPTIONS:
+            if option.numeric:
+                self.add_number_option(option, values)
+                continue
             if not option.choices:
                 continue
             combo = QtWidgets.QComboBox()
@@ -84,6 +89,19 @@ class FeatureChip(QtWidgets.QFrame):
         self.pattern_edit.setText(values.get("pattern", ""))
         self.options_box.addWidget(self.pattern_edit)
         self.sync_pattern_visibility()
+
+    def add_number_option(self, option: OptionSpec, values: dict[str, str]) -> None:
+        spin = QtWidgets.QSpinBox()
+        spin.setRange(option.minimum, option.maximum)
+        spin.setPrefix(f"{t(option.label)} ")
+        try:
+            spin.setValue(int(values.get(option.name, option.default)))
+        except ValueError:
+            spin.setValue(int(option.default))
+        spin.setToolTip(t(option.description))
+        spin.valueChanged.connect(lambda _value: self.changed.emit())
+        self.options_box.addWidget(spin)
+        self.option_spins[option.name] = spin
 
     def sync_pattern_visibility(self):
         combo = self.option_combos.get("separator")
@@ -107,6 +125,7 @@ class FeatureChip(QtWidgets.QFrame):
 
     def spec(self) -> FeatureSpec:
         options = {name: combo.currentData() for name, combo in self.option_combos.items() if combo.currentData() != self.option_default(name)}
+        options.update({name: str(spin.value()) for name, spin in self.option_spins.items() if str(spin.value()) != self.option_default(name)})
         if self.pattern_edit.isVisibleTo(self) and self.pattern_edit.text():
             options["pattern"] = self.pattern_edit.text()
         return FeatureSpec(self.key, self.encoder_combo.currentData(), round(self.weight_spin.value(), 2), options)

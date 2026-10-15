@@ -153,3 +153,29 @@ def test_set_encoder_updates_the_matching_chip_and_emits(qtbot):
     bar.set_encoder("missing", "numeric")
     assert bar.features() == [FeatureSpec("score", "numeric"), FeatureSpec("tags", "text")]
     assert emitted == [1]
+
+
+def test_number_options_appear_on_the_chip_and_only_changes_are_saved(qtbot):
+    bar = FeatureBar(lambda key: "text")
+    qtbot.addWidget(bar)
+    bar.add_feature("prompt")
+    chip = bar.chips()[0]
+    assert set(chip.option_spins) == {"min_chars", "max_chars", "summary"}
+    assert bar.features()[0].options == {}
+    chip.option_spins["max_chars"].setValue(8)
+    chip.option_spins["summary"].setValue(120)
+    assert bar.features()[0].options == {"max_chars": "8", "summary": "120"}
+    bar.set_features([FeatureSpec("prompt", "text", 1.0, {"min_chars": "3"})])
+    assert bar.chips()[0].option_spins["min_chars"].value() == 3
+
+
+def test_switching_encoder_rebuilds_number_options(qtbot):
+    bar = FeatureBar(lambda key: "text")
+    qtbot.addWidget(bar)
+    bar.add_feature("prompt")
+    chip = bar.chips()[0]
+    chip.set_encoder("numeric")
+    assert chip.option_spins == {}
+    chip.set_encoder("token_set")
+    assert set(chip.option_spins) == {"summary"}
+

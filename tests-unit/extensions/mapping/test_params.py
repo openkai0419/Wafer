@@ -14,22 +14,26 @@ def test_every_param_has_stage_and_description():
 
 def test_values_for_groups_by_stage():
     params = MapParams()
-    assert params.values_for("reduce") == (50,)
-    assert MapParams(min_dist=0.5).values_for("encode") == params.values_for("encode")
+    assert MapParams(label_terms=5).values_for("layout") == params.values_for("layout")
+    assert MapParams(min_dist=0.5).values_for("layout") != params.values_for("layout")
+
+
+def test_key_settings_are_not_params():
+    names = {name for name, _spec, _default in param_specs()}
+    assert not names & {"ngram_min", "ngram_max", "svd_dims"}
+    assert STAGES == ("layout", "cluster", "view")
 
 
 def test_changed_stage_returns_earliest():
     base = MapParams()
     assert changed_stage(base, base) is None
     assert changed_stage(base, MapParams(min_dist=0.3)) == "layout"
-    assert changed_stage(base, MapParams(min_dist=0.3, ngram_min=3)) == "encode"
+    assert changed_stage(base, MapParams(min_dist=0.3, label_terms=5)) == "layout"
     assert changed_stage(base, MapParams(label_terms=5)) == "view"
 
 
-def test_normalized_clamps_and_orders_ngrams():
-    params = MapParams(ngram_min=5, ngram_max=2, min_dist=9.0).normalized()
-    assert params.ngram_max == 5
-    assert params.min_dist == 1.0
+def test_normalized_clamps():
+    assert MapParams(min_dist=9.0).normalized().min_dist == 1.0
 
 
 def test_dict_roundtrip_ignores_unknown_and_bad_values():
@@ -59,9 +63,9 @@ def test_from_dict_ignores_non_finite_values(bad):
 
 
 def test_normalized_resets_non_finite_fields_to_default():
-    params = MapParams(seed=float("nan"), min_dist=float("inf"), svd_dims=float("-inf")).normalized()
+    params = MapParams(seed=float("nan"), min_dist=float("inf"), n_neighbors=float("-inf")).normalized()
     defaults = MapParams()
-    assert (params.seed, params.min_dist, params.svd_dims) == (defaults.seed, defaults.min_dist, defaults.svd_dims)
+    assert (params.seed, params.min_dist, params.n_neighbors) == (defaults.seed, defaults.min_dist, defaults.n_neighbors)
 
 
 def test_hover_size_is_a_view_param_clamped_to_range():

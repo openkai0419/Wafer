@@ -145,9 +145,9 @@ class MapPipeline:
             return None
         with timed(diagnostics, "reduce"):
             for block in blocks:
-                key = params.values_for("reduce") + (params.seed,)
+                key = (block.encoder.summary_dims(), params.seed)
                 if block.reduced_key != key:
-                    block.reduced = projection.BlockReducer(params.svd_dims, params.seed).fit_transform(block.raw)
+                    block.reduced = projection.BlockReducer(block.encoder.summary_dims(), params.seed).fit_transform(block.raw)
                     block.reduced_key = key
         if cancelled():
             return None
@@ -160,7 +160,7 @@ class MapPipeline:
         layout_key = (
             self._encode_key,
             tuple((f.cache_key, f.weight) for f in request.features),
-            params.values_for("reduce"),
+            params.seed,
             params.values_for("layout"),
         )
         if layout_key != self._layout_key:
@@ -190,7 +190,7 @@ class MapPipeline:
         return MapResult(list(request.paths), positions, outliers, ~has_value, labels, group_terms, order, diagnostics)
 
     def _encode(self, request, params, cancelled, progress, diagnostics) -> list[_Block] | None:
-        encode_key = (tuple(request.paths), params.values_for("encode"))
+        encode_key = tuple(request.paths)
         if encode_key != self._encode_key:
             self._blocks.clear()
             self._encode_key = encode_key

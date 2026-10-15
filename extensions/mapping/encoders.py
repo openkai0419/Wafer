@@ -39,6 +39,24 @@ class OptionSpec:
     description: str
     default: str
     choices: tuple[tuple[str, str], ...] = ()
+    minimum: int = 0
+    maximum: int = 0
+
+    @property
+    def numeric(self) -> bool:
+        return self.maximum > self.minimum
+
+
+SUMMARY_DIMS = 50
+TEXT_MAX_CHARS = 12
+SUMMARY_OPTION = OptionSpec(
+    "summary",
+    "Detail",
+    "How many dimensions this key is summarized into. Higher keeps finer differences, is slower, and makes the key count a little more.",
+    str(SUMMARY_DIMS),
+    minimum=2,
+    maximum=300,
+)
 
 
 class BaseEncoder(ABC):
@@ -59,6 +77,18 @@ class BaseEncoder(ABC):
 
     def present(self, inputs: Sequence[Any]) -> np.ndarray:
         return np.array([item is not None for item in inputs], dtype=bool)
+
+    def number_option(self, name: str) -> int:
+        spec = next(option for option in self.OPTIONS if option.name == name)
+        try:
+            value = int(self.options.get(name, spec.default))
+        except (TypeError, ValueError) as e:
+            AppLogger.warning(f"[Mapping] Ignored invalid option {name}={self.options.get(name)!r}", exc=e)
+            value = int(spec.default)
+        return min(max(value, spec.minimum), spec.maximum)
+
+    def summary_dims(self) -> int:
+        return self.number_option("summary") if any(option.name == "summary" for option in self.OPTIONS) else SUMMARY_DIMS
 
     @abstractmethod
     def fit_transform(self, inputs: Sequence[Any], params: MapParams): ...
@@ -224,6 +254,7 @@ class TokenSetEncoder(BaseEncoder):
             (("auto", "Auto"), ("comma", ","), ("newline", "New line"), ("semicolon", ";"), ("pipe", "|"), ("space", "Space"), ("custom", "Regex")),
         ),
         OptionSpec("pattern", "Regex", "Regular expression used when the separator is Regex.", ""),
+        SUMMARY_OPTION,
     )
 
     def __init__(self, options: dict[str, str] | None = None):
@@ -311,7 +342,7 @@ class PathEncoder(TokenSetEncoder):
     NAME = "path"
     DISPLAY_NAME = "Folders"
     DESCRIPTION = "Compares the folders in a path, ignoring the file name. Files in the same or nearby folders come closer."
-    OPTIONS = ()
+    OPTIONS = (SUMMARY_OPTION,)
 
     @classmethod
     def detect(cls, values):
@@ -339,6 +370,11 @@ class TextEncoder(BaseEncoder):
     NAME = "text"
     DISPLAY_NAME = "Text"
     DESCRIPTION = "Compares how similar the character sequences are. Works with any language or separator."
+    OPTIONS = (
+        OptionSpec("min_chars", "Min chars", "Compare text in chunks of at least this many characters. Lower tolerates spelling variations.", "2", minimum=1, maximum=TEXT_MAX_CHARS),
+        OptionSpec("max_chars", "Max chars", "Compare text in chunks of at most this many characters. Higher is more sensitive to word differences.", "4", minimum=1, maximum=TEXT_MAX_CHARS),
+        SUMMARY_OPTION,
+    )
 
     def __init__(self, options: dict[str, str] | None = None):
         super().__init__(options)
@@ -358,7 +394,7 @@ class TextEncoder(BaseEncoder):
         self.words_matrix = None
         vectorizer = TfidfVectorizer(
             analyzer="char_wb",
-            ngram_range=(params.ngram_min, params.ngram_max),
+            ngram_range=self.ngram_range(),
             sublinear_tf=True,
             max_features=100_000,
             dtype=np.float32,
@@ -371,6 +407,10 @@ class TextEncoder(BaseEncoder):
             return np.zeros((len(inputs), 1), dtype=np.float32)
         self.vectorizer = vectorizer
         return matrix
+
+    def ngram_range(self) -> tuple[int, int]:
+        low, high = self.number_option("min_chars"), self.number_option("max_chars")
+        return min(low, high), max(low, high)
 
     def fit_describe(self, inputs, params):
         self.texts = [item.text if item is not None else "" for item in inputs]
@@ -407,6 +447,7 @@ class CategoryEncoder(BaseEncoder):
     NAME = "category"
     DISPLAY_NAME = "Category"
     DESCRIPTION = "Only checks whether the values are exactly the same."
+    OPTIONS = (SUMMARY_OPTION,)
 
     def __init__(self, options: dict[str, str] | None = None):
         super().__init__(options)

@@ -121,6 +121,8 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.wanted_paths: set[str] = set()
         self.image_limit = IMAGE_LIMIT
         self.image_spacing = IMAGE_SPACING
+        self.image_cap = 0.0
+        self.labels_visible = True
         self.fit_scale = 1.0
         self.thumbnail_zoom = 2.0
         self.thumbnails = False
@@ -149,7 +151,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         return dpix(self.display_size()) if self.thumbnails else self.dot_size()
 
     def point_size(self) -> float:
-        return max(dpix(POINT_SIZE) * self.image_scale * self.zoom, MIN_POINT_SIZE)
+        return max(dpix(POINT_SIZE) * self.zoom, MIN_POINT_SIZE)
 
     def dot_size(self) -> float:
         return self.point_size() + dpix(RING) * 2
@@ -158,7 +160,19 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         return self.dot_size() + dpix(RING) * 2
 
     def display_size(self) -> float:
-        return THUMB_SIZE * self.image_scale * self.zoom / max(self.thumbnail_zoom, 1e-6)
+        size = THUMB_SIZE * self.image_scale * self.zoom / max(self.thumbnail_zoom, 1e-6)
+        return min(size, self.image_cap) if self.image_cap > 0 else size
+
+    def set_image_cap(self, cap: float) -> None:
+        if cap != self.image_cap:
+            self.begin_geometry_change()
+            self.image_cap = max(float(cap), 0.0)
+            self.invalidate()
+
+    def set_labels_visible(self, visible: bool) -> None:
+        self.labels_visible = bool(visible)
+        for label in self.labels:
+            label.setVisible(self.labels_visible)
 
     def invalidate(self) -> None:
         self.version += 1
@@ -207,7 +221,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.sprites = {}
         self.invalidate()
 
-    def show_result(self, result: MapResult, colors: list[QtGui.QColor], show_groups: bool, keep_view: bool):
+    def show_result(self, result: MapResult, colors: list[QtGui.QColor], keep_view: bool):
         self.clear_map()
         count = len(result.paths)
         self.paths = list(result.paths)
@@ -221,8 +235,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         fallback = QtGui.QColor(ThemeManager.instance().palette.text_secondary).rgba()
         keys = np.array([colors[row].rgba() if row < len(colors) else fallback for row in range(count)], dtype=np.int64)
         self.color_keys, self.color_ids = np.unique(keys, return_inverse=True)
-        if show_groups:
-            self.add_labels(result)
+        self.add_labels(result)
         core = QtCore.QRectF(0, 0, SCENE_SIZE, SCENE_SIZE)
         rect = core
         if count:
@@ -248,6 +261,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 continue
             anchor = QtCore.QPointF(float(np.median(coords[:, 0])) * SCENE_SIZE, float(np.max(coords[:, 1])) * SCENE_SIZE)
             label = GroupLabelItem(self, group, ", ".join(words), anchor)
+            label.setVisible(self.labels_visible)
             self.scene().addItem(label)
             self.labels.append(label)
 

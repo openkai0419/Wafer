@@ -103,3 +103,21 @@ def test_update_path_emits_data_changed_for_the_row(qtbot):
     widget.update_path("c:/a.png")
     widget.update_path("c:/missing.png")
     assert changed == [1]
+
+
+def test_large_thumbnails_are_shrunk_to_the_icon_size(qtbot):
+    class BigOwner(Owner):
+        def __init__(self):
+            self.pixmap = QtGui.QPixmap(512, 256)
+            self.pixmap.fill(QtGui.QColor("blue"))
+
+        def thumbnail(self, path):
+            return self.pixmap
+
+    widget = FileList(BigOwner())
+    qtbot.addWidget(widget)
+    widget.set_rows(["c:/a.png", "c:/b.png"], np.array([0, 1]), [QtGui.QColor("red")] * 2)
+    icon = widget.model().index(0, 0).data(QtCore.Qt.DecorationRole)
+    limit = widget.iconSize().width() + 1
+    assert icon.width() / icon.devicePixelRatio() <= limit and icon.height() / icon.devicePixelRatio() <= limit
+    assert widget.model().index(0, 0).data(QtCore.Qt.DecorationRole).cacheKey() == icon.cacheKey()

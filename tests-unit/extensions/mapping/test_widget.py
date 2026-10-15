@@ -95,7 +95,7 @@ def test_selection_survives_recompute(mapping, qtbot):
     mapping.map_view.select_rows([3, 4])
     mapping.map_view.selection_changed.emit()
     previous = mapping.current_result()
-    mapping.set_grouping(False)
+    mapping.recompute()
     qtbot.waitUntil(lambda: mapping.current_result() is not previous, timeout=5000)
     assert mapping.selected_paths() == ["c:/3.png", "c:/4.png"]
 
@@ -185,9 +185,7 @@ def test_fetch_failure_shows_error(qtbot, monkeypatch):
 
 
 def without_labels(mapping, qtbot):
-    previous = mapping.current_result()
-    mapping.set_grouping(False)
-    qtbot.waitUntil(lambda: mapping.current_result() is not previous, timeout=5000)
+    mapping.set_labels_shown(False)
     return mapping.map_view
 
 
@@ -225,15 +223,24 @@ def test_right_click_on_unselected_point_selects_only_it(mapping, qtbot):
 def test_state_roundtrip(mapping):
     state = mapping.save_state()
     assert state["features"][0]["key"] == "tags"
-    assert "params" in state and state["grouping"] is True
+    assert "params" in state and state["labels"] is True
 
 
-def test_restore_state_applies_grouping(mapping):
+def test_restore_state_applies_labels(mapping):
     state = mapping.save_state()
-    state["grouping"] = False
+    state["labels"] = False
     mapping.restore_state(state)
-    assert mapping.grouping is False
-    assert not mapping.group_check.isChecked()
+    assert mapping.labels_shown is False
+    assert not mapping.label_check.isChecked()
+    assert mapping.map_view.label_items() and not any(label.isVisible() for label in mapping.map_view.label_items())
+
+
+def test_label_checkbox_hides_labels_without_recomputing(mapping):
+    previous = mapping.current_result()
+    mapping.label_check.setChecked(False)
+    assert mapping.labels_shown is False and mapping.current_result() is previous
+    assert not any(label.isVisible() for label in mapping.map_view.label_items())
+    assert mapping.current_result().labels is not None
 
 
 def test_no_features_shows_message(qtbot, monkeypatch):
@@ -339,10 +346,8 @@ def test_selection_mode_syncs_toolbar_and_persists(mapping):
     assert mapping.selection_mode == "group" and mapping.mode_buttons["group"].isChecked()
 
 
-def test_group_button_follows_grouping(mapping):
-    mapping.set_grouping(False)
-    assert not mapping.mode_buttons["group"].isEnabled()
-    mapping.set_grouping(True)
+def test_group_selection_is_always_available(mapping):
+    mapping.set_labels_shown(False)
     assert mapping.mode_buttons["group"].isEnabled()
 
 

@@ -99,7 +99,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.paths: list[str] = []
         self.values: dict[str, dict[str, PathValue]] = {}
         self.params = MapParams()
-        self.grouping_enabled = True
+        self.labels_shown = True
         self.levels: list[MapLevel] = []
         self.shown: MapResult | None = None
         self.host = MapHost(self)
@@ -152,11 +152,11 @@ class MappingWidget(QtWidgets.QWidget):
         for mode, button in self.space_buttons.items():
             button.toggled.connect(partial(self.on_space_toggled, mode))
         self.precomputed_button.setEnabled(False)
-        self.group_check = QtWidgets.QCheckBox(t("Groups"))
-        self.group_check.setChecked(True)
-        self.group_check.setToolTip(t("Show group colors and labels."))
-        self.group_check.toggled.connect(self.set_grouping)
-        toolbar.addWidget(self.group_check)
+        self.label_check = QtWidgets.QCheckBox(t("Labels"))
+        self.label_check.setChecked(True)
+        self.label_check.setToolTip(t("Show group labels."))
+        self.label_check.toggled.connect(self.set_labels_shown)
+        toolbar.addWidget(self.label_check)
         self.mode_buttons = {}
         mode_group = QtWidgets.QButtonGroup(self)
         for mode, text in (("single", t("Single")), ("group", t("Group"))):
@@ -213,10 +213,6 @@ class MappingWidget(QtWidgets.QWidget):
 
     def current_result(self) -> MapResult | None:
         return self.levels[-1].result if self.levels else None
-
-    @property
-    def grouping(self) -> bool:
-        return self.grouping_enabled
 
     def set_files(self, paths: list[str], db_path) -> None:
         self.db_path = db_path
@@ -371,7 +367,7 @@ class MappingWidget(QtWidgets.QWidget):
             self.compute_cancel.cancel()
             self.finish(t("Add a key to start."))
             return
-        paths, values, params, grouping = list(level.paths), self.values, self.params, self.grouping_enabled
+        paths, values, params = list(level.paths), self.values, self.params
         cancel = self.compute_cancel.renew()
         self.cancel_button.show()
 
@@ -382,8 +378,8 @@ class MappingWidget(QtWidgets.QWidget):
 
         def compute():
             if preset is not None:
-                return layout_from_space(paths, values, preset, params, grouping)
-            request = MapRequest(paths, values, features, params, grouping)
+                return layout_from_space(paths, values, preset, params)
+            request = MapRequest(paths, values, features, params)
             return level.pipeline.run(request, cancelled=cancel.is_cancelled, progress=progress)
 
         def task():
@@ -424,7 +420,8 @@ class MappingWidget(QtWidgets.QWidget):
         self.map_view.set_thumbnail_zoom(self.params.thumbnail_zoom)
         self.map_view.set_image_limit(self.params.max_images)
         self.map_view.set_image_spacing(self.params.image_spacing)
-        self.map_view.show_result(result, colors, self.grouping_enabled, keep_view)
+        self.map_view.set_image_cap(self.params.hover_size)
+        self.map_view.show_result(result, colors, keep_view)
         self.file_list.set_rows(result.paths, result.order, colors)
         self.shown = result
         rows = [row for row, path in enumerate(result.paths) if path in selected]
@@ -432,9 +429,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.file_list.select_rows(rows)
         self.tuning.set_diagnostics(result.diagnostics)
         self.cancel_button.hide()
-        parts = [t("{count} files", count=len(result.paths))]
-        if self.grouping_enabled:
-            parts.append(t("{count} groups", count=result.diagnostics.groups))
+        parts = [t("{count} files", count=len(result.paths)), t("{count} groups", count=result.diagnostics.groups)]
         if result.diagnostics.unset and self.levels and self.levels[-1].mode == "space":
             parts.append(t("{count} waiting for placement", count=result.diagnostics.unset))
         self.set_message(f" {SEPARATOR} ".join(parts))
@@ -445,13 +440,13 @@ class MappingWidget(QtWidgets.QWidget):
     def set_message(self, text: str):
         self.message.setText(text)
 
-    def set_grouping(self, enabled: bool) -> None:
-        self.grouping_enabled = bool(enabled)
-        if self.group_check.isChecked() != self.grouping_enabled:
-            self.group_check.setChecked(self.grouping_enabled)
-            return
-        self.mode_buttons["group"].setEnabled(self.grouping_enabled)
-        self.recompute()
+    def set_labels_shown(self, shown: bool) -> None:
+        self.labels_shown = bool(shown)
+        if self.label_check.isChecked() != self.labels_shown:
+            self.label_check.blockSignals(True)
+            self.label_check.setChecked(self.labels_shown)
+            self.label_check.blockSignals(False)
+        self.map_view.set_labels_visible(self.labels_shown)
 
     def on_params(self, params: MapParams):
         self.params = params
@@ -634,7 +629,7 @@ class MappingWidget(QtWidgets.QWidget):
             "features": [feature.to_dict() for feature in self.live_features],
             "space_mode": self.space_mode,
             "params": self.params.to_dict(),
-            "grouping": self.grouping_enabled,
+            "labels": self.labels_shown,
             "image_scale": self.map_view.image_scale,
             "selection_mode": self.selection_mode,
             "splitter": bytes(self.splitter.saveState().toHex()).decode("ascii"),
@@ -649,11 +644,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.sync_space_buttons()
         self.params = MapParams.from_dict(state.get("params") or {})
         self.tuning.set_params(self.params)
-        self.grouping_enabled = bool(state.get("grouping", True))
-        self.group_check.blockSignals(True)
-        self.group_check.setChecked(self.grouping_enabled)
-        self.group_check.blockSignals(False)
-        self.mode_buttons["group"].setEnabled(self.grouping_enabled)
+        self.set_labels_shown(state.get("labels", True) is not False)
         scale = state.get("image_scale", 1.0)
         self.set_image_scale(float(scale) if isinstance(scale, (int, float)) and math.isfinite(scale) else 1.0)
         mode = state.get("selection_mode")

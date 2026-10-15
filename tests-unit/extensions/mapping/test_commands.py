@@ -57,7 +57,7 @@ def test_command_ids():
         "mapping.relayout_selection",
         "mapping.recompute",
         "mapping.space_mode",
-        "mapping.toggle_grouping",
+        "mapping.toggle_labels",
         "mapping.image_scale_up",
         "mapping.image_scale_down",
         "mapping.selection_mode",
@@ -81,7 +81,7 @@ def test_image_scale_commands_call_widget():
 
 
 def test_selection_mode_command_toggles():
-    widget = MagicMock(selection_mode="single", grouping=True)
+    widget = MagicMock(selection_mode="single")
     ctx = Ctx(**{"instance:MappingWidget": widget})
     commands.toggle_selection_mode(ctx)
     widget.set_selection_mode.assert_called_once_with("group")
@@ -120,14 +120,13 @@ def test_space_mode_checked_follows_effective_mode(monkeypatch):
     assert commands._space_mode_checked() is False
 
 
-def test_selection_mode_stays_out_of_group_while_grouping_is_off(monkeypatch):
+def test_labels_command_toggles_and_reports_state(monkeypatch):
     from extensions.mapping.widget import MappingWidget
 
-    widget = MagicMock(selection_mode="single", grouping=False)
-    commands.toggle_selection_mode(Ctx(**{"instance:MappingWidget": widget}))
-    widget.set_selection_mode.assert_not_called()
+    widget = MagicMock(labels_shown=True)
+    commands.toggle_labels(Ctx(**{"instance:MappingWidget": widget}))
+    widget.set_labels_shown.assert_called_once_with(False)
     monkeypatch.setattr(MappingWidget, "instance", classmethod(lambda cls: widget))
+    assert commands._labels_checked() is True
     widget.selection_mode = "group"
-    assert commands._group_mode_checked() is False
-    widget.grouping = True
     assert commands._group_mode_checked() is True

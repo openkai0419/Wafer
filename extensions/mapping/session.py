@@ -73,7 +73,6 @@ class MapRequest:
     values: dict[str, dict[str, PathValue]]
     features: list[FeatureSpec]
     params: MapParams
-    grouping: bool
 
 
 @dataclass
@@ -174,19 +173,16 @@ class MapPipeline:
         if cancelled():
             return None
         diagnostics.blocks = self._stats
-        labels = None
-        group_terms: dict[int, list[str]] = {}
-        if request.grouping:
-            labels = self._group(params, layout_key, count, progress, diagnostics)
-            if cancelled():
-                return None
-            group_terms = self._describe(labels, blocks, params)
+        labels = self._group(params, layout_key, count, progress, diagnostics)
+        if cancelled():
+            return None
+        group_terms = self._describe(labels, blocks, params)
         unit, active_outliers = projection.normalize_to_core(self._points, params.outlier_percent)
         positions = np.full((count, 2), np.nan, dtype=np.float32)
         positions[self._active] = unit
         outliers = np.zeros(count, dtype=bool)
         outliers[self._active] = active_outliers
-        active_labels = self._labels if labels is not None else np.zeros(self._active.size, dtype=np.int32)
+        active_labels = self._labels
         order = np.concatenate([self._active[projection.order_rows(unit, active_labels)], np.flatnonzero(~has_value)])
         diagnostics.outliers = int(active_outliers.sum())
         diagnostics.unset = int((~has_value).sum())
@@ -250,7 +246,7 @@ class MapPipeline:
         return terms
 
 
-def layout_from_space(paths: list[str], values: dict[str, dict[str, PathValue]], preset: Preset, params: MapParams, grouping: bool) -> MapResult:
+def layout_from_space(paths: list[str], values: dict[str, dict[str, PathValue]], preset: Preset, params: MapParams) -> MapResult:
     params = params.normalized()
     diagnostics = MapDiagnostics()
     count = len(paths)
@@ -275,7 +271,7 @@ def layout_from_space(paths: list[str], values: dict[str, dict[str, PathValue]],
     labels = None
     terms: dict[int, list[str]] = {}
     active_labels = np.zeros(active.size, dtype=np.int32)
-    if grouping and active.size >= 3:
+    if active.size >= 3:
         with timed(diagnostics, "cluster"):
             active_labels = projection.cluster(unit, params.resolved_min_cluster_size(active.size), params.resolved_min_samples(active.size))
         labels = np.full(count, -1, dtype=np.int32)

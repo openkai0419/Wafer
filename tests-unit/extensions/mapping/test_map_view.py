@@ -67,16 +67,20 @@ def colors(count):
 
 
 def test_show_result_keeps_points_as_arrays_and_labels_as_items(view):
-    view.show_result(result(), colors(6), show_groups=True, keep_view=False)
+    view.show_result(result(), colors(6), keep_view=False)
     assert view.positions.shape == (6, 2)
     assert [type(item).__name__ for item in view.scene().items()] == ["GroupLabelItem"] * 2
+    view.set_labels_visible(False)
+    assert not any(label.isVisible() for label in view.label_items())
+    view.show_result(result(), colors(6), keep_view=True)
+    assert len(view.label_items()) == 2 and not any(label.isVisible() for label in view.label_items())
+    view.set_labels_visible(True)
+    assert all(label.isVisible() for label in view.label_items())
     assert [label.text for label in view.label_items()] == ["cat", "dog"]
-    view.show_result(result(), colors(6), show_groups=False, keep_view=True)
-    assert view.label_items() == []
 
 
 def test_select_rows_is_silent_and_select_group_emits(view, qtbot):
-    view.show_result(result(), colors(6), show_groups=True, keep_view=False)
+    view.show_result(result(), colors(6), keep_view=False)
     emitted = []
     view.selection_changed.connect(lambda: emitted.append(1))
     view.select_rows([1, 2])
@@ -86,7 +90,7 @@ def test_select_rows_is_silent_and_select_group_emits(view, qtbot):
 
 
 def test_rubber_band_drag_selects(view, qtbot):
-    view.show_result(result(), colors(6), show_groups=False, keep_view=False)
+    view.show_result(result(), colors(6), keep_view=False)
     viewport = view.viewport()
     start = view.mapFromScene(QtCore.QPointF(0, 0)) - QtCore.QPoint(15, 15)
     end = view.mapFromScene(QtCore.QPointF(400, 1000)) + QtCore.QPoint(15, 15)
@@ -97,7 +101,7 @@ def test_rubber_band_drag_selects(view, qtbot):
 
 
 def test_thumbnails_requested_only_when_zoomed(view, qtbot):
-    view.show_result(result(), colors(6), show_groups=False, keep_view=False)
+    view.show_result(result(), colors(6), keep_view=False)
     view.set_thumbnail_zoom(2.0)
     view.viewport().repaint()
     assert view.owner.requested == []
@@ -115,7 +119,7 @@ def point_pos(view, row):
 
 
 def test_drag_starting_on_a_point_selects_several(view, qtbot):
-    view.show_result(result(), colors(6), show_groups=False, keep_view=False)
+    view.show_result(result(), colors(6), keep_view=False)
     viewport = view.viewport()
     start = point_pos(view, 0)
     end = view.mapFromScene(QtCore.QPointF(400, 1000)) + QtCore.QPoint(15, 15)
@@ -130,7 +134,7 @@ def test_drag_starting_on_a_point_selects_several(view, qtbot):
 
 
 def test_click_on_a_point_selects_only_it(view, qtbot):
-    view.show_result(result(), colors(6), show_groups=False, keep_view=False)
+    view.show_result(result(), colors(6), keep_view=False)
     view.select_rows([0, 2])
     emitted = []
     view.selection_changed.connect(lambda: emitted.append(view.selected_rows()))
@@ -143,7 +147,7 @@ def test_click_on_a_point_selects_only_it(view, qtbot):
 
 
 def test_ctrl_click_toggles_a_point(view, qtbot):
-    view.show_result(result(), colors(6), show_groups=False, keep_view=False)
+    view.show_result(result(), colors(6), keep_view=False)
     view.select_rows([0])
     ctrl = QtCore.Qt.ControlModifier
     qtbot.mouseClick(view.viewport(), QtCore.Qt.LeftButton, ctrl, point_pos(view, 1))
@@ -153,7 +157,7 @@ def test_ctrl_click_toggles_a_point(view, qtbot):
 
 
 def test_clicking_a_group_label_selects_the_group(view, qtbot):
-    view.show_result(result(), colors(6), show_groups=True, keep_view=False)
+    view.show_result(result(), colors(6), keep_view=False)
     label = view.label_items()[1]
     qtbot.mouseClick(view.viewport(), QtCore.Qt.LeftButton, pos=view.mapFromScene(label.pos()) + QtCore.QPoint(0, int(label.offset())))
     assert view.selected_rows() == [3, 4]
@@ -172,17 +176,18 @@ def test_outlier_is_drawn_with_a_ring_even_when_unselected(view, thumbnail_zoom)
     image.fill(QtGui.QColor("white"))
     view.owner.pixmaps = {f"c:/{i}.png": image for i in range(6)}
     view.set_thumbnail_zoom(thumbnail_zoom)
-    view.show_result(result(), colors(6), show_groups=False, keep_view=False)
+    view.show_result(result(), colors(6), keep_view=False)
     plain = render_point(view, 1)
-    view.show_result(result(outlier_rows=[1]), colors(6), show_groups=False, keep_view=True)
+    view.show_result(result(outlier_rows=[1]), colors(6), keep_view=True)
     assert render_point(view, 1) != plain
 
 
 def test_image_scale_changes_extent_and_clamps(view):
-    view.show_result(result(), colors(6), show_groups=False, keep_view=False)
-    base = view.point_size()
+    view.show_result(result(), colors(6), keep_view=False)
+    point, display = view.point_size(), view.display_size()
     view.set_image_scale(2.0)
-    assert view.point_size() == pytest.approx(base * 2)
+    assert view.point_size() == pytest.approx(point)
+    assert view.display_size() == pytest.approx(display * 2)
     view.set_image_scale(99)
     assert view.image_scale == 4.0
     view.set_image_scale(0)
@@ -190,7 +195,7 @@ def test_image_scale_changes_extent_and_clamps(view):
 
 
 def test_ctrl_wheel_does_not_zoom_map(view):
-    view.show_result(result(), colors(6), show_groups=False, keep_view=False)
+    view.show_result(result(), colors(6), keep_view=False)
     before = view.transform().m11()
     position = QtCore.QPointF(10, 10)
     event = QtGui.QWheelEvent(position, position, QtCore.QPoint(), QtCore.QPoint(0, 120), QtCore.Qt.NoButton, QtCore.Qt.ControlModifier, QtCore.Qt.NoScrollPhase, False)
@@ -199,7 +204,7 @@ def test_ctrl_wheel_does_not_zoom_map(view):
 
 
 def test_plain_wheel_zooms_map(view):
-    view.show_result(result(), colors(6), show_groups=False, keep_view=False)
+    view.show_result(result(), colors(6), keep_view=False)
     before = view.transform().m11()
     position = QtCore.QPointF(10, 10)
     event = QtGui.QWheelEvent(position, position, QtCore.QPoint(), QtCore.QPoint(0, 120), QtCore.Qt.NoButton, QtCore.Qt.NoModifier, QtCore.Qt.NoScrollPhase, False)
@@ -208,7 +213,7 @@ def test_plain_wheel_zooms_map(view):
 
 
 def test_group_mode_expands_click_and_rows(view, qtbot):
-    view.show_result(result(), colors(6), show_groups=True, keep_view=False)
+    view.show_result(result(), colors(6), keep_view=False)
     view.set_selection_mode("group")
     qtbot.mouseClick(view.viewport(), QtCore.Qt.LeftButton, pos=point_pos(view, 0))
     assert view.selected_rows() == [0, 1, 2]
@@ -216,7 +221,7 @@ def test_group_mode_expands_click_and_rows(view, qtbot):
 
 
 def test_group_mode_ctrl_click_toggles_whole_group(view, qtbot):
-    view.show_result(result(), colors(6), show_groups=True, keep_view=False)
+    view.show_result(result(), colors(6), keep_view=False)
     view.set_selection_mode("group")
     view.select_rows([0, 1, 2])
     ctrl = QtCore.Qt.ControlModifier
@@ -227,7 +232,7 @@ def test_group_mode_ctrl_click_toggles_whole_group(view, qtbot):
 
 
 def test_single_mode_click_does_not_expand(view, qtbot):
-    view.show_result(result(), colors(6), show_groups=True, keep_view=False)
+    view.show_result(result(), colors(6), keep_view=False)
     qtbot.mouseClick(view.viewport(), QtCore.Qt.LeftButton, pos=point_pos(view, 0))
     assert view.selected_rows() == [0]
 
@@ -246,7 +251,7 @@ def hover_at(view, position):
 
 
 def test_hover_reports_point_under_cursor(view):
-    view.show_result(result(), colors(6), show_groups=False, keep_view=False)
+    view.show_result(result(), colors(6), keep_view=False)
     hover_at(view, point_pos(view, 1))
     assert view.owner.hovers[-1] == "c:/1.png"
     hover_at(view, QtCore.QPoint(1, 1))
@@ -254,7 +259,7 @@ def test_hover_reports_point_under_cursor(view):
 
 
 def test_press_hides_hover(view, qtbot):
-    view.show_result(result(), colors(6), show_groups=False, keep_view=False)
+    view.show_result(result(), colors(6), keep_view=False)
     hover_at(view, point_pos(view, 1))
     assert view.owner.hovers[-1] == "c:/1.png"
     qtbot.mousePress(view.viewport(), QtCore.Qt.LeftButton, pos=point_pos(view, 1))
@@ -263,7 +268,7 @@ def test_press_hides_hover(view, qtbot):
 
 
 def test_labels_sit_below_lowest_member(view):
-    view.show_result(result(), colors(6), show_groups=True, keep_view=False)
+    view.show_result(result(), colors(6), keep_view=False)
     label = view.label_items()[0]
     lowest = max(point_pos(view, row).y() for row in (0, 1, 2))
     label_top = view.mapFromScene(label.scenePos()).y() + label.boundingRect().top()
@@ -293,7 +298,7 @@ def loaded_owner(view, count):
 def test_images_are_capped_one_per_cell_and_the_rest_stay_dots(view):
     loaded_owner(view, 2000)
     view.set_thumbnail_zoom(0.5)
-    view.show_result(image_result(2000), colors(2000), show_groups=False, keep_view=False)
+    view.show_result(image_result(2000), colors(2000), keep_view=False)
     view.set_image_limit(50)
     view.viewport().repaint()
     assert 0 < len(view.image_rows) <= 50
@@ -311,7 +316,7 @@ def test_images_are_capped_one_per_cell_and_the_rest_stay_dots(view):
 def test_selected_files_get_images_first(view):
     loaded_owner(view, 2000)
     view.set_thumbnail_zoom(0.5)
-    view.show_result(image_result(2000, spread=0.01), colors(2000), show_groups=False, keep_view=False)
+    view.show_result(image_result(2000, spread=0.01), colors(2000), keep_view=False)
     view.set_image_limit(1)
     view.select_rows([1234])
     view.viewport().repaint()
@@ -321,7 +326,7 @@ def test_selected_files_get_images_first(view):
 def test_image_choice_is_stable_across_repaints(view):
     loaded_owner(view, 500)
     view.set_thumbnail_zoom(0.5)
-    view.show_result(image_result(500), colors(500), show_groups=False, keep_view=False)
+    view.show_result(image_result(500), colors(500), keep_view=False)
     view.viewport().repaint()
     first = sorted(view.image_rows.tolist())
     view.invalidate()
@@ -332,7 +337,7 @@ def test_image_choice_is_stable_across_repaints(view):
 def test_hover_and_click_reach_points_drawn_as_dots(view):
     loaded_owner(view, 2000)
     view.set_thumbnail_zoom(0.5)
-    view.show_result(image_result(2000), colors(2000), show_groups=False, keep_view=False)
+    view.show_result(image_result(2000), colors(2000), keep_view=False)
     view.set_image_limit(0)
     view.viewport().repaint()
     assert len(view.image_rows) == 0
@@ -345,7 +350,7 @@ def test_hover_and_click_reach_points_drawn_as_dots(view):
 def test_hit_test_prefers_the_image_under_the_cursor(view):
     loaded_owner(view, 6)
     view.set_thumbnail_zoom(0.5)
-    view.show_result(result(labels=False), colors(6), show_groups=False, keep_view=False)
+    view.show_result(result(labels=False), colors(6), keep_view=False)
     view.viewport().repaint()
     row = int(view.image_rows[-1])
     left, top, right, bottom = view.image_rects[-1]
@@ -354,7 +359,7 @@ def test_hit_test_prefers_the_image_under_the_cursor(view):
 
 def test_arrived_thumbnail_repaints_once_after_a_short_wait(view, qtbot):
     view.set_thumbnail_zoom(0.5)
-    view.show_result(result(labels=False), colors(6), show_groups=False, keep_view=False)
+    view.show_result(result(labels=False), colors(6), keep_view=False)
     view.viewport().repaint()
     version = view.version
     view.update_path("c:/0.png")
@@ -365,7 +370,7 @@ def test_arrived_thumbnail_repaints_once_after_a_short_wait(view, qtbot):
 
 
 def test_rows_in_rect_uses_viewport_pixels(view):
-    view.show_result(result(labels=False), colors(6), show_groups=False, keep_view=False)
+    view.show_result(result(labels=False), colors(6), keep_view=False)
     pos = point_pos(view, 2)
     rect = QtCore.QRectF(pos.x() - 1, pos.y() - 1, 2, 2)
     assert 2 in view.rows_in_rect(rect).tolist()
@@ -374,7 +379,7 @@ def test_rows_in_rect_uses_viewport_pixels(view):
 def test_hover_follows_points_not_image_rectangles(view):
     loaded_owner(view, 6)
     view.set_thumbnail_zoom(0.5)
-    view.show_result(result(labels=False), colors(6), show_groups=False, keep_view=False)
+    view.show_result(result(labels=False), colors(6), keep_view=False)
     view.viewport().repaint()
     row = int(view.image_rows[-1])
     left, top, right, bottom = view.image_rects[-1]
@@ -385,7 +390,7 @@ def test_hover_follows_points_not_image_rectangles(view):
 
 
 def test_wheel_zoom_grows_points_and_images_with_the_plane(view):
-    view.show_result(result(labels=False), colors(6), show_groups=False, keep_view=False)
+    view.show_result(result(labels=False), colors(6), keep_view=False)
     point, display = view.point_size(), view.display_size()
     position = QtCore.QPointF(200, 200)
     event = QtGui.QWheelEvent(position, position, QtCore.QPoint(), QtCore.QPoint(0, 240), QtCore.Qt.NoButton, QtCore.Qt.NoModifier, QtCore.Qt.NoScrollPhase, False)
@@ -395,21 +400,21 @@ def test_wheel_zoom_grows_points_and_images_with_the_plane(view):
 
 
 def test_images_start_at_the_thumbnail_size_where_they_switch_on(view):
-    view.show_result(result(labels=False), colors(6), show_groups=False, keep_view=False)
+    view.show_result(result(labels=False), colors(6), keep_view=False)
     view.set_thumbnail_zoom(view.zoom)
     assert view.thumbnails
     assert view.display_size() == pytest.approx(64.0)
 
 
 def test_zoomed_out_points_keep_a_minimum_size(view):
-    view.show_result(result(labels=False), colors(6), show_groups=False, keep_view=False)
+    view.show_result(result(labels=False), colors(6), keep_view=False)
     view.scale(0.01, 0.01)
     assert view.point_size() == map_view_module.MIN_POINT_SIZE == 1.0
 
 
 def test_tiny_points_are_drawn_as_single_pixels(view):
-    view.show_result(result(labels=False), colors(6), show_groups=False, keep_view=False)
-    view.set_image_scale(map_view_module.MIN_IMAGE_SCALE)
+    view.show_result(result(labels=False), colors(6), keep_view=False)
+    view.scale(0.01, 0.01)
     assert view.point_size() == 1.0
     assert not render_point(view, 1).isNull()
 
@@ -417,7 +422,7 @@ def test_tiny_points_are_drawn_as_single_pixels(view):
 def test_outliers_keep_their_place_outside_the_first_view(view):
     data = result(labels=False)
     data.positions[0] = (3.0, 0.5)
-    view.show_result(data, colors(6), show_groups=False, keep_view=False)
+    view.show_result(data, colors(6), keep_view=False)
     assert view.positions[0, 0] == pytest.approx(3000.0)
     assert view.scene().sceneRect().contains(QtCore.QPointF(3000.0, 500.0))
     assert not view.viewport().rect().contains(point_pos(view, 0))
@@ -427,5 +432,14 @@ def test_outliers_keep_their_place_outside_the_first_view(view):
 def test_waiting_files_sit_below_every_placed_point(view):
     data = result(labels=False)
     data.positions[0] = (0.5, 2.0)
-    view.show_result(data, colors(6), show_groups=False, keep_view=False)
+    view.show_result(data, colors(6), keep_view=False)
     assert view.positions[5, 1] > view.positions[0, 1]
+
+
+def test_images_stop_growing_at_the_hover_size(view):
+    view.show_result(result(labels=False), colors(6), keep_view=False)
+    view.set_image_cap(100)
+    view.scale(50, 50)
+    assert view.display_size() == pytest.approx(100.0)
+    view.set_image_cap(0)
+    assert view.display_size() > 100.0

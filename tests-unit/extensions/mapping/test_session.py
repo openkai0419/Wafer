@@ -29,7 +29,7 @@ def jittered_copy(matrix, n_components):
     return output
 
 
-def make_request(count=40, grouping=True, features=None, params=None):
+def make_request(count=40, features=None, params=None):
     paths = [f"c:/{i}.png" for i in range(count)]
     values = {
         p: {
@@ -39,7 +39,7 @@ def make_request(count=40, grouping=True, features=None, params=None):
         for i, p in enumerate(paths)
     }
     features = [FeatureSpec("tags", "token_set")] if features is None else features
-    return MapRequest(paths, values, features, params or MapParams(), grouping)
+    return MapRequest(paths, values, features, params or MapParams())
 
 
 def pipeline():
@@ -53,12 +53,6 @@ def test_run_produces_positions_groups_and_terms(embed_calls):
     assert result.labels is not None and set(result.labels.tolist()) <= {-1, 0, 1}
     assert sorted(result.order.tolist()) == list(range(40))
     assert any({"cat", "sky"} & set(words) for words in result.group_terms.values())
-
-
-def test_grouping_off_skips_clustering(embed_calls):
-    result = pipeline().run(make_request(grouping=False))
-    assert result.labels is None and result.group_terms == {}
-    assert embed_calls == [2]
 
 
 def test_cluster_only_change_does_not_rerun_layout(embed_calls):
@@ -182,7 +176,7 @@ def test_layout_from_space_uses_current_version_only():
     values["c:/0.png"]["mapping.model"] = PathValue("1", 1.0)
     values["c:/archive.zip::m.png"] = {"tags": PathValue("cat")}
     paths = list(values)
-    result = layout_from_space(paths, values, space_preset(), MapParams(min_cluster_size=3), grouping=True)
+    result = layout_from_space(paths, values, space_preset(), MapParams(min_cluster_size=3))
     assert result.unset[paths.index("c:/0.png")] and result.unset[paths.index("c:/archive.zip::m.png")]
     assert np.isfinite(result.positions[~result.unset]).all()
     assert result.diagnostics.unset == 2
@@ -194,26 +188,20 @@ def test_layout_from_space_uses_current_version_only():
 
 def test_layout_from_space_without_placed_files_raises():
     with pytest.raises(MapError):
-        layout_from_space(["a", "b"], {"a": {}, "b": {}}, space_preset(), MapParams(), grouping=False)
-
-
-def test_layout_from_space_grouping_off():
-    values = space_values()
-    result = layout_from_space(list(values), values, space_preset(), MapParams(), grouping=False)
-    assert result.labels is None and result.group_terms == {}
+        layout_from_space(["a", "b"], {"a": {}, "b": {}}, space_preset(), MapParams())
 
 
 def test_layout_from_space_ignores_other_versions_and_missing_numbers():
     values = space_values(count=6)
     values["c:/0.png"]["mapping.model"] = PathValue("3", 3.0)
     values["c:/1.png"]["mapping.x"] = PathValue("n/a")
-    result = layout_from_space(list(values), values, space_preset(), MapParams(), grouping=False)
+    result = layout_from_space(list(values), values, space_preset(), MapParams())
     assert result.unset.tolist() == [True, True, False, False, False, False]
 
 
 def test_layout_from_space_with_one_placed_file_still_lays_out():
     values = {"a": space_values(count=1)["c:/0.png"], "b": {}}
-    result = layout_from_space(["a", "b"], values, space_preset(), MapParams(), grouping=True)
+    result = layout_from_space(["a", "b"], values, space_preset(), MapParams())
     assert result.unset.tolist() == [False, True]
     assert result.labels is None and result.order.tolist() == [0, 1]
 

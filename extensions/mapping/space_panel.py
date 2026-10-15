@@ -144,7 +144,7 @@ def read_snapshot(db_name: str) -> SpaceSnapshot:
     values = fetch_path_values(db_path, sample, keys=[*preset.value_keys(), *SPACE_KEYS])
     snapshot.sources = fetch_sources(db_path, sample)
     try:
-        snapshot.result = layout_from_space(sample, values, preset, MapParams(), grouping=True)
+        snapshot.result = layout_from_space(sample, values, preset, MapParams())
     except MapError as e:
         snapshot.problem = str(e)
     except Exception as e:
@@ -510,7 +510,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         def task():
             try:
                 sample = reusable or read_quick_train_sample(db_name, size, keys)
-                result = sample.pipeline.run(MapRequest(sample.paths, sample.values, features, params, True), cancelled=cancel.is_cancelled, progress=progress)
+                result = sample.pipeline.run(MapRequest(sample.paths, sample.values, features, params), cancelled=cancel.is_cancelled, progress=progress)
             except MapError as e:
                 self.dispatcher.invoke(lambda m=str(e): cancel.is_cancelled() or self.finish_quick_train(t(m)))
                 return
@@ -637,7 +637,8 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.map_view.set_thumbnail_zoom(params.thumbnail_zoom)
         self.map_view.set_image_limit(params.max_images)
         self.map_view.set_image_spacing(params.image_spacing)
-        self.map_view.show_result(result, result_colors(result, self.palette_colors), True, keep_view)
+        self.map_view.set_image_cap(params.hover_size)
+        self.map_view.show_result(result, result_colors(result, self.palette_colors), keep_view)
         self.shown = result
         self.count_label.setText(caption)
 

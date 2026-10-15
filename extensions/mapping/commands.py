@@ -89,15 +89,15 @@ def _space_mode_checked() -> bool:
 
 
 @require(m="MappingWidget")
-def toggle_grouping(ctx, m):
-    m.set_grouping(not m.grouping)
+def toggle_labels(ctx, m):
+    m.set_labels_shown(not m.labels_shown)
 
 
-def _grouping_checked() -> bool:
+def _labels_checked() -> bool:
     from .widget import MappingWidget
 
     widget = MappingWidget.instance()
-    return bool(widget is not None and widget.grouping)
+    return bool(widget is not None and widget.labels_shown)
 
 
 @require(m="MappingWidget")
@@ -112,15 +112,14 @@ def image_scale_down(ctx, m, ratio: float = 1.1):
 
 @require(m="MappingWidget")
 def toggle_selection_mode(ctx, m):
-    if m.grouping:
-        m.set_selection_mode("single" if m.selection_mode == "group" else "group")
+    m.set_selection_mode("single" if m.selection_mode == "group" else "group")
 
 
 def _group_mode_checked() -> bool:
     from .widget import MappingWidget
 
     widget = MappingWidget.instance()
-    return bool(widget is not None and widget.grouping and widget.selection_mode == "group")
+    return bool(widget is not None and widget.selection_mode == "group")
 
 
 class MappingGridCommands(MenuGroup):
@@ -153,7 +152,7 @@ class MappingViewCommands(MenuGroup):
             CommandMeta(path="mapping.relayout_selection", display="Relayout Selection", func=relayout_selection),
             CommandMeta(path="mapping.recompute", display="Recompute", func=recompute),
             CommandMeta(path="mapping.space_mode", display="Use Precomputed Space", func=toggle_space_mode, checked=_space_mode_checked),
-            CommandMeta(path="mapping.toggle_grouping", display="Show Groups", func=toggle_grouping, checked=_grouping_checked),
+            CommandMeta(path="mapping.toggle_labels", display="Show Labels", func=toggle_labels, checked=_labels_checked),
             CommandMeta(path="mapping.image_scale_up", display="Larger Images", func=image_scale_up, params=[CommandParam(name="ratio", value=1.1, min_value=1.01, max_value=4.0)]),
             CommandMeta(path="mapping.image_scale_down", display="Smaller Images", func=image_scale_down, params=[CommandParam(name="ratio", value=1.1, min_value=1.01, max_value=4.0)]),
             CommandMeta(path="mapping.selection_mode", display="Select Whole Groups", func=toggle_selection_mode, checked=_group_mode_checked),

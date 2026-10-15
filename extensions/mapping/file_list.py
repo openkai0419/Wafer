@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections import OrderedDict
 from collections.abc import Iterable
 
 import numpy as np
@@ -13,6 +14,7 @@ from wafer.qt.common.dpi import dpix
 ROW_ROLE = Qt.UserRole + 1
 COLOR_ROLE = Qt.UserRole + 2
 ICON_SIZE = 40
+ICON_CACHE = 2000
 COLOR_BAR = 4
 
 
@@ -24,6 +26,24 @@ class FileListModel(QtCore.QAbstractListModel):
         self.order = np.zeros(0, dtype=np.int64)
         self.colors: list[QtGui.QColor] = []
         self.selected = np.zeros(0, dtype=bool)
+        self.icons: OrderedDict[str, tuple[int, QtGui.QPixmap]] = OrderedDict()
+        self.pixel_ratio = 1.0
+
+    def icon(self, path: str) -> QtGui.QPixmap | None:
+        pixmap = self.owner.thumbnail(path)
+        if pixmap is None or pixmap.isNull():
+            return pixmap
+        cached = self.icons.get(path)
+        if cached is not None and cached[0] == pixmap.cacheKey():
+            self.icons.move_to_end(path)
+            return cached[1]
+        side = round(dpix(ICON_SIZE) * self.pixel_ratio)
+        icon = pixmap.scaled(side, side, Qt.KeepAspectRatio, Qt.SmoothTransformation) if max(pixmap.width(), pixmap.height()) > side else QtGui.QPixmap(pixmap)
+        icon.setDevicePixelRatio(self.pixel_ratio)
+        self.icons[path] = (pixmap.cacheKey(), icon)
+        while len(self.icons) > ICON_CACHE:
+            self.icons.popitem(last=False)
+        return icon
 
     def rowCount(self, parent=QtCore.QModelIndex()):
         return 0 if parent.isValid() else len(self.order)
@@ -38,7 +58,7 @@ class FileListModel(QtCore.QAbstractListModel):
         if role == Qt.ToolTipRole:
             return path
         if role == Qt.DecorationRole:
-            return self.owner.thumbnail(path)
+            return self.icon(path)
         if role == ROW_ROLE:
             return row
         if role == COLOR_ROLE:
@@ -90,6 +110,8 @@ class FileList(QtWidgets.QListView, ActionKit.UIMixin):
         model.order = np.asarray(order, dtype=np.int64).reshape(-1)
         model.colors = colors
         model.selected = np.zeros(len(model.paths), dtype=bool)
+        model.icons.clear()
+        model.pixel_ratio = self.devicePixelRatioF()
         model.endResetModel()
         self.path_positions = {model.paths[row]: position for position, row in enumerate(model.order.tolist())}
         self.anchor = None

@@ -4,13 +4,20 @@ import pytest
 from PySide6 import QtGui
 
 from wafer.plugin.grid import thumbnail_loader
-from wafer.plugin.grid.thumbnail_loader import ThumbnailLoader
+from wafer.plugin.grid.thumbnail_loader import ThumbnailLoader, shared_image_cache
 
 
-def _image():
-    image = QtGui.QImage(4, 4, QtGui.QImage.Format_RGB32)
+def _image(side=4):
+    image = QtGui.QImage(side, side, QtGui.QImage.Format_RGB32)
     image.fill(QtGui.QColor(255, 0, 0))
     return image
+
+
+@pytest.fixture(autouse=True)
+def empty_shared_cache():
+    shared_image_cache().clear()
+    yield
+    shared_image_cache().clear()
 
 
 @pytest.fixture()
@@ -99,8 +106,56 @@ def test_failed_load_does_not_strand_other_paths(qtbot, monkeypatch):
     assert not loader.pending("bad") and not loader.pending("good")
 
 
-def test_set_size_clears_cache(qtbot):
+def test_set_size_keeps_the_cache_and_larger_images_serve_smaller_sizes(qtbot, calls, monkeypatch):
+    monkeypatch.setattr(thumbnail_loader, "dpix", lambda value: value)
+    loader = ThumbnailLoader(lambda _p: None, size=64, cache_limit=10)
+    loader.store("a", _image(64))
+    loader.set_size(32)
+    assert loader.size == 32 and "a" in loader
+    loader.request(["a"])
+    assert calls == []
+    assert loader.get("a").width() == 64
+
+
+def test_smaller_image_is_shown_while_a_larger_one_loads(qtbot, calls, monkeypatch):
+    monkeypatch.setattr(thumbnail_loader, "dpix", lambda value: value)
+    monkeypatch.setattr(thumbnail_loader, "load_thumbnail", lambda path, size: calls.append((path, size.width())) or _image(size.width()))
+    loaded = []
+    loader = ThumbnailLoader(loaded.append, size=32, cache_limit=10)
+    loader.store("a", _image(32))
+    loader.set_size(128)
+    assert loader.get("a").width() == 32
+    loaded.clear()
+    loader.request(["a"])
+    qtbot.waitUntil(lambda: loaded == ["a"], timeout=3000)
+    assert calls == [("a", 128)] and loader.get("a").width() == 128
+
+
+def test_small_source_is_not_reloaded_for_larger_sizes(qtbot, calls, monkeypatch):
+    monkeypatch.setattr(thumbnail_loader, "dpix", lambda value: value)
+    loader = ThumbnailLoader(lambda _p: None, size=128, cache_limit=10)
+    loader.store("a", _image(20), 128)
+    loader.set_size(256)
+    loader.request(["a"])
+    assert calls == []
+
+
+def test_images_are_shared_with_other_loaders_and_the_grid_cache(qtbot, calls, monkeypatch):
+    monkeypatch.setattr(thumbnail_loader, "dpix", lambda value: value)
+    first = ThumbnailLoader(lambda _p: None, size=64, cache_limit=10)
+    second = ThumbnailLoader(lambda _p: None, size=32, cache_limit=10)
+    first.store("a", _image(64))
+    assert shared_image_cache().peek("a").width() == 64
+    second.request(["a"])
+    assert calls == [] and second.get("a").width() == 64
+    shared_image_cache()["b"] = _image(48)
+    second.request(["b"])
+    assert calls == [] and second.get("b").width() == 48
+
+
+def test_smaller_result_does_not_replace_a_larger_cached_image(qtbot, monkeypatch):
+    monkeypatch.setattr(thumbnail_loader, "dpix", lambda value: value)
     loader = ThumbnailLoader(lambda _p: None, size=32, cache_limit=10)
-    loader.store("a", _image())
-    loader.set_size(64)
-    assert loader.size == 64 and "a" not in loader
+    loader.store("a", _image(64))
+    loader.store("a", _image(32))
+    assert shared_image_cache().peek("a").width() == 64 and loader.get("a").width() == 64

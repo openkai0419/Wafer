@@ -1404,7 +1404,7 @@ class TestScrollSync:
 
 class TestThumbnailResolution:
     @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_resolution_change_clears_cache(self, mock_init, qtbot, tmp_files):
+    def test_resolution_change_keeps_cache(self, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
@@ -1412,7 +1412,7 @@ class TestThumbnailResolution:
         dlg._thumb_res_slider.setValue(BatchRenameWidget.THUMB_RESOLUTIONS.index(1024))
         assert dlg._thumb_resolution == 1024
         assert dlg._thumbs.size == 1024
-        assert len(dlg._thumbs) == 0
+        assert str(tmp_files[0]) in dlg._thumbs
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")

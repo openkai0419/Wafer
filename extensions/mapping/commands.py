@@ -3,6 +3,8 @@ from __future__ import annotations
 from wafer.plugin import CommandMeta, CommandParam, MenuGroup, require
 from wafer.qt.common.notifier import Notifier
 
+from .view_settings import ViewSettings
+
 PANEL_NAME = "Mapping"
 
 
@@ -51,9 +53,19 @@ def mapping_remove(ctx, w):
         widget.remove_files(paths)
 
 
-@require(m="MappingWidget")
-def select_all(ctx, m):
-    m.select_all()
+def map_panel(ctx):
+    panel = ctx.get("map_panel")
+    if panel is not None:
+        return panel
+    from .widget import MappingWidget
+
+    return MappingWidget.instance()
+
+
+def select_all(ctx):
+    panel = map_panel(ctx)
+    if panel is not None:
+        panel.select_all()
 
 
 @require(m="MappingWidget")
@@ -66,43 +78,38 @@ def drill_up(ctx, m):
     m.drill_up()
 
 
-@require(m="MappingWidget")
-def recompute(ctx, m):
-    m.refresh()
+def recompute(ctx):
+    panel = map_panel(ctx)
+    if panel is not None:
+        panel.refresh()
 
 
-@require(m="MappingWidget")
-def toggle_labels(ctx, m):
-    m.set_labels_shown(not m.labels_shown)
+def toggle_labels(ctx):
+    settings = ViewSettings.instance()
+    settings.set_labels_shown(not settings.labels_shown)
 
 
 def _labels_checked() -> bool:
-    from .widget import MappingWidget
-
-    widget = MappingWidget.instance()
-    return bool(widget is not None and widget.labels_shown)
+    return ViewSettings.instance().labels_shown
 
 
-@require(m="MappingWidget")
-def image_scale_up(ctx, m, ratio: float = 1.1):
-    m.image_scale_up(float(ratio))
+def image_scale_up(ctx, ratio: float = 1.1):
+    settings = ViewSettings.instance()
+    settings.set_image_scale(settings.image_scale * float(ratio))
 
 
-@require(m="MappingWidget")
-def image_scale_down(ctx, m, ratio: float = 1.1):
-    m.image_scale_down(float(ratio))
+def image_scale_down(ctx, ratio: float = 1.1):
+    settings = ViewSettings.instance()
+    settings.set_image_scale(settings.image_scale / float(ratio))
 
 
-@require(m="MappingWidget")
-def toggle_selection_mode(ctx, m):
-    m.set_selection_mode("single" if m.selection_mode == "group" else "group")
+def toggle_selection_mode(ctx):
+    settings = ViewSettings.instance()
+    settings.set_selection_mode("single" if settings.selection_mode == "group" else "group")
 
 
 def _group_mode_checked() -> bool:
-    from .widget import MappingWidget
-
-    widget = MappingWidget.instance()
-    return bool(widget is not None and widget.selection_mode == "group")
+    return ViewSettings.instance().selection_mode == "group"
 
 
 class MappingGridCommands(MenuGroup):

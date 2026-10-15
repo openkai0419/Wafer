@@ -70,32 +70,29 @@ def test_image_scale_commands_take_a_ratio():
         assert (param.name, param.default) == ("ratio", 1.1)
 
 
-def test_image_scale_commands_call_widget():
-    widget = MagicMock()
-    ctx = Ctx(**{"instance:MappingWidget": widget})
-    commands.image_scale_up(ctx, ratio=1.5)
-    commands.image_scale_down(ctx)
-    widget.image_scale_up.assert_called_once_with(1.5)
-    widget.image_scale_down.assert_called_once_with(1.1)
+def test_view_commands_change_the_shared_settings():
+    from extensions.mapping.view_settings import ViewSettings
 
-
-def test_selection_mode_command_toggles():
-    widget = MagicMock(selection_mode="single")
-    ctx = Ctx(**{"instance:MappingWidget": widget})
+    settings = ViewSettings.instance()
+    ctx = Ctx()
+    commands.image_scale_up(ctx, ratio=2.0)
+    assert settings.image_scale == 2.0
+    commands.image_scale_down(ctx, ratio=4.0)
+    assert settings.image_scale == 0.5
     commands.toggle_selection_mode(ctx)
-    widget.set_selection_mode.assert_called_once_with("group")
-    widget.selection_mode = "group"
-    commands.toggle_selection_mode(ctx)
-    widget.set_selection_mode.assert_called_with("single")
+    assert settings.selection_mode == "group" and commands._group_mode_checked()
+    commands.toggle_labels(ctx)
+    assert settings.labels_shown is False and not commands._labels_checked()
 
 
-def test_labels_command_toggles_and_reports_state(monkeypatch):
+def test_panel_commands_target_the_panel_the_command_came_from(monkeypatch):
     from extensions.mapping.widget import MappingWidget
 
-    widget = MagicMock(labels_shown=True)
-    commands.toggle_labels(Ctx(**{"instance:MappingWidget": widget}))
-    widget.set_labels_shown.assert_called_once_with(False)
-    monkeypatch.setattr(MappingWidget, "instance", classmethod(lambda cls: widget))
-    assert commands._labels_checked() is True
-    widget.selection_mode = "group"
-    assert commands._group_mode_checked() is True
+    space, mapping = MagicMock(), MagicMock()
+    monkeypatch.setattr(MappingWidget, "instance", classmethod(lambda cls: mapping))
+    commands.select_all(Ctx(map_panel=space))
+    commands.recompute(Ctx(map_panel=space))
+    space.select_all.assert_called_once_with()
+    space.refresh.assert_called_once_with()
+    commands.select_all(Ctx())
+    mapping.select_all.assert_called_once_with()

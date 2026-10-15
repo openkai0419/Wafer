@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from extensions.mapping import projection
+from extensions.mapping.view_settings import ViewSettings
 from wafer.plugin.grid.thumbnail_loader import shared_image_cache
 
 
@@ -27,3 +28,8 @@ def empty_shared_image_cache():
 @pytest.fixture(autouse=True)
 def no_layout_warm_up(monkeypatch):
     monkeypatch.setattr(projection, "_warmed_up", True)
+
+
+@pytest.fixture(autouse=True)
+def fresh_view_settings(monkeypatch):
+    monkeypatch.setattr(ViewSettings, "_instance", None)

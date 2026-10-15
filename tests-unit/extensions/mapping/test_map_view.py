@@ -406,19 +406,6 @@ def test_images_start_at_the_thumbnail_size_where_they_switch_on(view):
     assert view.display_size() == pytest.approx(64.0)
 
 
-def test_zoomed_out_points_keep_a_minimum_size(view):
-    view.show_result(result(labels=False), colors(6), keep_view=False)
-    view.scale(0.01, 0.01)
-    assert view.point_size() == map_view_module.MIN_POINT_SIZE == 1.0
-
-
-def test_tiny_points_are_drawn_as_single_pixels(view):
-    view.show_result(result(labels=False), colors(6), keep_view=False)
-    view.scale(0.01, 0.01)
-    assert view.point_size() == 1.0
-    assert not render_point(view, 1).isNull()
-
-
 def test_outliers_keep_their_place_outside_the_first_view(view):
     data = result(labels=False)
     data.positions[0] = (3.0, 0.5)
@@ -451,3 +438,50 @@ def test_point_size_setting_is_clamped_to_one_pixel(view):
     assert view.point_size() == map_view_module.MIN_POINT_SIZE
     view.set_point_size(6)
     assert view.point_size() == pytest.approx(map_view_module.dpix(6))
+
+
+def drag_over(view, qtbot, left, right, modifiers=QtCore.Qt.NoModifier):
+    viewport = view.viewport()
+    start = view.mapFromScene(QtCore.QPointF(left, -50)) - QtCore.QPoint(5, 5)
+    end = view.mapFromScene(QtCore.QPointF(right, 1050)) + QtCore.QPoint(5, 5)
+    qtbot.mousePress(viewport, QtCore.Qt.LeftButton, modifiers, start)
+    qtbot.mouseMove(viewport, pos=end)
+    qtbot.mouseRelease(viewport, QtCore.Qt.LeftButton, modifiers, end)
+
+
+def test_rubber_band_replaces_adds_with_shift_and_removes_with_ctrl(view, qtbot):
+    view.show_result(result(labels=False), colors(6), keep_view=False)
+    view.select_rows([4])
+    drag_over(view, qtbot, 0, 100)
+    assert view.selected_rows() == [0]
+    drag_over(view, qtbot, 300, 500, QtCore.Qt.ShiftModifier)
+    assert view.selected_rows() == [0, 2]
+    drag_over(view, qtbot, 700, 900, QtCore.Qt.AltModifier)
+    assert view.selected_rows() == [0, 2, 4]
+    drag_over(view, qtbot, 300, 900, QtCore.Qt.ControlModifier)
+    assert view.selected_rows() == [0]
+
+
+def test_shift_click_adds_and_ctrl_click_toggles(view, qtbot):
+    view.show_result(result(labels=False), colors(6), keep_view=False)
+    viewport = view.viewport()
+    qtbot.mouseClick(viewport, QtCore.Qt.LeftButton, pos=point_pos(view, 0))
+    qtbot.mouseClick(viewport, QtCore.Qt.LeftButton, QtCore.Qt.ShiftModifier, point_pos(view, 2))
+    assert view.selected_rows() == [0, 2]
+    qtbot.mouseClick(viewport, QtCore.Qt.LeftButton, QtCore.Qt.ShiftModifier, QtCore.QPoint(2, 2))
+    assert view.selected_rows() == [0, 2]
+    qtbot.mouseClick(viewport, QtCore.Qt.LeftButton, QtCore.Qt.ControlModifier, point_pos(view, 2))
+    assert view.selected_rows() == [0]
+
+
+def test_group_mode_applies_to_rubber_band_operations(view, qtbot):
+    view.show_result(result(), colors(6), keep_view=False)
+    view.set_labels_visible(False)
+    view.set_selection_mode("group")
+    drag_over(view, qtbot, 0, 100)
+    assert view.selected_rows() == [0, 1, 2]
+    drag_over(view, qtbot, 700, 900, QtCore.Qt.ShiftModifier)
+    assert view.selected_rows() == [0, 1, 2, 3, 4]
+    drag_over(view, qtbot, 0, 100, QtCore.Qt.ControlModifier)
+    assert view.selected_rows() == [3, 4]
+

@@ -12,6 +12,7 @@ from extensions.mapping import widget as widget_module
 from extensions.mapping.params import MapParams, param_specs
 from extensions.mapping.session import FeatureSpec
 from extensions.mapping.space import Preset
+from extensions.mapping.view_settings import ViewSettings
 from extensions.mapping.widget import MappingWidget
 from wafer.core.db.path_values import PathValue
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
@@ -37,6 +38,10 @@ class DropEvent:
 
     def ignore(self):
         self.accepted = False
+
+
+def settings() -> ViewSettings:
+    return ViewSettings.instance()
 
 
 class InstanceCtx(dict):
@@ -102,7 +107,7 @@ def test_set_files_places_files_from_the_space(mapping):
 
 def test_only_view_settings_and_no_keys_are_shown(mapping):
     view_params = {name for name, spec, _ in param_specs() if spec.stage == "view"}
-    assert set(mapping.tuning.controls) == view_params
+    assert set(mapping.toolbar.tuning.controls) == view_params
     assert not hasattr(mapping, "feature_bar")
     assert mapping.edit_space_button.isVisibleTo(mapping)
 
@@ -249,7 +254,7 @@ def clickable_point(view):
 
 
 def test_right_click_on_selected_point_keeps_selection(mapping, qtbot):
-    mapping.set_labels_shown(False)
+    settings().set_labels_shown(False)
     view = mapping.map_view
     pos, hit = clickable_point(view)
     view.select_rows([hit, (hit + 1) % 27])
@@ -261,7 +266,7 @@ def test_right_click_on_selected_point_keeps_selection(mapping, qtbot):
 
 
 def test_right_click_on_unselected_point_selects_only_it(mapping, qtbot):
-    mapping.set_labels_shown(False)
+    settings().set_labels_shown(False)
     view = mapping.map_view
     pos, hit = clickable_point(view)
     view.select_rows([(hit + 1) % 27])
@@ -271,25 +276,10 @@ def test_right_click_on_unselected_point_selects_only_it(mapping, qtbot):
     assert mapping.file_list.selected_rows() == [hit]
 
 
-def test_state_roundtrip(mapping):
-    state = mapping.save_state()
-    assert set(state) == {"params", "labels", "image_scale", "selection_mode", "splitter"}
-    assert state["labels"] is True
-
-
-def test_restore_state_applies_labels(mapping):
-    state = mapping.save_state()
-    state["labels"] = False
-    mapping.restore_state(state)
-    assert mapping.labels_shown is False
-    assert not mapping.label_check.isChecked()
-    assert mapping.map_view.label_items() and not any(label.isVisible() for label in mapping.map_view.label_items())
-
-
 def test_label_checkbox_hides_labels_without_recomputing(mapping):
     previous = mapping.current_result()
-    mapping.label_check.setChecked(False)
-    assert mapping.labels_shown is False and mapping.current_result() is previous
+    mapping.toolbar.label_check.setChecked(False)
+    assert settings().labels_shown is False and mapping.current_result() is previous
     assert not any(label.isVisible() for label in mapping.map_view.label_items())
     assert mapping.current_result().labels is not None
 
@@ -343,7 +333,7 @@ def test_drop_without_files_is_ignored(mapping):
 
 def test_thumbnail_bucket_uses_the_logical_size(mapping, monkeypatch):
     monkeypatch.setattr(map_view_module, "dpix", lambda value: value * 2)
-    mapping.set_image_scale(1.5)
+    settings().set_image_scale(1.5)
     view = mapping.map_view
     view.set_thumbnail_zoom(view.zoom)
     assert view.display_size() == pytest.approx(map_view_module.THUMB_SIZE * 1.5)
@@ -356,60 +346,24 @@ def test_smallest_thumbnail_bucket_matches_map_view():
     assert map_host_module.THUMB_BUCKETS[0] == map_view_module.THUMB_SIZE
 
 
-def test_point_size_comes_from_the_settings(mapping, qtbot):
-    assert mapping.map_view.point_size() == map_view_module.MIN_POINT_SIZE
+def test_point_size_comes_from_the_settings_without_relayout(mapping):
+    assert mapping.map_view.point_base == MapParams().point_size == 3.0
     previous = mapping.current_result()
-    mapping.on_params(MapParams(point_size=6))
+    settings().set_params(MapParams(point_size=6))
+    assert mapping.map_view.point_base == 6 and mapping.current_result() is previous
+    settings().set_image_scale(3.0)
+    assert mapping.map_view.point_base == 6
+
+
+def test_relayout_settings_recompute_the_map(mapping, qtbot):
+    previous = mapping.current_result()
+    settings().set_params(MapParams(outlier_percent=5.0))
     wait_for_new_result(qtbot, mapping, previous)
-    assert mapping.map_view.point_base == 6
-    mapping.set_image_scale(3.0)
-    assert mapping.map_view.point_base == 6
-
-
-def test_image_scale_persists(mapping):
-    mapping.set_image_scale(2.0)
-    state = mapping.save_state()
-    assert state["image_scale"] == 2.0
-    mapping.set_image_scale(1.0)
-    mapping.restore_state(state)
-    assert mapping.map_view.image_scale == 2.0
-
-
-def test_image_scale_up_and_down_use_ratio(mapping):
-    mapping.image_scale_up(2.0)
-    assert mapping.map_view.image_scale == 2.0
-    mapping.image_scale_down(4.0)
-    assert mapping.map_view.image_scale == 0.5
-    mapping.image_scale_down(1000.0)
-    assert mapping.map_view.image_scale == map_view_module.MIN_IMAGE_SCALE
-
-
-@pytest.mark.parametrize("bad", ["x", None, float("nan"), float("inf")])
-def test_restore_state_ignores_bad_image_scale(mapping, bad):
-    mapping.restore_state({"image_scale": bad, "selection_mode": "weird"})
-    assert mapping.map_view.image_scale == 1.0
-    assert mapping.selection_mode == "single"
-
-
-def test_restore_state_clamps_image_scale(mapping):
-    mapping.restore_state({"image_scale": 99})
-    assert mapping.map_view.image_scale == map_view_module.MAX_IMAGE_SCALE
-
-
-def test_selection_mode_syncs_toolbar_and_persists(mapping):
-    mapping.set_selection_mode("group")
-    assert mapping.selection_mode == "group" and mapping.mode_buttons["group"].isChecked()
-    state = mapping.save_state()
-    assert state["selection_mode"] == "group"
-    mapping.mode_buttons["single"].click()
-    assert mapping.selection_mode == "single"
-    mapping.restore_state(state)
-    assert mapping.selection_mode == "group" and mapping.mode_buttons["group"].isChecked()
 
 
 def test_group_selection_is_always_available(mapping):
-    mapping.set_labels_shown(False)
-    assert mapping.mode_buttons["group"].isEnabled()
+    settings().set_labels_shown(False)
+    assert mapping.toolbar.mode_buttons["group"].isEnabled()
 
 
 def test_list_selection_expands_to_whole_group(mapping):
@@ -417,7 +371,7 @@ def test_list_selection_expands_to_whole_group(mapping):
     row = int(np.flatnonzero(labels >= 0)[0])
     members = np.flatnonzero(labels == labels[row]).tolist()
     assert len(members) > 1
-    mapping.set_selection_mode("group")
+    settings().set_selection_mode("group")
     mapping.file_list.select_rows([row])
     mapping.file_list.selection_changed.emit()
     assert mapping.map_view.selected_rows() == members
@@ -443,7 +397,7 @@ def test_hover_goes_through_host_and_hides_with_the_panel(mapping):
 
 
 def test_hover_size_param_reaches_host(mapping):
-    mapping.on_params(MapParams(hover_size=0))
+    settings().set_params(MapParams(hover_size=0))
     assert mapping.host.hover_size == 0
     mapping.show_hover("c:/1.png", QtCore.QPoint(300, 300))
     assert not mapping.host.preview.isVisible()
@@ -481,3 +435,52 @@ def test_recompute_command_refreshes(mapping):
     with patch.object(MappingWidget, "fetch") as fetch:
         commands.recompute(ctx)
     fetch.assert_called_once_with(keep_levels=True)
+
+
+def test_state_roundtrip_carries_the_shared_view_settings(mapping):
+    settings().set_labels_shown(False)
+    settings().set_image_scale(2.0)
+    settings().set_selection_mode("group")
+    state = mapping.save_state()
+    assert set(state) == {"view", "splitter"}
+    settings().load({})
+    assert settings().labels_shown and settings().image_scale == 1.0 and settings().selection_mode == "single"
+    mapping.restore_state(state)
+    assert not settings().labels_shown and settings().image_scale == 2.0 and settings().selection_mode == "group"
+    assert mapping.map_view.image_scale == 2.0 and mapping.map_view.selection_mode == "group"
+    assert mapping.toolbar.mode_buttons["group"].isChecked() and not mapping.toolbar.label_check.isChecked()
+    assert mapping.map_view.label_items() and not any(label.isVisible() for label in mapping.map_view.label_items())
+
+
+@pytest.mark.parametrize("bad", ["x", None, float("nan"), float("inf")])
+def test_restore_state_ignores_bad_values(mapping, bad):
+    mapping.restore_state({"view": {"image_scale": bad, "selection_mode": "weird"}})
+    assert settings().image_scale == 1.0 and settings().selection_mode == "single"
+
+
+def test_image_scale_is_clamped(mapping):
+    settings().set_image_scale(99)
+    assert mapping.map_view.image_scale == map_view_module.MAX_IMAGE_SCALE
+    settings().set_image_scale(0)
+    assert mapping.map_view.image_scale == map_view_module.MIN_IMAGE_SCALE
+
+
+def test_toolbar_drives_the_shared_settings(mapping):
+    mapping.toolbar.mode_buttons["group"].click()
+    assert settings().selection_mode == "group" and mapping.map_view.selection_mode == "group"
+    mapping.toolbar.label_check.setChecked(False)
+    assert settings().labels_shown is False
+
+
+def test_view_settings_reach_the_mapping_space_panel(mapping, qtbot):
+    from extensions.mapping.space_panel import MappingSpaceWidget
+
+    with patch.object(MappingSpaceWidget, "refresh"):
+        space = MappingSpaceWidget()
+    qtbot.addWidget(space)
+    settings().set_image_scale(3.0)
+    settings().set_selection_mode("group")
+    assert space.map_view.image_scale == 3.0 == mapping.map_view.image_scale
+    assert space.toolbar.mode_buttons["group"].isChecked() and mapping.toolbar.mode_buttons["group"].isChecked()
+    assert set(space.toolbar.tuning.controls) == set(mapping.toolbar.tuning.controls)
+    space.close()

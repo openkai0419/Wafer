@@ -30,11 +30,13 @@ from wafer.qt.theme import ThemeManager
 from .encoders import detect_encoder, value_input
 from .feature_bar import FeatureBar
 from .map_host import MapHost
+from .map_toolbar import MapToolbar
 from .map_view import MapView
 from .params import MapParams
 from .session import OUTPUT_PREFIX, SPACE_KEYS, MapError, MapPipeline, MapRequest, MapResult, layout_from_space
 from .space import Preset, SpaceStatus, load_preset, model_dir, read_status, save_preset
 from .tuning import TuningPanel
+from .view_settings import ViewSettings
 from .widget import STAGE_NAMES, cancel_work, prepare_layout_engine, result_colors
 
 LOAD_PRIORITY = 7
@@ -131,7 +133,7 @@ def read_space_status(db_name: str) -> SpaceSnapshot:
     return snapshot
 
 
-def read_snapshot(db_name: str) -> SpaceSnapshot:
+def read_snapshot(db_name: str, params: MapParams) -> SpaceSnapshot:
     snapshot = read_space_status(db_name)
     preset = snapshot.preset
     db_path = data_db_path(db_name)
@@ -144,7 +146,7 @@ def read_snapshot(db_name: str) -> SpaceSnapshot:
     values = fetch_path_values(db_path, sample, keys=[*preset.value_keys(), *SPACE_KEYS])
     snapshot.sources = fetch_sources(db_path, sample)
     try:
-        snapshot.result = layout_from_space(sample, values, preset, MapParams())
+        snapshot.result = layout_from_space(sample, values, preset, params)
     except MapError as e:
         snapshot.problem = str(e)
     except Exception as e:
@@ -213,30 +215,6 @@ def cancel_tokens(tokens: dict[str, CancelToken]) -> None:
         token.cancel()
 
 
-class PreviewOwner:
-    def __init__(self, host: MapHost, selected_paths):
-        self.host = host
-        self.selected_paths = selected_paths
-
-    def map_thumbnails(self, paths: list[str], size: float) -> list[QtGui.QPixmap | None]:
-        return self.host.map_thumbnails(paths, size)
-
-    def show_hover(self, path: str, global_pos: QtCore.QPoint) -> None:
-        self.host.show_hover(path, global_pos)
-
-    def hide_hover(self) -> None:
-        self.host.hide_hover()
-
-    def context_for_selection(self) -> dict:
-        return self.host.context_for(self.selected_paths())
-
-    def handle_drag_enter(self, event) -> None:
-        event.ignore()
-
-    def handle_drop(self, event) -> None:
-        event.ignore()
-
-
 class MappingSpaceWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -268,8 +246,10 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.preview_placed = 0
         self.preview_loaded_at = 0.0
         self.host = MapHost(self)
+        self.settings = ViewSettings.instance()
         self.build_ui()
         self.host.map_views = [self.map_view]
+        self.settings.changed.connect(self.on_view_settings)
         self.sync_host()
         self.update_buttons()
         self.destroyed.connect(partial(cancel_work, self.refresh_cancel, self.keys_cancel, self.status_cancel, self.quick_cancel))
@@ -339,10 +319,14 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         preview = QtWidgets.QWidget()
         preview_layout = QtWidgets.QVBoxLayout(preview)
         preview_layout.setContentsMargins(dpix(6), dpix(6), dpix(6), dpix(6))
+        header = QtWidgets.QHBoxLayout()
         self.count_label = QtWidgets.QLabel()
         self.count_label.setStyleSheet(f"color: {palette.text_secondary};")
-        preview_layout.addWidget(self.count_label)
-        self.map_view = MapView(PreviewOwner(self.host, self.selected_paths))
+        header.addWidget(self.count_label, stretch=1)
+        self.toolbar = MapToolbar()
+        header.addWidget(self.toolbar)
+        preview_layout.addLayout(header)
+        self.map_view = MapView(self)
         preview_layout.addWidget(self.map_view, stretch=1)
         self.splitter.addWidget(preview)
         self.splitter.setStretchFactor(1, 3)
@@ -404,6 +388,34 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         if self.shown is None:
             return []
         return [self.shown.paths[row] for row in self.map_view.selected_rows()]
+
+    def select_all(self) -> None:
+        if self.shown is not None:
+            self.map_view.select_rows(range(len(self.shown.paths)))
+
+    def map_thumbnails(self, paths: list[str], size: float) -> list[QtGui.QPixmap | None]:
+        return self.host.map_thumbnails(paths, size)
+
+    def show_hover(self, path: str, global_pos: QtCore.QPoint) -> None:
+        self.host.show_hover(path, global_pos)
+
+    def hide_hover(self) -> None:
+        self.host.hide_hover()
+
+    def context_for_selection(self) -> dict:
+        return {**self.host.context_for(self.selected_paths()), "map_panel": self}
+
+    def handle_drag_enter(self, event) -> None:
+        event.ignore()
+
+    def handle_drop(self, event) -> None:
+        event.ignore()
+
+    def on_view_settings(self, relayout: bool) -> None:
+        if relayout and not self.showing_quick:
+            self.refresh()
+        else:
+            self.settings.apply(self.map_view, self.host)
 
     def detect(self, key: str) -> str:
         if self.db_name:
@@ -494,7 +506,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         features = self.feature_bar.features()
         if not self.db_name or not features:
             return
-        db_name, size, params = self.db_name, self.quick_size.value(), self.tuning.params()
+        db_name, size, params = self.db_name, self.quick_size.value(), self.settings.merged(self.tuning.params())
         keys = frozenset(Preset(features, params, 0).value_keys())
         reusable = self.quick_sample if self.quick_sample is not None and self.quick_sample.covers(db_name, size, keys) else None
         cancel = self.quick_cancel.renew()
@@ -568,13 +580,14 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         if self.quick_sample is not None and self.quick_sample.db_name != db_name:
             self.quick_sample, self.showing_quick = None, False
         cancel = self.refresh_cancel.renew()
+        params = self.settings.params
         self.preview_loading = True
         if not self.showing_quick and not self.quick_running:
             self.count_label.setText(t("Loading values") + ELLIPSIS)
 
         def task():
             try:
-                snapshot = read_snapshot(db_name)
+                snapshot = read_snapshot(db_name, params)
             except Exception as e:
                 AppLogger.error(f"[Mapping] Reading the space state of {db_name} failed", exc=e)
                 self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.preview_failed())
@@ -630,15 +643,9 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.map_view.clear_map()
 
     def show_preview(self, result: MapResult, sources: dict[str, str], caption: str) -> None:
-        params = MapParams()
         self.host.sources = sources
-        self.host.set_hover_size(params.hover_size)
         keep_view = self.shown is not None and self.shown.paths == result.paths
-        self.map_view.set_thumbnail_zoom(params.thumbnail_zoom)
-        self.map_view.set_image_limit(params.max_images)
-        self.map_view.set_image_spacing(params.image_spacing)
-        self.map_view.set_image_cap(params.hover_size)
-        self.map_view.set_point_size(params.point_size)
+        self.settings.apply(self.map_view, self.host)
         self.map_view.show_result(result, result_colors(result, self.palette_colors), keep_view)
         self.shown = result
         self.count_label.setText(caption)
@@ -653,9 +660,12 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         super().hideEvent(event)
 
     def save_state(self) -> dict[str, Any]:
-        return {"splitter": bytes(self.splitter.saveState().toHex()).decode("ascii"), "quick_train_files": self.quick_size.value()}
+        return {"view": self.settings.to_dict(), "splitter": bytes(self.splitter.saveState().toHex()).decode("ascii"), "quick_train_files": self.quick_size.value()}
 
     def restore_state(self, state: dict[str, Any]) -> None:
+        view = state.get("view")
+        if isinstance(view, dict):
+            self.settings.load(view)
         splitter = state.get("splitter")
         if isinstance(splitter, str) and splitter:
             self.splitter.restoreState(QtCore.QByteArray.fromHex(splitter.encode("ascii")))

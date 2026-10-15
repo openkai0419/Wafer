@@ -160,7 +160,7 @@ def database(tmp_path, monkeypatch):
 
 
 def test_snapshot_reads_counts_status_and_preview(database):
-    snapshot = read_snapshot("map")
+    snapshot = read_snapshot("map", MapParams())
     assert snapshot.preset.version == 1 and snapshot.status.state == "ready"
     assert snapshot.total == 12 and snapshot.placed == 10 and snapshot.waiting == 0
     assert snapshot.model_bytes == 2048
@@ -171,21 +171,21 @@ def test_snapshot_reads_counts_status_and_preview(database):
 
 def test_snapshot_without_a_saved_preset_has_no_preview(database, monkeypatch):
     monkeypatch.setattr(space_panel, "load_preset", lambda name: None)
-    snapshot = read_snapshot("map")
+    snapshot = read_snapshot("map", MapParams())
     assert snapshot.preset.version == 0 and snapshot.preset.features == []
     assert snapshot.total == 12 and snapshot.placed == 0 and snapshot.result is None
 
 
 def test_snapshot_is_empty_when_the_database_is_missing(database, monkeypatch, tmp_path):
     monkeypatch.setattr(space_panel, "data_db_path", lambda name: str(tmp_path / "missing.db"))
-    snapshot = read_snapshot("map")
+    snapshot = read_snapshot("map", MapParams())
     assert snapshot.total == 0 and snapshot.result is None
 
 
 def test_apply_snapshot_shows_preview_and_keeps_unsaved_edits(widget, database, monkeypatch):
     w, _saved, _resets = widget
     monkeypatch.setattr(space_panel, "load_preset", space.load_preset)
-    snapshot = read_snapshot("map")
+    snapshot = read_snapshot("map", MapParams())
     w.feature_bar.add_feature("path")
     w.apply_snapshot(snapshot)
     assert w.saved.version == 1 and [f.key for f in w.feature_bar.features()] == ["tags", "path"]
@@ -264,7 +264,7 @@ def test_snapshot_counts_waiting_from_mapping_collection_status(database):
     database.upsert_collection_results(
         [], [], [], [("c:/0.png", "mapping", "pending", None), ("c:/1.png", "mapping", "dispatched", None), ("c:/2.png", "mapping", "done", 1.0), ("c:/3.png", "wd14", "pending", None)]
     )
-    assert read_snapshot("map").waiting == 2
+    assert read_snapshot("map", MapParams()).waiting == 2
 
 
 def test_save_after_the_database_changed_only_refreshes(widget, monkeypatch):
@@ -304,7 +304,7 @@ def test_snapshot_keeps_counts_when_the_preview_fails(database, monkeypatch):
         raise ValueError("bad layout")
 
     monkeypatch.setattr(space_panel, "layout_from_space", broken)
-    snapshot = read_snapshot("map")
+    snapshot = read_snapshot("map", MapParams())
     assert snapshot.result is None and snapshot.problem == "bad layout"
     assert snapshot.total == 12 and snapshot.placed == 10 and snapshot.status.state == "ready"
 

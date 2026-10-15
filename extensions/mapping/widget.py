@@ -20,16 +20,16 @@ from wafer.qt.common.icon_engine import themed_icon
 from wafer.qt.common.rate_limit import qt_debounce
 from wafer.qt.common.thread import utility_pool
 from wafer.qt.theme import ThemeManager
-from wafer.qt.widgets.popup import PopupBase
 
 from . import projection
 from .file_list import FileList
 from .map_host import MapHost
+from .map_toolbar import MapToolbar
 from .map_view import MapView
 from .params import MapParams
 from .session import MapError, MapResult, layout_from_space
 from .space import Preset, load_preset
-from .tuning import TuningPanel
+from .view_settings import ViewSettings
 
 COMPUTE_PRIORITY = 7
 WARM_UP_PRIORITY = 1
@@ -39,7 +39,6 @@ ELLIPSIS = "\N{HORIZONTAL ELLIPSIS}"
 SEPARATOR = "\N{MIDDLE DOT}"
 CRUMB_ARROW = "\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}"
 SPACE_PANEL_NAME = "Mapping Space"
-VIEW_STAGES = ("view",)
 STAGE_NAMES = {"encode": "Encoding", "layout": "Laying out (the first run takes longer)", "cluster": "Grouping"}
 
 
@@ -90,16 +89,15 @@ class MappingWidget(QtWidgets.QWidget):
         self.preset: Preset | None = None
         self.paths: list[str] = []
         self.values: dict[str, dict[str, PathValue]] = {}
-        self.params = MapParams()
-        self.labels_shown = True
+        self.settings = ViewSettings.instance()
         self.levels: list[MapLevel] = []
         self.shown: MapResult | None = None
         self.host = MapHost(self)
-        self.tuning_popup: PopupBase | None = None
         self.build_ui()
         self.host.map_views = [self.map_view]
         self.host.list_views = [self.file_list]
         self.setAcceptDrops(True)
+        self.settings.changed.connect(self.on_view_settings)
         self.destroyed.connect(partial(cancel_work, self.fetch_cancel, self.compute_cancel))
 
     @classmethod
@@ -126,28 +124,8 @@ class MappingWidget(QtWidgets.QWidget):
         self.edit_space_button.clicked.connect(self.open_space_panel)
         toolbar.addWidget(self.edit_space_button)
         toolbar.addStretch(1)
-        self.label_check = QtWidgets.QCheckBox(t("Labels"))
-        self.label_check.setChecked(True)
-        self.label_check.setToolTip(t("Show group labels."))
-        self.label_check.toggled.connect(self.set_labels_shown)
-        toolbar.addWidget(self.label_check)
-        self.mode_buttons = {}
-        mode_group = QtWidgets.QButtonGroup(self)
-        for mode, text in (("single", t("Single")), ("group", t("Group"))):
-            button = QtWidgets.QToolButton()
-            button.setText(text)
-            button.setCheckable(True)
-            button.setChecked(mode == "single")
-            button.setToolTip(t("Select one file at a time.") if mode == "single" else t("Select whole groups."))
-            button.toggled.connect(partial(self.on_mode_toggled, mode))
-            mode_group.addButton(button)
-            toolbar.addWidget(button)
-            self.mode_buttons[mode] = button
-        self.tuning_button = QtWidgets.QToolButton()
-        self.tuning_button.setIcon(themed_icon("gear_small"))
-        self.tuning_button.setToolTip(t("Tuning"))
-        self.tuning_button.clicked.connect(self.toggle_tuning)
-        toolbar.addWidget(self.tuning_button)
+        self.toolbar = MapToolbar()
+        toolbar.addWidget(self.toolbar)
         refresh = QtWidgets.QToolButton()
         refresh.setIcon(themed_icon("refresh"))
         refresh.setToolTip(t("Recompute"))
@@ -177,10 +155,18 @@ class MappingWidget(QtWidgets.QWidget):
         self.splitter.setStretchFactor(1, 3)
         layout.addWidget(self.splitter, stretch=1)
         self.stack.addWidget(self.page)
-        self.tuning = TuningPanel(stages=VIEW_STAGES)
-        self.tuning.params_changed.connect(self.on_params)
         self.map_view.selection_changed.connect(self.on_map_selection)
         self.file_list.selection_changed.connect(self.on_list_selection)
+
+    @property
+    def params(self) -> MapParams:
+        return self.settings.params
+
+    def on_view_settings(self, relayout: bool) -> None:
+        if relayout:
+            self.schedule_recompute()
+        else:
+            self.settings.apply(self.map_view, self.host)
 
     def message_text(self) -> str:
         return self.message.text()
@@ -315,22 +301,16 @@ class MappingWidget(QtWidgets.QWidget):
         self.show_result(result)
 
     def show_result(self, result: MapResult):
-        self.host.set_hover_size(self.params.hover_size)
         selected = set(self.selected_paths())
         keep_view = self.shown is not None and self.shown.paths == result.paths
         colors = self.colors_for(result)
-        self.map_view.set_thumbnail_zoom(self.params.thumbnail_zoom)
-        self.map_view.set_image_limit(self.params.max_images)
-        self.map_view.set_image_spacing(self.params.image_spacing)
-        self.map_view.set_image_cap(self.params.hover_size)
-        self.map_view.set_point_size(self.params.point_size)
+        self.settings.apply(self.map_view, self.host)
         self.map_view.show_result(result, colors, keep_view)
         self.file_list.set_rows(result.paths, result.order, colors)
         self.shown = result
         rows = [row for row, path in enumerate(result.paths) if path in selected]
         self.map_view.select_rows(rows)
         self.file_list.select_rows(rows)
-        self.tuning.set_diagnostics(result.diagnostics)
         self.cancel_button.hide()
         parts = [t("{count} files", count=len(result.paths)), t("{count} groups", count=result.diagnostics.groups)]
         if result.diagnostics.unset:
@@ -343,43 +323,13 @@ class MappingWidget(QtWidgets.QWidget):
     def set_message(self, text: str):
         self.message.setText(text)
 
-    def set_labels_shown(self, shown: bool) -> None:
-        self.labels_shown = bool(shown)
-        if self.label_check.isChecked() != self.labels_shown:
-            self.label_check.blockSignals(True)
-            self.label_check.setChecked(self.labels_shown)
-            self.label_check.blockSignals(False)
-        self.map_view.set_labels_visible(self.labels_shown)
-
-    def on_params(self, params: MapParams):
-        self.params = params
-        self.host.set_hover_size(params.hover_size)
-        self.schedule_recompute()
-
-    def toggle_tuning(self):
-        popup = self.tuning_popup
-        if popup is not None and popup.isVisible():
-            popup.close()
-            return
-        if popup is None:
-            palette = self.palette_colors
-            popup = PopupBase(self)
-            popup.setStyleSheet(f"PopupBase {{ background: {palette.bg_elevated}; border: 1px solid {palette.border_default}; border-radius: {dpix(6)}px; }}")
-            QtWidgets.QVBoxLayout(popup).setContentsMargins(0, 0, 0, 0)
-            scroll = QtWidgets.QScrollArea()
-            scroll.setWidgetResizable(True)
-            scroll.setWidget(self.tuning)
-            popup.set_content_widget(scroll)
-            self.tuning_popup = popup
-        popup.show_below(self.tuning_button, align=Qt.AlignRight, max_height=dpix(600))
-
     def selected_paths(self) -> list[str]:
         if self.shown is None:
             return []
         return [self.shown.paths[row] for row in self.map_view.selected_rows()]
 
     def context_for_selection(self) -> dict:
-        return self.host.context_for(self.selected_paths())
+        return {**self.host.context_for(self.selected_paths()), "map_panel": self}
 
     def select_all(self) -> None:
         if self.shown is None:
@@ -393,7 +343,7 @@ class MappingWidget(QtWidgets.QWidget):
 
     def on_list_selection(self):
         rows = self.file_list.selected_rows()
-        if self.selection_mode == "group":
+        if self.settings.selection_mode == "group":
             expanded = self.map_view.expand_to_groups(rows)
             if expanded != rows:
                 rows = expanded
@@ -459,31 +409,6 @@ class MappingWidget(QtWidgets.QWidget):
         self.host.hide_hover()
         super().hideEvent(event)
 
-    def set_image_scale(self, scale: float) -> None:
-        self.map_view.set_image_scale(scale)
-
-    def image_scale_up(self, ratio: float = 1.1) -> None:
-        self.set_image_scale(self.map_view.image_scale * ratio)
-
-    def image_scale_down(self, ratio: float = 1.1) -> None:
-        self.set_image_scale(self.map_view.image_scale / ratio)
-
-    @property
-    def selection_mode(self) -> str:
-        return self.map_view.selection_mode
-
-    def set_selection_mode(self, mode: str) -> None:
-        self.map_view.set_selection_mode(mode)
-        button = self.mode_buttons[self.map_view.selection_mode]
-        if not button.isChecked():
-            button.blockSignals(True)
-            button.setChecked(True)
-            button.blockSignals(False)
-
-    def on_mode_toggled(self, mode: str, checked: bool) -> None:
-        if checked:
-            self.set_selection_mode(mode)
-
     def handle_drag_enter(self, event):
         if local_file_paths(event.mimeData()):
             event.setDropAction(Qt.CopyAction)
@@ -511,22 +436,12 @@ class MappingWidget(QtWidgets.QWidget):
         self.handle_drop(event)
 
     def save_state(self) -> dict:
-        return {
-            "params": self.params.to_dict(),
-            "labels": self.labels_shown,
-            "image_scale": self.map_view.image_scale,
-            "selection_mode": self.selection_mode,
-            "splitter": bytes(self.splitter.saveState().toHex()).decode("ascii"),
-        }
+        return {"view": self.settings.to_dict(), "splitter": bytes(self.splitter.saveState().toHex()).decode("ascii")}
 
     def restore_state(self, state: dict) -> None:
-        self.params = MapParams.from_dict(state.get("params") or {})
-        self.tuning.set_params(self.params)
-        self.set_labels_shown(state.get("labels", True) is not False)
-        scale = state.get("image_scale", 1.0)
-        self.set_image_scale(float(scale) if isinstance(scale, (int, float)) and math.isfinite(scale) else 1.0)
-        mode = state.get("selection_mode")
-        self.set_selection_mode(mode if mode in ("single", "group") else "single")
+        view = state.get("view")
+        if isinstance(view, dict):
+            self.settings.load(view)
         splitter = state.get("splitter")
         if isinstance(splitter, str) and splitter:
             self.splitter.restoreState(QtCore.QByteArray.fromHex(splitter.encode("ascii")))

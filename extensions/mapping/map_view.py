@@ -18,7 +18,7 @@ SCENE_SIZE = 1000.0
 UNSET_GAP = SCENE_SIZE * 0.08
 UNSET_SPACING = 20.0
 UNSET_PER_ROW = 50
-POINT_SIZE = 1.0
+POINT_SIZE = 3.0
 MIN_POINT_SIZE = 1.0
 ROUND_POINT_SIZE = 3.0
 THUMB_SIZE = 64
@@ -33,6 +33,22 @@ IMAGE_REFRESH_MS = 50
 PRIORITY_SEED = 0
 NO_ROWS = np.zeros(0, dtype=np.int64)
 NO_RECTS = np.zeros((0, 4), dtype=np.float64)
+
+
+def selection_operation(modifiers: Qt.KeyboardModifier) -> str:
+    if modifiers & Qt.ControlModifier:
+        return "remove"
+    if modifiers & (Qt.ShiftModifier | Qt.AltModifier):
+        return "add"
+    return "replace"
+
+
+def combine_selection(base: np.ndarray, target: np.ndarray, operation: str) -> np.ndarray:
+    if operation == "add":
+        return base | target
+    if operation == "remove":
+        return base & ~target
+    return target.copy()
 
 
 def scene_positions(result: MapResult) -> np.ndarray:
@@ -134,6 +150,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.press_pos: QtCore.QPoint | None = None
         self.press_rows: list[int] = []
         self.band_base = np.zeros(0, dtype=bool)
+        self.band_operation = "replace"
         self.image_timer = QtCore.QTimer(self)
         self.image_timer.setSingleShot(True)
         self.image_timer.setInterval(IMAGE_REFRESH_MS)
@@ -211,13 +228,24 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     def set_selection_mode(self, mode: str):
         self.selection_mode = "group" if mode == "group" else "single"
 
+    def row_mask(self, rows: Iterable[int]) -> np.ndarray:
+        wanted = np.fromiter(rows, dtype=np.int64)
+        mask = np.zeros(len(self.paths), dtype=bool)
+        mask[wanted[(wanted >= 0) & (wanted < mask.size)]] = True
+        return mask
+
+    def with_groups(self, mask: np.ndarray) -> np.ndarray:
+        if self.selection_mode != "group" or self.group_of.size != mask.size:
+            return mask
+        groups = np.unique(self.group_of[mask])
+        groups = groups[groups >= 0]
+        return mask | np.isin(self.group_of, groups) if groups.size else mask
+
     def expand_to_groups(self, rows: Iterable[int]) -> list[int]:
-        wanted = set(rows)
-        if not wanted or not (self.group_of >= 0).any():
-            return sorted(wanted)
-        groups = {int(self.group_of[row]) for row in wanted if row < self.group_of.size} - {-1}
-        members = np.flatnonzero(np.isin(self.group_of, list(groups)))
-        return sorted(wanted | set(members.tolist()))
+        mask = self.row_mask(rows)
+        groups = np.unique(self.group_of[mask]) if self.group_of.size == mask.size else np.zeros(0, dtype=np.int32)
+        groups = groups[groups >= 0]
+        return np.flatnonzero(mask | np.isin(self.group_of, groups) if groups.size else mask).tolist()
 
     def clear_map(self):
         self.scene().clear()
@@ -443,10 +471,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         return np.flatnonzero(self.selected).tolist()
 
     def select_rows(self, rows: Iterable[int]):
-        wanted = np.fromiter(rows, dtype=np.int64)
-        mask = np.zeros(len(self.paths), dtype=bool)
-        mask[wanted[(wanted >= 0) & (wanted < mask.size)]] = True
-        self.set_selection(mask)
+        self.set_selection(self.row_mask(rows))
 
     def set_selection(self, mask: np.ndarray) -> None:
         self.selected = mask
@@ -468,8 +493,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     def on_rubber_band(self, rect: QtCore.QRect, *_):
         if rect.isNull() or self.press_pos is None or self.band_base.size != len(self.paths):
             return
-        mask = self.band_base.copy()
-        mask[self.rows_in_rect(QtCore.QRectF(rect))] = True
+        mask = combine_selection(self.band_base, self.with_groups(self.row_mask(self.rows_in_rect(QtCore.QRectF(rect)).tolist())), self.band_operation)
         if np.array_equal(mask, self.selected):
             return
         self.set_selection(mask)
@@ -515,8 +539,8 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         tracking = event.button() == Qt.LeftButton and not on_label
         self.press_pos = position if tracking else None
         self.press_rows = self.selected_rows()
-        additive = bool(event.modifiers() & Qt.ControlModifier)
-        self.band_base = self.selected.copy() if additive else np.zeros(len(self.paths), dtype=bool)
+        self.band_operation = selection_operation(event.modifiers())
+        self.band_base = self.selected.copy()
         super().mousePressEvent(event)
 
     def select_for_context(self, position: QtCore.QPoint):
@@ -562,8 +586,6 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         position = event.position().toPoint()
         if (position - press_pos).manhattanLength() < QtWidgets.QApplication.startDragDistance():
             self.apply_click(position, event.modifiers())
-        if self.selection_mode == "group" and (self.group_of >= 0).any():
-            self.select_rows(self.expand_to_groups(self.selected_rows()))
         rows = self.selected_rows()
         if rows != self.press_rows:
             self.press_rows = rows
@@ -571,15 +593,15 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
 
     def apply_click(self, position: QtCore.QPoint, modifiers: Qt.KeyboardModifier):
         row = self.row_at(position)
-        selected = set(self.selected_rows())
-        if modifiers & Qt.ControlModifier:
-            if row is None:
-                return
-            target = set(self.expand_to_groups([row])) if self.selection_mode == "group" else {row}
-            selected = selected - target if target <= selected else selected | target
-        else:
-            selected = set() if row is None else {row}
-        self.select_rows(selected)
+        operation = selection_operation(modifiers)
+        if row is None:
+            if operation == "replace":
+                self.set_selection(np.zeros(len(self.paths), dtype=bool))
+            return
+        target = self.with_groups(self.row_mask([row]))
+        if operation == "remove":
+            operation = "remove" if self.selected[target].all() else "add"
+        self.set_selection(combine_selection(self.selected, target, operation))
 
     def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent):
         row = self.row_at(event.position().toPoint())

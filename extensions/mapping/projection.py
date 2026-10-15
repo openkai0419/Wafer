@@ -10,6 +10,7 @@ from wafer.core.logs import AppLogger
 
 SMALL_LAYOUT_LIMIT = 3
 SPECTRAL_INIT_MIN = 20
+GROUPING_MIN_DIST = 0.0
 WARM_UP_ROWS = 300
 _warm_up_lock = threading.Lock()
 _warmed_up = False

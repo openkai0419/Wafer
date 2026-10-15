@@ -22,6 +22,7 @@ from .params import MapParams
 from .session import OUTPUT_PREFIX, FeatureSpec, MapError
 
 PRESET_KEY = "mapping.preset"
+COORD_COLUMNS = 4
 K_NEIGHBORS = 10
 STATUS_FILE = "status.json"
 PATH_SEPARATOR = "\n"
@@ -155,12 +156,16 @@ class SpaceModel:
         if active.size < 3:
             raise MapError("Not enough files have values for the selected keys.")
         combined, _stats, scales = projection.combine_blocks([(label, dense[active], present[active], weight) for label, dense, present, weight in blocks], params.seed)
-        coords = projection.embed(combined, 2, params.n_neighbors, params.min_dist, params.seed)
+        display = projection.embed(combined, 2, params.n_neighbors, params.min_dist, params.seed)
+        if cancelled():
+            raise MapError("Cancelled")
+        grouping = projection.embed(combined, 2, params.n_neighbors, projection.GROUPING_MIN_DIST, params.seed)
+        coords = np.hstack([display, grouping])
         return cls(preset, encoders, reducers, scales, [paths[i] for i in active], combined.astype(np.float16), coords.astype(np.float32), time.time())
 
-    def coords_for(self, path: str) -> tuple[float, float] | None:
+    def coords_for(self, path: str) -> tuple[float, ...] | None:
         index = self.train_index.get(path)
-        return None if index is None else (float(self.coords[index, 0]), float(self.coords[index, 1]))
+        return None if index is None else tuple(float(value) for value in self.coords[index])
 
     def place(self, entries: list[dict[str, PathValue]]) -> np.ndarray:
         parts = []
@@ -171,7 +176,7 @@ class SpaceModel:
             present = encoder.present(inputs)
             parts.append((reducer.transform(encoder.transform(inputs)), present))
             has_value |= present
-        output = np.full((len(entries), 2), np.nan, dtype=np.float32)
+        output = np.full((len(entries), COORD_COLUMNS), np.nan, dtype=np.float32)
         rows = np.flatnonzero(has_value)
         if rows.size == 0:
             return output
@@ -223,6 +228,8 @@ class SpaceModel:
             encoders, reducers, scales = state["encoders"], state["reducers"], state["scales"]
             if not len(train_paths) == len(matrix) == len(coords):
                 raise ValueError("model arrays have different row counts")
+            if coords.ndim != 2 or coords.shape[1] != COORD_COLUMNS:
+                raise ValueError("model was built without grouping coordinates")
             if not len(preset.features) == len(encoders) == len(reducers) == len(scales):
                 raise ValueError("model blocks do not match the preset features")
             return cls(preset, encoders, reducers, scales, train_paths, matrix, coords, float(state["built_at"]))

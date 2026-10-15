@@ -55,7 +55,7 @@ def space_values() -> dict:
         entry = {"tags": PathValue("cat, sky" if i < 15 else "dog, sea")}
         if path not in UNSET:
             x = float(i // 15) * 10 + i * 0.01
-            entry.update({"mapping.x": PathValue(str(x), x), "mapping.y": PathValue("0", 0.0), "mapping.model": PathValue("2", 2.0)})
+            entry.update({"mapping.x": PathValue(str(x), x), "mapping.y": PathValue("0", 0.0), "mapping.gx": PathValue(str(x), x), "mapping.gy": PathValue("0", 0.0), "mapping.model": PathValue("2", 2.0)})
         values[path] = entry
     return values
 

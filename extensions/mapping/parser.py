@@ -10,7 +10,7 @@ from wafer.core.db.path_values import fetch_path_values
 from wafer.core.logs import AppLogger
 from wafer.plugin import BaseParserPlugin, ParserResult
 
-from .session import SPACE_KEYS
+from .session import KEY_MODEL, SPACE_KEYS
 from .space import OUTPUT_PREFIX, Preset, SpaceLoadError, SpaceModel, SpaceStatus, load_preset, model_dir, write_status
 
 IDLE_TIMEOUT = 60.0
@@ -66,7 +66,8 @@ class MappingParser(BaseParserPlugin):
             return ParserResult(source=path, status=False)
         if point is None:
             return ParserResult(source=path, status=True, delete_meta_keys=list(SPACE_KEYS))
-        return ParserResult(source=path, status=True, meta_info={"x": repr(point[0]), "y": repr(point[1]), "model": str(model.version)})
+        x, y, gx, gy = point
+        return ParserResult(source=path, status=True, meta_info={"x": repr(x), "y": repr(y), "gx": repr(gx), "gy": repr(gy), "model": str(model.version)})
 
     def ensure_model(self, preset: Preset) -> SpaceModel | None:
         if self.model is not None and self.model.preset.to_dict() == preset.to_dict():
@@ -107,7 +108,7 @@ class MappingParser(BaseParserPlugin):
         return model
 
     def position(self, model: SpaceModel, path: str):
-        rows = self.query_db("SELECT value FROM meta_info WHERE path = ? AND key = ?", (path, f"{OUTPUT_PREFIX}.model"))
+        rows = self.query_db("SELECT value FROM meta_info WHERE path = ? AND key = ?", (path, KEY_MODEL))
         stored = rows[0][0] if rows else None
         if stored != str(model.version):
             trained = model.coords_for(path)
@@ -117,7 +118,7 @@ class MappingParser(BaseParserPlugin):
         if entry is None:
             return UNREAD
         point = model.place([entry])[0]
-        return None if np.isnan(point).any() else (float(point[0]), float(point[1]))
+        return None if np.isnan(point).any() else tuple(float(value) for value in point)
 
     def touch(self):
         self.last_used = time.monotonic()

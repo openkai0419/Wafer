@@ -417,6 +417,7 @@ class MappingWidget(QtWidgets.QWidget):
         colors = self.colors_for(result)
         self.map_view.set_thumbnail_zoom(self.params.thumbnail_zoom)
         self.map_view.set_image_limit(self.params.max_images)
+        self.map_view.set_image_spacing(self.params.image_spacing)
         self.map_view.show_result(result, colors, self.grouping_enabled, keep_view)
         self.file_list.set_rows(result.paths, result.order, colors)
         self.shown = result

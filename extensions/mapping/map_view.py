@@ -26,6 +26,7 @@ MIN_IMAGE_SCALE = 0.5
 MAX_IMAGE_SCALE = 4.0
 LABEL_GAP = 4
 IMAGE_LIMIT = 300
+IMAGE_SPACING = 0.01
 IMAGE_REFRESH_MS = 50
 PRIORITY_SEED = 0
 NO_ROWS = np.zeros(0, dtype=np.int64)
@@ -114,6 +115,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.image_rects = NO_RECTS
         self.wanted_paths: set[str] = set()
         self.image_limit = IMAGE_LIMIT
+        self.image_spacing = IMAGE_SPACING
         self.fit_scale = 1.0
         self.thumbnail_zoom = 2.0
         self.thumbnails = False
@@ -163,6 +165,11 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     def set_image_limit(self, limit: int) -> None:
         if limit != self.image_limit:
             self.image_limit = max(int(limit), 0)
+            self.invalidate()
+
+    def set_image_spacing(self, spacing: float) -> None:
+        if spacing != self.image_spacing:
+            self.image_spacing = max(float(spacing), 0.01)
             self.invalidate()
 
     def begin_geometry_change(self):
@@ -298,7 +305,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if self.image_limit <= 0 or visible.size == 0:
             return NO_ROWS
         ranked = visible[np.lexsort((self.priority[visible], ~self.selected[visible]))]
-        cells = np.floor(device[ranked] / max(self.item_extent(), 1.0)).astype(np.int64)
+        cells = np.floor(device[ranked] / max(self.item_extent() * self.image_spacing, 1.0)).astype(np.int64)
         _, first = np.unique(cells, axis=0, return_index=True)
         chosen = ranked[np.sort(first)][: self.image_limit]
         center = np.array([size.width() / 2, size.height() / 2])

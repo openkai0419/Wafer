@@ -636,6 +636,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         keep_view = self.shown is not None and self.shown.paths == result.paths
         self.map_view.set_thumbnail_zoom(params.thumbnail_zoom)
         self.map_view.set_image_limit(params.max_images)
+        self.map_view.set_image_spacing(params.image_spacing)
         self.map_view.show_result(result, result_colors(result, self.palette_colors), True, keep_view)
         self.shown = result
         self.count_label.setText(caption)

@@ -296,9 +296,14 @@ def test_images_are_capped_one_per_cell_and_the_rest_stay_dots(view):
     view.viewport().repaint()
     assert 0 < len(view.image_rows) <= 50
     view.set_image_limit(10_000)
+    view.set_image_spacing(1.0)
     view.viewport().repaint()
     cells = np.floor(view.device_positions()[view.image_rows] / view.item_extent()).astype(int)
     assert len({tuple(cell) for cell in cells}) == len(view.image_rows) < 2000
+    spaced = len(view.image_rows)
+    view.set_image_spacing(0.5)
+    view.viewport().repaint()
+    assert len(view.image_rows) > spaced
 
 
 def test_selected_files_get_images_first(view):

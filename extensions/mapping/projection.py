@@ -151,7 +151,7 @@ def cluster(space: np.ndarray, min_cluster_size: int, min_samples: int) -> np.nd
     return relabel_by_size(HDBSCAN(min_cluster_size=size, min_samples=samples, copy=True).fit_predict(space))
 
 
-def clip_to_unit(points: np.ndarray, percent: float) -> tuple[np.ndarray, np.ndarray]:
+def normalize_to_core(points: np.ndarray, percent: float) -> tuple[np.ndarray, np.ndarray]:
     if len(points) == 0:
         return np.zeros((0, 2), dtype=np.float32), np.zeros(0, dtype=bool)
     low = np.percentile(points, percent, axis=0)
@@ -160,7 +160,7 @@ def clip_to_unit(points: np.ndarray, percent: float) -> tuple[np.ndarray, np.nda
     flat = span <= 1e-12
     unit = np.where(flat, 0.5, (points - low) / np.where(flat, 1.0, span))
     outliers = ((unit < 0) | (unit > 1)).any(axis=1)
-    return np.clip(unit, 0.0, 1.0).astype(np.float32), outliers
+    return unit.astype(np.float32), outliers
 
 
 def order_rows(points: np.ndarray, labels: np.ndarray) -> np.ndarray:

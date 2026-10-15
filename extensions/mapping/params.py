@@ -23,6 +23,12 @@ def param(default, *, stage: str, label: str, description: str, minimum: float, 
     return field(default=default, metadata={"spec": ParamSpec(stage, label, description, minimum, maximum, step)})
 
 
+AUTO_GROUP_MIN = 5
+AUTO_GROUP_MAX = 30
+AUTO_GROUP_DIVISOR = 500
+AUTO_STRICTNESS_MAX = 10
+
+
 @dataclass(frozen=True)
 class MapParams:
     ngram_min: int = param(
@@ -45,9 +51,9 @@ class MapParams:
     min_cluster_size: int = param(
         0, stage="cluster", label="Min group size", description="Smallest number of files in a group. Higher gives fewer, larger groups. 0 = automatic.", minimum=0, maximum=1000
     )
-    min_samples: int = param(0, stage="cluster", label="Noise strictness", description="Higher marks more files as noise (gray). 0 = same as min group size.", minimum=0, maximum=1000)
-    clip_percent: float = param(
-        1.0, stage="view", label="Outlier clip (%)", description="Share of points pushed to the edge as outliers. Higher spreads the center.", minimum=0.0, maximum=20.0, step=0.5
+    min_samples: int = param(0, stage="cluster", label="Noise strictness", description="Higher marks more files as noise (gray). 0 = automatic.", minimum=0, maximum=1000)
+    outlier_percent: float = param(
+        1.0, stage="view", label="Outliers (%)", description="Share of far points marked as outliers and left outside the first view. Higher zooms the first view into the center.", minimum=0.0, maximum=20.0, step=0.5
     )
     thumbnail_zoom: float = param(2.0, stage="view", label="Thumbnail zoom", description="Zoom level at which points turn into thumbnails.", minimum=1.0, maximum=20.0, step=0.5)
     image_spacing: float = param(0.01, stage="view", label="Image spacing", description="Space between images, relative to their size. Lower lets them overlap more.", minimum=0.01, maximum=2.0, step=0.05)
@@ -90,10 +96,10 @@ class MapParams:
         return replace(cls(), **changes).normalized()
 
     def resolved_min_cluster_size(self, count: int) -> int:
-        return self.min_cluster_size or max(5, count // 100)
+        return self.min_cluster_size or min(AUTO_GROUP_MAX, max(AUTO_GROUP_MIN, count // AUTO_GROUP_DIVISOR))
 
     def resolved_min_samples(self, count: int) -> int:
-        return self.min_samples or self.resolved_min_cluster_size(count)
+        return self.min_samples or min(self.resolved_min_cluster_size(count), AUTO_STRICTNESS_MAX)
 
 
 def param_specs() -> list[tuple[str, ParamSpec, int | float]]:

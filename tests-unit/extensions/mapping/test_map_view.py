@@ -412,3 +412,20 @@ def test_tiny_points_are_drawn_as_single_pixels(view):
     view.set_image_scale(map_view_module.MIN_IMAGE_SCALE)
     assert view.point_size() == 1.0
     assert not render_point(view, 1).isNull()
+
+
+def test_outliers_keep_their_place_outside_the_first_view(view):
+    data = result(labels=False)
+    data.positions[0] = (3.0, 0.5)
+    view.show_result(data, colors(6), show_groups=False, keep_view=False)
+    assert view.positions[0, 0] == pytest.approx(3000.0)
+    assert view.scene().sceneRect().contains(QtCore.QPointF(3000.0, 500.0))
+    assert not view.viewport().rect().contains(point_pos(view, 0))
+    assert view.viewport().rect().contains(point_pos(view, 1))
+
+
+def test_waiting_files_sit_below_every_placed_point(view):
+    data = result(labels=False)
+    data.positions[0] = (0.5, 2.0)
+    view.show_result(data, colors(6), show_groups=False, keep_view=False)
+    assert view.positions[5, 1] > view.positions[0, 1]

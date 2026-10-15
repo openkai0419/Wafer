@@ -182,7 +182,7 @@ class MapPipeline:
             if cancelled():
                 return None
             group_terms = self._describe(labels, blocks, params)
-        unit, active_outliers = projection.clip_to_unit(self._points, params.clip_percent)
+        unit, active_outliers = projection.normalize_to_core(self._points, params.outlier_percent)
         positions = np.full((count, 2), np.nan, dtype=np.float32)
         positions[self._active] = unit
         outliers = np.zeros(count, dtype=bool)
@@ -271,7 +271,7 @@ def layout_from_space(paths: list[str], values: dict[str, dict[str, PathValue]],
     active = np.flatnonzero(placed)
     if active.size == 0:
         raise MapError("No files have been placed yet. Wait for the Mapping parser or retrain in Mapping Space.")
-    unit, active_outliers = projection.clip_to_unit(raw[active], params.clip_percent)
+    unit, active_outliers = projection.normalize_to_core(raw[active], params.outlier_percent)
     positions = np.full((count, 2), np.nan, dtype=np.float32)
     positions[active] = unit
     outliers = np.zeros(count, dtype=bool)

@@ -15,7 +15,7 @@ from wafer.qt.theme import ThemeManager
 from .session import MapResult
 
 SCENE_SIZE = 1000.0
-UNSET_TOP = SCENE_SIZE * 1.08
+UNSET_GAP = SCENE_SIZE * 0.08
 UNSET_SPACING = 20.0
 UNSET_PER_ROW = 50
 POINT_SIZE = 8
@@ -38,9 +38,11 @@ NO_RECTS = np.zeros((0, 4), dtype=np.float64)
 def scene_positions(result: MapResult) -> np.ndarray:
     positions = np.asarray(result.positions, dtype=np.float64).reshape(-1, 2) * SCENE_SIZE
     unset = np.flatnonzero(result.unset)
+    placed = positions[~np.asarray(result.unset, dtype=bool)]
+    bottom = max(SCENE_SIZE, float(np.nanmax(placed[:, 1]))) if np.isfinite(placed).any() else SCENE_SIZE
     slots = np.arange(unset.size)
     positions[unset, 0] = (slots % UNSET_PER_ROW) * UNSET_SPACING
-    positions[unset, 1] = UNSET_TOP + (slots // UNSET_PER_ROW) * UNSET_SPACING
+    positions[unset, 1] = bottom + UNSET_GAP + (slots // UNSET_PER_ROW) * UNSET_SPACING
     return np.nan_to_num(positions)
 
 
@@ -221,15 +223,16 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.color_keys, self.color_ids = np.unique(keys, return_inverse=True)
         if show_groups:
             self.add_labels(result)
-        rect = QtCore.QRectF()
+        core = QtCore.QRectF(0, 0, SCENE_SIZE, SCENE_SIZE)
+        rect = core
         if count:
             low, high = self.positions.min(axis=0), self.positions.max(axis=0)
-            rect = QtCore.QRectF(QtCore.QPointF(*low), QtCore.QPointF(*high))
+            rect = rect.united(QtCore.QRectF(QtCore.QPointF(*low), QtCore.QPointF(*high)))
         margin = SCENE_SIZE * 0.05
         self.scene().setSceneRect(rect.adjusted(-margin, -margin, margin, margin))
         if not keep_view:
             self.begin_geometry_change()
-            self.fitInView(self.scene().sceneRect(), Qt.KeepAspectRatio)
+            self.fitInView(core.adjusted(-margin, -margin, margin, margin), Qt.KeepAspectRatio)
             self.fit_scale = self.transform().m11()
         self.sync_thumbnail_mode()
         self.invalidate()

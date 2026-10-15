@@ -42,9 +42,12 @@ def test_dict_roundtrip_ignores_unknown_and_bad_values():
 def test_auto_cluster_size():
     params = MapParams()
     assert params.resolved_min_cluster_size(100) == 5
-    assert params.resolved_min_cluster_size(3000) == 30
-    assert params.resolved_min_samples(3000) == 30
+    assert params.resolved_min_cluster_size(5000) == 10
+    assert params.resolved_min_cluster_size(20000) == params.resolved_min_cluster_size(1_000_000) == 30
+    assert params.resolved_min_samples(100) == 5
+    assert params.resolved_min_samples(20000) == 10
     assert MapParams(min_samples=4).resolved_min_samples(3000) == 4
+    assert MapParams(min_cluster_size=200).resolved_min_samples(3000) == 10
 
 
 @pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan"), 10**400, "inf", "nan"])

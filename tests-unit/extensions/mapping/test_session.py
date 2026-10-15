@@ -73,7 +73,7 @@ def test_view_only_change_does_not_rerun_layout(embed_calls):
     runner = pipeline()
     runner.run(make_request())
     embed_calls.clear()
-    runner.run(make_request(params=MapParams(clip_percent=5.0, label_terms=1)))
+    runner.run(make_request(params=MapParams(outlier_percent=5.0, label_terms=1)))
     assert embed_calls == []
 
 

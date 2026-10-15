@@ -126,16 +126,17 @@ def test_relabel_by_size_largest_first():
     assert projection.relabel_by_size(np.array([3, 3, 7, 7, 7, -1])).tolist() == [1, 1, 0, 0, 0, -1]
 
 
-def test_clip_to_unit_marks_outliers():
+def test_normalize_to_core_marks_outliers_and_keeps_their_distance():
     points = np.vstack([np.linspace(0, 1, 98)[:, None].repeat(2, axis=1), [[100.0, 100.0], [-100.0, -100.0]]])
-    unit, outliers = projection.clip_to_unit(points, 1.0)
-    assert unit.min() >= 0.0 and unit.max() <= 1.0
+    unit, outliers = projection.normalize_to_core(points, 1.0)
+    assert unit[:-2].min() >= -0.05 and unit[:-2].max() <= 1.05
+    assert unit[-2, 0] > 10 and unit[-1, 0] < -10
     assert outliers[-1] and outliers[-2]
     assert outliers.sum() == 2
 
 
-def test_clip_to_unit_degenerate_centers():
-    unit, outliers = projection.clip_to_unit(np.zeros((5, 2)), 1.0)
+def test_normalize_to_core_degenerate_centers():
+    unit, outliers = projection.normalize_to_core(np.zeros((5, 2)), 1.0)
     assert np.allclose(unit, 0.5) and not outliers.any()
 
 

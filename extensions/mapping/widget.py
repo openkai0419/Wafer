@@ -23,6 +23,7 @@ from wafer.qt.common.thread import utility_pool
 from wafer.qt.theme import ThemeManager
 from wafer.qt.widgets.popup import PopupBase
 
+from . import projection
 from .encoders import detect_encoder, value_input
 from .feature_bar import FeatureBar
 from .file_list import FileList
@@ -34,6 +35,7 @@ from .space import Preset, load_preset
 from .tuning import TuningPanel
 
 COMPUTE_PRIORITY = 7
+WARM_UP_PRIORITY = 1
 RECOMPUTE_DELAY_MS = 300
 MIN_DRILL_FILES = 3
 ELLIPSIS = "\N{HORIZONTAL ELLIPSIS}"
@@ -62,6 +64,10 @@ def result_colors(result: MapResult, palette) -> list[QtGui.QColor]:
     return [group_color(int(label)) if label >= 0 else noise for label in result.labels]
 
 
+def prepare_layout_engine(dispatcher: Dispatcher) -> None:
+    dispatcher.post(lambda: projection.warm_up(), priority=WARM_UP_PRIORITY)
+
+
 def cancel_work(*slots: CancelSlot) -> None:
     for slot in slots:
         slot.cancel()
@@ -81,6 +87,7 @@ class MappingWidget(QtWidgets.QWidget):
         InstanceRegistry.instance().register("MappingWidget", self)
         self.palette_colors = ThemeManager.instance().palette
         self.dispatcher = Dispatcher(pool=utility_pool, parent=self)
+        prepare_layout_engine(self.dispatcher)
         self.fetch_cancel = CancelSlot()
         self.compute_cancel = CancelSlot()
         self.db_path = None

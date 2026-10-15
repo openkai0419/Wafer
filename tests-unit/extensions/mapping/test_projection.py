@@ -156,3 +156,21 @@ def test_embed_real_umap_keeps_blobs_apart():
     gap = np.linalg.norm(points[:60].mean(axis=0) - points[60:].mean(axis=0))
     spread = points[:60].std(axis=0).mean()
     assert gap > spread * 3
+
+
+def test_warm_up_runs_the_layout_once(monkeypatch):
+    monkeypatch.setattr(projection, "_warmed_up", False)
+    calls = []
+    monkeypatch.setattr(projection, "embed", lambda *args: calls.append(args[0].shape))
+    projection.warm_up()
+    projection.warm_up()
+    assert calls == [(projection.WARM_UP_ROWS, 8)]
+
+
+def test_failed_warm_up_is_logged_and_retried_later(monkeypatch):
+    monkeypatch.setattr(projection, "_warmed_up", False)
+    warnings = []
+    monkeypatch.setattr(projection.AppLogger, "warning", lambda message, exc=None: warnings.append(message))
+    monkeypatch.setattr(projection, "embed", lambda *args: (_ for _ in ()).throw(RuntimeError("boom")))
+    projection.warm_up()
+    assert warnings and not projection._warmed_up

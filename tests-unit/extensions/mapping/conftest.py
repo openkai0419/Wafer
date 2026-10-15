@@ -22,3 +22,8 @@ def empty_shared_image_cache():
     shared_image_cache().clear()
     yield
     shared_image_cache().clear()
+
+
+@pytest.fixture(autouse=True)
+def no_layout_warm_up(monkeypatch):
+    monkeypatch.setattr(projection, "_warmed_up", True)

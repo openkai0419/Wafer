@@ -35,7 +35,7 @@ from .params import MapParams
 from .session import OUTPUT_PREFIX, SPACE_KEYS, MapError, MapPipeline, MapRequest, MapResult, layout_from_space
 from .space import Preset, SpaceStatus, load_preset, model_dir, read_status, save_preset
 from .tuning import TuningPanel
-from .widget import STAGE_NAMES, cancel_work, result_colors
+from .widget import STAGE_NAMES, cancel_work, prepare_layout_engine, result_colors
 
 LOAD_PRIORITY = 7
 STATUS_REFRESH_MS = 1000
@@ -243,6 +243,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         InstanceRegistry.instance().register("MappingSpaceWidget", self)
         self.palette_colors = ThemeManager.instance().palette
         self.dispatcher = Dispatcher(pool=utility_pool, parent=self)
+        prepare_layout_engine(self.dispatcher)
         self.refresh_cancel = CancelSlot()
         self.keys_cancel = CancelSlot()
         self.status_cancel = CancelSlot()

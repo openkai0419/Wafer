@@ -46,7 +46,6 @@ class MapParams:
     min_dist: float = param(
         0.1, stage="layout", label="Spacing", description="How tightly points are packed. Lower makes dense clusters, higher spreads points evenly.", minimum=0.0, maximum=1.0, step=0.05
     )
-    cluster_dims: int = param(10, stage="layout", label="Grouping dimensions", description="Dimensions used for grouping. Usually no need to change.", minimum=2, maximum=50)
     seed: int = param(42, stage="layout", label="Random seed", description="Change to try a different layout.", minimum=0, maximum=9999)
     min_cluster_size: int = param(
         0, stage="cluster", label="Min group size", description="Smallest number of files in a group. Higher gives fewer, larger groups. 0 = automatic.", minimum=0, maximum=1000

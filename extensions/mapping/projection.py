@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import threading
+import time
 from dataclasses import dataclass
 
 import numpy as np
 
+from wafer.core.logs import AppLogger
+
 SMALL_LAYOUT_LIMIT = 3
 SPECTRAL_INIT_MIN = 20
+WARM_UP_ROWS = 300
+_warm_up_lock = threading.Lock()
+_warmed_up = False
 
 
 @dataclass
@@ -132,6 +139,21 @@ def embed(matrix: np.ndarray, n_components: int, n_neighbors: int, min_dist: flo
     )
     output[:, :components] = reducer.fit_transform(matrix)
     return output
+
+
+def warm_up() -> None:
+    global _warmed_up
+    with _warm_up_lock:
+        if _warmed_up:
+            return
+        started = time.perf_counter()
+        try:
+            embed(np.random.default_rng(0).normal(size=(WARM_UP_ROWS, 8)).astype(np.float32), 2, 15, 0.1, 0)
+        except Exception as e:
+            AppLogger.warning("[Mapping] Preparing the layout engine failed; the first map will take longer", exc=e)
+            return
+        _warmed_up = True
+        AppLogger.info(f"[Mapping] Prepared the layout engine in {time.perf_counter() - started:.1f}s")
 
 
 def relabel_by_size(labels: np.ndarray) -> np.ndarray:

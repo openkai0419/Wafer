@@ -125,7 +125,6 @@ class MapPipeline:
         self._points = np.zeros((0, 2), dtype=np.float32)
         self._combined: np.ndarray | None = None
         self._stats: list[projection.BlockStats] = []
-        self._cluster_space: np.ndarray | None = None
         self._cluster_key: tuple | None = None
         self._labels: np.ndarray | None = None
 
@@ -171,7 +170,7 @@ class MapPipeline:
                 self._combined, self._stats, _scales = projection.combine_blocks([(b.feature.label(), b.reduced[active], b.present[active], b.feature.weight) for b in blocks], params.seed)
                 self._points = projection.embed(self._combined, 2, params.n_neighbors, params.min_dist, params.seed)
             self._active, self._layout_key = active, layout_key
-            self._cluster_space, self._cluster_key, self._labels = None, None, None
+            self._cluster_key, self._labels = None, None
         if cancelled():
             return None
         diagnostics.blocks = self._stats
@@ -221,15 +220,12 @@ class MapPipeline:
         return [feature_input(request.values.get(path, {}), feature.key, ENCODERS[feature.encoder]) for path in request.paths]
 
     def _group(self, params, layout_key, count, progress, diagnostics) -> np.ndarray:
-        if self._cluster_space is None:
-            progress("cluster", 0.0)
-            with timed(diagnostics, "cluster_layout"):
-                self._cluster_space = projection.embed(self._combined, params.cluster_dims, params.n_neighbors, 0.0, params.seed)
         cluster_key = (layout_key, params.values_for("cluster"))
         if cluster_key != self._cluster_key:
+            progress("cluster", 0.0)
             with timed(diagnostics, "cluster"):
                 size = self._active.size
-                self._labels = projection.cluster(self._cluster_space, params.resolved_min_cluster_size(size), params.resolved_min_samples(size))
+                self._labels = projection.cluster(self._points, params.resolved_min_cluster_size(size), params.resolved_min_samples(size))
             self._cluster_key = cluster_key
         labels = np.full(count, -1, dtype=np.int32)
         labels[self._active] = self._labels

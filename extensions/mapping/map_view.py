@@ -19,11 +19,12 @@ UNSET_TOP = SCENE_SIZE * 1.08
 UNSET_SPACING = 20.0
 UNSET_PER_ROW = 50
 POINT_SIZE = 8
-MIN_POINT_SIZE = 2
+MIN_POINT_SIZE = 1.0
+ROUND_POINT_SIZE = 3.0
 THUMB_SIZE = 64
 RING = 2
 ZOOM_STEP = 1.25
-MIN_IMAGE_SCALE = 0.5
+MIN_IMAGE_SCALE = 0.02
 MAX_IMAGE_SCALE = 4.0
 LABEL_GAP = 4
 IMAGE_LIMIT = 300
@@ -146,7 +147,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         return dpix(self.display_size()) if self.thumbnails else self.dot_size()
 
     def point_size(self) -> float:
-        return max(dpix(POINT_SIZE) * self.image_scale * self.zoom, dpix(MIN_POINT_SIZE))
+        return max(dpix(POINT_SIZE) * self.image_scale * self.zoom, MIN_POINT_SIZE)
 
     def dot_size(self) -> float:
         return self.point_size() + dpix(RING) * 2
@@ -342,7 +343,10 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         frame = QtCore.QRectF((side - size) / 2, (side - size) / 2, size, size)
         painter.setPen(Qt.NoPen)
         painter.setBrush(color)
-        painter.drawEllipse(frame)
+        if size < ROUND_POINT_SIZE:
+            painter.drawRect(frame)
+        else:
+            painter.drawEllipse(frame)
         if selected or outlier:
             self.set_ring_pen(painter, color, selected, outlier)
             painter.drawEllipse(frame.adjusted(-dpix(RING), -dpix(RING), dpix(RING), dpix(RING)))

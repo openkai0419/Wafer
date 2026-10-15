@@ -312,6 +312,8 @@ def test_image_scale_up_and_down_use_ratio(mapping):
     assert mapping.map_view.image_scale == 2.0
     mapping.image_scale_down(4.0)
     assert mapping.map_view.image_scale == 0.5
+    mapping.image_scale_down(1000.0)
+    assert mapping.map_view.image_scale == map_view_module.MIN_IMAGE_SCALE
 
 
 @pytest.mark.parametrize("bad", ["x", None, float("nan"), float("inf")])

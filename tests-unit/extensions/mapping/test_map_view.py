@@ -186,7 +186,7 @@ def test_image_scale_changes_extent_and_clamps(view):
     view.set_image_scale(99)
     assert view.image_scale == 4.0
     view.set_image_scale(0)
-    assert view.image_scale == 0.5
+    assert view.image_scale == map_view_module.MIN_IMAGE_SCALE
 
 
 def test_ctrl_wheel_does_not_zoom_map(view):
@@ -404,4 +404,11 @@ def test_images_start_at_the_thumbnail_size_where_they_switch_on(view):
 def test_zoomed_out_points_keep_a_minimum_size(view):
     view.show_result(result(labels=False), colors(6), show_groups=False, keep_view=False)
     view.scale(0.01, 0.01)
-    assert view.point_size() >= map_view_module.dpix(map_view_module.MIN_POINT_SIZE)
+    assert view.point_size() == map_view_module.MIN_POINT_SIZE == 1.0
+
+
+def test_tiny_points_are_drawn_as_single_pixels(view):
+    view.show_result(result(labels=False), colors(6), show_groups=False, keep_view=False)
+    view.set_image_scale(map_view_module.MIN_IMAGE_SCALE)
+    assert view.point_size() == 1.0
+    assert not render_point(view, 1).isNull()

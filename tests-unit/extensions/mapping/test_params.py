@@ -75,3 +75,12 @@ def test_hover_size_is_a_view_param_clamped_to_range():
     assert MapParams(hover_size=5000).normalized().hover_size == 1024
     assert MapParams(hover_size=-3).normalized().hover_size == 0
     assert changed_stage(MapParams(), MapParams(hover_size=0)) == "view"
+
+
+def test_auto_neighbors_follow_the_file_count():
+    params = MapParams()
+    assert params.n_neighbors == 0
+    assert params.resolved_neighbors(3000) == 15
+    assert params.resolved_neighbors(20000) == 100
+    assert params.resolved_neighbors(110000) == params.resolved_neighbors(5_000_000) == 200
+    assert MapParams(n_neighbors=30).resolved_neighbors(110000) == 30

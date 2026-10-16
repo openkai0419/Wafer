@@ -170,15 +170,15 @@ class MapPipeline:
         if layout_key != self._layout_key:
             progress("layout", 0.0)
             with timed(diagnostics, "layout"):
-                self._points = projection.embed(self._combined, 2, params.n_neighbors, params.min_dist, params.seed)
+                self._points = projection.embed(self._combined, 2, params.resolved_neighbors(self._active.size), params.min_dist, params.seed)
             self._layout_key = layout_key
         if cancelled():
             return None
-        group_key = (combine_key, params.n_neighbors)
+        group_key = (combine_key, params.resolved_neighbors(self._active.size))
         if group_key != self._group_key:
             progress("cluster", 0.0)
             with timed(diagnostics, "group_layout"):
-                self._group_points = projection.embed(self._combined, 2, params.n_neighbors, projection.GROUPING_MIN_DIST, params.seed)
+                self._group_points = projection.embed(self._combined, 2, params.resolved_neighbors(self._active.size), projection.GROUPING_MIN_DIST, params.seed)
             self._group_key, self._cluster_key, self._labels = group_key, None, None
         if cancelled():
             return None

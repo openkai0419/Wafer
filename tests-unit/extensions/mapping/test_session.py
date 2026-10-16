@@ -257,3 +257,17 @@ def test_layout_from_space_groups_by_the_grouping_coordinates():
     assert len(set(result.labels[:half].tolist())) == 1 and len(set(result.labels[half:].tolist())) == 1
     assert result.labels[0] != result.labels[-1]
 
+
+def test_layouts_use_the_resolved_neighbor_count(monkeypatch):
+    seen = []
+
+    def record(matrix, n_components, n_neighbors, min_dist, seed):
+        seen.append(n_neighbors)
+        return jittered_copy(matrix, n_components)
+
+    monkeypatch.setattr(projection, "embed", record)
+    pipeline().run(make_request())
+    assert seen == [MapParams().resolved_neighbors(40)] * 2
+    seen.clear()
+    pipeline().run(make_request(params=MapParams(n_neighbors=7)))
+    assert seen == [7, 7]

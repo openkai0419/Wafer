@@ -156,10 +156,11 @@ class SpaceModel:
         if active.size < 3:
             raise MapError("Not enough files have values for the selected keys.")
         combined, _stats, scales = projection.combine_blocks([(label, dense[active], present[active], weight) for label, dense, present, weight in blocks], params.seed)
-        display = projection.embed(combined, 2, params.n_neighbors, params.min_dist, params.seed)
+        neighbors = params.resolved_neighbors(active.size)
+        display = projection.embed(combined, 2, neighbors, params.min_dist, params.seed)
         if cancelled():
             raise MapError("Cancelled")
-        grouping = projection.embed(combined, 2, params.n_neighbors, projection.GROUPING_MIN_DIST, params.seed)
+        grouping = projection.embed(combined, 2, neighbors, projection.GROUPING_MIN_DIST, params.seed)
         coords = np.hstack([display, grouping])
         return cls(preset, encoders, reducers, scales, [paths[i] for i in active], combined.astype(np.float16), coords.astype(np.float32), time.time())
 

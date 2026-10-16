@@ -27,12 +27,20 @@ AUTO_GROUP_MIN = 5
 AUTO_GROUP_MAX = 30
 AUTO_GROUP_DIVISOR = 500
 AUTO_STRICTNESS_MAX = 10
+AUTO_NEIGHBORS_MIN = 15
+AUTO_NEIGHBORS_MAX = 200
+AUTO_NEIGHBORS_SHARE = 0.005
 
 
 @dataclass(frozen=True)
 class MapParams:
     n_neighbors: int = param(
-        15, stage="layout", label="Neighbors", description="How many nearby files shape the layout. Lower shows small clusters, higher the overall structure.", minimum=2, maximum=200
+        0,
+        stage="layout",
+        label="Neighbors",
+        description="How many nearby files shape the layout. Lower shows small clusters, higher the overall structure. 0 = automatic (about 0.5% of the files, 15 to 200).",
+        minimum=0,
+        maximum=AUTO_NEIGHBORS_MAX,
     )
     min_dist: float = param(
         0.1, stage="layout", label="Spacing", description="How tightly points are packed on the map. Lower makes dense clusters, higher spreads points evenly. Groups do not change.", minimum=0.0, maximum=1.0, step=0.05
@@ -84,6 +92,9 @@ class MapParams:
             except (TypeError, ValueError, OverflowError) as e:
                 AppLogger.warning(f"[Mapping] Ignored invalid saved value {f.name}={data[f.name]!r}", exc=e)
         return replace(cls(), **changes).normalized()
+
+    def resolved_neighbors(self, count: int) -> int:
+        return self.n_neighbors or min(AUTO_NEIGHBORS_MAX, max(AUTO_NEIGHBORS_MIN, round(count * AUTO_NEIGHBORS_SHARE)))
 
     def resolved_min_cluster_size(self, count: int) -> int:
         return self.min_cluster_size or min(AUTO_GROUP_MAX, max(AUTO_GROUP_MIN, count // AUTO_GROUP_DIVISOR))

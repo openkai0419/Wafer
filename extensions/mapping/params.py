@@ -35,7 +35,7 @@ class MapParams:
         15, stage="layout", label="Neighbors", description="How many nearby files shape the layout. Lower shows small clusters, higher the overall structure.", minimum=2, maximum=200
     )
     min_dist: float = param(
-        0.1, stage="layout", label="Spacing", description="How tightly points are packed. Lower makes dense clusters, higher spreads points evenly.", minimum=0.0, maximum=1.0, step=0.05
+        0.1, stage="layout", label="Spacing", description="How tightly points are packed on the map. Lower makes dense clusters, higher spreads points evenly. Groups do not change.", minimum=0.0, maximum=1.0, step=0.05
     )
     seed: int = param(42, stage="layout", label="Random seed", description="Change to try a different layout.", minimum=0, maximum=9999)
     min_cluster_size: int = param(

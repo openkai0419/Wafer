@@ -127,7 +127,7 @@ def test_place_with_only_some_features():
 def test_place_with_fewer_rows_than_neighbours(count):
     model = SpaceModel.fit(preset(), tag_values(count))
     placed = model.place([{"tags": PathValue("cat, sky")}])
-    assert placed.shape == (1, 2) and np.isfinite(placed).all()
+    assert placed.shape == (1, 4) and np.isfinite(placed).all()
 
 
 def test_cleanup_matches_whole_version_only(tmp_path):
@@ -195,3 +195,31 @@ def test_load_ignores_a_model_built_from_another_preset(tmp_path):
     retuned = Preset(preset(1).features, MapParams(n_neighbors=30), 1)
     assert SpaceModel.load(tmp_path, retuned) is None
     assert SpaceModel.load(tmp_path, preset(1)) is not None
+
+
+def test_grouping_coordinates_do_not_depend_on_spacing(monkeypatch):
+    calls = []
+
+    def spacing_embed(matrix, n_components, n_neighbors, min_dist, seed):
+        calls.append(min_dist)
+        return np.full((matrix.shape[0], n_components), min_dist, dtype=np.float32) + matrix[:, :1]
+
+    monkeypatch.setattr(projection, "embed", spacing_embed)
+    tight = SpaceModel.fit(Preset([FeatureSpec("tags", "token_set")], MapParams(min_dist=0.05), 1), tag_values())
+    loose = SpaceModel.fit(Preset([FeatureSpec("tags", "token_set")], MapParams(min_dist=0.9), 1), tag_values())
+    assert calls == [0.05, projection.GROUPING_MIN_DIST, 0.9, projection.GROUPING_MIN_DIST]
+    assert tight.coords.shape[1] == 4
+    assert np.allclose(tight.coords[:, 2:], loose.coords[:, 2:])
+    assert not np.allclose(tight.coords[:, :2], loose.coords[:, :2])
+    assert tight.place([{"tags": PathValue("cat, sky")}]).shape == (1, 4)
+
+
+def test_model_without_grouping_coordinates_must_be_retrained(tmp_path):
+    SpaceModel.fit(preset(2), tag_values()).save(tmp_path)
+    path = tmp_path / "model-v2.npz"
+    with np.load(path) as arrays:
+        data = {k: arrays[k] for k in arrays.files}
+    data["coords"] = data["coords"][:, :2]
+    np.savez(path, **data)
+    with pytest.raises(SpaceLoadError):
+        SpaceModel.load(tmp_path, preset(2))

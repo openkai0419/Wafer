@@ -144,7 +144,7 @@ def database(tmp_path, monkeypatch):
     db.upsert_basic_sources([(f"c:/{i}.png", f"h{i}", 100, 1.0, 1.0, 1.0) for i in range(count)], [(f"c:/{i}.png", f"c:/{i}.png", f"{i}.png", 1.0, None) for i in range(count)])
     meta = []
     for i in range(count - 2):
-        meta += [(f"c:/{i}.png", "mapping.x", str(i), float(i)), (f"c:/{i}.png", "mapping.y", str(i % 3), float(i % 3)), (f"c:/{i}.png", "mapping.model", "1", 1.0)]
+        meta += [(f"c:/{i}.png", key, str(value), float(value)) for key, value in (("mapping.x", i), ("mapping.y", i % 3), ("mapping.gx", i), ("mapping.gy", i % 3), ("mapping.model", 1))]
     db.upsert_collection_results([], meta, [(f"c:/{i}.png", "wd14.tags", "cat, sky", None) for i in range(count)], [])
     settings = lambda name: str(tmp_path / f"{name}.settings.db")
     monkeypatch.setattr(space_panel, "data_db_path", lambda name: str(db_path))

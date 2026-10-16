@@ -33,7 +33,7 @@ from .map_host import MapHost
 from .map_toolbar import MapToolbar
 from .map_view import MapView
 from .params import MapParams
-from .session import OUTPUT_PREFIX, SPACE_KEYS, MapError, MapPipeline, MapRequest, MapResult, layout_from_space
+from .session import KEY_MODEL, OUTPUT_PREFIX, SPACE_KEYS, MapError, MapPipeline, MapRequest, MapResult, layout_from_space
 from .space import Preset, SpaceStatus, load_preset, model_dir, read_status, save_preset
 from .tuning import TuningPanel
 from .view_settings import ViewSettings
@@ -49,7 +49,6 @@ DETECT_SAMPLE = 300
 RETRAIN_RATIO = 0.2
 MEGABYTE = 1024 * 1024
 TUNING_STAGES = ("layout",)
-MODEL_KEY = SPACE_KEYS[2]
 ELLIPSIS = "\N{HORIZONTAL ELLIPSIS}"
 SEPARATOR = "\N{MIDDLE DOT}"
 PROVISIONAL_ENCODER = "text"
@@ -129,7 +128,7 @@ def read_space_status(db_name: str) -> SpaceSnapshot:
         snapshot.total = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
         snapshot.waiting = conn.execute(WAITING_SQL, (OUTPUT_PREFIX,)).fetchone()[0]
         if has_saved_space(preset):
-            snapshot.placed = conn.execute("SELECT COUNT(*) FROM meta_info WHERE key = ? AND value = ?", (MODEL_KEY, str(preset.version))).fetchone()[0]
+            snapshot.placed = conn.execute("SELECT COUNT(*) FROM meta_info WHERE key = ? AND value = ?", (KEY_MODEL, str(preset.version))).fetchone()[0]
     return snapshot
 
 
@@ -140,7 +139,7 @@ def read_snapshot(db_name: str, params: MapParams) -> SpaceSnapshot:
     if not has_saved_space(preset) or not snapshot.placed:
         return snapshot
     with closing(open_readonly(db_path)) as conn:
-        sample = [row[0] for row in conn.execute("SELECT path FROM meta_info WHERE key = ? AND value = ? ORDER BY RANDOM() LIMIT ?", (MODEL_KEY, str(preset.version), PREVIEW_SAMPLE))]
+        sample = [row[0] for row in conn.execute("SELECT path FROM meta_info WHERE key = ? AND value = ? ORDER BY RANDOM() LIMIT ?", (KEY_MODEL, str(preset.version), PREVIEW_SAMPLE))]
     if not sample:
         return snapshot
     values = fetch_path_values(db_path, sample, keys=[*preset.value_keys(), *SPACE_KEYS])

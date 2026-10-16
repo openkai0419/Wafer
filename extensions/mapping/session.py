@@ -22,8 +22,7 @@ if TYPE_CHECKING:
     from .space import Preset
 
 OUTPUT_PREFIX = "mapping"
-KEY_X, KEY_Y, KEY_GROUP_X, KEY_GROUP_Y, KEY_MODEL = (f"{OUTPUT_PREFIX}.{name}" for name in ("x", "y", "gx", "gy", "model"))
-SPACE_KEYS = (KEY_X, KEY_Y, KEY_GROUP_X, KEY_GROUP_Y, KEY_MODEL)
+SPACE_KEYS = (f"{OUTPUT_PREFIX}.x", f"{OUTPUT_PREFIX}.y", f"{OUTPUT_PREFIX}.model")
 
 
 class MapError(Exception):
@@ -120,12 +119,9 @@ class MapPipeline:
         self._lock = threading.Lock()
         self._blocks: dict[str, _Block] = {}
         self._encode_key: tuple | None = None
-        self._combine_key: tuple | None = None
         self._layout_key: tuple | None = None
-        self._group_key: tuple | None = None
         self._active = np.zeros(0, dtype=np.int64)
         self._points = np.zeros((0, 2), dtype=np.float32)
-        self._group_points = np.zeros((0, 2), dtype=np.float32)
         self._combined: np.ndarray | None = None
         self._stats: list[projection.BlockStats] = []
         self._cluster_key: tuple | None = None
@@ -161,29 +157,23 @@ class MapPipeline:
         active = np.flatnonzero(has_value)
         if active.size < 3:
             raise MapError("Not enough files have values for the selected keys.")
-        combine_key = (self._encode_key, tuple((f.cache_key, f.weight) for f in request.features), params.seed)
-        if combine_key != self._combine_key:
-            with timed(diagnostics, "combine"):
-                self._combined, self._stats, _scales = projection.combine_blocks([(b.feature.label(), b.reduced[active], b.present[active], b.feature.weight) for b in blocks], params.seed)
-            self._active, self._combine_key, self._layout_key, self._group_key = active, combine_key, None, None
-        layout_key = (combine_key, params.values_for("layout"))
+        layout_key = (
+            self._encode_key,
+            tuple((f.cache_key, f.weight) for f in request.features),
+            params.seed,
+            params.values_for("layout"),
+        )
         if layout_key != self._layout_key:
             progress("layout", 0.0)
             with timed(diagnostics, "layout"):
+                self._combined, self._stats, _scales = projection.combine_blocks([(b.feature.label(), b.reduced[active], b.present[active], b.feature.weight) for b in blocks], params.seed)
                 self._points = projection.embed(self._combined, 2, params.n_neighbors, params.min_dist, params.seed)
-            self._layout_key = layout_key
-        if cancelled():
-            return None
-        group_key = (combine_key, params.n_neighbors)
-        if group_key != self._group_key:
-            progress("cluster", 0.0)
-            with timed(diagnostics, "group_layout"):
-                self._group_points = projection.embed(self._combined, 2, params.n_neighbors, projection.GROUPING_MIN_DIST, params.seed)
-            self._group_key, self._cluster_key, self._labels = group_key, None, None
+            self._active, self._layout_key = active, layout_key
+            self._cluster_key, self._labels = None, None
         if cancelled():
             return None
         diagnostics.blocks = self._stats
-        labels = self._group(params, group_key, count, progress, diagnostics)
+        labels = self._group(params, layout_key, count, progress, diagnostics)
         if cancelled():
             return None
         group_terms = self._describe(labels, blocks, params)
@@ -225,12 +215,13 @@ class MapPipeline:
     def inputs(self, feature, request) -> list:
         return [feature_input(request.values.get(path, {}), feature.key, ENCODERS[feature.encoder]) for path in request.paths]
 
-    def _group(self, params, group_key, count, progress, diagnostics) -> np.ndarray:
-        cluster_key = (group_key, params.values_for("cluster"))
+    def _group(self, params, layout_key, count, progress, diagnostics) -> np.ndarray:
+        cluster_key = (layout_key, params.values_for("cluster"))
         if cluster_key != self._cluster_key:
+            progress("cluster", 0.0)
             with timed(diagnostics, "cluster"):
                 size = self._active.size
-                self._labels = projection.cluster(self._group_points, params.resolved_min_cluster_size(size), params.resolved_min_samples(size))
+                self._labels = projection.cluster(self._points, params.resolved_min_cluster_size(size), params.resolved_min_samples(size))
             self._cluster_key = cluster_key
         labels = np.full(count, -1, dtype=np.int32)
         labels[self._active] = self._labels
@@ -259,21 +250,20 @@ def layout_from_space(paths: list[str], values: dict[str, dict[str, PathValue]],
     params = params.normalized()
     diagnostics = MapDiagnostics()
     count = len(paths)
-    raw = np.full((count, 4), np.nan, dtype=np.float64)
+    raw = np.full((count, 2), np.nan, dtype=np.float64)
     version = str(preset.version)
+    key_x, key_y, key_model = SPACE_KEYS
     for row, path in enumerate(paths):
         entry = values.get(path, {})
-        model = entry.get(KEY_MODEL)
-        if model is None or model.text != version:
+        model, x, y = entry.get(key_model), entry.get(key_x), entry.get(key_y)
+        if model is None or model.text != version or x is None or y is None or x.number is None or y.number is None:
             continue
-        numbers = [entry[key].number if key in entry else None for key in (KEY_X, KEY_Y, KEY_GROUP_X, KEY_GROUP_Y)]
-        if None not in numbers:
-            raw[row] = numbers
+        raw[row] = (x.number, y.number)
     placed = np.isfinite(raw).all(axis=1)
     active = np.flatnonzero(placed)
     if active.size == 0:
         raise MapError("No files have been placed yet. Wait for the Mapping parser or retrain in Mapping Space.")
-    unit, active_outliers = projection.normalize_to_core(raw[active, :2], params.outlier_percent)
+    unit, active_outliers = projection.normalize_to_core(raw[active], params.outlier_percent)
     positions = np.full((count, 2), np.nan, dtype=np.float32)
     positions[active] = unit
     outliers = np.zeros(count, dtype=bool)
@@ -283,7 +273,7 @@ def layout_from_space(paths: list[str], values: dict[str, dict[str, PathValue]],
     active_labels = np.zeros(active.size, dtype=np.int32)
     if active.size >= 3:
         with timed(diagnostics, "cluster"):
-            active_labels = projection.cluster(raw[active, 2:], params.resolved_min_cluster_size(active.size), params.resolved_min_samples(active.size))
+            active_labels = projection.cluster(unit, params.resolved_min_cluster_size(active.size), params.resolved_min_samples(active.size))
         labels = np.full(count, -1, dtype=np.int32)
         labels[active] = active_labels
         with timed(diagnostics, "describe"):

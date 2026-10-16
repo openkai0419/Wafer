@@ -162,8 +162,6 @@ def space_values(count=12, version="2"):
             "tags": PathValue("cat" if i < count // 2 else "dog"),
             "mapping.x": PathValue(str(x + i * 0.01), x + i * 0.01),
             "mapping.y": PathValue("0", 0.0),
-            "mapping.gx": PathValue(str(x), x),
-            "mapping.gy": PathValue("0", 0.0),
             "mapping.model": PathValue(version, float(version)),
         }
     return values
@@ -226,34 +224,3 @@ def test_describe_space_groups_uses_fit_describe_and_matches_fit_transform(monke
     assert session.describe_space_groups(paths, values, preset, labels, MapParams()) == fast
     assert sorted(calls) == ["palette", "token_set"]
     assert "cat" in fast[0] and "dog" in fast[1]
-
-
-def test_spacing_changes_the_layout_but_not_the_groups(monkeypatch):
-    calls = []
-
-    def spacing_embed(matrix, n_components, n_neighbors, min_dist, seed):
-        calls.append(min_dist)
-        return jittered_copy(matrix, n_components) + min_dist * 100
-
-    monkeypatch.setattr(projection, "embed", spacing_embed)
-    runner = pipeline()
-    first = runner.run(make_request(params=MapParams(min_dist=0.1)))
-    assert calls == [0.1, projection.GROUPING_MIN_DIST]
-    second = runner.run(make_request(params=MapParams(min_dist=0.5)))
-    assert calls == [0.1, projection.GROUPING_MIN_DIST, 0.5]
-    assert np.array_equal(first.labels, second.labels)
-    runner.run(make_request(params=MapParams(min_dist=0.5, n_neighbors=5)))
-    assert calls[-2:] == [0.5, projection.GROUPING_MIN_DIST]
-
-
-def test_layout_from_space_groups_by_the_grouping_coordinates():
-    values = space_values()
-    order = np.random.default_rng(3).permutation(len(values))
-    for rank, entry in zip(order, values.values()):
-        entry["mapping.x"] = PathValue(str(rank), float(rank))
-    paths = list(values)
-    result = layout_from_space(paths, values, space_preset(), MapParams(min_cluster_size=3))
-    half = len(paths) // 2
-    assert len(set(result.labels[:half].tolist())) == 1 and len(set(result.labels[half:].tolist())) == 1
-    assert result.labels[0] != result.labels[-1]
-

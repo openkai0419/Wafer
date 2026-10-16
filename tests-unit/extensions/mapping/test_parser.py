@@ -52,7 +52,7 @@ def test_trigger_keys_follow_the_preset(env):
 def test_first_call_trains_and_writes_training_coordinates(env):
     plugin, _db, tmp = env
     result = run(plugin, "c:/0.png")
-    assert result.status and set(result.meta_info) == {"x", "y", "gx", "gy", "model"}
+    assert result.status and set(result.meta_info) == {"x", "y", "model"}
     assert result.meta_info["model"] == "1"
     status = read_status(tmp / "cache" / "mapping" / "map")
     assert status.state == "ready" and status.trained == 30 and status.sources_at_training == 30
@@ -73,7 +73,7 @@ def test_file_without_values_clears_coordinates(env):
     plugin, db, _tmp = env
     db.upsert_basic_sources([("c:/empty.png", "he", 1, 1.0, 1.0, 1.0)], [("c:/empty.png", "c:/empty.png", "empty.png", 1.0, None)])
     result = run(plugin, "c:/empty.png")
-    assert result.status and result.delete_meta_keys == ["mapping.x", "mapping.y", "mapping.gx", "mapping.gy", "mapping.model"]
+    assert result.status and result.delete_meta_keys == ["mapping.x", "mapping.y", "mapping.model"]
 
 
 def test_version_change_retrains(env, monkeypatch):
@@ -133,17 +133,17 @@ def test_first_call_values_equal_training_coordinates(env):
     plugin, _db, _tmp = env
     meta = run(plugin, "c:/3.png").meta_info
     expected = plugin.model.coords_for("c:/3.png")
-    assert tuple(float(meta[key]) for key in ("x", "y", "gx", "gy")) == pytest.approx(expected)
+    assert (float(meta["x"]), float(meta["y"])) == pytest.approx(expected)
 
 
 def test_current_version_file_is_placed_by_neighbours(env):
     plugin, db, _tmp = env
     run(plugin, "c:/0.png")
-    trained = plugin.model.coords_for("c:/0.png")[:2]
+    trained = plugin.model.coords_for("c:/0.png")
     db.upsert_collection_results([], [("c:/0.png", "mapping.model", "1", None)], [("c:/0.png", "wd14.tags", "dog, sea", None)], [])
     meta = run(plugin, "c:/0.png").meta_info
     point = np.array([float(meta["x"]), float(meta["y"])])
-    dog = np.array(plugin.model.coords_for("c:/20.png"))[:2]
+    dog = np.array(plugin.model.coords_for("c:/20.png"))
     assert np.linalg.norm(point - dog) < np.linalg.norm(point - np.array(trained))
 
 

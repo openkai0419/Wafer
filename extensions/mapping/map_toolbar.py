@@ -34,6 +34,10 @@ class MapToolbar(QtWidgets.QWidget):
         self.label_check.setToolTip(t("Show group labels."))
         self.label_check.toggled.connect(self.settings.set_labels_shown)
         layout.addWidget(self.label_check)
+        self.thumbnail_check = QtWidgets.QCheckBox(t("Thumbnails"))
+        self.thumbnail_check.setToolTip(t("Show thumbnails instead of dots."))
+        self.thumbnail_check.toggled.connect(self.settings.set_thumbnails_shown)
+        layout.addWidget(self.thumbnail_check)
         self.mode_buttons: dict[str, QtWidgets.QToolButton] = {}
         group = QtWidgets.QButtonGroup(self)
         for mode, text, tip in (("single", t("Single"), t("Select one file at a time.")), ("group", t("Group"), t("Select whole groups."))):
@@ -62,6 +66,7 @@ class MapToolbar(QtWidgets.QWidget):
     def sync(self, *_) -> None:
         settings = self.settings
         set_quietly(self.label_check, settings.labels_shown)
+        set_quietly(self.thumbnail_check, settings.thumbnails_shown)
         for mode, button in self.mode_buttons.items():
             set_quietly(button, mode == settings.selection_mode)
         if self.tuning.params() != settings.params:

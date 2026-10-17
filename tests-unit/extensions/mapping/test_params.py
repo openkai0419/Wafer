@@ -1,6 +1,6 @@
 import pytest
 
-from extensions.mapping.params import STAGES, MapParams, changed_stage, min_group_size, noise_strictness, param_specs
+from extensions.mapping.params import MAX_NEIGHBORS, STAGES, MapParams, changed_stage, min_group_size, noise_strictness, param_specs
 
 
 def test_every_param_has_stage_and_description():
@@ -53,16 +53,17 @@ def test_group_sizes_follow_the_number_of_files():
 
 @pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan"), 10**400, "inf", "nan"])
 def test_from_dict_ignores_non_finite_values(bad):
-    params = MapParams.from_dict({"seed": bad, "min_dist": bad, "n_neighbors": bad})
+    params = MapParams.from_dict({"seed": bad, "min_dist": bad, "neighbors": bad, "train_limit": bad})
     assert params.seed == MapParams().seed
     assert params.min_dist == MapParams().min_dist
-    assert params.n_neighbors == MapParams().n_neighbors
+    assert params.neighbors == MapParams().neighbors
+    assert params.train_limit == MapParams().train_limit
 
 
 def test_normalized_resets_non_finite_fields_to_default():
-    params = MapParams(seed=float("nan"), min_dist=float("inf"), n_neighbors=float("-inf")).normalized()
+    params = MapParams(seed=float("nan"), min_dist=float("inf"), neighbors=float("-inf")).normalized()
     defaults = MapParams()
-    assert (params.seed, params.min_dist, params.n_neighbors) == (defaults.seed, defaults.min_dist, defaults.n_neighbors)
+    assert (params.seed, params.min_dist, params.neighbors) == (defaults.seed, defaults.min_dist, defaults.neighbors)
 
 
 def test_hover_size_is_a_view_param_clamped_to_range():
@@ -74,10 +75,34 @@ def test_hover_size_is_a_view_param_clamped_to_range():
     assert changed_stage(MapParams(), MapParams(hover_size=0)) == "view"
 
 
-def test_auto_neighbors_follow_the_file_count():
+def test_neighbors_keep_the_same_share_of_the_trained_files():
     params = MapParams()
-    assert params.n_neighbors == 0
+    assert params.neighbors == 1.0
     assert params.resolved_neighbors(3000) == 15
     assert params.resolved_neighbors(20000) == 100
-    assert params.resolved_neighbors(110000) == params.resolved_neighbors(5_000_000) == 200
-    assert MapParams(n_neighbors=30).resolved_neighbors(110000) == 30
+    assert params.resolved_neighbors(110000) == 550
+    assert params.resolved_neighbors(150_000) == 750
+
+
+def test_neighbors_setting_scales_the_automatic_count():
+    assert MapParams(neighbors=2.0).resolved_neighbors(20000) == 200
+    assert MapParams(neighbors=0.5).resolved_neighbors(20000) == 50
+    assert MapParams(neighbors=0.5).resolved_neighbors(100) == 8
+    assert MapParams(neighbors=0.25).resolved_neighbors(100) >= 2
+
+
+def test_old_fixed_neighbor_count_is_dropped():
+    assert MapParams.from_dict({"n_neighbors": 15}).neighbors == 1.0
+
+
+def test_training_limit_is_a_layout_setting_where_zero_means_all():
+    spec = next(spec for name, spec, _ in param_specs() if name == "train_limit")
+    assert spec.stage == "layout" and spec.minimum == 0
+    assert MapParams().train_limit == 10000
+    assert MapParams(train_limit=-5).normalized().train_limit == 0
+    assert changed_stage(MapParams(), MapParams(train_limit=5000)) == "layout"
+
+
+def test_neighbors_never_exceed_the_cap():
+    assert MapParams().resolved_neighbors(1_000_000) == MAX_NEIGHBORS == 1000
+    assert MapParams(neighbors=4.0).resolved_neighbors(100_000) == MAX_NEIGHBORS

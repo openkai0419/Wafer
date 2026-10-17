@@ -4,7 +4,7 @@ Shows the selected files on the database's precomputed 2D map, placed by how sim
 
 - Grid: right-click → File → Mapping → Set / Add
 - Map: click or drag to select. Shift/Alt adds, Ctrl+click toggles, Ctrl+drag removes. F frames the selection (or everything). Copy, cut and other file commands work like in the Grid.
-- Mapping and Mapping Space share the display settings (labels, selection mode, sizes).
-- Mapping Space: choose keys and retrain the database-wide map. Enable the Mapping parser per database in Plugin Manager; it keeps new files placed in the background. Quick Train checks the current settings on random files without saving.
+- Mapping and Mapping Space share the display settings (labels, thumbnails, selection mode, sizes).
+- Mapping Space: choose keys and retrain the database-wide map. Enable the Mapping parser per database in Plugin Manager; it keeps new files placed in the background. Training learns from up to Training files random files with values and places the rest. Quick Train does the same on random files without saving.
 - Folders compares paths by their folders (file name ignored).
 - Files not placed yet (new files, files inside archives) are listed as waiting.

@@ -99,13 +99,15 @@ def test_apply_block_scales_fills_new_missing_rows_with_fit_mean():
 @pytest.mark.parametrize("count", [1, 2, 3, pytest.param(5, marks=pytest.mark.slow), pytest.param(8, marks=pytest.mark.slow)])
 def test_embed_small_counts_do_not_fail(count):
     rng = np.random.default_rng(0)
-    points = projection.embed(rng.random((count, 6)), 2, 15, 0.1, 0)
+    matrix = rng.random((count, 6))
+    points = projection.embed(matrix, projection.nearest_neighbors(matrix, 15, 0), 0.1, 0)
     assert points.shape == (count, 2)
     assert np.isfinite(points).all()
 
 
 def test_embed_identical_rows_returns_zeros():
-    assert np.allclose(projection.embed(np.ones((30, 4)), 2, 15, 0.1, 0), 0.0)
+    matrix = np.ones((30, 4))
+    assert np.allclose(projection.embed(matrix, projection.nearest_neighbors(matrix, 15, 0), 0.1, 0), 0.0)
 
 
 def test_cluster_separates_blobs_and_noise():
@@ -152,7 +154,7 @@ def test_order_rows_groups_then_noise():
 def test_embed_real_umap_keeps_blobs_apart():
     rng = np.random.default_rng(0)
     data = np.vstack([rng.normal(0, 0.1, (60, 8)), rng.normal(5, 0.1, (60, 8))])
-    points = projection.embed(data, 2, 15, 0.1, 0)
+    points = projection.embed(data, projection.nearest_neighbors(data, 15, 0), 0.1, 0)
     gap = np.linalg.norm(points[:60].mean(axis=0) - points[60:].mean(axis=0))
     spread = points[:60].std(axis=0).mean()
     assert gap > spread * 3
@@ -174,3 +176,87 @@ def test_failed_warm_up_is_logged_and_retried_later(monkeypatch):
     monkeypatch.setattr(projection, "embed", lambda *args: (_ for _ in ()).throw(RuntimeError("boom")))
     projection.warm_up()
     assert warnings and not projection._warmed_up
+
+
+def brute_neighbors(matrix, k):
+    from sklearn.neighbors import NearestNeighbors
+
+    return NearestNeighbors(n_neighbors=k, algorithm="brute").fit(matrix).kneighbors(matrix)
+
+
+def test_exact_neighbors_match_brute_force_with_each_point_first():
+    matrix = np.random.default_rng(0).normal(size=(200, 12)).astype(np.float32)
+    found = projection.nearest_neighbors(matrix, 10, 0)
+    distances, indices = brute_neighbors(matrix, 10)
+    assert found.indices.shape == (200, 10)
+    assert (found.indices[:, 0] == np.arange(200)).all() and np.allclose(found.distances[:, 0], 0.0)
+    assert all(set(a) == set(b) for a, b in zip(found.indices.tolist(), indices.tolist()))
+    assert np.allclose(found.distances, distances, atol=1e-3)
+
+
+def test_duplicate_rows_still_list_themselves_first():
+    matrix = np.vstack([np.ones((10, 3)), np.random.default_rng(2).normal(size=(10, 3))])
+    found = projection.nearest_neighbors(matrix, 5, 0)
+    assert (found.indices[:, 0] == np.arange(20)).all()
+
+
+def test_neighbor_count_is_clamped_and_tiny_inputs_need_no_search():
+    matrix = np.random.default_rng(3).normal(size=(6, 3))
+    assert projection.nearest_neighbors(matrix, 50, 0).indices.shape == (6, 5)
+    assert projection.nearest_neighbors(matrix[:3], 15, 0) is None
+
+
+@pytest.mark.slow
+def test_large_inputs_use_the_approximate_search(monkeypatch):
+    monkeypatch.setattr(projection, "EXACT_NEIGHBORS_LIMIT", 50)
+    matrix = np.random.default_rng(4).normal(size=(120, 5)).astype(np.float32)
+    found = projection.nearest_neighbors(matrix, 10, 0)
+    _, indices = brute_neighbors(matrix, 10)
+    recall = np.mean([len(set(a) & set(b)) / 10 for a, b in zip(found.indices.tolist(), indices.tolist())])
+    assert recall > 0.9
+
+
+def test_layout_reuses_the_given_neighbors_with_fixed_epochs(monkeypatch):
+    import umap
+
+    seen = {}
+
+    class Recorder:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+        def fit_transform(self, matrix):
+            return np.zeros((matrix.shape[0], 2), dtype=np.float32)
+
+    monkeypatch.setattr(umap, "UMAP", Recorder)
+    matrix = np.random.default_rng(5).normal(size=(40, 4))
+    neighbors = projection.nearest_neighbors(matrix, 9, 0)
+    projection.embed(matrix, neighbors, 0.2, 3)
+    assert seen["n_neighbors"] == 9 and seen["n_epochs"] == projection.LAYOUT_EPOCHS
+    assert seen["precomputed_knn"][0] is neighbors.indices and seen["random_state"] == 3
+
+
+def test_more_duplicates_than_neighbors_still_list_themselves_first():
+    matrix = np.vstack([np.ones((12, 3)), np.random.default_rng(6).normal(size=(8, 3))])
+    found = projection.nearest_neighbors(matrix, 4, 0)
+    assert (found.indices[:, 0] == np.arange(20)).all() and np.allclose(found.distances[:12], 0.0)
+    assert all(len(set(row)) == 4 for row in found.indices.tolist())
+
+
+def test_sample_rows_is_sorted_seeded_and_keeps_everything_under_the_limit():
+    assert np.array_equal(projection.sample_rows(5, 10, 0), np.arange(5))
+    assert np.array_equal(projection.sample_rows(5, 0, 0), np.arange(5))
+    rows = projection.sample_rows(100, 10, 3)
+    assert rows.size == 10 and np.array_equal(rows, np.sort(rows))
+    assert np.array_equal(rows, projection.sample_rows(100, 10, 3))
+    assert not np.array_equal(rows, projection.sample_rows(100, 10, 4))
+
+
+def test_placement_averages_the_nearest_trained_points():
+    trained = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0], [10.0, 10.0]], dtype=np.float32)
+    coords = trained * 2
+    placement = projection.NeighborIndex(trained).placement(np.array([[0.0, 0.0], [9.0, 9.0]]))
+    placed = placement.apply(coords)
+    assert np.allclose(placed[0], coords[0], atol=1e-3)
+    assert np.linalg.norm(placed[1] - coords[3]) < np.linalg.norm(placed[1] - coords[0])
+    assert np.allclose(placement.weights.sum(axis=1), 1.0)

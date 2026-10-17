@@ -13,9 +13,9 @@ from wafer.core.db.path_values import PathValue
 def embed_calls(monkeypatch):
     calls = []
 
-    def fake_embed(matrix, n_components, n_neighbors, min_dist, seed):
-        calls.append(n_components)
-        return jittered_copy(matrix, n_components)
+    def fake_embed(matrix, neighbors, min_dist, seed):
+        calls.append(min_dist)
+        return jittered_copy(matrix, 2)
 
     monkeypatch.setattr(projection, "embed", fake_embed)
     return calls
@@ -224,9 +224,9 @@ def test_space_describers_use_fit_describe_and_matches_fit_transform(monkeypatch
 def test_spacing_changes_the_layout_but_not_the_groups(monkeypatch):
     calls = []
 
-    def spacing_embed(matrix, n_components, n_neighbors, min_dist, seed):
+    def spacing_embed(matrix, neighbors, min_dist, seed):
         calls.append(min_dist)
-        return jittered_copy(matrix, n_components) + min_dist * 100
+        return jittered_copy(matrix, 2) + min_dist * 100
 
     monkeypatch.setattr(projection, "embed", spacing_embed)
     runner = pipeline()
@@ -235,7 +235,7 @@ def test_spacing_changes_the_layout_but_not_the_groups(monkeypatch):
     second = runner.run(make_request(params=MapParams(min_dist=0.5)))
     assert calls == [0.1, projection.GROUPING_MIN_DIST, 0.5]
     assert np.array_equal(first.labels, second.labels)
-    runner.run(make_request(params=MapParams(min_dist=0.5, n_neighbors=5)))
+    runner.run(make_request(params=MapParams(min_dist=0.5, neighbors=0.5)))
     assert calls[-2:] == [0.5, projection.GROUPING_MIN_DIST]
 
 
@@ -251,19 +251,28 @@ def test_space_layout_groups_by_the_grouping_coordinates():
     assert result.labels[0] != result.labels[-1]
 
 
-def test_layouts_use_the_resolved_neighbor_count(monkeypatch):
-    seen = []
+def test_both_layouts_share_one_neighbor_search_of_the_resolved_size(monkeypatch):
+    searched, used = [], []
+    real_search = projection.nearest_neighbors
 
-    def record(matrix, n_components, n_neighbors, min_dist, seed):
-        seen.append(n_neighbors)
-        return jittered_copy(matrix, n_components)
+    def search(matrix, n_neighbors, seed):
+        searched.append(n_neighbors)
+        return real_search(matrix, n_neighbors, seed)
 
+    def record(matrix, neighbors, min_dist, seed):
+        used.append(neighbors)
+        return jittered_copy(matrix, 2)
+
+    monkeypatch.setattr(projection, "nearest_neighbors", search)
     monkeypatch.setattr(projection, "embed", record)
-    pipeline().run(make_request())
-    assert seen == [MapParams().resolved_neighbors(40)] * 2
-    seen.clear()
-    pipeline().run(make_request(params=MapParams(n_neighbors=7)))
-    assert seen == [7, 7]
+    runner = pipeline()
+    runner.run(make_request())
+    assert searched == [MapParams().resolved_neighbors(40)]
+    assert len(used) == 2 and used[0] is used[1]
+    runner.run(make_request(params=MapParams(min_dist=0.5)))
+    assert len(searched) == 1 and len(used) == 3
+    runner.run(make_request(params=MapParams(neighbors=0.5)))
+    assert searched[-1] == 8 and len(used) == 5
 
 
 def test_space_layout_groups_once_and_relabels_on_view_changes(monkeypatch):
@@ -291,3 +300,29 @@ def test_detail_change_reduces_again_without_encoding_again(embed_calls, monkeyp
     layouts = len(embed_calls)
     runner.run(make_request(features=[FeatureSpec("tags", "token_set", options={"summary": "3"})]))
     assert len(encodes) == 1 and len(embed_calls) > layouts
+
+
+def test_quick_train_learns_from_the_training_limit_and_places_the_rest(monkeypatch):
+    searched, embedded = [], []
+    real_search = projection.nearest_neighbors
+
+    def search(matrix, n_neighbors, seed):
+        searched.append((matrix.shape[0], n_neighbors))
+        return real_search(matrix, n_neighbors, seed)
+
+    def record(matrix, neighbors, min_dist, seed):
+        embedded.append(matrix.shape[0])
+        return jittered_copy(matrix, 2)
+
+    monkeypatch.setattr(projection, "nearest_neighbors", search)
+    monkeypatch.setattr(projection, "embed", record)
+    runner = pipeline()
+    result = runner.run(make_request(count=200, params=MapParams(train_limit=50)))
+    assert embedded == [50, 50] and searched == [(50, MapParams().resolved_neighbors(50))]
+    assert np.isfinite(result.positions).all()
+    cats, dogs = result.positions[:100], result.positions[100:]
+    assert np.linalg.norm(cats.mean(axis=0) - dogs.mean(axis=0)) > max(cats.std(), dogs.std())
+    runner.run(make_request(count=200, params=MapParams(train_limit=50, outlier_percent=5.0)))
+    assert len(embedded) == 2
+    runner.run(make_request(count=200, params=MapParams(train_limit=0)))
+    assert embedded[-2:] == [200, 200]

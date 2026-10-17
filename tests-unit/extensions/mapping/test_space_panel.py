@@ -76,7 +76,7 @@ def test_edits_mark_dirty_and_revert(widget):
 
 def test_param_edits_mark_dirty(widget):
     w, _saved, _resets = widget
-    w.tuning.controls["n_neighbors"].setValue(30)
+    w.tuning.controls["neighbors"].setValue(2.0)
     assert w.is_dirty()
     w.revert()
     assert not w.is_dirty() and w.tuning.params() == MapParams()
@@ -84,7 +84,7 @@ def test_param_edits_mark_dirty(widget):
 
 def test_form_shows_layout_stage_only(widget):
     w, _saved, _resets = widget
-    assert "n_neighbors" in w.tuning.controls
+    assert "neighbors" in w.tuning.controls and "train_limit" in w.tuning.controls
     assert "hover_size" not in w.tuning.controls and "min_cluster_size" not in w.tuning.controls
 
 
@@ -415,7 +415,7 @@ def test_quick_train_shows_a_sample_without_saving_and_reuses_it(widget, databas
     qtbot.waitUntil(lambda: w.showing_quick, timeout=30000)
     assert len(w.map_view.paths) == 12 and "not saved" in w.count_label.text()
     assert w.quick_button.text() == "Quick Train" and not saved and not resets
-    w.tuning.controls["n_neighbors"].setValue(5)
+    w.tuning.controls["neighbors"].setValue(0.5)
     w.showing_quick = False
     w.toggle_quick_train()
     qtbot.waitUntil(lambda: w.showing_quick, timeout=30000)

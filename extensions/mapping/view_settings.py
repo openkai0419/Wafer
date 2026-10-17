@@ -30,6 +30,7 @@ class ViewSettings(QtCore.QObject):
         super().__init__()
         self.params = MapParams()
         self.labels_shown = True
+        self.thumbnails_shown = True
         self.image_scale = 1.0
         self.selection_mode = "single"
 
@@ -49,6 +50,11 @@ class ViewSettings(QtCore.QObject):
             self.labels_shown = bool(shown)
             self.changed.emit(False)
 
+    def set_thumbnails_shown(self, shown: bool) -> None:
+        if bool(shown) != self.thumbnails_shown:
+            self.thumbnails_shown = bool(shown)
+            self.changed.emit(False)
+
     def set_image_scale(self, scale: float) -> None:
         scale = min(max(float(scale), MIN_IMAGE_SCALE), MAX_IMAGE_SCALE) if math.isfinite(scale) else 1.0
         if scale != self.image_scale:
@@ -65,6 +71,7 @@ class ViewSettings(QtCore.QObject):
         return {
             "params": {name: getattr(self.params, name) for name in VIEW_PARAMS},
             "labels": self.labels_shown,
+            "thumbnails": self.thumbnails_shown,
             "image_scale": self.image_scale,
             "selection_mode": self.selection_mode,
         }
@@ -74,6 +81,7 @@ class ViewSettings(QtCore.QObject):
         params = state.get("params")
         self.params = MapParams.from_dict(params) if isinstance(params, dict) else MapParams()
         self.labels_shown = state.get("labels", True) is not False
+        self.thumbnails_shown = state.get("thumbnails", True) is not False
         scale = state.get("image_scale", 1.0)
         self.image_scale = min(max(float(scale), MIN_IMAGE_SCALE), MAX_IMAGE_SCALE) if isinstance(scale, (int, float)) and math.isfinite(scale) else 1.0
         mode = state.get("selection_mode")
@@ -85,11 +93,11 @@ class ViewSettings(QtCore.QObject):
     def apply(self, view, host) -> None:
         params = self.params
         host.set_hover_size(params.hover_size)
-        view.set_thumbnail_zoom(params.thumbnail_zoom)
         view.set_image_limit(params.max_images)
         view.set_image_spacing(params.image_spacing)
         view.set_image_cap(params.hover_size or DEFAULT_IMAGE_CAP)
         view.set_point_size(params.point_size)
         view.set_image_scale(self.image_scale)
         view.set_labels_visible(self.labels_shown)
+        view.set_thumbnails_visible(self.thumbnails_shown)
         view.set_selection_mode(self.selection_mode)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -12,6 +13,9 @@ SMALL_LAYOUT_LIMIT = 3
 SPECTRAL_INIT_MIN = 20
 GROUPING_MIN_DIST = 0.0
 WARM_UP_ROWS = 300
+EXACT_NEIGHBORS_LIMIT = 200_000
+PLACE_NEIGHBORS = 3
+LAYOUT_EPOCHS = 200
 _warm_up_lock = threading.Lock()
 _warmed_up = False
 
@@ -114,31 +118,103 @@ def apply_block_scales(parts: list[tuple[np.ndarray, np.ndarray]], scales: list[
     return np.hstack(columns).astype(np.float32)
 
 
-def embed(matrix: np.ndarray, n_components: int, n_neighbors: int, min_dist: float, seed: int) -> np.ndarray:
+@dataclass
+class Neighbors:
+    indices: np.ndarray
+    distances: np.ndarray
+
+
+def nearest_neighbors(matrix: np.ndarray, n_neighbors: int, seed: int) -> Neighbors | None:
     count = matrix.shape[0]
-    output = np.zeros((count, n_components), dtype=np.float32)
+    if count <= SMALL_LAYOUT_LIMIT:
+        return None
+    k = max(2, min(n_neighbors, count - 1))
+    if count > EXACT_NEIGHBORS_LIMIT:
+        from pynndescent import NNDescent
+
+        indices, distances = NNDescent(matrix, n_neighbors=k, metric="euclidean", random_state=seed, n_jobs=1, low_memory=True).neighbor_graph
+        return Neighbors(indices, distances)
+    return exact_neighbors(matrix, k)
+
+
+def exact_neighbors(matrix: np.ndarray, k: int) -> Neighbors:
+    from sklearn.neighbors import NearestNeighbors
+
+    data = np.ascontiguousarray(matrix, dtype=np.float32)
+    distances, indices = NearestNeighbors(n_neighbors=k, algorithm="brute").fit(data).kneighbors(data)
+    return own_first(indices.astype(np.int32), distances.astype(np.float32))
+
+
+def own_first(indices: np.ndarray, distances: np.ndarray) -> Neighbors:
+    rows = np.flatnonzero(indices[:, 0] != np.arange(len(indices)))
+    if rows.size:
+        own = indices[rows] == rows[:, None]
+        order = np.argsort(~own, axis=1, kind="stable")
+        moved, gaps = np.take_along_axis(indices[rows], order, axis=1), np.take_along_axis(distances[rows], order, axis=1)
+        missing = ~own.any(axis=1)
+        moved[missing] = np.hstack([rows[missing, None], moved[missing, :-1]])
+        gaps[missing] = np.hstack([np.zeros((int(missing.sum()), 1), dtype=gaps.dtype), gaps[missing, :-1]])
+        gaps[:, 0] = 0.0
+        indices[rows], distances[rows] = moved, gaps
+    return Neighbors(indices, distances)
+
+
+def sample_rows(count: int, limit: int, seed: int) -> np.ndarray:
+    if not limit or count <= limit:
+        return np.arange(count)
+    return np.sort(np.random.default_rng(seed).choice(count, limit, replace=False))
+
+
+@dataclass
+class Placement:
+    indices: np.ndarray
+    weights: np.ndarray
+
+    def apply(self, coords: np.ndarray) -> np.ndarray:
+        return (coords[self.indices] * self.weights[..., None]).sum(axis=1)
+
+
+class NeighborIndex:
+    def __init__(self, matrix: np.ndarray):
+        from sklearn.neighbors import NearestNeighbors
+
+        self.search = NearestNeighbors(n_neighbors=min(PLACE_NEIGHBORS, len(matrix))).fit(np.asarray(matrix, dtype=np.float32))
+
+    def placement(self, query: np.ndarray) -> Placement:
+        distances, indices = self.search.kneighbors(np.asarray(query, dtype=np.float32))
+        weights = 1.0 / (distances + 1e-6)
+        return Placement(indices, weights / weights.sum(axis=1, keepdims=True))
+
+
+def embed(matrix: np.ndarray, neighbors: Neighbors | None, min_dist: float, seed: int) -> np.ndarray:
+    count = matrix.shape[0]
+    output = np.zeros((count, 2), dtype=np.float32)
     if count == 0 or not np.any(np.ptp(matrix, axis=0) > 1e-9):
         return output
-    if count <= SMALL_LAYOUT_LIMIT:
+    if neighbors is None:
         centered = matrix - matrix.mean(axis=0)
         u, s, _ = np.linalg.svd(centered, full_matrices=False)
-        width = min(n_components, s.size)
+        width = min(2, s.size)
         output[:, :width] = u[:, :width] * s[:width]
         return output
     import umap
 
-    components = max(1, min(n_components, count - 2))
+    components = max(1, min(2, count - 2))
     reducer = umap.UMAP(
         n_components=components,
-        n_neighbors=max(2, min(n_neighbors, count - 1)),
+        n_neighbors=neighbors.indices.shape[1],
         min_dist=min_dist,
         metric="euclidean",
         random_state=seed,
         n_jobs=1,
         force_approximation_algorithm=True,
         init="spectral" if count >= SPECTRAL_INIT_MIN else "random",
+        n_epochs=LAYOUT_EPOCHS,
+        precomputed_knn=(neighbors.indices, neighbors.distances, None),
     )
-    output[:, :components] = reducer.fit_transform(matrix)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=r"precomputed_knn\[2\]")
+        output[:, :components] = reducer.fit_transform(matrix)
     return output
 
 
@@ -149,7 +225,8 @@ def warm_up() -> None:
             return
         started = time.perf_counter()
         try:
-            embed(np.random.default_rng(0).normal(size=(WARM_UP_ROWS, 8)).astype(np.float32), 2, 15, 0.1, 0)
+            matrix = np.random.default_rng(0).normal(size=(WARM_UP_ROWS, 8)).astype(np.float32)
+            embed(matrix, nearest_neighbors(matrix, 15, 0), 0.1, 0)
         except Exception as e:
             AppLogger.warning("[Mapping] Preparing the layout engine failed; the first map will take longer", exc=e)
             return

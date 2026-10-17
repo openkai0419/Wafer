@@ -100,12 +100,12 @@ def test_rubber_band_drag_selects(view, qtbot):
     assert {0, 1, 2} <= set(view.selected_rows())
 
 
-def test_thumbnails_requested_only_when_zoomed(view, qtbot):
+def test_thumbnails_are_requested_only_while_shown(view, qtbot):
     view.show_result(result(), colors(6), keep_view=False)
-    view.set_thumbnail_zoom(2.0)
+    view.set_thumbnails_visible(False)
     view.viewport().repaint()
     assert view.owner.requested == []
-    view.set_thumbnail_zoom(0.5)
+    view.set_thumbnails_visible(True)
     view.viewport().repaint()
     assert view.owner.requested
 
@@ -170,12 +170,12 @@ def render_point(view, row):
     return view.current_layer().toImage().copy(center.x() - side // 2, center.y() - side // 2, side, side)
 
 
-@pytest.mark.parametrize("thumbnail_zoom", [2.0, 0.5])
-def test_outlier_is_drawn_with_a_ring_even_when_unselected(view, thumbnail_zoom):
+@pytest.mark.parametrize("thumbnails", [False, True])
+def test_outlier_is_drawn_with_a_ring_even_when_unselected(view, thumbnails):
     image = QtGui.QPixmap(32, 32)
     image.fill(QtGui.QColor("white"))
     view.owner.pixmaps = {f"c:/{i}.png": image for i in range(6)}
-    view.set_thumbnail_zoom(thumbnail_zoom)
+    view.set_thumbnails_visible(thumbnails)
     view.show_result(result(), colors(6), keep_view=False)
     plain = render_point(view, 1)
     view.show_result(result(outlier_rows=[1]), colors(6), keep_view=True)
@@ -297,7 +297,7 @@ def loaded_owner(view, count):
 
 def test_images_are_capped_one_per_cell_and_the_rest_stay_dots(view):
     loaded_owner(view, 2000)
-    view.set_thumbnail_zoom(0.5)
+    view.set_thumbnails_visible(True)
     view.show_result(image_result(2000), colors(2000), keep_view=False)
     view.set_image_limit(50)
     view.viewport().repaint()
@@ -315,7 +315,7 @@ def test_images_are_capped_one_per_cell_and_the_rest_stay_dots(view):
 
 def test_selected_files_get_images_first(view):
     loaded_owner(view, 2000)
-    view.set_thumbnail_zoom(0.5)
+    view.set_thumbnails_visible(True)
     view.show_result(image_result(2000, spread=0.01), colors(2000), keep_view=False)
     view.set_image_limit(1)
     view.select_rows([1234])
@@ -325,7 +325,7 @@ def test_selected_files_get_images_first(view):
 
 def test_image_choice_is_stable_across_repaints(view):
     loaded_owner(view, 500)
-    view.set_thumbnail_zoom(0.5)
+    view.set_thumbnails_visible(True)
     view.show_result(image_result(500), colors(500), keep_view=False)
     view.viewport().repaint()
     first = sorted(view.image_rows.tolist())
@@ -336,7 +336,7 @@ def test_image_choice_is_stable_across_repaints(view):
 
 def test_hover_and_click_reach_points_drawn_as_dots(view):
     loaded_owner(view, 2000)
-    view.set_thumbnail_zoom(0.5)
+    view.set_thumbnails_visible(True)
     view.show_result(image_result(2000), colors(2000), keep_view=False)
     view.set_image_limit(0)
     view.viewport().repaint()
@@ -349,7 +349,7 @@ def test_hover_and_click_reach_points_drawn_as_dots(view):
 
 def test_hit_test_prefers_the_image_under_the_cursor(view):
     loaded_owner(view, 6)
-    view.set_thumbnail_zoom(0.5)
+    view.set_thumbnails_visible(True)
     view.show_result(result(labels=False), colors(6), keep_view=False)
     view.viewport().repaint()
     row = int(view.image_rows[-1])
@@ -358,7 +358,7 @@ def test_hit_test_prefers_the_image_under_the_cursor(view):
 
 
 def test_arrived_thumbnail_repaints_once_after_a_short_wait(view, qtbot):
-    view.set_thumbnail_zoom(0.5)
+    view.set_thumbnails_visible(True)
     view.show_result(result(labels=False), colors(6), keep_view=False)
     view.viewport().repaint()
     version = view.version
@@ -378,7 +378,7 @@ def test_rows_in_rect_uses_viewport_pixels(view):
 
 def test_hover_follows_points_not_image_rectangles(view):
     loaded_owner(view, 6)
-    view.set_thumbnail_zoom(0.5)
+    view.set_thumbnails_visible(True)
     view.show_result(result(labels=False), colors(6), keep_view=False)
     view.viewport().repaint()
     row = int(view.image_rows[-1])
@@ -399,11 +399,10 @@ def test_wheel_zoom_grows_images_but_points_keep_their_set_size(view):
     assert view.display_size() == pytest.approx(display * view.zoom)
 
 
-def test_images_start_at_the_thumbnail_size_where_they_switch_on(view):
+def test_images_show_at_every_zoom_and_grow_from_the_fit_size(view):
     view.show_result(result(labels=False), colors(6), keep_view=False)
-    view.set_thumbnail_zoom(view.zoom)
-    assert view.thumbnails
-    assert view.display_size() == pytest.approx(64.0)
+    assert view.thumbnails and view.zoom == pytest.approx(1.0)
+    assert view.display_size() == pytest.approx(map_view_module.FIT_IMAGE_SIZE)
 
 
 def test_outliers_keep_their_place_outside_the_first_view(view):
@@ -450,6 +449,7 @@ def drag_over(view, qtbot, left, right, modifiers=QtCore.Qt.NoModifier):
 
 
 def test_rubber_band_replaces_adds_with_shift_and_removes_with_ctrl(view, qtbot):
+    view.set_thumbnails_visible(False)
     view.show_result(result(labels=False), colors(6), keep_view=False)
     view.select_rows([4])
     drag_over(view, qtbot, 0, 100)
@@ -475,6 +475,7 @@ def test_shift_click_adds_and_ctrl_click_toggles(view, qtbot):
 
 
 def test_group_mode_applies_to_rubber_band_operations(view, qtbot):
+    view.set_thumbnails_visible(False)
     view.show_result(result(), colors(6), keep_view=False)
     view.set_labels_visible(False)
     view.set_selection_mode("group")
@@ -515,3 +516,20 @@ def test_frame_on_a_single_point_zooms_in_around_it(view):
     shown = scene_view_rect(view)
     assert shown.contains(QtCore.QPointF(*view.positions[2])) and shown.width() < 100
 
+
+def first_per_cell_by_rows(points, cell, limit):
+    _, first = np.unique(np.floor(points / cell).astype(np.int64), axis=0, return_index=True)
+    return np.sort(first)[:limit]
+
+
+@pytest.mark.parametrize(
+    ("points", "cell", "limit"),
+    [
+        (np.random.default_rng(0).random((20_000, 2)) * (1600, 1000) - 50, 1.0, 300),
+        (np.random.default_rng(1).normal(0, 3, (20_000, 2)), 2.0, 300),
+        (np.random.default_rng(2).random((500, 2)) * 10, 1.0, 300),
+        (np.zeros((9000, 2)), 1.0, 300),
+    ],
+)
+def test_first_per_cell_matches_the_full_scan(points, cell, limit):
+    assert np.array_equal(map_view_module.first_per_cell(points, cell, limit), first_per_cell_by_rows(points, cell, limit))

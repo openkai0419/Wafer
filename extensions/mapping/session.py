@@ -126,6 +126,12 @@ class MapPipeline:
         self._combine_key: tuple | None = None
         self._layout_key: tuple | None = None
         self._group_key: tuple | None = None
+        self._sample_key: tuple | None = None
+        self._train = np.zeros(0, dtype=np.int64)
+        self._training: np.ndarray | None = None
+        self._placement: tuple[np.ndarray, projection.Placement] | None = None
+        self._neighbors_key: tuple | None = None
+        self._neighbors: projection.Neighbors | None = None
         self._active = np.zeros(0, dtype=np.int64)
         self._points = np.zeros((0, 2), dtype=np.float32)
         self._group_points = np.zeros((0, 2), dtype=np.float32)
@@ -169,19 +175,28 @@ class MapPipeline:
             with timed(diagnostics, "combine"):
                 self._combined, self._stats, _scales = projection.combine_blocks([(b.feature.label(), b.reduced[active], b.present[active], b.feature.weight) for b in blocks], params.seed)
             self._active, self._combine_key, self._layout_key, self._group_key = active, combine_key, None, None
-        layout_key = (combine_key, params.values_for("layout"))
+        sample_key = (combine_key, params.train_limit)
+        if sample_key != self._sample_key:
+            self._train = projection.sample_rows(self._active.size, params.train_limit, params.seed)
+            self._training = self._combined if self._train.size == self._active.size else self._combined[self._train]
+            self._sample_key, self._placement = sample_key, None
+        neighbor_count = params.resolved_neighbors(self._train.size)
+        neighbors_key = (sample_key, neighbor_count)
+        layout_key = (neighbors_key, params.min_dist)
         if layout_key != self._layout_key:
             progress("layout", 0.0)
+            neighbors = self._neighbors_for(neighbors_key, neighbor_count, params.seed, diagnostics)
             with timed(diagnostics, "layout"):
-                self._points = projection.embed(self._combined, 2, params.resolved_neighbors(self._active.size), params.min_dist, params.seed)
+                self._points = self._spread(projection.embed(self._training, neighbors, params.min_dist, params.seed), diagnostics)
             self._layout_key = layout_key
         if cancelled():
             return None
-        group_key = (combine_key, params.resolved_neighbors(self._active.size))
+        group_key = neighbors_key
         if group_key != self._group_key:
             progress("cluster", 0.0)
+            neighbors = self._neighbors_for(neighbors_key, neighbor_count, params.seed, diagnostics)
             with timed(diagnostics, "group_layout"):
-                self._group_points = projection.embed(self._combined, 2, params.resolved_neighbors(self._active.size), projection.GROUPING_MIN_DIST, params.seed)
+                self._group_points = self._spread(projection.embed(self._training, neighbors, projection.GROUPING_MIN_DIST, params.seed), diagnostics)
             self._group_key, self._cluster_key, self._labels = group_key, None, None
         if cancelled():
             return None
@@ -201,6 +216,26 @@ class MapPipeline:
         diagnostics.unset = int((~has_value).sum())
         AppLogger.info(diagnostics.summary())
         return MapResult(list(request.paths), positions, outliers, ~has_value, labels, group_terms, order, diagnostics)
+
+    def _neighbors_for(self, key, count, seed, diagnostics) -> projection.Neighbors | None:
+        if key != self._neighbors_key:
+            with timed(diagnostics, "neighbors"):
+                self._neighbors = projection.nearest_neighbors(self._training, count, seed)
+            self._neighbors_key = key
+        return self._neighbors
+
+    def _spread(self, trained: np.ndarray, diagnostics) -> np.ndarray:
+        if self._train.size == self._active.size:
+            return trained
+        if self._placement is None:
+            with timed(diagnostics, "place"):
+                rest = np.setdiff1d(np.arange(self._active.size), self._train, assume_unique=True)
+                self._placement = (rest, projection.NeighborIndex(self._training).placement(self._combined[rest]))
+        rest, placement = self._placement
+        points = np.empty((self._active.size, 2), dtype=np.float32)
+        points[self._train] = trained
+        points[rest] = placement.apply(trained)
+        return points
 
     def _encode(self, request, params, cancelled, progress, diagnostics) -> list[_Block] | None:
         encode_key = tuple(request.paths)

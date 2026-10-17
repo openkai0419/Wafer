@@ -28,30 +28,55 @@ AUTO_GROUP_MAX = 30
 AUTO_GROUP_DIVISOR = 500
 AUTO_STRICTNESS_MAX = 10
 AUTO_NEIGHBORS_MIN = 15
-AUTO_NEIGHBORS_MAX = 200
 AUTO_NEIGHBORS_SHARE = 0.005
+MIN_NEIGHBORS = 2
+MAX_NEIGHBORS = 1000
+TRAIN_LIMIT = 10000
 
 
 @dataclass(frozen=True)
 class MapParams:
-    n_neighbors: int = param(
-        0,
+    neighbors: float = param(
+        1.0,
         stage="layout",
         label="Neighbors",
-        description="How many nearby files shape the layout. Lower shows small clusters, higher the overall structure. 0 = automatic (about 0.5% of the files, 15 to 200).",
+        description="How many nearby files shape the layout, as a multiple of about 0.5% of the training files (at most 1000). Lower shows small clusters, higher the overall structure.",
+        minimum=0.25,
+        maximum=4.0,
+        step=0.25,
+    )
+    train_limit: int = param(
+        TRAIN_LIMIT,
+        stage="layout",
+        label="Training files",
+        description="Learn the layout from this many random files and place the rest next to their most similar ones. 0 = learn from every file (slow on large databases).",
         minimum=0,
-        maximum=AUTO_NEIGHBORS_MAX,
+        maximum=10_000_000,
+        step=5000,
     )
     min_dist: float = param(
-        0.1, stage="layout", label="Spacing", description="How tightly points are packed on the map. Lower makes dense clusters, higher spreads points evenly. Groups do not change.", minimum=0.0, maximum=1.0, step=0.05
+        0.1,
+        stage="layout",
+        label="Spacing",
+        description="How tightly points are packed on the map. Lower makes dense clusters, higher spreads points evenly. Groups do not change.",
+        minimum=0.0,
+        maximum=1.0,
+        step=0.05,
     )
     seed: int = param(42, stage="layout", label="Random seed", description="Change to try a different layout.", minimum=0, maximum=9999)
     outlier_percent: float = param(
-        1.0, stage="view", label="Outliers (%)", description="Share of far points marked as outliers and left outside the first view. Higher zooms the first view into the center.", minimum=0.0, maximum=20.0, step=0.5
+        1.0,
+        stage="view",
+        label="Outliers (%)",
+        description="Share of far points marked as outliers and left outside the first view. Higher zooms the first view into the center.",
+        minimum=0.0,
+        maximum=20.0,
+        step=0.5,
     )
     point_size: float = param(3.0, stage="view", label="Point size", description="Size of the dots in pixels.", minimum=1.0, maximum=16.0, step=1.0)
-    thumbnail_zoom: float = param(2.0, stage="view", label="Thumbnail zoom", description="Zoom level at which points turn into thumbnails.", minimum=1.0, maximum=20.0, step=0.5)
-    image_spacing: float = param(0.01, stage="view", label="Image spacing", description="Space between images, relative to their size. Lower lets them overlap more.", minimum=0.01, maximum=2.0, step=0.05)
+    image_spacing: float = param(
+        0.01, stage="view", label="Image spacing", description="Space between images, relative to their size. Lower lets them overlap more.", minimum=0.01, maximum=2.0, step=0.05
+    )
     max_images: int = param(300, stage="view", label="Image limit", description="Most images shown at once. Other files stay as dots.", minimum=0, maximum=2000, step=50)
     label_terms: int = param(3, stage="view", label="Label words", description="Number of words in each group label.", minimum=1, maximum=10)
     hover_size: int = param(256, stage="view", label="Hover size", description="Size of the enlarged image shown under the cursor. 0 turns it off.", minimum=0, maximum=1024, step=32)
@@ -90,8 +115,7 @@ class MapParams:
         return replace(cls(), **changes).normalized()
 
     def resolved_neighbors(self, count: int) -> int:
-        return self.n_neighbors or min(AUTO_NEIGHBORS_MAX, max(AUTO_NEIGHBORS_MIN, round(count * AUTO_NEIGHBORS_SHARE)))
-
+        return min(MAX_NEIGHBORS, max(MIN_NEIGHBORS, round(max(AUTO_NEIGHBORS_MIN, count * AUTO_NEIGHBORS_SHARE) * self.neighbors)))
 
 
 def min_group_size(count: int) -> int:

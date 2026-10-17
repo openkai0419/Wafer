@@ -10,9 +10,9 @@ from wafer.core.db.path_values import PathValue
 
 @pytest.fixture(autouse=True)
 def fast_embed(monkeypatch):
-    def fake_embed(matrix, n_components, n_neighbors, min_dist, seed):
-        out = np.zeros((matrix.shape[0], n_components), dtype=np.float32)
-        width = min(n_components, matrix.shape[1])
+    def fake_embed(matrix, neighbors, min_dist, seed):
+        out = np.zeros((matrix.shape[0], 2), dtype=np.float32)
+        width = min(2, matrix.shape[1])
         out[:, :width] = matrix[:, :width]
         return out
 
@@ -48,7 +48,7 @@ def test_preset_roundtrip_and_keys(settings):
 
 def test_fit_places_training_files_and_new_files_near_neighbours():
     model = SpaceModel.fit(preset(), tag_values())
-    assert len(model.train_paths) == 40
+    assert model.trained == len(model.paths) == 40
     cat = np.array(model.coords_for("c:/0.png"))
     dog = np.array(model.coords_for("c:/39.png"))
     new = model.place([{"tags": PathValue("cat, sky")}, {}])
@@ -68,7 +68,7 @@ def test_save_load_roundtrip_and_old_versions_removed(tmp_path):
     second.save(tmp_path)
     assert not list(tmp_path.glob("model-v1.*"))
     loaded = SpaceModel.load(tmp_path, preset(2))
-    assert loaded.train_paths == second.train_paths
+    assert loaded.paths == second.paths and loaded.trained == second.trained
     assert np.allclose(loaded.place([{"tags": PathValue("cat, sky")}]), second.place([{"tags": PathValue("cat, sky")}]))
     assert SpaceModel.load(tmp_path, preset(9)) is None
 
@@ -162,9 +162,9 @@ def test_npz_stores_paths_compactly(tmp_path):
     values[long_path] = {"tags": PathValue("cat, sky")}
     model = SpaceModel.fit(preset(1), values)
     model.save(tmp_path)
-    raw = len("\n".join(model.train_paths).encode("utf-8")) + model.matrix.nbytes + model.coords.nbytes
+    raw = len("\n".join(model.paths).encode("utf-8")) + model.matrix.nbytes + model.coords.nbytes
     assert (tmp_path / "model-v1.npz").stat().st_size < raw + 2048
-    assert SpaceModel.load(tmp_path, preset(1)).train_paths == model.train_paths
+    assert SpaceModel.load(tmp_path, preset(1)).paths == model.paths
 
 
 def test_mismatched_model_raises_load_error(tmp_path):
@@ -192,7 +192,7 @@ def test_load_ignores_a_model_built_from_another_preset(tmp_path):
     SpaceModel.fit(preset(1), tag_values()).save(tmp_path)
     other = Preset([FeatureSpec("tags", "text")], MapParams(), 1)
     assert SpaceModel.load(tmp_path, other) is None
-    retuned = Preset(preset(1).features, MapParams(n_neighbors=30), 1)
+    retuned = Preset(preset(1).features, MapParams(neighbors=2.0), 1)
     assert SpaceModel.load(tmp_path, retuned) is None
     assert SpaceModel.load(tmp_path, preset(1)) is not None
 
@@ -200,9 +200,9 @@ def test_load_ignores_a_model_built_from_another_preset(tmp_path):
 def test_grouping_coordinates_do_not_depend_on_spacing(monkeypatch):
     calls = []
 
-    def spacing_embed(matrix, n_components, n_neighbors, min_dist, seed):
+    def spacing_embed(matrix, neighbors, min_dist, seed):
         calls.append(min_dist)
-        return np.full((matrix.shape[0], n_components), min_dist, dtype=np.float32) + matrix[:, :1]
+        return np.full((matrix.shape[0], 2), min_dist, dtype=np.float32) + matrix[:, :1]
 
     monkeypatch.setattr(projection, "embed", spacing_embed)
     tight = SpaceModel.fit(Preset([FeatureSpec("tags", "token_set")], MapParams(min_dist=0.05), 1), tag_values())
@@ -223,3 +223,71 @@ def test_model_without_grouping_coordinates_must_be_retrained(tmp_path):
     np.savez(path, **data)
     with pytest.raises(SpaceLoadError):
         SpaceModel.load(tmp_path, preset(2))
+
+
+def limited(limit, seed=42):
+    return Preset([FeatureSpec("tags", "token_set")], MapParams(train_limit=limit, seed=seed), 1)
+
+
+def is_cat(path):
+    return int(path.split("/")[-1].split(".")[0]) < 20
+
+
+def test_fit_learns_from_a_sample_and_places_every_other_file():
+    values = tag_values(40)
+    model = SpaceModel.fit(limited(10), values)
+    assert model.trained == len(model.matrix) == 10
+    assert sorted(model.paths) == sorted(values)
+    trained = model.paths[: model.trained]
+    assert any(is_cat(p) for p in trained) and not all(is_cat(p) for p in trained)
+    cat = np.mean([model.coords_for(p) for p in trained if is_cat(p)], axis=0)
+    dog = np.mean([model.coords_for(p) for p in trained if not is_cat(p)], axis=0)
+    for path in model.paths[model.trained :]:
+        point = np.array(model.coords_for(path))
+        near, far = (cat, dog) if is_cat(path) else (dog, cat)
+        assert np.linalg.norm(point - near) < np.linalg.norm(point - far)
+
+
+def test_the_training_sample_depends_only_on_the_files_and_the_seed():
+    values = tag_values(40)
+    first = SpaceModel.fit(limited(10), values)
+    shuffled = dict(reversed(list(values.items())))
+    assert sorted(SpaceModel.fit(limited(10), shuffled).paths[:10]) == sorted(first.paths[:10])
+    assert sorted(SpaceModel.fit(limited(10, seed=7), values).paths[:10]) != sorted(first.paths[:10])
+
+
+def test_zero_training_limit_learns_from_every_file():
+    assert SpaceModel.fit(limited(0), tag_values(40)).trained == 40
+
+
+def test_files_without_values_are_left_out_of_the_space():
+    values = {**tag_values(40), "c:/empty.png": {}}
+    model = SpaceModel.fit(limited(10), values)
+    assert model.coords_for("c:/empty.png") is None and len(model.paths) == 40
+
+
+def test_placed_files_survive_save_and_load(tmp_path):
+    model = SpaceModel.fit(limited(10), tag_values(40))
+    model.save(tmp_path)
+    loaded = SpaceModel.load(tmp_path, limited(10))
+    assert loaded.trained == 10 and loaded.paths == model.paths
+    assert np.allclose(loaded.coords, model.coords)
+
+
+def test_cancelling_while_placing_stops_the_fit(monkeypatch):
+    monkeypatch.setattr(space, "PLACE_BATCH", 5)
+    checks = []
+
+    def cancelled():
+        checks.append(1)
+        return len(checks) > 3
+
+    with pytest.raises(MapError):
+        SpaceModel.fit(limited(10), tag_values(40), cancelled=cancelled)
+
+
+def test_the_training_sample_is_drawn_only_from_files_with_values():
+    values = {**tag_values(40), **{f"c:/bare{i}.png": {"modified": PathValue(str(i), float(i))} for i in range(400)}}
+    model = SpaceModel.fit(limited(10), values)
+    assert model.trained == 10 and len(model.paths) == 40
+    assert all(path in tag_values(40) for path in model.paths)

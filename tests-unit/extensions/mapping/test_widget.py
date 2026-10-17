@@ -279,7 +279,9 @@ def test_right_click_on_unselected_point_selects_only_it(mapping, qtbot):
 def test_label_checkbox_hides_labels_without_recomputing(mapping):
     previous = mapping.current_result()
     mapping.toolbar.label_check.setChecked(False)
-    assert settings().labels_shown is False and mapping.current_result() is previous
+    assert settings().labels_shown is False
+    mapping.toolbar.thumbnail_check.setChecked(False)
+    assert settings().thumbnails_shown is False and not mapping.map_view.thumbnails and mapping.current_result() is previous
     assert not any(label.isVisible() for label in mapping.map_view.label_items())
     assert mapping.current_result().labels is not None
 
@@ -333,10 +335,9 @@ def test_drop_without_files_is_ignored(mapping):
 
 def test_thumbnail_bucket_uses_the_logical_size(mapping, monkeypatch):
     monkeypatch.setattr(map_view_module, "dpix", lambda value: value * 2)
-    settings().set_image_scale(1.5)
+    settings().set_image_scale(3.0)
     view = mapping.map_view
-    view.set_thumbnail_zoom(view.zoom)
-    assert view.display_size() == pytest.approx(map_view_module.THUMB_SIZE * 1.5)
+    assert view.display_size() == pytest.approx(map_view_module.FIT_IMAGE_SIZE * 3.0)
     view.viewport().repaint()
     assert mapping.host.thumbs.size == 128
     assert mapping.host.thumbs.cache_limit == map_host_module.cache_limit(map_host_module.THUMB_BUDGET, 128)
@@ -447,7 +448,8 @@ def test_widget_state_leaves_the_shared_view_settings_to_the_plugin(mapping):
 
 
 def test_loaded_view_settings_reach_the_map(mapping):
-    settings().load({"labels": False, "image_scale": 2.0, "selection_mode": "group"})
+    settings().load({"labels": False, "thumbnails": False, "image_scale": 2.0, "selection_mode": "group"})
+    assert not settings().thumbnails_shown and not mapping.map_view.thumbnails and not mapping.toolbar.thumbnail_check.isChecked()
     assert not settings().labels_shown and settings().image_scale == 2.0 and settings().selection_mode == "group"
     assert mapping.map_view.image_scale == 2.0 and mapping.map_view.selection_mode == "group"
     assert mapping.toolbar.mode_buttons["group"].isChecked() and not mapping.toolbar.label_check.isChecked()
@@ -472,6 +474,8 @@ def test_toolbar_drives_the_shared_settings(mapping):
     assert settings().selection_mode == "group" and mapping.map_view.selection_mode == "group"
     mapping.toolbar.label_check.setChecked(False)
     assert settings().labels_shown is False
+    mapping.toolbar.thumbnail_check.setChecked(False)
+    assert settings().thumbnails_shown is False and not mapping.map_view.thumbnails
 
 
 def test_view_settings_reach_the_mapping_space_panel(mapping, qtbot):

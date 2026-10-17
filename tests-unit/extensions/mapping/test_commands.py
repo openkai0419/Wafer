@@ -58,6 +58,7 @@ def test_command_ids():
         "mapping.drill_up",
         "mapping.recompute",
         "mapping.toggle_labels",
+        "mapping.toggle_thumbnails",
         "mapping.image_scale_up",
         "mapping.image_scale_down",
         "mapping.selection_mode",
@@ -84,6 +85,8 @@ def test_view_commands_change_the_shared_settings():
     assert settings.selection_mode == "group" and commands._group_mode_checked()
     commands.toggle_labels(ctx)
     assert settings.labels_shown is False and not commands._labels_checked()
+    commands.toggle_thumbnails(ctx)
+    assert settings.thumbnails_shown is False and not commands._thumbnails_checked()
 
 
 def test_panel_commands_target_the_panel_the_command_came_from(monkeypatch):

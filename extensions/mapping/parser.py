@@ -103,8 +103,10 @@ class MappingParser(BaseParserPlugin):
             self.blocked = (preset.version, False)
             write_status(directory, SpaceStatus("failed", preset.version, error=str(e)))
             return None
-        write_status(directory, SpaceStatus("ready", preset.version, trained=len(model.train_paths), built_at=model.built_at, sources_at_training=len(paths)))
-        AppLogger.info(f"[Mapping] Trained space v{preset.version} for {self.db_name}: {len(model.train_paths)} files in {time.perf_counter() - started:.1f}s")
+        write_status(directory, SpaceStatus("ready", preset.version, trained=model.trained, built_at=model.built_at, sources_at_training=len(paths)))
+        AppLogger.info(
+            f"[Mapping] Trained space v{preset.version} for {self.db_name}: learned from {model.trained} files, placed {len(model.paths) - model.trained} more in {time.perf_counter() - started:.1f}s"
+        )
         return model
 
     def position(self, model: SpaceModel, path: str):

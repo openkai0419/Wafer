@@ -24,7 +24,6 @@ from extensions.mapping.encoders import (
     group_values,
     normalize_token,
     rgb_to_lab,
-    unpack_rgb,
 )
 from extensions.mapping.params import MapParams
 from wafer.core.db.path_values import PathValue
@@ -291,10 +290,6 @@ def test_compact_shrinks_pickled_text_encoder():
     assert len(pickle.dumps(encoder)) < before
 
 
-def test_unpack_rgb():
-    assert unpack_rgb(packed(1, 2, 3)) == (1, 2, 3)
-
-
 def test_group_values_orders_slots_and_skips_missing():
     entry = {
         "color.palette.2": PathValue("x", packed(0, 0, 255)),
@@ -304,7 +299,7 @@ def test_group_values_orders_slots_and_skips_missing():
         "other": PathValue("z", 1.0),
     }
     slots = group_values(entry, PALETTE_KEY)
-    assert [unpack_rgb(v.number) for v in slots] == [(255, 0, 0), (0, 0, 255)]
+    assert [v.number for v in slots] == [packed(255, 0, 0), packed(0, 0, 255)]
     assert group_values({}, PALETTE_KEY) is None
     assert feature_input(entry, PALETTE_KEY, PaletteEncoder) == slots
     assert feature_input(entry, "other", NumericEncoder) == entry["other"]
@@ -408,3 +403,43 @@ def test_number_options_are_clamped_and_fall_back_on_bad_values():
 def test_sparse_encoders_offer_a_detail_option(encoder):
     assert any(option.name == "summary" and option.numeric for option in encoder.OPTIONS)
     assert encoder.summary_dims({"summary": "120"}) == 120
+
+
+def slow_palette_reference(inputs):
+    import math
+
+    from extensions.mapping.encoders import PALETTE_BINS, PALETTE_RANGE, rgb_to_lab
+
+    def unpack_rgb(value):
+        number = int(value) & 0xFFFFFF
+        return (number >> 16) & 0xFF, (number >> 8) & 0xFF, number & 0xFF
+
+    def soft_bin_weights(lab):
+        coords = []
+        for value, (low, high), bins in zip(lab, PALETTE_RANGE, PALETTE_BINS):
+            position = (min(max(float(value), low), high) - low) / (high - low) * bins - 0.5
+            base = math.floor(position)
+            fraction = position - base
+            coords.append([(min(max(base, 0), bins - 1), 1.0 - fraction), (min(max(base + 1, 0), bins - 1), fraction)])
+        return [((i * PALETTE_BINS[1] + j) * PALETTE_BINS[2] + k, wi * wj * wk) for i, wi in coords[0] for j, wj in coords[1] for k, wk in coords[2]]
+
+    output = np.zeros((len(inputs), int(np.prod(PALETTE_BINS))), dtype=np.float64)
+    for row, slots in enumerate(inputs):
+        if not slots:
+            continue
+        ranks = np.array([1.0 / (i + 1) for i in range(len(slots))])
+        ranks /= ranks.sum()
+        labs = rgb_to_lab(np.array([unpack_rgb(slot.number) for slot in slots], dtype=np.uint8))
+        for lab, weight in zip(labs, ranks):
+            for index, share in soft_bin_weights(lab):
+                output[row, index] += weight * share
+    return np.sqrt(output)
+
+
+def test_palette_transform_matches_the_per_color_definition():
+    rng = np.random.default_rng(0)
+    inputs = [None, []]
+    for _ in range(60):
+        inputs.append(palette(*[tuple(int(v) for v in rng.integers(0, 256, 3)) for _ in range(int(rng.integers(1, 8)))]))
+    inputs.append(palette((0, 0, 0), (255, 255, 255), (255, 0, 0), (0, 255, 0), (0, 0, 255)))
+    assert np.allclose(PaletteEncoder().transform(inputs), slow_palette_reference(inputs), atol=1e-6)

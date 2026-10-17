@@ -23,7 +23,7 @@ from .session import OUTPUT_PREFIX, FeatureSpec, MapError
 
 PRESET_KEY = "mapping.preset"
 COORD_COLUMNS = 4
-K_NEIGHBORS = 10
+PLACE_BATCH = 5000
 STATUS_FILE = "status.json"
 PATH_SEPARATOR = "\n"
 
@@ -119,26 +119,32 @@ def decode_paths(blob: np.ndarray) -> list[str]:
     return text.split(PATH_SEPARATOR) if text else []
 
 
+def valued_paths(values: dict[str, dict[str, PathValue]], keys: list[str]) -> list[str]:
+    return sorted(path for path, entry in values.items() if any(key in entry for key in keys))
+
+
 class SpaceModel:
-    def __init__(self, preset, encoders, reducers, scales, train_paths, matrix, coords, built_at):
+    def __init__(self, preset, encoders, reducers, scales, paths, matrix, coords, built_at):
         self.preset = preset
         self.version = preset.version
         self.encoders: list[BaseEncoder] = encoders
         self.reducers: list[projection.BlockReducer] = reducers
         self.scales: list[projection.BlockScale] = scales
-        self.train_paths: list[str] = train_paths
-        self.train_index = {path: i for i, path in enumerate(train_paths)}
+        self.paths: list[str] = paths
+        self.index = {path: i for i, path in enumerate(paths)}
         self.matrix = matrix
+        self.trained = len(matrix)
         self.coords = coords
         self.built_at = built_at
-        self.neighbours = None
+        self.neighbor_index: projection.NeighborIndex | None = None
 
     @classmethod
     def fit(cls, preset: Preset, values: dict[str, dict[str, PathValue]], *, cancelled=lambda: False) -> SpaceModel:
-        paths = list(values)
+        params = preset.params.normalized()
+        valued = valued_paths(values, preset.value_keys())
+        paths = [valued[i] for i in projection.sample_rows(len(valued), params.train_limit, params.seed)]
         encoders, reducers, blocks = [], [], []
         has_value = np.zeros(len(paths), dtype=bool)
-        params = preset.params.normalized()
         for feature in preset.features:
             if cancelled():
                 raise MapError("Cancelled")
@@ -156,16 +162,36 @@ class SpaceModel:
         if active.size < 3:
             raise MapError("Not enough files have values for the selected keys.")
         combined, _stats, scales = projection.combine_blocks([(label, dense[active], present[active], weight) for label, dense, present, weight in blocks], params.seed)
-        neighbors = params.resolved_neighbors(active.size)
-        display = projection.embed(combined, 2, neighbors, params.min_dist, params.seed)
+        neighbors = projection.nearest_neighbors(combined, params.resolved_neighbors(active.size), params.seed)
         if cancelled():
             raise MapError("Cancelled")
-        grouping = projection.embed(combined, 2, neighbors, projection.GROUPING_MIN_DIST, params.seed)
+        display = projection.embed(combined, neighbors, params.min_dist, params.seed)
+        if cancelled():
+            raise MapError("Cancelled")
+        grouping = projection.embed(combined, neighbors, projection.GROUPING_MIN_DIST, params.seed)
         coords = np.hstack([display, grouping])
-        return cls(preset, encoders, reducers, scales, [paths[i] for i in active], combined.astype(np.float16), coords.astype(np.float32), time.time())
+        model = cls(preset, encoders, reducers, scales, [paths[i] for i in active], combined.astype(np.float16), coords.astype(np.float32), time.time())
+        learned = set(paths)
+        model.place_all([path for path in valued if path not in learned], values, cancelled)
+        return model
+
+    def place_all(self, paths: list[str], values: dict[str, dict[str, PathValue]], cancelled) -> None:
+        placed_paths, placed_coords = [], []
+        for start in range(0, len(paths), PLACE_BATCH):
+            if cancelled():
+                raise MapError("Cancelled")
+            batch = paths[start : start + PLACE_BATCH]
+            coords = self.place([values[path] for path in batch])
+            found = np.isfinite(coords).all(axis=1)
+            placed_paths += [path for path, ok in zip(batch, found) if ok]
+            placed_coords.append(coords[found])
+        if placed_paths:
+            self.paths = self.paths + placed_paths
+            self.index = {path: i for i, path in enumerate(self.paths)}
+            self.coords = np.vstack([self.coords, *placed_coords])
 
     def coords_for(self, path: str) -> tuple[float, ...] | None:
-        index = self.train_index.get(path)
+        index = self.index.get(path)
         return None if index is None else tuple(float(value) for value in self.coords[index])
 
     def place(self, entries: list[dict[str, PathValue]]) -> np.ndarray:
@@ -182,13 +208,9 @@ class SpaceModel:
         if rows.size == 0:
             return output
         query = projection.apply_block_scales([(dense[rows], present[rows]) for dense, present in parts], self.scales)
-        if self.neighbours is None:
-            from sklearn.neighbors import NearestNeighbors
-
-            self.neighbours = NearestNeighbors(n_neighbors=min(K_NEIGHBORS, len(self.train_paths))).fit(self.matrix.astype(np.float32))
-        distances, indices = self.neighbours.kneighbors(query)
-        weights = 1.0 / (distances + 1e-6)
-        output[rows] = (self.coords[indices] * weights[..., None]).sum(axis=1) / weights.sum(axis=1, keepdims=True)
+        if self.neighbor_index is None:
+            self.neighbor_index = projection.NeighborIndex(self.matrix)
+        output[rows] = self.neighbor_index.placement(query).apply(self.coords)
         return output
 
     def save(self, directory: Path) -> None:
@@ -198,7 +220,7 @@ class SpaceModel:
         stem = f"model-v{self.version}"
         arrays = directory / f"{stem}.npz.tmp"
         with open(arrays, "wb") as handle:
-            np.savez(handle, train_paths=encode_paths(self.train_paths), matrix=self.matrix, coords=self.coords)
+            np.savez(handle, paths=encode_paths(self.paths), matrix=self.matrix, coords=self.coords)
         os.replace(arrays, directory / f"{stem}.npz")
         state = {"preset": self.preset.to_dict(), "encoders": self.encoders, "reducers": self.reducers, "scales": self.scales, "built_at": self.built_at}
         write_atomic(directory / f"{stem}.pkl", pickle.dumps(state))
@@ -224,15 +246,15 @@ class SpaceModel:
                 AppLogger.info(f"[Mapping] The saved space model v{current.version} in {directory} was built from other settings; it will be retrained")
                 return None
             with np.load(stem.with_suffix(".npz")) as arrays:
-                train_paths = decode_paths(arrays["train_paths"])
+                paths = decode_paths(arrays["paths"])
                 matrix, coords = arrays["matrix"], arrays["coords"]
             encoders, reducers, scales = state["encoders"], state["reducers"], state["scales"]
-            if not len(train_paths) == len(matrix) == len(coords):
+            if len(paths) != len(coords) or not 0 < len(matrix) <= len(coords):
                 raise ValueError("model arrays have different row counts")
             if coords.ndim != 2 or coords.shape[1] != COORD_COLUMNS:
                 raise ValueError("model was built without grouping coordinates")
             if not len(preset.features) == len(encoders) == len(reducers) == len(scales):
                 raise ValueError("model blocks do not match the preset features")
-            return cls(preset, encoders, reducers, scales, train_paths, matrix, coords, float(state["built_at"]))
+            return cls(preset, encoders, reducers, scales, paths, matrix, coords, float(state["built_at"]))
         except (OSError, zipfile.BadZipFile, pickle.UnpicklingError, EOFError, AttributeError, ImportError, IndexError, KeyError, ValueError, TypeError, MemoryError) as e:
             raise SpaceLoadError(str(e)) from e

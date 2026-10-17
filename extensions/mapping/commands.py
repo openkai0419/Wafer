@@ -108,6 +108,15 @@ def _labels_checked() -> bool:
     return ViewSettings.instance().labels_shown
 
 
+def toggle_thumbnails(ctx):
+    settings = ViewSettings.instance()
+    settings.set_thumbnails_shown(not settings.thumbnails_shown)
+
+
+def _thumbnails_checked() -> bool:
+    return ViewSettings.instance().thumbnails_shown
+
+
 def image_scale_up(ctx, ratio: float = 1.1):
     settings = ViewSettings.instance()
     settings.set_image_scale(settings.image_scale * float(ratio))
@@ -157,6 +166,7 @@ class MappingViewCommands(MenuGroup):
             CommandMeta(path="mapping.drill_up", display="Back", func=drill_up),
             CommandMeta(path="mapping.recompute", display="Recompute", func=recompute),
             CommandMeta(path="mapping.toggle_labels", display="Show Labels", func=toggle_labels, checked=_labels_checked),
+            CommandMeta(path="mapping.toggle_thumbnails", display="Show Thumbnails", func=toggle_thumbnails, checked=_thumbnails_checked),
             CommandMeta(path="mapping.image_scale_up", display="Larger Images", func=image_scale_up, params=[CommandParam(name="ratio", value=1.1, min_value=1.01, max_value=4.0)]),
             CommandMeta(path="mapping.image_scale_down", display="Smaller Images", func=image_scale_down, params=[CommandParam(name="ratio", value=1.1, min_value=1.01, max_value=4.0)]),
             CommandMeta(path="mapping.selection_mode", display="Select Whole Groups", func=toggle_selection_mode, checked=_group_mode_checked),

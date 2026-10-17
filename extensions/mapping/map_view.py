@@ -22,6 +22,7 @@ POINT_SIZE = 3.0
 MIN_POINT_SIZE = 1.0
 ROUND_POINT_SIZE = 3.0
 THUMB_SIZE = 64
+FIT_IMAGE_SIZE = 32
 RING = 2
 ZOOM_STEP = 1.25
 MIN_IMAGE_SCALE = 0.02
@@ -32,6 +33,7 @@ FRAME_MIN_SPAN = SCENE_SIZE * 0.02
 IMAGE_LIMIT = 300
 IMAGE_SPACING = 0.01
 IMAGE_REFRESH_MS = 50
+IMAGE_SCAN_MIN = 4096
 PRIORITY_SEED = 0
 NO_ROWS = np.zeros(0, dtype=np.int64)
 NO_RECTS = np.zeros((0, 4), dtype=np.float64)
@@ -51,6 +53,16 @@ def combine_selection(base: np.ndarray, target: np.ndarray, operation: str) -> n
     if operation == "remove":
         return base & ~target
     return target.copy()
+
+
+def first_per_cell(points: np.ndarray, cell: float, limit: int) -> np.ndarray:
+    scanned = min(len(points), max(limit * 4, IMAGE_SCAN_MIN))
+    while True:
+        cells = np.floor(points[:scanned] / cell).astype(np.int64)
+        _, first = np.unique((cells[:, 0] << 32) ^ (cells[:, 1] & 0xFFFFFFFF), return_index=True)
+        if first.size >= limit or scanned == len(points):
+            return np.sort(first)[:limit]
+        scanned = min(len(points), scanned * 4)
 
 
 def scene_positions(result: MapResult) -> np.ndarray:
@@ -143,8 +155,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.point_base = POINT_SIZE
         self.labels_visible = True
         self.fit_scale = 1.0
-        self.thumbnail_zoom = 2.0
-        self.thumbnails = False
+        self.thumbnails = True
         self.image_scale = 1.0
         self.selection_mode = "single"
         self.hover_path: str | None = None
@@ -187,7 +198,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         return self.dot_size() + dpix(RING) * 2
 
     def display_size(self) -> float:
-        size = THUMB_SIZE * self.image_scale * self.zoom / max(self.thumbnail_zoom, 1e-6)
+        size = FIT_IMAGE_SIZE * self.image_scale * self.zoom
         return min(size, self.image_cap) if self.image_cap > 0 else size
 
     def set_image_cap(self, cap: float) -> None:
@@ -282,7 +293,6 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self.begin_geometry_change()
             self.fitInView(core.adjusted(-margin, -margin, margin, margin), Qt.KeepAspectRatio)
             self.fit_scale = self.transform().m11()
-        self.sync_thumbnail_mode()
         self.invalidate()
 
     def add_labels(self, result: MapResult) -> None:
@@ -300,19 +310,11 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self.scene().addItem(label)
             self.labels.append(label)
 
-    def set_thumbnail_zoom(self, zoom: float):
-        if zoom != self.thumbnail_zoom:
-            self.begin_geometry_change()
-            self.thumbnail_zoom = zoom
-            self.invalidate()
-        self.sync_thumbnail_mode()
-
-    def sync_thumbnail_mode(self):
-        enabled = self.zoom >= self.thumbnail_zoom
-        if enabled == self.thumbnails:
+    def set_thumbnails_visible(self, visible: bool) -> None:
+        if bool(visible) == self.thumbnails:
             return
         self.begin_geometry_change()
-        self.thumbnails = enabled
+        self.thumbnails = bool(visible)
         self.invalidate()
 
     def device_positions(self) -> np.ndarray:
@@ -369,9 +371,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if self.image_limit <= 0 or visible.size == 0:
             return NO_ROWS
         ranked = visible[np.lexsort((self.priority[visible], ~self.selected[visible]))]
-        cells = np.floor(device[ranked] / max(self.item_extent() * self.image_spacing, 1.0)).astype(np.int64)
-        _, first = np.unique(cells, axis=0, return_index=True)
-        chosen = ranked[np.sort(first)][: self.image_limit]
+        chosen = ranked[first_per_cell(device[ranked], max(self.item_extent() * self.image_spacing, 1.0), self.image_limit)]
         center = np.array([size.width() / 2, size.height() / 2])
         return chosen[np.argsort(((device[chosen] - center) ** 2).sum(axis=1), kind="stable")]
 
@@ -488,7 +488,6 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         center, span = (low + high) / 2, np.maximum(high - low, FRAME_MIN_SPAN) * (1 + FRAME_MARGIN * 2)
         self.begin_geometry_change()
         self.fitInView(QtCore.QRectF(center[0] - span[0] / 2, center[1] - span[1] / 2, span[0], span[1]), Qt.KeepAspectRatio)
-        self.sync_thumbnail_mode()
         self.invalidate()
 
     def reveal(self, row: int):
@@ -523,7 +522,6 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             factor = ZOOM_STEP**steps
             self.begin_geometry_change()
             self.scale(factor, factor)
-            self.sync_thumbnail_mode()
         event.accept()
 
     def leaveEvent(self, event):

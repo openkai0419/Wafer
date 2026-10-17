@@ -516,34 +516,31 @@ def rgb_to_lab(rgb: np.ndarray) -> np.ndarray:
     return np.stack([116.0 * f[..., 1] - 16.0, 500.0 * (f[..., 0] - f[..., 1]), 200.0 * (f[..., 1] - f[..., 2])], axis=-1)
 
 
-def unpack_rgb(value: float) -> tuple[int, int, int]:
-    packed = int(value) & 0xFFFFFF
-    return (packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF
+def packed_lab(numbers: np.ndarray) -> np.ndarray:
+    packed = np.asarray(numbers, dtype=np.float64).astype(np.int64) & 0xFFFFFF
+    rgb = np.stack([(packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF], axis=-1).astype(np.uint8)
+    return rgb_to_lab(rgb)
 
 
 def first_slot_lab(inputs: Sequence[list[PathValue] | None]) -> np.ndarray:
     output = np.full((len(inputs), 3), np.nan, dtype=np.float32)
     rows = [row for row, slots in enumerate(inputs) if slots]
     if rows:
-        packed = np.array([inputs[row][0].number for row in rows], dtype=np.float64).astype(np.int64) & 0xFFFFFF
-        rgb = np.stack([(packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF], axis=-1).astype(np.uint8)
-        output[rows] = rgb_to_lab(rgb)
+        output[rows] = packed_lab(np.array([inputs[row][0].number for row in rows]))
     return output
 
 
-def soft_bin_weights(lab: np.ndarray) -> list[tuple[int, float]]:
-    coords = []
-    for value, (low, high), bins in zip(lab, PALETTE_RANGE, PALETTE_BINS):
-        position = (min(max(float(value), low), high) - low) / (high - low) * bins - 0.5
-        base = math.floor(position)
+def soft_bins(labs: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    indices, weights = np.zeros((len(labs), 1), dtype=np.int64), np.ones((len(labs), 1), dtype=np.float64)
+    for channel, ((low, high), bins) in enumerate(zip(PALETTE_RANGE, PALETTE_BINS)):
+        position = (np.clip(labs[:, channel].astype(np.float64), low, high) - low) / (high - low) * bins - 0.5
+        base = np.floor(position)
         fraction = position - base
-        coords.append([(min(max(base, 0), bins - 1), 1.0 - fraction), (min(max(base + 1, 0), bins - 1), fraction)])
-    weights = []
-    for i, wi in coords[0]:
-        for j, wj in coords[1]:
-            for k, wk in coords[2]:
-                weights.append(((i * PALETTE_BINS[1] + j) * PALETTE_BINS[2] + k, wi * wj * wk))
-    return weights
+        channel_bins = np.stack([np.clip(base, 0, bins - 1), np.clip(base + 1, 0, bins - 1)], axis=1).astype(np.int64)
+        channel_weights = np.stack([1.0 - fraction, fraction], axis=1)
+        indices = (indices[:, :, None] * bins + channel_bins[:, None, :]).reshape(len(labs), -1)
+        weights = (weights[:, :, None] * channel_weights[:, None, :]).reshape(len(labs), -1)
+    return indices, weights
 
 
 class PaletteEncoder(BaseEncoder):
@@ -565,17 +562,19 @@ class PaletteEncoder(BaseEncoder):
         self.first_colors = first_slot_lab(inputs)
 
     def transform(self, inputs):
-        output = np.zeros((len(inputs), int(np.prod(PALETTE_BINS))), dtype=np.float32)
+        output = np.zeros((len(inputs), int(np.prod(PALETTE_BINS))), dtype=np.float64)
+        rows, ranks, numbers = [], [], []
         for row, slots in enumerate(inputs):
             if not slots:
                 continue
-            ranks = np.array([1.0 / (i + 1) for i in range(len(slots))])
-            ranks /= ranks.sum()
-            labs = rgb_to_lab(np.array([unpack_rgb(slot.number) for slot in slots], dtype=np.uint8))
-            for lab, weight in zip(labs, ranks):
-                for index, share in soft_bin_weights(lab):
-                    output[row, index] += weight * share
-        return np.sqrt(output)
+            weights = 1.0 / np.arange(1, len(slots) + 1)
+            rows += [row] * len(slots)
+            ranks.append(weights / weights.sum())
+            numbers += [slot.number for slot in slots]
+        if rows:
+            indices, shares = soft_bins(packed_lab(np.array(numbers)))
+            np.add.at(output, (np.array(rows)[:, None], indices), np.concatenate(ranks)[:, None] * shares)
+        return np.sqrt(output).astype(np.float32)
 
     def compact(self):
         self.first_colors = np.zeros((0, 3), dtype=np.float32)

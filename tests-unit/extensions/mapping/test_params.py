@@ -1,6 +1,6 @@
 import pytest
 
-from extensions.mapping.params import MAX_NEIGHBORS, STAGES, MapParams, changed_stage, min_group_size, noise_strictness, param_specs
+from extensions.mapping.params import MAX_NEIGHBORS, STAGES, MapParams, changed_stage, param_specs
 
 
 def test_every_param_has_stage_and_description():
@@ -44,11 +44,10 @@ def test_dict_roundtrip_ignores_unknown_and_bad_values():
 
 
 def test_group_sizes_follow_the_number_of_files():
-    assert min_group_size(100) == 5
-    assert min_group_size(5000) == 10
-    assert min_group_size(20000) == min_group_size(1_000_000) == 30
-    assert noise_strictness(100) == 5
-    assert noise_strictness(20000) == 10
+    params = MapParams()
+    assert params.group_sizes(100) == (5, 5)
+    assert params.group_sizes(5000) == (10, 10)
+    assert params.group_sizes(20000) == params.group_sizes(1_000_000) == (30, 10)
 
 
 @pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan"), 10**400, "inf", "nan"])
@@ -106,3 +105,12 @@ def test_training_limit_is_a_layout_setting_where_zero_means_all():
 def test_neighbors_never_exceed_the_cap():
     assert MapParams().resolved_neighbors(1_000_000) == MAX_NEIGHBORS == 1000
     assert MapParams(neighbors=4.0).resolved_neighbors(100_000) == MAX_NEIGHBORS
+
+
+def test_group_size_setting_scales_the_automatic_size():
+    spec = next(spec for name, spec, _ in param_specs() if name == "group_size")
+    assert spec.stage == "view" and MapParams().group_size == 1.0
+    assert MapParams(group_size=2.0).group_sizes(5000) == (20, 10)
+    assert MapParams(group_size=0.5).group_sizes(5000) == (5, 5)
+    assert MapParams(group_size=0.25).group_sizes(100) == (2, 2)
+    assert changed_stage(MapParams(), MapParams(group_size=2.0)) == "view"

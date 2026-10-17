@@ -364,3 +364,29 @@ def test_grouping_text_roundtrip_and_bad_values():
     assert np.allclose(grouping_values(grouping_text(numbers)), numbers, rtol=1e-5)
     assert grouping_values("1,2") is None and grouping_values("") is None
     assert grouping_values(",".join(["x"] * projection.GROUPING_DIMS)) is None
+
+
+def test_group_size_regroups_the_shown_files_without_moving_them(monkeypatch):
+    seen = []
+    real_cluster = projection.cluster
+    monkeypatch.setattr(projection, "cluster", lambda space, size, samples: seen.append((size, samples)) or real_cluster(space, size, samples))
+    values = space_values(40)
+    layout = SpaceLayout(list(values), values, space_preset())
+    first = layout.run(MapParams())
+    finer = layout.run(MapParams(group_size=0.5))
+    again = layout.run(MapParams())
+    assert seen == [MapParams().group_sizes(40), MapParams(group_size=0.5).group_sizes(40)]
+    assert np.array_equal(first.positions, finer.positions) and np.array_equal(first.labels, again.labels)
+    assert layout.is_grouped()
+
+
+def test_quick_train_uses_the_group_size(monkeypatch, embed_calls):
+    seen = []
+    real_cluster = projection.cluster
+    monkeypatch.setattr(projection, "cluster", lambda space, size, samples: seen.append(size) or real_cluster(space, size, samples))
+    runner = pipeline()
+    runner.run(make_request(params=MapParams(group_size=2.0)))
+    layouts = len(embed_calls)
+    runner.run(make_request(params=MapParams(group_size=0.5)))
+    assert seen == [MapParams(group_size=2.0).group_sizes(40)[0], MapParams(group_size=0.5).group_sizes(40)[0]]
+    assert len(embed_calls) == layouts

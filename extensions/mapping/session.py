@@ -16,7 +16,7 @@ from wafer.core.logs import AppLogger
 
 from . import projection
 from .encoders import ENCODERS, SUMMARY_OPTION, BaseEncoder, feature_input
-from .params import MapParams, min_group_size, noise_strictness
+from .params import MapParams
 
 if TYPE_CHECKING:
     from .space import Preset
@@ -218,7 +218,7 @@ class MapPipeline:
         if cancelled():
             return None
         diagnostics.blocks = self._stats
-        labels = self._group(group_key, count, diagnostics)
+        labels = self._group((group_key, params.group_sizes(self._active.size)), count, diagnostics)
         if cancelled():
             return None
         group_terms = self._describe(labels, blocks, params)
@@ -280,12 +280,11 @@ class MapPipeline:
     def inputs(self, feature, request) -> list:
         return [feature_input(request.values.get(path, {}), feature.key, ENCODERS[feature.encoder]) for path in request.paths]
 
-    def _group(self, group_key, count, diagnostics) -> np.ndarray:
-        if group_key != self._cluster_key:
+    def _group(self, cluster_key, count, diagnostics) -> np.ndarray:
+        if cluster_key != self._cluster_key:
             with timed(diagnostics, "cluster"):
-                size = self._active.size
-                self._labels = projection.cluster(self._group_points, min_group_size(size), noise_strictness(size))
-            self._cluster_key = group_key
+                self._labels = projection.cluster(self._group_points, *cluster_key[1])
+            self._cluster_key = cluster_key
         labels = np.full(count, -1, dtype=np.int32)
         labels[self._active] = self._labels
         record_groups(diagnostics, self._labels)
@@ -304,7 +303,7 @@ class SpaceLayout:
         self.lock = threading.Lock()
         self.coords: np.ndarray | None = None
         self.describers: list[tuple[BaseEncoder, np.ndarray]] | None = None
-        self.active_labels: np.ndarray | None = None
+        self.labels_by_sizes: dict[tuple[int, int], np.ndarray] = {}
 
     def run(self, params: MapParams, *, grouped: bool = True) -> MapResult:
         with self.lock:
@@ -327,7 +326,7 @@ class SpaceLayout:
         terms: dict[int, list[str]] = {}
         active_labels = np.zeros(active.size, dtype=np.int32)
         if grouped and active.size >= 3:
-            active_labels = self.group(raw[active, 2:], diagnostics)
+            active_labels = self.group(raw[active, 2:], params, diagnostics)
             labels = np.full(count, -1, dtype=np.int32)
             labels[active] = active_labels
             with timed(diagnostics, "describe"):
@@ -340,7 +339,7 @@ class SpaceLayout:
         return MapResult(list(self.paths), positions, outliers, ~placed, labels, terms, order, diagnostics)
 
     def is_grouped(self) -> bool:
-        return self.active_labels is not None
+        return bool(self.labels_by_sizes)
 
     def space_coords(self) -> np.ndarray:
         if self.coords is None:
@@ -359,12 +358,12 @@ class SpaceLayout:
             self.coords = raw
         return self.coords
 
-    def group(self, grouping: np.ndarray, diagnostics: MapDiagnostics) -> np.ndarray:
-        if self.active_labels is None:
-            size = len(grouping)
+    def group(self, grouping: np.ndarray, params: MapParams, diagnostics: MapDiagnostics) -> np.ndarray:
+        sizes = params.group_sizes(len(grouping))
+        if sizes not in self.labels_by_sizes:
             with timed(diagnostics, "cluster"):
-                self.active_labels = projection.cluster(grouping, min_group_size(size), noise_strictness(size))
-        return self.active_labels
+                self.labels_by_sizes[sizes] = projection.cluster(grouping, *sizes)
+        return self.labels_by_sizes[sizes]
 
     def space_describers(self, active: np.ndarray, params: MapParams) -> list[tuple[BaseEncoder, np.ndarray]]:
         if self.describers is None:

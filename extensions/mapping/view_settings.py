@@ -11,7 +11,7 @@ from .params import MapParams, param_specs
 
 VIEW_STAGES = ("view",)
 VIEW_PARAMS = tuple(name for name, spec, _ in param_specs() if spec.stage in VIEW_STAGES)
-RELAYOUT_PARAMS = frozenset({"outlier_percent", "label_terms"})
+RELAYOUT_PARAMS = frozenset({"outlier_percent", "label_terms", "group_size"})
 SELECTION_MODES = ("single", "group")
 DEFAULT_IMAGE_CAP = MapParams().hover_size
 

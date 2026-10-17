@@ -508,3 +508,11 @@ def test_map_is_shown_before_its_groups(qtbot, space_data, monkeypatch):
     assert shown[:2] == [True, False]
     assert w.current_result().labels is not None and "groups" in w.message_text()
     w.close()
+
+
+def test_group_size_regroups_the_map(mapping, qtbot):
+    previous = mapping.current_result()
+    settings().set_params(MapParams(group_size=0.25))
+    wait_for_new_result(qtbot, mapping, previous)
+    assert np.array_equal(mapping.current_result().positions, previous.positions, equal_nan=True)
+    assert "group_size" in mapping.toolbar.tuning.controls

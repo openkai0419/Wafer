@@ -27,6 +27,7 @@ AUTO_GROUP_MIN = 5
 AUTO_GROUP_MAX = 30
 AUTO_GROUP_DIVISOR = 500
 AUTO_STRICTNESS_MAX = 10
+MIN_GROUP_SIZE = 2
 AUTO_NEIGHBORS_MIN = 15
 AUTO_NEIGHBORS_SHARE = 0.005
 MIN_NEIGHBORS = 2
@@ -73,6 +74,15 @@ class MapParams:
         maximum=20.0,
         step=0.5,
     )
+    group_size: float = param(
+        1.0,
+        stage="view",
+        label="Group size",
+        description="Smallest group, as a multiple of the automatic size (about 1 in 500 shown files, 5 to 30). Lower makes more, smaller groups.",
+        minimum=0.25,
+        maximum=4.0,
+        step=0.25,
+    )
     point_size: float = param(3.0, stage="view", label="Point size", description="Size of the dots in pixels.", minimum=1.0, maximum=16.0, step=1.0)
     image_spacing: float = param(
         0.01, stage="view", label="Image spacing", description="Space between images, relative to their size. Lower lets them overlap more.", minimum=0.01, maximum=2.0, step=0.05
@@ -117,13 +127,10 @@ class MapParams:
     def resolved_neighbors(self, count: int) -> int:
         return min(MAX_NEIGHBORS, max(MIN_NEIGHBORS, round(max(AUTO_NEIGHBORS_MIN, count * AUTO_NEIGHBORS_SHARE) * self.neighbors)))
 
-
-def min_group_size(count: int) -> int:
-    return min(AUTO_GROUP_MAX, max(AUTO_GROUP_MIN, count // AUTO_GROUP_DIVISOR))
-
-
-def noise_strictness(count: int) -> int:
-    return min(min_group_size(count), AUTO_STRICTNESS_MAX)
+    def group_sizes(self, count: int) -> tuple[int, int]:
+        automatic = min(AUTO_GROUP_MAX, max(AUTO_GROUP_MIN, count // AUTO_GROUP_DIVISOR))
+        size = max(MIN_GROUP_SIZE, round(automatic * self.group_size))
+        return size, min(size, AUTO_STRICTNESS_MAX)
 
 
 def param_specs() -> list[tuple[str, ParamSpec, int | float]]:

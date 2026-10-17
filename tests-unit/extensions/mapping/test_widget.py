@@ -115,7 +115,7 @@ def test_set_files_places_files_from_the_space(mapping):
 
 def test_only_view_settings_and_no_keys_are_shown(mapping):
     view_params = {name for name, spec, _ in param_specs() if spec.stage == "view"}
-    assert set(mapping.toolbar.tuning.controls) == view_params
+    assert set(mapping.toolbar.tuning.controls) == view_params - {"group_size"}
     assert not hasattr(mapping, "feature_bar")
     assert mapping.edit_space_button.isVisibleTo(mapping)
 
@@ -510,9 +510,25 @@ def test_map_is_shown_before_its_groups(qtbot, space_data, monkeypatch):
     w.close()
 
 
-def test_group_size_regroups_the_map(mapping, qtbot):
+def test_group_size_slider_regroups_the_map(mapping, qtbot):
     previous = mapping.current_result()
-    settings().set_params(MapParams(group_size=0.25))
+    slider = mapping.toolbar.group_slider
+    slider.setValue(slider.minimum())
+    assert settings().params.group_size == 0.25 and mapping.toolbar.group_value.text() == "\N{MULTIPLICATION SIGN}0.25"
     wait_for_new_result(qtbot, mapping, previous)
     assert np.array_equal(mapping.current_result().positions, previous.positions, equal_nan=True)
-    assert "group_size" in mapping.toolbar.tuning.controls
+    slider.setValue(slider.maximum())
+    assert settings().params.group_size == 4.0
+
+
+def test_group_size_slider_follows_the_shared_settings(mapping, qtbot):
+    from extensions.mapping.space_panel import MappingSpaceWidget
+
+    with patch.object(MappingSpaceWidget, "refresh"):
+        space = MappingSpaceWidget()
+    qtbot.addWidget(space)
+    mapping.toolbar.group_slider.setValue(mapping.toolbar.group_slider.maximum())
+    assert space.toolbar.group_slider.value() == space.toolbar.group_slider.maximum()
+    settings().set_params(MapParams(group_size=1.0))
+    assert mapping.toolbar.group_value.text() == "\N{MULTIPLICATION SIGN}1.00"
+    space.close()

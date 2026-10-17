@@ -15,7 +15,7 @@ from .session import MapDiagnostics
 class TuningPanel(QtWidgets.QWidget):
     params_changed = QtCore.Signal(object)
 
-    def __init__(self, stages: tuple[str, ...] | None = None, parent=None):
+    def __init__(self, stages: tuple[str, ...] | None = None, exclude: frozenset[str] = frozenset(), parent=None):
         super().__init__(parent)
         palette = ThemeManager.instance().palette
         self.current = MapParams()
@@ -27,7 +27,7 @@ class TuningPanel(QtWidgets.QWidget):
         grid.setVerticalSpacing(dpix(2))
         row = 0
         for name, spec, default in param_specs():
-            if stages is not None and spec.stage not in stages:
+            if (stages is not None and spec.stage not in stages) or name in exclude:
                 continue
             label = QtWidgets.QLabel(t(spec.label))
             label.setToolTip(t(spec.description))

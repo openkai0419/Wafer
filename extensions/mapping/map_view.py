@@ -244,10 +244,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         return mask | np.isin(self.group_of, groups) if groups.size else mask
 
     def expand_to_groups(self, rows: Iterable[int]) -> list[int]:
-        mask = self.row_mask(rows)
-        groups = np.unique(self.group_of[mask]) if self.group_of.size == mask.size else np.zeros(0, dtype=np.int32)
-        groups = groups[groups >= 0]
-        return np.flatnonzero(mask | np.isin(self.group_of, groups) if groups.size else mask).tolist()
+        return np.flatnonzero(self.with_groups(self.row_mask(rows))).tolist()
 
     def clear_map(self):
         self.scene().clear()

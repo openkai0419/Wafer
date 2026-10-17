@@ -99,3 +99,20 @@ def test_panel_commands_target_the_panel_the_command_came_from(monkeypatch):
     space.refresh.assert_called_once_with()
     commands.select_all(Ctx())
     mapping.select_all.assert_called_once_with()
+
+
+def test_drill_commands_only_drive_the_mapping_panel(monkeypatch):
+    from extensions.mapping.widget import MappingWidget
+
+    mapping = MagicMock(spec=MappingWidget)
+    monkeypatch.setattr(MappingWidget, "instance", classmethod(lambda cls: mapping))
+    space = MagicMock()
+    commands.drill_down(Ctx(map_panel=space))
+    commands.drill_up(Ctx(map_panel=space))
+    space.drill_down.assert_not_called()
+    mapping.drill_down.assert_not_called()
+    mapping.drill_up.assert_not_called()
+    commands.drill_down(Ctx(map_panel=mapping))
+    commands.drill_up(Ctx())
+    mapping.drill_down.assert_called_once_with()
+    mapping.drill_up.assert_called_once_with()

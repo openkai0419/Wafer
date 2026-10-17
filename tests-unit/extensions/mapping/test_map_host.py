@@ -72,6 +72,17 @@ def test_map_image_size_picks_the_thumbnail_bucket(qtbot, monkeypatch):
     assert host.thumbs.size == map_host.THUMB_BUCKETS[0]
 
 
+def test_many_map_images_fall_back_to_a_bucket_whose_cache_holds_them(qtbot, monkeypatch):
+    monkeypatch.setattr(map_host, "dpix", lambda value: value)
+    host = make_host(qtbot)
+    monkeypatch.setattr(host.thumbs, "request", lambda paths: None)
+    host.map_thumbnails(["a.png"], 400)
+    assert host.thumbs.size == 512
+    paths = [f"{i}.png" for i in range(300)]
+    host.map_thumbnails(paths, 400)
+    assert host.thumbs.size == 256 and host.thumbs.cache_limit >= len(paths)
+
+
 def test_hover_size_zero_hides_preview(qtbot):
     host = make_host(qtbot)
     host.show_hover("a.png", QtCore.QPoint(300, 300))

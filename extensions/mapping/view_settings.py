@@ -13,6 +13,7 @@ VIEW_STAGES = ("view",)
 VIEW_PARAMS = tuple(name for name, spec, _ in param_specs() if spec.stage in VIEW_STAGES)
 RELAYOUT_PARAMS = frozenset({"outlier_percent", "label_terms"})
 SELECTION_MODES = ("single", "group")
+DEFAULT_IMAGE_CAP = MapParams().hover_size
 
 
 class ViewSettings(QtCore.QObject):
@@ -69,6 +70,7 @@ class ViewSettings(QtCore.QObject):
         }
 
     def load(self, state: dict[str, Any]) -> None:
+        before = self.to_dict()
         params = state.get("params")
         self.params = MapParams.from_dict(params) if isinstance(params, dict) else MapParams()
         self.labels_shown = state.get("labels", True) is not False
@@ -76,7 +78,9 @@ class ViewSettings(QtCore.QObject):
         self.image_scale = min(max(float(scale), MIN_IMAGE_SCALE), MAX_IMAGE_SCALE) if isinstance(scale, (int, float)) and math.isfinite(scale) else 1.0
         mode = state.get("selection_mode")
         self.selection_mode = mode if mode in SELECTION_MODES else "single"
-        self.changed.emit(True)
+        after = self.to_dict()
+        if after != before:
+            self.changed.emit(any(before["params"][name] != after["params"][name] for name in RELAYOUT_PARAMS))
 
     def apply(self, view, host) -> None:
         params = self.params
@@ -84,7 +88,7 @@ class ViewSettings(QtCore.QObject):
         view.set_thumbnail_zoom(params.thumbnail_zoom)
         view.set_image_limit(params.max_images)
         view.set_image_spacing(params.image_spacing)
-        view.set_image_cap(params.hover_size)
+        view.set_image_cap(params.hover_size or DEFAULT_IMAGE_CAP)
         view.set_point_size(params.point_size)
         view.set_image_scale(self.image_scale)
         view.set_labels_visible(self.labels_shown)

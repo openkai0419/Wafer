@@ -68,14 +68,23 @@ def select_all(ctx):
         panel.select_all()
 
 
-@require(m="MappingWidget")
-def drill_down(ctx, m):
-    m.drill_down()
+def mapping_panel(ctx):
+    from .widget import MappingWidget
+
+    panel = map_panel(ctx)
+    return panel if isinstance(panel, MappingWidget) else None
 
 
-@require(m="MappingWidget")
-def drill_up(ctx, m):
-    m.drill_up()
+def drill_down(ctx):
+    panel = mapping_panel(ctx)
+    if panel is not None:
+        panel.drill_down()
+
+
+def drill_up(ctx):
+    panel = mapping_panel(ctx)
+    if panel is not None:
+        panel.drill_up()
 
 
 def frame_selection(ctx):

@@ -10,6 +10,7 @@ from extensions.mapping import space, space_panel
 from extensions.mapping.params import MapParams
 from extensions.mapping.session import FeatureSpec
 from extensions.mapping.space import Preset, SpaceStatus, save_preset, write_status
+from extensions.mapping.view_settings import ViewSettings
 from extensions.mapping.space_panel import MappingSpacePlugin, MappingSpaceWidget, SpaceSnapshot, current_status, read_snapshot, status_text
 from wafer.core.db.db_utils import open_readonly
 from wafer.core.db.file_db import FileDB
@@ -81,10 +82,22 @@ def test_param_edits_mark_dirty(widget):
     assert not w.is_dirty() and w.tuning.params() == MapParams()
 
 
-def test_form_hides_cluster_and_view_stages(widget):
+def test_form_shows_layout_stage_only(widget):
     w, _saved, _resets = widget
     assert "n_neighbors" in w.tuning.controls
     assert "hover_size" not in w.tuning.controls and "min_cluster_size" not in w.tuning.controls
+
+
+def test_space_panel_does_not_restore_view_settings(qtbot, monkeypatch):
+    monkeypatch.setattr(MappingSpaceWidget, "refresh", lambda self: None)
+    MappingSpacePlugin.saved_state = {"view": {"labels": False}}
+    try:
+        w = MappingSpacePlugin().create_widget()
+        qtbot.addWidget(w)
+        assert ViewSettings.instance().labels_shown and "view" not in w.save_state()
+        w.close()
+    finally:
+        MappingSpacePlugin.saved_state = {}
 
 
 def test_save_and_retrain_bumps_version_and_resets_collection(widget):
@@ -303,7 +316,7 @@ def test_snapshot_keeps_counts_when_the_preview_fails(database, monkeypatch):
     def broken(*args, **kwargs):
         raise ValueError("bad layout")
 
-    monkeypatch.setattr(space_panel, "layout_from_space", broken)
+    monkeypatch.setattr(space_panel.SpaceLayout, "run", broken)
     snapshot = read_snapshot("map", MapParams())
     assert snapshot.result is None and snapshot.problem == "bad layout"
     assert snapshot.total == 12 and snapshot.placed == 10 and snapshot.status.state == "ready"
@@ -353,7 +366,7 @@ def test_indexer_updates_for_this_database_refresh_the_status_once_per_interval(
 def test_status_refresh_reads_counts_without_the_preview(widget, database, monkeypatch, qtbot):
     w, _saved, _resets = widget
     monkeypatch.setattr(space_panel, "load_preset", space.load_preset)
-    monkeypatch.setattr(space_panel, "layout_from_space", lambda *args, **kwargs: pytest.fail("the status refresh must not lay out the preview"))
+    monkeypatch.setattr(space_panel.SpaceLayout, "run", lambda *args, **kwargs: pytest.fail("the status refresh must not lay out the preview"))
     w.db_name = "map"
     w.refresh_status()
     qtbot.waitUntil(lambda: w.total == 12, timeout=10000)
@@ -443,3 +456,26 @@ def test_quick_train_size_is_kept_in_the_panel_state(widget):
     w.quick_size.setValue(space_panel.QUICK_TRAIN_FILES)
     w.restore_state(state)
     assert w.quick_size.value() == 8000
+
+
+def test_label_and_outlier_changes_relayout_the_shown_sample(widget, qtbot, monkeypatch):
+    from extensions.mapping.session import SpaceLayout
+    from wafer.core.db.path_values import PathValue
+
+    w, _saved, _resets = widget
+    values = {
+        f"c:/{i}.png": {
+            "tags": PathValue("cat" if i < 6 else "dog"),
+            "mapping.x": PathValue(str(i), float(i)),
+            "mapping.y": PathValue("0", 0.0),
+            "mapping.gx": PathValue(str(i), float(i)),
+            "mapping.gy": PathValue("0", 0.0),
+            "mapping.model": PathValue("1", 1.0),
+        }
+        for i in range(12)
+    }
+    w.preview_layout = SpaceLayout(list(values), values, w.saved)
+    monkeypatch.setattr(space_panel, "read_snapshot", lambda *args: pytest.fail("a view change must not read a new sample"))
+    ViewSettings.instance().set_params(MapParams(label_terms=1))
+    qtbot.waitUntil(lambda: w.shown is not None, timeout=5000)
+    assert w.shown.paths == list(values) and "12 files" in w.count_label.text()

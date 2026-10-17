@@ -399,6 +399,7 @@ def test_hover_goes_through_host_and_hides_with_the_panel(mapping):
 def test_hover_size_param_reaches_host(mapping):
     settings().set_params(MapParams(hover_size=0))
     assert mapping.host.hover_size == 0
+    assert mapping.map_view.image_cap == MapParams().hover_size
     mapping.show_hover("c:/1.png", QtCore.QPoint(300, 300))
     assert not mapping.host.preview.isVisible()
 
@@ -437,15 +438,16 @@ def test_recompute_command_refreshes(mapping):
     fetch.assert_called_once_with(keep_levels=True)
 
 
-def test_state_roundtrip_carries_the_shared_view_settings(mapping):
+def test_widget_state_leaves_the_shared_view_settings_to_the_plugin(mapping):
     settings().set_labels_shown(False)
-    settings().set_image_scale(2.0)
-    settings().set_selection_mode("group")
     state = mapping.save_state()
-    assert set(state) == {"view", "splitter"}
-    settings().load({})
-    assert settings().labels_shown and settings().image_scale == 1.0 and settings().selection_mode == "single"
-    mapping.restore_state(state)
+    assert set(state) == {"splitter"}
+    mapping.restore_state({**state, "view": {"labels": True}})
+    assert not settings().labels_shown
+
+
+def test_loaded_view_settings_reach_the_map(mapping):
+    settings().load({"labels": False, "image_scale": 2.0, "selection_mode": "group"})
     assert not settings().labels_shown and settings().image_scale == 2.0 and settings().selection_mode == "group"
     assert mapping.map_view.image_scale == 2.0 and mapping.map_view.selection_mode == "group"
     assert mapping.toolbar.mode_buttons["group"].isChecked() and not mapping.toolbar.label_check.isChecked()
@@ -453,8 +455,8 @@ def test_state_roundtrip_carries_the_shared_view_settings(mapping):
 
 
 @pytest.mark.parametrize("bad", ["x", None, float("nan"), float("inf")])
-def test_restore_state_ignores_bad_values(mapping, bad):
-    mapping.restore_state({"view": {"image_scale": bad, "selection_mode": "weird"}})
+def test_loading_view_settings_ignores_bad_values(mapping, bad):
+    settings().load({"image_scale": bad, "selection_mode": "weird"})
     assert settings().image_scale == 1.0 and settings().selection_mode == "single"
 
 

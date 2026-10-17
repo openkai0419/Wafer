@@ -6,7 +6,7 @@ from typing import Any
 
 from wafer.core.logs import AppLogger
 
-STAGES = ("layout", "cluster", "view")
+STAGES = ("layout", "view")
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,10 +46,6 @@ class MapParams:
         0.1, stage="layout", label="Spacing", description="How tightly points are packed on the map. Lower makes dense clusters, higher spreads points evenly. Groups do not change.", minimum=0.0, maximum=1.0, step=0.05
     )
     seed: int = param(42, stage="layout", label="Random seed", description="Change to try a different layout.", minimum=0, maximum=9999)
-    min_cluster_size: int = param(
-        0, stage="cluster", label="Min group size", description="Smallest number of files in a group. Higher gives fewer, larger groups. 0 = automatic.", minimum=0, maximum=1000
-    )
-    min_samples: int = param(0, stage="cluster", label="Noise strictness", description="Higher marks more files as noise (gray). 0 = automatic.", minimum=0, maximum=1000)
     outlier_percent: float = param(
         1.0, stage="view", label="Outliers (%)", description="Share of far points marked as outliers and left outside the first view. Higher zooms the first view into the center.", minimum=0.0, maximum=20.0, step=0.5
     )
@@ -96,11 +92,14 @@ class MapParams:
     def resolved_neighbors(self, count: int) -> int:
         return self.n_neighbors or min(AUTO_NEIGHBORS_MAX, max(AUTO_NEIGHBORS_MIN, round(count * AUTO_NEIGHBORS_SHARE)))
 
-    def resolved_min_cluster_size(self, count: int) -> int:
-        return self.min_cluster_size or min(AUTO_GROUP_MAX, max(AUTO_GROUP_MIN, count // AUTO_GROUP_DIVISOR))
 
-    def resolved_min_samples(self, count: int) -> int:
-        return self.min_samples or min(self.resolved_min_cluster_size(count), AUTO_STRICTNESS_MAX)
+
+def min_group_size(count: int) -> int:
+    return min(AUTO_GROUP_MAX, max(AUTO_GROUP_MIN, count // AUTO_GROUP_DIVISOR))
+
+
+def noise_strictness(count: int) -> int:
+    return min(min_group_size(count), AUTO_STRICTNESS_MAX)
 
 
 def param_specs() -> list[tuple[str, ParamSpec, int | float]]:

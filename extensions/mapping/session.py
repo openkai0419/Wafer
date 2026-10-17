@@ -15,8 +15,8 @@ from wafer.core.db.path_values import PathValue
 from wafer.core.logs import AppLogger
 
 from . import projection
-from .encoders import ENCODERS, BaseEncoder, feature_input
-from .params import MapParams
+from .encoders import ENCODERS, SUMMARY_OPTION, BaseEncoder, feature_input
+from .params import MapParams, min_group_size, noise_strictness
 
 if TYPE_CHECKING:
     from .space import Preset
@@ -39,7 +39,10 @@ class FeatureSpec:
 
     @property
     def cache_key(self) -> str:
-        return json.dumps([self.key, self.encoder, sorted(self.options.items())])
+        return json.dumps([self.key, self.encoder, sorted((name, value) for name, value in self.options.items() if name != SUMMARY_OPTION.name)])
+
+    def summary_dims(self) -> int:
+        return ENCODERS[self.encoder].summary_dims(self.options)
 
     def label(self) -> str:
         return self.key
@@ -149,9 +152,9 @@ class MapPipeline:
             return None
         with timed(diagnostics, "reduce"):
             for block in blocks:
-                key = (block.encoder.summary_dims(), params.seed)
+                key = (block.feature.summary_dims(), params.seed)
                 if block.reduced_key != key:
-                    block.reduced = projection.BlockReducer(block.encoder.summary_dims(), params.seed).fit_transform(block.raw)
+                    block.reduced = projection.BlockReducer(key[0], params.seed).fit_transform(block.raw)
                     block.reduced_key = key
         if cancelled():
             return None
@@ -161,7 +164,7 @@ class MapPipeline:
         active = np.flatnonzero(has_value)
         if active.size < 3:
             raise MapError("Not enough files have values for the selected keys.")
-        combine_key = (self._encode_key, tuple((f.cache_key, f.weight) for f in request.features), params.seed)
+        combine_key = (self._encode_key, tuple((b.feature.cache_key, b.feature.weight, b.reduced_key) for b in blocks), params.seed)
         if combine_key != self._combine_key:
             with timed(diagnostics, "combine"):
                 self._combined, self._stats, _scales = projection.combine_blocks([(b.feature.label(), b.reduced[active], b.present[active], b.feature.weight) for b in blocks], params.seed)
@@ -183,7 +186,7 @@ class MapPipeline:
         if cancelled():
             return None
         diagnostics.blocks = self._stats
-        labels = self._group(params, group_key, count, progress, diagnostics)
+        labels = self._group(group_key, count, diagnostics)
         if cancelled():
             return None
         group_terms = self._describe(labels, blocks, params)
@@ -225,99 +228,119 @@ class MapPipeline:
     def inputs(self, feature, request) -> list:
         return [feature_input(request.values.get(path, {}), feature.key, ENCODERS[feature.encoder]) for path in request.paths]
 
-    def _group(self, params, group_key, count, progress, diagnostics) -> np.ndarray:
-        cluster_key = (group_key, params.values_for("cluster"))
-        if cluster_key != self._cluster_key:
+    def _group(self, group_key, count, diagnostics) -> np.ndarray:
+        if group_key != self._cluster_key:
             with timed(diagnostics, "cluster"):
                 size = self._active.size
-                self._labels = projection.cluster(self._group_points, params.resolved_min_cluster_size(size), params.resolved_min_samples(size))
-            self._cluster_key = cluster_key
+                self._labels = projection.cluster(self._group_points, min_group_size(size), noise_strictness(size))
+            self._cluster_key = group_key
         labels = np.full(count, -1, dtype=np.int32)
         labels[self._active] = self._labels
-        sizes = np.bincount(self._labels[self._labels >= 0]) if (self._labels >= 0).any() else np.zeros(0, dtype=np.int64)
-        diagnostics.groups = int(sizes.size)
-        diagnostics.noise_ratio = float((self._labels < 0).mean()) if self._labels.size else 0.0
-        diagnostics.largest = int(sizes.max()) if sizes.size else 0
-        diagnostics.smallest = int(sizes.min()) if sizes.size else 0
+        record_groups(diagnostics, self._labels)
         return labels
 
     def _describe(self, labels, blocks, params) -> dict[int, list[str]]:
         ranked = [block for block, _ in sorted(zip(blocks, self._stats), key=lambda pair: -pair[1].contribution)]
+        return describe_groups([(block.encoder, block.present) for block in ranked], labels, params)
+
+
+class SpaceLayout:
+    def __init__(self, paths: list[str], values: dict[str, dict[str, PathValue]], preset: Preset):
+        self.paths = paths
+        self.values = values
+        self.preset = preset
+        self.lock = threading.Lock()
+        self.coords: np.ndarray | None = None
+        self.describers: list[tuple[BaseEncoder, np.ndarray]] | None = None
+        self.active_labels: np.ndarray | None = None
+
+    def run(self, params: MapParams) -> MapResult:
+        with self.lock:
+            return self._run(params.normalized())
+
+    def _run(self, params: MapParams) -> MapResult:
+        diagnostics = MapDiagnostics()
+        count = len(self.paths)
+        raw = self.space_coords()
+        placed = np.isfinite(raw).all(axis=1)
+        active = np.flatnonzero(placed)
+        if active.size == 0:
+            raise MapError("No files have been placed yet. Wait for the Mapping parser or retrain in Mapping Space.")
+        unit, active_outliers = projection.normalize_to_core(raw[active, :2], params.outlier_percent)
+        positions = np.full((count, 2), np.nan, dtype=np.float32)
+        positions[active] = unit
+        outliers = np.zeros(count, dtype=bool)
+        outliers[active] = active_outliers
+        labels = None
         terms: dict[int, list[str]] = {}
-        for group in sorted(set(labels.tolist()) - {-1}):
-            members = np.flatnonzero(labels == group)
-            words: list[str] = []
-            for block in ranked:
-                for word in block.encoder.describe(members[block.present[members]], params):
-                    if word not in words:
-                        words.append(word)
-            terms[group] = words[: params.label_terms]
-        return terms
+        active_labels = np.zeros(active.size, dtype=np.int32)
+        if active.size >= 3:
+            active_labels = self.group(raw[active, 2:], diagnostics)
+            labels = np.full(count, -1, dtype=np.int32)
+            labels[active] = active_labels
+            with timed(diagnostics, "describe"):
+                terms = describe_groups(self.space_describers(active, params), active_labels, params)
+            record_groups(diagnostics, active_labels)
+        order = np.concatenate([active[projection.order_rows(unit, active_labels)], np.flatnonzero(~placed)])
+        diagnostics.outliers = int(active_outliers.sum())
+        diagnostics.unset = int((~placed).sum())
+        AppLogger.info(diagnostics.summary())
+        return MapResult(list(self.paths), positions, outliers, ~placed, labels, terms, order, diagnostics)
+
+    def space_coords(self) -> np.ndarray:
+        if self.coords is None:
+            raw = np.full((len(self.paths), 4), np.nan, dtype=np.float64)
+            version = str(self.preset.version)
+            for row, path in enumerate(self.paths):
+                entry = self.values.get(path, {})
+                model = entry.get(KEY_MODEL)
+                if model is None or model.text != version:
+                    continue
+                numbers = [entry[key].number if key in entry else None for key in (KEY_X, KEY_Y, KEY_GROUP_X, KEY_GROUP_Y)]
+                if None not in numbers:
+                    raw[row] = numbers
+            self.coords = raw
+        return self.coords
+
+    def group(self, grouping: np.ndarray, diagnostics: MapDiagnostics) -> np.ndarray:
+        if self.active_labels is None:
+            size = len(grouping)
+            with timed(diagnostics, "cluster"):
+                self.active_labels = projection.cluster(grouping, min_group_size(size), noise_strictness(size))
+        return self.active_labels
+
+    def space_describers(self, active: np.ndarray, params: MapParams) -> list[tuple[BaseEncoder, np.ndarray]]:
+        if self.describers is None:
+            paths = [self.paths[i] for i in active]
+            self.describers = []
+            for feature in self.preset.features:
+                encoder_cls = ENCODERS[feature.encoder]
+                encoder = encoder_cls(feature.options)
+                inputs = [feature_input(self.values.get(path, {}), feature.key, encoder_cls) for path in paths]
+                encoder.fit_describe(inputs, params)
+                self.describers.append((encoder, encoder.present(inputs)))
+        return self.describers
 
 
-def layout_from_space(paths: list[str], values: dict[str, dict[str, PathValue]], preset: Preset, params: MapParams) -> MapResult:
-    params = params.normalized()
-    diagnostics = MapDiagnostics()
-    count = len(paths)
-    raw = np.full((count, 4), np.nan, dtype=np.float64)
-    version = str(preset.version)
-    for row, path in enumerate(paths):
-        entry = values.get(path, {})
-        model = entry.get(KEY_MODEL)
-        if model is None or model.text != version:
-            continue
-        numbers = [entry[key].number if key in entry else None for key in (KEY_X, KEY_Y, KEY_GROUP_X, KEY_GROUP_Y)]
-        if None not in numbers:
-            raw[row] = numbers
-    placed = np.isfinite(raw).all(axis=1)
-    active = np.flatnonzero(placed)
-    if active.size == 0:
-        raise MapError("No files have been placed yet. Wait for the Mapping parser or retrain in Mapping Space.")
-    unit, active_outliers = projection.normalize_to_core(raw[active, :2], params.outlier_percent)
-    positions = np.full((count, 2), np.nan, dtype=np.float32)
-    positions[active] = unit
-    outliers = np.zeros(count, dtype=bool)
-    outliers[active] = active_outliers
-    labels = None
-    terms: dict[int, list[str]] = {}
-    active_labels = np.zeros(active.size, dtype=np.int32)
-    if active.size >= 3:
-        with timed(diagnostics, "cluster"):
-            active_labels = projection.cluster(raw[active, 2:], params.resolved_min_cluster_size(active.size), params.resolved_min_samples(active.size))
-        labels = np.full(count, -1, dtype=np.int32)
-        labels[active] = active_labels
-        with timed(diagnostics, "describe"):
-            terms = describe_space_groups([paths[i] for i in active], values, preset, active_labels, params)
-        sizes = np.bincount(active_labels[active_labels >= 0]) if (active_labels >= 0).any() else np.zeros(0, dtype=np.int64)
-        diagnostics.groups = int(sizes.size)
-        diagnostics.noise_ratio = float((active_labels < 0).mean())
-        diagnostics.largest = int(sizes.max()) if sizes.size else 0
-        diagnostics.smallest = int(sizes.min()) if sizes.size else 0
-    order = np.concatenate([active[projection.order_rows(unit, active_labels)], np.flatnonzero(~placed)])
-    diagnostics.outliers = int(active_outliers.sum())
-    diagnostics.unset = int((~placed).sum())
-    AppLogger.info(diagnostics.summary())
-    return MapResult(list(paths), positions, outliers, ~placed, labels, terms, order, diagnostics)
-
-
-def describe_space_groups(paths: list[str], values: dict[str, dict[str, PathValue]], preset: Preset, labels: np.ndarray, params: MapParams) -> dict[int, list[str]]:
-    described = []
-    for feature in preset.features:
-        encoder_cls = ENCODERS[feature.encoder]
-        encoder = encoder_cls(feature.options)
-        inputs = [feature_input(values.get(path, {}), feature.key, encoder_cls) for path in paths]
-        encoder.fit_describe(inputs, params)
-        described.append((encoder, encoder.present(inputs)))
+def describe_groups(describers: list[tuple[BaseEncoder, np.ndarray]], labels: np.ndarray, params: MapParams) -> dict[int, list[str]]:
     terms: dict[int, list[str]] = {}
     for group in sorted(set(labels.tolist()) - {-1}):
         members = np.flatnonzero(labels == group)
         words: list[str] = []
-        for encoder, present in described:
+        for encoder, present in describers:
             for word in encoder.describe(members[present[members]], params):
                 if word not in words:
                     words.append(word)
         terms[group] = words[: params.label_terms]
     return terms
+
+
+def record_groups(diagnostics: MapDiagnostics, labels: np.ndarray) -> None:
+    sizes = np.bincount(labels[labels >= 0]) if (labels >= 0).any() else np.zeros(0, dtype=np.int64)
+    diagnostics.groups = int(sizes.size)
+    diagnostics.noise_ratio = float((labels < 0).mean()) if labels.size else 0.0
+    diagnostics.largest = int(sizes.max()) if sizes.size else 0
+    diagnostics.smallest = int(sizes.min()) if sizes.size else 0
 
 
 @contextmanager

@@ -398,13 +398,13 @@ def test_text_chunk_sizes_are_per_key_options():
 
 
 def test_number_options_are_clamped_and_fall_back_on_bad_values():
-    assert TextEncoder({"max_chars": "999"}).number_option("max_chars") == TEXT_MAX_CHARS
-    assert TokenSetEncoder({"summary": "bad"}).summary_dims() == SUMMARY_DIMS
-    assert PathEncoder({"summary": "1"}).summary_dims() == 2
-    assert NumericEncoder().summary_dims() == SUMMARY_DIMS
+    assert TextEncoder.number_option({"max_chars": "999"}, "max_chars") == TEXT_MAX_CHARS
+    assert TokenSetEncoder.summary_dims({"summary": "bad"}) == SUMMARY_DIMS
+    assert PathEncoder.summary_dims({"summary": "1"}) == 2
+    assert NumericEncoder.summary_dims({}) == SUMMARY_DIMS
 
 
 @pytest.mark.parametrize("encoder", [TokenSetEncoder, PathEncoder, TextEncoder, CategoryEncoder])
 def test_sparse_encoders_offer_a_detail_option(encoder):
     assert any(option.name == "summary" and option.numeric for option in encoder.OPTIONS)
-    assert encoder({"summary": "120"}).summary_dims() == 120
+    assert encoder.summary_dims({"summary": "120"}) == 120

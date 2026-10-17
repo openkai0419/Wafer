@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -26,8 +25,7 @@ from .file_list import FileList
 from .map_host import MapHost
 from .map_toolbar import MapToolbar
 from .map_view import MapView
-from .params import MapParams
-from .session import MapError, MapResult, layout_from_space
+from .session import MapError, MapResult, SpaceLayout
 from .space import Preset, load_preset
 from .view_settings import ViewSettings
 
@@ -73,6 +71,7 @@ def cancel_work(*slots: CancelSlot) -> None:
 class MapLevel:
     paths: list[str]
     result: MapResult | None = None
+    layout: SpaceLayout | None = None
 
 
 class MappingWidget(QtWidgets.QWidget):
@@ -158,10 +157,6 @@ class MappingWidget(QtWidgets.QWidget):
         self.map_view.selection_changed.connect(self.on_map_selection)
         self.file_list.selection_changed.connect(self.on_list_selection)
 
-    @property
-    def params(self) -> MapParams:
-        return self.settings.params
-
     def on_view_settings(self, relayout: bool) -> None:
         if relayout:
             self.schedule_recompute()
@@ -201,7 +196,7 @@ class MappingWidget(QtWidgets.QWidget):
         for level in self.levels:
             kept = [p for p in level.paths if p not in removed]
             if len(kept) != len(level.paths):
-                level.paths, level.result = kept, None
+                level.paths, level.result, level.layout = kept, None, None
                 changed.append(level)
         self.update_crumbs()
         if self.levels and self.levels[-1] in changed:
@@ -242,7 +237,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.preset = preset if preset is not None and preset.features and preset.version > 0 else None
         if keep_levels and self.levels:
             for level in self.levels:
-                level.result = None
+                level.result, level.layout = None, None
         else:
             self.levels = [MapLevel(list(self.paths))]
         self.update_crumbs()
@@ -266,14 +261,16 @@ class MappingWidget(QtWidgets.QWidget):
             self.compute_cancel.cancel()
             self.finish(t("This database has no Mapping Space yet. Train one in Mapping Space."))
             return
-        level, preset, values, params = self.levels[-1], self.preset, self.values, self.params
-        paths = list(level.paths)
+        level, params = self.levels[-1], self.settings.params
+        if level.layout is None or level.layout.preset is not self.preset:
+            level.layout = SpaceLayout(level.paths, self.values, self.preset)
+        layout = level.layout
         cancel = self.compute_cancel.renew()
         self.cancel_button.show()
 
         def task():
             try:
-                result = layout_from_space(paths, values, preset, params)
+                result = layout.run(params)
             except MapError as e:
                 self.dispatcher.invoke(lambda m=str(e): cancel.is_cancelled() or self.finish(t(m)))
                 return
@@ -436,12 +433,9 @@ class MappingWidget(QtWidgets.QWidget):
         self.handle_drop(event)
 
     def save_state(self) -> dict:
-        return {"view": self.settings.to_dict(), "splitter": bytes(self.splitter.saveState().toHex()).decode("ascii")}
+        return {"splitter": bytes(self.splitter.saveState().toHex()).decode("ascii")}
 
     def restore_state(self, state: dict) -> None:
-        view = state.get("view")
-        if isinstance(view, dict):
-            self.settings.load(view)
         splitter = state.get("splitter")
         if isinstance(splitter, str) and splitter:
             self.splitter.restoreState(QtCore.QByteArray.fromHex(splitter.encode("ascii")))

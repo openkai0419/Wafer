@@ -4,7 +4,7 @@ import pytest
 from extensions.mapping import projection, session
 from extensions.mapping.encoders import ENCODERS
 from extensions.mapping.params import MapParams
-from extensions.mapping.session import FeatureSpec, MapError, MapPipeline, MapRequest, layout_from_space
+from extensions.mapping.session import FeatureSpec, MapError, MapPipeline, MapRequest, SpaceLayout
 from extensions.mapping.space import Preset
 from wafer.core.db.path_values import PathValue
 
@@ -53,14 +53,6 @@ def test_run_produces_positions_groups_and_terms(embed_calls):
     assert result.labels is not None and set(result.labels.tolist()) <= {-1, 0, 1}
     assert sorted(result.order.tolist()) == list(range(40))
     assert any({"cat", "sky"} & set(words) for words in result.group_terms.values())
-
-
-def test_cluster_only_change_does_not_rerun_layout(embed_calls):
-    runner = pipeline()
-    runner.run(make_request())
-    embed_calls.clear()
-    runner.run(make_request(params=MapParams(min_cluster_size=3)))
-    assert embed_calls == []
 
 
 def test_view_only_change_does_not_rerun_layout(embed_calls):
@@ -173,12 +165,12 @@ def space_preset(version=2):
     return Preset([FeatureSpec("tags", "token_set")], MapParams(), version)
 
 
-def test_layout_from_space_uses_current_version_only():
+def test_space_layout_uses_current_version_only():
     values = space_values()
     values["c:/0.png"]["mapping.model"] = PathValue("1", 1.0)
     values["c:/archive.zip::m.png"] = {"tags": PathValue("cat")}
     paths = list(values)
-    result = layout_from_space(paths, values, space_preset(), MapParams(min_cluster_size=3))
+    result = SpaceLayout(paths, values, space_preset()).run(MapParams())
     assert result.unset[paths.index("c:/0.png")] and result.unset[paths.index("c:/archive.zip::m.png")]
     assert np.isfinite(result.positions[~result.unset]).all()
     assert result.diagnostics.unset == 2
@@ -188,27 +180,27 @@ def test_layout_from_space_uses_current_version_only():
     assert set(result.order[-2:].tolist()) == {paths.index("c:/0.png"), paths.index("c:/archive.zip::m.png")}
 
 
-def test_layout_from_space_without_placed_files_raises():
+def test_space_layout_without_placed_files_raises():
     with pytest.raises(MapError):
-        layout_from_space(["a", "b"], {"a": {}, "b": {}}, space_preset(), MapParams())
+        SpaceLayout(["a", "b"], {"a": {}, "b": {}}, space_preset()).run(MapParams())
 
 
-def test_layout_from_space_ignores_other_versions_and_missing_numbers():
+def test_space_layout_ignores_other_versions_and_missing_numbers():
     values = space_values(count=6)
     values["c:/0.png"]["mapping.model"] = PathValue("3", 3.0)
     values["c:/1.png"]["mapping.x"] = PathValue("n/a")
-    result = layout_from_space(list(values), values, space_preset(), MapParams())
+    result = SpaceLayout(list(values), values, space_preset()).run(MapParams())
     assert result.unset.tolist() == [True, True, False, False, False, False]
 
 
-def test_layout_from_space_with_one_placed_file_still_lays_out():
+def test_space_layout_with_one_placed_file_still_lays_out():
     values = {"a": space_values(count=1)["c:/0.png"], "b": {}}
-    result = layout_from_space(["a", "b"], values, space_preset(), MapParams())
+    result = SpaceLayout(["a", "b"], values, space_preset()).run(MapParams())
     assert result.unset.tolist() == [False, True]
     assert result.labels is None and result.order.tolist() == [0, 1]
 
 
-def test_describe_space_groups_uses_fit_describe_and_matches_fit_transform(monkeypatch):
+def test_space_describers_use_fit_describe_and_matches_fit_transform(monkeypatch):
     values = space_values()
     for i, path in enumerate(values):
         values[path]["color.palette.1"] = PathValue("", float(0xFF0000 if i % 2 else 0x0000FF))
@@ -218,12 +210,13 @@ def test_describe_space_groups_uses_fit_describe_and_matches_fit_transform(monke
     calls = []
     for cls in ENCODERS.values():
         monkeypatch.setattr(cls, "fit_transform", lambda self, inputs, params, original=cls.fit_transform: calls.append(self.NAME) or original(self, inputs, params))
-    fast = session.describe_space_groups(paths, values, preset, labels, MapParams())
+    rows = np.arange(len(paths))
+    fast = session.describe_groups(SpaceLayout(paths, values, preset).space_describers(rows, MapParams()), labels, MapParams())
     assert calls == ["token_set"]
     calls.clear()
     for cls in ENCODERS.values():
         monkeypatch.setattr(cls, "fit_describe", lambda self, inputs, params: self.fit_transform(inputs, params))
-    assert session.describe_space_groups(paths, values, preset, labels, MapParams()) == fast
+    assert session.describe_groups(SpaceLayout(paths, values, preset).space_describers(rows, MapParams()), labels, MapParams()) == fast
     assert sorted(calls) == ["palette", "token_set"]
     assert "cat" in fast[0] and "dog" in fast[1]
 
@@ -246,13 +239,13 @@ def test_spacing_changes_the_layout_but_not_the_groups(monkeypatch):
     assert calls[-2:] == [0.5, projection.GROUPING_MIN_DIST]
 
 
-def test_layout_from_space_groups_by_the_grouping_coordinates():
+def test_space_layout_groups_by_the_grouping_coordinates():
     values = space_values()
     order = np.random.default_rng(3).permutation(len(values))
     for rank, entry in zip(order, values.values()):
         entry["mapping.x"] = PathValue(str(rank), float(rank))
     paths = list(values)
-    result = layout_from_space(paths, values, space_preset(), MapParams(min_cluster_size=3))
+    result = SpaceLayout(paths, values, space_preset()).run(MapParams())
     half = len(paths) // 2
     assert len(set(result.labels[:half].tolist())) == 1 and len(set(result.labels[half:].tolist())) == 1
     assert result.labels[0] != result.labels[-1]
@@ -271,3 +264,30 @@ def test_layouts_use_the_resolved_neighbor_count(monkeypatch):
     seen.clear()
     pipeline().run(make_request(params=MapParams(n_neighbors=7)))
     assert seen == [7, 7]
+
+
+def test_space_layout_groups_once_and_relabels_on_view_changes(monkeypatch):
+    clusters, fits = [], []
+    real_cluster = projection.cluster
+    monkeypatch.setattr(projection, "cluster", lambda *args: clusters.append(args[1:]) or real_cluster(*args))
+    real_fit = ENCODERS["token_set"].fit_describe
+    monkeypatch.setattr(ENCODERS["token_set"], "fit_describe", lambda self, inputs, params: fits.append(1) or real_fit(self, inputs, params))
+    values = space_values()
+    layout = SpaceLayout(list(values), values, space_preset())
+    first = layout.run(MapParams())
+    second = layout.run(MapParams(outlier_percent=10.0, label_terms=1))
+    assert len(clusters) == 1 and len(fits) == 1
+    assert second.labels.tolist() == first.labels.tolist()
+    assert all(len(words) <= 1 for words in second.group_terms.values())
+    assert not np.array_equal(second.positions, first.positions)
+
+
+def test_detail_change_reduces_again_without_encoding_again(embed_calls, monkeypatch):
+    encodes = []
+    real = ENCODERS["token_set"].fit_transform
+    monkeypatch.setattr(ENCODERS["token_set"], "fit_transform", lambda self, inputs, params: encodes.append(1) or real(self, inputs, params))
+    runner = pipeline()
+    runner.run(make_request())
+    layouts = len(embed_calls)
+    runner.run(make_request(features=[FeatureSpec("tags", "token_set", options={"summary": "3"})]))
+    assert len(encodes) == 1 and len(embed_calls) > layouts

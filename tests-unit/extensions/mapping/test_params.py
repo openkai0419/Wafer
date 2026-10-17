@@ -1,6 +1,6 @@
 import pytest
 
-from extensions.mapping.params import STAGES, MapParams, changed_stage, param_specs
+from extensions.mapping.params import STAGES, MapParams, changed_stage, min_group_size, noise_strictness, param_specs
 
 
 def test_every_param_has_stage_and_description():
@@ -20,8 +20,8 @@ def test_values_for_groups_by_stage():
 
 def test_key_settings_are_not_params():
     names = {name for name, _spec, _default in param_specs()}
-    assert not names & {"ngram_min", "ngram_max", "svd_dims"}
-    assert STAGES == ("layout", "cluster", "view")
+    assert not names & {"ngram_min", "ngram_max", "svd_dims", "min_cluster_size", "min_samples"}
+    assert STAGES == ("layout", "view")
 
 
 def test_changed_stage_returns_earliest():
@@ -43,15 +43,12 @@ def test_dict_roundtrip_ignores_unknown_and_bad_values():
     assert params.min_dist == MapParams().min_dist
 
 
-def test_auto_cluster_size():
-    params = MapParams()
-    assert params.resolved_min_cluster_size(100) == 5
-    assert params.resolved_min_cluster_size(5000) == 10
-    assert params.resolved_min_cluster_size(20000) == params.resolved_min_cluster_size(1_000_000) == 30
-    assert params.resolved_min_samples(100) == 5
-    assert params.resolved_min_samples(20000) == 10
-    assert MapParams(min_samples=4).resolved_min_samples(3000) == 4
-    assert MapParams(min_cluster_size=200).resolved_min_samples(3000) == 10
+def test_group_sizes_follow_the_number_of_files():
+    assert min_group_size(100) == 5
+    assert min_group_size(5000) == 10
+    assert min_group_size(20000) == min_group_size(1_000_000) == 30
+    assert noise_strictness(100) == 5
+    assert noise_strictness(20000) == 10
 
 
 @pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan"), 10**400, "inf", "nan"])

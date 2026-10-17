@@ -25,6 +25,11 @@ def thumb_bucket(size: float) -> int:
     return next((bucket for bucket in THUMB_BUCKETS if bucket >= size), THUMB_BUCKETS[-1])
 
 
+def fitting_thumb_bucket(size: float, count: int) -> int:
+    largest = thumb_bucket(size)
+    return next((bucket for bucket in reversed(THUMB_BUCKETS) if bucket <= largest and cache_limit(THUMB_BUDGET, bucket) >= count), THUMB_BUCKETS[0])
+
+
 def hover_bucket(size: int) -> int:
     return next((bucket for bucket in HOVER_BUCKETS if bucket >= size), HOVER_BUCKETS[-1])
 
@@ -69,7 +74,7 @@ class MapHost(QtCore.QObject):
         return self.list_thumbs.get(path)
 
     def map_thumbnails(self, paths: list[str], size: float) -> list[QtGui.QPixmap | None]:
-        resize_loader(self.thumbs, thumb_bucket(size), THUMB_BUDGET)
+        resize_loader(self.thumbs, fitting_thumb_bucket(size, len(paths)), THUMB_BUDGET)
         wanted = set(paths)
         self.thumbs.cancel([path for path in self.map_wanted if path not in wanted])
         self.map_wanted = list(paths)

@@ -33,11 +33,11 @@ from .map_host import MapHost
 from .map_toolbar import MapToolbar
 from .map_view import MapView
 from .params import MapParams
-from .session import KEY_MODEL, OUTPUT_PREFIX, SPACE_KEYS, MapError, MapPipeline, MapRequest, MapResult, layout_from_space
+from .session import KEY_MODEL, OUTPUT_PREFIX, SPACE_KEYS, MapError, MapPipeline, MapRequest, MapResult, SpaceLayout
 from .space import Preset, SpaceStatus, load_preset, model_dir, read_status, save_preset
 from .tuning import TuningPanel
 from .view_settings import ViewSettings
-from .widget import STAGE_NAMES, cancel_work, prepare_layout_engine, result_colors
+from .widget import cancel_work, prepare_layout_engine, result_colors
 
 LOAD_PRIORITY = 7
 STATUS_REFRESH_MS = 1000
@@ -52,6 +52,7 @@ TUNING_STAGES = ("layout",)
 ELLIPSIS = "\N{HORIZONTAL ELLIPSIS}"
 SEPARATOR = "\N{MIDDLE DOT}"
 PROVISIONAL_ENCODER = "text"
+STAGE_NAMES = {"encode": "Encoding", "layout": "Laying out (the first run takes longer)", "cluster": "Grouping"}
 WAITING_SQL = "SELECT COUNT(*) FROM collection_status WHERE collector = ? AND status IN ('pending', 'dispatched')"
 FILE_KEYS = frozenset((*STANDARD_KEYS, SYSTEM_FILE_HASH_KEY))
 
@@ -107,6 +108,7 @@ class SpaceSnapshot:
     model_bytes: int = 0
     parser_enabled: bool = True
     result: MapResult | None = None
+    layout: SpaceLayout | None = None
     sources: dict[str, str] = field(default_factory=dict)
     problem: str = ""
 
@@ -132,7 +134,7 @@ def read_space_status(db_name: str) -> SpaceSnapshot:
     return snapshot
 
 
-def read_snapshot(db_name: str, params: MapParams) -> SpaceSnapshot:
+def read_snapshot(db_name: str, view: MapParams) -> SpaceSnapshot:
     snapshot = read_space_status(db_name)
     preset = snapshot.preset
     db_path = data_db_path(db_name)
@@ -144,14 +146,19 @@ def read_snapshot(db_name: str, params: MapParams) -> SpaceSnapshot:
         return snapshot
     values = fetch_path_values(db_path, sample, keys=[*preset.value_keys(), *SPACE_KEYS])
     snapshot.sources = fetch_sources(db_path, sample)
+    snapshot.layout = SpaceLayout(sample, values, preset)
+    snapshot.result, snapshot.problem = run_preview(snapshot.layout, view, db_name)
+    return snapshot
+
+
+def run_preview(layout: SpaceLayout, view: MapParams, db_name: str) -> tuple[MapResult | None, str]:
     try:
-        snapshot.result = layout_from_space(sample, values, preset, params)
+        return layout.run(view), ""
     except MapError as e:
-        snapshot.problem = str(e)
+        return None, str(e)
     except Exception as e:
         AppLogger.warning(f"[Mapping] Laying out the Mapping Space preview of {db_name} failed", exc=e)
-        snapshot.problem = str(e) or type(e).__name__
-    return snapshot
+        return None, str(e) or type(e).__name__
 
 
 @dataclass
@@ -236,6 +243,8 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.notice = ""
         self.detecting: dict[str, CancelToken] = {}
         self.shown: MapResult | None = None
+        self.preview_layout: SpaceLayout | None = None
+        self.preview_sources: dict[str, str] = {}
         self.quick_sample: QuickTrainSample | None = None
         self.quick_cancel = CancelSlot()
         self.quick_running = False
@@ -411,10 +420,22 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         event.ignore()
 
     def on_view_settings(self, relayout: bool) -> None:
-        if relayout and not self.showing_quick:
-            self.refresh()
-        else:
+        if not relayout or self.showing_quick:
             self.settings.apply(self.map_view, self.host)
+        elif self.preview_layout is not None and not self.preview_loading:
+            self.relayout_preview(self.preview_layout)
+        else:
+            self.refresh()
+
+    def relayout_preview(self, layout: SpaceLayout) -> None:
+        cancel = self.refresh_cancel.renew()
+        db_name, view = self.db_name, self.settings.params
+
+        def task():
+            result, problem = run_preview(layout, view, db_name)
+            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.showing_quick or self.quick_running or self.show_space_result(result, problem))
+
+        self.dispatcher.post(task, priority=LOAD_PRIORITY, cancel=cancel)
 
     def detect(self, key: str) -> str:
         if self.db_name:
@@ -627,14 +648,18 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.preview_mark = (snapshot.status.state, snapshot.status.version)
         self.preview_placed = snapshot.placed
         self.preview_loaded_at = time.monotonic()
+        self.preview_layout, self.preview_sources = snapshot.layout, snapshot.sources
         if self.showing_quick or self.quick_running:
             return
-        if snapshot.result is None:
+        self.show_space_result(snapshot.result, snapshot.problem)
+
+    def show_space_result(self, result: MapResult | None, problem: str) -> None:
+        if result is None:
             self.clear_preview()
-            self.count_label.setText(t(snapshot.problem) if snapshot.problem else t("Nothing to preview yet."))
+            self.count_label.setText(t(problem) if problem else t("Nothing to preview yet."))
             return
-        placed = len(snapshot.result.paths) - snapshot.result.diagnostics.unset
-        self.show_preview(snapshot.result, snapshot.sources, t("Preview: {count} files", count=f"{placed:,}"))
+        placed = len(result.paths) - result.diagnostics.unset
+        self.show_preview(result, self.preview_sources, t("Preview: {count} files", count=f"{placed:,}"))
 
     def clear_preview(self) -> None:
         self.shown = None
@@ -659,12 +684,9 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         super().hideEvent(event)
 
     def save_state(self) -> dict[str, Any]:
-        return {"view": self.settings.to_dict(), "splitter": bytes(self.splitter.saveState().toHex()).decode("ascii"), "quick_train_files": self.quick_size.value()}
+        return {"splitter": bytes(self.splitter.saveState().toHex()).decode("ascii"), "quick_train_files": self.quick_size.value()}
 
     def restore_state(self, state: dict[str, Any]) -> None:
-        view = state.get("view")
-        if isinstance(view, dict):
-            self.settings.load(view)
         splitter = state.get("splitter")
         if isinstance(splitter, str) and splitter:
             self.splitter.restoreState(QtCore.QByteArray.fromHex(splitter.encode("ascii")))

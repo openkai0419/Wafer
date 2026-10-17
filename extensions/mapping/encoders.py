@@ -78,17 +78,19 @@ class BaseEncoder(ABC):
     def present(self, inputs: Sequence[Any]) -> np.ndarray:
         return np.array([item is not None for item in inputs], dtype=bool)
 
-    def number_option(self, name: str) -> int:
-        spec = next(option for option in self.OPTIONS if option.name == name)
+    @classmethod
+    def number_option(cls, options: dict[str, str], name: str) -> int:
+        spec = next(option for option in cls.OPTIONS if option.name == name)
         try:
-            value = int(self.options.get(name, spec.default))
+            value = int(options.get(name, spec.default))
         except (TypeError, ValueError) as e:
-            AppLogger.warning(f"[Mapping] Ignored invalid option {name}={self.options.get(name)!r}", exc=e)
+            AppLogger.warning(f"[Mapping] Ignored invalid option {name}={options.get(name)!r}", exc=e)
             value = int(spec.default)
         return min(max(value, spec.minimum), spec.maximum)
 
-    def summary_dims(self) -> int:
-        return self.number_option("summary") if any(option.name == "summary" for option in self.OPTIONS) else SUMMARY_DIMS
+    @classmethod
+    def summary_dims(cls, options: dict[str, str]) -> int:
+        return cls.number_option(options, SUMMARY_OPTION.name) if SUMMARY_OPTION in cls.OPTIONS else SUMMARY_DIMS
 
     @abstractmethod
     def fit_transform(self, inputs: Sequence[Any], params: MapParams): ...
@@ -409,7 +411,7 @@ class TextEncoder(BaseEncoder):
         return matrix
 
     def ngram_range(self) -> tuple[int, int]:
-        low, high = self.number_option("min_chars"), self.number_option("max_chars")
+        low, high = self.number_option(self.options, "min_chars"), self.number_option(self.options, "max_chars")
         return min(low, high), max(low, high)
 
     def fit_describe(self, inputs, params):

@@ -27,10 +27,9 @@ class FeatureChip(QtWidgets.QFrame):
         palette = ThemeManager.instance().palette
         self.setObjectName("FeatureChip")
         self.setStyleSheet(f"#FeatureChip {{ border: 1px solid {palette.border_default}; border-radius: {dpix(4)}px; }}")
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(dpix(6), dpix(2), dpix(2), dpix(2))
-        layout.setSpacing(dpix(4))
-        layout.addWidget(QtWidgets.QLabel(spec.key))
+        self.flow = FlowLayout(self, spacing=dpix(4))
+        self.flow.setContentsMargins(dpix(6), dpix(2), dpix(2), dpix(2))
+        self.flow.addWidget(QtWidgets.QLabel(spec.key))
         self.encoder_combo = QtWidgets.QComboBox()
         key_group = ENCODERS[spec.encoder].KEY_GROUP
         for cls in ENCODERS.values():
@@ -40,10 +39,8 @@ class FeatureChip(QtWidgets.QFrame):
         self.encoder_combo.setCurrentIndex(self.encoder_combo.findData(spec.encoder))
         self.encoder_combo.setEnabled(self.encoder_combo.count() > 1)
         self.encoder_combo.currentIndexChanged.connect(self.on_encoder_changed)
-        layout.addWidget(self.encoder_combo)
-        self.options_box = QtWidgets.QHBoxLayout()
-        self.options_box.setSpacing(dpix(4))
-        layout.addLayout(self.options_box)
+        self.flow.addWidget(self.encoder_combo)
+        self.option_widgets: list[QtWidgets.QWidget] = []
         self.option_combos: dict[str, QtWidgets.QComboBox] = {}
         self.option_spins: dict[str, QtWidgets.QSpinBox] = {}
         self.pattern_edit = QtWidgets.QLineEdit()
@@ -56,20 +53,23 @@ class FeatureChip(QtWidgets.QFrame):
         self.weight_spin.setPrefix(WEIGHT_PREFIX)
         self.weight_spin.setToolTip(t("How much this key counts."))
         self.weight_spin.valueChanged.connect(lambda _value: self.changed.emit())
-        layout.addWidget(self.weight_spin)
         self.remove_button = QtWidgets.QToolButton()
         self.remove_button.setIcon(themed_icon("cross"))
         self.remove_button.setAutoRaise(True)
         self.remove_button.clicked.connect(lambda: self.removed.emit(self))
-        layout.addWidget(self.remove_button)
+        for widget in (self.pattern_edit, self.weight_spin, self.remove_button):
+            self.flow.addWidget(widget)
         self.build_options(spec.options)
 
+    def sizeHint(self):
+        return self.flow.single_line_size()
+
     def build_options(self, values: dict[str, str]):
-        while self.options_box.count():
-            widget = self.options_box.takeAt(0).widget()
-            if widget is not None and widget is not self.pattern_edit:
-                widget.hide()
-                widget.deleteLater()
+        for widget in self.option_widgets:
+            self.flow.removeWidget(widget)
+            widget.hide()
+            widget.deleteLater()
+        self.option_widgets.clear()
         self.option_combos.clear()
         self.option_spins.clear()
         for option in ENCODERS[self.encoder_combo.currentData()].OPTIONS:
@@ -84,11 +84,15 @@ class FeatureChip(QtWidgets.QFrame):
             combo.setCurrentIndex(max(0, combo.findData(values.get(option.name, option.default))))
             combo.setToolTip(t(option.description))
             combo.currentIndexChanged.connect(self.on_option_changed)
-            self.options_box.addWidget(combo)
+            self.add_option_widget(combo)
             self.option_combos[option.name] = combo
         self.pattern_edit.setText(values.get("pattern", ""))
-        self.options_box.addWidget(self.pattern_edit)
         self.sync_pattern_visibility()
+        self.updateGeometry()
+
+    def add_option_widget(self, widget: QtWidgets.QWidget) -> None:
+        self.flow.insertWidget(self.flow.indexOf(self.pattern_edit), widget)
+        self.option_widgets.append(widget)
 
     def add_number_option(self, option: OptionSpec, values: dict[str, str]) -> None:
         spin = QtWidgets.QSpinBox()
@@ -100,7 +104,7 @@ class FeatureChip(QtWidgets.QFrame):
             spin.setValue(int(option.default))
         spin.setToolTip(t(option.description))
         spin.valueChanged.connect(lambda _value: self.changed.emit())
-        self.options_box.addWidget(spin)
+        self.add_option_widget(spin)
         self.option_spins[option.name] = spin
 
     def sync_pattern_visibility(self):
@@ -178,9 +182,7 @@ class FeatureBar(QtWidgets.QWidget):
         chip = FeatureChip(spec, self)
         chip.changed.connect(self.features_changed.emit)
         chip.removed.connect(self.remove_chip)
-        self.flow.removeWidget(self.add_button)
-        self.flow.addWidget(chip)
-        self.flow.addWidget(self.add_button)
+        self.flow.insertWidget(self.flow.indexOf(self.add_button), chip)
         chip.show()
         self.feature_chips.append(chip)
 

@@ -179,3 +179,30 @@ def test_switching_encoder_rebuilds_number_options(qtbot):
     chip.set_encoder("token_set")
     assert set(chip.option_spins) == {"summary"}
 
+
+
+def test_a_wide_key_wraps_to_fit_a_narrow_panel(qtbot):
+    bar = FeatureBar(lambda key: "text")
+    qtbot.addWidget(bar)
+    bar.set_features([FeatureSpec("novelai.prompt", "text")])
+    chip = bar.chips()[0]
+    natural = chip.sizeHint().width()
+    assert bar.minimumSizeHint().width() < natural // 2
+    assert bar.heightForWidth(natural // 2) > bar.heightForWidth(natural * 2)
+    bar.resize(natural // 2, bar.heightForWidth(natural // 2))
+    bar.show()
+    qtbot.waitUntil(lambda: chip.width() <= natural // 2)
+    assert chip.remove_button.geometry().right() <= chip.width()
+    bar.close()
+
+
+def test_option_order_survives_an_encoder_switch(qtbot):
+    bar = FeatureBar(lambda key: "text")
+    qtbot.addWidget(bar)
+    bar.add_feature("prompt")
+    chip = bar.chips()[0]
+    chip.set_encoder("token_set")
+    layout = chip.layout()
+    order = [layout.itemAt(i).widget() for i in range(layout.count())]
+    assert order[-2:] == [chip.weight_spin, chip.remove_button]
+    assert order.index(chip.option_combos["separator"]) > order.index(chip.encoder_combo)

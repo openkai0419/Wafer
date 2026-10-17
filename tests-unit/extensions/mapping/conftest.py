@@ -6,7 +6,7 @@ from extensions.mapping.view_settings import ViewSettings
 from wafer.plugin.grid.thumbnail_loader import shared_image_cache
 
 
-def split_by_x(space, min_cluster_size, min_samples):
+def split_by_x(space, min_cluster_size, min_samples, method="eom"):
     if len(space) < 3:
         return np.full(len(space), -1, dtype=np.int32)
     x = space[:, 0]

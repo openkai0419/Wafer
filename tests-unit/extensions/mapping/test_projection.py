@@ -280,3 +280,20 @@ def test_embed_can_return_more_dimensions(monkeypatch):
     assert points.shape == (40, projection.GROUPING_DIMS) and seen["n_components"] == projection.GROUPING_DIMS
     tiny = projection.embed(matrix[:3], None, 0.0, 1, projection.GROUPING_DIMS)
     assert tiny.shape == (3, projection.GROUPING_DIMS) and np.isfinite(tiny).all()
+
+
+def test_cluster_passes_the_selection_method(monkeypatch):
+    import sklearn.cluster
+
+    seen = {}
+
+    class Recorder:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+        def fit_predict(self, space):
+            return np.zeros(len(space), dtype=np.int32)
+
+    monkeypatch.setattr(sklearn.cluster, "HDBSCAN", Recorder)
+    projection.cluster(np.random.default_rng(0).normal(size=(20, 2)), 5, 3, "leaf")
+    assert (seen["min_cluster_size"], seen["min_samples"], seen["cluster_selection_method"]) == (5, 3, "leaf")

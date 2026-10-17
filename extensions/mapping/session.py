@@ -218,7 +218,7 @@ class MapPipeline:
         if cancelled():
             return None
         diagnostics.blocks = self._stats
-        labels = self._group((group_key, params.group_sizes(self._active.size)), count, diagnostics)
+        labels = self._group((group_key, params.cluster_options(self._active.size)), count, diagnostics)
         if cancelled():
             return None
         group_terms = self._describe(labels, blocks, params)
@@ -303,7 +303,7 @@ class SpaceLayout:
         self.lock = threading.Lock()
         self.coords: np.ndarray | None = None
         self.describers: list[tuple[BaseEncoder, np.ndarray]] | None = None
-        self.labels_by_sizes: dict[tuple[int, int], np.ndarray] = {}
+        self.labels_by_options: dict[tuple[int, int, str], np.ndarray] = {}
 
     def run(self, params: MapParams, *, grouped: bool = True) -> MapResult:
         with self.lock:
@@ -339,7 +339,7 @@ class SpaceLayout:
         return MapResult(list(self.paths), positions, outliers, ~placed, labels, terms, order, diagnostics)
 
     def is_grouped(self) -> bool:
-        return bool(self.labels_by_sizes)
+        return bool(self.labels_by_options)
 
     def space_coords(self) -> np.ndarray:
         if self.coords is None:
@@ -359,11 +359,11 @@ class SpaceLayout:
         return self.coords
 
     def group(self, grouping: np.ndarray, params: MapParams, diagnostics: MapDiagnostics) -> np.ndarray:
-        sizes = params.group_sizes(len(grouping))
-        if sizes not in self.labels_by_sizes:
+        options = params.cluster_options(len(grouping))
+        if options not in self.labels_by_options:
             with timed(diagnostics, "cluster"):
-                self.labels_by_sizes[sizes] = projection.cluster(grouping, *sizes)
-        return self.labels_by_sizes[sizes]
+                self.labels_by_options[options] = projection.cluster(grouping, *options)
+        return self.labels_by_options[options]
 
     def space_describers(self, active: np.ndarray, params: MapParams) -> list[tuple[BaseEncoder, np.ndarray]]:
         if self.describers is None:

@@ -43,11 +43,11 @@ def test_dict_roundtrip_ignores_unknown_and_bad_values():
     assert params.min_dist == MapParams().min_dist
 
 
-def test_group_sizes_follow_the_number_of_files():
+def test_cluster_options_follow_the_number_of_files():
     params = MapParams()
-    assert params.group_sizes(100) == (5, 5)
-    assert params.group_sizes(5000) == (10, 10)
-    assert params.group_sizes(20000) == params.group_sizes(1_000_000) == (30, 10)
+    assert params.cluster_options(100) == (5, 5, "eom")
+    assert params.cluster_options(5000) == (10, 10, "eom")
+    assert params.cluster_options(20000) == params.cluster_options(1_000_000) == (30, 10, "eom")
 
 
 @pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan"), 10**400, "inf", "nan"])
@@ -110,7 +110,21 @@ def test_neighbors_never_exceed_the_cap():
 def test_group_size_setting_scales_the_automatic_size():
     spec = next(spec for name, spec, _ in param_specs() if name == "group_size")
     assert spec.stage == "view" and MapParams().group_size == 1.0
-    assert MapParams(group_size=2.0).group_sizes(5000) == (20, 10)
-    assert MapParams(group_size=0.5).group_sizes(5000) == (5, 5)
-    assert MapParams(group_size=0.25).group_sizes(100) == (2, 2)
+    assert MapParams(group_size=2.0).cluster_options(5000) == (20, 10, "eom")
+    assert MapParams(group_size=0.5).cluster_options(5000) == (5, 5, "eom")
+    assert MapParams(group_size=0.25).cluster_options(100) == (2, 2, "eom")
     assert changed_stage(MapParams(), MapParams(group_size=2.0)) == "view"
+
+
+def test_strictness_scales_how_dense_a_group_must_be():
+    assert MapParams(group_strictness=0.5).cluster_options(5000) == (10, 5, "eom")
+    assert MapParams(group_strictness=2.0).cluster_options(5000) == (10, 20, "eom")
+    assert MapParams(group_strictness=0.25).cluster_options(100) == (5, 1, "eom")
+
+
+def test_fine_groups_pick_the_leaf_clusters():
+    assert MapParams(fine_groups=1).cluster_options(5000)[2] == "leaf"
+    assert MapParams(fine_groups=5).normalized().fine_groups == 1
+    for name in ("group_strictness", "fine_groups"):
+        spec = next(spec for key, spec, _ in param_specs() if key == name)
+        assert spec.stage == "view"

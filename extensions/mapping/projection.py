@@ -241,7 +241,7 @@ def relabel_by_size(labels: np.ndarray) -> np.ndarray:
     return np.array([mapping.get(label, -1) for label in labels.tolist()], dtype=np.int32)
 
 
-def cluster(space: np.ndarray, min_cluster_size: int, min_samples: int) -> np.ndarray:
+def cluster(space: np.ndarray, min_cluster_size: int, min_samples: int, method: str = "eom") -> np.ndarray:
     count = space.shape[0]
     if count < 3:
         return np.full(count, -1, dtype=np.int32)
@@ -249,7 +249,7 @@ def cluster(space: np.ndarray, min_cluster_size: int, min_samples: int) -> np.nd
 
     size = max(2, min(min_cluster_size, count))
     samples = max(1, min(min_samples, count - 1))
-    return relabel_by_size(HDBSCAN(min_cluster_size=size, min_samples=samples, copy=True).fit_predict(space))
+    return relabel_by_size(HDBSCAN(min_cluster_size=size, min_samples=samples, cluster_selection_method=method, copy=True).fit_predict(space))
 
 
 def normalize_to_core(points: np.ndarray, percent: float) -> tuple[np.ndarray, np.ndarray]:

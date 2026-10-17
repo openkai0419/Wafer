@@ -115,7 +115,7 @@ def test_set_files_places_files_from_the_space(mapping):
 
 def test_only_view_settings_and_no_keys_are_shown(mapping):
     view_params = {name for name, spec, _ in param_specs() if spec.stage == "view"}
-    assert set(mapping.toolbar.tuning.controls) == view_params - {"group_size"}
+    assert set(mapping.toolbar.tuning.controls) == view_params - {"group_size", "group_strictness", "fine_groups"}
     assert not hasattr(mapping, "feature_bar")
     assert mapping.edit_space_button.isVisibleTo(mapping)
 
@@ -512,9 +512,9 @@ def test_map_is_shown_before_its_groups(qtbot, space_data, monkeypatch):
 
 def test_group_size_slider_regroups_the_map(mapping, qtbot):
     previous = mapping.current_result()
-    slider = mapping.toolbar.group_slider
+    slider = mapping.toolbar.sliders["group_size"]
     slider.setValue(slider.minimum())
-    assert settings().params.group_size == 0.25 and mapping.toolbar.group_value.text() == "\N{MULTIPLICATION SIGN}0.25"
+    assert settings().params.group_size == 0.25 and mapping.toolbar.slider_values["group_size"].text() == "\N{MULTIPLICATION SIGN}0.25"
     wait_for_new_result(qtbot, mapping, previous)
     assert np.array_equal(mapping.current_result().positions, previous.positions, equal_nan=True)
     slider.setValue(slider.maximum())
@@ -527,8 +527,21 @@ def test_group_size_slider_follows_the_shared_settings(mapping, qtbot):
     with patch.object(MappingSpaceWidget, "refresh"):
         space = MappingSpaceWidget()
     qtbot.addWidget(space)
-    mapping.toolbar.group_slider.setValue(mapping.toolbar.group_slider.maximum())
-    assert space.toolbar.group_slider.value() == space.toolbar.group_slider.maximum()
-    settings().set_params(MapParams(group_size=1.0))
-    assert mapping.toolbar.group_value.text() == "\N{MULTIPLICATION SIGN}1.00"
+    mapping.toolbar.sliders["group_size"].setValue(mapping.toolbar.sliders["group_size"].maximum())
+    assert space.toolbar.sliders["group_size"].value() == space.toolbar.sliders["group_size"].maximum()
+    settings().set_params(MapParams(group_size=1.0, group_strictness=0.5, fine_groups=1))
+    assert mapping.toolbar.slider_values["group_size"].text() == "\N{MULTIPLICATION SIGN}1.00"
+    assert space.toolbar.slider_values["group_strictness"].text() == "\N{MULTIPLICATION SIGN}0.50" and space.toolbar.fine_check.isChecked()
     space.close()
+
+
+def test_strictness_and_fine_groups_regroup_the_map(mapping, qtbot):
+    previous = mapping.current_result()
+    mapping.toolbar.sliders["group_strictness"].setValue(mapping.toolbar.sliders["group_strictness"].maximum())
+    assert settings().params.group_strictness == 4.0
+    wait_for_new_result(qtbot, mapping, previous)
+    previous = mapping.current_result()
+    mapping.toolbar.fine_check.setChecked(True)
+    assert settings().params.fine_groups == 1
+    wait_for_new_result(qtbot, mapping, previous)
+    assert np.array_equal(mapping.current_result().positions, previous.positions, equal_nan=True)

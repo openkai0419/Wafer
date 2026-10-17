@@ -14,11 +14,11 @@ from wafer.qt.widgets.popup import PopupBase
 
 from .params import param_specs
 from .tuning import TuningPanel
-from .view_settings import TOOLBAR_PARAMS, VIEW_STAGES, ViewSettings
+from .view_settings import TOOLBAR_PARAMS, TOOLBAR_SLIDERS, VIEW_STAGES, ViewSettings
 
 TUNING_HEIGHT = 600
-GROUP_SLIDER_WIDTH = 140
-GROUP_SPEC = next(spec for name, spec, _ in param_specs() if name == "group_size")
+SLIDER_WIDTH = 110
+SPECS = {name: spec for name, spec, _ in param_specs()}
 MULTIPLY = "\N{MULTIPLICATION SIGN}"
 
 
@@ -43,17 +43,15 @@ class MapToolbar(QtWidgets.QWidget):
         self.thumbnail_check.setToolTip(t("Show thumbnails instead of dots."))
         self.thumbnail_check.toggled.connect(self.settings.set_thumbnails_shown)
         layout.addWidget(self.thumbnail_check)
-        group_label = QtWidgets.QLabel(t(GROUP_SPEC.label))
-        group_label.setToolTip(t(GROUP_SPEC.description))
-        layout.addWidget(group_label)
-        self.group_slider = QtWidgets.QSlider(Qt.Horizontal)
-        self.group_slider.setRange(round(GROUP_SPEC.minimum / GROUP_SPEC.step), round(GROUP_SPEC.maximum / GROUP_SPEC.step))
-        self.group_slider.setFixedWidth(dpix(GROUP_SLIDER_WIDTH))
-        self.group_slider.setToolTip(t(GROUP_SPEC.description))
-        self.group_slider.valueChanged.connect(self.on_group_slider)
-        layout.addWidget(self.group_slider)
-        self.group_value = QtWidgets.QLabel()
-        layout.addWidget(self.group_value)
+        self.sliders: dict[str, QtWidgets.QSlider] = {}
+        self.slider_values: dict[str, QtWidgets.QLabel] = {}
+        for name in TOOLBAR_SLIDERS:
+            self.add_slider(layout, name)
+        fine = SPECS["fine_groups"]
+        self.fine_check = QtWidgets.QCheckBox(t(fine.label))
+        self.fine_check.setToolTip(t(fine.description))
+        self.fine_check.toggled.connect(lambda checked: self.set_param("fine_groups", int(checked)))
+        layout.addWidget(self.fine_check)
         self.mode_buttons: dict[str, QtWidgets.QToolButton] = {}
         group = QtWidgets.QButtonGroup(self)
         for mode, text, tip in (("single", t("Single"), t("Select one file at a time.")), ("group", t("Group"), t("Select whole groups."))):
@@ -75,10 +73,22 @@ class MapToolbar(QtWidgets.QWidget):
         self.settings.changed.connect(self.sync)
         self.sync()
 
-    def on_group_slider(self, position: int) -> None:
-        size = position * GROUP_SPEC.step
-        self.group_value.setText(f"{MULTIPLY}{size:.2f}")
-        self.settings.set_params(replace(self.settings.params, group_size=size))
+    def add_slider(self, layout: QtWidgets.QHBoxLayout, name: str) -> None:
+        spec = SPECS[name]
+        label = QtWidgets.QLabel(t(spec.label))
+        label.setToolTip(t(spec.description))
+        slider = QtWidgets.QSlider(Qt.Horizontal)
+        slider.setRange(round(spec.minimum / spec.step), round(spec.maximum / spec.step))
+        slider.setFixedWidth(dpix(SLIDER_WIDTH))
+        slider.setToolTip(t(spec.description))
+        slider.valueChanged.connect(lambda position: self.set_param(name, position * spec.step))
+        value = QtWidgets.QLabel()
+        for widget in (label, slider, value):
+            layout.addWidget(widget)
+        self.sliders[name], self.slider_values[name] = slider, value
+
+    def set_param(self, name: str, value) -> None:
+        self.settings.set_params(replace(self.settings.params, **{name: value}))
 
     def on_mode_toggled(self, mode: str, checked: bool) -> None:
         if checked:
@@ -88,10 +98,13 @@ class MapToolbar(QtWidgets.QWidget):
         settings = self.settings
         set_quietly(self.label_check, settings.labels_shown)
         set_quietly(self.thumbnail_check, settings.thumbnails_shown)
-        self.group_slider.blockSignals(True)
-        self.group_slider.setValue(round(settings.params.group_size / GROUP_SPEC.step))
-        self.group_slider.blockSignals(False)
-        self.group_value.setText(f"{MULTIPLY}{settings.params.group_size:.2f}")
+        for name, slider in self.sliders.items():
+            value = getattr(settings.params, name)
+            slider.blockSignals(True)
+            slider.setValue(round(value / SPECS[name].step))
+            slider.blockSignals(False)
+            self.slider_values[name].setText(f"{MULTIPLY}{value:.2f}")
+        set_quietly(self.fine_check, bool(settings.params.fine_groups))
         for mode, button in self.mode_buttons.items():
             set_quietly(button, mode == settings.selection_mode)
         if self.tuning.params() != settings.params:

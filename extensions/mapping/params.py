@@ -83,6 +83,16 @@ class MapParams:
         maximum=4.0,
         step=0.25,
     )
+    group_strictness: float = param(
+        1.0,
+        stage="view",
+        label="Strictness",
+        description="How crowded files must be to form a group, as a multiple of the automatic value. Lower leaves fewer files without a group.",
+        minimum=0.25,
+        maximum=4.0,
+        step=0.25,
+    )
+    fine_groups: int = param(0, stage="view", label="Fine groups", description="Split large groups into the smaller crowds inside them.", minimum=0, maximum=1)
     point_size: float = param(3.0, stage="view", label="Point size", description="Size of the dots in pixels.", minimum=1.0, maximum=16.0, step=1.0)
     image_spacing: float = param(
         0.01, stage="view", label="Image spacing", description="Space between images, relative to their size. Lower lets them overlap more.", minimum=0.01, maximum=2.0, step=0.05
@@ -127,10 +137,11 @@ class MapParams:
     def resolved_neighbors(self, count: int) -> int:
         return min(MAX_NEIGHBORS, max(MIN_NEIGHBORS, round(max(AUTO_NEIGHBORS_MIN, count * AUTO_NEIGHBORS_SHARE) * self.neighbors)))
 
-    def group_sizes(self, count: int) -> tuple[int, int]:
+    def cluster_options(self, count: int) -> tuple[int, int, str]:
         automatic = min(AUTO_GROUP_MAX, max(AUTO_GROUP_MIN, count // AUTO_GROUP_DIVISOR))
         size = max(MIN_GROUP_SIZE, round(automatic * self.group_size))
-        return size, min(size, AUTO_STRICTNESS_MAX)
+        samples = max(1, round(min(size, AUTO_STRICTNESS_MAX) * self.group_strictness))
+        return size, samples, "leaf" if self.fine_groups else "eom"
 
 
 def param_specs() -> list[tuple[str, ParamSpec, int | float]]:

@@ -122,6 +122,18 @@ def valued_paths(values: dict[str, dict[str, PathValue]], keys: list[str]) -> li
     return sorted(path for path, entry in values.items() if any(key in entry for key in keys))
 
 
+def input_key(item):
+    return tuple(item) if isinstance(item, list) else item
+
+
+def encode_once(encoder: BaseEncoder, reducer: projection.BlockReducer, inputs: list, known: dict) -> np.ndarray:
+    keys = [input_key(item) for item in inputs]
+    missing = {key: item for key, item in zip(keys, inputs) if key not in known}
+    if missing:
+        known.update(zip(missing, reducer.transform(encoder.transform(list(missing.values())))))
+    return np.stack([known[key] for key in keys])
+
+
 class SpaceModel:
     def __init__(self, preset, encoders, reducers, scales, paths, matrix, coords, built_at):
         self.preset = preset
@@ -176,11 +188,12 @@ class SpaceModel:
 
     def place_all(self, paths: list[str], values: dict[str, dict[str, PathValue]], cancelled) -> None:
         placed_paths, placed_coords = [], []
+        encoded: list[dict] = [{} for _ in self.encoders]
         for start in range(0, len(paths), PLACE_BATCH):
             if cancelled():
                 raise MapError("Cancelled")
             batch = paths[start : start + PLACE_BATCH]
-            coords = self.place([values[path] for path in batch])
+            coords = self.place([values[path] for path in batch], encoded)
             found = np.isfinite(coords).all(axis=1)
             placed_paths += [path for path, ok in zip(batch, found) if ok]
             placed_coords.append(coords[found])
@@ -193,14 +206,15 @@ class SpaceModel:
         index = self.index.get(path)
         return None if index is None else tuple(float(value) for value in self.coords[index])
 
-    def place(self, entries: list[dict[str, PathValue]]) -> np.ndarray:
+    def place(self, entries: list[dict[str, PathValue]], encoded: list[dict] | None = None) -> np.ndarray:
+        encoded = encoded if encoded is not None else [{} for _ in self.encoders]
         parts = []
         has_value = np.zeros(len(entries), dtype=bool)
-        for feature, encoder, reducer in zip(self.preset.features, self.encoders, self.reducers):
+        for feature, encoder, reducer, known in zip(self.preset.features, self.encoders, self.reducers, encoded):
             encoder_cls = ENCODERS[feature.encoder]
             inputs = [feature_input(entry, feature.key, encoder_cls) for entry in entries]
             present = encoder.present(inputs)
-            parts.append((reducer.transform(encoder.transform(inputs)), present))
+            parts.append((encode_once(encoder, reducer, inputs, known), present))
             has_value |= present
         output = np.full((len(entries), SPACE_COLUMNS), np.nan, dtype=np.float32)
         rows = np.flatnonzero(has_value)

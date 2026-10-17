@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from extensions.mapping import projection, space
+from extensions.mapping.encoders import ENCODERS
 from extensions.mapping.params import MapParams
 from extensions.mapping.session import FeatureSpec, MapError
 from extensions.mapping.space import Preset, SpaceLoadError, SpaceModel, SpaceStatus, load_preset, read_status, save_preset, write_status
@@ -292,3 +293,26 @@ def test_the_training_sample_is_drawn_only_from_files_with_values():
     model = SpaceModel.fit(limited(10), values)
     assert model.trained == 10 and len(model.paths) == 40
     assert all(path in tag_values(40) for path in model.paths)
+
+
+def test_placing_encodes_each_distinct_value_once_with_the_same_result(monkeypatch):
+    model = SpaceModel.fit(limited(10), tag_values(40))
+    entries = [{"tags": PathValue("cat, sky")}, {"tags": PathValue("dog, sea")}, {"tags": PathValue("cat, sky")}, {}, {"tags": PathValue("dog, sea")}]
+    separately = np.vstack([model.place([entry]) for entry in entries])
+    encoded = []
+    encoder = model.encoders[0]
+    original = type(encoder).transform
+    monkeypatch.setattr(type(encoder), "transform", lambda self, inputs: encoded.append(len(inputs)) or original(self, inputs))
+    together = model.place(entries)
+    assert encoded == [3]
+    assert np.allclose(together, separately, equal_nan=True)
+
+
+def test_placing_reuses_encoded_values_across_batches(monkeypatch):
+    monkeypatch.setattr(space, "PLACE_BATCH", 5)
+    values = {**tag_values(40), **{f"c:/copy/{i}.png": {"tags": PathValue("cat, sky" if i % 2 else "dog, sea")} for i in range(30)}}
+    encoded = []
+    original = ENCODERS["token_set"].transform
+    monkeypatch.setattr(ENCODERS["token_set"], "transform", lambda self, inputs: encoded.append(len(inputs)) or original(self, inputs))
+    SpaceModel.fit(limited(10), values)
+    assert sum(encoded) == 2

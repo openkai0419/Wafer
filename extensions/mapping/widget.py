@@ -91,6 +91,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.settings = ViewSettings.instance()
         self.levels: list[MapLevel] = []
         self.shown: MapResult | None = None
+        self.grouping = False
         self.host = MapHost(self)
         self.build_ui()
         self.host.map_views = [self.map_view]
@@ -270,6 +271,11 @@ class MappingWidget(QtWidgets.QWidget):
 
         def task():
             try:
+                if not layout.is_grouped():
+                    plain = layout.run(params, grouped=False)
+                    self.dispatcher.invoke(lambda: cancel.is_cancelled() or self._apply_result(level, plain, final=False))
+                    if cancel.is_cancelled():
+                        return
                 result = layout.run(params)
             except MapError as e:
                 self.dispatcher.invoke(lambda m=str(e): cancel.is_cancelled() or self.finish(t(m)))
@@ -278,7 +284,7 @@ class MappingWidget(QtWidgets.QWidget):
                 AppLogger.error("[Mapping] Map computation failed", exc=e)
                 self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.finish(t("Mapping failed. See the log for details.")))
                 return
-            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self._apply_result(level, result))
+            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self._apply_result(level, result, final=True))
 
         self.dispatcher.post(task, priority=COMPUTE_PRIORITY, cancel=cancel)
 
@@ -290,11 +296,13 @@ class MappingWidget(QtWidgets.QWidget):
         self.cancel_button.hide()
         self.set_message(message)
 
-    def _apply_result(self, level: MapLevel, result: MapResult):
-        self.cancel_button.hide()
-        level.result = result
+    def _apply_result(self, level: MapLevel, result: MapResult, final: bool):
+        if final:
+            self.cancel_button.hide()
+            level.result = result
         if not self.levels or level is not self.levels[-1]:
             return
+        self.grouping = not final
         self.show_result(result)
 
     def show_result(self, result: MapResult):
@@ -308,8 +316,8 @@ class MappingWidget(QtWidgets.QWidget):
         rows = [row for row, path in enumerate(result.paths) if path in selected]
         self.map_view.select_rows(rows)
         self.file_list.select_rows(rows)
-        self.cancel_button.hide()
-        parts = [t("{count} files", count=len(result.paths)), t("{count} groups", count=result.diagnostics.groups)]
+        groups = t("Grouping") + ELLIPSIS if self.grouping else t("{count} groups", count=result.diagnostics.groups)
+        parts = [t("{count} files", count=len(result.paths)), groups]
         if result.diagnostics.unset:
             parts.append(t("{count} waiting for placement", count=result.diagnostics.unset))
         self.set_message(f" {SEPARATOR} ".join(parts))

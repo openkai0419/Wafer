@@ -135,7 +135,7 @@ def test_token_set_all_empty():
 
 
 def test_folder_prefixes_ignore_the_file_name_and_mixed_separators():
-    assert folder_prefixes(r"c:\a/b\x.png") ==("c:", "c:/a", "c:/a/b")
+    assert folder_prefixes(r"c:\a/b\x.png") == ("c:", "c:/a", "c:/a/b")
     assert folder_prefixes("//server/share/x.png") == ("server", "server/share")
     assert folder_prefixes("x.png") == ()
 

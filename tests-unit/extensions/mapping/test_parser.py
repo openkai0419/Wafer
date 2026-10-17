@@ -9,7 +9,7 @@ from extensions.mapping import parser as parser_module
 from extensions.mapping import projection, space
 from extensions.mapping.params import MapParams
 from extensions.mapping.parser import MappingParser
-from extensions.mapping.session import FeatureSpec, MapError
+from extensions.mapping.session import FeatureSpec, MapError, grouping_values
 from extensions.mapping.space import Preset, SpaceStatus, read_status, save_preset, write_status
 from wafer.core.db.file_db import FileDB
 
@@ -31,7 +31,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(space, "setting_db_path", settings)
     monkeypatch.setattr(space, "resolve_cache_path", lambda rel: str(tmp_path / "cache" / rel))
     monkeypatch.setattr(parser_module, "data_db_path", lambda name: str(db_path))
-    monkeypatch.setattr(projection, "embed", lambda m, neighbors, d, s: np.asarray(m[:, :2], dtype=np.float32))
+    monkeypatch.setattr(projection, "embed", lambda m, neighbors, d, s, dims=2: np.tile(np.asarray(m, dtype=np.float32), (1, dims))[:, :dims])
     save_preset("map", Preset([FeatureSpec("wd14.tags", "token_set")], MapParams(), 1))
     plugin = MappingParser()
     plugin.db_name = "map"
@@ -52,7 +52,7 @@ def test_trigger_keys_follow_the_preset(env):
 def test_first_call_trains_and_writes_training_coordinates(env):
     plugin, _db, tmp = env
     result = run(plugin, "c:/0.png")
-    assert result.status and set(result.meta_info) == {"x", "y", "gx", "gy", "model"}
+    assert result.status and set(result.meta_info) == {"x", "y", "group", "model"}
     assert result.meta_info["model"] == "1"
     status = read_status(tmp / "cache" / "mapping" / "map")
     assert status.state == "ready" and status.trained == 30 and status.sources_at_training == 30
@@ -73,7 +73,7 @@ def test_file_without_values_clears_coordinates(env):
     plugin, db, _tmp = env
     db.upsert_basic_sources([("c:/empty.png", "he", 1, 1.0, 1.0, 1.0)], [("c:/empty.png", "c:/empty.png", "empty.png", 1.0, None)])
     result = run(plugin, "c:/empty.png")
-    assert result.status and result.delete_meta_keys == ["mapping.x", "mapping.y", "mapping.gx", "mapping.gy", "mapping.model"]
+    assert result.status and result.delete_meta_keys == ["mapping.x", "mapping.y", "mapping.group", "mapping.model"]
 
 
 def test_version_change_retrains(env, monkeypatch):
@@ -133,7 +133,8 @@ def test_first_call_values_equal_training_coordinates(env):
     plugin, _db, _tmp = env
     meta = run(plugin, "c:/3.png").meta_info
     expected = plugin.model.coords_for("c:/3.png")
-    assert tuple(float(meta[key]) for key in ("x", "y", "gx", "gy")) == pytest.approx(expected)
+    written = (float(meta["x"]), float(meta["y"]), *grouping_values(meta["group"]))
+    assert written == pytest.approx(expected, rel=1e-5)
 
 
 def test_current_version_file_is_placed_by_neighbours(env):

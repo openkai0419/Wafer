@@ -10,7 +10,8 @@ from extensions.mapping import map_host as map_host_module
 from extensions.mapping import map_view as map_view_module
 from extensions.mapping import widget as widget_module
 from extensions.mapping.params import MapParams, param_specs
-from extensions.mapping.session import FeatureSpec
+from extensions.mapping.projection import GROUPING_DIMS
+from extensions.mapping.session import FeatureSpec, grouping_text
 from extensions.mapping.space import Preset
 from extensions.mapping.view_settings import ViewSettings
 from extensions.mapping.widget import MappingWidget
@@ -55,7 +56,14 @@ def space_values() -> dict:
         entry = {"tags": PathValue("cat, sky" if i < 15 else "dog, sea")}
         if path not in UNSET:
             x = float(i // 15) * 10 + i * 0.01
-            entry.update({"mapping.x": PathValue(str(x), x), "mapping.y": PathValue("0", 0.0), "mapping.gx": PathValue(str(x), x), "mapping.gy": PathValue("0", 0.0), "mapping.model": PathValue("2", 2.0)})
+            entry.update(
+                {
+                    "mapping.x": PathValue(str(x), x),
+                    "mapping.y": PathValue("0", 0.0),
+                    "mapping.group": PathValue(grouping_text([x] + [0.0] * (GROUPING_DIMS - 1))),
+                    "mapping.model": PathValue("2", 2.0),
+                }
+            )
         values[path] = entry
     return values
 
@@ -490,3 +498,13 @@ def test_view_settings_reach_the_mapping_space_panel(mapping, qtbot):
     assert space.toolbar.mode_buttons["group"].isChecked() and mapping.toolbar.mode_buttons["group"].isChecked()
     assert set(space.toolbar.tuning.controls) == set(mapping.toolbar.tuning.controls)
     space.close()
+
+
+def test_map_is_shown_before_its_groups(qtbot, space_data, monkeypatch):
+    shown = []
+    original = MappingWidget.show_result
+    monkeypatch.setattr(MappingWidget, "show_result", lambda self, result: shown.append(result.labels is None) or original(self, result))
+    w = open_widget(qtbot)
+    assert shown[:2] == [True, False]
+    assert w.current_result().labels is not None and "groups" in w.message_text()
+    w.close()

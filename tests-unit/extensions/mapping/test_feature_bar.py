@@ -180,7 +180,6 @@ def test_switching_encoder_rebuilds_number_options(qtbot):
     assert set(chip.option_spins) == {"summary"}
 
 
-
 def test_a_wide_key_wraps_to_fit_a_narrow_panel(qtbot):
     bar = FeatureBar(lambda key: "text")
     qtbot.addWidget(bar)

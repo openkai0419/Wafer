@@ -260,3 +260,23 @@ def test_placement_averages_the_nearest_trained_points():
     assert np.allclose(placed[0], coords[0], atol=1e-3)
     assert np.linalg.norm(placed[1] - coords[3]) < np.linalg.norm(placed[1] - coords[0])
     assert np.allclose(placement.weights.sum(axis=1), 1.0)
+
+
+def test_embed_can_return_more_dimensions(monkeypatch):
+    import umap
+
+    seen = {}
+
+    class Recorder:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+        def fit_transform(self, matrix):
+            return np.ones((matrix.shape[0], seen["n_components"]), dtype=np.float32)
+
+    monkeypatch.setattr(umap, "UMAP", Recorder)
+    matrix = np.random.default_rng(6).normal(size=(40, 12))
+    points = projection.embed(matrix, projection.nearest_neighbors(matrix, 9, 0), 0.0, 1, projection.GROUPING_DIMS)
+    assert points.shape == (40, projection.GROUPING_DIMS) and seen["n_components"] == projection.GROUPING_DIMS
+    tiny = projection.embed(matrix[:3], None, 0.0, 1, projection.GROUPING_DIMS)
+    assert tiny.shape == (3, projection.GROUPING_DIMS) and np.isfinite(tiny).all()

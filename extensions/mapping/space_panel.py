@@ -147,13 +147,13 @@ def read_snapshot(db_name: str, view: MapParams) -> SpaceSnapshot:
     values = fetch_path_values(db_path, sample, keys=[*preset.value_keys(), *SPACE_KEYS])
     snapshot.sources = fetch_sources(db_path, sample)
     snapshot.layout = SpaceLayout(sample, values, preset)
-    snapshot.result, snapshot.problem = run_preview(snapshot.layout, view, db_name)
+    snapshot.result, snapshot.problem = run_preview(snapshot.layout, view, db_name, grouped=False)
     return snapshot
 
 
-def run_preview(layout: SpaceLayout, view: MapParams, db_name: str) -> tuple[MapResult | None, str]:
+def run_preview(layout: SpaceLayout, view: MapParams, db_name: str, grouped: bool = True) -> tuple[MapResult | None, str]:
     try:
-        return layout.run(view), ""
+        return layout.run(view, grouped=grouped), ""
     except MapError as e:
         return None, str(e)
     except Exception as e:
@@ -613,6 +613,10 @@ class MappingSpaceWidget(QtWidgets.QWidget):
                 self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.preview_failed())
                 return
             self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.apply_snapshot(snapshot))
+            if snapshot.layout is None or snapshot.result is None or cancel.is_cancelled():
+                return
+            result, problem = run_preview(snapshot.layout, params, db_name)
+            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.showing_quick or self.quick_running or self.preview_layout is not snapshot.layout or self.show_space_result(result, problem))
 
         self.dispatcher.post(task, priority=LOAD_PRIORITY, cancel=cancel)
 

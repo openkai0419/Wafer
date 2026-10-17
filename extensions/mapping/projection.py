@@ -12,6 +12,7 @@ from wafer.core.logs import AppLogger
 SMALL_LAYOUT_LIMIT = 3
 SPECTRAL_INIT_MIN = 20
 GROUPING_MIN_DIST = 0.0
+GROUPING_DIMS = 10
 WARM_UP_ROWS = 300
 EXACT_NEIGHBORS_LIMIT = 200_000
 PLACE_NEIGHBORS = 3
@@ -186,20 +187,20 @@ class NeighborIndex:
         return Placement(indices, weights / weights.sum(axis=1, keepdims=True))
 
 
-def embed(matrix: np.ndarray, neighbors: Neighbors | None, min_dist: float, seed: int) -> np.ndarray:
+def embed(matrix: np.ndarray, neighbors: Neighbors | None, min_dist: float, seed: int, dims: int = 2) -> np.ndarray:
     count = matrix.shape[0]
-    output = np.zeros((count, 2), dtype=np.float32)
+    output = np.zeros((count, dims), dtype=np.float32)
     if count == 0 or not np.any(np.ptp(matrix, axis=0) > 1e-9):
         return output
     if neighbors is None:
         centered = matrix - matrix.mean(axis=0)
         u, s, _ = np.linalg.svd(centered, full_matrices=False)
-        width = min(2, s.size)
+        width = min(dims, s.size)
         output[:, :width] = u[:, :width] * s[:width]
         return output
     import umap
 
-    components = max(1, min(2, count - 2))
+    components = max(1, min(dims, count - 2))
     reducer = umap.UMAP(
         n_components=components,
         n_neighbors=neighbors.indices.shape[1],

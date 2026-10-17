@@ -8,7 +8,8 @@ from PySide6 import QtCore
 
 from extensions.mapping import space, space_panel
 from extensions.mapping.params import MapParams
-from extensions.mapping.session import FeatureSpec
+from extensions.mapping.projection import GROUPING_DIMS
+from extensions.mapping.session import FeatureSpec, grouping_text
 from extensions.mapping.space import Preset, SpaceStatus, save_preset, write_status
 from extensions.mapping.view_settings import ViewSettings
 from extensions.mapping.space_panel import MappingSpacePlugin, MappingSpaceWidget, SpaceSnapshot, current_status, read_snapshot, status_text
@@ -157,7 +158,8 @@ def database(tmp_path, monkeypatch):
     db.upsert_basic_sources([(f"c:/{i}.png", f"h{i}", 100, 1.0, 1.0, 1.0) for i in range(count)], [(f"c:/{i}.png", f"c:/{i}.png", f"{i}.png", 1.0, None) for i in range(count)])
     meta = []
     for i in range(count - 2):
-        meta += [(f"c:/{i}.png", key, str(value), float(value)) for key, value in (("mapping.x", i), ("mapping.y", i % 3), ("mapping.gx", i), ("mapping.gy", i % 3), ("mapping.model", 1))]
+        meta += [(f"c:/{i}.png", key, str(value), float(value)) for key, value in (("mapping.x", i), ("mapping.y", i % 3), ("mapping.model", 1))]
+        meta.append((f"c:/{i}.png", "mapping.group", grouping_text([float(i), float(i % 3)] + [0.0] * (GROUPING_DIMS - 2)), None))
     db.upsert_collection_results([], meta, [(f"c:/{i}.png", "wd14.tags", "cat, sky", None) for i in range(count)], [])
     settings = lambda name: str(tmp_path / f"{name}.settings.db")
     monkeypatch.setattr(space_panel, "data_db_path", lambda name: str(db_path))
@@ -468,8 +470,7 @@ def test_label_and_outlier_changes_relayout_the_shown_sample(widget, qtbot, monk
             "tags": PathValue("cat" if i < 6 else "dog"),
             "mapping.x": PathValue(str(i), float(i)),
             "mapping.y": PathValue("0", 0.0),
-            "mapping.gx": PathValue(str(i), float(i)),
-            "mapping.gy": PathValue("0", 0.0),
+            "mapping.group": PathValue(grouping_text([float(i)] + [0.0] * (GROUPING_DIMS - 1))),
             "mapping.model": PathValue("1", 1.0),
         }
         for i in range(12)
@@ -479,3 +480,16 @@ def test_label_and_outlier_changes_relayout_the_shown_sample(widget, qtbot, monk
     ViewSettings.instance().set_params(MapParams(label_terms=1))
     qtbot.waitUntil(lambda: w.shown is not None, timeout=5000)
     assert w.shown.paths == list(values) and "12 files" in w.count_label.text()
+
+
+def test_preview_is_shown_before_its_groups(qtbot, database, monkeypatch):
+    shown = []
+    original = MappingSpaceWidget.show_preview
+    monkeypatch.setattr(MappingSpaceWidget, "show_preview", lambda self, result, sources, caption: shown.append(result.labels is None) or original(self, result, sources, caption))
+    w = MappingSpaceWidget()
+    qtbot.addWidget(w)
+    w.db_name = "map"
+    w.refresh()
+    qtbot.waitUntil(lambda: len(shown) >= 2, timeout=20000)
+    assert shown[:2] == [True, False] and w.shown.labels is not None
+    w.close()

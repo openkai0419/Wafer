@@ -4,7 +4,7 @@ import pytest
 from extensions.mapping import projection, session
 from extensions.mapping.encoders import ENCODERS
 from extensions.mapping.params import MapParams
-from extensions.mapping.session import FeatureSpec, MapError, MapPipeline, MapRequest, SpaceLayout
+from extensions.mapping.session import FeatureSpec, MapError, MapPipeline, MapRequest, SpaceLayout, grouping_text
 from extensions.mapping.space import Preset
 from wafer.core.db.path_values import PathValue
 
@@ -13,9 +13,9 @@ from wafer.core.db.path_values import PathValue
 def embed_calls(monkeypatch):
     calls = []
 
-    def fake_embed(matrix, neighbors, min_dist, seed):
+    def fake_embed(matrix, neighbors, min_dist, seed, dims=2):
         calls.append(min_dist)
-        return jittered_copy(matrix, 2)
+        return jittered_copy(matrix, dims)
 
     monkeypatch.setattr(projection, "embed", fake_embed)
     return calls
@@ -154,8 +154,7 @@ def space_values(count=12, version="2"):
             "tags": PathValue("cat" if i < count // 2 else "dog"),
             "mapping.x": PathValue(str(x + i * 0.01), x + i * 0.01),
             "mapping.y": PathValue("0", 0.0),
-            "mapping.gx": PathValue(str(x), x),
-            "mapping.gy": PathValue("0", 0.0),
+            "mapping.group": PathValue(grouping_text([x] + [0.0] * (projection.GROUPING_DIMS - 1))),
             "mapping.model": PathValue(version, float(version)),
         }
     return values
@@ -224,9 +223,9 @@ def test_space_describers_use_fit_describe_and_matches_fit_transform(monkeypatch
 def test_spacing_changes_the_layout_but_not_the_groups(monkeypatch):
     calls = []
 
-    def spacing_embed(matrix, neighbors, min_dist, seed):
+    def spacing_embed(matrix, neighbors, min_dist, seed, dims=2):
         calls.append(min_dist)
-        return jittered_copy(matrix, 2) + min_dist * 100
+        return jittered_copy(matrix, dims) + min_dist * 100
 
     monkeypatch.setattr(projection, "embed", spacing_embed)
     runner = pipeline()
@@ -259,9 +258,9 @@ def test_both_layouts_share_one_neighbor_search_of_the_resolved_size(monkeypatch
         searched.append(n_neighbors)
         return real_search(matrix, n_neighbors, seed)
 
-    def record(matrix, neighbors, min_dist, seed):
+    def record(matrix, neighbors, min_dist, seed, dims=2):
         used.append(neighbors)
-        return jittered_copy(matrix, 2)
+        return jittered_copy(matrix, dims)
 
     monkeypatch.setattr(projection, "nearest_neighbors", search)
     monkeypatch.setattr(projection, "embed", record)
@@ -310,9 +309,9 @@ def test_quick_train_learns_from_the_training_limit_and_places_the_rest(monkeypa
         searched.append((matrix.shape[0], n_neighbors))
         return real_search(matrix, n_neighbors, seed)
 
-    def record(matrix, neighbors, min_dist, seed):
+    def record(matrix, neighbors, min_dist, seed, dims=2):
         embedded.append(matrix.shape[0])
-        return jittered_copy(matrix, 2)
+        return jittered_copy(matrix, dims)
 
     monkeypatch.setattr(projection, "nearest_neighbors", search)
     monkeypatch.setattr(projection, "embed", record)
@@ -326,3 +325,42 @@ def test_quick_train_learns_from_the_training_limit_and_places_the_rest(monkeypa
     assert len(embedded) == 2
     runner.run(make_request(count=200, params=MapParams(train_limit=0)))
     assert embedded[-2:] == [200, 200]
+
+
+def test_quick_train_groups_on_the_ten_dimensional_layout(monkeypatch):
+    calls = []
+
+    def record(matrix, neighbors, min_dist, seed, dims=2):
+        calls.append((dims, min_dist))
+        return jittered_copy(matrix, dims)
+
+    monkeypatch.setattr(projection, "embed", record)
+    clustered = []
+    real_cluster = projection.cluster
+    monkeypatch.setattr(projection, "cluster", lambda space, *args: clustered.append(space.shape[1]) or real_cluster(space, *args))
+    pipeline().run(make_request(params=MapParams(min_dist=0.3)))
+    assert calls == [(2, 0.3), (projection.GROUPING_DIMS, projection.GROUPING_MIN_DIST)]
+    assert clustered == [projection.GROUPING_DIMS]
+
+
+def test_space_layout_can_show_the_map_before_grouping(monkeypatch):
+    clustered = []
+    real_cluster = projection.cluster
+    monkeypatch.setattr(projection, "cluster", lambda *args: clustered.append(1) or real_cluster(*args))
+    values = space_values()
+    layout = SpaceLayout(list(values), values, space_preset())
+    plain = layout.run(MapParams(), grouped=False)
+    assert plain.labels is None and plain.group_terms == {} and clustered == []
+    assert np.isfinite(plain.positions).all() and sorted(plain.order.tolist()) == list(range(len(values)))
+    grouped = layout.run(MapParams())
+    assert grouped.labels is not None and clustered == [1]
+    assert np.array_equal(plain.positions, grouped.positions)
+
+
+def test_grouping_text_roundtrip_and_bad_values():
+    from extensions.mapping.session import grouping_values
+
+    numbers = np.linspace(-3.5, 7.25, projection.GROUPING_DIMS)
+    assert np.allclose(grouping_values(grouping_text(numbers)), numbers, rtol=1e-5)
+    assert grouping_values("1,2") is None and grouping_values("") is None
+    assert grouping_values(",".join(["x"] * projection.GROUPING_DIMS)) is None

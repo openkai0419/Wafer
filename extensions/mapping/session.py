@@ -22,8 +22,25 @@ if TYPE_CHECKING:
     from .space import Preset
 
 OUTPUT_PREFIX = "mapping"
-KEY_X, KEY_Y, KEY_GROUP_X, KEY_GROUP_Y, KEY_MODEL = (f"{OUTPUT_PREFIX}.{name}" for name in ("x", "y", "gx", "gy", "model"))
-SPACE_KEYS = (KEY_X, KEY_Y, KEY_GROUP_X, KEY_GROUP_Y, KEY_MODEL)
+KEY_X, KEY_Y, KEY_GROUP, KEY_MODEL = (f"{OUTPUT_PREFIX}.{name}" for name in ("x", "y", "group", "model"))
+SPACE_KEYS = (KEY_X, KEY_Y, KEY_GROUP, KEY_MODEL)
+SPACE_COLUMNS = 2 + projection.GROUPING_DIMS
+GROUPING_SEPARATOR = ","
+
+
+def grouping_text(numbers) -> str:
+    return GROUPING_SEPARATOR.join(f"{float(value):.6g}" for value in numbers)
+
+
+def grouping_values(text: str) -> np.ndarray | None:
+    parts = text.split(GROUPING_SEPARATOR) if text else []
+    if len(parts) != projection.GROUPING_DIMS:
+        return None
+    try:
+        numbers = np.array([float(part) for part in parts], dtype=np.float64)
+    except ValueError:
+        return None
+    return numbers if np.isfinite(numbers).all() else None
 
 
 class MapError(Exception):
@@ -134,7 +151,7 @@ class MapPipeline:
         self._neighbors: projection.Neighbors | None = None
         self._active = np.zeros(0, dtype=np.int64)
         self._points = np.zeros((0, 2), dtype=np.float32)
-        self._group_points = np.zeros((0, 2), dtype=np.float32)
+        self._group_points = np.zeros((0, projection.GROUPING_DIMS), dtype=np.float32)
         self._combined: np.ndarray | None = None
         self._stats: list[projection.BlockStats] = []
         self._cluster_key: tuple | None = None
@@ -196,7 +213,7 @@ class MapPipeline:
             progress("cluster", 0.0)
             neighbors = self._neighbors_for(neighbors_key, neighbor_count, params.seed, diagnostics)
             with timed(diagnostics, "group_layout"):
-                self._group_points = self._spread(projection.embed(self._training, neighbors, projection.GROUPING_MIN_DIST, params.seed), diagnostics)
+                self._group_points = self._spread(projection.embed(self._training, neighbors, projection.GROUPING_MIN_DIST, params.seed, projection.GROUPING_DIMS), diagnostics)
             self._group_key, self._cluster_key, self._labels = group_key, None, None
         if cancelled():
             return None
@@ -232,7 +249,7 @@ class MapPipeline:
                 rest = np.setdiff1d(np.arange(self._active.size), self._train, assume_unique=True)
                 self._placement = (rest, projection.NeighborIndex(self._training).placement(self._combined[rest]))
         rest, placement = self._placement
-        points = np.empty((self._active.size, 2), dtype=np.float32)
+        points = np.empty((self._active.size, trained.shape[1]), dtype=np.float32)
         points[self._train] = trained
         points[rest] = placement.apply(trained)
         return points
@@ -289,11 +306,11 @@ class SpaceLayout:
         self.describers: list[tuple[BaseEncoder, np.ndarray]] | None = None
         self.active_labels: np.ndarray | None = None
 
-    def run(self, params: MapParams) -> MapResult:
+    def run(self, params: MapParams, *, grouped: bool = True) -> MapResult:
         with self.lock:
-            return self._run(params.normalized())
+            return self._run(params.normalized(), grouped)
 
-    def _run(self, params: MapParams) -> MapResult:
+    def _run(self, params: MapParams, grouped: bool) -> MapResult:
         diagnostics = MapDiagnostics()
         count = len(self.paths)
         raw = self.space_coords()
@@ -309,7 +326,7 @@ class SpaceLayout:
         labels = None
         terms: dict[int, list[str]] = {}
         active_labels = np.zeros(active.size, dtype=np.int32)
-        if active.size >= 3:
+        if grouped and active.size >= 3:
             active_labels = self.group(raw[active, 2:], diagnostics)
             labels = np.full(count, -1, dtype=np.int32)
             labels[active] = active_labels
@@ -322,18 +339,23 @@ class SpaceLayout:
         AppLogger.info(diagnostics.summary())
         return MapResult(list(self.paths), positions, outliers, ~placed, labels, terms, order, diagnostics)
 
+    def is_grouped(self) -> bool:
+        return self.active_labels is not None
+
     def space_coords(self) -> np.ndarray:
         if self.coords is None:
-            raw = np.full((len(self.paths), 4), np.nan, dtype=np.float64)
+            raw = np.full((len(self.paths), SPACE_COLUMNS), np.nan, dtype=np.float64)
             version = str(self.preset.version)
             for row, path in enumerate(self.paths):
                 entry = self.values.get(path, {})
                 model = entry.get(KEY_MODEL)
-                if model is None or model.text != version:
+                if model is None or model.text != version or KEY_GROUP not in entry:
                     continue
-                numbers = [entry[key].number if key in entry else None for key in (KEY_X, KEY_Y, KEY_GROUP_X, KEY_GROUP_Y)]
-                if None not in numbers:
-                    raw[row] = numbers
+                x, y = (entry[key].number if key in entry else None for key in (KEY_X, KEY_Y))
+                grouping = grouping_values(entry[KEY_GROUP].text)
+                if x is not None and y is not None and grouping is not None:
+                    raw[row, :2] = x, y
+                    raw[row, 2:] = grouping
             self.coords = raw
         return self.coords
 

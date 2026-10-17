@@ -10,9 +10,9 @@ from wafer.core.db.path_values import PathValue
 
 @pytest.fixture(autouse=True)
 def fast_embed(monkeypatch):
-    def fake_embed(matrix, neighbors, min_dist, seed):
-        out = np.zeros((matrix.shape[0], 2), dtype=np.float32)
-        width = min(2, matrix.shape[1])
+    def fake_embed(matrix, neighbors, min_dist, seed, dims=2):
+        out = np.zeros((matrix.shape[0], dims), dtype=np.float32)
+        width = min(dims, matrix.shape[1])
         out[:, :width] = matrix[:, :width]
         return out
 
@@ -127,7 +127,7 @@ def test_place_with_only_some_features():
 def test_place_with_fewer_rows_than_neighbours(count):
     model = SpaceModel.fit(preset(), tag_values(count))
     placed = model.place([{"tags": PathValue("cat, sky")}])
-    assert placed.shape == (1, 4) and np.isfinite(placed).all()
+    assert placed.shape == (1, 2 + projection.GROUPING_DIMS) and np.isfinite(placed).all()
 
 
 def test_cleanup_matches_whole_version_only(tmp_path):
@@ -200,26 +200,27 @@ def test_load_ignores_a_model_built_from_another_preset(tmp_path):
 def test_grouping_coordinates_do_not_depend_on_spacing(monkeypatch):
     calls = []
 
-    def spacing_embed(matrix, neighbors, min_dist, seed):
-        calls.append(min_dist)
-        return np.full((matrix.shape[0], 2), min_dist, dtype=np.float32) + matrix[:, :1]
+    def spacing_embed(matrix, neighbors, min_dist, seed, dims=2):
+        calls.append((dims, min_dist))
+        return np.full((matrix.shape[0], dims), min_dist, dtype=np.float32) + matrix[:, :1]
 
     monkeypatch.setattr(projection, "embed", spacing_embed)
     tight = SpaceModel.fit(Preset([FeatureSpec("tags", "token_set")], MapParams(min_dist=0.05), 1), tag_values())
     loose = SpaceModel.fit(Preset([FeatureSpec("tags", "token_set")], MapParams(min_dist=0.9), 1), tag_values())
-    assert calls == [0.05, projection.GROUPING_MIN_DIST, 0.9, projection.GROUPING_MIN_DIST]
-    assert tight.coords.shape[1] == 4
+    grouping = (projection.GROUPING_DIMS, projection.GROUPING_MIN_DIST)
+    assert calls == [(2, 0.05), grouping, (2, 0.9), grouping]
+    assert tight.coords.shape[1] == 2 + projection.GROUPING_DIMS
     assert np.allclose(tight.coords[:, 2:], loose.coords[:, 2:])
     assert not np.allclose(tight.coords[:, :2], loose.coords[:, :2])
-    assert tight.place([{"tags": PathValue("cat, sky")}]).shape == (1, 4)
+    assert tight.place([{"tags": PathValue("cat, sky")}]).shape == (1, 2 + projection.GROUPING_DIMS)
 
 
-def test_model_without_grouping_coordinates_must_be_retrained(tmp_path):
+def test_model_with_two_dimensional_grouping_must_be_retrained(tmp_path):
     SpaceModel.fit(preset(2), tag_values()).save(tmp_path)
     path = tmp_path / "model-v2.npz"
     with np.load(path) as arrays:
         data = {k: arrays[k] for k in arrays.files}
-    data["coords"] = data["coords"][:, :2]
+    data["coords"] = data["coords"][:, :4]
     np.savez(path, **data)
     with pytest.raises(SpaceLoadError):
         SpaceModel.load(tmp_path, preset(2))

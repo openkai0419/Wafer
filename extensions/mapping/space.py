@@ -19,10 +19,9 @@ from wafer.core.logs import AppLogger
 from . import projection
 from .encoders import ENCODERS, BaseEncoder, expand_group_keys, feature_input
 from .params import MapParams
-from .session import OUTPUT_PREFIX, FeatureSpec, MapError
+from .session import OUTPUT_PREFIX, SPACE_COLUMNS, FeatureSpec, MapError
 
 PRESET_KEY = "mapping.preset"
-COORD_COLUMNS = 4
 PLACE_BATCH = 5000
 STATUS_FILE = "status.json"
 PATH_SEPARATOR = "\n"
@@ -168,7 +167,7 @@ class SpaceModel:
         display = projection.embed(combined, neighbors, params.min_dist, params.seed)
         if cancelled():
             raise MapError("Cancelled")
-        grouping = projection.embed(combined, neighbors, projection.GROUPING_MIN_DIST, params.seed)
+        grouping = projection.embed(combined, neighbors, projection.GROUPING_MIN_DIST, params.seed, projection.GROUPING_DIMS)
         coords = np.hstack([display, grouping])
         model = cls(preset, encoders, reducers, scales, [paths[i] for i in active], combined.astype(np.float16), coords.astype(np.float32), time.time())
         learned = set(paths)
@@ -203,7 +202,7 @@ class SpaceModel:
             present = encoder.present(inputs)
             parts.append((reducer.transform(encoder.transform(inputs)), present))
             has_value |= present
-        output = np.full((len(entries), COORD_COLUMNS), np.nan, dtype=np.float32)
+        output = np.full((len(entries), SPACE_COLUMNS), np.nan, dtype=np.float32)
         rows = np.flatnonzero(has_value)
         if rows.size == 0:
             return output
@@ -251,8 +250,8 @@ class SpaceModel:
             encoders, reducers, scales = state["encoders"], state["reducers"], state["scales"]
             if len(paths) != len(coords) or not 0 < len(matrix) <= len(coords):
                 raise ValueError("model arrays have different row counts")
-            if coords.ndim != 2 or coords.shape[1] != COORD_COLUMNS:
-                raise ValueError("model was built without grouping coordinates")
+            if coords.ndim != 2 or coords.shape[1] != SPACE_COLUMNS:
+                raise ValueError("model was built with another grouping layout")
             if not len(preset.features) == len(encoders) == len(reducers) == len(scales):
                 raise ValueError("model blocks do not match the preset features")
             return cls(preset, encoders, reducers, scales, paths, matrix, coords, float(state["built_at"]))

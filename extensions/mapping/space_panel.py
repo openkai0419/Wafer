@@ -12,7 +12,7 @@ import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
-from wafer.core.common.paths import data_db_path, safe_getsize, setting_db_path
+from wafer.core.common.paths import data_db_path, list_data_db_names, safe_getsize, setting_db_path
 from wafer.core.db.db_utils import open_readonly
 from wafer.core.db.path_values import PathValue, fetch_path_values, fetch_sources
 from wafer.core.db.query import STANDARD_KEYS, SYSTEM_FILE_HASH_KEY, FileSearchEngine
@@ -46,6 +46,8 @@ STATUS_REFRESH_MS = 1000
 PREVIEW_FILES = 5000
 PREVIEW_RANGE = (100, 200_000)
 RESAMPLE_DELAY_MS = 300
+FORM_MIN_WIDTH = 300
+MAP_MIN_WIDTH = 360
 QUICK_TRAIN_FILES = 3000
 QUICK_TRAIN_RANGE = (100, 100_000)
 DETECT_SAMPLE = 300
@@ -144,6 +146,49 @@ def file_count_box(value_range: tuple[int, int], value: int) -> QtWidgets.QSpinB
     box.setValue(value)
     box.setSuffix(" " + t("files"))
     return box
+
+
+class DatabaseBox(QtWidgets.QComboBox):
+    def showPopup(self) -> None:
+        self.reload()
+        super().showPopup()
+
+    def reload(self) -> None:
+        current = self.currentText()
+        names = sorted(set(list_data_db_names()) | ({current} if current else set()))
+        self.blockSignals(True)
+        self.clear()
+        self.addItems(names)
+        self.setCurrentText(current)
+        self.blockSignals(False)
+
+    def show_quietly(self, name: str) -> None:
+        if not name:
+            return
+        self.blockSignals(True)
+        if self.findText(name) < 0:
+            self.addItem(name)
+        self.setCurrentText(name)
+        self.blockSignals(False)
+
+
+def section_title(text: str) -> QtWidgets.QLabel:
+    label = QtWidgets.QLabel(t(text))
+    font = label.font()
+    font.setBold(True)
+    label.setFont(font)
+    return label
+
+
+def labelled_row(text: str, widget: QtWidgets.QWidget, tooltip: str = "") -> QtWidgets.QHBoxLayout:
+    row = QtWidgets.QHBoxLayout()
+    label = QtWidgets.QLabel(t(text))
+    if tooltip:
+        label.setToolTip(t(tooltip))
+        widget.setToolTip(t(tooltip))
+    row.addWidget(label)
+    row.addWidget(widget, stretch=1)
+    return row
 
 
 def read_snapshot(db_name: str, view: ViewParams, size: int = PREVIEW_FILES) -> SpaceSnapshot:
@@ -274,7 +319,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.settings.changed.connect(self.on_view_settings)
         self.tab.changed.connect(lambda _changed: self.tab.apply(self.map_view))
         GroupingStore.instance().changed.connect(self.on_grouping_changed)
-        self.sync_host()
+        self.default_db()
         self.update_buttons()
         self.destroyed.connect(partial(cancel_work, self.refresh_cancel, self.keys_cancel, self.status_cancel, self.quick_cancel))
         self.destroyed.connect(partial(cancel_tokens, self.detecting))
@@ -293,12 +338,20 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         form = QtWidgets.QWidget()
         form_layout = QtWidgets.QVBoxLayout(form)
         form_layout.setContentsMargins(dpix(8), dpix(8), dpix(8), dpix(8))
+        form_layout.addWidget(section_title("Database"))
+        self.db_box = DatabaseBox()
+        self.db_box.setToolTip(t("The database whose map you train and view here."))
+        self.db_box.currentTextChanged.connect(self.choose_db)
+        form_layout.addWidget(self.db_box)
+        form_layout.addWidget(section_title("Keys"))
         self.feature_bar = FeatureBar(self.detect)
         self.feature_bar.features_changed.connect(self.update_buttons)
         form_layout.addWidget(self.feature_bar)
+        form_layout.addWidget(section_title("Training"))
         self.tuning = TuningPanel(TrainParams)
         self.tuning.params_changed.connect(self.update_buttons)
         form_layout.addWidget(self.tuning)
+        form_layout.addWidget(section_title("Saved map"))
         self.status_label = QtWidgets.QLabel()
         self.status_label.setWordWrap(True)
         self.status_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -317,45 +370,59 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         for button in (self.save_button, self.revert_button, self.refresh_button):
             buttons.addWidget(button)
         form_layout.addLayout(buttons)
-        quick = QtWidgets.QHBoxLayout()
-        self.quick_button = QtWidgets.QPushButton(t("Quick Train"))
-        self.quick_button.setToolTip(t("Train on random files with the current settings for a rough check. Nothing is saved."))
-        self.quick_button.clicked.connect(self.toggle_quick_train)
-        self.quick_size = file_count_box(QUICK_TRAIN_RANGE, QUICK_TRAIN_FILES)
-        quick.addWidget(self.quick_button)
-        quick.addWidget(self.quick_size, stretch=1)
-        form_layout.addLayout(quick)
         self.preview_size = file_count_box(PREVIEW_RANGE, PREVIEW_FILES)
-        self.preview_size.setToolTip(t("Number of files on the whole map."))
         self.preview_size.valueChanged.connect(self.resample)
-        form_layout.addWidget(self.preview_size)
+        form_layout.addLayout(labelled_row("Files on the whole map", self.preview_size, "Number of files on the whole map."))
+        form_layout.addWidget(section_title("Quick Train"))
+        hint = QtWidgets.QLabel(t("Train on random files with the current settings for a rough check. Nothing is saved."))
+        hint.setWordWrap(True)
+        hint.setStyleSheet(f"color: {palette.text_muted};")
+        form_layout.addWidget(hint)
+        self.quick_size = file_count_box(QUICK_TRAIN_RANGE, QUICK_TRAIN_FILES)
+        form_layout.addLayout(labelled_row("Files to train on", self.quick_size))
+        self.quick_button = QtWidgets.QPushButton(t("Quick Train"))
+        self.quick_button.clicked.connect(self.toggle_quick_train)
+        form_layout.addWidget(self.quick_button)
         form_layout.addStretch(1)
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
         scroll.setWidget(form)
+        scroll.setMinimumWidth(dpix(FORM_MIN_WIDTH))
         self.splitter.addWidget(scroll)
         preview = QtWidgets.QWidget()
         preview_layout = QtWidgets.QVBoxLayout(preview)
         preview_layout.setContentsMargins(dpix(6), dpix(6), dpix(6), dpix(6))
-        header = QtWidgets.QHBoxLayout()
+        self.toolbar = MapToolbar(self.tab, edits_space_groups=True)
+        preview_layout.addWidget(self.toolbar)
         self.count_label = QtWidgets.QLabel()
         self.count_label.setStyleSheet(f"color: {palette.text_secondary};")
-        header.addWidget(self.count_label, stretch=1)
-        self.toolbar = MapToolbar(self.tab, edits_space_groups=True)
-        header.addWidget(self.toolbar)
-        preview_layout.addLayout(header)
+        preview_layout.addWidget(self.count_label)
         self.map_view = MapView(self)
+        self.map_view.setMinimumSize(dpix(MAP_MIN_WIDTH) // 2, dpix(MAP_MIN_WIDTH) // 2)
         preview_layout.addWidget(self.map_view, stretch=1)
         self.splitter.addWidget(preview)
+        self.splitter.setChildrenCollapsible(False)
         self.splitter.setStretchFactor(1, 3)
 
-    def sync_host(self) -> None:
-        host = InstanceRegistry.instance().get_host_window()
-        name = getattr(host, "database_name", None)
-        if name:
-            self.db_name = name
-        self.toolbar.set_db(self.db_name)
+    def default_db(self) -> None:
+        if self.db_name:
+            return
+        name = getattr(InstanceRegistry.instance().get_host_window(), "database_name", None) or self.db_box.currentText()
+        if not name:
+            return
+        self.db_name = name
+        self.db_box.show_quietly(name)
+        self.toolbar.set_db(name)
+
+    def choose_db(self, name: str) -> None:
+        if not name or name == self.db_name:
+            return
+        self.db_name = name
+        self.toolbar.set_db(name)
+        self.notice = ""
+        self.preview_key = None
+        self.refresh()
 
     def connect_indexer_updates(self) -> None:
         from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
@@ -526,11 +593,6 @@ class MappingSpaceWidget(QtWidgets.QWidget):
 
     def save_and_retrain(self) -> None:
         db_name = self.db_name
-        self.sync_host()
-        if self.db_name != db_name:
-            AppLogger.info(f"[Mapping] The open database changed from {db_name} to {self.db_name}; reloading Settings without saving")
-            self.refresh()
-            return
         features = self.feature_bar.features()
         if not db_name or not features:
             return
@@ -558,7 +620,6 @@ class MappingSpaceWidget(QtWidgets.QWidget):
             self.quick_cancel.cancel()
             self.finish_quick_train(t("Cancelled"))
             return
-        self.sync_host()
         features = self.feature_bar.features()
         if not self.db_name or not features:
             return
@@ -651,7 +712,6 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.refresh()
 
     def refresh(self) -> None:
-        self.sync_host()
         self.update_buttons()
         if not self.db_name:
             self.render_status()
@@ -746,7 +806,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
         super().showEvent(event)
-        self.sync_host()
+        self.default_db()
         if self.preview_key is not None and self.preview_key == (self.db_name, self.preview_size.value()):
             self.refresh_status()
         else:

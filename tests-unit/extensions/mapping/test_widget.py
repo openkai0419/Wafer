@@ -787,3 +787,7 @@ def test_only_the_map_tab_has_a_spacing_slider(qtbot):
     qtbot.addWidget(space)
     assert "spacing" not in space.toolbar.sliders
     space.close()
+
+
+def test_the_map_tab_names_its_database(mapping):
+    assert mapping.message_text().startswith("db \N{MIDDLE DOT} ")

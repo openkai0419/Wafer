@@ -5,7 +5,7 @@ import time
 
 import numpy as np
 import pytest
-from PySide6 import QtCore
+from PySide6 import QtCore, QtGui
 
 from extensions.mapping import projection, space, space_panel
 from extensions.mapping.params import Grouping, TrainParams, ViewParams
@@ -58,7 +58,7 @@ def widget(qtbot, monkeypatch, tmp_path):
     monkeypatch.setattr(space_panel, "data_db_path", lambda name: str(tmp_path / f"{name}.db"))
     monkeypatch.setattr(space_panel.Recollect, "reset", staticmethod(lambda **kw: resets.append(kw) or 1))
     monkeypatch.setattr(MappingSpaceWidget, "refresh", lambda self: None)
-    monkeypatch.setattr(MappingSpaceWidget, "sync_host", lambda self: None)
+    monkeypatch.setattr(MappingSpaceWidget, "default_db", lambda self: None)
     w = MappingSpaceWidget()
     qtbot.addWidget(w)
     w.db_name = "db1"
@@ -265,16 +265,6 @@ def test_snapshot_counts_waiting_from_mapping_collection_status(database):
         [], [], [], [("c:/0.png", "mapping", "pending", None), ("c:/1.png", "mapping", "dispatched", None), ("c:/2.png", "mapping", "done", 1.0), ("c:/3.png", "wd14", "pending", None)]
     )
     assert read_snapshot("map", ViewParams()).waiting == 2
-
-
-def test_save_after_the_database_changed_only_refreshes(widget, monkeypatch):
-    w, saved, resets = widget
-    refreshed = []
-    monkeypatch.setattr(MappingSpaceWidget, "sync_host", lambda self: setattr(self, "db_name", "db2"))
-    monkeypatch.setattr(MappingSpaceWidget, "refresh", lambda self: refreshed.append(self.db_name))
-    w.feature_bar.add_feature("path")
-    w.save_and_retrain()
-    assert saved == {} and resets == [] and refreshed == ["db2"]
 
 
 def test_save_failure_is_reported_and_keeps_the_edits(widget, monkeypatch):
@@ -543,7 +533,7 @@ def test_showing_the_settings_tab_again_keeps_the_whole_map(qtbot, database, mon
     qtbot.addWidget(w)
     w.db_name = "map"
     w.show()
-    qtbot.waitUntil(lambda: w.shown is not None and not w.preview_loading, timeout=20000)
+    qtbot.waitUntil(lambda: w.shown is not None and w.shown.labels is not None and not w.preview_loading, timeout=20000)
     shown = w.shown
     w.hide()
     w.show()
@@ -556,3 +546,65 @@ def test_key_catalog_hides_every_mapping_key(database):
     database.upsert_collection_results([], [("c:/0.png", "mapping.x", "1", 1.0), ("c:/0.png", "mapping.y", "2", 2.0)], [], [])
     keys = [key for key, _count in space_panel.read_key_catalog("map")]
     assert "wd14.tags" in keys and not [key for key in keys if key.startswith("mapping.")]
+
+
+def test_the_database_can_be_chosen_and_starts_at_the_open_window(qtbot, monkeypatch):
+    from types import SimpleNamespace
+
+    from wafer.qt.commands.binding.instance_registry import InstanceRegistry
+
+    monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: SimpleNamespace(database_name="nai"))
+    monkeypatch.setattr(space_panel, "list_data_db_names", lambda: ["work", "nai"])
+    refreshed = []
+    monkeypatch.setattr(MappingSpaceWidget, "refresh", lambda self: refreshed.append(self.db_name))
+    w = MappingSpaceWidget()
+    qtbot.addWidget(w)
+    assert w.db_name == "nai" and w.db_box.currentText() == "nai"
+    w.db_box.reload()
+    assert [w.db_box.itemText(i) for i in range(w.db_box.count())] == ["nai", "work"]
+    w.db_box.setCurrentText("work")
+    assert w.db_name == "work" and refreshed[-1] == "work" and w.toolbar.db_name == "work"
+    w.showEvent(QtGui.QShowEvent())
+    assert w.db_name == "work"
+    w.close()
+
+
+def test_save_and_retrain_uses_the_chosen_database(widget, monkeypatch):
+    w, saved, resets = widget
+    monkeypatch.setattr(space_panel, "list_data_db_names", lambda: ["db1", "db2"])
+    w.db_box.reload()
+    w.db_box.setCurrentText("db2")
+    w.feature_bar.add_feature("path")
+    w.save_and_retrain()
+    assert list(saved) == ["db2"] and resets[-1]["db_scope"] == "db2"
+
+
+def test_settings_form_names_every_file_count_and_keeps_its_width(qtbot):
+    from PySide6 import QtWidgets
+
+    from wafer.qt.common.dpi import dpix
+
+    w = MappingSpaceWidget()
+    qtbot.addWidget(w)
+    texts = {label.text() for label in w.findChildren(QtWidgets.QLabel)}
+    assert {"Database", "Keys", "Training", "Saved map", "Quick Train", "Files on the whole map", "Files to train on"} <= texts
+    assert w.splitter.widget(0).minimumWidth() >= dpix(space_panel.FORM_MIN_WIDTH)
+    assert w.splitter.widget(1).minimumSizeHint().width() <= dpix(space_panel.MAP_MIN_WIDTH)
+    assert not w.splitter.childrenCollapsible()
+    w.close()
+
+
+def test_no_open_window_leaves_the_database_choice_alone(qtbot, monkeypatch):
+    from types import SimpleNamespace
+
+    from wafer.qt.commands.binding.instance_registry import InstanceRegistry
+
+    monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: SimpleNamespace())
+    monkeypatch.setattr(MappingSpaceWidget, "refresh", lambda self: None)
+    w = MappingSpaceWidget()
+    qtbot.addWidget(w)
+    assert w.db_box.count() == 0 and w.db_name == ""
+    w.db_box.show_quietly("nai")
+    w.showEvent(QtGui.QShowEvent())
+    assert w.db_box.currentText() == "nai" and "" not in [w.db_box.itemText(i) for i in range(w.db_box.count())]
+    w.close()

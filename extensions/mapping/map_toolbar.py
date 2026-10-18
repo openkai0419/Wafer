@@ -11,6 +11,7 @@ from wafer.core.lang.manager import t
 from wafer.qt.common.dpi import dpix
 from wafer.qt.common.icon_engine import themed_icon
 from wafer.qt.theme import ThemeManager
+from wafer.qt.widgets.flow_layout import FlowLayout
 from wafer.qt.widgets.popup import PopupBase
 
 from .params import Grouping, TrainParams, ViewParams, param_specs
@@ -18,6 +19,7 @@ from .tuning import TuningPanel
 from .view_settings import TOOLBAR_PARAMS, GroupingStore, TabSettings, ViewSettings
 
 TUNING_HEIGHT = 600
+TOOLBAR_SPACING = 6
 SLIDER_WIDTH = 110
 STEPS_PER_DOUBLING = 4
 SPECS = {name: spec for name, spec, _ in param_specs(ViewParams)}
@@ -35,6 +37,15 @@ def slider_factor(position: int) -> float:
     return 2.0 ** (position / STEPS_PER_DOUBLING)
 
 
+def cluster(*widgets: QtWidgets.QWidget) -> QtWidgets.QWidget:
+    box = QtWidgets.QWidget()
+    layout = QtWidgets.QHBoxLayout(box)
+    layout.setContentsMargins(0, 0, 0, 0)
+    for widget in widgets:
+        layout.addWidget(widget)
+    return box
+
+
 def set_quietly(button: QtWidgets.QAbstractButton, checked: bool) -> None:
     button.blockSignals(True)
     button.setChecked(checked)
@@ -50,8 +61,7 @@ class MapToolbar(QtWidgets.QWidget):
         self.edits_space_groups = edits_space_groups
         self.db_name = ""
         self.tuning_popup: PopupBase | None = None
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout = FlowLayout(self, spacing=dpix(TOOLBAR_SPACING))
         self.thumbnail_check = QtWidgets.QCheckBox(t("Thumbnails"))
         self.thumbnail_check.setToolTip(t("Show thumbnails instead of dots."))
         self.thumbnail_check.toggled.connect(self.tab.set_thumbnails_shown)
@@ -80,8 +90,8 @@ class MapToolbar(QtWidgets.QWidget):
             button.setToolTip(tip)
             button.toggled.connect(partial(self.on_mode_toggled, mode))
             group.addButton(button)
-            layout.addWidget(button)
             self.mode_buttons[mode] = button
+        layout.addWidget(cluster(*self.mode_buttons.values()))
         self.tuning = TuningPanel(ViewParams, exclude=TOOLBAR_PARAMS)
         self.tuning.params_changed.connect(self.settings.set_params)
         self.tuning_button = QtWidgets.QToolButton()
@@ -93,7 +103,7 @@ class MapToolbar(QtWidgets.QWidget):
         self.tab.changed.connect(self.sync)
         self.sync()
 
-    def add_slider(self, layout: QtWidgets.QHBoxLayout, name: str, spec, apply) -> None:
+    def add_slider(self, layout: FlowLayout, name: str, spec, apply) -> None:
         label = QtWidgets.QLabel(t(spec.label))
         label.setToolTip(t(spec.description))
         slider = QtWidgets.QSlider(Qt.Horizontal)
@@ -103,11 +113,10 @@ class MapToolbar(QtWidgets.QWidget):
         slider.valueChanged.connect(lambda position: apply(name, slider_factor(position)))
         value = QtWidgets.QLabel()
         value.setFixedWidth(value.fontMetrics().horizontalAdvance(f"{MULTIPLY}0.0625") + dpix(2))
-        for widget in (label, slider, value):
-            layout.addWidget(widget)
+        layout.addWidget(cluster(label, slider, value))
         self.sliders[name], self.slider_values[name] = slider, value
 
-    def add_spacing_slider(self, layout: QtWidgets.QHBoxLayout) -> None:
+    def add_spacing_slider(self, layout: FlowLayout) -> None:
         label = QtWidgets.QLabel(t(SPACING_SPEC.label))
         label.setToolTip(t(SPACING_SPEC.description))
         slider = QtWidgets.QSlider(Qt.Horizontal)
@@ -117,8 +126,7 @@ class MapToolbar(QtWidgets.QWidget):
         slider.valueChanged.connect(lambda position: self.tab.set_spacing(SPACING_SPEC.minimum + position * SPACING_SPEC.step))
         value = QtWidgets.QLabel()
         value.setFixedWidth(value.fontMetrics().horizontalAdvance("0.00") + dpix(2))
-        for widget in (label, slider, value):
-            layout.addWidget(widget)
+        layout.addWidget(cluster(label, slider, value))
         self.sliders["spacing"], self.slider_values["spacing"] = slider, value
 
     def set_param(self, name: str, value) -> None:

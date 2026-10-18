@@ -401,7 +401,7 @@ class MappingWidget(QtWidgets.QWidget):
 
     def show_counts(self, result: MapResult) -> None:
         groups = t(STAGE_TEXTS[self.stage]) + ELLIPSIS if self.stage else t("{count} groups", count=result.diagnostics.groups)
-        parts = [t("{count} files", count=len(result.paths)), groups]
+        parts = [self.db_name, t("{count} files", count=len(result.paths)), groups]
         if result.diagnostics.unset:
             parts.append(t("{count} waiting for placement", count=result.diagnostics.unset))
         self.set_message(f" {SEPARATOR} ".join(parts))

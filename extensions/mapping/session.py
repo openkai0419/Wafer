@@ -198,6 +198,7 @@ class SpaceLayout:
         self.lock = threading.Lock()
         self.coords: np.ndarray | None = None
         self.local: np.ndarray | None = None
+        self.refining: threading.Event | None = None
         self.describers: list[tuple[BaseEncoder, np.ndarray]] | None = None
         self.labels_by_options: dict[tuple[Grouping, float], np.ndarray] = {}
 
@@ -281,22 +282,39 @@ class SpaceLayout:
         return self.coords
 
     def refine(self, cancelled: Callable[[], bool] = lambda: False, progress: Callable[[str], None] = lambda stage: None) -> bool:
-        with self.lock:
-            if self.local is not None:
+        waited = False
+        while True:
+            with self.lock:
+                if self.local is not None:
+                    return waited
+                running = self.refining
+                if running is None:
+                    active = np.flatnonzero(np.isfinite(self.space_coords()).all(axis=1))
+                    model = self.space_model()
+                    if model is None or active.size < MIN_LAYOUT_FILES:
+                        return False
+                    start = self.space_coords()[active]
+                    self.refining = threading.Event()
+            if running is None:
+                break
+            if cancelled():
                 return False
-            active = np.flatnonzero(np.isfinite(self.space_coords()).all(axis=1))
-            model = self.space_model()
-            if model is None or active.size < MIN_LAYOUT_FILES:
-                return False
-            start = self.space_coords()[active]
-        coords = model.relayout([self.values.get(self.paths[row], {}) for row in active], start, cancelled=cancelled, progress=progress)
-        with self.lock:
-            local = np.array(self.space_coords(), copy=True)
-            found = np.isfinite(coords).all(axis=1)
-            local[active[found]] = coords[found]
-            self.local, self.local_trees = local, None
-            self.labels_by_options.clear()
-        return True
+            progress("layout")
+            running.wait()
+            waited = True
+        try:
+            coords = model.relayout([self.values.get(self.paths[row], {}) for row in active], start, cancelled=cancelled, progress=progress)
+            with self.lock:
+                local = np.array(self.space_coords(), copy=True)
+                found = np.isfinite(coords).all(axis=1)
+                local[active[found]] = coords[found]
+                self.local, self.local_trees = local, None
+                self.labels_by_options.clear()
+            return True
+        finally:
+            with self.lock:
+                done, self.refining = self.refining, None
+            done.set()
 
     def group(self, active: np.ndarray, grouping: Grouping, share: float, diagnostics: MapDiagnostics) -> np.ndarray:
         key = (grouping, share)

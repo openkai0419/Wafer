@@ -533,3 +533,26 @@ def test_whole_map_size_is_kept_and_changing_it_resamples(widget, monkeypatch, q
 
 def test_there_is_no_mapping_space_panel_anymore():
     assert not hasattr(space_panel, "MappingSpacePlugin")
+
+
+def test_showing_the_settings_tab_again_keeps_the_whole_map(qtbot, database, monkeypatch):
+    reads = []
+    original = space_panel.read_snapshot
+    monkeypatch.setattr(space_panel, "read_snapshot", lambda *args: reads.append(1) or original(*args))
+    w = MappingSpaceWidget()
+    qtbot.addWidget(w)
+    w.db_name = "map"
+    w.show()
+    qtbot.waitUntil(lambda: w.shown is not None and not w.preview_loading, timeout=20000)
+    shown = w.shown
+    w.hide()
+    w.show()
+    qtbot.wait(300)
+    assert reads == [1] and w.shown is shown
+    w.close()
+
+
+def test_key_catalog_hides_every_mapping_key(database):
+    database.upsert_collection_results([], [("c:/0.png", "mapping.x", "1", 1.0), ("c:/0.png", "mapping.y", "2", 2.0)], [], [])
+    keys = [key for key, _count in space_panel.read_key_catalog("map")]
+    assert "wd14.tags" in keys and not [key for key in keys if key.startswith("mapping.")]

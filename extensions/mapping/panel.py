@@ -26,6 +26,8 @@ class MappingPanel(QtWidgets.QWidget):
         self.settings_tab = MappingSpaceWidget()
         self.tabs.addTab(self.map_tab, t("Map"))
         self.tabs.addTab(self.settings_tab, t("Settings"))
+        self.settings_tab.setAcceptDrops(True)
+        self.settings_tab.on_drop = self.drop_on_map
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.tabs)
@@ -39,6 +41,10 @@ class MappingPanel(QtWidgets.QWidget):
 
     def show_settings(self) -> None:
         self.tabs.setCurrentIndex(SETTINGS_TAB)
+
+    def drop_on_map(self, event) -> None:
+        self.map_tab.handle_drop(event)
+        self.show_map()
 
     def current_map(self) -> MappingWidget | MappingSpaceWidget:
         return self.settings_tab if self.tabs.currentIndex() == SETTINGS_TAB else self.map_tab

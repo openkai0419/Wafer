@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Callable
 from contextlib import closing
 from dataclasses import dataclass, field
 from functools import partial
@@ -38,7 +39,7 @@ from .session import KEY_MODEL, OUTPUT_PREFIX, SPACE_KEYS, MapError, MapResult, 
 from .space import Preset, SpaceModel, SpaceStatus, count_placed, load_preset, model_dir, read_status, save_preset, space_model
 from .tuning import TuningPanel
 from .view_settings import RELAYOUT_PARAMS, GroupingStore, TabSettings, ViewSettings
-from .widget import cancel_work, prepare_layout_engine, result_colors, same_layout
+from .widget import cancel_work, local_file_paths, prepare_layout_engine, result_colors, same_layout
 
 LOAD_PRIORITY = 7
 STATUS_REFRESH_MS = 1000
@@ -201,7 +202,7 @@ def read_key_catalog(db_name: str) -> list[tuple[str, int]]:
         results = SearchComposer().list_all_keys(engine, [], sort_by_freq=True)
     finally:
         engine.close()
-    return [(key, count) for key, count in results if key not in SPACE_KEYS]
+    return [(key, count) for key, count in results if not key.startswith(OUTPUT_PREFIX + ".")]
 
 
 def sample_paths_with_key(conn, key: str, limit: int) -> list[str]:
@@ -263,6 +264,8 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.showing_quick = False
         self.preview_loading = False
         self.preview_mark: tuple[str, int] | None = None
+        self.preview_key: tuple[str, int] | None = None
+        self.on_drop: Callable[[Any], None] | None = None
         self.host = MapHost(self)
         self.settings = ViewSettings.instance()
         self.tab = TabSettings(self)
@@ -419,10 +422,26 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         return {**self.host.context_for(self.selected_paths()), "map_panel": self}
 
     def handle_drag_enter(self, event) -> None:
-        event.ignore()
+        if self.on_drop is not None and local_file_paths(event.mimeData()):
+            event.setDropAction(Qt.CopyAction)
+            event.accept()
+        else:
+            event.ignore()
 
     def handle_drop(self, event) -> None:
-        event.ignore()
+        if self.on_drop is None:
+            event.ignore()
+            return
+        self.on_drop(event)
+
+    def dragEnterEvent(self, event):
+        self.handle_drag_enter(event)
+
+    def dragMoveEvent(self, event):
+        self.handle_drag_enter(event)
+
+    def dropEvent(self, event):
+        self.handle_drop(event)
 
     def on_grouping_changed(self, db_name: str) -> None:
         if db_name == self.db_name:
@@ -644,6 +663,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
             self.quick_sample, self.quick_layout, self.showing_quick = None, None, False
         cancel = self.refresh_cancel.renew()
         params, size = self.settings.params, self.preview_size.value()
+        self.preview_key = (db_name, size)
         self.preview_loading = True
         if not self.showing_quick and not self.quick_running:
             self.count_label.setText(t("Loading values") + ELLIPSIS)
@@ -726,7 +746,11 @@ class MappingSpaceWidget(QtWidgets.QWidget):
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
         super().showEvent(event)
-        self.refresh()
+        self.sync_host()
+        if self.preview_key is not None and self.preview_key == (self.db_name, self.preview_size.value()):
+            self.refresh_status()
+        else:
+            self.refresh()
 
     def hideEvent(self, event: QtGui.QHideEvent) -> None:
         self.status_timer.stop()

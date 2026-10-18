@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 
@@ -13,7 +13,7 @@ from wafer.core.db.path_values import PathValue, fetch_path_values, fetch_source
 from wafer.core.lang.manager import t
 from wafer.core.logs import AppLogger
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
-from wafer.qt.common.dispatcher import CancelSlot, Dispatcher
+from wafer.qt.common.dispatcher import CancelSlot, CancelToken, Dispatcher
 from wafer.qt.common.dpi import dpix
 from wafer.qt.common.icon_engine import themed_icon
 from wafer.qt.common.rate_limit import qt_debounce
@@ -79,6 +79,12 @@ class MapLevel:
     paths: list[str]
     result: MapResult | None = None
     layout: SpaceLayout | None = None
+    layout_token: CancelToken = field(default_factory=CancelToken)
+
+    def drop_layout(self) -> None:
+        self.layout_token.cancel()
+        self.layout_token = CancelToken()
+        self.layout, self.result = None, None
 
 
 class MappingWidget(QtWidgets.QWidget):
@@ -226,7 +232,8 @@ class MappingWidget(QtWidgets.QWidget):
         for level in self.levels:
             kept = [p for p in level.paths if p not in removed]
             if len(kept) != len(level.paths):
-                level.paths, level.result, level.layout = kept, None, None
+                level.paths = kept
+                level.drop_layout()
                 changed.append(level)
         self.update_crumbs()
         if self.levels and self.levels[-1] in changed:
@@ -234,6 +241,8 @@ class MappingWidget(QtWidgets.QWidget):
 
     def reset(self) -> None:
         cancel_work(self.fetch_cancel, self.compute_cancel)
+        for level in self.levels:
+            level.drop_layout()
         self.paths, self.values, self.levels, self.shown = [], {}, [], None
         self.host.clear()
         self.map_view.clear_map()
@@ -248,6 +257,7 @@ class MappingWidget(QtWidgets.QWidget):
         cancel = self.fetch_cancel.renew()
         self.compute_cancel.cancel()
         paths, db_path, db_name = list(self.paths), self.db_path, self.db_name
+        self.cancel_button.show()
         self.set_stage("load")
 
         def task():
@@ -267,10 +277,9 @@ class MappingWidget(QtWidgets.QWidget):
     def on_values(self, values, sources, preset: Preset | None = None, keep_levels: bool = False):
         self.values, self.host.sources = values, sources
         self.preset = preset if preset is not None and preset.features and preset.version > 0 else None
-        if keep_levels and self.levels:
-            for level in self.levels:
-                level.result, level.layout = None, None
-        else:
+        for level in self.levels:
+            level.drop_layout()
+        if not keep_levels or not self.levels:
             self.levels = [MapLevel(list(self.paths))]
         self.update_crumbs()
         self.recompute()
@@ -292,9 +301,13 @@ class MappingWidget(QtWidgets.QWidget):
             return
         level, params = self.levels[-1], self.settings.params
         grouping, share = GroupingStore.instance().get(self.db_name), params.subgroup_size
-        if level.layout is None or level.layout.preset is not self.preset:
+        if level.layout is not None and level.layout.preset is not self.preset:
+            level.drop_layout()
+        if level.layout_token.is_cancelled():
+            level.layout_token = CancelToken()
+        if level.layout is None:
             level.layout = SpaceLayout(level.paths, self.values, self.preset, load_model=partial(space_model, self.db_name, self.preset))
-        layout = level.layout
+        layout, layout_cancelled = level.layout, level.layout_token.is_cancelled
         cancel = self.compute_cancel.renew()
         self.cancel_button.show()
 
@@ -311,7 +324,7 @@ class MappingWidget(QtWidgets.QWidget):
                     if plain is None:
                         return
                     show(plain, "encode")
-                    if layout.refine(cancelled=cancel.is_cancelled, progress=report):
+                    if layout.refine(cancelled=layout_cancelled, progress=report):
                         refined = layout.run(params, grouping=grouping, share=share, grouped=False, cancelled=cancel.is_cancelled)
                         if refined is None:
                             return
@@ -333,7 +346,10 @@ class MappingWidget(QtWidgets.QWidget):
         self.dispatcher.post(task, priority=COMPUTE_PRIORITY, cancel=cancel)
 
     def cancel_compute(self):
+        self.fetch_cancel.cancel()
         self.compute_cancel.cancel()
+        if self.levels:
+            self.levels[-1].layout_token.cancel()
         self.finish(t("Cancelled"))
 
     def finish(self, message: str):
@@ -437,12 +453,16 @@ class MappingWidget(QtWidgets.QWidget):
         if target < 0 or target >= len(self.levels) - 1:
             return
         self.compute_cancel.cancel()
+        for dropped in self.levels[target + 1 :]:
+            dropped.drop_layout()
         del self.levels[target + 1 :]
         self.update_crumbs()
         result = self.levels[-1].result
         if result is None:
             self.recompute()
         else:
+            self.cancel_button.hide()
+            self.end_stages()
             self.show_result(result)
 
     def update_crumbs(self):

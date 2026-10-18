@@ -639,6 +639,7 @@ class MirroringModel:
         coords[:, 0] = np.arange(len(paths))
         self.space = WholeSpace(list(paths), coords)
         self.calls = []
+        self.starts = 0
         self.started = threading.Event()
         self.release = threading.Event()
         self.release.set()
@@ -651,6 +652,7 @@ class MirroringModel:
 
     def relayout(self, entries, start, cancelled=lambda: False, progress=lambda stage: None):
         progress("encode")
+        self.starts += 1
         self.started.set()
         self.release.wait(10)
         progress("layout")
@@ -732,4 +734,47 @@ def test_without_a_model_the_database_coordinates_are_shown(qtbot, space_data):
     w = open_widget(qtbot)
     assert not w.levels[-1].layout.is_local() and "failed" not in w.message_text()
     assert len(w.current_result().paths) == 30 and not w.progress.isVisible()
+    w.close()
+
+
+def test_going_back_during_a_computation_clears_the_progress(qtbot, space_data):
+    space_data.model = MirroringModel()
+    w = open_widget(qtbot)
+    space_data.model.release.clear()
+    space_data.model.started.clear()
+    w.map_view.select_rows(range(10))
+    w.map_view.selection_changed.emit()
+    w.drill_down()
+    qtbot.waitUntil(space_data.model.started.is_set, timeout=FIRST_RUN_TIMEOUT)
+    w.drill_up(0)
+    assert not w.progress.isVisible() and not w.cancel_button.isVisible() and w.stage == ""
+    assert "groups" in w.message_text()
+    space_data.model.release.set()
+    w.close()
+
+
+def test_a_view_setting_change_during_the_layout_does_not_start_it_again(qtbot, space_data):
+    space_data.model = MirroringModel()
+    space_data.model.release.clear()
+    w = open_widget(qtbot, wait=False)
+    qtbot.waitUntil(space_data.model.started.is_set, timeout=FIRST_RUN_TIMEOUT)
+    settings().set_params(ViewParams(outlier_percent=5.0))
+    qtbot.wait(widget_module.RECOMPUTE_DELAY_MS + 200)
+    space_data.model.release.set()
+    qtbot.waitUntil(lambda: w.current_result() is not None and w.levels[-1].layout.is_local(), timeout=FIRST_RUN_TIMEOUT)
+    assert space_data.model.starts == 1
+    w.close()
+
+
+def test_loading_values_can_be_cancelled(qtbot, space_data, monkeypatch):
+    release = threading.Event()
+    original = widget_module.fetch_path_values
+    monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps: release.wait(10) and original(db, ps))
+    w = open_widget(qtbot, wait=False)
+    assert w.cancel_button.isVisibleTo(w) and w.progress.isVisibleTo(w)
+    w.cancel_button.click()
+    assert w.message_text() == "Cancelled" and not w.progress.isVisibleTo(w)
+    release.set()
+    qtbot.wait(300)
+    assert w.current_result() is None and w.message_text() == "Cancelled"
     w.close()

@@ -453,3 +453,17 @@ def test_model_layout_keeps_the_model_for_placing_new_files():
     assert layout.model is model
     plain = layout.run(ViewParams(), grouped=False)
     assert not plain.unset.any()
+
+
+def test_cancelling_a_relayout_stops_between_encoding_batches(monkeypatch):
+    monkeypatch.setattr(space, "PLACE_BATCH", 5)
+    model = SpaceModel.fit(preset(), tag_values())
+    encoded = []
+    encoder = model.encoders[0]
+    original = type(encoder).transform
+    monkeypatch.setattr(type(encoder), "transform", lambda self, inputs: encoded.append(len(inputs)) or original(self, inputs))
+    entries = [{"tags": PathValue(f"tag{i}, sky")} for i in range(40)]
+    start = np.zeros((40, 2 + projection.GROUPING_DIMS), dtype=np.float32)
+    with pytest.raises(MapError):
+        model.relayout(entries, start, cancelled=lambda: bool(encoded))
+    assert encoded == [5]

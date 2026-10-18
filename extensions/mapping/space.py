@@ -273,7 +273,7 @@ class SpaceModel:
         index = self.index.get(path)
         return None if index is None else tuple(float(value) for value in self.coords[index])
 
-    def features(self, entries: list[dict[str, PathValue]], encoded: list[dict] | None = None) -> tuple[np.ndarray, np.ndarray]:
+    def features(self, entries: list[dict[str, PathValue]], encoded: list[dict] | None = None, cancelled=lambda: False) -> tuple[np.ndarray, np.ndarray]:
         encoded = encoded if encoded is not None else [{} for _ in self.encoders]
         parts = []
         has_value = np.zeros(len(entries), dtype=bool)
@@ -281,7 +281,12 @@ class SpaceModel:
             encoder_cls = ENCODERS[feature.encoder]
             inputs = [feature_input(entry, feature.key, encoder_cls) for entry in entries]
             present = encoder.present(inputs)
-            parts.append((encode_once(encoder, reducer, inputs, known), present))
+            batches = []
+            for begin in range(0, len(inputs), PLACE_BATCH):
+                if cancelled():
+                    raise MapError("Cancelled")
+                batches.append(encode_once(encoder, reducer, inputs[begin : begin + PLACE_BATCH], known))
+            parts.append((np.vstack(batches) if batches else np.zeros((0, 0), dtype=np.float32), present))
             has_value |= present
         rows = np.flatnonzero(has_value)
         return rows, projection.apply_block_scales([(dense[rows], present[rows]) for dense, present in parts], self.scales)
@@ -300,7 +305,7 @@ class SpaceModel:
         params = self.preset.params.normalized()
         output = np.full((len(entries), SPACE_COLUMNS), np.nan, dtype=np.float32)
         progress("encode")
-        rows, features = self.features(entries)
+        rows, features = self.features(entries, cancelled=cancelled)
         if rows.size == 0:
             return output
         progress("layout")
@@ -308,6 +313,8 @@ class SpaceModel:
         trained = embed_space(features[train], params, cancelled, init=start[rows[train]], epochs=projection.LOCAL_EPOCHS)
         coords = np.empty((rows.size, SPACE_COLUMNS), dtype=np.float32)
         coords[train] = trained
+        if cancelled():
+            raise MapError("Cancelled")
         if train.size < rows.size:
             rest = np.setdiff1d(np.arange(rows.size), train, assume_unique=True)
             coords[rest] = projection.NeighborIndex(features[train]).placement(features[rest]).apply(trained)

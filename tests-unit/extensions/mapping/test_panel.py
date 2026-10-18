@@ -79,3 +79,27 @@ def test_switching_tabs_hides_the_hover(qtbot):
     panel.show_settings()
     assert not panel.map_tab.host.preview.isVisible()
     panel.close()
+
+
+def test_dropping_on_the_settings_tab_shows_the_files_on_the_map(qtbot, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from wafer.qt.commands.binding.instance_registry import InstanceRegistry
+
+    dropped = tmp_path / "new.png"
+    dropped.write_bytes(b"x")
+    mime = QtCore.QMimeData()
+    mime.setUrls([QtCore.QUrl.fromLocalFile(str(dropped))])
+    monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: SimpleNamespace(database_path="main.db"))
+    panel = MappingPanel()
+    qtbot.addWidget(panel)
+    panel.show_settings()
+    added = []
+    monkeypatch.setattr(panel.map_tab, "add_files", lambda paths, db: added.append((paths, db)))
+    event = SimpleNamespace(mimeData=lambda: mime, accepted=None, setDropAction=lambda action: None)
+    event.accept = lambda: setattr(event, "accepted", True)
+    event.ignore = lambda: setattr(event, "accepted", False)
+    panel.settings_tab.handle_drag_enter(event)
+    assert event.accepted is True
+    panel.settings_tab.handle_drop(event)
+    assert len(added) == 1 and added[0][1] == "main.db" and panel.current_map() is panel.map_tab

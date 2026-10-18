@@ -20,7 +20,8 @@ def test_set_opens_panel_with_selected_paths(monkeypatch):
     window = MagicMock(database_path="db")
     monkeypatch.setattr(commands, "_panel", lambda w: widget)
     commands.mapping_set(Ctx(**{"paths": ["a", "b"], "instance:MainWindow": window}))
-    widget.set_files.assert_called_once_with(["a", "b"], "db")
+    widget.map_tab.set_files.assert_called_once_with(["a", "b"], "db")
+    widget.show_map.assert_called_once_with()
     window._layout_manager.ensure_panel_visible.assert_called_once_with("Mapping")
 
 
@@ -30,9 +31,9 @@ def test_add_and_remove_use_selected_paths(monkeypatch):
     monkeypatch.setattr(commands, "_panel", lambda w: widget)
     ctx = Ctx(**{"paths": ["a"], "instance:MainWindow": window})
     commands.mapping_add(ctx)
-    widget.add_files.assert_called_once_with(["a"], "db")
+    widget.map_tab.add_files.assert_called_once_with(["a"], "db")
     commands.mapping_remove(ctx)
-    widget.remove_files.assert_called_once_with(["a"])
+    widget.map_tab.remove_files.assert_called_once_with(["a"])
 
 
 def test_set_without_paths_does_nothing(monkeypatch):
@@ -42,7 +43,7 @@ def test_set_without_paths_does_nothing(monkeypatch):
     monkeypatch.setattr(commands, "_panel", lambda w: widget)
     monkeypatch.setattr(commands.Notifier, "info", staticmethod(notifications.append))
     commands.mapping_set(Ctx(**{"instance:MainWindow": window}))
-    widget.set_files.assert_not_called()
+    widget.map_tab.set_files.assert_not_called()
     assert notifications == ["No files selected"]
 
 
@@ -99,10 +100,10 @@ def test_view_commands_toggle_the_tab_they_came_from(monkeypatch):
 
 
 def test_panel_commands_target_the_panel_the_command_came_from(monkeypatch):
-    from extensions.mapping.widget import MappingWidget
+    from extensions.mapping.panel import MappingPanel
 
     space, mapping = MagicMock(), MagicMock()
-    monkeypatch.setattr(MappingWidget, "instance", classmethod(lambda cls: mapping))
+    monkeypatch.setattr(MappingPanel, "instance", classmethod(lambda cls: MagicMock(current_map=lambda: mapping)))
     commands.select_all(Ctx(map_panel=space))
     commands.frame_selection(Ctx(map_panel=space))
     space.map_view.frame_selection.assert_called_once_with()
@@ -116,8 +117,10 @@ def test_panel_commands_target_the_panel_the_command_came_from(monkeypatch):
 def test_drill_commands_only_drive_the_mapping_panel(monkeypatch):
     from extensions.mapping.widget import MappingWidget
 
+    from extensions.mapping.panel import MappingPanel
+
     mapping = MagicMock(spec=MappingWidget)
-    monkeypatch.setattr(MappingWidget, "instance", classmethod(lambda cls: mapping))
+    monkeypatch.setattr(MappingPanel, "instance", classmethod(lambda cls: MagicMock(current_map=lambda: mapping)))
     space = MagicMock()
     commands.drill_down(Ctx(map_panel=space))
     commands.drill_up(Ctx(map_panel=space))
@@ -128,3 +131,17 @@ def test_drill_commands_only_drive_the_mapping_panel(monkeypatch):
     commands.drill_up(Ctx())
     mapping.drill_down.assert_called_once_with()
     mapping.drill_up.assert_called_once_with()
+
+
+def test_set_shows_the_files_on_the_map_tab(qtbot, monkeypatch):
+    from extensions.mapping.panel import MappingPanel
+
+    panel = MappingPanel()
+    qtbot.addWidget(panel)
+    panel.show_settings()
+    received = []
+    monkeypatch.setattr(panel.map_tab, "set_files", lambda paths, db: received.append((paths, db)))
+    window = MagicMock(database_path="db")
+    window._layout_manager.panel_widget.return_value = panel
+    commands.mapping_set(Ctx(**{"paths": ["c:/a.png"], "instance:MainWindow": window}))
+    assert received == [(["c:/a.png"], "db")] and panel.current_map() is panel.map_tab

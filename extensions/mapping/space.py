@@ -155,7 +155,7 @@ def space_model(db_name: str, preset: Preset) -> SpaceModel | None:
         try:
             model = SpaceModel.load(directory, preset)
         except SpaceLoadError as e:
-            AppLogger.warning(f"[Mapping] Cannot read the space model of {db_name}; retrain from Mapping Space", exc=e)
+            AppLogger.warning(f"[Mapping] Cannot read the space model of {db_name}; retrain from the Settings tab", exc=e)
             model = None
         if model is not None:
             AppLogger.info(f"[Mapping] Loaded space v{preset.version} of {db_name} ({len(model.paths)} files) in {time.perf_counter() - started:.1f}s")

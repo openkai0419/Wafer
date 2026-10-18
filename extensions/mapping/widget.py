@@ -11,7 +11,6 @@ from PySide6.QtCore import Qt
 from wafer.core.common.paths import db_name_from_path, normalize_path, safe_is_file
 from wafer.core.db.path_values import PathValue, fetch_path_values, fetch_sources
 from wafer.core.lang.manager import t
-from wafer.builtins.commands.panel import open_panel
 from wafer.core.logs import AppLogger
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 from wafer.qt.common.dispatcher import CancelSlot, Dispatcher
@@ -39,7 +38,6 @@ SEPARATOR = "\N{MIDDLE DOT}"
 GROUPING_TEXT = "Grouping"
 LAYING_OUT_TEXT = "Laying out (the first run takes longer)"
 CRUMB_ARROW = "\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}"
-SPACE_PANEL_NAME = "Mapping Space"
 RELAYOUT_NAMES = RELAYOUT_PARAMS | TOOLBAR_PARAMS
 
 
@@ -85,7 +83,6 @@ class MapLevel:
 class MappingWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        InstanceRegistry.instance().register("MappingWidget", self)
         self.palette_colors = ThemeManager.instance().palette
         self.dispatcher = Dispatcher(pool=utility_pool, parent=self)
         prepare_layout_engine(self.dispatcher)
@@ -111,10 +108,6 @@ class MappingWidget(QtWidgets.QWidget):
         GroupingStore.instance().changed.connect(self.on_grouping_changed)
         self.destroyed.connect(partial(cancel_work, self.fetch_cancel, self.compute_cancel))
 
-    @classmethod
-    def instance(cls) -> MappingWidget | None:
-        return InstanceRegistry.instance().get_one("MappingWidget")
-
     def build_ui(self):
         palette = self.palette_colors
         root = QtWidgets.QVBoxLayout(self)
@@ -129,11 +122,6 @@ class MappingWidget(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self.page)
         layout.setContentsMargins(dpix(6), dpix(6), dpix(6), dpix(6))
         toolbar = QtWidgets.QHBoxLayout()
-        self.edit_space_button = QtWidgets.QToolButton()
-        self.edit_space_button.setText(t("Edit in Mapping Space"))
-        self.edit_space_button.setToolTip(t("Change the keys and retrain in the Mapping Space panel."))
-        self.edit_space_button.clicked.connect(self.open_space_panel)
-        toolbar.addWidget(self.edit_space_button)
         toolbar.addStretch(1)
         self.toolbar = MapToolbar(self.tab)
         toolbar.addWidget(self.toolbar)
@@ -272,9 +260,6 @@ class MappingWidget(QtWidgets.QWidget):
         if self.levels:
             self.fetch(keep_levels=True)
 
-    def open_space_panel(self) -> None:
-        open_panel(name=SPACE_PANEL_NAME, toggle=False)
-
     @qt_debounce(RECOMPUTE_DELAY_MS)
     def schedule_recompute(self):
         self.recompute()
@@ -284,7 +269,7 @@ class MappingWidget(QtWidgets.QWidget):
             return
         if self.preset is None:
             self.compute_cancel.cancel()
-            self.finish(t("This database has no Mapping Space yet. Train one in Mapping Space."))
+            self.finish(t("This database has no trained map yet. Train one in Settings."))
             return
         level, params = self.levels[-1], self.settings.params
         grouping, share = GroupingStore.instance().get(self.db_name), params.subgroup_size

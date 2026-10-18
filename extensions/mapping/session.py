@@ -212,7 +212,7 @@ class SpaceLayout:
         placed = np.isfinite(raw).all(axis=1)
         active = np.flatnonzero(placed)
         if active.size == 0:
-            raise MapError("No files have been placed yet. Wait for the Mapping parser or retrain in Mapping Space.")
+            raise MapError("No files have been placed yet. Wait for the Mapping parser or retrain in Settings.")
         unit, active_outliers = projection.normalize_to_core(raw[active, :2], params.outlier_percent)
         positions = np.full((count, 2), np.nan, dtype=np.float32)
         positions[active] = unit

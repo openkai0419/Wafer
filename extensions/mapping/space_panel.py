@@ -19,7 +19,6 @@ from wafer.core.db.recollect import Recollect
 from wafer.core.db.setting_db import SettingDB
 from wafer.core.lang.manager import t
 from wafer.core.logs import AppLogger
-from wafer.plugin import BasePanelPlugin
 from wafer.plugin.query.composer import SearchComposer
 from wafer.plugin.settings import PluginSettings
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
@@ -170,7 +169,7 @@ def run_preview(layout: SpaceLayout, view: ViewParams, db_name: str, grouped: bo
     except MapError as e:
         return None, str(e)
     except Exception as e:
-        AppLogger.warning(f"[Mapping] Laying out the Mapping Space preview of {db_name} failed", exc=e)
+        AppLogger.warning(f"[Mapping] Laying out the whole map of {db_name} failed", exc=e)
         return None, str(e) or type(e).__name__
 
 
@@ -236,7 +235,6 @@ def cancel_tokens(tokens: dict[str, CancelToken]) -> None:
 class MappingSpaceWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        InstanceRegistry.instance().register("MappingSpaceWidget", self)
         self.palette_colors = ThemeManager.instance().palette
         self.dispatcher = Dispatcher(pool=utility_pool, parent=self)
         prepare_layout_engine(self.dispatcher)
@@ -281,10 +279,6 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.status_timer.setInterval(STATUS_REFRESH_MS)
         self.status_timer.timeout.connect(self.refresh_status)
         self.connect_indexer_updates()
-
-    @classmethod
-    def instance(cls) -> MappingSpaceWidget | None:
-        return InstanceRegistry.instance().get_one("MappingSpaceWidget")
 
     def build_ui(self):
         palette = self.palette_colors
@@ -514,7 +508,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         db_name = self.db_name
         self.sync_host()
         if self.db_name != db_name:
-            AppLogger.info(f"[Mapping] The open database changed from {db_name} to {self.db_name}; reloading Mapping Space without saving")
+            AppLogger.info(f"[Mapping] The open database changed from {db_name} to {self.db_name}; reloading Settings without saving")
             self.refresh()
             return
         features = self.feature_bar.features()
@@ -761,33 +755,3 @@ class MappingSpaceWidget(QtWidgets.QWidget):
             self.preview_size.blockSignals(True)
             self.preview_size.setValue(preview)
             self.preview_size.blockSignals(False)
-
-
-class MappingSpacePlugin(BasePanelPlugin):
-    NAME = "mapping_space"
-    DISPLAY_NAME = "Mapping Space"
-    PRIORITY = 0
-    DEFAULT_ENABLED = True
-    STANDALONE_AVAILABLE = True
-    STANDALONE_SIZE = (1100, 700)
-    saved_state: dict[str, Any] = {}
-
-    def save_ui_state(self) -> dict[str, Any]:
-        widget = MappingSpaceWidget.instance()
-        if widget is not None:
-            try:
-                MappingSpacePlugin.saved_state = widget.save_state()
-            except RuntimeError as e:
-                AppLogger.warning("[Mapping] Saving the Mapping Space panel state failed", exc=e)
-        return dict(MappingSpacePlugin.saved_state)
-
-    def restore_ui_state(self, state: dict[str, Any]) -> None:
-        MappingSpacePlugin.saved_state = dict(state or {})
-        widget = MappingSpaceWidget.instance()
-        if widget is not None:
-            widget.restore_state(MappingSpacePlugin.saved_state)
-
-    def create_widget(self):
-        widget = MappingSpaceWidget()
-        widget.restore_state(MappingSpacePlugin.saved_state)
-        return widget

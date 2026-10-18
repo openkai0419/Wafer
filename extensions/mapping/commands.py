@@ -17,10 +17,10 @@ def ctx_paths(ctx) -> list[str]:
 
 
 def _panel(window):
-    from .widget import MappingWidget
+    from .panel import MappingPanel
 
     widget = window._layout_manager.panel_widget(PANEL_NAME)
-    return widget if isinstance(widget, MappingWidget) else None
+    return widget if isinstance(widget, MappingPanel) else None
 
 
 def _open(ctx, window, apply):
@@ -28,10 +28,11 @@ def _open(ctx, window, apply):
     if not paths:
         Notifier.info("No files selected")
         return
-    widget = _panel(window)
-    if widget is None:
+    panel = _panel(window)
+    if panel is None:
         return
-    apply(widget, paths)
+    apply(panel.map_tab, paths)
+    panel.show_map()
     window._layout_manager.ensure_panel_visible(PANEL_NAME)
 
 
@@ -48,18 +49,19 @@ def mapping_add(ctx, w):
 @require(w="MainWindow")
 def mapping_remove(ctx, w):
     paths = ctx_paths(ctx)
-    widget = _panel(w)
-    if widget is not None and paths:
-        widget.remove_files(paths)
+    panel = _panel(w)
+    if panel is not None and paths:
+        panel.map_tab.remove_files(paths)
 
 
 def map_panel(ctx):
     panel = ctx.get("map_panel")
     if panel is not None:
         return panel
-    from .widget import MappingWidget
+    from .panel import MappingPanel
 
-    return MappingWidget.instance()
+    mapping = MappingPanel.instance()
+    return None if mapping is None else mapping.current_map()
 
 
 def select_all(ctx):

@@ -78,7 +78,7 @@ class MappingParser(BaseParserPlugin):
         try:
             self.model = SpaceModel.load(directory, preset)
         except SpaceLoadError as e:
-            AppLogger.warning(f"[Mapping] Cannot read the space model for {self.db_name}; retrain from Mapping Space", exc=e)
+            AppLogger.warning(f"[Mapping] Cannot read the space model for {self.db_name}; retrain from the Settings tab", exc=e)
             write_status(directory, SpaceStatus("unreadable", preset.version, error=str(e)))
             self.blocked = (preset.version, True)
             return None

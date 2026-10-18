@@ -119,16 +119,15 @@ def test_only_view_settings_and_no_keys_are_shown(mapping):
     view_params = {name for name, _spec, _default in param_specs(ViewParams)}
     assert set(mapping.toolbar.tuning.controls) == view_params - {"subgroup_size"}
     assert set(mapping.toolbar.sliders) == {"subgroup_size"} and mapping.toolbar.fine_check is None
-    assert not hasattr(mapping, "feature_bar")
-    assert mapping.edit_space_button.isVisibleTo(mapping)
+    assert not hasattr(mapping, "feature_bar") and not hasattr(mapping, "edit_space_button")
 
 
 @pytest.mark.parametrize("preset", [None, Preset([FeatureSpec("tags", "token_set")], TrainParams(), 0)])
-def test_without_a_trained_space_it_points_to_mapping_space(qtbot, space_data, preset):
+def test_without_a_trained_space_it_points_to_the_settings_tab(qtbot, space_data, preset):
     space_data.preset = preset
     w = open_widget(qtbot, wait=False)
-    qtbot.waitUntil(lambda: w.message_text().startswith("This database has no Mapping Space yet"), timeout=5000)
-    assert w.current_result() is None and w.edit_space_button.isVisibleTo(w)
+    qtbot.waitUntil(lambda: w.message_text().startswith("This database has no trained map yet"), timeout=5000)
+    assert w.current_result() is None and "Settings" in w.message_text()
     w.close()
 
 
@@ -137,12 +136,6 @@ def test_nothing_placed_shows_the_hint(qtbot, space_data):
     w = open_widget(qtbot, wait=False)
     qtbot.waitUntil(lambda: w.message_text().startswith("No files have been placed yet"), timeout=FIRST_RUN_TIMEOUT)
     w.close()
-
-
-def test_edit_in_space_opens_the_space_panel(mapping):
-    with patch.object(widget_module, "open_panel") as open_panel:
-        mapping.edit_space_button.click()
-    open_panel.assert_called_once_with(name="Mapping Space", toggle=False)
 
 
 def test_selection_sync_and_context(mapping):
@@ -444,7 +437,7 @@ def test_retrained_preset_is_picked_up_on_refresh(mapping, qtbot, space_data):
 
 
 def test_recompute_command_refreshes(mapping):
-    ctx = InstanceCtx(**{"instance:MappingWidget": mapping})
+    ctx = InstanceCtx(map_panel=mapping)
     with patch.object(MappingWidget, "fetch") as fetch:
         commands.recompute(ctx)
     fetch.assert_called_once_with(keep_levels=True)

@@ -109,7 +109,7 @@ class ViewParams(ParamSet):
     subgroup_size: float = param(
         1.0,
         label="Group size",
-        description="Split the Mapping Space groups into smaller ones, as a share of their size. 1 = the Mapping Space groups.",
+        description="Split the base groups from Settings into smaller ones, as a share of their size. 1 = the base groups.",
         minimum=0.0625,
         maximum=1.0,
         step=0.25,

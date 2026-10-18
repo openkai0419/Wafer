@@ -13,7 +13,7 @@ from extensions.mapping.projection import GROUPING_DIMS
 from extensions.mapping.session import FeatureSpec, MapError, grouping_text
 from extensions.mapping.space import Preset, SpaceModel, SpaceStatus, save_preset, write_status
 from extensions.mapping.view_settings import ViewSettings
-from extensions.mapping.space_panel import MappingSpacePlugin, MappingSpaceWidget, SpaceSnapshot, current_status, read_snapshot, status_text
+from extensions.mapping.space_panel import MappingSpaceWidget, SpaceSnapshot, current_status, read_snapshot, status_text
 from wafer.core.db.db_utils import open_readonly
 from wafer.core.db.file_db import FileDB
 from wafer.core.db.path_values import PathValue
@@ -89,18 +89,6 @@ def test_form_shows_layout_stage_only(widget):
     w, _saved, _resets = widget
     assert "neighbors" in w.tuning.controls and "train_limit" in w.tuning.controls
     assert "hover_size" not in w.tuning.controls and "min_cluster_size" not in w.tuning.controls
-
-
-def test_space_panel_does_not_restore_view_settings(qtbot, monkeypatch):
-    monkeypatch.setattr(MappingSpaceWidget, "refresh", lambda self: None)
-    MappingSpacePlugin.saved_state = {"view": {"image_scale": 2.0}}
-    try:
-        w = MappingSpacePlugin().create_widget()
-        qtbot.addWidget(w)
-        assert ViewSettings.instance().image_scale == 1.0 and "view" not in w.save_state()
-        w.close()
-    finally:
-        MappingSpacePlugin.saved_state = {}
 
 
 def test_save_and_retrain_bumps_version_and_resets_collection(widget):
@@ -216,18 +204,6 @@ def test_apply_snapshot_shows_preview_and_keeps_unsaved_edits(widget, database, 
     assert "Enable the Mapping parser" in w.status_label.text()
     w.revert()
     assert [f.key for f in w.feature_bar.features()] == ["wd14.tags"]
-
-
-def test_plugin_identity_and_state(qtbot):
-    assert MappingSpacePlugin.NAME == "mapping_space" and MappingSpacePlugin.DISPLAY_NAME == "Mapping Space"
-    assert MappingSpacePlugin.DEFAULT_ENABLED and MappingSpacePlugin.STANDALONE_AVAILABLE
-    plugin = MappingSpacePlugin()
-    widget = plugin.create_widget()
-    qtbot.addWidget(widget)
-    assert isinstance(widget, MappingSpaceWidget)
-    assert "splitter" in plugin.save_ui_state()
-    widget.close()
-    MappingSpacePlugin.saved_state = {}
 
 
 def test_refresh_loads_preview_and_key_catalog_in_background(qtbot, database):
@@ -553,3 +529,7 @@ def test_whole_map_size_is_kept_and_changing_it_resamples(widget, monkeypatch, q
     w.preview_size.setValue(space_panel.PREVIEW_FILES)
     w.restore_state(state)
     assert w.preview_size.value() == 8000 and (w.preview_size.minimum(), w.preview_size.maximum()) == space_panel.PREVIEW_RANGE
+
+
+def test_there_is_no_mapping_space_panel_anymore():
+    assert not hasattr(space_panel, "MappingSpacePlugin")

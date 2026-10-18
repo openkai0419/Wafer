@@ -536,10 +536,10 @@ def test_mapping_space_sets_the_base_groups_of_its_database(mapping, qtbot, fres
     previous = mapping.current_result()
     space.toolbar.sliders["size"].setValue(space.toolbar.sliders["size"].minimum())
     space.toolbar.fine_check.setChecked(True)
-    assert GroupingStore.instance().get("db") == Grouping(size=0.0625, fine=1) == fresh_grouping_store["db"]
+    assert GroupingStore.instance().get("db") == Grouping(size=0.25, fine=1) == fresh_grouping_store["db"]
     wait_for_new_result(qtbot, mapping, previous)
     assert mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}1"
-    assert space.toolbar.slider_values["size"].text() == "\N{MULTIPLICATION SIGN}0.0625"
+    assert space.toolbar.slider_values["size"].text() == "\N{MULTIPLICATION SIGN}0.25"
     space.toolbar.set_db("other")
     assert space.toolbar.slider_values["size"].text() == "\N{MULTIPLICATION SIGN}1" and not space.toolbar.fine_check.isChecked()
     space.close()
@@ -566,7 +566,7 @@ def test_group_sliders_step_by_the_same_ratio(mapping):
     space_toolbar.set_db("db")
     cases = (
         (mapping.toolbar, "subgroup_size", lambda: settings().params.subgroup_size, 0.0625, 1.0, {0.125, 0.25, 0.5}),
-        (space_toolbar, "size", lambda: GroupingStore.instance().get("db").size, 0.0625, 1.0, {0.125, 0.25, 0.5}),
+        (space_toolbar, "size", lambda: GroupingStore.instance().get("db").size, 0.25, 16.0, {0.5, 1.0, 2.0, 4.0, 8.0}),
         (space_toolbar, "strictness", lambda: GroupingStore.instance().get("db").strictness, 0.25, 16.0, {0.5, 1.0, 2.0, 4.0, 8.0}),
     )
     for toolbar, name, current, low, high, stops in cases:
@@ -604,5 +604,5 @@ def test_only_the_latest_regroup_is_computed(space_data):
 
 def test_groups_start_from_the_size_of_the_whole_space(mapping, space_data):
     level = mapping.levels[-1]
-    assert level.layout.groups is space_data.groups
+    assert level.layout.groups is space_data.groups and level.layout.load_groups is None
     assert mapping.toolbar.sliders["subgroup_size"].value() == mapping.toolbar.sliders["subgroup_size"].maximum()

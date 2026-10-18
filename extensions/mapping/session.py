@@ -94,7 +94,6 @@ class MapRequest:
     values: dict[str, dict[str, PathValue]]
     features: list[FeatureSpec]
     params: MapParams
-    space_size: int = 0
     grouping: Grouping = field(default_factory=Grouping)
 
 
@@ -220,7 +219,7 @@ class MapPipeline:
         if cancelled():
             return None
         diagnostics.blocks = self._stats
-        labels = self._group((group_key, request.grouping, request.space_size or self._active.size), count, diagnostics)
+        labels = self._group((group_key, request.grouping, self._active.size), count, diagnostics)
         if cancelled():
             return None
         group_terms = self._describe(labels, blocks, params)
@@ -343,11 +342,19 @@ class SpaceGroups:
 
 
 class SpaceLayout:
-    def __init__(self, paths: list[str], values: dict[str, dict[str, PathValue]], preset: Preset, groups: SpaceGroups | None = None):
+    def __init__(
+        self,
+        paths: list[str],
+        values: dict[str, dict[str, PathValue]],
+        preset: Preset,
+        groups: SpaceGroups | None = None,
+        load_groups: Callable[[], SpaceGroups | None] | None = None,
+    ):
         self.paths = paths
         self.values = values
         self.preset = preset
         self.groups = groups
+        self.load_groups = load_groups
         self.lock = threading.Lock()
         self.coords: np.ndarray | None = None
         self.describers: list[tuple[BaseEncoder, np.ndarray]] | None = None
@@ -408,6 +415,9 @@ class SpaceLayout:
 
     def group(self, active: np.ndarray, points: np.ndarray, grouping: Grouping, share: float, diagnostics: MapDiagnostics) -> np.ndarray:
         key = (grouping, share)
+        if self.groups is None and self.load_groups is not None:
+            with timed(diagnostics, "space"):
+                self.groups, self.load_groups = self.load_groups(), None
         if key not in self.labels_by_options:
             with timed(diagnostics, "cluster"):
                 if self.groups is not None:

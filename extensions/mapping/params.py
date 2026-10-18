@@ -24,7 +24,6 @@ def param(default, *, stage: str, label: str, description: str, minimum: float, 
 
 
 AUTO_GROUP_MIN = 5
-AUTO_GROUP_MAX = 30
 AUTO_GROUP_DIVISOR = 500
 AUTO_STRICTNESS_MAX = 10
 MIN_GROUP_SIZE = 2
@@ -136,9 +135,9 @@ class Grouping(ParamSet):
         1.0,
         stage="grouping",
         label="Group size",
-        description="Smallest group in the whole space, as a share of the automatic size (about 1 in 500 files, 5 to 30). Lower makes more, smaller groups.",
-        minimum=0.0625,
-        maximum=1.0,
+        description="Smallest group in the whole space, as a multiple of the automatic size (1 in 500 files, at least 5). Lower makes more, smaller groups.",
+        minimum=0.25,
+        maximum=16.0,
         step=0.25,
     )
     strictness: float = param(
@@ -153,7 +152,7 @@ class Grouping(ParamSet):
     fine: int = param(0, stage="grouping", label="Fine groups", description="Split large groups into the smaller crowds inside them.", minimum=0, maximum=1)
 
     def cluster_options(self, count: int, share: float = 1.0) -> tuple[int, int, str]:
-        automatic = min(AUTO_GROUP_MAX, max(AUTO_GROUP_MIN, count // AUTO_GROUP_DIVISOR))
+        automatic = max(AUTO_GROUP_MIN, count // AUTO_GROUP_DIVISOR)
         size = max(MIN_GROUP_SIZE, round(max(MIN_GROUP_SIZE, round(automatic * self.size)) * share))
         samples = max(1, round(min(automatic, AUTO_STRICTNESS_MAX) * self.strictness))
         return size, samples, "leaf" if self.fine else "eom"

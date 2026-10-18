@@ -507,5 +507,5 @@ def test_grouping_changes_regroup_the_quick_train_view(widget, database, qtbot):
 
     GroupingStore.instance().set("map", Grouping(size=0.25))
     qtbot.waitUntil(lambda: w.shown is not previous, timeout=30000)
-    assert w.showing_quick and w.quick_request.grouping.size == 0.25 and w.quick_sample.space_size == 12
+    assert w.showing_quick and w.quick_request.grouping.size == 0.25
     assert w.shown.paths == previous.paths

@@ -47,7 +47,9 @@ def test_cluster_options_follow_the_number_of_files():
     grouping = Grouping()
     assert grouping.cluster_options(100) == (5, 5, "eom")
     assert grouping.cluster_options(5000) == (10, 10, "eom")
-    assert grouping.cluster_options(20000) == grouping.cluster_options(1_000_000) == (30, 10, "eom")
+    assert grouping.cluster_options(20000) == (40, 10, "eom")
+    assert grouping.cluster_options(111_500) == (223, 10, "eom")
+    assert grouping.cluster_options(1_000_000) == (2000, 10, "eom")
 
 
 @pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan"), 10**400, "inf", "nan"])
@@ -109,16 +111,16 @@ def test_neighbors_never_exceed_the_cap():
 
 def test_group_size_setting_scales_the_automatic_size():
     spec = next(spec for name, spec, _ in param_specs(Grouping) if name == "size")
-    assert spec.stage == "grouping" and (spec.minimum, spec.maximum) == (0.0625, 1.0) and Grouping().size == 1.0
+    assert spec.stage == "grouping" and (spec.minimum, spec.maximum) == (0.25, 16.0) and Grouping().size == 1.0
     assert Grouping(size=0.5).cluster_options(5000) == (5, 10, "eom")
     assert Grouping(size=0.25).cluster_options(100) == (2, 5, "eom")
-    assert Grouping(size=0.0625).cluster_options(1_000_000) == (2, 10, "eom")
-    assert Grouping(size=5.0).normalized().size == 1.0
+    assert Grouping(size=4.0).cluster_options(5000) == (40, 10, "eom")
+    assert Grouping(size=99.0).normalized().size == 16.0
 
 
 def test_mapping_share_shrinks_the_base_group_size():
-    assert Grouping().cluster_options(1_000_000, share=0.5) == (15, 10, "eom")
-    assert Grouping(size=0.5).cluster_options(1_000_000, share=0.5) == (8, 10, "eom")
+    assert Grouping().cluster_options(1_000_000, share=0.5) == (1000, 10, "eom")
+    assert Grouping(size=0.5).cluster_options(1_000_000, share=0.25) == (250, 10, "eom")
     assert Grouping().cluster_options(100, share=0.0625) == (2, 5, "eom")
     spec = next(spec for name, spec, _ in param_specs() if name == "subgroup_size")
     assert spec.stage == "view" and (spec.minimum, spec.maximum) == (0.0625, 1.0) and MapParams().subgroup_size == 1.0

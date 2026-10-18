@@ -462,11 +462,22 @@ def test_selection_without_a_whole_space_groups_by_itself(monkeypatch):
     assert FakeTree.built == [(40, Grouping().cluster_options(40)[1])]
 
 
-def test_quick_train_sizes_groups_by_the_whole_database(monkeypatch, embed_calls):
+def test_quick_train_sizes_groups_by_its_own_sample(monkeypatch, embed_calls):
     monkeypatch.setattr(projection, "ClusterTree", FakeTree)
     FakeTree.built, FakeTree.cuts = [], []
-    request = make_request()
-    request.space_size = 50_000
-    pipeline().run(request)
-    assert FakeTree.built == [(40, Grouping().cluster_options(50_000)[1])]
-    assert FakeTree.cuts == [(Grouping().cluster_options(50_000)[0], "eom")]
+    pipeline().run(make_request())
+    assert FakeTree.built == [(40, Grouping().cluster_options(40)[1])]
+    assert FakeTree.cuts == [(Grouping().cluster_options(40)[0], "eom")]
+
+
+def test_whole_space_groups_are_loaded_only_when_grouping(monkeypatch):
+    monkeypatch.setattr(projection, "ClusterTree", FakeTree)
+    loads = []
+    groups = whole_space()
+    values = space_values(12)
+    layout = SpaceLayout(list(values), values, space_preset(), load_groups=lambda: loads.append(1) or groups)
+    layout.run(MapParams(), grouped=False)
+    assert loads == []
+    layout.run(MapParams())
+    layout.run(MapParams(), share=0.5)
+    assert loads == [1] and layout.groups is groups

@@ -26,7 +26,7 @@ from .file_list import FileList
 from .map_host import MapHost
 from .map_toolbar import MapToolbar
 from .map_view import MapView
-from .session import MapError, MapResult, SpaceGroups, SpaceLayout
+from .session import MapError, MapResult, SpaceLayout
 from .space import Preset, load_preset, space_groups
 from .view_settings import GroupingStore, ViewSettings
 
@@ -98,7 +98,6 @@ class MappingWidget(QtWidgets.QWidget):
         self.levels: list[MapLevel] = []
         self.shown: MapResult | None = None
         self.grouping = False
-        self.groups: SpaceGroups | None = None
         self.host = MapHost(self)
         self.build_ui()
         self.host.map_views = [self.map_view]
@@ -240,18 +239,17 @@ class MappingWidget(QtWidgets.QWidget):
                 values = fetch_path_values(db_path, paths)
                 sources = fetch_sources(db_path, paths)
                 preset = load_preset(db_name) if db_name else None
-                groups = space_groups(db_path, preset) if preset is not None and preset.features and preset.version > 0 else None
                 GroupingStore.instance().get(db_name)
             except Exception as e:
                 AppLogger.error("[Mapping] Loading values failed", exc=e)
                 self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.finish(t("Mapping failed. See the log for details.")))
                 return
-            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.on_values(values, sources, preset, keep_levels, groups))
+            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.on_values(values, sources, preset, keep_levels))
 
         self.dispatcher.post(task, priority=COMPUTE_PRIORITY, cancel=cancel)
 
-    def on_values(self, values, sources, preset: Preset | None = None, keep_levels: bool = False, groups: SpaceGroups | None = None):
-        self.values, self.host.sources, self.groups = values, sources, groups
+    def on_values(self, values, sources, preset: Preset | None = None, keep_levels: bool = False):
+        self.values, self.host.sources = values, sources
         self.preset = preset if preset is not None and preset.features and preset.version > 0 else None
         if keep_levels and self.levels:
             for level in self.levels:
@@ -282,7 +280,7 @@ class MappingWidget(QtWidgets.QWidget):
         level, params = self.levels[-1], self.settings.params
         grouping, share = GroupingStore.instance().get(self.db_name), params.subgroup_size
         if level.layout is None or level.layout.preset is not self.preset:
-            level.layout = SpaceLayout(level.paths, self.values, self.preset, self.groups)
+            level.layout = SpaceLayout(level.paths, self.values, self.preset, load_groups=partial(space_groups, self.db_path, self.preset))
         layout = level.layout
         cancel = self.compute_cancel.renew()
         self.cancel_button.show()

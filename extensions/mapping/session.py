@@ -16,7 +16,7 @@ from wafer.core.logs import AppLogger
 
 from . import projection
 from .encoders import ENCODERS, SUMMARY_OPTION, BaseEncoder, feature_input
-from .params import MapParams
+from .params import Grouping, MapParams
 
 if TYPE_CHECKING:
     from .space import Preset
@@ -95,6 +95,7 @@ class MapRequest:
     features: list[FeatureSpec]
     params: MapParams
     space_size: int = 0
+    grouping: Grouping = field(default_factory=Grouping)
 
 
 @dataclass
@@ -219,7 +220,7 @@ class MapPipeline:
         if cancelled():
             return None
         diagnostics.blocks = self._stats
-        labels = self._group((group_key, params.cluster_options(request.space_size or self._active.size)), count, diagnostics)
+        labels = self._group((group_key, request.grouping, request.space_size or self._active.size), count, diagnostics)
         if cancelled():
             return None
         group_terms = self._describe(labels, blocks, params)
@@ -283,8 +284,10 @@ class MapPipeline:
 
     def _group(self, cluster_key, count, diagnostics) -> np.ndarray:
         if cluster_key != self._cluster_key:
+            _key, grouping, space_size = cluster_key
             with timed(diagnostics, "cluster"):
-                self._labels = projection.cluster(self._group_points, *cluster_key[1])
+                tree = projection.ClusterTree(self._group_points, grouping.cluster_options(space_size)[1])
+                self._labels = group_labels(tree, grouping, space_size)
             self._cluster_key = cluster_key
         labels = np.full(count, -1, dtype=np.int32)
         labels[self._active] = self._labels
@@ -296,6 +299,21 @@ class MapPipeline:
         return describe_groups([(block.encoder, block.present) for block in ranked], labels, params)
 
 
+def group_labels(tree: projection.ClusterTree, grouping: Grouping, count: int, share: float = 1.0) -> np.ndarray:
+    size, _samples, method = grouping.cluster_options(count)
+    base = tree.labels(size, method)
+    smaller = grouping.cluster_options(count, share)[0]
+    return base if smaller >= size else nested_labels(base, tree.labels(smaller, method))
+
+
+def nested_labels(base: np.ndarray, finer: np.ndarray) -> np.ndarray:
+    grouped = base >= 0
+    rest = int(finer.max()) + 1
+    codes = np.full(base.size, -1, dtype=np.int64)
+    codes[grouped] = base[grouped].astype(np.int64) * (rest + 1) + np.where(finer[grouped] >= 0, finer[grouped], rest)
+    return projection.relabel_by_size(codes)
+
+
 class SpaceGroups:
     def __init__(self, paths: list[str], points: np.ndarray):
         self.paths = paths
@@ -303,25 +321,24 @@ class SpaceGroups:
         self.index = {path: row for row, path in enumerate(paths)}
         self.lock = threading.Lock()
         self.trees: dict[int, projection.ClusterTree] = {}
-        self.labels_by_options: dict[tuple[int, int, str], np.ndarray] = {}
+        self.labels_by_options: dict[tuple[Grouping, float], np.ndarray] = {}
 
     @property
     def size(self) -> int:
         return len(self.paths)
 
-    def labels(self, params: MapParams) -> np.ndarray:
-        options = params.cluster_options(self.size)
-        size, samples, method = options
+    def labels(self, grouping: Grouping, share: float = 1.0) -> np.ndarray:
+        samples = grouping.cluster_options(self.size)[1]
         with self.lock:
-            if options not in self.labels_by_options:
+            if (grouping, share) not in self.labels_by_options:
                 if samples not in self.trees:
                     self.trees = {samples: projection.ClusterTree(self.points, samples)}
-                self.labels_by_options[options] = self.trees[samples].labels(size, method)
-            return self.labels_by_options[options]
+                self.labels_by_options[(grouping, share)] = group_labels(self.trees[samples], grouping, self.size, share)
+            return self.labels_by_options[(grouping, share)]
 
-    def labels_for(self, paths: list[str], params: MapParams) -> np.ndarray:
+    def labels_for(self, paths: list[str], grouping: Grouping, share: float = 1.0) -> np.ndarray:
         rows = np.fromiter((self.index.get(path, -1) for path in paths), dtype=np.int64, count=len(paths))
-        labels = self.labels(params)
+        labels = self.labels(grouping, share)
         return np.where(rows >= 0, labels[np.maximum(rows, 0)], -1).astype(np.int32)
 
 
@@ -334,13 +351,13 @@ class SpaceLayout:
         self.lock = threading.Lock()
         self.coords: np.ndarray | None = None
         self.describers: list[tuple[BaseEncoder, np.ndarray]] | None = None
-        self.labels_by_options: dict[tuple[int, int, str], np.ndarray] = {}
+        self.labels_by_options: dict[tuple[Grouping, float], np.ndarray] = {}
 
-    def run(self, params: MapParams, *, grouped: bool = True, cancelled: Callable[[], bool] = lambda: False) -> MapResult | None:
+    def run(self, params: MapParams, *, grouping: Grouping | None = None, share: float = 1.0, grouped: bool = True, cancelled: Callable[[], bool] = lambda: False) -> MapResult | None:
         with self.lock:
-            return None if cancelled() else self._run(params.normalized(), grouped)
+            return None if cancelled() else self._run(params.normalized(), (grouping or Grouping()).normalized(), share, grouped)
 
-    def _run(self, params: MapParams, grouped: bool) -> MapResult:
+    def _run(self, params: MapParams, grouping: Grouping, share: float, grouped: bool) -> MapResult:
         diagnostics = MapDiagnostics()
         count = len(self.paths)
         raw = self.space_coords()
@@ -357,7 +374,7 @@ class SpaceLayout:
         terms: dict[int, list[str]] = {}
         active_labels = np.zeros(active.size, dtype=np.int32)
         if grouped and active.size >= 3:
-            active_labels = self.group(active, raw[active, 2:], params, diagnostics)
+            active_labels = self.group(active, raw[active, 2:], grouping, share, diagnostics)
             labels = np.full(count, -1, dtype=np.int32)
             labels[active] = active_labels
             with timed(diagnostics, "describe"):
@@ -389,15 +406,16 @@ class SpaceLayout:
             self.coords = raw
         return self.coords
 
-    def group(self, active: np.ndarray, grouping: np.ndarray, params: MapParams, diagnostics: MapDiagnostics) -> np.ndarray:
-        options = params.cluster_options(self.groups.size if self.groups is not None else len(grouping))
-        if options not in self.labels_by_options:
+    def group(self, active: np.ndarray, points: np.ndarray, grouping: Grouping, share: float, diagnostics: MapDiagnostics) -> np.ndarray:
+        key = (grouping, share)
+        if key not in self.labels_by_options:
             with timed(diagnostics, "cluster"):
                 if self.groups is not None:
-                    self.labels_by_options[options] = self.groups.labels_for([self.paths[row] for row in active], params)
+                    self.labels_by_options[key] = self.groups.labels_for([self.paths[row] for row in active], grouping, share)
                 else:
-                    self.labels_by_options[options] = projection.cluster(grouping, *options)
-        return self.labels_by_options[options]
+                    tree = projection.ClusterTree(points, grouping.cluster_options(len(points))[1])
+                    self.labels_by_options[key] = group_labels(tree, grouping, len(points), share)
+        return self.labels_by_options[key]
 
     def space_describers(self, active: np.ndarray, params: MapParams) -> list[tuple[BaseEncoder, np.ndarray]]:
         if self.describers is None:

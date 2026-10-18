@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import math
+import threading
 from dataclasses import replace
 from typing import Any
 
 from PySide6 import QtCore
 
 from .map_view import MAX_IMAGE_SCALE, MIN_IMAGE_SCALE
-from .params import MapParams, param_specs
+from .params import Grouping, MapParams, param_specs
+from .space import load_grouping, save_grouping
 
 VIEW_STAGES = ("view",)
 VIEW_PARAMS = tuple(name for name, spec, _ in param_specs() if spec.stage in VIEW_STAGES)
-TOOLBAR_SLIDERS = ("group_size", "group_strictness")
-TOOLBAR_PARAMS = frozenset({*TOOLBAR_SLIDERS, "fine_groups"})
+TOOLBAR_PARAMS = frozenset({"subgroup_size"})
 RELAYOUT_PARAMS = frozenset({"outlier_percent", "label_terms", *TOOLBAR_PARAMS})
 SELECTION_MODES = ("single", "group")
 DEFAULT_IMAGE_CAP = MapParams().hover_size
@@ -103,3 +104,37 @@ class ViewSettings(QtCore.QObject):
         view.set_labels_visible(self.labels_shown)
         view.set_thumbnails_visible(self.thumbnails_shown)
         view.set_selection_mode(self.selection_mode)
+
+
+class GroupingStore(QtCore.QObject):
+    changed = QtCore.Signal(str)
+    _instance: GroupingStore | None = None
+
+    @classmethod
+    def instance(cls) -> GroupingStore:
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def __init__(self):
+        super().__init__()
+        self.lock = threading.Lock()
+        self.by_db: dict[str, Grouping] = {}
+
+    def get(self, db_name: str) -> Grouping:
+        with self.lock:
+            cached = self.by_db.get(db_name)
+        if cached is not None:
+            return cached
+        loaded = load_grouping(db_name) if db_name else Grouping()
+        with self.lock:
+            return self.by_db.setdefault(db_name, loaded)
+
+    def set(self, db_name: str, grouping: Grouping) -> None:
+        grouping = grouping.normalized()
+        if not db_name or grouping == self.get(db_name):
+            return
+        with self.lock:
+            self.by_db[db_name] = grouping
+        save_grouping(db_name, grouping)
+        self.changed.emit(db_name)

@@ -9,7 +9,7 @@ from extensions.mapping import commands
 from extensions.mapping import map_host as map_host_module
 from extensions.mapping import map_view as map_view_module
 from extensions.mapping import widget as widget_module
-from extensions.mapping.params import MapParams, param_specs
+from extensions.mapping.params import Grouping, MapParams, param_specs
 from extensions.mapping.projection import GROUPING_DIMS
 from extensions.mapping.session import FeatureSpec, grouping_text
 from extensions.mapping.space import Preset
@@ -116,7 +116,8 @@ def test_set_files_places_files_from_the_space(mapping):
 
 def test_only_view_settings_and_no_keys_are_shown(mapping):
     view_params = {name for name, spec, _ in param_specs() if spec.stage == "view"}
-    assert set(mapping.toolbar.tuning.controls) == view_params - {"group_size", "group_strictness", "fine_groups"}
+    assert set(mapping.toolbar.tuning.controls) == view_params - {"subgroup_size"}
+    assert set(mapping.toolbar.sliders) == {"subgroup_size"} and mapping.toolbar.fine_check is None
     assert not hasattr(mapping, "feature_bar")
     assert mapping.edit_space_button.isVisibleTo(mapping)
 
@@ -514,48 +515,66 @@ def test_map_is_shown_before_its_groups(qtbot, space_data, monkeypatch):
 
 def test_group_size_slider_regroups_the_map(mapping, qtbot):
     previous = mapping.current_result()
-    slider = mapping.toolbar.sliders["group_size"]
+    slider = mapping.toolbar.sliders["subgroup_size"]
     slider.setValue(slider.minimum())
-    assert settings().params.group_size == 0.0625 and mapping.toolbar.slider_values["group_size"].text() == "\N{MULTIPLICATION SIGN}0.0625"
+    assert settings().params.subgroup_size == 0.0625 and mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}0.0625"
     wait_for_new_result(qtbot, mapping, previous)
     assert np.array_equal(mapping.current_result().positions, previous.positions, equal_nan=True)
     slider.setValue(slider.maximum())
-    assert settings().params.group_size == 1.0 and mapping.toolbar.slider_values["group_size"].text() == "\N{MULTIPLICATION SIGN}1"
+    assert settings().params.subgroup_size == 1.0 and mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}1"
 
 
-def test_group_size_slider_follows_the_shared_settings(mapping, qtbot):
+def test_mapping_space_sets_the_base_groups_of_its_database(mapping, qtbot, fresh_grouping_store):
     from extensions.mapping.space_panel import MappingSpaceWidget
+    from extensions.mapping.view_settings import GroupingStore
 
     with patch.object(MappingSpaceWidget, "refresh"):
         space = MappingSpaceWidget()
     qtbot.addWidget(space)
-    mapping.toolbar.sliders["group_size"].setValue(mapping.toolbar.sliders["group_size"].minimum())
-    assert space.toolbar.sliders["group_size"].value() == space.toolbar.sliders["group_size"].minimum()
-    settings().set_params(MapParams(group_size=1.0, group_strictness=0.5, fine_groups=1))
-    assert mapping.toolbar.slider_values["group_size"].text() == "\N{MULTIPLICATION SIGN}1"
-    assert space.toolbar.slider_values["group_strictness"].text() == "\N{MULTIPLICATION SIGN}0.5" and space.toolbar.fine_check.isChecked()
+    space.toolbar.set_db("db")
+    assert set(space.toolbar.sliders) == {"size", "strictness"} and space.toolbar.fine_check is not None
+    previous = mapping.current_result()
+    space.toolbar.sliders["size"].setValue(space.toolbar.sliders["size"].minimum())
+    space.toolbar.fine_check.setChecked(True)
+    assert GroupingStore.instance().get("db") == Grouping(size=0.0625, fine=1) == fresh_grouping_store["db"]
+    wait_for_new_result(qtbot, mapping, previous)
+    assert mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}1"
+    assert space.toolbar.slider_values["size"].text() == "\N{MULTIPLICATION SIGN}0.0625"
+    space.toolbar.set_db("other")
+    assert space.toolbar.slider_values["size"].text() == "\N{MULTIPLICATION SIGN}1" and not space.toolbar.fine_check.isChecked()
     space.close()
 
 
-def test_strictness_and_fine_groups_regroup_the_map(mapping, qtbot):
+def test_base_strictness_change_regroups_the_map(mapping, qtbot):
+    from extensions.mapping.view_settings import GroupingStore
+
     previous = mapping.current_result()
-    mapping.toolbar.sliders["group_strictness"].setValue(mapping.toolbar.sliders["group_strictness"].maximum())
-    assert settings().params.group_strictness == 16.0
+    GroupingStore.instance().set("db", Grouping(strictness=16.0))
+    assert "Grouping" in mapping.message_text()
     wait_for_new_result(qtbot, mapping, previous)
     previous = mapping.current_result()
-    mapping.toolbar.fine_check.setChecked(True)
-    assert settings().params.fine_groups == 1
-    wait_for_new_result(qtbot, mapping, previous)
-    assert np.array_equal(mapping.current_result().positions, previous.positions, equal_nan=True)
+    GroupingStore.instance().set("other", Grouping(strictness=2.0))
+    qtbot.wait(200)
+    assert mapping.current_result() is previous
 
 
 def test_group_sliders_step_by_the_same_ratio(mapping):
-    for name, low, high, stops in (("group_size", 0.0625, 1.0, {0.125, 0.25, 0.5}), ("group_strictness", 0.25, 16.0, {0.5, 1.0, 2.0, 4.0, 8.0})):
-        slider = mapping.toolbar.sliders[name]
+    from extensions.mapping.map_toolbar import MapToolbar
+    from extensions.mapping.view_settings import GroupingStore
+
+    space_toolbar = MapToolbar(edits_space_groups=True)
+    space_toolbar.set_db("db")
+    cases = (
+        (mapping.toolbar, "subgroup_size", lambda: settings().params.subgroup_size, 0.0625, 1.0, {0.125, 0.25, 0.5}),
+        (space_toolbar, "size", lambda: GroupingStore.instance().get("db").size, 0.0625, 1.0, {0.125, 0.25, 0.5}),
+        (space_toolbar, "strictness", lambda: GroupingStore.instance().get("db").strictness, 0.25, 16.0, {0.5, 1.0, 2.0, 4.0, 8.0}),
+    )
+    for toolbar, name, current, low, high, stops in cases:
+        slider = toolbar.sliders[name]
         factors = []
         for position in range(slider.minimum(), slider.maximum() + 1):
             slider.setValue(position)
-            factors.append(getattr(settings().params, name))
+            factors.append(current())
         ratios = np.array(factors[1:]) / np.array(factors[:-1])
         assert factors[0] == low and factors[-1] == high and np.allclose(ratios, ratios[0])
         assert stops <= set(factors)
@@ -568,7 +587,7 @@ def test_regrouping_swaps_colors_and_labels_and_keeps_the_view(mapping, qtbot, m
     mapping.map_view.scale(2.0, 2.0)
     transform = mapping.map_view.transform()
     previous = mapping.current_result()
-    settings().set_params(MapParams(group_size=0.25))
+    settings().set_params(MapParams(subgroup_size=0.25))
     assert "Grouping" in mapping.message_text()
     wait_for_new_result(qtbot, mapping, previous)
     assert calls == [] and mapping.map_view.transform() == transform
@@ -586,4 +605,4 @@ def test_only_the_latest_regroup_is_computed(space_data):
 def test_groups_start_from_the_size_of_the_whole_space(mapping, space_data):
     level = mapping.levels[-1]
     assert level.layout.groups is space_data.groups
-    assert mapping.toolbar.sliders["group_size"].value() == mapping.toolbar.sliders["group_size"].maximum()
+    assert mapping.toolbar.sliders["subgroup_size"].value() == mapping.toolbar.sliders["subgroup_size"].maximum()

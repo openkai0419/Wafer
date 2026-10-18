@@ -28,7 +28,7 @@ from .map_toolbar import MapToolbar
 from .map_view import MapView
 from .session import MapError, MapResult, SpaceGroups, SpaceLayout
 from .space import Preset, load_preset, space_groups
-from .view_settings import ViewSettings
+from .view_settings import GroupingStore, ViewSettings
 
 COMPUTE_PRIORITY = 7
 WARM_UP_PRIORITY = 1
@@ -105,6 +105,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.host.list_views = [self.file_list]
         self.setAcceptDrops(True)
         self.settings.changed.connect(self.on_view_settings)
+        GroupingStore.instance().changed.connect(self.on_grouping_changed)
         self.destroyed.connect(partial(cancel_work, self.fetch_cancel, self.compute_cancel))
 
     @classmethod
@@ -164,6 +165,10 @@ class MappingWidget(QtWidgets.QWidget):
         self.stack.addWidget(self.page)
         self.map_view.selection_changed.connect(self.on_map_selection)
         self.file_list.selection_changed.connect(self.on_list_selection)
+
+    def on_grouping_changed(self, db_name: str) -> None:
+        if db_name == self.db_name:
+            self.on_view_settings(True)
 
     def on_view_settings(self, relayout: bool) -> None:
         if relayout:
@@ -236,6 +241,7 @@ class MappingWidget(QtWidgets.QWidget):
                 sources = fetch_sources(db_path, paths)
                 preset = load_preset(db_name) if db_name else None
                 groups = space_groups(db_path, preset) if preset is not None and preset.features and preset.version > 0 else None
+                GroupingStore.instance().get(db_name)
             except Exception as e:
                 AppLogger.error("[Mapping] Loading values failed", exc=e)
                 self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.finish(t("Mapping failed. See the log for details.")))
@@ -274,6 +280,7 @@ class MappingWidget(QtWidgets.QWidget):
             self.finish(t("This database has no Mapping Space yet. Train one in Mapping Space."))
             return
         level, params = self.levels[-1], self.settings.params
+        grouping, share = GroupingStore.instance().get(self.db_name), params.subgroup_size
         if level.layout is None or level.layout.preset is not self.preset:
             level.layout = SpaceLayout(level.paths, self.values, self.preset, self.groups)
         layout = level.layout
@@ -283,11 +290,11 @@ class MappingWidget(QtWidgets.QWidget):
         def task():
             try:
                 if not layout.is_grouped():
-                    plain = layout.run(params, grouped=False, cancelled=cancel.is_cancelled)
+                    plain = layout.run(params, grouping=grouping, share=share, grouped=False, cancelled=cancel.is_cancelled)
                     if plain is None:
                         return
                     self.dispatcher.invoke(lambda: cancel.is_cancelled() or self._apply_result(level, plain, final=False))
-                result = layout.run(params, cancelled=cancel.is_cancelled)
+                result = layout.run(params, grouping=grouping, share=share, cancelled=cancel.is_cancelled)
                 if result is None:
                     return
             except MapError as e:

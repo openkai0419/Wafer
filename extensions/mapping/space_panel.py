@@ -36,7 +36,7 @@ from .params import MapParams
 from .session import KEY_MODEL, OUTPUT_PREFIX, SPACE_KEYS, MapError, MapPipeline, MapRequest, MapResult, SpaceLayout
 from .space import Preset, SpaceStatus, count_placed, load_preset, model_dir, read_status, save_preset, space_groups
 from .tuning import TuningPanel
-from .view_settings import ViewSettings
+from .view_settings import GroupingStore, ViewSettings
 from .widget import cancel_work, prepare_layout_engine, result_colors, same_layout
 
 LOAD_PRIORITY = 7
@@ -153,7 +153,7 @@ def read_snapshot(db_name: str, view: MapParams) -> SpaceSnapshot:
 
 def run_preview(layout: SpaceLayout, view: MapParams, db_name: str, grouped: bool = True, cancelled=lambda: False) -> tuple[MapResult | None, str]:
     try:
-        return layout.run(view, grouped=grouped, cancelled=cancelled), ""
+        return layout.run(view, grouping=GroupingStore.instance().get(db_name), grouped=grouped, cancelled=cancelled), ""
     except MapError as e:
         return None, str(e)
     except Exception as e:
@@ -261,6 +261,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.build_ui()
         self.host.map_views = [self.map_view]
         self.settings.changed.connect(self.on_view_settings)
+        GroupingStore.instance().changed.connect(self.on_grouping_changed)
         self.sync_host()
         self.update_buttons()
         self.destroyed.connect(partial(cancel_work, self.refresh_cancel, self.keys_cancel, self.status_cancel, self.quick_cancel))
@@ -334,7 +335,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.count_label = QtWidgets.QLabel()
         self.count_label.setStyleSheet(f"color: {palette.text_secondary};")
         header.addWidget(self.count_label, stretch=1)
-        self.toolbar = MapToolbar()
+        self.toolbar = MapToolbar(edits_space_groups=True)
         header.addWidget(self.toolbar)
         preview_layout.addLayout(header)
         self.map_view = MapView(self)
@@ -347,6 +348,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         name = getattr(host, "database_name", None)
         if name:
             self.db_name = name
+        self.toolbar.set_db(self.db_name)
 
     def connect_indexer_updates(self) -> None:
         from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
@@ -421,6 +423,10 @@ class MappingSpaceWidget(QtWidgets.QWidget):
 
     def handle_drop(self, event) -> None:
         event.ignore()
+
+    def on_grouping_changed(self, db_name: str) -> None:
+        if db_name == self.db_name:
+            self.on_view_settings(True)
 
     def on_view_settings(self, relayout: bool) -> None:
         if not relayout:
@@ -536,6 +542,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         if not self.db_name or not features:
             return
         db_name, size, params = self.db_name, self.quick_size.value(), self.settings.merged(self.tuning.params())
+        grouping = GroupingStore.instance().get(db_name)
         keys = frozenset(Preset(features, params, 0).value_keys())
         reusable = self.quick_sample if self.quick_sample is not None and self.quick_sample.covers(db_name, size, keys) else None
         cancel = self.quick_cancel.renew()
@@ -551,7 +558,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         def task():
             try:
                 sample = reusable or read_quick_train_sample(db_name, size, keys)
-                request = MapRequest(sample.paths, sample.values, features, params, sample.space_size)
+                request = MapRequest(sample.paths, sample.values, features, params, sample.space_size, grouping)
                 result = sample.pipeline.run(request, cancelled=cancel.is_cancelled, progress=progress)
             except MapError as e:
                 self.dispatcher.invoke(lambda m=str(e): cancel.is_cancelled() or self.finish_quick_train(t(m)))
@@ -568,7 +575,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         sample, shown = self.quick_sample, self.quick_request
         if sample is None or shown is None:
             return
-        request = replace(shown, params=self.settings.merged(shown.params))
+        request = replace(shown, params=self.settings.merged(shown.params), grouping=GroupingStore.instance().get(sample.db_name))
         cancel = self.quick_cancel.renew()
         self.count_label.setText(t("Grouping") + ELLIPSIS)
 

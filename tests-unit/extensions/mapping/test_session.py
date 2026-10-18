@@ -3,7 +3,7 @@ import pytest
 
 from extensions.mapping import projection, session
 from extensions.mapping.encoders import ENCODERS
-from extensions.mapping.params import MapParams
+from extensions.mapping.params import Grouping, MapParams
 from extensions.mapping.session import FeatureSpec, MapError, MapPipeline, MapRequest, SpaceLayout, grouping_text
 from extensions.mapping.space import Preset
 from wafer.core.db.path_values import PathValue
@@ -275,16 +275,16 @@ def test_both_layouts_share_one_neighbor_search_of_the_resolved_size(monkeypatch
 
 
 def test_space_layout_groups_once_and_relabels_on_view_changes(monkeypatch):
-    clusters, fits = [], []
-    real_cluster = projection.cluster
-    monkeypatch.setattr(projection, "cluster", lambda *args: clusters.append(args[1:]) or real_cluster(*args))
+    fits = []
+    monkeypatch.setattr(projection, "ClusterTree", FakeTree)
+    FakeTree.built, FakeTree.cuts = [], []
     real_fit = ENCODERS["token_set"].fit_describe
     monkeypatch.setattr(ENCODERS["token_set"], "fit_describe", lambda self, inputs, params: fits.append(1) or real_fit(self, inputs, params))
     values = space_values()
     layout = SpaceLayout(list(values), values, space_preset())
     first = layout.run(MapParams())
     second = layout.run(MapParams(outlier_percent=10.0, label_terms=1))
-    assert len(clusters) == 1 and len(fits) == 1
+    assert len(FakeTree.built) == 1 and len(fits) == 1
     assert second.labels.tolist() == first.labels.tolist()
     assert all(len(words) <= 1 for words in second.group_terms.values())
     assert not np.array_equal(second.positions, first.positions)
@@ -336,8 +336,7 @@ def test_quick_train_groups_on_the_ten_dimensional_layout(monkeypatch):
 
     monkeypatch.setattr(projection, "embed", record)
     clustered = []
-    real_cluster = projection.cluster
-    monkeypatch.setattr(projection, "cluster", lambda space, *args: clustered.append(space.shape[1]) or real_cluster(space, *args))
+    monkeypatch.setattr(projection, "ClusterTree", lambda space, samples: clustered.append(space.shape[1]) or FakeTree(space, samples))
     pipeline().run(make_request(params=MapParams(min_dist=0.3)))
     assert calls == [(2, 0.3), (projection.GROUPING_DIMS, projection.GROUPING_MIN_DIST)]
     assert clustered == [projection.GROUPING_DIMS]
@@ -345,8 +344,7 @@ def test_quick_train_groups_on_the_ten_dimensional_layout(monkeypatch):
 
 def test_space_layout_can_show_the_map_before_grouping(monkeypatch):
     clustered = []
-    real_cluster = projection.cluster
-    monkeypatch.setattr(projection, "cluster", lambda *args: clustered.append(1) or real_cluster(*args))
+    monkeypatch.setattr(projection, "ClusterTree", lambda space, samples: clustered.append(1) or FakeTree(space, samples))
     values = space_values()
     layout = SpaceLayout(list(values), values, space_preset())
     plain = layout.run(MapParams(), grouped=False)
@@ -367,42 +365,45 @@ def test_grouping_text_roundtrip_and_bad_values():
 
 
 def test_group_size_regroups_the_shown_files_without_moving_them(monkeypatch):
-    seen = []
-    real_cluster = projection.cluster
-    monkeypatch.setattr(projection, "cluster", lambda space, *options: seen.append(options) or real_cluster(space, *options))
+    monkeypatch.setattr(projection, "ClusterTree", FakeTree)
+    FakeTree.built, FakeTree.cuts = [], []
     values = space_values(40)
     layout = SpaceLayout(list(values), values, space_preset())
     first = layout.run(MapParams())
-    finer = layout.run(MapParams(group_size=0.5))
+    finer = layout.run(MapParams(), share=0.5)
     again = layout.run(MapParams())
-    assert seen == [MapParams().cluster_options(40), MapParams(group_size=0.5).cluster_options(40)]
-    layout.run(MapParams(group_strictness=2.0))
-    layout.run(MapParams(fine_groups=1))
-    assert seen[2:] == [MapParams(group_strictness=2.0).cluster_options(40), MapParams(fine_groups=1).cluster_options(40)]
     assert np.array_equal(first.positions, finer.positions) and np.array_equal(first.labels, again.labels)
-    assert layout.is_grouped()
+    layout.run(MapParams(), grouping=Grouping(strictness=2.0))
+    layout.run(MapParams(), grouping=Grouping(fine=1))
+    samples = [samples for _count, samples in FakeTree.built]
+    default, strict = Grouping().cluster_options(40)[1], Grouping(strictness=2.0).cluster_options(40)[1]
+    assert samples == [default, default, strict, default]
+    assert ("leaf" in [method for _size, method in FakeTree.cuts]) and layout.is_grouped()
 
 
-def test_quick_train_uses_the_group_size(monkeypatch, embed_calls):
-    seen = []
-    real_cluster = projection.cluster
-    monkeypatch.setattr(projection, "cluster", lambda space, *options: seen.append(options[0]) or real_cluster(space, *options))
+def test_quick_train_uses_the_space_grouping(monkeypatch, embed_calls):
+    monkeypatch.setattr(projection, "ClusterTree", FakeTree)
+    FakeTree.built, FakeTree.cuts = [], []
     runner = pipeline()
-    runner.run(make_request(params=MapParams(group_size=1.0)))
+    runner.run(make_request())
     layouts = len(embed_calls)
-    runner.run(make_request(params=MapParams(group_size=0.5)))
-    assert seen == [MapParams(group_size=1.0).cluster_options(40)[0], MapParams(group_size=0.5).cluster_options(40)[0]]
+    request = make_request()
+    request.grouping = Grouping(size=0.5)
+    runner.run(request)
+    assert [size for size, _method in FakeTree.cuts] == [Grouping().cluster_options(40)[0], Grouping(size=0.5).cluster_options(40)[0]]
     assert len(embed_calls) == layouts
 
 
 class FakeTree:
     built = []
+    cuts = []
 
     def __init__(self, space, min_samples):
         FakeTree.built.append((len(space), min_samples))
         self.space = space
 
     def labels(self, min_cluster_size, method="eom"):
+        FakeTree.cuts.append((min_cluster_size, method))
         return (self.space[:, 0] > self.space[:, 0].mean()).astype(np.int32) * 7
 
 
@@ -416,44 +417,56 @@ def whole_space(count=60):
 
 def test_selections_take_their_groups_from_the_whole_space(monkeypatch):
     monkeypatch.setattr(projection, "ClusterTree", FakeTree)
-    FakeTree.built = []
+    FakeTree.built, FakeTree.cuts = [], []
     groups = whole_space()
     values = space_values(12)
     first = SpaceLayout(list(values)[:6], values, space_preset(), groups).run(MapParams())
     both = SpaceLayout(list(values), values, space_preset(), groups).run(MapParams())
     assert first.labels.tolist() == [0] * 6
     assert both.labels.tolist() == [0] * 12
-    assert FakeTree.built == [(60, MapParams().cluster_options(60)[1])]
+    assert FakeTree.built == [(60, Grouping().cluster_options(60)[1])]
     assert first.diagnostics.groups == 1
 
 
 def test_whole_space_labels_are_cut_per_size_and_rebuilt_per_strictness(monkeypatch):
     monkeypatch.setattr(projection, "ClusterTree", FakeTree)
-    FakeTree.built = []
+    FakeTree.built, FakeTree.cuts = [], []
     groups = whole_space()
     paths = ["c:/0.png", "c:/59.png", "c:/missing.png"]
-    assert groups.labels_for(paths, MapParams()).tolist() == [0, 7, -1]
-    groups.labels_for(paths, MapParams(group_size=0.5))
-    groups.labels_for(paths, MapParams(fine_groups=1))
+    assert groups.labels_for(paths, Grouping()).tolist() == [0, 7, -1]
+    groups.labels_for(paths, Grouping(size=0.5))
+    groups.labels_for(paths, Grouping(fine=1))
+    groups.labels_for(paths, Grouping(), share=0.25)
     assert len(FakeTree.built) == 1
-    groups.labels_for(paths, MapParams(group_strictness=2.0))
+    groups.labels_for(paths, Grouping(strictness=2.0))
     assert len(FakeTree.built) == 2
 
 
+def test_smaller_groups_stay_inside_their_base_group():
+    from extensions.mapping.session import nested_labels
+
+    base = np.array([0, 0, 0, 1, 1, 1, -1])
+    finer = np.array([4, 4, 5, 4, 6, -1, 4])
+    nested = nested_labels(base, finer)
+    assert nested[6] == -1
+    assert nested[0] == nested[1] != nested[2] and nested[3] not in (nested[0], nested[2], nested[4])
+    assert nested[5] >= 0 and nested[5] not in (nested[3], nested[4], nested[0], nested[2])
+    assert len(set(nested.tolist()) - {-1}) == 5
+
+
 def test_selection_without_a_whole_space_groups_by_itself(monkeypatch):
-    seen = []
-    real_cluster = projection.cluster
-    monkeypatch.setattr(projection, "cluster", lambda space, *options: seen.append(options) or real_cluster(space, *options))
+    monkeypatch.setattr(projection, "ClusterTree", FakeTree)
+    FakeTree.built, FakeTree.cuts = [], []
     values = space_values(40)
     SpaceLayout(list(values), values, space_preset()).run(MapParams())
-    assert seen == [MapParams().cluster_options(40)]
+    assert FakeTree.built == [(40, Grouping().cluster_options(40)[1])]
 
 
 def test_quick_train_sizes_groups_by_the_whole_database(monkeypatch, embed_calls):
-    seen = []
-    real_cluster = projection.cluster
-    monkeypatch.setattr(projection, "cluster", lambda space, *options: seen.append(options) or real_cluster(space, *options))
+    monkeypatch.setattr(projection, "ClusterTree", FakeTree)
+    FakeTree.built, FakeTree.cuts = [], []
     request = make_request()
     request.space_size = 50_000
     pipeline().run(request)
-    assert seen == [MapParams().cluster_options(50_000)]
+    assert FakeTree.built == [(40, Grouping().cluster_options(50_000)[1])]
+    assert FakeTree.cuts == [(Grouping().cluster_options(50_000)[0], "eom")]

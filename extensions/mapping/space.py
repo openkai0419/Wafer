@@ -21,10 +21,11 @@ from wafer.core.logs import AppLogger
 
 from . import projection
 from .encoders import ENCODERS, BaseEncoder, expand_group_keys, feature_input
-from .params import MapParams
+from .params import Grouping, MapParams
 from .session import KEY_GROUP, KEY_MODEL, OUTPUT_PREFIX, SPACE_COLUMNS, FeatureSpec, MapError, SpaceGroups, grouping_values
 
 PRESET_KEY = "mapping.preset"
+GROUPING_KEY = "mapping.grouping"
 PLACE_BATCH = 5000
 STATUS_FILE = "status.json"
 PATH_SEPARATOR = "\n"
@@ -74,6 +75,15 @@ def load_preset(db_name: str) -> Preset | None:
 
 def save_preset(db_name: str, preset: Preset) -> None:
     settings_db(db_name).set_setting(PRESET_KEY, preset.to_dict())
+
+
+def load_grouping(db_name: str) -> Grouping:
+    saved = settings_db(db_name).get_setting(GROUPING_KEY)
+    return Grouping.from_dict(saved) if isinstance(saved, dict) else Grouping()
+
+
+def save_grouping(db_name: str, grouping: Grouping) -> None:
+    settings_db(db_name).set_setting(GROUPING_KEY, grouping.to_dict())
 
 
 def model_dir(db_name: str) -> Path:

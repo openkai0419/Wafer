@@ -1,6 +1,6 @@
 import pytest
 
-from extensions.mapping.params import MAX_NEIGHBORS, STAGES, MapParams, changed_stage, param_specs
+from extensions.mapping.params import MAX_NEIGHBORS, STAGES, Grouping, MapParams, changed_stage, param_specs
 
 
 def test_every_param_has_stage_and_description():
@@ -44,10 +44,10 @@ def test_dict_roundtrip_ignores_unknown_and_bad_values():
 
 
 def test_cluster_options_follow_the_number_of_files():
-    params = MapParams()
-    assert params.cluster_options(100) == (5, 5, "eom")
-    assert params.cluster_options(5000) == (10, 10, "eom")
-    assert params.cluster_options(20000) == params.cluster_options(1_000_000) == (30, 10, "eom")
+    grouping = Grouping()
+    assert grouping.cluster_options(100) == (5, 5, "eom")
+    assert grouping.cluster_options(5000) == (10, 10, "eom")
+    assert grouping.cluster_options(20000) == grouping.cluster_options(1_000_000) == (30, 10, "eom")
 
 
 @pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan"), 10**400, "inf", "nan"])
@@ -108,31 +108,36 @@ def test_neighbors_never_exceed_the_cap():
 
 
 def test_group_size_setting_scales_the_automatic_size():
-    spec = next(spec for name, spec, _ in param_specs() if name == "group_size")
-    assert spec.stage == "view" and (spec.minimum, spec.maximum) == (0.0625, 1.0) and MapParams().group_size == 1.0
-    assert MapParams(group_size=0.5).cluster_options(5000) == (5, 10, "eom")
-    assert MapParams(group_size=0.25).cluster_options(100) == (2, 5, "eom")
-    assert MapParams(group_size=0.0625).cluster_options(1_000_000) == (2, 10, "eom")
-    assert {MapParams(group_size=factor).cluster_options(1_000_000)[1] for factor in (1.0, 0.5, 0.0625)} == {10}
-    assert MapParams(group_size=5.0).normalized().group_size == 1.0
-    assert changed_stage(MapParams(), MapParams(group_size=0.5)) == "view"
+    spec = next(spec for name, spec, _ in param_specs(Grouping) if name == "size")
+    assert spec.stage == "grouping" and (spec.minimum, spec.maximum) == (0.0625, 1.0) and Grouping().size == 1.0
+    assert Grouping(size=0.5).cluster_options(5000) == (5, 10, "eom")
+    assert Grouping(size=0.25).cluster_options(100) == (2, 5, "eom")
+    assert Grouping(size=0.0625).cluster_options(1_000_000) == (2, 10, "eom")
+    assert Grouping(size=5.0).normalized().size == 1.0
+
+
+def test_mapping_share_shrinks_the_base_group_size():
+    assert Grouping().cluster_options(1_000_000, share=0.5) == (15, 10, "eom")
+    assert Grouping(size=0.5).cluster_options(1_000_000, share=0.5) == (8, 10, "eom")
+    assert Grouping().cluster_options(100, share=0.0625) == (2, 5, "eom")
+    spec = next(spec for name, spec, _ in param_specs() if name == "subgroup_size")
+    assert spec.stage == "view" and (spec.minimum, spec.maximum) == (0.0625, 1.0) and MapParams().subgroup_size == 1.0
+    assert changed_stage(MapParams(), MapParams(subgroup_size=0.5)) == "view"
 
 
 def test_strictness_scales_how_dense_a_group_must_be():
-    assert MapParams(group_strictness=0.5).cluster_options(5000) == (10, 5, "eom")
-    assert MapParams(group_strictness=2.0).cluster_options(5000) == (10, 20, "eom")
-    assert MapParams(group_strictness=0.25).cluster_options(100) == (5, 1, "eom")
+    assert Grouping(strictness=0.5).cluster_options(5000) == (10, 5, "eom")
+    assert Grouping(strictness=2.0).cluster_options(5000) == (10, 20, "eom")
+    assert Grouping(strictness=0.25).cluster_options(100) == (5, 1, "eom")
 
 
 def test_fine_groups_pick_the_leaf_clusters():
-    assert MapParams(fine_groups=1).cluster_options(5000)[2] == "leaf"
-    assert MapParams(fine_groups=5).normalized().fine_groups == 1
-    for name in ("group_strictness", "fine_groups"):
-        spec = next(spec for key, spec, _ in param_specs() if key == name)
-        assert spec.stage == "view"
+    assert Grouping(fine=1).cluster_options(5000)[2] == "leaf"
+    assert Grouping(fine=5).normalized().fine == 1
+    assert Grouping.from_dict({"size": "x", "strictness": 2, "fine": 1}) == Grouping(strictness=2.0, fine=1)
 
 
 def test_group_factors_reach_sixteen():
-    spec = next(spec for key, spec, _ in param_specs() if key == "group_strictness")
+    spec = next(spec for key, spec, _ in param_specs(Grouping) if key == "strictness")
     assert (spec.minimum, spec.maximum) == (0.25, 16.0)
-    assert MapParams(group_strictness=99).normalized().group_strictness == 16.0
+    assert Grouping(strictness=99).normalized().strictness == 16.0

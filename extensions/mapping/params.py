@@ -35,8 +35,43 @@ MAX_NEIGHBORS = 1000
 TRAIN_LIMIT = 10000
 
 
+class ParamSet:
+    def values_for(self, stage: str) -> tuple:
+        return tuple(getattr(self, f.name) for f in fields(self) if f.metadata["spec"].stage == stage)
+
+    def normalized(self):
+        changes: dict[str, Any] = {}
+        for f in fields(self):
+            spec: ParamSpec = f.metadata["spec"]
+            current = getattr(self, f.name)
+            if not math.isfinite(current):
+                changes[f.name] = f.default
+                continue
+            value = min(max(current, spec.minimum), spec.maximum)
+            changes[f.name] = round(value) if isinstance(f.default, int) else float(value)
+        return replace(self, **changes)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {f.name: getattr(self, f.name) for f in fields(self)}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]):
+        changes: dict[str, Any] = {}
+        for f in fields(cls):
+            if f.name not in data:
+                continue
+            try:
+                value = float(data[f.name])
+                if not math.isfinite(value):
+                    raise ValueError("non-finite value")
+                changes[f.name] = type(f.default)(value)
+            except (TypeError, ValueError, OverflowError) as e:
+                AppLogger.warning(f"[Mapping] Ignored invalid saved value {f.name}={data[f.name]!r}", exc=e)
+        return replace(cls(), **changes).normalized()
+
+
 @dataclass(frozen=True)
-class MapParams:
+class MapParams(ParamSet):
     neighbors: float = param(
         1.0,
         stage="layout",
@@ -74,25 +109,15 @@ class MapParams:
         maximum=20.0,
         step=0.5,
     )
-    group_size: float = param(
+    subgroup_size: float = param(
         1.0,
         stage="view",
         label="Group size",
-        description="Smallest group, as a share of the size used for the whole space (about 1 in 500 files, 5 to 30). Lower makes more, smaller groups.",
+        description="Split the Mapping Space groups into smaller ones, as a share of their size. 1 = the Mapping Space groups.",
         minimum=0.0625,
         maximum=1.0,
         step=0.25,
     )
-    group_strictness: float = param(
-        1.0,
-        stage="view",
-        label="Strictness",
-        description="How crowded files must be to form a group, as a multiple of the automatic value. Lower leaves fewer files without a group.",
-        minimum=0.25,
-        maximum=16.0,
-        step=0.25,
-    )
-    fine_groups: int = param(0, stage="view", label="Fine groups", description="Split large groups into the smaller crowds inside them.", minimum=0, maximum=1)
     point_size: float = param(3.0, stage="view", label="Point size", description="Size of the dots in pixels.", minimum=1.0, maximum=16.0, step=1.0)
     image_spacing: float = param(
         0.01, stage="view", label="Image spacing", description="Space between images, relative to their size. Lower lets them overlap more.", minimum=0.01, maximum=2.0, step=0.05
@@ -101,51 +126,41 @@ class MapParams:
     label_terms: int = param(3, stage="view", label="Label words", description="Number of words in each group label.", minimum=1, maximum=10)
     hover_size: int = param(256, stage="view", label="Hover size", description="Size of the enlarged image shown under the cursor. 0 turns it off.", minimum=0, maximum=1024, step=32)
 
-    def values_for(self, stage: str) -> tuple:
-        return tuple(getattr(self, f.name) for f in fields(self) if f.metadata["spec"].stage == stage)
-
-    def normalized(self) -> MapParams:
-        changes: dict[str, Any] = {}
-        for f in fields(self):
-            spec: ParamSpec = f.metadata["spec"]
-            current = getattr(self, f.name)
-            if not math.isfinite(current):
-                changes[f.name] = f.default
-                continue
-            value = min(max(current, spec.minimum), spec.maximum)
-            changes[f.name] = round(value) if isinstance(f.default, int) else float(value)
-        return replace(self, **changes)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {f.name: getattr(self, f.name) for f in fields(self)}
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> MapParams:
-        changes: dict[str, Any] = {}
-        for f in fields(cls):
-            if f.name not in data:
-                continue
-            try:
-                value = float(data[f.name])
-                if not math.isfinite(value):
-                    raise ValueError("non-finite value")
-                changes[f.name] = type(f.default)(value)
-            except (TypeError, ValueError, OverflowError) as e:
-                AppLogger.warning(f"[Mapping] Ignored invalid saved value {f.name}={data[f.name]!r}", exc=e)
-        return replace(cls(), **changes).normalized()
-
     def resolved_neighbors(self, count: int) -> int:
         return min(MAX_NEIGHBORS, max(MIN_NEIGHBORS, round(max(AUTO_NEIGHBORS_MIN, count * AUTO_NEIGHBORS_SHARE) * self.neighbors)))
 
-    def cluster_options(self, count: int) -> tuple[int, int, str]:
+
+@dataclass(frozen=True)
+class Grouping(ParamSet):
+    size: float = param(
+        1.0,
+        stage="grouping",
+        label="Group size",
+        description="Smallest group in the whole space, as a share of the automatic size (about 1 in 500 files, 5 to 30). Lower makes more, smaller groups.",
+        minimum=0.0625,
+        maximum=1.0,
+        step=0.25,
+    )
+    strictness: float = param(
+        1.0,
+        stage="grouping",
+        label="Strictness",
+        description="How crowded files must be to form a group, as a multiple of the automatic value. Lower leaves fewer files without a group.",
+        minimum=0.25,
+        maximum=16.0,
+        step=0.25,
+    )
+    fine: int = param(0, stage="grouping", label="Fine groups", description="Split large groups into the smaller crowds inside them.", minimum=0, maximum=1)
+
+    def cluster_options(self, count: int, share: float = 1.0) -> tuple[int, int, str]:
         automatic = min(AUTO_GROUP_MAX, max(AUTO_GROUP_MIN, count // AUTO_GROUP_DIVISOR))
-        size = max(MIN_GROUP_SIZE, round(automatic * self.group_size))
-        samples = max(1, round(min(automatic, AUTO_STRICTNESS_MAX) * self.group_strictness))
-        return size, samples, "leaf" if self.fine_groups else "eom"
+        size = max(MIN_GROUP_SIZE, round(max(MIN_GROUP_SIZE, round(automatic * self.size)) * share))
+        samples = max(1, round(min(automatic, AUTO_STRICTNESS_MAX) * self.strictness))
+        return size, samples, "leaf" if self.fine else "eom"
 
 
-def param_specs() -> list[tuple[str, ParamSpec, int | float]]:
-    return [(f.name, f.metadata["spec"], f.default) for f in fields(MapParams)]
+def param_specs(cls: type[ParamSet] | None = None) -> list[tuple[str, ParamSpec, int | float]]:
+    return [(f.name, f.metadata["spec"], f.default) for f in fields(cls or MapParams)]
 
 
 def changed_stage(old: MapParams, new: MapParams) -> str | None:

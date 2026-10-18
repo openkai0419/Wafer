@@ -13,14 +13,15 @@ from wafer.qt.common.icon_engine import themed_icon
 from wafer.qt.theme import ThemeManager
 from wafer.qt.widgets.popup import PopupBase
 
-from .params import param_specs
+from .params import Grouping, param_specs
 from .tuning import TuningPanel
-from .view_settings import TOOLBAR_PARAMS, TOOLBAR_SLIDERS, VIEW_STAGES, ViewSettings
+from .view_settings import TOOLBAR_PARAMS, VIEW_STAGES, GroupingStore, ViewSettings
 
 TUNING_HEIGHT = 600
 SLIDER_WIDTH = 110
 STEPS_PER_DOUBLING = 4
 SPECS = {name: spec for name, spec, _ in param_specs()}
+GROUPING_SPECS = {name: spec for name, spec, _ in param_specs(Grouping)}
 MULTIPLY = "\N{MULTIPLICATION SIGN}"
 
 
@@ -39,9 +40,12 @@ def set_quietly(button: QtWidgets.QAbstractButton, checked: bool) -> None:
 
 
 class MapToolbar(QtWidgets.QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, edits_space_groups: bool = False, parent=None):
         super().__init__(parent)
         self.settings = ViewSettings.instance()
+        self.groupings = GroupingStore.instance()
+        self.edits_space_groups = edits_space_groups
+        self.db_name = ""
         self.tuning_popup: PopupBase | None = None
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -55,13 +59,18 @@ class MapToolbar(QtWidgets.QWidget):
         layout.addWidget(self.thumbnail_check)
         self.sliders: dict[str, QtWidgets.QSlider] = {}
         self.slider_values: dict[str, QtWidgets.QLabel] = {}
-        for name in TOOLBAR_SLIDERS:
-            self.add_slider(layout, name)
-        fine = SPECS["fine_groups"]
-        self.fine_check = QtWidgets.QCheckBox(t(fine.label))
-        self.fine_check.setToolTip(t(fine.description))
-        self.fine_check.toggled.connect(lambda checked: self.set_param("fine_groups", int(checked)))
-        layout.addWidget(self.fine_check)
+        self.fine_check: QtWidgets.QCheckBox | None = None
+        if edits_space_groups:
+            for name in ("size", "strictness"):
+                self.add_slider(layout, name, GROUPING_SPECS[name], self.set_grouping)
+            fine = GROUPING_SPECS["fine"]
+            self.fine_check = QtWidgets.QCheckBox(t(fine.label))
+            self.fine_check.setToolTip(t(fine.description))
+            self.fine_check.toggled.connect(lambda checked: self.set_grouping("fine", int(checked)))
+            layout.addWidget(self.fine_check)
+            self.groupings.changed.connect(self.on_grouping_changed)
+        else:
+            self.add_slider(layout, "subgroup_size", SPECS["subgroup_size"], self.set_param)
         self.mode_buttons: dict[str, QtWidgets.QToolButton] = {}
         group = QtWidgets.QButtonGroup(self)
         for mode, text, tip in (("single", t("Single"), t("Select one file at a time.")), ("group", t("Group"), t("Select whole groups."))):
@@ -83,15 +92,14 @@ class MapToolbar(QtWidgets.QWidget):
         self.settings.changed.connect(self.sync)
         self.sync()
 
-    def add_slider(self, layout: QtWidgets.QHBoxLayout, name: str) -> None:
-        spec = SPECS[name]
+    def add_slider(self, layout: QtWidgets.QHBoxLayout, name: str, spec, apply) -> None:
         label = QtWidgets.QLabel(t(spec.label))
         label.setToolTip(t(spec.description))
         slider = QtWidgets.QSlider(Qt.Horizontal)
         slider.setRange(slider_position(spec.minimum), slider_position(spec.maximum))
         slider.setFixedWidth(dpix(SLIDER_WIDTH))
         slider.setToolTip(t(spec.description))
-        slider.valueChanged.connect(lambda position: self.set_param(name, slider_factor(position)))
+        slider.valueChanged.connect(lambda position: apply(name, slider_factor(position)))
         value = QtWidgets.QLabel()
         value.setFixedWidth(value.fontMetrics().horizontalAdvance(f"{MULTIPLY}0.0625") + dpix(2))
         for widget in (label, slider, value):
@@ -101,6 +109,22 @@ class MapToolbar(QtWidgets.QWidget):
     def set_param(self, name: str, value) -> None:
         self.settings.set_params(replace(self.settings.params, **{name: value}))
 
+    def set_grouping(self, name: str, value) -> None:
+        if self.db_name:
+            self.groupings.set(self.db_name, replace(self.groupings.get(self.db_name), **{name: value}))
+
+    def set_db(self, db_name: str) -> None:
+        if db_name != self.db_name:
+            self.db_name = db_name
+            self.sync()
+
+    def on_grouping_changed(self, db_name: str) -> None:
+        if db_name == self.db_name:
+            self.sync()
+
+    def slider_source(self):
+        return self.groupings.get(self.db_name) if self.edits_space_groups else self.settings.params
+
     def on_mode_toggled(self, mode: str, checked: bool) -> None:
         if checked:
             self.settings.set_selection_mode(mode)
@@ -109,13 +133,15 @@ class MapToolbar(QtWidgets.QWidget):
         settings = self.settings
         set_quietly(self.label_check, settings.labels_shown)
         set_quietly(self.thumbnail_check, settings.thumbnails_shown)
+        source = self.slider_source()
         for name, slider in self.sliders.items():
-            value = getattr(settings.params, name)
+            value = getattr(source, name)
             slider.blockSignals(True)
             slider.setValue(slider_position(value))
             slider.blockSignals(False)
             self.slider_values[name].setText(f"{MULTIPLY}{value:.3g}")
-        set_quietly(self.fine_check, bool(settings.params.fine_groups))
+        if self.fine_check is not None:
+            set_quietly(self.fine_check, bool(source.fine))
         for mode, button in self.mode_buttons.items():
             set_quietly(button, mode == settings.selection_mode)
         if self.tuning.params() != settings.params:

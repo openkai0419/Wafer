@@ -7,7 +7,7 @@ import pytest
 from PySide6 import QtCore
 
 from extensions.mapping import space, space_panel
-from extensions.mapping.params import MapParams
+from extensions.mapping.params import Grouping, MapParams
 from extensions.mapping.projection import GROUPING_DIMS
 from extensions.mapping.session import FeatureSpec, grouping_text
 from extensions.mapping.space import Preset, SpaceStatus, save_preset, write_status
@@ -503,7 +503,9 @@ def test_grouping_changes_regroup_the_quick_train_view(widget, database, qtbot):
     w.toggle_quick_train()
     qtbot.waitUntil(lambda: w.showing_quick and not w.quick_running, timeout=30000)
     previous = w.shown
-    ViewSettings.instance().set_params(MapParams(group_size=0.25))
+    from extensions.mapping.view_settings import GroupingStore
+
+    GroupingStore.instance().set("map", Grouping(size=0.25))
     qtbot.waitUntil(lambda: w.shown is not previous, timeout=30000)
-    assert w.showing_quick and w.quick_request.params.group_size == 0.25 and w.quick_sample.space_size == 12
+    assert w.showing_quick and w.quick_request.grouping.size == 0.25 and w.quick_sample.space_size == 12
     assert w.shown.paths == previous.paths

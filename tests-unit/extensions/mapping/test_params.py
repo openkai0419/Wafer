@@ -110,9 +110,10 @@ def test_neighbors_never_exceed_the_cap():
 def test_group_size_setting_scales_the_automatic_size():
     spec = next(spec for name, spec, _ in param_specs() if name == "group_size")
     assert spec.stage == "view" and (spec.minimum, spec.maximum) == (0.0625, 1.0) and MapParams().group_size == 1.0
-    assert MapParams(group_size=0.5).cluster_options(5000) == (5, 5, "eom")
-    assert MapParams(group_size=0.25).cluster_options(100) == (2, 2, "eom")
-    assert MapParams(group_size=0.0625).cluster_options(1_000_000) == (2, 2, "eom")
+    assert MapParams(group_size=0.5).cluster_options(5000) == (5, 10, "eom")
+    assert MapParams(group_size=0.25).cluster_options(100) == (2, 5, "eom")
+    assert MapParams(group_size=0.0625).cluster_options(1_000_000) == (2, 10, "eom")
+    assert {MapParams(group_size=factor).cluster_options(1_000_000)[1] for factor in (1.0, 0.5, 0.0625)} == {10}
     assert MapParams(group_size=5.0).normalized().group_size == 1.0
     assert changed_stage(MapParams(), MapParams(group_size=0.5)) == "view"
 

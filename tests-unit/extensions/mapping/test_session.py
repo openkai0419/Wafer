@@ -395,14 +395,58 @@ def test_quick_train_uses_the_group_size(monkeypatch, embed_calls):
     assert len(embed_calls) == layouts
 
 
-def test_space_layout_sizes_groups_by_the_whole_space(monkeypatch):
+class FakeTree:
+    built = []
+
+    def __init__(self, space, min_samples):
+        FakeTree.built.append((len(space), min_samples))
+        self.space = space
+
+    def labels(self, min_cluster_size, method="eom"):
+        return (self.space[:, 0] > self.space[:, 0].mean()).astype(np.int32) * 7
+
+
+def whole_space(count=60):
+    from extensions.mapping.session import SpaceGroups
+
+    points = np.zeros((count, projection.GROUPING_DIMS))
+    points[:, 0] = np.r_[np.zeros(count // 2), np.full(count - count // 2, 10.0)]
+    return SpaceGroups([f"c:/{i}.png" for i in range(count)], points)
+
+
+def test_selections_take_their_groups_from_the_whole_space(monkeypatch):
+    monkeypatch.setattr(projection, "ClusterTree", FakeTree)
+    FakeTree.built = []
+    groups = whole_space()
+    values = space_values(12)
+    first = SpaceLayout(list(values)[:6], values, space_preset(), groups).run(MapParams())
+    both = SpaceLayout(list(values), values, space_preset(), groups).run(MapParams())
+    assert first.labels.tolist() == [0] * 6
+    assert both.labels.tolist() == [0] * 12
+    assert FakeTree.built == [(60, MapParams().cluster_options(60)[1])]
+    assert first.diagnostics.groups == 1
+
+
+def test_whole_space_labels_are_cut_per_size_and_rebuilt_per_strictness(monkeypatch):
+    monkeypatch.setattr(projection, "ClusterTree", FakeTree)
+    FakeTree.built = []
+    groups = whole_space()
+    paths = ["c:/0.png", "c:/59.png", "c:/missing.png"]
+    assert groups.labels_for(paths, MapParams()).tolist() == [0, 7, -1]
+    groups.labels_for(paths, MapParams(group_size=0.5))
+    groups.labels_for(paths, MapParams(fine_groups=1))
+    assert len(FakeTree.built) == 1
+    groups.labels_for(paths, MapParams(group_strictness=2.0))
+    assert len(FakeTree.built) == 2
+
+
+def test_selection_without_a_whole_space_groups_by_itself(monkeypatch):
     seen = []
     real_cluster = projection.cluster
     monkeypatch.setattr(projection, "cluster", lambda space, *options: seen.append(options) or real_cluster(space, *options))
     values = space_values(40)
-    SpaceLayout(list(values), values, space_preset(), space_size=100_000).run(MapParams())
     SpaceLayout(list(values), values, space_preset()).run(MapParams())
-    assert seen == [MapParams().cluster_options(100_000), MapParams().cluster_options(40)]
+    assert seen == [MapParams().cluster_options(40)]
 
 
 def test_quick_train_sizes_groups_by_the_whole_database(monkeypatch, embed_calls):

@@ -316,3 +316,36 @@ def test_placing_reuses_encoded_values_across_batches(monkeypatch):
     monkeypatch.setattr(ENCODERS["token_set"], "transform", lambda self, inputs: encoded.append(len(inputs)) or original(self, inputs))
     SpaceModel.fit(limited(10), values)
     assert sum(encoded) == 2
+
+
+def test_space_groups_are_read_from_the_database_and_reloaded_when_files_are_placed(tmp_path):
+    from wafer.core.db.file_db import FileDB
+
+    from extensions.mapping.session import grouping_text
+
+    db_path = tmp_path / "groups.db"
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+    count = 8
+    db.upsert_basic_sources([(f"c:/{i}.png", f"h{i}", 1, 1.0, 1.0, 1.0) for i in range(count)], [(f"c:/{i}.png", f"c:/{i}.png", f"{i}.png", 1.0, None) for i in range(count)])
+
+    def place(rows, version="3"):
+        meta = []
+        for i in rows:
+            meta.append((f"c:/{i}.png", "mapping.model", version, float(version)))
+            meta.append((f"c:/{i}.png", "mapping.group", grouping_text([float(i)] * projection.GROUPING_DIMS), None))
+        db.upsert_collection_results([], meta, [], [])
+
+    place(range(5))
+    place([5], version="2")
+    current = Preset([FeatureSpec("tags", "token_set")], MapParams(), 3)
+    space.forget_space_groups()
+    groups = space.space_groups(str(db_path), current)
+    assert sorted(groups.paths) == [f"c:/{i}.png" for i in range(5)]
+    assert groups.points.shape == (5, projection.GROUPING_DIMS)
+    assert space.space_groups(str(db_path), current) is groups
+    place([6, 7])
+    reloaded = space.space_groups(str(db_path), current)
+    assert reloaded is not groups and reloaded.size == 7
+    db.close()

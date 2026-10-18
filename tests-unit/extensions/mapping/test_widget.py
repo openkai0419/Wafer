@@ -76,11 +76,11 @@ def deterministic_groups(fake_cluster):
 @pytest.fixture()
 def space_data(monkeypatch):
     values = space_values()
-    state = SimpleNamespace(preset=Preset([FeatureSpec("tags", "token_set")], MapParams(), 2), values=values, space_size=25_000)
+    state = SimpleNamespace(preset=Preset([FeatureSpec("tags", "token_set")], MapParams(), 2), values=values, groups=None)
     monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps: {p: state.values[p] for p in ps if p in state.values})
     monkeypatch.setattr(widget_module, "fetch_sources", lambda db, ps: {p: p.replace(".png", ".zip") for p in ps})
     monkeypatch.setattr(widget_module, "load_preset", lambda db_name: state.preset)
-    monkeypatch.setattr(widget_module, "count_placed", lambda db_path, preset: state.space_size)
+    monkeypatch.setattr(widget_module, "space_groups", lambda db_path, preset: state.groups)
     return state
 
 
@@ -585,5 +585,5 @@ def test_only_the_latest_regroup_is_computed(space_data):
 
 def test_groups_start_from_the_size_of_the_whole_space(mapping, space_data):
     level = mapping.levels[-1]
-    assert level.layout.space_size == space_data.space_size
+    assert level.layout.groups is space_data.groups
     assert mapping.toolbar.sliders["group_size"].value() == mapping.toolbar.sliders["group_size"].maximum()

@@ -140,7 +140,7 @@ class MapParams:
     def cluster_options(self, count: int) -> tuple[int, int, str]:
         automatic = min(AUTO_GROUP_MAX, max(AUTO_GROUP_MIN, count // AUTO_GROUP_DIVISOR))
         size = max(MIN_GROUP_SIZE, round(automatic * self.group_size))
-        samples = max(1, round(min(size, AUTO_STRICTNESS_MAX) * self.group_strictness))
+        samples = max(1, round(min(automatic, AUTO_STRICTNESS_MAX) * self.group_strictness))
         return size, samples, "leaf" if self.fine_groups else "eom"
 
 

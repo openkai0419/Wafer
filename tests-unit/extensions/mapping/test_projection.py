@@ -112,6 +112,13 @@ def test_embed_identical_rows_returns_zeros():
     assert np.allclose(projection.embed(matrix, projection.nearest_neighbors(matrix, 15, 0), 0.1, 0), 0.0)
 
 
+def blobs_with_outlier():
+    rng = np.random.default_rng(0)
+    blobs = [rng.normal(center, 0.05, size=(40, 2)) for center in ((0, 0), (5, 5), (0, 5))]
+    return np.vstack(blobs + [np.array([[20.0, -20.0]])])
+
+
+@pytest.mark.timeout(180)
 def test_cluster_separates_blobs_and_noise():
     rng = np.random.default_rng(0)
     blobs = [rng.normal(center, 0.05, size=(40, 2)) for center in ((0, 0), (5, 5), (0, 5))]
@@ -162,13 +169,14 @@ def test_embed_real_umap_keeps_blobs_apart():
     assert gap > spread * 3
 
 
-def test_warm_up_runs_the_layout_once(monkeypatch):
+def test_warm_up_runs_the_layout_and_grouping_once(monkeypatch):
     monkeypatch.setattr(projection, "_warmed_up", False)
     calls = []
-    monkeypatch.setattr(projection, "embed", lambda *args: calls.append(args[0].shape))
+    monkeypatch.setattr(projection, "embed", lambda *args: calls.append(("embed", args[0].shape)))
+    monkeypatch.setattr(projection, "cluster", lambda *args: calls.append(("cluster", args[0].shape)))
     projection.warm_up()
     projection.warm_up()
-    assert calls == [(projection.WARM_UP_ROWS, 8)]
+    assert calls == [("embed", (projection.WARM_UP_ROWS, 8)), ("cluster", (projection.WARM_UP_ROWS, 8))]
 
 
 def test_failed_warm_up_is_logged_and_retried_later(monkeypatch):
@@ -280,18 +288,32 @@ def test_embed_can_return_more_dimensions(monkeypatch):
     assert tiny.shape == (3, projection.GROUPING_DIMS) and np.isfinite(tiny).all()
 
 
-def test_cluster_passes_the_selection_method(monkeypatch):
-    import sklearn.cluster
+def test_cluster_passes_its_options_to_fast_hdbscan(monkeypatch):
+    import fast_hdbscan.hdbscan as engine
 
     seen = {}
-
-    class Recorder:
-        def __init__(self, **kwargs):
-            seen.update(kwargs)
-
-        def fit_predict(self, space):
-            return np.zeros(len(space), dtype=np.int32)
-
-    monkeypatch.setattr(sklearn.cluster, "HDBSCAN", Recorder)
+    monkeypatch.setattr(engine, "compute_minimum_spanning_tree", lambda data, min_samples: seen.update(samples=min_samples) or ("tree", None, None))
+    monkeypatch.setattr(
+        engine,
+        "clusters_from_spanning_tree",
+        lambda tree, min_cluster_size, cluster_selection_method: seen.update(size=min_cluster_size, method=cluster_selection_method) or (np.zeros(20, dtype=np.int64),),
+    )
     projection.cluster(np.random.default_rng(0).normal(size=(20, 2)), 5, 3, "leaf")
-    assert (seen["min_cluster_size"], seen["min_samples"], seen["cluster_selection_method"]) == (5, 3, "leaf")
+    assert seen == {"samples": 2, "size": 5, "method": "leaf"}
+
+
+@pytest.mark.timeout(180)
+def test_min_samples_counts_the_point_itself_like_hdbscan():
+    rng = np.random.default_rng(1)
+    data = np.vstack([rng.normal(0, 0.01, (5, 4)), rng.normal(10, 0.01, (6, 4))])
+    assert projection.cluster(data, 5, 5).tolist() == [1] * 5 + [0] * 6
+
+
+@pytest.mark.timeout(180)
+def test_a_cluster_tree_is_cut_again_at_other_sizes_without_rebuilding():
+    space = blobs_with_outlier()
+    tree = projection.ClusterTree(space, 5)
+    assert np.array_equal(tree.labels(10), projection.cluster(space, 10, 5))
+    assert set(tree.labels(10, "leaf").tolist()) - {-1}
+    assert (tree.labels(200) == -1).all() or len(set(tree.labels(200).tolist())) <= 2
+    assert (projection.ClusterTree(space[:2], 5).labels(5) == -1).all()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import pickle
+import threading
 import time
 import zipfile
 from contextlib import closing
@@ -21,7 +22,7 @@ from wafer.core.logs import AppLogger
 from . import projection
 from .encoders import ENCODERS, BaseEncoder, expand_group_keys, feature_input
 from .params import MapParams
-from .session import KEY_MODEL, OUTPUT_PREFIX, SPACE_COLUMNS, FeatureSpec, MapError
+from .session import KEY_GROUP, KEY_MODEL, OUTPUT_PREFIX, SPACE_COLUMNS, FeatureSpec, MapError, SpaceGroups, grouping_values
 
 PRESET_KEY = "mapping.preset"
 PLACE_BATCH = 5000
@@ -123,6 +124,43 @@ def decode_paths(blob: np.ndarray) -> list[str]:
 def count_placed(db_path: str, preset: Preset) -> int:
     with closing(open_readonly(db_path)) as conn:
         return conn.execute("SELECT COUNT(*) FROM meta_info WHERE key = ? AND value = ?", (KEY_MODEL, str(preset.version))).fetchone()[0]
+
+
+GROUPS_SQL = "SELECT g.path, g.value FROM meta_info AS g JOIN meta_info AS m ON m.path = g.path AND m.key = ? WHERE g.key = ? AND m.value = ?"
+_groups_lock = threading.Lock()
+_groups_cache: dict[tuple[str, int], tuple[int, SpaceGroups]] = {}
+
+
+def read_space_groups(db_path: str, preset: Preset) -> SpaceGroups:
+    paths, points = [], []
+    with closing(open_readonly(db_path)) as conn:
+        for path, text in conn.execute(GROUPS_SQL, (KEY_MODEL, KEY_GROUP, str(preset.version))):
+            numbers = grouping_values(text or "")
+            if numbers is not None:
+                paths.append(path)
+                points.append(numbers)
+    return SpaceGroups(paths, np.array(points, dtype=np.float32).reshape(-1, projection.GROUPING_DIMS))
+
+
+def space_groups(db_path: str, preset: Preset) -> SpaceGroups:
+    key = (str(db_path), preset.version)
+    placed = count_placed(db_path, preset)
+    with _groups_lock:
+        cached = _groups_cache.get(key)
+        if cached is not None and cached[0] == placed:
+            return cached[1]
+    started = time.perf_counter()
+    groups = read_space_groups(db_path, preset)
+    AppLogger.info(f"[Mapping] Read the grouping coordinates of {groups.size} files in {time.perf_counter() - started:.1f}s")
+    with _groups_lock:
+        _groups_cache.clear()
+        _groups_cache[key] = (placed, groups)
+    return groups
+
+
+def forget_space_groups() -> None:
+    with _groups_lock:
+        _groups_cache.clear()
 
 
 def valued_paths(values: dict[str, dict[str, PathValue]], keys: list[str]) -> list[str]:

@@ -296,12 +296,41 @@ class MapPipeline:
         return describe_groups([(block.encoder, block.present) for block in ranked], labels, params)
 
 
+class SpaceGroups:
+    def __init__(self, paths: list[str], points: np.ndarray):
+        self.paths = paths
+        self.points = points
+        self.index = {path: row for row, path in enumerate(paths)}
+        self.lock = threading.Lock()
+        self.trees: dict[int, projection.ClusterTree] = {}
+        self.labels_by_options: dict[tuple[int, int, str], np.ndarray] = {}
+
+    @property
+    def size(self) -> int:
+        return len(self.paths)
+
+    def labels(self, params: MapParams) -> np.ndarray:
+        options = params.cluster_options(self.size)
+        size, samples, method = options
+        with self.lock:
+            if options not in self.labels_by_options:
+                if samples not in self.trees:
+                    self.trees = {samples: projection.ClusterTree(self.points, samples)}
+                self.labels_by_options[options] = self.trees[samples].labels(size, method)
+            return self.labels_by_options[options]
+
+    def labels_for(self, paths: list[str], params: MapParams) -> np.ndarray:
+        rows = np.fromiter((self.index.get(path, -1) for path in paths), dtype=np.int64, count=len(paths))
+        labels = self.labels(params)
+        return np.where(rows >= 0, labels[np.maximum(rows, 0)], -1).astype(np.int32)
+
+
 class SpaceLayout:
-    def __init__(self, paths: list[str], values: dict[str, dict[str, PathValue]], preset: Preset, space_size: int = 0):
+    def __init__(self, paths: list[str], values: dict[str, dict[str, PathValue]], preset: Preset, groups: SpaceGroups | None = None):
         self.paths = paths
         self.values = values
         self.preset = preset
-        self.space_size = space_size
+        self.groups = groups
         self.lock = threading.Lock()
         self.coords: np.ndarray | None = None
         self.describers: list[tuple[BaseEncoder, np.ndarray]] | None = None
@@ -328,7 +357,7 @@ class SpaceLayout:
         terms: dict[int, list[str]] = {}
         active_labels = np.zeros(active.size, dtype=np.int32)
         if grouped and active.size >= 3:
-            active_labels = self.group(raw[active, 2:], params, diagnostics)
+            active_labels = self.group(active, raw[active, 2:], params, diagnostics)
             labels = np.full(count, -1, dtype=np.int32)
             labels[active] = active_labels
             with timed(diagnostics, "describe"):
@@ -360,11 +389,14 @@ class SpaceLayout:
             self.coords = raw
         return self.coords
 
-    def group(self, grouping: np.ndarray, params: MapParams, diagnostics: MapDiagnostics) -> np.ndarray:
-        options = params.cluster_options(self.space_size or len(grouping))
+    def group(self, active: np.ndarray, grouping: np.ndarray, params: MapParams, diagnostics: MapDiagnostics) -> np.ndarray:
+        options = params.cluster_options(self.groups.size if self.groups is not None else len(grouping))
         if options not in self.labels_by_options:
             with timed(diagnostics, "cluster"):
-                self.labels_by_options[options] = projection.cluster(grouping, *options)
+                if self.groups is not None:
+                    self.labels_by_options[options] = self.groups.labels_for([self.paths[row] for row in active], params)
+                else:
+                    self.labels_by_options[options] = projection.cluster(grouping, *options)
         return self.labels_by_options[options]
 
     def space_describers(self, active: np.ndarray, params: MapParams) -> list[tuple[BaseEncoder, np.ndarray]]:
@@ -394,7 +426,7 @@ def describe_groups(describers: list[tuple[BaseEncoder, np.ndarray]], labels: np
 
 
 def record_groups(diagnostics: MapDiagnostics, labels: np.ndarray) -> None:
-    sizes = np.bincount(labels[labels >= 0]) if (labels >= 0).any() else np.zeros(0, dtype=np.int64)
+    sizes = np.unique(labels[labels >= 0], return_counts=True)[1]
     diagnostics.groups = int(sizes.size)
     diagnostics.noise_ratio = float((labels < 0).mean()) if labels.size else 0.0
     diagnostics.largest = int(sizes.max()) if sizes.size else 0

@@ -228,6 +228,7 @@ def warm_up() -> None:
         try:
             matrix = np.random.default_rng(0).normal(size=(WARM_UP_ROWS, 8)).astype(np.float32)
             embed(matrix, nearest_neighbors(matrix, 15, 0), 0.1, 0)
+            cluster(matrix, 10, 5)
         except Exception as e:
             AppLogger.warning("[Mapping] Preparing the layout engine failed; the first map will take longer", exc=e)
             return
@@ -241,15 +242,28 @@ def relabel_by_size(labels: np.ndarray) -> np.ndarray:
     return np.array([mapping.get(label, -1) for label in labels.tolist()], dtype=np.int32)
 
 
-def cluster(space: np.ndarray, min_cluster_size: int, min_samples: int, method: str = "eom") -> np.ndarray:
-    count = space.shape[0]
-    if count < 3:
-        return np.full(count, -1, dtype=np.int32)
-    from sklearn.cluster import HDBSCAN
+class ClusterTree:
+    def __init__(self, space: np.ndarray, min_samples: int):
+        self.count = space.shape[0]
+        self.spanning = None
+        if self.count >= 3:
+            from fast_hdbscan.hdbscan import compute_minimum_spanning_tree
 
-    size = max(2, min(min_cluster_size, count))
-    samples = max(1, min(min_samples, count - 1))
-    return relabel_by_size(HDBSCAN(min_cluster_size=size, min_samples=samples, cluster_selection_method=method, copy=True).fit_predict(space))
+            data = np.ascontiguousarray(space, dtype=np.float32)
+            neighbors_besides_self = max(1, min(min_samples - 1, self.count - 1))
+            self.spanning = compute_minimum_spanning_tree(data, min_samples=neighbors_besides_self)[0]
+
+    def labels(self, min_cluster_size: int, method: str = "eom") -> np.ndarray:
+        if self.spanning is None:
+            return np.full(self.count, -1, dtype=np.int32)
+        from fast_hdbscan.hdbscan import clusters_from_spanning_tree
+
+        size = max(2, min(min_cluster_size, self.count))
+        return relabel_by_size(np.asarray(clusters_from_spanning_tree(self.spanning, min_cluster_size=size, cluster_selection_method=method)[0]))
+
+
+def cluster(space: np.ndarray, min_cluster_size: int, min_samples: int, method: str = "eom") -> np.ndarray:
+    return ClusterTree(space, min_samples).labels(min_cluster_size, method)
 
 
 def normalize_to_core(points: np.ndarray, percent: float) -> tuple[np.ndarray, np.ndarray]:

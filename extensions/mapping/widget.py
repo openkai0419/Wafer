@@ -138,6 +138,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.list_button.setIcon(themed_icon("menu"))
         self.list_button.setToolTip(t("Show the file list"))
         self.list_button.setCheckable(True)
+        self.list_button.setChecked(True)
         self.list_button.toggled.connect(self.show_list)
         refresh = QtWidgets.QToolButton()
         refresh.setIcon(themed_icon("refresh"))
@@ -164,7 +165,6 @@ class MappingWidget(QtWidgets.QWidget):
         self.splitter.addWidget(self.file_list)
         self.splitter.addWidget(self.map_view)
         self.splitter.setStretchFactor(1, 3)
-        self.file_list.hide()
         layout.addWidget(self.splitter, stretch=1)
         self.stack.addWidget(self.page)
         self.map_view.selection_changed.connect(self.on_map_selection)
@@ -541,5 +541,5 @@ class MappingWidget(QtWidgets.QWidget):
         splitter = state.get("splitter")
         if isinstance(splitter, str) and splitter:
             self.splitter.restoreState(QtCore.QByteArray.fromHex(splitter.encode("ascii")))
-        self.list_button.setChecked(state.get("list") is True)
+        self.list_button.setChecked(state.get("list") is not False)
         self.show_list(self.list_button.isChecked())

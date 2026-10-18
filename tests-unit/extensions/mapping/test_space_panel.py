@@ -577,7 +577,7 @@ def test_settings_form_names_every_file_count_and_keeps_its_width(qtbot):
     texts = {label.text() for label in w.findChildren(QtWidgets.QLabel)}
     assert {"Database", "Keys", "Training", "Saved map", "Quick Train", "Files on the whole map", "Files to train on"} <= texts
     assert w.splitter.widget(0).minimumWidth() >= dpix(space_panel.FORM_MIN_WIDTH)
-    assert w.splitter.widget(1).minimumSizeHint().width() <= dpix(space_panel.MAP_MIN_WIDTH)
+    assert w.splitter.widget(1).minimumSizeHint().width() <= dpix(360)
     assert not w.splitter.childrenCollapsible()
     w.close()
 

@@ -47,7 +47,6 @@ PREVIEW_FILES = 5000
 PREVIEW_RANGE = (100, 200_000)
 RESAMPLE_DELAY_MS = 300
 FORM_MIN_WIDTH = 300
-MAP_MIN_WIDTH = 360
 QUICK_TRAIN_FILES = 3000
 QUICK_TRAIN_RANGE = (100, 100_000)
 DETECT_SAMPLE = 300
@@ -418,7 +417,6 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.toolbar = self.bar = MapToolbar(self.tab, edits_space_groups=True)
         preview_layout.addWidget(self.bar)
         self.map_view = MapView(self)
-        self.map_view.setMinimumSize(dpix(MAP_MIN_WIDTH) // 2, dpix(MAP_MIN_WIDTH) // 2)
         preview_layout.addWidget(self.map_view, stretch=1)
         self.splitter.addWidget(preview)
         self.splitter.setChildrenCollapsible(False)

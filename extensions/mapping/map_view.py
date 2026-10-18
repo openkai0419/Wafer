@@ -16,6 +16,7 @@ from .session import MapResult
 
 SCENE_SIZE = 1000.0
 CAPTION_MARGIN = 6
+MIN_SIDE = 24
 UNSET_GAP = SCENE_SIZE * 0.08
 UNSET_SPACING = 20.0
 UNSET_PER_ROW = 50
@@ -188,6 +189,9 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if limit != self.image_limit:
             self.image_limit = max(int(limit), 0)
             self.invalidate()
+
+    def minimumSizeHint(self) -> QtCore.QSize:
+        return QtCore.QSize(dpix(MIN_SIDE), dpix(MIN_SIDE))
 
     def set_caption(self, text: str) -> None:
         self.caption.setText(text)

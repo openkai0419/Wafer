@@ -803,15 +803,17 @@ def test_map_tab_keeps_its_controls_in_one_row_and_gives_the_rest_to_the_map(map
     qtbot.waitUntil(lambda: mapping.bar.width() >= row.width(), timeout=2000)
     assert mapping.bar.height() <= row.height() + dpix(4)
     assert mapping.map_view.height() >= mapping.height() - row.height() - dpix(24)
-    assert mapping.map_view.width() >= mapping.width() - dpix(20)
+    assert mapping.map_view.width() + mapping.file_list.width() >= mapping.width() - dpix(30)
 
 
-def test_file_list_is_hidden_until_asked(mapping):
-    assert not mapping.file_list.isVisibleTo(mapping)
+def test_file_list_is_shown_until_hidden(mapping):
+    assert mapping.file_list.isVisibleTo(mapping) and mapping.list_button.isChecked()
     mapping.list_button.click()
-    assert mapping.file_list.isVisibleTo(mapping) and mapping.save_state()["list"] is True
+    assert not mapping.file_list.isVisibleTo(mapping) and mapping.save_state()["list"] is False
     other = MappingWidget()
     other.restore_state(mapping.save_state())
+    assert not other.list_button.isChecked() and other.file_list.isHidden()
+    other.restore_state({})
     assert other.list_button.isChecked() and not other.file_list.isHidden()
     other.close()
 

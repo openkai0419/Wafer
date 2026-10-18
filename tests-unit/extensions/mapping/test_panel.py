@@ -103,3 +103,12 @@ def test_dropping_on_the_settings_tab_shows_the_files_on_the_map(qtbot, tmp_path
     assert event.accepted is True
     panel.settings_tab.handle_drop(event)
     assert len(added) == 1 and added[0][1] == "main.db" and panel.current_map() is panel.map_tab
+
+
+def test_the_panel_can_be_made_short(qtbot):
+    from wafer.qt.common.dpi import dpix
+
+    panel = MappingPanel()
+    qtbot.addWidget(panel)
+    assert panel.minimumSizeHint().height() <= dpix(150)
+    assert panel.map_tab.minimumSizeHint().height() <= dpix(150) and panel.settings_tab.minimumSizeHint().height() <= dpix(150)

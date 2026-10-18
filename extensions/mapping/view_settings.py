@@ -7,7 +7,7 @@ from typing import Any
 from PySide6 import QtCore
 
 from .map_view import MAX_IMAGE_SCALE, MIN_IMAGE_SCALE
-from .params import Grouping, ViewParams, param_specs
+from .params import Grouping, TrainParams, ViewParams, param_specs
 from .space import load_grouping, save_grouping
 
 VIEW_PARAMS = tuple(name for name, _spec, _default in param_specs(ViewParams))
@@ -15,6 +15,8 @@ TOOLBAR_PARAMS = frozenset({"subgroup_size"})
 RELAYOUT_PARAMS = frozenset({"outlier_percent"})
 SELECTION_MODES = ("single", "group")
 DEFAULT_IMAGE_CAP = ViewParams().hover_size
+DEFAULT_SPACING = TrainParams().min_dist
+SPACING_RANGE = (0.0, 1.0)
 
 
 def clamped_scale(scale) -> float:
@@ -80,6 +82,7 @@ class TabSettings(QtCore.QObject):
         super().__init__(parent)
         self.thumbnails_shown = True
         self.selection_mode = "single"
+        self.spacing = DEFAULT_SPACING
 
     def set_thumbnails_shown(self, shown: bool) -> None:
         if bool(shown) != self.thumbnails_shown:
@@ -92,12 +95,20 @@ class TabSettings(QtCore.QObject):
             self.selection_mode = mode
             self.changed.emit(frozenset({"selection_mode"}))
 
+    def set_spacing(self, spacing: float) -> None:
+        low, high = SPACING_RANGE
+        spacing = round(min(max(float(spacing), low), high), 2) if isinstance(spacing, (int, float)) and math.isfinite(spacing) else DEFAULT_SPACING
+        if spacing != self.spacing:
+            self.spacing = spacing
+            self.changed.emit(frozenset({"spacing"}))
+
     def to_dict(self) -> dict[str, Any]:
-        return {"thumbnails": self.thumbnails_shown, "selection_mode": self.selection_mode}
+        return {"thumbnails": self.thumbnails_shown, "selection_mode": self.selection_mode, "spacing": self.spacing}
 
     def load(self, state: dict[str, Any]) -> None:
         self.set_thumbnails_shown(state.get("thumbnails", True) is not False)
         self.set_selection_mode(state.get("selection_mode", "single"))
+        self.set_spacing(state.get("spacing", DEFAULT_SPACING))
 
     def apply(self, view) -> None:
         view.set_thumbnails_visible(self.thumbnails_shown)

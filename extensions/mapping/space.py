@@ -7,7 +7,7 @@ import threading
 import time
 import zipfile
 from contextlib import closing
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -301,8 +301,9 @@ class SpaceModel:
         output[rows] = self.neighbor_index.placement(query).apply(self.coords)
         return output
 
-    def relayout(self, entries: list[dict[str, PathValue]], start: np.ndarray, cancelled=lambda: False, progress=lambda stage: None) -> np.ndarray:
-        params = self.preset.params.normalized()
+    def relayout(self, entries: list[dict[str, PathValue]], start: np.ndarray, cancelled=lambda: False, progress=lambda stage: None, min_dist: float | None = None) -> np.ndarray:
+        params = self.preset.params if min_dist is None else replace(self.preset.params, min_dist=min_dist)
+        params = params.normalized()
         output = np.full((len(entries), SPACE_COLUMNS), np.nan, dtype=np.float32)
         progress("encode")
         rows, features = self.features(entries, cancelled=cancelled)

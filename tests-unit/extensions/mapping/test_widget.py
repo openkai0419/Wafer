@@ -117,7 +117,7 @@ def test_set_files_places_files_from_the_space(mapping):
 def test_only_view_settings_and_no_keys_are_shown(mapping):
     view_params = {name for name, _spec, _default in param_specs(ViewParams)}
     assert set(mapping.toolbar.tuning.controls) == view_params - {"subgroup_size"}
-    assert set(mapping.toolbar.sliders) == {"subgroup_size"} and mapping.toolbar.fine_check is None
+    assert set(mapping.toolbar.sliders) == {"subgroup_size", "spacing"} and mapping.toolbar.fine_check is None
     assert not hasattr(mapping, "feature_bar") and not hasattr(mapping, "edit_space_button")
 
 
@@ -607,7 +607,7 @@ def test_toolbar_settings_are_saved_per_tab(qtbot, space_data):
     mapping = open_widget(qtbot)
     mapping.tab.set_thumbnails_shown(False)
     state = mapping.save_state()
-    assert state["toolbar"] == {"thumbnails": False, "selection_mode": "single"}
+    assert state["toolbar"] == {"thumbnails": False, "selection_mode": "single", "spacing": 0.1}
     other = MappingWidget()
     qtbot.addWidget(other)
     other.restore_state(state)
@@ -624,6 +624,7 @@ class MirroringModel:
         self.space = WholeSpace(list(paths), coords)
         self.calls = []
         self.starts = 0
+        self.spacings = []
         self.started = threading.Event()
         self.release = threading.Event()
         self.release.set()
@@ -634,8 +635,9 @@ class MirroringModel:
     def place(self, entries):
         return np.full((len(entries), 2 + GROUPING_DIMS), np.nan, dtype=np.float32)
 
-    def relayout(self, entries, start, cancelled=lambda: False, progress=lambda stage: None):
+    def relayout(self, entries, start, cancelled=lambda: False, progress=lambda stage: None, min_dist=None):
         progress("encode")
+        self.spacings.append(min_dist)
         self.starts += 1
         self.started.set()
         self.release.wait(10)
@@ -762,3 +764,26 @@ def test_loading_values_can_be_cancelled(qtbot, space_data, monkeypatch):
     qtbot.wait(300)
     assert w.current_result() is None and w.message_text() == "Cancelled"
     w.close()
+
+
+def test_the_map_spacing_slider_lays_the_map_out_again(qtbot, space_data):
+    from extensions.mapping.view_settings import DEFAULT_SPACING
+
+    space_data.model = MirroringModel()
+    w = open_widget(qtbot)
+    assert space_data.model.spacings == [DEFAULT_SPACING] and w.tab.spacing == DEFAULT_SPACING
+    slider = w.toolbar.sliders["spacing"]
+    slider.setValue(slider.maximum())
+    assert w.tab.spacing == 1.0 and w.toolbar.slider_values["spacing"].text() == "1"
+    qtbot.waitUntil(lambda: space_data.model.spacings[-1:] == [1.0] and w.current_result() is not None and w.levels[-1].layout.is_local(), timeout=FIRST_RUN_TIMEOUT)
+    assert w.save_state()["toolbar"]["spacing"] == 1.0
+    w.close()
+
+
+def test_only_the_map_tab_has_a_spacing_slider(qtbot):
+    from extensions.mapping.space_panel import MappingSpaceWidget
+
+    space = MappingSpaceWidget()
+    qtbot.addWidget(space)
+    assert "spacing" not in space.toolbar.sliders
+    space.close()

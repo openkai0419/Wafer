@@ -450,3 +450,15 @@ def test_cancelling_a_relayout_stops_between_encoding_batches(monkeypatch):
     with pytest.raises(MapError):
         model.relayout(entries, start, cancelled=lambda: bool(encoded))
     assert encoded == [5]
+
+
+def test_relayout_uses_the_given_spacing_for_the_display_layout_only(monkeypatch):
+    model = SpaceModel.fit(preset(), tag_values())
+    calls = []
+    monkeypatch.setattr(projection, "embed", lambda matrix, neighbors, d, s, dims=2, init=None, **_: calls.append((dims, d)) or np.asarray(init, dtype=np.float32))
+    start = np.zeros((4, 2 + projection.GROUPING_DIMS), dtype=np.float32)
+    model.relayout([{"tags": PathValue("cat, sky")}] * 4, start, min_dist=0.4)
+    assert calls == [(2, 0.4), (projection.GROUPING_DIMS, projection.GROUPING_MIN_DIST)]
+    calls.clear()
+    model.relayout([{"tags": PathValue("cat, sky")}] * 4, start)
+    assert calls[0] == (2, model.preset.params.min_dist)

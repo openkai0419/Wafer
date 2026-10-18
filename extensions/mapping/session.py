@@ -187,7 +187,9 @@ class SpaceLayout:
         preset: Preset,
         model: SpaceModel | None = None,
         load_model: Callable[[], SpaceModel | None] | None = None,
+        spacing: float | None = None,
     ):
+        self.spacing = spacing
         self.paths = paths
         self.values = values
         self.preset = preset
@@ -298,7 +300,7 @@ class SpaceLayout:
             running.wait()
             waited = True
         try:
-            coords = model.relayout([self.values.get(self.paths[row], {}) for row in active], start, cancelled=cancelled, progress=progress)
+            coords = model.relayout([self.values.get(self.paths[row], {}) for row in active], start, cancelled=cancelled, progress=progress, min_dist=self.spacing)
             with self.lock:
                 local = np.array(self.space_coords(), copy=True)
                 found = np.isfinite(coords).all(axis=1)

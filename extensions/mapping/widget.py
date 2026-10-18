@@ -179,8 +179,13 @@ class MappingWidget(QtWidgets.QWidget):
         if changed & RELAYOUT_NAMES:
             self.regroup()
 
-    def on_tab_settings(self, _changed: frozenset[str]) -> None:
+    def on_tab_settings(self, changed: frozenset[str]) -> None:
         self.tab.apply(self.map_view)
+        if "spacing" in changed and self.levels:
+            for level in self.levels:
+                level.drop_layout()
+            self.set_stage("layout")
+            self.schedule_recompute()
 
     def regroup(self) -> None:
         self.set_stage("group")
@@ -306,7 +311,7 @@ class MappingWidget(QtWidgets.QWidget):
         if level.layout_token.is_cancelled():
             level.layout_token = CancelToken()
         if level.layout is None:
-            level.layout = SpaceLayout(level.paths, self.values, self.preset, load_model=partial(space_model, self.db_name, self.preset))
+            level.layout = SpaceLayout(level.paths, self.values, self.preset, load_model=partial(space_model, self.db_name, self.preset), spacing=self.tab.spacing)
         layout, layout_cancelled = level.layout, level.layout_token.is_cancelled
         cancel = self.compute_cancel.renew()
         self.cancel_button.show()

@@ -13,7 +13,7 @@ from wafer.qt.common.icon_engine import themed_icon
 from wafer.qt.theme import ThemeManager
 from wafer.qt.widgets.popup import PopupBase
 
-from .params import Grouping, ViewParams, param_specs
+from .params import Grouping, TrainParams, ViewParams, param_specs
 from .tuning import TuningPanel
 from .view_settings import TOOLBAR_PARAMS, GroupingStore, TabSettings, ViewSettings
 
@@ -22,6 +22,8 @@ SLIDER_WIDTH = 110
 STEPS_PER_DOUBLING = 4
 SPECS = {name: spec for name, spec, _ in param_specs(ViewParams)}
 GROUPING_SPECS = {name: spec for name, spec, _ in param_specs(Grouping)}
+SPACING_SPEC = next(spec for name, spec, _ in param_specs(TrainParams) if name == "min_dist")
+SPACING_STEPS = round((SPACING_SPEC.maximum - SPACING_SPEC.minimum) / SPACING_SPEC.step)
 MULTIPLY = "\N{MULTIPLICATION SIGN}"
 
 
@@ -68,6 +70,7 @@ class MapToolbar(QtWidgets.QWidget):
             self.groupings.changed.connect(self.on_grouping_changed)
         else:
             self.add_slider(layout, "subgroup_size", SPECS["subgroup_size"], self.set_param)
+            self.add_spacing_slider(layout)
         self.mode_buttons: dict[str, QtWidgets.QToolButton] = {}
         group = QtWidgets.QButtonGroup(self)
         for mode, text, tip in (("single", t("Single"), t("Select one file at a time.")), ("group", t("Group"), t("Select whole groups."))):
@@ -104,6 +107,20 @@ class MapToolbar(QtWidgets.QWidget):
             layout.addWidget(widget)
         self.sliders[name], self.slider_values[name] = slider, value
 
+    def add_spacing_slider(self, layout: QtWidgets.QHBoxLayout) -> None:
+        label = QtWidgets.QLabel(t(SPACING_SPEC.label))
+        label.setToolTip(t(SPACING_SPEC.description))
+        slider = QtWidgets.QSlider(Qt.Horizontal)
+        slider.setRange(0, SPACING_STEPS)
+        slider.setFixedWidth(dpix(SLIDER_WIDTH))
+        slider.setToolTip(t(SPACING_SPEC.description))
+        slider.valueChanged.connect(lambda position: self.tab.set_spacing(SPACING_SPEC.minimum + position * SPACING_SPEC.step))
+        value = QtWidgets.QLabel()
+        value.setFixedWidth(value.fontMetrics().horizontalAdvance("0.00") + dpix(2))
+        for widget in (label, slider, value):
+            layout.addWidget(widget)
+        self.sliders["spacing"], self.slider_values["spacing"] = slider, value
+
     def set_param(self, name: str, value) -> None:
         self.settings.set_params(replace(self.settings.params, **{name: value}))
 
@@ -132,6 +149,12 @@ class MapToolbar(QtWidgets.QWidget):
         set_quietly(self.thumbnail_check, self.tab.thumbnails_shown)
         source = self.slider_source()
         for name, slider in self.sliders.items():
+            if name == "spacing":
+                slider.blockSignals(True)
+                slider.setValue(round((self.tab.spacing - SPACING_SPEC.minimum) / SPACING_SPEC.step))
+                slider.blockSignals(False)
+                self.slider_values[name].setText(f"{self.tab.spacing:g}")
+                continue
             value = getattr(source, name)
             slider.blockSignals(True)
             slider.setValue(slider_position(value))

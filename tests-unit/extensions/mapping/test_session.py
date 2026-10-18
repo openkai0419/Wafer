@@ -181,6 +181,7 @@ class FakeModel:
         self.calls = []
         self.placed = 0
         self.stages = []
+        self.spacings = []
 
     def whole_space(self):
         return self.space
@@ -194,10 +195,11 @@ class FakeModel:
                 self.placed += 1
         return output
 
-    def relayout(self, entries, start, cancelled=lambda: False, progress=lambda stage: None):
+    def relayout(self, entries, start, cancelled=lambda: False, progress=lambda stage: None, min_dist=None):
         progress("encode")
         progress("layout")
         self.calls.append(len(entries))
+        self.spacings.append(min_dist)
         local = np.array(start, dtype=np.float32)
         local[:, 0] = -local[:, 0]
         local[:, 2] = np.where(np.arange(len(start)) % 2, 5.0, -5.0)
@@ -342,3 +344,10 @@ def test_local_groups_split_the_whole_space_groups_by_the_same_size(monkeypatch)
     local_tree = FakeTree.built[-1]
     assert local_tree == (40, Grouping().cluster_options(60, 0.5)[1])
     assert FakeTree.cuts[-1] == (Grouping().cluster_options(60, 0.5)[0], "eom")
+
+
+def test_the_map_spacing_is_used_for_its_own_layout():
+    model = FakeModel(whole_space())
+    values = {path: {"tags": PathValue("cat")} for path in model.space.paths[:40]}
+    layout = SpaceLayout(list(values), values, space_preset(), model, spacing=0.4)
+    assert layout.refine() and model.spacings == [0.4]

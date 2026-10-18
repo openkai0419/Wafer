@@ -31,7 +31,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(space, "setting_db_path", settings)
     monkeypatch.setattr(space, "resolve_cache_path", lambda rel: str(tmp_path / "cache" / rel))
     monkeypatch.setattr(parser_module, "data_db_path", lambda name: str(db_path))
-    monkeypatch.setattr(projection, "embed", lambda m, neighbors, d, s, dims=2: np.tile(np.asarray(m, dtype=np.float32), (1, dims))[:, :dims])
+    monkeypatch.setattr(projection, "embed", lambda m, neighbors, d, s, dims=2, **_: np.tile(np.asarray(m, dtype=np.float32), (1, dims))[:, :dims])
     save_preset("map", Preset([FeatureSpec("wd14.tags", "token_set")], TrainParams(), 1))
     plugin = MappingParser()
     plugin.db_name = "map"

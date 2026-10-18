@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from functools import partial
 from typing import Any
 
+import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
@@ -34,7 +35,7 @@ from .map_toolbar import MapToolbar
 from .map_view import MapView
 from .params import TrainParams, ViewParams
 from .session import KEY_MODEL, OUTPUT_PREFIX, SPACE_KEYS, MapError, MapResult, SpaceLayout
-from .space import Preset, SpaceModel, SpaceStatus, count_placed, load_preset, model_dir, read_status, save_preset, space_groups
+from .space import Preset, SpaceModel, SpaceStatus, count_placed, load_preset, model_dir, read_status, save_preset, whole_space
 from .tuning import TuningPanel
 from .view_settings import RELAYOUT_PARAMS, GroupingStore, ViewSettings
 from .widget import cancel_work, prepare_layout_engine, result_colors, same_layout
@@ -42,7 +43,6 @@ from .widget import cancel_work, prepare_layout_engine, result_colors, same_layo
 LOAD_PRIORITY = 7
 STATUS_REFRESH_MS = 1000
 PREVIEW_SAMPLE = 5000
-PREVIEW_RELOAD_SECONDS = 30.0
 QUICK_TRAIN_FILES = 3000
 QUICK_TRAIN_RANGE = (100, 100_000)
 DETECT_SAMPLE = 300
@@ -137,15 +137,16 @@ def read_snapshot(db_name: str, view: ViewParams) -> SpaceSnapshot:
     snapshot = read_space_status(db_name)
     preset = snapshot.preset
     db_path = data_db_path(db_name)
-    if not has_saved_space(preset) or not snapshot.placed:
+    if not os.path.isfile(db_path):
         return snapshot
-    with closing(open_readonly(db_path)) as conn:
-        sample = [row[0] for row in conn.execute("SELECT path FROM meta_info WHERE key = ? AND value = ? ORDER BY RANDOM() LIMIT ?", (KEY_MODEL, str(preset.version), PREVIEW_SAMPLE))]
-    if not sample:
+    space = whole_space(db_name, preset) if has_saved_space(preset) and snapshot.status.state == "ready" else None
+    if space is None or not space.size:
         return snapshot
-    values = fetch_path_values(db_path, sample, keys=[*preset.value_keys(), *SPACE_KEYS])
+    rows = np.random.default_rng().choice(space.size, min(PREVIEW_SAMPLE, space.size), replace=False)
+    sample = [space.paths[row] for row in rows]
+    values = fetch_path_values(db_path, sample, keys=preset.value_keys())
     snapshot.sources = fetch_sources(db_path, sample)
-    snapshot.layout = SpaceLayout(sample, values, preset, load_groups=partial(space_groups, db_path, preset))
+    snapshot.layout = SpaceLayout(sample, values, preset, space)
     snapshot.result, snapshot.problem = run_preview(snapshot.layout, view, db_name, grouped=False)
     return snapshot
 
@@ -250,8 +251,6 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.showing_quick = False
         self.preview_loading = False
         self.preview_mark: tuple[str, int] | None = None
-        self.preview_placed = 0
-        self.preview_loaded_at = 0.0
         self.host = MapHost(self)
         self.settings = ViewSettings.instance()
         self.build_ui()
@@ -382,11 +381,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
     def preview_outdated(self, snapshot: SpaceSnapshot) -> bool:
         if self.showing_quick or self.preview_loading:
             return False
-        if (snapshot.status.state, snapshot.status.version) != self.preview_mark:
-            return True
-        if snapshot.placed == self.preview_placed:
-            return False
-        return self.shown is None or snapshot.waiting == 0 or time.monotonic() - self.preview_loaded_at >= PREVIEW_RELOAD_SECONDS
+        return (snapshot.status.state, snapshot.status.version) != self.preview_mark
 
     def apply_status(self, snapshot: SpaceSnapshot) -> None:
         self.status, self.total, self.placed, self.waiting = snapshot.status, snapshot.total, snapshot.placed, snapshot.waiting
@@ -685,8 +680,6 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.update_buttons()
         self.preview_loading = False
         self.preview_mark = (snapshot.status.state, snapshot.status.version)
-        self.preview_placed = snapshot.placed
-        self.preview_loaded_at = time.monotonic()
         self.preview_layout, self.preview_sources = snapshot.layout, snapshot.sources
         if self.showing_quick or self.quick_running:
             return

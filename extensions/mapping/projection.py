@@ -17,6 +17,8 @@ WARM_UP_ROWS = 300
 EXACT_NEIGHBORS_LIMIT = 200_000
 PLACE_NEIGHBORS = 3
 LAYOUT_EPOCHS = 200
+LOCAL_EPOCHS = 100
+INIT_JITTER = 1e-4
 _warm_up_lock = threading.Lock()
 _warmed_up = False
 
@@ -187,7 +189,7 @@ class NeighborIndex:
         return Placement(indices, weights / weights.sum(axis=1, keepdims=True))
 
 
-def embed(matrix: np.ndarray, neighbors: Neighbors | None, min_dist: float, seed: int, dims: int = 2) -> np.ndarray:
+def embed(matrix: np.ndarray, neighbors: Neighbors | None, min_dist: float, seed: int, dims: int = 2, init: np.ndarray | None = None, epochs: int = LAYOUT_EPOCHS) -> np.ndarray:
     count = matrix.shape[0]
     output = np.zeros((count, dims), dtype=np.float32)
     if count == 0 or not np.any(np.ptp(matrix, axis=0) > 1e-9):
@@ -201,6 +203,9 @@ def embed(matrix: np.ndarray, neighbors: Neighbors | None, min_dist: float, seed
     import umap
 
     components = max(1, min(dims, count - 2))
+    start = "spectral" if count >= SPECTRAL_INIT_MIN else "random"
+    if init is not None and components == dims:
+        start = jittered(init, seed)
     reducer = umap.UMAP(
         n_components=components,
         n_neighbors=neighbors.indices.shape[1],
@@ -209,14 +214,20 @@ def embed(matrix: np.ndarray, neighbors: Neighbors | None, min_dist: float, seed
         random_state=seed,
         n_jobs=1,
         force_approximation_algorithm=True,
-        init="spectral" if count >= SPECTRAL_INIT_MIN else "random",
-        n_epochs=LAYOUT_EPOCHS,
+        init=start,
+        n_epochs=epochs,
         precomputed_knn=(neighbors.indices, neighbors.distances, None),
     )
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message=r"precomputed_knn\[2\]")
         output[:, :components] = reducer.fit_transform(matrix)
     return output
+
+
+def jittered(points: np.ndarray, seed: int) -> np.ndarray:
+    points = np.asarray(points, dtype=np.float32)
+    scale = INIT_JITTER * (float(points.std()) or 1.0)
+    return points + np.random.default_rng(seed).normal(scale=scale, size=points.shape).astype(np.float32)
 
 
 def warm_up() -> None:

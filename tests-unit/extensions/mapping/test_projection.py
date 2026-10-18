@@ -317,3 +317,25 @@ def test_a_cluster_tree_is_cut_again_at_other_sizes_without_rebuilding():
     assert set(tree.labels(10, "leaf").tolist()) - {-1}
     assert (tree.labels(200) == -1).all() or len(set(tree.labels(200).tolist())) <= 2
     assert (projection.ClusterTree(space[:2], 5).labels(5) == -1).all()
+
+
+def test_layout_can_start_from_given_positions_with_fewer_epochs(monkeypatch):
+    seen = {}
+
+    class Recorder:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+        def fit_transform(self, matrix):
+            return np.zeros((matrix.shape[0], 2), dtype=np.float32)
+
+    monkeypatch.setitem(sys.modules, "umap", types.SimpleNamespace(UMAP=Recorder))
+    matrix = np.random.default_rng(5).normal(size=(40, 4))
+    start = np.repeat(np.arange(20, dtype=np.float32), 2).reshape(40, 1) * np.ones((1, 2), dtype=np.float32)
+    projection.embed(matrix, projection.nearest_neighbors(matrix, 9, 0), 0.2, 3, init=start, epochs=projection.LOCAL_EPOCHS)
+    assert seen["n_epochs"] == projection.LOCAL_EPOCHS
+    init = seen["init"]
+    assert init.shape == (40, 2) and np.allclose(init, start, atol=1e-2)
+    assert len(np.unique(init, axis=0)) == 40
+    projection.embed(matrix, projection.nearest_neighbors(matrix, 9, 0), 0.2, 3)
+    assert seen["init"] == "spectral"

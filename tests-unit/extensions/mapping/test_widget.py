@@ -76,11 +76,12 @@ def deterministic_groups(fake_cluster):
 @pytest.fixture()
 def space_data(monkeypatch):
     values = space_values()
-    state = SimpleNamespace(preset=Preset([FeatureSpec("tags", "token_set")], TrainParams(), 2), values=values, groups=None)
+    state = SimpleNamespace(preset=Preset([FeatureSpec("tags", "token_set")], TrainParams(), 2), values=values, space=None, model=None)
     monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps: {p: state.values[p] for p in ps if p in state.values})
     monkeypatch.setattr(widget_module, "fetch_sources", lambda db, ps: {p: p.replace(".png", ".zip") for p in ps})
     monkeypatch.setattr(widget_module, "load_preset", lambda db_name: state.preset)
-    monkeypatch.setattr(widget_module, "space_groups", lambda db_path, preset: state.groups)
+    monkeypatch.setattr(widget_module, "whole_space", lambda db_name, preset: state.space)
+    monkeypatch.setattr(widget_module, "space_model", lambda db_name, preset: state.model)
     return state
 
 
@@ -604,5 +605,37 @@ def test_only_the_latest_regroup_is_computed(space_data):
 
 def test_groups_start_from_the_size_of_the_whole_space(mapping, space_data):
     level = mapping.levels[-1]
-    assert level.layout.groups is space_data.groups and level.layout.load_groups is None
+    assert level.layout.space is space_data.space and level.layout.load_space is None
     assert mapping.toolbar.sliders["subgroup_size"].value() == mapping.toolbar.sliders["subgroup_size"].maximum()
+
+
+class MirroringModel:
+    def __init__(self):
+        self.calls = []
+
+    def relayout(self, entries, start, cancelled=lambda: False):
+        self.calls.append(len(entries))
+        local = np.array(start, dtype=np.float32)
+        local[:, 0] = -local[:, 0]
+        return local
+
+
+def test_small_maps_are_laid_out_again_from_their_own_files(qtbot, space_data, monkeypatch):
+    from extensions.mapping.session import WholeSpace
+
+    paths = PATHS + [f"c:/extra/{i}.png" for i in range(30)]
+    coords = np.zeros((len(paths), 2 + GROUPING_DIMS))
+    coords[:, 0] = np.arange(len(paths))
+    space_data.space, space_data.model = WholeSpace(paths, coords), MirroringModel()
+    messages = []
+    original = MappingWidget.set_message
+    monkeypatch.setattr(MappingWidget, "set_message", lambda self, text: messages.append(text) or original(self, text))
+    w = open_widget(qtbot, wait=False)
+    qtbot.waitUntil(lambda: w.current_result() is not None, timeout=FIRST_RUN_TIMEOUT)
+    assert space_data.model.calls == [len(PATHS)] and w.levels[-1].layout.is_local()
+    assert not w.current_result().unset.any() and "waiting" not in w.message_text()
+    assert any("Laying out" in text for text in messages)
+    result = w.current_result()
+    xs = result.positions[~result.unset, 0]
+    assert xs[0] > xs[-1]
+    w.close()

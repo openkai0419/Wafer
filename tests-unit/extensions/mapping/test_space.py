@@ -11,7 +11,7 @@ from wafer.core.db.path_values import PathValue
 
 @pytest.fixture(autouse=True)
 def fast_embed(monkeypatch):
-    def fake_embed(matrix, neighbors, min_dist, seed, dims=2):
+    def fake_embed(matrix, neighbors, min_dist, seed, dims=2, **_):
         out = np.zeros((matrix.shape[0], dims), dtype=np.float32)
         width = min(dims, matrix.shape[1])
         out[:, :width] = matrix[:, :width]
@@ -201,7 +201,7 @@ def test_load_ignores_a_model_built_from_another_preset(tmp_path):
 def test_grouping_coordinates_do_not_depend_on_spacing(monkeypatch):
     calls = []
 
-    def spacing_embed(matrix, neighbors, min_dist, seed, dims=2):
+    def spacing_embed(matrix, neighbors, min_dist, seed, dims=2, **_):
         calls.append((dims, min_dist))
         return np.full((matrix.shape[0], dims), min_dist, dtype=np.float32) + matrix[:, :1]
 
@@ -318,37 +318,70 @@ def test_placing_reuses_encoded_values_across_batches(monkeypatch):
     assert sum(encoded) == 2
 
 
-def test_space_groups_are_read_from_the_database_and_reloaded_when_files_are_placed(tmp_path):
-    from wafer.core.db.file_db import FileDB
+def test_viewer_reads_the_saved_model_once_per_version(tmp_path, monkeypatch):
+    monkeypatch.setattr(space, "model_dir", lambda name: tmp_path / name)
+    space.forget_space_models()
+    current = preset(3)
+    assert space.space_model("db1", current) is None and space.whole_space("db1", current) is None
+    SpaceModel.fit(current, tag_values()).save(tmp_path / "db1")
+    loads = []
+    original = SpaceModel.load
+    monkeypatch.setattr(SpaceModel, "load", classmethod(lambda cls, *a: loads.append(1) or original.__func__(cls, *a)))
+    model = space.space_model("db1", current)
+    assert model is not None and space.space_model("db1", current) is model and loads == [1]
+    whole = space.whole_space("db1", current)
+    assert whole is model.whole_space() and whole.size == 40 and whole.coords.shape == (40, 2 + projection.GROUPING_DIMS)
+    SpaceModel.fit(preset(4), tag_values()).save(tmp_path / "db1")
+    assert space.space_model("db1", preset(4)) is not model and loads == [1, 1]
+    space.forget_space_models()
 
-    from extensions.mapping.session import grouping_text
 
-    db_path = tmp_path / "groups.db"
-    db = FileDB(db_path)
-    db.start()
-    db.initialize_database()
-    count = 8
-    db.upsert_basic_sources([(f"c:/{i}.png", f"h{i}", 1, 1.0, 1.0, 1.0) for i in range(count)], [(f"c:/{i}.png", f"c:/{i}.png", f"{i}.png", 1.0, None) for i in range(count)])
+def test_unreadable_model_is_not_retried_until_it_changes(tmp_path, monkeypatch):
+    monkeypatch.setattr(space, "model_dir", lambda name: tmp_path / name)
+    space.forget_space_models()
+    SpaceModel.fit(preset(1), tag_values()).save(tmp_path / "db1")
+    (tmp_path / "db1" / "model-v1.pkl").write_bytes(b"broken")
+    assert space.space_model("db1", preset(1)) is None
+    monkeypatch.setattr(SpaceModel, "load", classmethod(lambda cls, *a: pytest.fail("must not reload")))
+    assert space.space_model("db1", preset(1)) is None
+    space.forget_space_models()
 
-    def place(rows, version="3"):
-        meta = []
-        for i in rows:
-            meta.append((f"c:/{i}.png", "mapping.model", version, float(version)))
-            meta.append((f"c:/{i}.png", "mapping.group", grouping_text([float(i)] * projection.GROUPING_DIMS), None))
-        db.upsert_collection_results([], meta, [], [])
 
-    place(range(5))
-    place([5], version="2")
-    current = Preset([FeatureSpec("tags", "token_set")], TrainParams(), 3)
-    space.forget_space_groups()
-    groups = space.space_groups(str(db_path), current)
-    assert sorted(groups.paths) == [f"c:/{i}.png" for i in range(5)]
-    assert groups.points.shape == (5, projection.GROUPING_DIMS)
-    assert space.space_groups(str(db_path), current) is groups
-    place([6, 7])
-    reloaded = space.space_groups(str(db_path), current)
-    assert reloaded is not groups and reloaded.size == 7
-    db.close()
+def test_relayout_lays_out_only_the_given_files_from_their_space_positions(monkeypatch):
+    calls = []
+
+    def record(matrix, neighbors, min_dist, seed, dims=2, init=None, epochs=projection.LAYOUT_EPOCHS):
+        calls.append((len(matrix), dims, min_dist, epochs, None if init is None else init.shape))
+        return np.asarray(init, dtype=np.float32) * 2
+
+    model = SpaceModel.fit(preset(), tag_values())
+    monkeypatch.setattr(projection, "embed", record)
+    entries = [{"tags": PathValue("cat, sky")}] * 4 + [{}] + [{"tags": PathValue("dog, sea")}] * 4
+    start = np.arange(9 * (2 + projection.GROUPING_DIMS), dtype=np.float32).reshape(9, -1)
+    local = model.relayout(entries, start)
+    params = preset().params
+    assert calls == [(8, 2, params.min_dist, projection.LOCAL_EPOCHS, (8, 2)), (8, projection.GROUPING_DIMS, projection.GROUPING_MIN_DIST, projection.LOCAL_EPOCHS, (8, projection.GROUPING_DIMS))]
+    assert np.isnan(local[4]).all()
+    assert np.allclose(np.delete(local, 4, axis=0), np.delete(start, 4, axis=0) * 2)
+
+
+def test_relayout_learns_from_the_training_limit_and_places_the_rest(monkeypatch):
+    model = SpaceModel.fit(limited(10), tag_values(40))
+    sizes = []
+    monkeypatch.setattr(projection, "embed", lambda matrix, neighbors, d, s, dims=2, init=None, **_: sizes.append(len(matrix)) or np.asarray(init, dtype=np.float32))
+    entries = [{"tags": PathValue("cat, sky" if i < 15 else "dog, sea")} for i in range(30)]
+    start = np.zeros((30, 2 + projection.GROUPING_DIMS), dtype=np.float32)
+    start[15:] = 10.0
+    local = model.relayout(entries, start)
+    assert sizes == [10, 10] and np.isfinite(local).all()
+    assert np.allclose(local[:15], 0.0, atol=1e-3) and np.allclose(local[15:], 10.0, atol=1e-3)
+
+
+def test_cancelling_a_relayout_stops_it():
+    model = SpaceModel.fit(preset(), tag_values())
+    start = np.zeros((4, 2 + projection.GROUPING_DIMS), dtype=np.float32)
+    with pytest.raises(MapError):
+        model.relayout([{"tags": PathValue("cat")}] * 4, start, cancelled=lambda: True)
 
 
 def test_fit_reports_its_stages_and_logs_each_key_share(monkeypatch):
@@ -376,7 +409,7 @@ def test_both_layouts_share_one_neighbor_search_of_the_resolved_size(monkeypatch
         searched.append(n_neighbors)
         return real_search(matrix, n_neighbors, seed)
 
-    def record(matrix, neighbors, min_dist, seed, dims=2):
+    def record(matrix, neighbors, min_dist, seed, dims=2, **_):
         used.append(neighbors)
         return np.zeros((matrix.shape[0], dims), dtype=np.float32) + matrix[:, :1]
 

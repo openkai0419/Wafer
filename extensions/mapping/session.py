@@ -25,6 +25,7 @@ KEY_X, KEY_Y, KEY_GROUP, KEY_MODEL = (f"{OUTPUT_PREFIX}.{name}" for name in ("x"
 SPACE_KEYS = (KEY_X, KEY_Y, KEY_GROUP, KEY_MODEL)
 SPACE_COLUMNS = 2 + projection.GROUPING_DIMS
 GROUPING_SEPARATOR = ","
+LOCAL_LAYOUT_RANGE = (20, 5000)
 
 
 def grouping_text(numbers) -> str:
@@ -123,7 +124,11 @@ class TreeCache:
 
 def group_labels(trees: Callable[[int], projection.ClusterTree], grouping: Grouping, count: int, share: float = 1.0) -> np.ndarray:
     size, samples, method = grouping.cluster_options(count)
-    base = trees(samples).labels(size, method)
+    return finer_labels(trees(samples).labels(size, method), trees, grouping, count, share)
+
+
+def finer_labels(base: np.ndarray, trees: Callable[[int], projection.ClusterTree], grouping: Grouping, count: int, share: float) -> np.ndarray:
+    size, _samples, method = grouping.cluster_options(count)
     smaller, smaller_samples, _ = grouping.cluster_options(count, share)
     return base if smaller >= size else nested_labels(base, trees(smaller_samples).labels(smaller, method))
 
@@ -136,18 +141,23 @@ def nested_labels(base: np.ndarray, finer: np.ndarray) -> np.ndarray:
     return projection.relabel_by_size(codes)
 
 
-class SpaceGroups:
-    def __init__(self, paths: list[str], points: np.ndarray):
+class WholeSpace:
+    def __init__(self, paths: list[str], coords: np.ndarray):
         self.paths = paths
-        self.points = points
+        self.coords = coords
+        self.points = np.ascontiguousarray(coords[:, 2:], dtype=np.float32)
         self.index = {path: row for row, path in enumerate(paths)}
         self.lock = threading.Lock()
-        self.trees = TreeCache(points)
+        self.trees = TreeCache(self.points)
+        self.nearest = None
         self.labels_by_options: dict[tuple[Grouping, float], np.ndarray] = {}
 
     @property
     def size(self) -> int:
         return len(self.paths)
+
+    def rows(self, paths: list[str]) -> np.ndarray:
+        return np.fromiter((self.index.get(path, -1) for path in paths), dtype=np.int64, count=len(paths))
 
     def labels(self, grouping: Grouping, share: float = 1.0) -> np.ndarray:
         with self.lock:
@@ -155,10 +165,19 @@ class SpaceGroups:
                 self.labels_by_options[(grouping, share)] = group_labels(self.trees, grouping, self.size, share)
             return self.labels_by_options[(grouping, share)]
 
-    def labels_for(self, paths: list[str], grouping: Grouping, share: float = 1.0) -> np.ndarray:
-        rows = np.fromiter((self.index.get(path, -1) for path in paths), dtype=np.int64, count=len(paths))
-        labels = self.labels(grouping, share)
-        return np.where(rows >= 0, labels[np.maximum(rows, 0)], -1).astype(np.int32)
+    def labels_for(self, paths: list[str], points: np.ndarray, grouping: Grouping, share: float = 1.0) -> np.ndarray:
+        rows = self.rows(paths)
+        missing = np.flatnonzero(rows < 0)
+        if missing.size:
+            rows[missing] = self.nearest_rows(points[missing])
+        return self.labels(grouping, share)[rows].astype(np.int32)
+
+    def nearest_rows(self, points: np.ndarray) -> np.ndarray:
+        if self.nearest is None:
+            from sklearn.neighbors import NearestNeighbors
+
+            self.nearest = NearestNeighbors(n_neighbors=1).fit(self.points)
+        return self.nearest.kneighbors(np.asarray(points, dtype=np.float32), return_distance=False)[:, 0]
 
 
 class SpaceLayout:
@@ -167,18 +186,18 @@ class SpaceLayout:
         paths: list[str],
         values: dict[str, dict[str, PathValue]],
         preset: Preset,
-        groups: SpaceGroups | None = None,
-        load_groups: Callable[[], SpaceGroups | None] | None = None,
-        coords: np.ndarray | None = None,
+        space: WholeSpace | None = None,
+        load_space: Callable[[], WholeSpace | None] | None = None,
     ):
         self.paths = paths
         self.values = values
         self.preset = preset
-        self.groups = groups
-        self.load_groups = load_groups
+        self.space = space
+        self.load_space = load_space
         self.local_trees: TreeCache | None = None
         self.lock = threading.Lock()
-        self.coords = coords
+        self.coords: np.ndarray | None = None
+        self.local: np.ndarray | None = None
         self.describers: list[tuple[BaseEncoder, np.ndarray]] | None = None
         self.labels_by_options: dict[tuple[Grouping, float], np.ndarray] = {}
 
@@ -189,7 +208,7 @@ class SpaceLayout:
     def _run(self, params: ViewParams, grouping: Grouping, share: float, grouped: bool) -> MapResult:
         diagnostics = MapDiagnostics()
         count = len(self.paths)
-        raw = self.space_coords()
+        raw = self.shown_coords(diagnostics)
         placed = np.isfinite(raw).all(axis=1)
         active = np.flatnonzero(placed)
         if active.size == 0:
@@ -203,7 +222,7 @@ class SpaceLayout:
         terms: dict[int, list[str]] = {}
         active_labels = np.zeros(active.size, dtype=np.int32)
         if grouped and active.size >= 3:
-            active_labels = self.group(active, raw[active, 2:], grouping, share, diagnostics)
+            active_labels = self.group(active, grouping, share, diagnostics)
             labels = np.full(count, -1, dtype=np.int32)
             labels[active] = active_labels
             with timed(diagnostics, "describe"):
@@ -218,7 +237,19 @@ class SpaceLayout:
     def is_grouped(self) -> bool:
         return bool(self.labels_by_options)
 
-    def space_coords(self) -> np.ndarray:
+    def is_local(self) -> bool:
+        return self.local is not None
+
+    def whole_space(self, diagnostics: MapDiagnostics | None = None) -> WholeSpace | None:
+        if self.space is None and self.load_space is not None:
+            with timed(diagnostics or MapDiagnostics(), "space"):
+                self.space, self.load_space = self.load_space(), None
+        return self.space
+
+    def shown_coords(self, diagnostics: MapDiagnostics | None = None) -> np.ndarray:
+        return self.local if self.local is not None else self.space_coords(diagnostics)
+
+    def space_coords(self, diagnostics: MapDiagnostics | None = None) -> np.ndarray:
         if self.coords is None:
             raw = np.full((len(self.paths), SPACE_COLUMNS), np.nan, dtype=np.float64)
             version = str(self.preset.version)
@@ -232,22 +263,58 @@ class SpaceLayout:
                 if x is not None and y is not None and grouping is not None:
                     raw[row, :2] = x, y
                     raw[row, 2:] = grouping
+            missing = np.flatnonzero(~np.isfinite(raw).all(axis=1))
+            space = self.whole_space(diagnostics) if missing.size else None
+            if space is not None:
+                rows = space.rows([self.paths[row] for row in missing])
+                found = rows >= 0
+                raw[missing[found]] = space.coords[rows[found]]
             self.coords = raw
         return self.coords
 
-    def group(self, active: np.ndarray, points: np.ndarray, grouping: Grouping, share: float, diagnostics: MapDiagnostics) -> np.ndarray:
+    def local_rows(self) -> np.ndarray | None:
+        with self.lock:
+            if self.local is not None:
+                return None
+            active = np.flatnonzero(np.isfinite(self.space_coords()).all(axis=1))
+            space = self.whole_space()
+            low, high = LOCAL_LAYOUT_RANGE
+            if space is None or not low <= active.size <= high or active.size >= space.size:
+                return None
+            return active
+
+    def refine(self, relayout: Callable[[list[dict[str, PathValue]], np.ndarray], np.ndarray]) -> bool:
+        active = self.local_rows()
+        if active is None:
+            return False
+        start = self.space_coords()[active]
+        coords = relayout([self.values.get(self.paths[row], {}) for row in active], start)
+        with self.lock:
+            local = np.array(self.space_coords(), copy=True)
+            found = np.isfinite(coords).all(axis=1)
+            local[active[found]] = coords[found]
+            self.local, self.local_trees = local, None
+            self.labels_by_options.clear()
+        return True
+
+    def group(self, active: np.ndarray, grouping: Grouping, share: float, diagnostics: MapDiagnostics) -> np.ndarray:
         key = (grouping, share)
-        if self.groups is None and self.load_groups is not None:
-            with timed(diagnostics, "space"):
-                self.groups, self.load_groups = self.load_groups(), None
         if key not in self.labels_by_options:
+            space = self.whole_space(diagnostics)
+            shown = self.shown_coords()[active, 2:]
             with timed(diagnostics, "cluster"):
-                if self.groups is not None:
-                    self.labels_by_options[key] = self.groups.labels_for([self.paths[row] for row in active], grouping, share)
+                if space is None:
+                    if self.local_trees is None:
+                        self.local_trees = TreeCache(shown)
+                    labels = group_labels(self.local_trees, grouping, len(shown), share)
+                elif self.local is None:
+                    labels = space.labels_for([self.paths[row] for row in active], shown, grouping, share)
                 else:
                     if self.local_trees is None:
-                        self.local_trees = TreeCache(points)
-                    self.labels_by_options[key] = group_labels(self.local_trees, grouping, len(points), share)
+                        self.local_trees = TreeCache(shown)
+                    base = space.labels_for([self.paths[row] for row in active], self.space_coords()[active, 2:], grouping)
+                    labels = finer_labels(base, self.local_trees, grouping, space.size, share)
+            self.labels_by_options[key] = labels
         return self.labels_by_options[key]
 
     def space_describers(self, active: np.ndarray) -> list[tuple[BaseEncoder, np.ndarray]]:

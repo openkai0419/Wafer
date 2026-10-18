@@ -4,7 +4,7 @@ import pytest
 from extensions.mapping import projection, session
 from extensions.mapping.encoders import ENCODERS
 from extensions.mapping.params import Grouping, TrainParams, ViewParams
-from extensions.mapping.session import FeatureSpec, MapError, SpaceLayout, grouping_text
+from extensions.mapping.session import FeatureSpec, MapError, SpaceLayout, WholeSpace, grouping_text
 from extensions.mapping.space import Preset
 from wafer.core.db.path_values import PathValue
 
@@ -188,11 +188,14 @@ class FakeTree:
 
 
 def whole_space(count=60):
-    from extensions.mapping.session import SpaceGroups
+    coords = np.zeros((count, 2 + projection.GROUPING_DIMS))
+    coords[:, 0] = np.arange(count, dtype=np.float64)
+    coords[:, 2] = np.r_[np.zeros(count // 2), np.full(count - count // 2, 10.0)]
+    return WholeSpace([f"c:/{i}.png" for i in range(count)], coords)
 
-    points = np.zeros((count, projection.GROUPING_DIMS))
-    points[:, 0] = np.r_[np.zeros(count // 2), np.full(count - count // 2, 10.0)]
-    return SpaceGroups([f"c:/{i}.png" for i in range(count)], points)
+
+def point(x):
+    return np.array([[x] + [0.0] * (projection.GROUPING_DIMS - 1)])
 
 
 def test_selections_take_their_groups_from_the_whole_space(monkeypatch):
@@ -213,14 +216,15 @@ def test_whole_space_labels_are_cut_per_size_and_rebuilt_per_strictness(monkeypa
     FakeTree.built, FakeTree.cuts = [], []
     groups = whole_space(12_000)
     paths = ["c:/0.png", "c:/11999.png", "c:/missing.png"]
-    assert groups.labels_for(paths, Grouping()).tolist() == [0, 7, -1]
-    groups.labels_for(paths, Grouping(size=0.5))
-    groups.labels_for(paths, Grouping(fine=1))
-    groups.labels_for(paths, Grouping(), share=0.5)
+    points = np.vstack([point(0.0), point(10.0), point(9.5)])
+    assert groups.labels_for(paths, points, Grouping()).tolist() == [0, 7, 7]
+    groups.labels_for(paths, points, Grouping(size=0.5))
+    groups.labels_for(paths, points, Grouping(fine=1))
+    groups.labels_for(paths, points, Grouping(), share=0.5)
     assert len(FakeTree.built) == 1
-    groups.labels_for(paths, Grouping(), share=0.25)
+    groups.labels_for(paths, points, Grouping(), share=0.25)
     assert [samples for _count, samples in FakeTree.built] == [10, 6]
-    groups.labels_for(paths, Grouping(strictness=2.0))
+    groups.labels_for(paths, points, Grouping(strictness=2.0))
     assert len(FakeTree.built) == 3
 
 
@@ -244,14 +248,86 @@ def test_selection_without_a_whole_space_groups_by_itself(monkeypatch):
     assert FakeTree.built == [(40, Grouping().cluster_options(40)[1])]
 
 
-def test_whole_space_groups_are_loaded_only_when_grouping(monkeypatch):
+def test_whole_space_is_loaded_only_when_grouping_or_coordinates_are_missing(monkeypatch):
     monkeypatch.setattr(projection, "ClusterTree", FakeTree)
     loads = []
-    groups = whole_space()
+    space = whole_space()
     values = space_values(12)
-    layout = SpaceLayout(list(values), values, space_preset(), load_groups=lambda: loads.append(1) or groups)
+    layout = SpaceLayout(list(values), values, space_preset(), load_space=lambda: loads.append(1) or space)
     layout.run(ViewParams(), grouped=False)
     assert loads == []
     layout.run(ViewParams())
     layout.run(ViewParams(), share=0.5)
-    assert loads == [1] and layout.groups is groups
+    assert loads == [1] and layout.space is space
+
+
+def test_files_not_yet_written_take_their_coordinates_from_the_whole_space():
+    space = whole_space()
+    values = {path: {"tags": PathValue("cat")} for path in space.paths[:5]}
+    values["c:/3.png"] = space_values(1)["c:/0.png"]
+    values["c:/new.png"] = {"tags": PathValue("cat")}
+    layout = SpaceLayout(list(values), values, space_preset(), load_space=lambda: space)
+    result = layout.run(ViewParams(), grouped=False)
+    assert result.unset.tolist() == [False] * 5 + [True]
+    raw = layout.space_coords()
+    assert raw[3, 0] == 10.0 and space.coords[3, 0] == 3.0
+    assert np.array_equal(raw[[0, 1, 2, 4]], space.coords[[0, 1, 2, 4]])
+
+
+def test_files_placed_after_training_join_the_group_of_their_nearest_file(monkeypatch):
+    monkeypatch.setattr(projection, "ClusterTree", FakeTree)
+    space = whole_space()
+    values = {"c:/0.png": {}, "c:/59.png": {}, "c:/late.png": space_values(12)["c:/11.png"]}
+    result = SpaceLayout(list(values), values, space_preset(), space).run(ViewParams())
+    assert result.labels.tolist()[2] == result.labels.tolist()[1] != result.labels.tolist()[0]
+
+
+def refining_layout(count=40, space_count=60):
+    space = whole_space(space_count)
+    values = {path: {"tags": PathValue("cat")} for path in space.paths[:count]}
+    return SpaceLayout(list(values), values, space_preset(), space)
+
+
+def local_relayout(calls):
+    def relayout(entries, start):
+        calls.append(len(entries))
+        local = np.array(start, dtype=np.float32)
+        local[:, 0] = -local[:, 0]
+        local[:, 2] = np.where(np.arange(len(start)) % 2, 5.0, -5.0)
+        return local
+
+    return relayout
+
+
+def test_small_selections_are_laid_out_again_on_their_own():
+    calls = []
+    layout = refining_layout()
+    before = layout.run(ViewParams(), grouped=False)
+    assert layout.refine(local_relayout(calls)) and calls == [40] and layout.is_local()
+    after = layout.run(ViewParams(), grouped=False)
+    assert np.allclose(after.positions[:, 0], 1.0 - before.positions[:, 0], atol=1e-6)
+    assert not layout.refine(local_relayout(calls)) and calls == [40]
+
+
+@pytest.mark.parametrize("count, space_count", [(10, 60), (60, 60), (session.LOCAL_LAYOUT_RANGE[1] + 1, 6000)])
+def test_tiny_huge_or_whole_selections_keep_the_whole_space_layout(count, space_count):
+    calls = []
+    layout = refining_layout(count, space_count)
+    assert layout.local_rows() is None and not layout.refine(local_relayout(calls)) and calls == []
+
+
+def test_local_groups_split_the_whole_space_groups_by_the_same_size(monkeypatch):
+    monkeypatch.setattr(projection, "ClusterTree", FakeTree)
+    FakeTree.built, FakeTree.cuts = [], []
+    layout = refining_layout()
+    base = layout.run(ViewParams()).labels
+    layout.refine(local_relayout([]))
+    same = layout.run(ViewParams()).labels
+    assert same.tolist() == base.tolist()
+    finer = layout.run(ViewParams(), share=0.5).labels
+    assert len(set(finer.tolist())) > len(set(base.tolist()))
+    for group in set(finer.tolist()):
+        assert len(set(base[finer == group].tolist())) == 1
+    local_tree = FakeTree.built[-1]
+    assert local_tree == (40, Grouping().cluster_options(60, 0.5)[1])
+    assert FakeTree.cuts[-1] == (Grouping().cluster_options(60, 0.5)[0], "eom")

@@ -27,7 +27,7 @@ from .map_host import MapHost
 from .map_toolbar import MapToolbar
 from .map_view import MapView
 from .session import MapError, MapResult, SpaceLayout
-from .space import Preset, load_preset, space_groups
+from .space import Preset, load_preset, space_model, whole_space
 from .view_settings import RELAYOUT_PARAMS, TOOLBAR_PARAMS, GroupingStore, ViewSettings
 
 COMPUTE_PRIORITY = 7
@@ -36,6 +36,8 @@ RECOMPUTE_DELAY_MS = 300
 MIN_DRILL_FILES = 3
 ELLIPSIS = "\N{HORIZONTAL ELLIPSIS}"
 SEPARATOR = "\N{MIDDLE DOT}"
+GROUPING_TEXT = "Grouping"
+LAYING_OUT_TEXT = "Laying out (the first run takes longer)"
 CRUMB_ARROW = "\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}"
 SPACE_PANEL_NAME = "Mapping Space"
 RELAYOUT_NAMES = RELAYOUT_PARAMS | TOOLBAR_PARAMS
@@ -97,7 +99,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.settings = ViewSettings.instance()
         self.levels: list[MapLevel] = []
         self.shown: MapResult | None = None
-        self.grouping = False
+        self.pending = ""
         self.host = MapHost(self)
         self.build_ui()
         self.host.map_views = [self.map_view]
@@ -176,7 +178,7 @@ class MappingWidget(QtWidgets.QWidget):
 
     def regroup(self) -> None:
         if self.shown is not None:
-            self.grouping = True
+            self.pending = GROUPING_TEXT
             self.show_counts(self.shown)
         self.schedule_recompute()
 
@@ -282,10 +284,13 @@ class MappingWidget(QtWidgets.QWidget):
         level, params = self.levels[-1], self.settings.params
         grouping, share = GroupingStore.instance().get(self.db_name), params.subgroup_size
         if level.layout is None or level.layout.preset is not self.preset:
-            level.layout = SpaceLayout(level.paths, self.values, self.preset, load_groups=partial(space_groups, self.db_path, self.preset))
-        layout = level.layout
+            level.layout = SpaceLayout(level.paths, self.values, self.preset, load_space=partial(whole_space, self.db_name, self.preset))
+        layout, db_name, preset = level.layout, self.db_name, self.preset
         cancel = self.compute_cancel.renew()
         self.cancel_button.show()
+
+        def show(result: MapResult, pending: str) -> None:
+            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self._apply_result(level, result, pending))
 
         def task():
             try:
@@ -293,7 +298,14 @@ class MappingWidget(QtWidgets.QWidget):
                     plain = layout.run(params, grouping=grouping, share=share, grouped=False, cancelled=cancel.is_cancelled)
                     if plain is None:
                         return
-                    self.dispatcher.invoke(lambda: cancel.is_cancelled() or self._apply_result(level, plain, final=False))
+                    local = layout.local_rows() is not None
+                    show(plain, LAYING_OUT_TEXT if local else GROUPING_TEXT)
+                    model = space_model(db_name, preset) if local else None
+                    if model is not None and layout.refine(partial(model.relayout, cancelled=cancel.is_cancelled)):
+                        refined = layout.run(params, grouping=grouping, share=share, grouped=False, cancelled=cancel.is_cancelled)
+                        if refined is None:
+                            return
+                        show(refined, GROUPING_TEXT)
                 result = layout.run(params, grouping=grouping, share=share, cancelled=cancel.is_cancelled)
                 if result is None:
                     return
@@ -304,7 +316,7 @@ class MappingWidget(QtWidgets.QWidget):
                 AppLogger.error("[Mapping] Map computation failed", exc=e)
                 self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.finish(t("Mapping failed. See the log for details.")))
                 return
-            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self._apply_result(level, result, final=True))
+            show(result, "")
 
         self.dispatcher.post(task, priority=COMPUTE_PRIORITY, cancel=cancel)
 
@@ -316,13 +328,13 @@ class MappingWidget(QtWidgets.QWidget):
         self.cancel_button.hide()
         self.set_message(message)
 
-    def _apply_result(self, level: MapLevel, result: MapResult, final: bool):
-        if final:
+    def _apply_result(self, level: MapLevel, result: MapResult, pending: str = ""):
+        if not pending:
             self.cancel_button.hide()
             level.result = result
         if not self.levels or level is not self.levels[-1]:
             return
-        self.grouping = not final
+        self.pending = pending
         if same_layout(self.shown, result):
             self.apply_groups(result)
         else:
@@ -349,7 +361,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.show_counts(result)
 
     def show_counts(self, result: MapResult) -> None:
-        groups = t("Grouping") + ELLIPSIS if self.grouping else t("{count} groups", count=result.diagnostics.groups)
+        groups = t(self.pending) + ELLIPSIS if self.pending else t("{count} groups", count=result.diagnostics.groups)
         parts = [t("{count} files", count=len(result.paths)), groups]
         if result.diagnostics.unset:
             parts.append(t("{count} waiting for placement", count=result.diagnostics.unset))

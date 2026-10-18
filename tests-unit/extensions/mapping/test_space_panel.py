@@ -3,18 +3,20 @@ from contextlib import closing
 import threading
 import time
 
+import numpy as np
 import pytest
 from PySide6 import QtCore
 
-from extensions.mapping import space, space_panel
+from extensions.mapping import projection, space, space_panel
 from extensions.mapping.params import Grouping, TrainParams, ViewParams
 from extensions.mapping.projection import GROUPING_DIMS
 from extensions.mapping.session import FeatureSpec, MapError, grouping_text
-from extensions.mapping.space import Preset, SpaceStatus, save_preset, write_status
+from extensions.mapping.space import Preset, SpaceModel, SpaceStatus, save_preset, write_status
 from extensions.mapping.view_settings import ViewSettings
 from extensions.mapping.space_panel import MappingSpacePlugin, MappingSpaceWidget, SpaceSnapshot, current_status, read_snapshot, status_text
 from wafer.core.db.db_utils import open_readonly
 from wafer.core.db.file_db import FileDB
+from wafer.core.db.path_values import PathValue
 
 
 def test_status_text_states():
@@ -167,10 +169,16 @@ def database(tmp_path, monkeypatch):
     monkeypatch.setattr(space, "setting_db_path", settings)
     monkeypatch.setattr(space, "resolve_cache_path", lambda rel: str(tmp_path / "cache" / rel))
     monkeypatch.setattr(space_panel.PluginSettings, "resolve_default_collectors", lambda self: [])
-    save_preset("map", Preset([FeatureSpec("wd14.tags", "token_set")], TrainParams(), 1))
+    preset = Preset([FeatureSpec("wd14.tags", "token_set")], TrainParams(), 1)
+    save_preset("map", preset)
+    trained = {f"c:/{i}.png": {"wd14.tags": PathValue("cat, sky" if i % 2 else "dog, sea")} for i in range(count - 2)}
+    with monkeypatch.context() as patch:
+        patch.setattr(projection, "embed", lambda matrix, neighbors, d, seed, dims=2, **_: np.tile(np.asarray(matrix, dtype=np.float32), (1, dims))[:, :dims])
+        SpaceModel.fit(preset, trained).save(tmp_path / "cache" / "mapping" / "map")
     write_status(tmp_path / "cache" / "mapping" / "map", SpaceStatus("ready", 1, trained=10))
-    (tmp_path / "cache" / "mapping" / "map" / "model-v1.npz").write_bytes(b"x" * 2048)
+    space.forget_space_models()
     yield db
+    space.forget_space_models()
     db.close()
 
 
@@ -178,7 +186,7 @@ def test_snapshot_reads_counts_status_and_preview(database):
     snapshot = read_snapshot("map", ViewParams())
     assert snapshot.preset.version == 1 and snapshot.status.state == "ready"
     assert snapshot.total == 12 and snapshot.placed == 10 and snapshot.waiting == 0
-    assert snapshot.model_bytes == 2048
+    assert snapshot.model_bytes > 0
     assert not snapshot.parser_enabled
     assert snapshot.result is not None and len(snapshot.result.paths) == 10 and not snapshot.result.unset.any()
     assert set(snapshot.sources) == set(snapshot.result.paths)
@@ -376,32 +384,38 @@ def test_status_refresh_reads_counts_without_the_preview(widget, database, monke
     assert w.shown is None and w.map_view.paths == []
 
 
-def test_preview_reloads_when_training_finishes_and_while_files_are_placed(widget, monkeypatch):
+def test_preview_reloads_only_when_the_space_changes(widget, monkeypatch):
     w, _saved, _resets = widget
     reloads = []
     monkeypatch.setattr(MappingSpaceWidget, "refresh", lambda self: reloads.append(1))
     preset = Preset([FeatureSpec("tags", "token_set")], TrainParams(), 2)
-    snapshot = lambda placed, waiting, state="ready": SpaceSnapshot(preset, SpaceStatus(state, 2), total=100, placed=placed, waiting=waiting)
-    w.preview_mark, w.preview_placed = ("training", 2), 0
-    w.on_status(snapshot(5, 90))
+    snapshot = lambda placed, state="ready", version=2: SpaceSnapshot(preset, SpaceStatus(state, version), total=100, placed=placed, waiting=100 - placed)
+    w.preview_mark = ("training", 2)
+    w.on_status(snapshot(0))
     assert reloads == [1]
-    w.shown = object()
-    w.preview_mark, w.preview_placed, w.preview_loaded_at = ("ready", 2), 5, time.monotonic()
-    w.on_status(snapshot(5, 90))
-    w.on_status(snapshot(6, 89))
+    w.preview_mark = ("ready", 2)
+    w.on_status(snapshot(5))
+    w.on_status(snapshot(95))
     assert reloads == [1]
-    w.preview_loaded_at -= space_panel.PREVIEW_RELOAD_SECONDS
-    w.on_status(snapshot(6, 89))
+    w.on_status(snapshot(0, "training", 3))
     assert reloads == [1, 1]
-    w.preview_loaded_at = time.monotonic()
-    w.on_status(snapshot(95, 0))
-    assert reloads == [1, 1, 1]
     w.preview_loading = True
-    w.on_status(snapshot(96, 0))
+    w.on_status(snapshot(0, "ready", 3))
     w.preview_loading, w.showing_quick = False, True
-    w.on_status(snapshot(97, 0))
-    assert reloads == [1, 1, 1]
-    w.shown = None
+    w.on_status(snapshot(0, "ready", 3))
+    assert reloads == [1, 1]
+
+
+def test_preview_shows_the_trained_space_before_the_parser_writes_it(database, tmp_path, monkeypatch):
+    preset = Preset([FeatureSpec("wd14.tags", "token_set")], TrainParams(), 2)
+    save_preset("map", preset)
+    values = {f"c:/{i}.png": {"wd14.tags": PathValue("cat, sky" if i % 2 else "dog, sea")} for i in range(12)}
+    monkeypatch.setattr(projection, "embed", lambda matrix, neighbors, d, seed, dims=2, **_: np.tile(np.asarray(matrix, dtype=np.float32), (1, dims))[:, :dims])
+    SpaceModel.fit(preset, values).save(tmp_path / "cache" / "mapping" / "map")
+    write_status(tmp_path / "cache" / "mapping" / "map", SpaceStatus("ready", 2, trained=12))
+    snapshot = read_snapshot("map", ViewParams())
+    assert snapshot.placed == 0
+    assert snapshot.result is not None and len(snapshot.result.paths) == 12 and not snapshot.result.unset.any()
 
 
 def test_quick_train_shows_a_sample_without_saving_and_reuses_it(widget, database, monkeypatch, qtbot):

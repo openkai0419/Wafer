@@ -22,7 +22,7 @@ from wafer.core.logs import AppLogger
 from . import projection
 from .encoders import ENCODERS, BaseEncoder, expand_group_keys, feature_input
 from .params import Grouping, TrainParams
-from .session import KEY_GROUP, KEY_MODEL, OUTPUT_PREFIX, SPACE_COLUMNS, FeatureSpec, MapError, SpaceGroups, SpaceLayout, grouping_values
+from .session import KEY_MODEL, OUTPUT_PREFIX, SPACE_COLUMNS, FeatureSpec, MapError, SpaceLayout, WholeSpace
 
 PRESET_KEY = "mapping.preset"
 GROUPING_KEY = "mapping.grouping"
@@ -136,41 +136,42 @@ def count_placed(db_path: str, preset: Preset) -> int:
         return conn.execute("SELECT COUNT(*) FROM meta_info WHERE key = ? AND value = ?", (KEY_MODEL, str(preset.version))).fetchone()[0]
 
 
-GROUPS_SQL = "SELECT g.path, g.value FROM meta_info AS g JOIN meta_info AS m ON m.path = g.path AND m.key = ? WHERE g.key = ? AND m.value = ?"
-_groups_lock = threading.Lock()
-_groups_cache: dict[tuple[str, int], tuple[int, SpaceGroups]] = {}
+_model_lock = threading.Lock()
+_model_cache: dict[str, tuple[tuple[int, int], SpaceModel | None]] = {}
 
 
-def read_space_groups(db_path: str, preset: Preset) -> SpaceGroups:
-    paths, points = [], []
-    with closing(open_readonly(db_path)) as conn:
-        for path, text in conn.execute(GROUPS_SQL, (KEY_MODEL, KEY_GROUP, str(preset.version))):
-            numbers = grouping_values(text or "")
-            if numbers is not None:
-                paths.append(path)
-                points.append(numbers)
-    return SpaceGroups(paths, np.array(points, dtype=np.float32).reshape(-1, projection.GROUPING_DIMS))
-
-
-def space_groups(db_path: str, preset: Preset) -> SpaceGroups:
-    key = (str(db_path), preset.version)
-    placed = count_placed(db_path, preset)
-    with _groups_lock:
-        cached = _groups_cache.get(key)
-        if cached is not None and cached[0] == placed:
+def space_model(db_name: str, preset: Preset) -> SpaceModel | None:
+    directory = model_dir(db_name)
+    try:
+        stamp = (directory / f"model-v{preset.version}.npz").stat().st_mtime_ns
+    except OSError:
+        return None
+    key = (preset.version, stamp)
+    with _model_lock:
+        cached = _model_cache.get(db_name)
+        if cached is not None and cached[0] == key:
             return cached[1]
-    started = time.perf_counter()
-    groups = read_space_groups(db_path, preset)
-    AppLogger.info(f"[Mapping] Read the grouping coordinates of {groups.size} files in {time.perf_counter() - started:.1f}s")
-    with _groups_lock:
-        _groups_cache.clear()
-        _groups_cache[key] = (placed, groups)
-    return groups
+        started = time.perf_counter()
+        try:
+            model = SpaceModel.load(directory, preset)
+        except SpaceLoadError as e:
+            AppLogger.warning(f"[Mapping] Cannot read the space model of {db_name}; retrain from Mapping Space", exc=e)
+            model = None
+        if model is not None:
+            AppLogger.info(f"[Mapping] Loaded space v{preset.version} of {db_name} ({len(model.paths)} files) in {time.perf_counter() - started:.1f}s")
+        _model_cache.clear()
+        _model_cache[db_name] = (key, model)
+        return model
 
 
-def forget_space_groups() -> None:
-    with _groups_lock:
-        _groups_cache.clear()
+def whole_space(db_name: str, preset: Preset) -> WholeSpace | None:
+    model = space_model(db_name, preset)
+    return None if model is None else model.whole_space()
+
+
+def forget_space_models() -> None:
+    with _model_lock:
+        _model_cache.clear()
 
 
 def valued_paths(values: dict[str, dict[str, PathValue]], keys: list[str]) -> list[str]:
@@ -189,6 +190,17 @@ def encode_once(encoder: BaseEncoder, reducer: projection.BlockReducer, inputs: 
     return np.stack([known[key] for key in keys])
 
 
+def embed_space(matrix: np.ndarray, params: TrainParams, cancelled, init: np.ndarray | None = None, epochs: int = projection.LAYOUT_EPOCHS) -> np.ndarray:
+    neighbors = projection.nearest_neighbors(matrix, params.resolved_neighbors(len(matrix)), params.seed)
+    if cancelled():
+        raise MapError("Cancelled")
+    display = projection.embed(matrix, neighbors, params.min_dist, params.seed, init=None if init is None else init[:, :2], epochs=epochs)
+    if cancelled():
+        raise MapError("Cancelled")
+    grouping = projection.embed(matrix, neighbors, projection.GROUPING_MIN_DIST, params.seed, projection.GROUPING_DIMS, init=None if init is None else init[:, 2:], epochs=epochs)
+    return np.hstack([display, grouping])
+
+
 class SpaceModel:
     def __init__(self, preset, encoders, reducers, scales, paths, matrix, coords, built_at):
         self.preset = preset
@@ -203,6 +215,7 @@ class SpaceModel:
         self.coords = coords
         self.built_at = built_at
         self.neighbor_index: projection.NeighborIndex | None = None
+        self.space: WholeSpace | None = None
 
     @classmethod
     def fit(cls, preset: Preset, values: dict[str, dict[str, PathValue]], *, cancelled=lambda: False, progress=lambda stage: None) -> SpaceModel:
@@ -231,14 +244,7 @@ class SpaceModel:
         combined, stats, scales = projection.combine_blocks([(label, dense[active], present[active], weight) for label, dense, present, weight in blocks], params.seed)
         AppLogger.info("[Mapping] Key shares: " + " ".join(f"{stat.label}={stat.contribution:.0%} (missing {stat.missing})" for stat in stats))
         progress("layout")
-        neighbors = projection.nearest_neighbors(combined, params.resolved_neighbors(active.size), params.seed)
-        if cancelled():
-            raise MapError("Cancelled")
-        display = projection.embed(combined, neighbors, params.min_dist, params.seed)
-        if cancelled():
-            raise MapError("Cancelled")
-        grouping = projection.embed(combined, neighbors, projection.GROUPING_MIN_DIST, params.seed, projection.GROUPING_DIMS)
-        coords = np.hstack([display, grouping])
+        coords = embed_space(combined, params, cancelled)
         model = cls(preset, encoders, reducers, scales, [paths[i] for i in active], combined.astype(np.float16), coords.astype(np.float32), time.time())
         learned = set(paths)
         model.place_all([path for path in valued if path not in learned], values, cancelled)
@@ -260,14 +266,19 @@ class SpaceModel:
             self.index = {path: i for i, path in enumerate(self.paths)}
             self.coords = np.vstack([self.coords, *placed_coords])
 
+    def whole_space(self) -> WholeSpace:
+        if self.space is None:
+            self.space = WholeSpace(self.paths, self.coords)
+        return self.space
+
     def layout(self, values: dict[str, dict[str, PathValue]]) -> SpaceLayout:
-        return SpaceLayout(self.paths, values, self.preset, SpaceGroups(self.paths, self.coords[:, 2:].astype(np.float32)), coords=self.coords.astype(np.float64))
+        return SpaceLayout(self.paths, values, self.preset, self.whole_space())
 
     def coords_for(self, path: str) -> tuple[float, ...] | None:
         index = self.index.get(path)
         return None if index is None else tuple(float(value) for value in self.coords[index])
 
-    def place(self, entries: list[dict[str, PathValue]], encoded: list[dict] | None = None) -> np.ndarray:
+    def features(self, entries: list[dict[str, PathValue]], encoded: list[dict] | None = None) -> tuple[np.ndarray, np.ndarray]:
         encoded = encoded if encoded is not None else [{} for _ in self.encoders]
         parts = []
         has_value = np.zeros(len(entries), dtype=bool)
@@ -277,14 +288,33 @@ class SpaceModel:
             present = encoder.present(inputs)
             parts.append((encode_once(encoder, reducer, inputs, known), present))
             has_value |= present
-        output = np.full((len(entries), SPACE_COLUMNS), np.nan, dtype=np.float32)
         rows = np.flatnonzero(has_value)
+        return rows, projection.apply_block_scales([(dense[rows], present[rows]) for dense, present in parts], self.scales)
+
+    def place(self, entries: list[dict[str, PathValue]], encoded: list[dict] | None = None) -> np.ndarray:
+        output = np.full((len(entries), SPACE_COLUMNS), np.nan, dtype=np.float32)
+        rows, query = self.features(entries, encoded)
         if rows.size == 0:
             return output
-        query = projection.apply_block_scales([(dense[rows], present[rows]) for dense, present in parts], self.scales)
         if self.neighbor_index is None:
             self.neighbor_index = projection.NeighborIndex(self.matrix)
         output[rows] = self.neighbor_index.placement(query).apply(self.coords)
+        return output
+
+    def relayout(self, entries: list[dict[str, PathValue]], start: np.ndarray, cancelled=lambda: False) -> np.ndarray:
+        params = self.preset.params.normalized()
+        output = np.full((len(entries), SPACE_COLUMNS), np.nan, dtype=np.float32)
+        rows, features = self.features(entries)
+        if rows.size == 0:
+            return output
+        train = projection.sample_rows(rows.size, params.train_limit, params.seed)
+        trained = embed_space(features[train], params, cancelled, init=start[rows[train]], epochs=projection.LOCAL_EPOCHS)
+        coords = np.empty((rows.size, SPACE_COLUMNS), dtype=np.float32)
+        coords[train] = trained
+        if train.size < rows.size:
+            rest = np.setdiff1d(np.arange(rows.size), train, assume_unique=True)
+            coords[rest] = projection.NeighborIndex(features[train]).placement(features[rest]).apply(trained)
+        output[rows] = coords
         return output
 
     def save(self, directory: Path) -> None:

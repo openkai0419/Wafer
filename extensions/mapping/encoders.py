@@ -104,6 +104,9 @@ class BaseEncoder(ABC):
     @abstractmethod
     def describe(self, members: np.ndarray, params: MapParams) -> list[str]: ...
 
+    def describe_groups(self, groups: list[np.ndarray], params: MapParams) -> list[list[str]]:
+        return [self.describe(members, params) for members in groups]
+
     def compact(self) -> None:
         return None
 
@@ -132,13 +135,21 @@ def feature_input(entry: dict[str, PathValue], key: str, encoder: type[BaseEncod
     return group_values(entry, key) if encoder.KEY_GROUP else value_input(entry.get(key))
 
 
-def top_lift_terms(matrix, members: np.ndarray, names, count: int) -> list[str]:
-    if matrix is None or matrix.shape[1] == 0 or len(members) == 0:
-        return []
-    inside = np.asarray(matrix[members].mean(axis=0)).ravel()
+def top_lift_terms_by_group(matrix, groups: list[np.ndarray], names, count: int) -> list[list[str]]:
+    if matrix is None or matrix.shape[1] == 0:
+        return [[] for _ in groups]
     overall = np.asarray(matrix.mean(axis=0)).ravel()
-    lift = inside - overall
-    return [str(names[i]) for i in np.argsort(-lift, kind="stable")[:count] if lift[i] > 0]
+    terms = []
+    for members in groups:
+        if len(members) == 0:
+            terms.append([])
+            continue
+        inside = matrix[members].mean(axis=0)
+        columns = np.flatnonzero(np.asarray(inside).ravel() > 0) if not hasattr(inside, "indices") else np.sort(inside.indices)
+        lift = np.asarray(inside).ravel()[columns] - overall[columns]
+        order = np.argsort(-lift, kind="stable")
+        terms.append([str(names[columns[i]]) for i in order[:count] if lift[i] > 0])
+    return terms
 
 
 class NumericEncoder(BaseEncoder):
@@ -327,7 +338,10 @@ class TokenSetEncoder(BaseEncoder):
         self.matrix, self.names = None, []
 
     def describe(self, members, params):
-        return top_lift_terms(self.matrix, members, self.names, params.label_terms)
+        return self.describe_groups([members], params)[0]
+
+    def describe_groups(self, groups, params):
+        return top_lift_terms_by_group(self.matrix, groups, self.names, params.label_terms)
 
 
 @lru_cache(maxsize=65536)
@@ -358,10 +372,13 @@ class PathEncoder(TokenSetEncoder):
     def documents(self, texts):
         return [dict.fromkeys(folder_prefixes(text), 1.0) for text in texts]
 
-    def describe(self, members, params):
-        terms = top_lift_terms(self.matrix, members, self.names, params.label_terms)
-        deepest = [term for term in terms if not any(other.startswith(term + "/") for other in terms)]
-        return [folder_label(term) for term in deepest]
+    def describe_groups(self, groups, params):
+        return [deepest_folders(terms) for terms in super().describe_groups(groups, params)]
+
+
+def deepest_folders(terms: list[str]) -> list[str]:
+    deepest = [term for term in terms if not any(other.startswith(term + "/") for other in terms)]
+    return [folder_label(term) for term in deepest]
 
 
 def _words(text: str) -> list[str]:
@@ -428,11 +445,14 @@ class TextEncoder(BaseEncoder):
         self.words_matrix, self.word_names = None, []
 
     def describe(self, members, params):
+        return self.describe_groups([members], params)[0]
+
+    def describe_groups(self, groups, params):
         from scipy import sparse
         from sklearn.feature_extraction.text import CountVectorizer
 
         if not self.texts:
-            return []
+            return [[] for _ in groups]
         if self.words_matrix is None:
             vectorizer = CountVectorizer(analyzer=_words, binary=True, dtype=np.float32)
             try:
@@ -442,7 +462,7 @@ class TextEncoder(BaseEncoder):
                 AppLogger.warning("[Mapping] Text key has no words to label groups", exc=e)
                 self.words_matrix = sparse.csr_matrix((len(self.texts), 0), dtype=np.float32)
                 self.word_names = []
-        return top_lift_terms(self.words_matrix, members, self.word_names, params.label_terms)
+        return top_lift_terms_by_group(self.words_matrix, groups, self.word_names, params.label_terms)
 
 
 class CategoryEncoder(BaseEncoder):

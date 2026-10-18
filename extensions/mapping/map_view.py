@@ -65,6 +65,15 @@ def first_per_cell(points: np.ndarray, cell: float, limit: int) -> np.ndarray:
         scanned = min(len(points), scanned * 4)
 
 
+def color_keys(colors: list[QtGui.QColor], count: int) -> np.ndarray:
+    fallback = QtGui.QColor(ThemeManager.instance().palette.text_secondary).rgba()
+    rgba = {id(color): color.rgba() for color in {id(color): color for color in colors}.values()}
+    keys = np.full(count, fallback, dtype=np.int64)
+    known = min(count, len(colors))
+    keys[:known] = np.fromiter((rgba[id(color)] for color in colors[:known]), dtype=np.int64, count=known)
+    return keys
+
+
 def scene_positions(result: MapResult) -> np.ndarray:
     positions = np.asarray(result.positions, dtype=np.float64).reshape(-1, 2) * SCENE_SIZE
     unset = np.flatnonzero(result.unset)
@@ -272,16 +281,11 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         count = len(result.paths)
         self.paths = list(result.paths)
         self.rows_by_path = {path: row for row, path in enumerate(self.paths)}
-        self.colors = colors
         self.outliers = np.asarray(result.outliers, dtype=bool)
-        self.group_of = result.labels if result.labels is not None else np.full(count, -1, dtype=np.int32)
         self.positions = scene_positions(result)
         self.selected = np.zeros(count, dtype=bool)
         self.priority = np.argsort(np.random.default_rng(PRIORITY_SEED).permutation(count))
-        fallback = QtGui.QColor(ThemeManager.instance().palette.text_secondary).rgba()
-        keys = np.array([colors[row].rgba() if row < len(colors) else fallback for row in range(count)], dtype=np.int64)
-        self.color_keys, self.color_ids = np.unique(keys, return_inverse=True)
-        self.add_labels(result)
+        self.set_groups(result, colors)
         core = QtCore.QRectF(0, 0, SCENE_SIZE, SCENE_SIZE)
         rect = core
         if count:
@@ -295,10 +299,26 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self.fit_scale = self.transform().m11()
         self.invalidate()
 
+    def set_groups(self, result: MapResult, colors: list[QtGui.QColor]) -> None:
+        count = len(self.paths)
+        self.colors = colors
+        self.group_of = result.labels if result.labels is not None else np.full(count, -1, dtype=np.int32)
+        self.color_keys, self.color_ids = np.unique(color_keys(colors, count), return_inverse=True)
+        self.sprites = {}
+        for label in self.labels:
+            self.scene().removeItem(label)
+        self.labels = []
+        self.add_labels(result)
+        self.invalidate()
+
     def add_labels(self, result: MapResult) -> None:
+        grouped = np.flatnonzero(self.group_of >= 0)
+        order = grouped[np.argsort(self.group_of[grouped], kind="stable")]
+        ids, starts = np.unique(self.group_of[order], return_index=True)
+        members_by_group = dict(zip(ids.tolist(), np.split(order, starts[1:]))) if ids.size else {}
         for group, words in result.group_terms.items():
-            members = np.flatnonzero(self.group_of == group)
-            if not words or members.size == 0:
+            members = members_by_group.get(group)
+            if not words or members is None:
                 continue
             coords = result.positions[members]
             coords = coords[~np.isnan(coords).any(axis=1)]

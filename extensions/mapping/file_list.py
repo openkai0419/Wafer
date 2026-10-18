@@ -116,6 +116,14 @@ class FileList(QtWidgets.QListView, ActionKit.UIMixin):
         self.path_positions = {model.paths[row]: position for position, row in enumerate(model.order.tolist())}
         self.anchor = None
 
+    def set_groups(self, order: np.ndarray, colors: list[QtGui.QColor]) -> None:
+        model = self.file_model
+        model.layoutAboutToBeChanged.emit()
+        model.order = np.asarray(order, dtype=np.int64).reshape(-1)
+        model.colors = colors
+        model.layoutChanged.emit()
+        self.path_positions = {model.paths[row]: position for position, row in enumerate(model.order.tolist())}
+
     def clear_rows(self):
         self.set_rows([], np.zeros(0, dtype=np.int64), [])
 

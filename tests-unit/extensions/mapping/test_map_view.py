@@ -533,3 +533,21 @@ def first_per_cell_by_rows(points, cell, limit):
 )
 def test_first_per_cell_matches_the_full_scan(points, cell, limit):
     assert np.array_equal(map_view_module.first_per_cell(points, cell, limit), first_per_cell_by_rows(points, cell, limit))
+
+
+def test_set_groups_replaces_colors_and_labels_but_keeps_points_view_and_selection(view):
+    view.show_result(result(), colors(6), keep_view=False)
+    view.scale(2.0, 2.0)
+    transform = view.transform()
+    view.select_rows([1, 3])
+    positions = view.positions.copy()
+    regrouped = result()
+    regrouped.labels = np.array([0, 1, 1, 2, 2, -1], dtype=np.int32)
+    regrouped.group_terms = {0: ["red"], 1: ["green"], 2: ["blue"]}
+    new_colors = [QtGui.QColor("red")] + [QtGui.QColor("green")] * 2 + [QtGui.QColor("blue")] * 2 + [QtGui.QColor("gray")]
+    view.set_groups(regrouped, new_colors)
+    assert view.transform() == transform and np.array_equal(view.positions, positions)
+    assert view.selected_rows() == [1, 3]
+    assert sorted(label.text for label in view.label_items()) == ["blue", "green", "red"]
+    assert [type(item).__name__ for item in view.scene().items()].count("GroupLabelItem") == 3
+    assert view.group_of.tolist() == [0, 1, 1, 2, 2, -1] and len(view.color_keys) == 4

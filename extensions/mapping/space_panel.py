@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import time
 from contextlib import closing
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import partial
 from typing import Any
 
@@ -37,7 +37,7 @@ from .session import KEY_MODEL, OUTPUT_PREFIX, SPACE_KEYS, MapError, MapPipeline
 from .space import Preset, SpaceStatus, load_preset, model_dir, read_status, save_preset
 from .tuning import TuningPanel
 from .view_settings import ViewSettings
-from .widget import cancel_work, prepare_layout_engine, result_colors
+from .widget import cancel_work, prepare_layout_engine, result_colors, same_layout
 
 LOAD_PRIORITY = 7
 STATUS_REFRESH_MS = 1000
@@ -151,9 +151,9 @@ def read_snapshot(db_name: str, view: MapParams) -> SpaceSnapshot:
     return snapshot
 
 
-def run_preview(layout: SpaceLayout, view: MapParams, db_name: str, grouped: bool = True) -> tuple[MapResult | None, str]:
+def run_preview(layout: SpaceLayout, view: MapParams, db_name: str, grouped: bool = True, cancelled=lambda: False) -> tuple[MapResult | None, str]:
     try:
-        return layout.run(view, grouped=grouped), ""
+        return layout.run(view, grouped=grouped, cancelled=cancelled), ""
     except MapError as e:
         return None, str(e)
     except Exception as e:
@@ -246,6 +246,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.preview_layout: SpaceLayout | None = None
         self.preview_sources: dict[str, str] = {}
         self.quick_sample: QuickTrainSample | None = None
+        self.quick_request: MapRequest | None = None
         self.quick_cancel = CancelSlot()
         self.quick_running = False
         self.showing_quick = False
@@ -420,8 +421,10 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         event.ignore()
 
     def on_view_settings(self, relayout: bool) -> None:
-        if not relayout or self.showing_quick:
+        if not relayout:
             self.settings.apply(self.map_view, self.host)
+        elif self.showing_quick:
+            self.regroup_quick_train()
         elif self.preview_layout is not None and not self.preview_loading:
             self.relayout_preview(self.preview_layout)
         else:
@@ -431,8 +434,12 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         cancel = self.refresh_cancel.renew()
         db_name, view = self.db_name, self.settings.params
 
+        self.count_label.setText(t("Grouping") + ELLIPSIS)
+
         def task():
-            result, problem = run_preview(layout, view, db_name)
+            result, problem = run_preview(layout, view, db_name, cancelled=cancel.is_cancelled)
+            if result is None and not problem:
+                return
             self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.showing_quick or self.quick_running or self.show_space_result(result, problem))
 
         self.dispatcher.post(task, priority=LOAD_PRIORITY, cancel=cancel)
@@ -542,7 +549,8 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         def task():
             try:
                 sample = reusable or read_quick_train_sample(db_name, size, keys)
-                result = sample.pipeline.run(MapRequest(sample.paths, sample.values, features, params), cancelled=cancel.is_cancelled, progress=progress)
+                request = MapRequest(sample.paths, sample.values, features, params)
+                result = sample.pipeline.run(request, cancelled=cancel.is_cancelled, progress=progress)
             except MapError as e:
                 self.dispatcher.invoke(lambda m=str(e): cancel.is_cancelled() or self.finish_quick_train(t(m)))
                 return
@@ -550,7 +558,27 @@ class MappingSpaceWidget(QtWidgets.QWidget):
                 AppLogger.error(f"[Mapping] Quick training on {db_name} failed", exc=e)
                 self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.finish_quick_train(t("Mapping failed. See the log for details.")))
                 return
-            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.apply_quick_train(sample, result))
+            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.apply_quick_train(sample, request, result))
+
+        self.dispatcher.post(task, priority=LOAD_PRIORITY, cancel=cancel)
+
+    def regroup_quick_train(self) -> None:
+        sample, shown = self.quick_sample, self.quick_request
+        if sample is None or shown is None:
+            return
+        request = replace(shown, params=self.settings.merged(shown.params))
+        cancel = self.quick_cancel.renew()
+        self.count_label.setText(t("Grouping") + ELLIPSIS)
+
+        def task():
+            try:
+                result = sample.pipeline.run(request, cancelled=cancel.is_cancelled)
+            except Exception as e:
+                AppLogger.error(f"[Mapping] Regrouping the quick train of {sample.db_name} failed", exc=e)
+                self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.count_label.setText(t("Mapping failed. See the log for details.")))
+                return
+            if result is not None:
+                self.dispatcher.invoke(lambda: cancel.is_cancelled() or not self.showing_quick or self.apply_quick_train(sample, request, result))
 
         self.dispatcher.post(task, priority=LOAD_PRIORITY, cancel=cancel)
 
@@ -559,8 +587,8 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.update_buttons()
         self.count_label.setText(message)
 
-    def apply_quick_train(self, sample: QuickTrainSample, result: MapResult | None) -> None:
-        self.quick_sample = sample
+    def apply_quick_train(self, sample: QuickTrainSample, request: MapRequest, result: MapResult | None) -> None:
+        self.quick_sample, self.quick_request = sample, request
         if result is None:
             self.finish_quick_train(t("Cancelled"))
             return
@@ -672,9 +700,13 @@ class MappingSpaceWidget(QtWidgets.QWidget):
 
     def show_preview(self, result: MapResult, sources: dict[str, str], caption: str) -> None:
         self.host.sources = sources
-        keep_view = self.shown is not None and self.shown.paths == result.paths
-        self.settings.apply(self.map_view, self.host)
-        self.map_view.show_result(result, result_colors(result, self.palette_colors), keep_view)
+        colors = result_colors(result, self.palette_colors)
+        if same_layout(self.shown, result):
+            self.map_view.set_groups(result, colors)
+        else:
+            keep_view = self.shown is not None and self.shown.paths == result.paths
+            self.settings.apply(self.map_view, self.host)
+            self.map_view.show_result(result, colors, keep_view)
         self.shown = result
         self.count_label.setText(caption)
 

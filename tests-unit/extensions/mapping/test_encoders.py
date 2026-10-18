@@ -443,3 +443,41 @@ def test_palette_transform_matches_the_per_color_definition():
         inputs.append(palette(*[tuple(int(v) for v in rng.integers(0, 256, 3)) for _ in range(int(rng.integers(1, 8)))]))
     inputs.append(palette((0, 0, 0), (255, 255, 255), (255, 0, 0), (0, 255, 0), (0, 0, 255)))
     assert np.allclose(PaletteEncoder().transform(inputs), slow_palette_reference(inputs), atol=1e-6)
+
+
+def per_group_lift_reference(matrix, members, names, count):
+    inside = np.asarray(matrix[members].mean(axis=0)).ravel()
+    overall = np.asarray(matrix.mean(axis=0)).ravel()
+    lift = inside - overall
+    return [str(names[i]) for i in np.argsort(-lift, kind="stable")[:count] if lift[i] > 0]
+
+
+def test_lift_terms_for_many_groups_match_the_per_group_definition():
+    from scipy import sparse
+
+    from extensions.mapping.encoders import top_lift_terms_by_group
+
+    rng = np.random.default_rng(0)
+    binary = sparse.random(400, 60, density=0.08, random_state=1, format="csr", dtype=np.float32)
+    binary.data[:] = 1.0
+    weighted = sparse.random(400, 60, density=0.08, random_state=2, format="csr", dtype=np.float32)
+    names = np.array([f"w{i}" for i in range(60)])
+    labels = rng.integers(0, 25, 400)
+    groups = [np.flatnonzero(labels == group) for group in range(25)] + [np.array([], dtype=np.int64), np.array([7])]
+    for matrix in (binary, weighted):
+        for count in (1, 3, 10):
+            expected = [per_group_lift_reference(matrix, members, names, count) if len(members) else [] for members in groups]
+            assert top_lift_terms_by_group(matrix, groups, names, count) == expected
+
+
+def test_describe_groups_matches_describe_for_each_group():
+    encoders = [
+        (TokenSetEncoder(), [PathValue(t) for t in ("cat, sky", "cat, sea", "dog, sea", "dog, sky", "cat, dog")]),
+        (PathEncoder(), [PathValue(t) for t in ("c:/a/b/1.png", "c:/a/b/2.png", "c:/a/c/3.png", "d:/x/4.png", "d:/x/5.png")]),
+        (TextEncoder(), [PathValue(t) for t in ("red apple pie", "red apple tart", "blue sky", "blue sea", "green tea")]),
+        (PaletteEncoder(), [palette((250, 10, 10)), palette((240, 20, 20)), palette((10, 10, 250)), palette((20, 20, 240)), palette((250, 250, 250))]),
+    ]
+    groups = [np.array([0, 1]), np.array([2, 3]), np.array([4]), np.array([], dtype=np.int64)]
+    for encoder, inputs in encoders:
+        encoder.fit_transform(inputs, PARAMS)
+        assert encoder.describe_groups(groups, PARAMS) == [encoder.describe(members, PARAMS) for members in groups]

@@ -493,3 +493,17 @@ def test_preview_is_shown_before_its_groups(qtbot, database, monkeypatch):
     qtbot.waitUntil(lambda: len(shown) >= 2, timeout=20000)
     assert shown[:2] == [True, False] and w.shown.labels is not None
     w.close()
+
+
+def test_grouping_changes_regroup_the_quick_train_view(widget, database, qtbot):
+    w, _saved, _resets = widget
+    w.db_name = "map"
+    w.apply_preset(Preset([FeatureSpec("wd14.tags", "token_set")], MapParams(), 1))
+    w.quick_size.setValue(100)
+    w.toggle_quick_train()
+    qtbot.waitUntil(lambda: w.showing_quick and not w.quick_running, timeout=30000)
+    previous = w.shown
+    ViewSettings.instance().set_params(MapParams(group_size=4.0))
+    qtbot.waitUntil(lambda: w.shown is not previous, timeout=30000)
+    assert w.showing_quick and w.quick_request.params.group_size == 4.0
+    assert w.shown.paths == previous.paths

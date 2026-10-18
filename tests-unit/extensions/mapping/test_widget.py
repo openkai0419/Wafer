@@ -502,10 +502,11 @@ def test_view_settings_reach_the_mapping_space_panel(mapping, qtbot):
 
 def test_map_is_shown_before_its_groups(qtbot, space_data, monkeypatch):
     shown = []
-    original = MappingWidget.show_result
-    monkeypatch.setattr(MappingWidget, "show_result", lambda self, result: shown.append(result.labels is None) or original(self, result))
+    original, regroup = MappingWidget.show_result, MappingWidget.apply_groups
+    monkeypatch.setattr(MappingWidget, "show_result", lambda self, result: shown.append(("show", result.labels is None)) or original(self, result))
+    monkeypatch.setattr(MappingWidget, "apply_groups", lambda self, result: shown.append(("groups", result.labels is None)) or regroup(self, result))
     w = open_widget(qtbot)
-    assert shown[:2] == [True, False]
+    assert shown[:2] == [("show", True), ("groups", False)]
     assert w.current_result().labels is not None and "groups" in w.message_text()
     w.close()
 
@@ -557,3 +558,25 @@ def test_group_sliders_step_by_the_same_ratio(mapping):
         ratios = np.array(factors[1:]) / np.array(factors[:-1])
         assert factors[0] == 0.25 and factors[-1] == 16.0 and np.allclose(ratios, ratios[0])
         assert {0.5, 1.0, 2.0, 4.0, 8.0} <= set(factors)
+
+
+def test_regrouping_swaps_colors_and_labels_and_keeps_the_view(mapping, qtbot, monkeypatch):
+    calls = []
+    monkeypatch.setattr(MappingWidget, "show_result", lambda self, result: calls.append("show"))
+    mapping.map_view.select_rows([0, 2])
+    mapping.map_view.scale(2.0, 2.0)
+    transform = mapping.map_view.transform()
+    previous = mapping.current_result()
+    settings().set_params(MapParams(group_size=4.0))
+    assert "Grouping" in mapping.message_text()
+    wait_for_new_result(qtbot, mapping, previous)
+    assert calls == [] and mapping.map_view.transform() == transform
+    assert mapping.map_view.selected_rows() == [0, 2] and "groups" in mapping.message_text()
+
+
+def test_only_the_latest_regroup_is_computed(space_data):
+    from extensions.mapping.session import SpaceLayout
+
+    layout = SpaceLayout(list(space_data.values), space_data.values, space_data.preset)
+    assert layout.run(MapParams(), cancelled=lambda: True) is None
+    assert layout.run(MapParams()) is not None

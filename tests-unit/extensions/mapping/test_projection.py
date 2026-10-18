@@ -1,4 +1,6 @@
 import pickle
+import sys
+import types
 
 import numpy as np
 import pytest
@@ -217,8 +219,6 @@ def test_large_inputs_use_the_approximate_search(monkeypatch):
 
 
 def test_layout_reuses_the_given_neighbors_with_fixed_epochs(monkeypatch):
-    import umap
-
     seen = {}
 
     class Recorder:
@@ -228,7 +228,7 @@ def test_layout_reuses_the_given_neighbors_with_fixed_epochs(monkeypatch):
         def fit_transform(self, matrix):
             return np.zeros((matrix.shape[0], 2), dtype=np.float32)
 
-    monkeypatch.setattr(umap, "UMAP", Recorder)
+    monkeypatch.setitem(sys.modules, "umap", types.SimpleNamespace(UMAP=Recorder))
     matrix = np.random.default_rng(5).normal(size=(40, 4))
     neighbors = projection.nearest_neighbors(matrix, 9, 0)
     projection.embed(matrix, neighbors, 0.2, 3)
@@ -263,8 +263,6 @@ def test_placement_averages_the_nearest_trained_points():
 
 
 def test_embed_can_return_more_dimensions(monkeypatch):
-    import umap
-
     seen = {}
 
     class Recorder:
@@ -274,7 +272,7 @@ def test_embed_can_return_more_dimensions(monkeypatch):
         def fit_transform(self, matrix):
             return np.ones((matrix.shape[0], seen["n_components"]), dtype=np.float32)
 
-    monkeypatch.setattr(umap, "UMAP", Recorder)
+    monkeypatch.setitem(sys.modules, "umap", types.SimpleNamespace(UMAP=Recorder))
     matrix = np.random.default_rng(6).normal(size=(40, 12))
     points = projection.embed(matrix, projection.nearest_neighbors(matrix, 9, 0), 0.0, 1, projection.GROUPING_DIMS)
     assert points.shape == (40, projection.GROUPING_DIMS) and seen["n_components"] == projection.GROUPING_DIMS

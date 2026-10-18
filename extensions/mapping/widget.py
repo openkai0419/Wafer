@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
+import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
@@ -54,8 +55,13 @@ def result_colors(result: MapResult, palette) -> list[QtGui.QColor]:
     neutral = QtGui.QColor(palette.text_secondary)
     if result.labels is None:
         return [neutral] * len(result.paths)
+    table = {group: group_color(group) for group in np.unique(result.labels).tolist() if group >= 0}
     noise = QtGui.QColor(palette.text_muted)
-    return [group_color(int(label)) if label >= 0 else noise for label in result.labels]
+    return [table.get(label, noise) for label in result.labels.tolist()]
+
+
+def same_layout(shown: MapResult | None, result: MapResult) -> bool:
+    return shown is not None and shown.paths == result.paths and np.array_equal(shown.positions, result.positions, equal_nan=True) and np.array_equal(shown.outliers, result.outliers)
 
 
 def prepare_layout_engine(dispatcher: Dispatcher) -> None:
@@ -160,6 +166,9 @@ class MappingWidget(QtWidgets.QWidget):
 
     def on_view_settings(self, relayout: bool) -> None:
         if relayout:
+            if self.shown is not None:
+                self.grouping = True
+                self.show_counts(self.shown)
             self.schedule_recompute()
         else:
             self.settings.apply(self.map_view, self.host)
@@ -272,11 +281,13 @@ class MappingWidget(QtWidgets.QWidget):
         def task():
             try:
                 if not layout.is_grouped():
-                    plain = layout.run(params, grouped=False)
-                    self.dispatcher.invoke(lambda: cancel.is_cancelled() or self._apply_result(level, plain, final=False))
-                    if cancel.is_cancelled():
+                    plain = layout.run(params, grouped=False, cancelled=cancel.is_cancelled)
+                    if plain is None:
                         return
-                result = layout.run(params)
+                    self.dispatcher.invoke(lambda: cancel.is_cancelled() or self._apply_result(level, plain, final=False))
+                result = layout.run(params, cancelled=cancel.is_cancelled)
+                if result is None:
+                    return
             except MapError as e:
                 self.dispatcher.invoke(lambda m=str(e): cancel.is_cancelled() or self.finish(t(m)))
                 return
@@ -303,7 +314,17 @@ class MappingWidget(QtWidgets.QWidget):
         if not self.levels or level is not self.levels[-1]:
             return
         self.grouping = not final
-        self.show_result(result)
+        if same_layout(self.shown, result):
+            self.apply_groups(result)
+        else:
+            self.show_result(result)
+
+    def apply_groups(self, result: MapResult) -> None:
+        colors = self.colors_for(result)
+        self.map_view.set_groups(result, colors)
+        self.file_list.set_groups(result.order, colors)
+        self.shown = result
+        self.show_counts(result)
 
     def show_result(self, result: MapResult):
         selected = set(self.selected_paths())
@@ -316,6 +337,9 @@ class MappingWidget(QtWidgets.QWidget):
         rows = [row for row, path in enumerate(result.paths) if path in selected]
         self.map_view.select_rows(rows)
         self.file_list.select_rows(rows)
+        self.show_counts(result)
+
+    def show_counts(self, result: MapResult) -> None:
         groups = t("Grouping") + ELLIPSIS if self.grouping else t("{count} groups", count=result.diagnostics.groups)
         parts = [t("{count} files", count=len(result.paths)), groups]
         if result.diagnostics.unset:

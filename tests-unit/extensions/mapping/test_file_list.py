@@ -121,3 +121,16 @@ def test_large_thumbnails_are_shrunk_to_the_icon_size(qtbot):
     limit = widget.iconSize().width() + 1
     assert icon.width() / icon.devicePixelRatio() <= limit and icon.height() / icon.devicePixelRatio() <= limit
     assert widget.model().index(0, 0).data(QtCore.Qt.DecorationRole).cacheKey() == icon.cacheKey()
+
+
+def test_set_groups_reorders_and_recolors_without_losing_the_selection(qtbot):
+    widget = make_list(qtbot)
+    widget.select_rows([1, 4])
+    blue = QtGui.QColor("blue")
+    widget.set_groups(np.array([5, 4, 3, 2, 1, 0]), [blue] * 6)
+    model = widget.model()
+    assert [model.index(r, 0).data() for r in range(3)] == ["f.png", "e.png", "d.png"]
+    assert widget.selected_rows() == [1, 4]
+    assert model.index(0, 0).data(QtCore.Qt.DecorationRole) is not None or model.colors[5] == blue
+    assert widget.path_positions["c:/a.png"] == 5
+    widget.close()

@@ -305,9 +305,9 @@ class SpaceLayout:
         self.describers: list[tuple[BaseEncoder, np.ndarray]] | None = None
         self.labels_by_options: dict[tuple[int, int, str], np.ndarray] = {}
 
-    def run(self, params: MapParams, *, grouped: bool = True) -> MapResult:
+    def run(self, params: MapParams, *, grouped: bool = True, cancelled: Callable[[], bool] = lambda: False) -> MapResult | None:
         with self.lock:
-            return self._run(params.normalized(), grouped)
+            return None if cancelled() else self._run(params.normalized(), grouped)
 
     def _run(self, params: MapParams, grouped: bool) -> MapResult:
         diagnostics = MapDiagnostics()
@@ -379,16 +379,16 @@ class SpaceLayout:
 
 
 def describe_groups(describers: list[tuple[BaseEncoder, np.ndarray]], labels: np.ndarray, params: MapParams) -> dict[int, list[str]]:
-    terms: dict[int, list[str]] = {}
-    for group in sorted(set(labels.tolist()) - {-1}):
-        members = np.flatnonzero(labels == group)
-        words: list[str] = []
-        for encoder, present in describers:
-            for word in encoder.describe(members[present[members]], params):
-                if word not in words:
-                    words.append(word)
-        terms[group] = words[: params.label_terms]
-    return terms
+    grouped = labels >= 0
+    order = np.flatnonzero(grouped)[np.argsort(labels[grouped], kind="stable")]
+    ids, starts = np.unique(labels[order], return_index=True)
+    members_by_group = np.split(order, starts[1:]) if ids.size else []
+    words_by_group: list[list[str]] = [[] for _ in members_by_group]
+    for encoder, present in describers:
+        described = encoder.describe_groups([members[present[members]] for members in members_by_group], params)
+        for words, found in zip(words_by_group, described):
+            words.extend(word for word in found if word not in words)
+    return {int(group): words[: params.label_terms] for group, words in zip(ids.tolist(), words_by_group)}
 
 
 def record_groups(diagnostics: MapDiagnostics, labels: np.ndarray) -> None:

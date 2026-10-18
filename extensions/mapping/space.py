@@ -5,6 +5,7 @@ import os
 import pickle
 import time
 import zipfile
+from contextlib import closing
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from typing import Any
 import numpy as np
 
 from wafer.core.common.paths import resolve_cache_path, setting_db_path
+from wafer.core.db.db_utils import open_readonly
 from wafer.core.db.path_values import PathValue
 from wafer.core.db.setting_db import SettingDB
 from wafer.core.logs import AppLogger
@@ -19,7 +21,7 @@ from wafer.core.logs import AppLogger
 from . import projection
 from .encoders import ENCODERS, BaseEncoder, expand_group_keys, feature_input
 from .params import MapParams
-from .session import OUTPUT_PREFIX, SPACE_COLUMNS, FeatureSpec, MapError
+from .session import KEY_MODEL, OUTPUT_PREFIX, SPACE_COLUMNS, FeatureSpec, MapError
 
 PRESET_KEY = "mapping.preset"
 PLACE_BATCH = 5000
@@ -116,6 +118,11 @@ def encode_paths(paths: list[str]) -> np.ndarray:
 def decode_paths(blob: np.ndarray) -> list[str]:
     text = blob.tobytes().decode("utf-8")
     return text.split(PATH_SEPARATOR) if text else []
+
+
+def count_placed(db_path: str, preset: Preset) -> int:
+    with closing(open_readonly(db_path)) as conn:
+        return conn.execute("SELECT COUNT(*) FROM meta_info WHERE key = ? AND value = ?", (KEY_MODEL, str(preset.version))).fetchone()[0]
 
 
 def valued_paths(values: dict[str, dict[str, PathValue]], keys: list[str]) -> list[str]:

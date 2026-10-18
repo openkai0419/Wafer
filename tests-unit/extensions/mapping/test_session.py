@@ -388,8 +388,28 @@ def test_quick_train_uses_the_group_size(monkeypatch, embed_calls):
     real_cluster = projection.cluster
     monkeypatch.setattr(projection, "cluster", lambda space, *options: seen.append(options[0]) or real_cluster(space, *options))
     runner = pipeline()
-    runner.run(make_request(params=MapParams(group_size=2.0)))
+    runner.run(make_request(params=MapParams(group_size=1.0)))
     layouts = len(embed_calls)
     runner.run(make_request(params=MapParams(group_size=0.5)))
-    assert seen == [MapParams(group_size=2.0).cluster_options(40)[0], MapParams(group_size=0.5).cluster_options(40)[0]]
+    assert seen == [MapParams(group_size=1.0).cluster_options(40)[0], MapParams(group_size=0.5).cluster_options(40)[0]]
     assert len(embed_calls) == layouts
+
+
+def test_space_layout_sizes_groups_by_the_whole_space(monkeypatch):
+    seen = []
+    real_cluster = projection.cluster
+    monkeypatch.setattr(projection, "cluster", lambda space, *options: seen.append(options) or real_cluster(space, *options))
+    values = space_values(40)
+    SpaceLayout(list(values), values, space_preset(), space_size=100_000).run(MapParams())
+    SpaceLayout(list(values), values, space_preset()).run(MapParams())
+    assert seen == [MapParams().cluster_options(100_000), MapParams().cluster_options(40)]
+
+
+def test_quick_train_sizes_groups_by_the_whole_database(monkeypatch, embed_calls):
+    seen = []
+    real_cluster = projection.cluster
+    monkeypatch.setattr(projection, "cluster", lambda space, *options: seen.append(options) or real_cluster(space, *options))
+    request = make_request()
+    request.space_size = 50_000
+    pipeline().run(request)
+    assert seen == [MapParams().cluster_options(50_000)]

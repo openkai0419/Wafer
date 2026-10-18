@@ -78,9 +78,9 @@ class MapParams:
         1.0,
         stage="view",
         label="Group size",
-        description="Smallest group, as a multiple of the automatic size (about 1 in 500 shown files, 5 to 30). Lower makes more, smaller groups.",
-        minimum=0.25,
-        maximum=16.0,
+        description="Smallest group, as a share of the size used for the whole space (about 1 in 500 files, 5 to 30). Lower makes more, smaller groups.",
+        minimum=0.0625,
+        maximum=1.0,
         step=0.25,
     )
     group_strictness: float = param(

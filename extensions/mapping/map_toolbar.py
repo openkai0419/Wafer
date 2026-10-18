@@ -93,7 +93,7 @@ class MapToolbar(QtWidgets.QWidget):
         slider.setToolTip(t(spec.description))
         slider.valueChanged.connect(lambda position: self.set_param(name, slider_factor(position)))
         value = QtWidgets.QLabel()
-        value.setFixedWidth(value.fontMetrics().horizontalAdvance(f"{MULTIPLY}0.297") + dpix(2))
+        value.setFixedWidth(value.fontMetrics().horizontalAdvance(f"{MULTIPLY}0.0625") + dpix(2))
         for widget in (label, slider, value):
             layout.addWidget(widget)
         self.sliders[name], self.slider_values[name] = slider, value

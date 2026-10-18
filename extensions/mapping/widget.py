@@ -27,7 +27,7 @@ from .map_host import MapHost
 from .map_toolbar import MapToolbar
 from .map_view import MapView
 from .session import MapError, MapResult, SpaceLayout
-from .space import Preset, load_preset
+from .space import Preset, count_placed, load_preset
 from .view_settings import ViewSettings
 
 COMPUTE_PRIORITY = 7
@@ -98,6 +98,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.levels: list[MapLevel] = []
         self.shown: MapResult | None = None
         self.grouping = False
+        self.space_size = 0
         self.host = MapHost(self)
         self.build_ui()
         self.host.map_views = [self.map_view]
@@ -234,16 +235,17 @@ class MappingWidget(QtWidgets.QWidget):
                 values = fetch_path_values(db_path, paths)
                 sources = fetch_sources(db_path, paths)
                 preset = load_preset(db_name) if db_name else None
+                space_size = count_placed(db_path, preset) if preset is not None else 0
             except Exception as e:
                 AppLogger.error("[Mapping] Loading values failed", exc=e)
                 self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.finish(t("Mapping failed. See the log for details.")))
                 return
-            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.on_values(values, sources, preset, keep_levels))
+            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.on_values(values, sources, preset, keep_levels, space_size))
 
         self.dispatcher.post(task, priority=COMPUTE_PRIORITY, cancel=cancel)
 
-    def on_values(self, values, sources, preset: Preset | None = None, keep_levels: bool = False):
-        self.values, self.host.sources = values, sources
+    def on_values(self, values, sources, preset: Preset | None = None, keep_levels: bool = False, space_size: int = 0):
+        self.values, self.host.sources, self.space_size = values, sources, space_size
         self.preset = preset if preset is not None and preset.features and preset.version > 0 else None
         if keep_levels and self.levels:
             for level in self.levels:
@@ -273,7 +275,7 @@ class MappingWidget(QtWidgets.QWidget):
             return
         level, params = self.levels[-1], self.settings.params
         if level.layout is None or level.layout.preset is not self.preset:
-            level.layout = SpaceLayout(level.paths, self.values, self.preset)
+            level.layout = SpaceLayout(level.paths, self.values, self.preset, self.space_size)
         layout = level.layout
         cancel = self.compute_cancel.renew()
         self.cancel_button.show()

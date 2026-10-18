@@ -109,11 +109,12 @@ def test_neighbors_never_exceed_the_cap():
 
 def test_group_size_setting_scales_the_automatic_size():
     spec = next(spec for name, spec, _ in param_specs() if name == "group_size")
-    assert spec.stage == "view" and MapParams().group_size == 1.0
-    assert MapParams(group_size=2.0).cluster_options(5000) == (20, 10, "eom")
+    assert spec.stage == "view" and (spec.minimum, spec.maximum) == (0.0625, 1.0) and MapParams().group_size == 1.0
     assert MapParams(group_size=0.5).cluster_options(5000) == (5, 5, "eom")
     assert MapParams(group_size=0.25).cluster_options(100) == (2, 2, "eom")
-    assert changed_stage(MapParams(), MapParams(group_size=2.0)) == "view"
+    assert MapParams(group_size=0.0625).cluster_options(1_000_000) == (2, 2, "eom")
+    assert MapParams(group_size=5.0).normalized().group_size == 1.0
+    assert changed_stage(MapParams(), MapParams(group_size=0.5)) == "view"
 
 
 def test_strictness_scales_how_dense_a_group_must_be():
@@ -131,8 +132,6 @@ def test_fine_groups_pick_the_leaf_clusters():
 
 
 def test_group_factors_reach_sixteen():
-    for name in ("group_size", "group_strictness"):
-        spec = next(spec for key, spec, _ in param_specs() if key == name)
-        assert (spec.minimum, spec.maximum) == (0.25, 16.0)
-    assert MapParams(group_size=99, group_strictness=99).normalized().group_size == 16.0
-    assert MapParams(group_size=16.0).cluster_options(5000) == (160, 10, "eom")
+    spec = next(spec for key, spec, _ in param_specs() if key == "group_strictness")
+    assert (spec.minimum, spec.maximum) == (0.25, 16.0)
+    assert MapParams(group_strictness=99).normalized().group_strictness == 16.0

@@ -34,7 +34,7 @@ from .map_toolbar import MapToolbar
 from .map_view import MapView
 from .params import MapParams
 from .session import KEY_MODEL, OUTPUT_PREFIX, SPACE_KEYS, MapError, MapPipeline, MapRequest, MapResult, SpaceLayout
-from .space import Preset, SpaceStatus, load_preset, model_dir, read_status, save_preset
+from .space import Preset, SpaceStatus, count_placed, load_preset, model_dir, read_status, save_preset
 from .tuning import TuningPanel
 from .view_settings import ViewSettings
 from .widget import cancel_work, prepare_layout_engine, result_colors, same_layout
@@ -130,7 +130,7 @@ def read_space_status(db_name: str) -> SpaceSnapshot:
         snapshot.total = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
         snapshot.waiting = conn.execute(WAITING_SQL, (OUTPUT_PREFIX,)).fetchone()[0]
         if has_saved_space(preset):
-            snapshot.placed = conn.execute("SELECT COUNT(*) FROM meta_info WHERE key = ? AND value = ?", (KEY_MODEL, str(preset.version))).fetchone()[0]
+            snapshot.placed = count_placed(db_path, preset)
     return snapshot
 
 
@@ -146,7 +146,7 @@ def read_snapshot(db_name: str, view: MapParams) -> SpaceSnapshot:
         return snapshot
     values = fetch_path_values(db_path, sample, keys=[*preset.value_keys(), *SPACE_KEYS])
     snapshot.sources = fetch_sources(db_path, sample)
-    snapshot.layout = SpaceLayout(sample, values, preset)
+    snapshot.layout = SpaceLayout(sample, values, preset, snapshot.placed)
     snapshot.result, snapshot.problem = run_preview(snapshot.layout, view, db_name, grouped=False)
     return snapshot
 
@@ -170,6 +170,7 @@ class QuickTrainSample:
     values: dict[str, dict[str, PathValue]]
     sources: dict[str, str]
     pipeline: MapPipeline = field(default_factory=MapPipeline)
+    space_size: int = 0
 
     def covers(self, db_name: str, size: int, keys: frozenset[str]) -> bool:
         return self.db_name == db_name and self.size == size and keys <= self.keys
@@ -179,8 +180,9 @@ def read_quick_train_sample(db_name: str, size: int, keys: frozenset[str]) -> Qu
     db_path = data_db_path(db_name)
     with closing(open_readonly(db_path)) as conn:
         paths = [row[0] for row in conn.execute("SELECT source FROM sources ORDER BY RANDOM() LIMIT ?", (size,))]
+        space_size = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
     values = fetch_path_values(db_path, paths, keys=sorted(keys))
-    return QuickTrainSample(db_name, size, keys, paths, values, fetch_sources(db_path, paths))
+    return QuickTrainSample(db_name, size, keys, paths, values, fetch_sources(db_path, paths), space_size=space_size)
 
 
 def read_key_catalog(db_name: str) -> list[tuple[str, int]]:
@@ -549,7 +551,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         def task():
             try:
                 sample = reusable or read_quick_train_sample(db_name, size, keys)
-                request = MapRequest(sample.paths, sample.values, features, params)
+                request = MapRequest(sample.paths, sample.values, features, params, sample.space_size)
                 result = sample.pipeline.run(request, cancelled=cancel.is_cancelled, progress=progress)
             except MapError as e:
                 self.dispatcher.invoke(lambda m=str(e): cancel.is_cancelled() or self.finish_quick_train(t(m)))

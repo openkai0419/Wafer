@@ -94,6 +94,7 @@ class MapRequest:
     values: dict[str, dict[str, PathValue]]
     features: list[FeatureSpec]
     params: MapParams
+    space_size: int = 0
 
 
 @dataclass
@@ -218,7 +219,7 @@ class MapPipeline:
         if cancelled():
             return None
         diagnostics.blocks = self._stats
-        labels = self._group((group_key, params.cluster_options(self._active.size)), count, diagnostics)
+        labels = self._group((group_key, params.cluster_options(request.space_size or self._active.size)), count, diagnostics)
         if cancelled():
             return None
         group_terms = self._describe(labels, blocks, params)
@@ -296,10 +297,11 @@ class MapPipeline:
 
 
 class SpaceLayout:
-    def __init__(self, paths: list[str], values: dict[str, dict[str, PathValue]], preset: Preset):
+    def __init__(self, paths: list[str], values: dict[str, dict[str, PathValue]], preset: Preset, space_size: int = 0):
         self.paths = paths
         self.values = values
         self.preset = preset
+        self.space_size = space_size
         self.lock = threading.Lock()
         self.coords: np.ndarray | None = None
         self.describers: list[tuple[BaseEncoder, np.ndarray]] | None = None
@@ -359,7 +361,7 @@ class SpaceLayout:
         return self.coords
 
     def group(self, grouping: np.ndarray, params: MapParams, diagnostics: MapDiagnostics) -> np.ndarray:
-        options = params.cluster_options(len(grouping))
+        options = params.cluster_options(self.space_size or len(grouping))
         if options not in self.labels_by_options:
             with timed(diagnostics, "cluster"):
                 self.labels_by_options[options] = projection.cluster(grouping, *options)

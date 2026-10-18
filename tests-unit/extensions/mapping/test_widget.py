@@ -76,10 +76,11 @@ def deterministic_groups(fake_cluster):
 @pytest.fixture()
 def space_data(monkeypatch):
     values = space_values()
-    state = SimpleNamespace(preset=Preset([FeatureSpec("tags", "token_set")], MapParams(), 2), values=values)
+    state = SimpleNamespace(preset=Preset([FeatureSpec("tags", "token_set")], MapParams(), 2), values=values, space_size=25_000)
     monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps: {p: state.values[p] for p in ps if p in state.values})
     monkeypatch.setattr(widget_module, "fetch_sources", lambda db, ps: {p: p.replace(".png", ".zip") for p in ps})
     monkeypatch.setattr(widget_module, "load_preset", lambda db_name: state.preset)
+    monkeypatch.setattr(widget_module, "count_placed", lambda db_path, preset: state.space_size)
     return state
 
 
@@ -515,11 +516,11 @@ def test_group_size_slider_regroups_the_map(mapping, qtbot):
     previous = mapping.current_result()
     slider = mapping.toolbar.sliders["group_size"]
     slider.setValue(slider.minimum())
-    assert settings().params.group_size == 0.25 and mapping.toolbar.slider_values["group_size"].text() == "\N{MULTIPLICATION SIGN}0.25"
+    assert settings().params.group_size == 0.0625 and mapping.toolbar.slider_values["group_size"].text() == "\N{MULTIPLICATION SIGN}0.0625"
     wait_for_new_result(qtbot, mapping, previous)
     assert np.array_equal(mapping.current_result().positions, previous.positions, equal_nan=True)
     slider.setValue(slider.maximum())
-    assert settings().params.group_size == 16.0 and mapping.toolbar.slider_values["group_size"].text() == "\N{MULTIPLICATION SIGN}16"
+    assert settings().params.group_size == 1.0 and mapping.toolbar.slider_values["group_size"].text() == "\N{MULTIPLICATION SIGN}1"
 
 
 def test_group_size_slider_follows_the_shared_settings(mapping, qtbot):
@@ -528,8 +529,8 @@ def test_group_size_slider_follows_the_shared_settings(mapping, qtbot):
     with patch.object(MappingSpaceWidget, "refresh"):
         space = MappingSpaceWidget()
     qtbot.addWidget(space)
-    mapping.toolbar.sliders["group_size"].setValue(mapping.toolbar.sliders["group_size"].maximum())
-    assert space.toolbar.sliders["group_size"].value() == space.toolbar.sliders["group_size"].maximum()
+    mapping.toolbar.sliders["group_size"].setValue(mapping.toolbar.sliders["group_size"].minimum())
+    assert space.toolbar.sliders["group_size"].value() == space.toolbar.sliders["group_size"].minimum()
     settings().set_params(MapParams(group_size=1.0, group_strictness=0.5, fine_groups=1))
     assert mapping.toolbar.slider_values["group_size"].text() == "\N{MULTIPLICATION SIGN}1"
     assert space.toolbar.slider_values["group_strictness"].text() == "\N{MULTIPLICATION SIGN}0.5" and space.toolbar.fine_check.isChecked()
@@ -549,15 +550,15 @@ def test_strictness_and_fine_groups_regroup_the_map(mapping, qtbot):
 
 
 def test_group_sliders_step_by_the_same_ratio(mapping):
-    for name in ("group_size", "group_strictness"):
+    for name, low, high, stops in (("group_size", 0.0625, 1.0, {0.125, 0.25, 0.5}), ("group_strictness", 0.25, 16.0, {0.5, 1.0, 2.0, 4.0, 8.0})):
         slider = mapping.toolbar.sliders[name]
         factors = []
         for position in range(slider.minimum(), slider.maximum() + 1):
             slider.setValue(position)
             factors.append(getattr(settings().params, name))
         ratios = np.array(factors[1:]) / np.array(factors[:-1])
-        assert factors[0] == 0.25 and factors[-1] == 16.0 and np.allclose(ratios, ratios[0])
-        assert {0.5, 1.0, 2.0, 4.0, 8.0} <= set(factors)
+        assert factors[0] == low and factors[-1] == high and np.allclose(ratios, ratios[0])
+        assert stops <= set(factors)
 
 
 def test_regrouping_swaps_colors_and_labels_and_keeps_the_view(mapping, qtbot, monkeypatch):
@@ -567,7 +568,7 @@ def test_regrouping_swaps_colors_and_labels_and_keeps_the_view(mapping, qtbot, m
     mapping.map_view.scale(2.0, 2.0)
     transform = mapping.map_view.transform()
     previous = mapping.current_result()
-    settings().set_params(MapParams(group_size=4.0))
+    settings().set_params(MapParams(group_size=0.25))
     assert "Grouping" in mapping.message_text()
     wait_for_new_result(qtbot, mapping, previous)
     assert calls == [] and mapping.map_view.transform() == transform
@@ -580,3 +581,9 @@ def test_only_the_latest_regroup_is_computed(space_data):
     layout = SpaceLayout(list(space_data.values), space_data.values, space_data.preset)
     assert layout.run(MapParams(), cancelled=lambda: True) is None
     assert layout.run(MapParams()) is not None
+
+
+def test_groups_start_from_the_size_of_the_whole_space(mapping, space_data):
+    level = mapping.levels[-1]
+    assert level.layout.space_size == space_data.space_size
+    assert mapping.toolbar.sliders["group_size"].value() == mapping.toolbar.sliders["group_size"].maximum()

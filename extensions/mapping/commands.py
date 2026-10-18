@@ -106,17 +106,6 @@ def current_tab(ctx=None):
     return None if panel is None else panel.tab
 
 
-def toggle_labels(ctx):
-    tab = current_tab(ctx)
-    if tab is not None:
-        tab.set_labels_shown(not tab.labels_shown)
-
-
-def _labels_checked() -> bool:
-    tab = current_tab()
-    return tab is not None and tab.labels_shown
-
-
 def toggle_thumbnails(ctx):
     tab = current_tab(ctx)
     if tab is not None:
@@ -178,7 +167,6 @@ class MappingViewCommands(MenuGroup):
             CommandMeta(path="mapping.drill_down", display="Map Selection Only", func=drill_down),
             CommandMeta(path="mapping.drill_up", display="Back", func=drill_up),
             CommandMeta(path="mapping.recompute", display="Recompute", func=recompute),
-            CommandMeta(path="mapping.toggle_labels", display="Show Labels", func=toggle_labels, checked=_labels_checked),
             CommandMeta(path="mapping.toggle_thumbnails", display="Show Thumbnails", func=toggle_thumbnails, checked=_thumbnails_checked),
             CommandMeta(path="mapping.image_scale_up", display="Larger Images", func=image_scale_up, params=[CommandParam(name="ratio", value=1.1, min_value=1.01, max_value=4.0)]),
             CommandMeta(path="mapping.image_scale_down", display="Smaller Images", func=image_scale_down, params=[CommandParam(name="ratio", value=1.1, min_value=1.01, max_value=4.0)]),

@@ -12,7 +12,7 @@ from .space import load_grouping, save_grouping
 
 VIEW_PARAMS = tuple(name for name, _spec, _default in param_specs(ViewParams))
 TOOLBAR_PARAMS = frozenset({"subgroup_size"})
-RELAYOUT_PARAMS = frozenset({"outlier_percent", "label_terms"})
+RELAYOUT_PARAMS = frozenset({"outlier_percent"})
 SELECTION_MODES = ("single", "group")
 DEFAULT_IMAGE_CAP = ViewParams().hover_size
 
@@ -78,14 +78,8 @@ class TabSettings(QtCore.QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.labels_shown = True
         self.thumbnails_shown = True
         self.selection_mode = "single"
-
-    def set_labels_shown(self, shown: bool) -> None:
-        if bool(shown) != self.labels_shown:
-            self.labels_shown = bool(shown)
-            self.changed.emit(frozenset({"labels"}))
 
     def set_thumbnails_shown(self, shown: bool) -> None:
         if bool(shown) != self.thumbnails_shown:
@@ -99,15 +93,13 @@ class TabSettings(QtCore.QObject):
             self.changed.emit(frozenset({"selection_mode"}))
 
     def to_dict(self) -> dict[str, Any]:
-        return {"labels": self.labels_shown, "thumbnails": self.thumbnails_shown, "selection_mode": self.selection_mode}
+        return {"thumbnails": self.thumbnails_shown, "selection_mode": self.selection_mode}
 
     def load(self, state: dict[str, Any]) -> None:
-        self.set_labels_shown(state.get("labels", True) is not False)
         self.set_thumbnails_shown(state.get("thumbnails", True) is not False)
         self.set_selection_mode(state.get("selection_mode", "single"))
 
     def apply(self, view) -> None:
-        view.set_labels_visible(self.labels_shown)
         view.set_thumbnails_visible(self.thumbnails_shown)
         view.set_selection_mode(self.selection_mode)
 

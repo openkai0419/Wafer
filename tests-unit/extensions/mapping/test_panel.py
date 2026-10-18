@@ -40,9 +40,9 @@ def test_loading_unchanged_view_settings_does_not_notify():
     settings.changed.connect(events.append)
     settings.load(settings.to_dict())
     assert events == []
-    settings.load({"params": {"label_terms": 5}})
-    settings.load({"params": {"label_terms": 5}, "image_scale": 2.0})
-    assert events == [frozenset({"label_terms"}), frozenset({"image_scale"})]
+    settings.load({"params": {"point_size": 5}})
+    settings.load({"params": {"point_size": 5}, "image_scale": 2.0})
+    assert events == [frozenset({"point_size"}), frozenset({"image_scale"})]
 
 
 def test_mapping_is_one_panel_with_a_map_and_a_settings_tab(qtbot):
@@ -60,13 +60,13 @@ def test_panel_state_keeps_the_tab_and_both_tabs(qtbot):
     panel = MappingPanel()
     qtbot.addWidget(panel)
     panel.show_settings()
-    panel.settings_tab.tab.set_labels_shown(False)
+    panel.settings_tab.tab.set_thumbnails_shown(False)
     panel.map_tab.tab.set_selection_mode("group")
     state = panel.save_state()
     other = MappingPanel()
     qtbot.addWidget(other)
     other.restore_state(state)
-    assert other.tabs.currentIndex() == 1 and not other.settings_tab.tab.labels_shown
+    assert other.tabs.currentIndex() == 1 and not other.settings_tab.tab.thumbnails_shown
     assert other.map_tab.tab.selection_mode == "group" and other.settings_tab.tab.selection_mode == "single"
 
 

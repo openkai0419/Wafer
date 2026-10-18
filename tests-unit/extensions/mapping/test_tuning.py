@@ -35,7 +35,7 @@ def test_excluded_params_have_no_control_but_are_kept(qtbot):
     qtbot.addWidget(panel)
     assert set(panel.controls) == {name for name, _spec, _default in param_specs(ViewParams)} - {"subgroup_size"}
     panel.set_params(ViewParams(subgroup_size=0.5))
-    panel.controls["label_terms"].setValue(7)
-    assert panel.params() == ViewParams(subgroup_size=0.5, label_terms=7)
+    panel.controls["max_images"].setValue(700)
+    assert panel.params() == ViewParams(subgroup_size=0.5, max_images=700)
     panel.reset_button.click()
     assert panel.params() == ViewParams()

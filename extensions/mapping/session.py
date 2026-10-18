@@ -103,7 +103,6 @@ class MapResult:
     outliers: np.ndarray
     unset: np.ndarray
     labels: np.ndarray | None
-    group_terms: dict[int, list[str]]
     order: np.ndarray
     diagnostics: MapDiagnostics
 
@@ -199,7 +198,6 @@ class SpaceLayout:
         self.coords: np.ndarray | None = None
         self.local: np.ndarray | None = None
         self.refining: threading.Event | None = None
-        self.describers: list[tuple[BaseEncoder, np.ndarray]] | None = None
         self.labels_by_options: dict[tuple[Grouping, float], np.ndarray] = {}
 
     def run(self, params: ViewParams, *, grouping: Grouping | None = None, share: float = 1.0, grouped: bool = True, cancelled: Callable[[], bool] = lambda: False) -> MapResult | None:
@@ -220,20 +218,17 @@ class SpaceLayout:
         outliers = np.zeros(count, dtype=bool)
         outliers[active] = active_outliers
         labels = None
-        terms: dict[int, list[str]] = {}
         active_labels = np.zeros(active.size, dtype=np.int32)
         if grouped and active.size >= 3:
             active_labels = self.group(active, grouping, share, diagnostics)
             labels = np.full(count, -1, dtype=np.int32)
             labels[active] = active_labels
-            with timed(diagnostics, "describe"):
-                terms = describe_groups(self.space_describers(active), active_labels, params.label_terms)
             record_groups(diagnostics, active_labels)
         order = np.concatenate([active[projection.order_rows(unit, active_labels)], np.flatnonzero(~placed)])
         diagnostics.outliers = int(active_outliers.sum())
         diagnostics.unset = int((~placed).sum())
         AppLogger.info(diagnostics.summary())
-        return MapResult(list(self.paths), positions, outliers, ~placed, labels, terms, order, diagnostics)
+        return MapResult(list(self.paths), positions, outliers, ~placed, labels, order, diagnostics)
 
     def is_grouped(self) -> bool:
         return bool(self.labels_by_options)
@@ -335,31 +330,6 @@ class SpaceLayout:
                     labels = finer_labels(base, self.local_trees, grouping, space.size, share)
             self.labels_by_options[key] = labels
         return self.labels_by_options[key]
-
-    def space_describers(self, active: np.ndarray) -> list[tuple[BaseEncoder, np.ndarray]]:
-        if self.describers is None:
-            paths = [self.paths[i] for i in active]
-            self.describers = []
-            for feature in self.preset.features:
-                encoder_cls = ENCODERS[feature.encoder]
-                encoder = encoder_cls(feature.options)
-                inputs = [feature_input(self.values.get(path, {}), feature.key, encoder_cls) for path in paths]
-                encoder.fit_describe(inputs)
-                self.describers.append((encoder, encoder.present(inputs)))
-        return self.describers
-
-
-def describe_groups(describers: list[tuple[BaseEncoder, np.ndarray]], labels: np.ndarray, terms: int) -> dict[int, list[str]]:
-    grouped = labels >= 0
-    order = np.flatnonzero(grouped)[np.argsort(labels[grouped], kind="stable")]
-    ids, starts = np.unique(labels[order], return_index=True)
-    members_by_group = np.split(order, starts[1:]) if ids.size else []
-    words_by_group: list[list[str]] = [[] for _ in members_by_group]
-    for encoder, present in describers:
-        described = encoder.describe_groups([members[present[members]] for members in members_by_group], terms)
-        for words, found in zip(words_by_group, described):
-            words.extend(word for word in found if word not in words)
-    return {int(group): words[:terms] for group, words in zip(ids.tolist(), words_by_group)}
 
 
 def record_groups(diagnostics: MapDiagnostics, labels: np.ndarray) -> None:

@@ -3,17 +3,14 @@ from __future__ import annotations
 import math
 import re
 from abc import ABC, abstractmethod
-from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
 from functools import lru_cache
 from typing import Any, ClassVar
 
 import numpy as np
 
 from wafer.core.db.path_values import PathValue
-from wafer.core.lang.manager import t
 from wafer.core.logs import AppLogger
 
 
@@ -23,12 +20,9 @@ PALETTE_BINS = (4, 8, 8)
 PALETTE_RANGE = ((0.0, 100.0), (-80.0, 80.0), (-80.0, 80.0))
 SEPARATORS = {"comma": r",", "newline": r"[\r\n]+", "semicolon": r";", "pipe": r"\|", "space": r"\s+"}
 AUTO_SEPARATORS = ("comma", "newline", "semicolon", "pipe")
-TIMESTAMP_RANGE = (9.0e8, 4.2e9)
 _WEIGHTED_TOKEN = re.compile(r"^\((.+):\s*([0-9]*\.?[0-9]+)\)$")
 _WRAPPERS = str.maketrans("", "", "{}[]()")
 _PATH_SPLIT = re.compile(r"[\\/]+")
-FOLDER_LABEL_PARTS = 2
-_WORD_SPLIT = re.compile(r"[\s,.;:!?、。\uff0c\uff0e・/|()\[\]{}\"'「」『』【】]+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,18 +91,6 @@ class BaseEncoder(ABC):
     @abstractmethod
     def transform(self, inputs: Sequence[Any]): ...
 
-    def fit_describe(self, inputs: Sequence[Any]) -> None:
-        self.fit_transform(inputs)
-
-    @abstractmethod
-    def describe(self, members: np.ndarray, terms: int) -> list[str]: ...
-
-    def describe_groups(self, groups: list[np.ndarray], terms: int) -> list[list[str]]:
-        return [self.describe(members, terms) for members in groups]
-
-    def compact(self) -> None:
-        return None
-
 
 def value_input(value: PathValue | None) -> PathValue | None:
     if value is None or (not value.text.strip() and value.number is None):
@@ -134,23 +116,6 @@ def feature_input(entry: dict[str, PathValue], key: str, encoder: type[BaseEncod
     return group_values(entry, key) if encoder.KEY_GROUP else value_input(entry.get(key))
 
 
-def top_lift_terms_by_group(matrix, groups: list[np.ndarray], names, count: int) -> list[list[str]]:
-    if matrix is None or matrix.shape[1] == 0:
-        return [[] for _ in groups]
-    overall = np.asarray(matrix.mean(axis=0)).ravel()
-    terms = []
-    for members in groups:
-        if len(members) == 0:
-            terms.append([])
-            continue
-        inside = matrix[members].mean(axis=0)
-        columns = np.flatnonzero(np.asarray(inside).ravel() > 0) if not hasattr(inside, "indices") else np.sort(inside.indices)
-        lift = np.asarray(inside).ravel()[columns] - overall[columns]
-        order = np.argsort(-lift, kind="stable")
-        terms.append([str(names[columns[i]]) for i in order[:count] if lift[i] > 0])
-    return terms
-
-
 class NumericEncoder(BaseEncoder):
     NAME = "numeric"
     DISPLAY_NAME = "Number"
@@ -167,7 +132,6 @@ class NumericEncoder(BaseEncoder):
 
     def __init__(self, options: dict[str, str] | None = None):
         super().__init__(options)
-        self.numbers = np.zeros(0, dtype=np.float64)
         self.reference = np.zeros(0, dtype=np.float64)
         self.positions = np.zeros(0, dtype=np.float64)
         self.low, self.high = 0.0, 1.0
@@ -184,8 +148,7 @@ class NumericEncoder(BaseEncoder):
 
     def fit_transform(self, inputs):
         present = self.present(inputs)
-        self.numbers = np.array([item.number if ok else np.nan for item, ok in zip(inputs, present)], dtype=np.float64)
-        values = self.scaled(self.numbers[present])
+        values = self.scaled(np.array([item.number for item, ok in zip(inputs, present) if ok], dtype=np.float64))
         self.reference, counts = np.unique(values, return_counts=True)
         average_rank = np.cumsum(counts) - (counts - 1) / 2
         self.positions = (average_rank - 1) / max(values.size - 1, 1)
@@ -211,23 +174,6 @@ class NumericEncoder(BaseEncoder):
         else:
             output[present, 0] = np.clip((values - self.low) / (self.high - self.low), 0.0, 1.0)
         return output
-
-    def compact(self):
-        self.numbers = np.zeros(0, dtype=np.float64)
-
-    def describe(self, members, terms):
-        if self.numbers.size == 0:
-            return []
-        numbers = self.numbers[members]
-        numbers = numbers[np.isfinite(numbers)]
-        if numbers.size == 0:
-            return []
-        low, high = float(numbers.min()), float(numbers.max())
-        if TIMESTAMP_RANGE[0] <= low and high <= TIMESTAMP_RANGE[1]:
-            start = datetime.fromtimestamp(low).strftime("%Y-%m-%d")
-            end = datetime.fromtimestamp(high).strftime("%Y-%m-%d")
-            return [start if start == end else f"{start} \u2013 {end}"]
-        return [f"{low:g}" if low == high else f"{low:g} \u2013 {high:g}"]
 
 
 def detect_separator(texts: Sequence[str]) -> str:
@@ -274,8 +220,6 @@ class TokenSetEncoder(BaseEncoder):
         self.pattern = SEPARATORS["comma"]
         self.vectorizer = None
         self.tfidf = None
-        self.matrix = None
-        self.names = []
 
     @classmethod
     def detect(cls, values):
@@ -319,13 +263,11 @@ class TokenSetEncoder(BaseEncoder):
         self.pattern = self.separator_pattern(texts)
         documents = self.documents(texts)
         if not any(documents):
-            self.vectorizer, self.tfidf, self.matrix, self.names = None, None, None, []
+            self.vectorizer, self.tfidf = None, None
             return np.zeros((len(inputs), 1), dtype=np.float32)
         self.vectorizer = DictVectorizer(dtype=np.float32)
         self.tfidf = TfidfTransformer()
-        self.matrix = self.tfidf.fit_transform(self.vectorizer.fit_transform(documents)).tocsr()
-        self.names = self.vectorizer.get_feature_names_out()
-        return self.matrix
+        return self.tfidf.fit_transform(self.vectorizer.fit_transform(documents)).tocsr()
 
     def transform(self, inputs):
         if self.vectorizer is None:
@@ -333,24 +275,10 @@ class TokenSetEncoder(BaseEncoder):
         texts = [item.text if item is not None else "" for item in inputs]
         return self.tfidf.transform(self.vectorizer.transform(self.documents(texts))).tocsr()
 
-    def compact(self):
-        self.matrix, self.names = None, []
 
-    def describe(self, members, terms):
-        return self.describe_groups([members], terms)[0]
-
-    def describe_groups(self, groups, terms):
-        return top_lift_terms_by_group(self.matrix, groups, self.names, terms)
-
-
-@lru_cache(maxsize=65536)
 def folder_prefixes(text: str) -> tuple[str, ...]:
     parts = [part for part in _PATH_SPLIT.split(text.strip()) if part][:-1]
     return tuple("/".join(parts[: depth + 1]) for depth in range(len(parts)))
-
-
-def folder_label(prefix: str) -> str:
-    return "/".join(prefix.split("/")[-FOLDER_LABEL_PARTS:])
 
 
 class PathEncoder(TokenSetEncoder):
@@ -371,18 +299,6 @@ class PathEncoder(TokenSetEncoder):
     def documents(self, texts):
         return [dict.fromkeys(folder_prefixes(text), 1.0) for text in texts]
 
-    def describe_groups(self, groups, terms):
-        return [deepest_folders(terms) for terms in super().describe_groups(groups, terms)]
-
-
-def deepest_folders(terms: list[str]) -> list[str]:
-    deepest = [term for term in terms if not any(other.startswith(term + "/") for other in terms)]
-    return [folder_label(term) for term in deepest]
-
-
-def _words(text: str) -> list[str]:
-    return [word.lower() for word in _WORD_SPLIT.split(text) if len(word) > 1]
-
 
 class TextEncoder(BaseEncoder):
     NAME = "text"
@@ -396,10 +312,7 @@ class TextEncoder(BaseEncoder):
 
     def __init__(self, options: dict[str, str] | None = None):
         super().__init__(options)
-        self.texts: list[str] = []
         self.vectorizer = None
-        self.words_matrix = None
-        self.word_names = []
 
     @classmethod
     def detect(cls, values):
@@ -408,8 +321,7 @@ class TextEncoder(BaseEncoder):
     def fit_transform(self, inputs):
         from sklearn.feature_extraction.text import TfidfVectorizer
 
-        self.texts = [item.text if item is not None else "" for item in inputs]
-        self.words_matrix = None
+        texts = [item.text if item is not None else "" for item in inputs]
         vectorizer = TfidfVectorizer(
             analyzer="char_wb",
             ngram_range=self.ngram_range(),
@@ -418,7 +330,7 @@ class TextEncoder(BaseEncoder):
             dtype=np.float32,
         )
         try:
-            matrix = vectorizer.fit_transform(self.texts).tocsr()
+            matrix = vectorizer.fit_transform(texts).tocsr()
         except ValueError as e:
             AppLogger.warning("[Mapping] Text key has no usable characters", exc=e)
             self.vectorizer = None
@@ -430,38 +342,10 @@ class TextEncoder(BaseEncoder):
         low, high = self.number_option(self.options, "min_chars"), self.number_option(self.options, "max_chars")
         return min(low, high), max(low, high)
 
-    def fit_describe(self, inputs):
-        self.texts = [item.text if item is not None else "" for item in inputs]
-        self.words_matrix, self.word_names = None, []
-
     def transform(self, inputs):
         if self.vectorizer is None:
             return np.zeros((len(inputs), 1), dtype=np.float32)
         return self.vectorizer.transform([item.text if item is not None else "" for item in inputs]).tocsr()
-
-    def compact(self):
-        self.texts = []
-        self.words_matrix, self.word_names = None, []
-
-    def describe(self, members, terms):
-        return self.describe_groups([members], terms)[0]
-
-    def describe_groups(self, groups, terms):
-        from scipy import sparse
-        from sklearn.feature_extraction.text import CountVectorizer
-
-        if not self.texts:
-            return [[] for _ in groups]
-        if self.words_matrix is None:
-            vectorizer = CountVectorizer(analyzer=_words, binary=True, dtype=np.float32)
-            try:
-                self.words_matrix = vectorizer.fit_transform(self.texts).tocsr()
-                self.word_names = vectorizer.get_feature_names_out()
-            except ValueError as e:
-                AppLogger.warning("[Mapping] Text key has no words to label groups", exc=e)
-                self.words_matrix = sparse.csr_matrix((len(self.texts), 0), dtype=np.float32)
-                self.word_names = []
-        return top_lift_terms_by_group(self.words_matrix, groups, self.word_names, terms)
 
 
 class CategoryEncoder(BaseEncoder):
@@ -472,7 +356,6 @@ class CategoryEncoder(BaseEncoder):
 
     def __init__(self, options: dict[str, str] | None = None):
         super().__init__(options)
-        self.values: list[str] = []
         self.codes: dict[str, int] = {}
 
     @classmethod
@@ -483,8 +366,8 @@ class CategoryEncoder(BaseEncoder):
         return 0.7 if len(set(texts)) <= max(2, len(texts) * 0.2) else 0.0
 
     def fit_transform(self, inputs):
-        self.values = [item.text.strip() if item is not None else "" for item in inputs]
-        self.codes = {value: i for i, value in enumerate(sorted({v for v in self.values if v}))}
+        values = {item.text.strip() for item in inputs if item is not None}
+        self.codes = {value: i for i, value in enumerate(sorted(value for value in values if value))}
         return self.transform(inputs)
 
     def transform(self, inputs):
@@ -495,31 +378,7 @@ class CategoryEncoder(BaseEncoder):
         columns = [self.codes[values[i]] for i in rows]
         return sparse.csr_matrix((np.ones(len(rows), dtype=np.float32), (rows, columns)), shape=(len(inputs), max(len(self.codes), 1)))
 
-    def compact(self):
-        self.values = []
 
-    def describe(self, members, terms):
-        if not self.values:
-            return []
-        counts = Counter(self.values[i] for i in members if self.values[i])
-        return [counts.most_common(1)[0][0]] if counts else []
-
-
-BRIGHT_L, DARK_L = 65.0, 35.0
-COLOR_NAMES = (
-    ("red", (53.0, 80.0, 67.0)),
-    ("orange", (67.0, 43.0, 74.0)),
-    ("yellow", (97.0, -21.0, 94.0)),
-    ("green", (46.0, -52.0, 50.0)),
-    ("cyan", (91.0, -48.0, -14.0)),
-    ("blue", (32.0, 79.0, -108.0)),
-    ("purple", (30.0, 58.0, -36.0)),
-    ("pink", (84.0, 24.0, 4.0)),
-    ("brown", (37.0, 24.0, 43.0)),
-    ("white", (100.0, 0.0, 0.0)),
-    ("gray", (54.0, 0.0, 0.0)),
-    ("black", (0.0, 0.0, 0.0)),
-)
 _RGB_TO_XYZ = np.array(
     [[0.4124564, 0.3575761, 0.1804375], [0.2126729, 0.7151522, 0.0721750], [0.0193339, 0.1191920, 0.9503041]],
     dtype=np.float32,
@@ -539,14 +398,6 @@ def packed_lab(numbers: np.ndarray) -> np.ndarray:
     packed = np.asarray(numbers, dtype=np.float64).astype(np.int64) & 0xFFFFFF
     rgb = np.stack([(packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF], axis=-1).astype(np.uint8)
     return rgb_to_lab(rgb)
-
-
-def first_slot_lab(inputs: Sequence[list[PathValue] | None]) -> np.ndarray:
-    output = np.full((len(inputs), 3), np.nan, dtype=np.float32)
-    rows = [row for row, slots in enumerate(inputs) if slots]
-    if rows:
-        output[rows] = packed_lab(np.array([inputs[row][0].number for row in rows]))
-    return output
 
 
 def soft_bins(labs: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -569,16 +420,8 @@ class PaletteEncoder(BaseEncoder):
     KEY_GROUP = True
     AUTO_DETECT = False
 
-    def __init__(self, options: dict[str, str] | None = None):
-        super().__init__(options)
-        self.first_colors = np.zeros((0, 3), dtype=np.float32)
-
     def fit_transform(self, inputs):
-        self.first_colors = first_slot_lab(inputs)
         return self.transform(inputs)
-
-    def fit_describe(self, inputs):
-        self.first_colors = first_slot_lab(inputs)
 
     def transform(self, inputs):
         output = np.zeros((len(inputs), int(np.prod(PALETTE_BINS))), dtype=np.float64)
@@ -594,25 +437,6 @@ class PaletteEncoder(BaseEncoder):
             indices, shares = soft_bins(packed_lab(np.array(numbers)))
             np.add.at(output, (np.array(rows)[:, None], indices), np.concatenate(ranks)[:, None] * shares)
         return np.sqrt(output).astype(np.float32)
-
-    def compact(self):
-        self.first_colors = np.zeros((0, 3), dtype=np.float32)
-
-    def describe(self, members, terms):
-        if self.first_colors.shape[0] == 0:
-            return []
-        colors = self.first_colors[members]
-        colors = colors[np.isfinite(colors).all(axis=1)]
-        if colors.size == 0:
-            return []
-        mean = colors.mean(axis=0)
-        name = min(COLOR_NAMES, key=lambda item: float(np.sum((np.array(item[1]) - mean) ** 2)))[0]
-        terms = [t(name)]
-        if mean[0] >= BRIGHT_L:
-            terms.append(t("bright"))
-        elif mean[0] <= DARK_L:
-            terms.append(t("dark"))
-        return terms
 
 
 ENCODERS: dict[str, type[BaseEncoder]] = {cls.NAME: cls for cls in (NumericEncoder, TokenSetEncoder, PathEncoder, TextEncoder, CategoryEncoder, PaletteEncoder)}

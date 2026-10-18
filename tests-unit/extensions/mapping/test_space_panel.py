@@ -452,7 +452,7 @@ def test_quick_train_size_is_kept_in_the_panel_state(widget):
     assert w.quick_size.value() == 8000
 
 
-def test_label_and_outlier_changes_relayout_the_shown_sample(widget, qtbot, monkeypatch):
+def test_outlier_changes_relayout_the_shown_sample(widget, qtbot, monkeypatch):
     from extensions.mapping.session import SpaceLayout
     from wafer.core.db.path_values import PathValue
 
@@ -468,7 +468,7 @@ def test_label_and_outlier_changes_relayout_the_shown_sample(widget, qtbot, monk
     }
     w.preview_layout = SpaceLayout(list(values), values, w.saved)
     monkeypatch.setattr(space_panel, "read_snapshot", lambda *args: pytest.fail("a view change must not read a new sample"))
-    ViewSettings.instance().set_params(ViewParams(label_terms=1))
+    ViewSettings.instance().set_params(ViewParams(outlier_percent=5.0))
     qtbot.waitUntil(lambda: w.shown is not None, timeout=5000)
     assert w.shown.paths == list(values) and "12 files" in w.count_label.text()
 

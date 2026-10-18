@@ -45,7 +45,6 @@ def result(count=6, labels=True, outlier_rows=()):
         np.isin(np.arange(count), list(outlier_rows)),
         unset,
         group,
-        {0: ["cat"], 1: ["dog"]} if labels else {},
         np.arange(count),
         MapDiagnostics(),
     )
@@ -66,27 +65,18 @@ def colors(count):
     return [QtGui.QColor.fromHsvF(i / count, 0.5, 0.9) for i in range(count)]
 
 
-def test_show_result_keeps_points_as_arrays_and_labels_as_items(view):
+def test_show_result_keeps_points_as_arrays_without_scene_items(view):
     view.show_result(result(), colors(6), keep_view=False)
     assert view.positions.shape == (6, 2)
-    assert [type(item).__name__ for item in view.scene().items()] == ["GroupLabelItem"] * 2
-    view.set_labels_visible(False)
-    assert not any(label.isVisible() for label in view.label_items())
-    view.show_result(result(), colors(6), keep_view=True)
-    assert len(view.label_items()) == 2 and not any(label.isVisible() for label in view.label_items())
-    view.set_labels_visible(True)
-    assert all(label.isVisible() for label in view.label_items())
-    assert [label.text for label in view.label_items()] == ["cat", "dog"]
+    assert view.scene().items() == []
 
 
-def test_select_rows_is_silent_and_select_group_emits(view, qtbot):
+def test_select_rows_is_silent(view, qtbot):
     view.show_result(result(), colors(6), keep_view=False)
     emitted = []
     view.selection_changed.connect(lambda: emitted.append(1))
     view.select_rows([1, 2])
     assert view.selected_rows() == [1, 2] and emitted == []
-    view.select_group(0)
-    assert view.selected_rows() == [0, 1, 2] and emitted
 
 
 def test_rubber_band_drag_selects(view, qtbot):
@@ -154,13 +144,6 @@ def test_ctrl_click_toggles_a_point(view, qtbot):
     assert view.selected_rows() == [0, 1]
     qtbot.mouseClick(view.viewport(), QtCore.Qt.LeftButton, ctrl, point_pos(view, 1))
     assert view.selected_rows() == [0]
-
-
-def test_clicking_a_group_label_selects_the_group(view, qtbot):
-    view.show_result(result(), colors(6), keep_view=False)
-    label = view.label_items()[1]
-    qtbot.mouseClick(view.viewport(), QtCore.Qt.LeftButton, pos=view.mapFromScene(label.pos()) + QtCore.QPoint(0, int(label.offset())))
-    assert view.selected_rows() == [3, 4]
 
 
 def render_point(view, row):
@@ -267,14 +250,6 @@ def test_press_hides_hover(view, qtbot):
     qtbot.mouseRelease(view.viewport(), QtCore.Qt.LeftButton, pos=point_pos(view, 1))
 
 
-def test_labels_sit_below_lowest_member(view):
-    view.show_result(result(), colors(6), keep_view=False)
-    label = view.label_items()[0]
-    lowest = max(point_pos(view, row).y() for row in (0, 1, 2))
-    label_top = view.mapFromScene(label.scenePos()).y() + label.boundingRect().top()
-    assert label_top > lowest + view.item_extent() / 2
-
-
 def image_result(count, spread=1.0):
     rng = np.random.default_rng(1)
     return MapResult(
@@ -283,7 +258,6 @@ def image_result(count, spread=1.0):
         np.zeros(count, dtype=bool),
         np.zeros(count, dtype=bool),
         None,
-        {},
         np.arange(count),
         MapDiagnostics(),
     )
@@ -477,7 +451,6 @@ def test_shift_click_adds_and_ctrl_click_toggles(view, qtbot):
 def test_group_mode_applies_to_rubber_band_operations(view, qtbot):
     view.set_thumbnails_visible(False)
     view.show_result(result(), colors(6), keep_view=False)
-    view.set_labels_visible(False)
     view.set_selection_mode("group")
     drag_over(view, qtbot, 0, 100)
     assert view.selected_rows() == [0, 1, 2]
@@ -535,7 +508,7 @@ def test_first_per_cell_matches_the_full_scan(points, cell, limit):
     assert np.array_equal(map_view_module.first_per_cell(points, cell, limit), first_per_cell_by_rows(points, cell, limit))
 
 
-def test_set_groups_replaces_colors_and_labels_but_keeps_points_view_and_selection(view):
+def test_set_groups_replaces_colors_but_keeps_points_view_and_selection(view):
     view.show_result(result(), colors(6), keep_view=False)
     view.scale(2.0, 2.0)
     transform = view.transform()
@@ -543,11 +516,16 @@ def test_set_groups_replaces_colors_and_labels_but_keeps_points_view_and_selecti
     positions = view.positions.copy()
     regrouped = result()
     regrouped.labels = np.array([0, 1, 1, 2, 2, -1], dtype=np.int32)
-    regrouped.group_terms = {0: ["red"], 1: ["green"], 2: ["blue"]}
     new_colors = [QtGui.QColor("red")] + [QtGui.QColor("green")] * 2 + [QtGui.QColor("blue")] * 2 + [QtGui.QColor("gray")]
     view.set_groups(regrouped, new_colors)
     assert view.transform() == transform and np.array_equal(view.positions, positions)
     assert view.selected_rows() == [1, 3]
-    assert sorted(label.text for label in view.label_items()) == ["blue", "green", "red"]
-    assert [type(item).__name__ for item in view.scene().items()].count("GroupLabelItem") == 3
     assert view.group_of.tolist() == [0, 1, 1, 2, 2, -1] and len(view.color_keys) == 4
+
+
+def test_the_map_has_no_group_labels():
+    from extensions.mapping import map_view as module
+    from extensions.mapping.session import MapResult
+
+    assert not hasattr(module, "GroupLabelItem") and not hasattr(module.MapView, "set_labels_visible")
+    assert "group_terms" not in MapResult.__dataclass_fields__

@@ -58,7 +58,6 @@ def test_command_ids():
         "mapping.drill_down",
         "mapping.drill_up",
         "mapping.recompute",
-        "mapping.toggle_labels",
         "mapping.toggle_thumbnails",
         "mapping.image_scale_up",
         "mapping.image_scale_down",
@@ -91,12 +90,11 @@ def test_view_commands_toggle_the_tab_they_came_from(monkeypatch):
     panel, other = SimpleNamespace(tab=TabSettings()), SimpleNamespace(tab=TabSettings())
     monkeypatch.setattr(commands, "map_panel", lambda ctx: ctx.get("map_panel", panel))
     ctx = Ctx(map_panel=panel)
-    commands.toggle_labels(ctx)
     commands.toggle_thumbnails(ctx)
     commands.toggle_selection_mode(ctx)
-    assert not panel.tab.labels_shown and not panel.tab.thumbnails_shown and panel.tab.selection_mode == "group"
-    assert other.tab.labels_shown and other.tab.selection_mode == "single"
-    assert not commands._labels_checked() and not commands._thumbnails_checked() and commands._group_mode_checked()
+    assert not panel.tab.thumbnails_shown and panel.tab.selection_mode == "group"
+    assert other.tab.thumbnails_shown and other.tab.selection_mode == "single"
+    assert not commands._thumbnails_checked() and commands._group_mode_checked()
 
 
 def test_panel_commands_target_the_panel_the_command_came_from(monkeypatch):
@@ -145,3 +143,10 @@ def test_set_shows_the_files_on_the_map_tab(qtbot, monkeypatch):
     window._layout_manager.panel_widget.return_value = panel
     commands.mapping_set(Ctx(**{"paths": ["c:/a.png"], "instance:MainWindow": window}))
     assert received == [(["c:/a.png"], "db")] and panel.current_map() is panel.map_tab
+
+
+def test_there_is_no_label_command():
+    from extensions.mapping.view_settings import TabSettings
+
+    assert "mapping.toggle_labels" not in {c.path for c in MappingViewCommands.commands() if not isinstance(c, str)}
+    assert "labels" not in TabSettings().to_dict()

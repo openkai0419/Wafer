@@ -27,7 +27,6 @@ RING = 2
 ZOOM_STEP = 1.25
 MIN_IMAGE_SCALE = 0.02
 MAX_IMAGE_SCALE = 4.0
-LABEL_GAP = 4
 FRAME_MARGIN = 0.05
 FRAME_MIN_SPAN = SCENE_SIZE * 0.02
 IMAGE_LIMIT = 300
@@ -85,47 +84,6 @@ def scene_positions(result: MapResult) -> np.ndarray:
     return np.nan_to_num(positions)
 
 
-class GroupLabelItem(QtWidgets.QGraphicsItem):
-    def __init__(self, view: MapView, group: int, text: str, anchor: QtCore.QPointF):
-        super().__init__()
-        self.view = view
-        self.group = group
-        self.text = text
-        self.setFlag(QtWidgets.QGraphicsItem.ItemIgnoresTransformations)
-        self.setPos(anchor)
-        self.setZValue(10)
-        metrics = QtGui.QFontMetrics(view.font())
-        pad = dpix(4)
-        width = metrics.horizontalAdvance(text) + pad * 2
-        height = metrics.height() + pad
-        self.rect = QtCore.QRectF(-width / 2, -height / 2, width, height)
-
-    def offset(self) -> float:
-        return self.view.item_extent() / 2 + dpix(LABEL_GAP) + self.rect.height() / 2
-
-    def placed_rect(self) -> QtCore.QRectF:
-        return self.rect.translated(0, self.offset())
-
-    def boundingRect(self) -> QtCore.QRectF:
-        return self.placed_rect()
-
-    def paint(self, painter, option, widget=None):
-        palette = ThemeManager.instance().palette
-        rect = self.placed_rect()
-        painter.setPen(QtGui.QPen(QtGui.QColor(palette.border_default)))
-        painter.setBrush(QtGui.QColor(palette.bg_elevated))
-        painter.drawRoundedRect(rect, dpix(4), dpix(4))
-        painter.setPen(QtGui.QColor(palette.text_primary))
-        painter.drawText(rect, Qt.AlignCenter, self.text)
-
-    def mousePressEvent(self, event):
-        if event.button() != Qt.LeftButton:
-            event.ignore()
-            return
-        self.view.select_group(self.group)
-        event.accept()
-
-
 class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     selection_changed = QtCore.Signal()
 
@@ -139,7 +97,6 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.setRenderHints(QtGui.QPainter.Antialiasing | QtGui.QPainter.SmoothPixmapTransform)
         self.setAcceptDrops(True)
         self.init_command_binding("MappingView", use_existing_events=True)
-        self.labels: list[GroupLabelItem] = []
         self.paths: list[str] = []
         self.rows_by_path: dict[str, int] = {}
         self.colors: list[QtGui.QColor] = []
@@ -162,7 +119,6 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.image_spacing = IMAGE_SPACING
         self.image_cap = 0.0
         self.point_base = POINT_SIZE
-        self.labels_visible = True
         self.fit_scale = 1.0
         self.thumbnails = True
         self.image_scale = 1.0
@@ -184,9 +140,6 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     def zoom(self) -> float:
         return self.transform().m11() / self.fit_scale if self.fit_scale else 1.0
 
-    def label_items(self) -> list[GroupLabelItem]:
-        return list(self.labels)
-
     def item_extent(self) -> float:
         return dpix(self.display_size()) if self.thumbnails else self.dot_size()
 
@@ -196,7 +149,6 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     def set_point_size(self, size: float) -> None:
         size = max(float(size), MIN_POINT_SIZE)
         if size != self.point_base:
-            self.begin_geometry_change()
             self.point_base = size
             self.invalidate()
 
@@ -212,14 +164,8 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
 
     def set_image_cap(self, cap: float) -> None:
         if cap != self.image_cap:
-            self.begin_geometry_change()
             self.image_cap = max(float(cap), 0.0)
             self.invalidate()
-
-    def set_labels_visible(self, visible: bool) -> None:
-        self.labels_visible = bool(visible)
-        for label in self.labels:
-            label.setVisible(self.labels_visible)
 
     def invalidate(self) -> None:
         self.version += 1
@@ -229,7 +175,6 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         scale = min(max(float(scale), MIN_IMAGE_SCALE), MAX_IMAGE_SCALE)
         if scale == self.image_scale:
             return
-        self.begin_geometry_change()
         self.image_scale = scale
         self.invalidate()
 
@@ -242,10 +187,6 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if spacing != self.image_spacing:
             self.image_spacing = max(float(spacing), 0.01)
             self.invalidate()
-
-    def begin_geometry_change(self):
-        for label in self.labels:
-            label.prepareGeometryChange()
 
     def set_selection_mode(self, mode: str):
         self.selection_mode = "group" if mode == "group" else "single"
@@ -268,7 +209,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
 
     def clear_map(self):
         self.scene().clear()
-        self.labels, self.paths, self.rows_by_path, self.colors = [], [], {}, []
+        self.paths, self.rows_by_path, self.colors = [], {}, []
         self.positions = np.zeros((0, 2), dtype=np.float64)
         self.selected = np.zeros(0, dtype=bool)
         self.priority = self.color_keys = self.color_ids = NO_ROWS
@@ -294,7 +235,6 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         margin = SCENE_SIZE * 0.05
         self.scene().setSceneRect(rect.adjusted(-margin, -margin, margin, margin))
         if not keep_view:
-            self.begin_geometry_change()
             self.fitInView(core.adjusted(-margin, -margin, margin, margin), Qt.KeepAspectRatio)
             self.fit_scale = self.transform().m11()
         self.invalidate()
@@ -305,35 +245,11 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.group_of = result.labels if result.labels is not None else np.full(count, -1, dtype=np.int32)
         self.color_keys, self.color_ids = np.unique(color_keys(colors, count), return_inverse=True)
         self.sprites = {}
-        for label in self.labels:
-            self.scene().removeItem(label)
-        self.labels = []
-        self.add_labels(result)
         self.invalidate()
-
-    def add_labels(self, result: MapResult) -> None:
-        grouped = np.flatnonzero(self.group_of >= 0)
-        order = grouped[np.argsort(self.group_of[grouped], kind="stable")]
-        ids, starts = np.unique(self.group_of[order], return_index=True)
-        members_by_group = dict(zip(ids.tolist(), np.split(order, starts[1:]))) if ids.size else {}
-        for group, words in result.group_terms.items():
-            members = members_by_group.get(group)
-            if not words or members is None:
-                continue
-            coords = result.positions[members]
-            coords = coords[~np.isnan(coords).any(axis=1)]
-            if coords.size == 0:
-                continue
-            anchor = QtCore.QPointF(float(np.median(coords[:, 0])) * SCENE_SIZE, float(np.max(coords[:, 1])) * SCENE_SIZE)
-            label = GroupLabelItem(self, group, ", ".join(words), anchor)
-            label.setVisible(self.labels_visible)
-            self.scene().addItem(label)
-            self.labels.append(label)
 
     def set_thumbnails_visible(self, visible: bool) -> None:
         if bool(visible) == self.thumbnails:
             return
-        self.begin_geometry_change()
         self.thumbnails = bool(visible)
         self.invalidate()
 
@@ -496,17 +412,12 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.selected = mask
         self.invalidate()
 
-    def select_group(self, group: int):
-        self.select_rows(np.flatnonzero(self.group_of == group).tolist())
-        self.selection_changed.emit()
-
     def frame_selection(self) -> None:
         if not self.paths:
             return
         points = self.positions[self.selected] if self.selected.any() else self.positions
         low, high = points.min(axis=0), points.max(axis=0)
         center, span = (low + high) / 2, np.maximum(high - low, FRAME_MIN_SPAN) * (1 + FRAME_MARGIN * 2)
-        self.begin_geometry_change()
         self.fitInView(QtCore.QRectF(center[0] - span[0] / 2, center[1] - span[1] / 2, span[0], span[1]), Qt.KeepAspectRatio)
         self.invalidate()
 
@@ -540,7 +451,6 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         steps = event.angleDelta().y() / 120
         if steps:
             factor = ZOOM_STEP**steps
-            self.begin_geometry_change()
             self.scale(factor, factor)
         event.accept()
 
@@ -563,8 +473,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self.select_for_context(position)
             event.accept()
             return
-        on_label = isinstance(self.itemAt(position), GroupLabelItem)
-        tracking = event.button() == Qt.LeftButton and not on_label
+        tracking = event.button() == Qt.LeftButton
         self.press_pos = position if tracking else None
         self.press_rows = self.selected_rows()
         self.band_operation = selection_operation(event.modifiers())

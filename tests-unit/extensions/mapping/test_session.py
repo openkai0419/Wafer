@@ -59,7 +59,6 @@ def test_space_layout_uses_current_version_only():
     assert np.isfinite(result.positions[~result.unset]).all()
     assert result.diagnostics.unset == 2
     assert result.labels is not None and len(set(result.labels[~result.unset].tolist()) - {-1}) == 2
-    assert any("cat" in words for words in result.group_terms.values())
     assert sorted(result.order.tolist()) == list(range(len(paths)))
     assert set(result.order[-2:].tolist()) == {paths.index("c:/0.png"), paths.index("c:/archive.zip::m.png")}
 
@@ -84,27 +83,6 @@ def test_space_layout_with_one_placed_file_still_lays_out():
     assert result.labels is None and result.order.tolist() == [0, 1]
 
 
-def test_space_describers_use_fit_describe_and_matches_fit_transform(monkeypatch):
-    values = space_values()
-    for i, path in enumerate(values):
-        values[path]["color.palette.1"] = PathValue("", float(0xFF0000 if i % 2 else 0x0000FF))
-    preset = Preset([FeatureSpec("tags", "token_set"), FeatureSpec("color.palette", "palette")], TrainParams(), 2)
-    paths = list(values)
-    labels = np.array([0] * 6 + [1] * 6, dtype=np.int32)
-    calls = []
-    for cls in ENCODERS.values():
-        monkeypatch.setattr(cls, "fit_transform", lambda self, inputs, original=cls.fit_transform: calls.append(self.NAME) or original(self, inputs))
-    rows = np.arange(len(paths))
-    fast = session.describe_groups(SpaceLayout(paths, values, preset).space_describers(rows), labels, 3)
-    assert calls == ["token_set"]
-    calls.clear()
-    for cls in ENCODERS.values():
-        monkeypatch.setattr(cls, "fit_describe", lambda self, inputs: self.fit_transform(inputs))
-    assert session.describe_groups(SpaceLayout(paths, values, preset).space_describers(rows), labels, 3) == fast
-    assert sorted(calls) == ["palette", "token_set"]
-    assert "cat" in fast[0] and "dog" in fast[1]
-
-
 def test_space_layout_groups_by_the_grouping_coordinates():
     values = space_values()
     order = np.random.default_rng(3).permutation(len(values))
@@ -117,19 +95,15 @@ def test_space_layout_groups_by_the_grouping_coordinates():
     assert result.labels[0] != result.labels[-1]
 
 
-def test_space_layout_groups_once_and_relabels_on_view_changes(monkeypatch):
-    fits = []
+def test_space_layout_groups_once_and_keeps_the_groups_on_view_changes(monkeypatch):
     monkeypatch.setattr(projection, "ClusterTree", FakeTree)
     FakeTree.built, FakeTree.cuts = [], []
-    real_fit = ENCODERS["token_set"].fit_describe
-    monkeypatch.setattr(ENCODERS["token_set"], "fit_describe", lambda self, inputs: fits.append(1) or real_fit(self, inputs))
     values = space_values()
     layout = SpaceLayout(list(values), values, space_preset())
     first = layout.run(ViewParams())
-    second = layout.run(ViewParams(outlier_percent=10.0, label_terms=1))
-    assert len(FakeTree.built) == 1 and len(fits) == 1
+    second = layout.run(ViewParams(outlier_percent=10.0))
+    assert len(FakeTree.built) == 1
     assert second.labels.tolist() == first.labels.tolist()
-    assert all(len(words) <= 1 for words in second.group_terms.values())
     assert not np.array_equal(second.positions, first.positions)
 
 
@@ -139,7 +113,7 @@ def test_space_layout_can_show_the_map_before_grouping(monkeypatch):
     values = space_values()
     layout = SpaceLayout(list(values), values, space_preset())
     plain = layout.run(ViewParams(), grouped=False)
-    assert plain.labels is None and plain.group_terms == {} and clustered == []
+    assert plain.labels is None and clustered == []
     assert np.isfinite(plain.positions).all() and sorted(plain.order.tolist()) == list(range(len(values)))
     grouped = layout.run(ViewParams())
     assert grouped.labels is not None and clustered == [1]

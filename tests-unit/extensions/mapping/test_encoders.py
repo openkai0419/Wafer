@@ -28,8 +28,6 @@ from extensions.mapping.encoders import (
 from wafer.core.db.path_values import PathValue
 from wafer.core.logs import AppLogger
 
-TERMS = 3
-
 
 def values(*texts):
     return [PathValue(t) for t in texts]
@@ -94,28 +92,18 @@ def test_numeric_linear_and_log():
     assert log[1] == pytest.approx((np.log1p(10) - np.log1p(1)) / (np.log1p(100) - np.log1p(1)), abs=1e-4)
 
 
-def test_numeric_describe_timestamps_and_plain():
-    encoder = NumericEncoder()
-    encoder.fit_transform([PathValue("", 1700000000.0), PathValue("", 1700090000.0)])
-    assert encoder.describe(np.array([0, 1]), TERMS)[0].count("-") == 4
-    encoder.fit_transform([PathValue("", 2.0), PathValue("", 5.0)])
-    assert encoder.describe(np.array([0, 1]), TERMS) == ["2 \u2013 5"]
-
-
-def test_token_set_overlap_and_describe():
+def test_token_set_overlap():
     encoder = TokenSetEncoder()
     inputs = values("cat, sky, common", "cat, sky, common", "dog, sea, common", "dog, sea, common")
     matrix = encoder.fit_transform(inputs).toarray()
     same = np.linalg.norm(matrix[0] - matrix[1])
     different = np.linalg.norm(matrix[0] - matrix[2])
     assert same < different
-    assert set(encoder.describe(np.array([0, 1]), 2)) == {"cat", "sky"}
 
 
 def test_token_set_space_and_custom_separator():
     space = TokenSetEncoder({"separator": "space"})
-    space.fit_transform(values("blue hair", "red hair"))
-    assert space.describe(np.array([0]), 1) == ["blue"]
+    assert space.fit_transform(values("blue hair", "red hair")).shape[1] == 3
     custom = TokenSetEncoder({"separator": "custom", "pattern": r"\s*/\s*"})
     assert custom.fit_transform(values("a / b", "b / c")).shape[1] == 3
 
@@ -130,7 +118,6 @@ def test_token_set_all_empty():
     encoder = TokenSetEncoder()
     matrix = encoder.fit_transform([None, None, None])
     assert matrix.shape[0] == 3
-    assert encoder.describe(np.array([0, 1]), TERMS) == []
 
 
 def test_folder_prefixes_ignore_the_file_name_and_mixed_separators():
@@ -147,12 +134,6 @@ def test_path_places_files_by_folder_distance():
     assert distance(0, 1) < distance(0, 2) < distance(0, 3)
 
 
-def test_path_labels_show_the_deepest_shared_folder():
-    encoder = PathEncoder()
-    encoder.fit_transform(values("c:/root/a/b/1.png", "c:/root/a/b/2.png", "c:/root/a/c/3.png", "d:/x/4.png"))
-    assert encoder.describe(np.array([0, 1]), 3) == ["a/b"]
-
-
 def test_path_is_detected_for_paths_but_not_tag_lists():
     assert detect_encoder([PathValue(f"c:/pics/{i}/x.png") for i in range(10)]) == "path"
     assert detect_encoder([PathValue("cat, sky/blue, sea") for _ in range(10)]) == "token_set"
@@ -162,17 +143,6 @@ def test_text_handles_japanese_variants():
     encoder = TextEncoder()
     matrix = encoder.fit_transform(values("青い髪の少女", "青髪の少女", "夜の街と雨")).toarray()
     assert np.linalg.norm(matrix[0] - matrix[1]) < np.linalg.norm(matrix[0] - matrix[2])
-    assert encoder.describe(np.array([2]), TERMS)
-
-
-def test_text_without_words_logs_once_and_returns_no_terms(monkeypatch):
-    warnings = []
-    monkeypatch.setattr(AppLogger, "warning", lambda message, **kwargs: warnings.append(message))
-    encoder = TextEncoder()
-    encoder.fit_transform(values("a b", "c d", "e"))
-    assert encoder.describe(np.array([0]), TERMS) == []
-    assert encoder.describe(np.array([1, 2]), TERMS) == []
-    assert [w for w in warnings if "no words" in w] == ["[Mapping] Text key has no words to label groups"]
 
 
 def test_token_set_custom_regex_with_capture_group_drops_empty_pieces():
@@ -181,11 +151,10 @@ def test_token_set_custom_regex_with_capture_group_drops_empty_pieces():
     assert matrix.shape[1] == 5
 
 
-def test_category_one_hot_and_describe():
+def test_category_one_hot():
     encoder = CategoryEncoder()
     matrix = encoder.fit_transform(values("a", "a", "b")).toarray()
     assert (matrix[0] == matrix[1]).all() and not (matrix[0] == matrix[2]).all()
-    assert encoder.describe(np.array([0, 1, 2]), TERMS) == ["a"]
 
 
 def test_rgb_to_lab_reference_points():
@@ -240,7 +209,6 @@ def test_fitted_encoders_are_picklable(encoder, fit_inputs):
     encoder.fit_transform(fit_inputs)
     restored = pickle.loads(pickle.dumps(encoder))
     assert np.allclose(dense(restored.transform(fit_inputs)), dense(encoder.transform(fit_inputs)))
-    assert restored.describe(np.array([0]), TERMS) == encoder.describe(np.array([0]), TERMS)
 
 
 def test_numeric_rank_ties_use_average_rank():
@@ -256,37 +224,6 @@ def test_numeric_rank_matches_scipy_rankdata_with_ties():
     numbers = [3.0, 1.0, 3.0, 2.0, 2.0, 2.0, 9.0]
     fitted = NumericEncoder().fit_transform([PathValue("", n) for n in numbers])[:, 0]
     assert fitted == pytest.approx((rankdata(numbers) - 1) / (len(numbers) - 1))
-
-
-COMPACT_CASES = [
-    (NumericEncoder(), [PathValue("1", 1.0), PathValue("5", 5.0), PathValue("9", 9.0)]),
-    (NumericEncoder({"scale": "log"}), [PathValue("1", 1.0), PathValue("10", 10.0)]),
-    (TokenSetEncoder(), values("cat, sky", "dog, sea", "cat, sea")),
-    (PathEncoder(), values("c:/a/1.png", "c:/b/2.png", "c:/a/3.png")),
-    (TextEncoder(), values("青い髪の少女", "夜の街", "猫が寝ている")),
-    (CategoryEncoder(), values("a", "b", "a")),
-    (PaletteEncoder(), [palette((250, 10, 10), (20, 20, 20)), palette((10, 10, 250)), None]),
-]
-
-
-@pytest.mark.parametrize("encoder, fit_inputs", COMPACT_CASES)
-def test_compact_keeps_transform_and_describe_is_safe(encoder, fit_inputs):
-    encoder.fit_transform(fit_inputs)
-    before = dense(encoder.transform(fit_inputs))
-    encoder.compact()
-    assert np.allclose(before, dense(encoder.transform(fit_inputs)))
-    assert encoder.describe(np.array([0, 1]), TERMS) == []
-    assert np.allclose(before, dense(pickle.loads(pickle.dumps(encoder)).transform(fit_inputs)))
-
-
-def test_compact_shrinks_pickled_text_encoder():
-    texts = values(*[f"sample prompt number {i} with some words about subject {i % 17}" for i in range(200)])
-    encoder = TextEncoder()
-    encoder.fit_transform(texts)
-    encoder.describe(np.array([0, 1]), TERMS)
-    before = len(pickle.dumps(encoder))
-    encoder.compact()
-    assert len(pickle.dumps(encoder)) < before
 
 
 def test_group_values_orders_slots_and_skips_missing():
@@ -335,44 +272,9 @@ def test_palette_rank_weighting():
     assert np.linalg.norm(matrix[0] - matrix[2]) < np.linalg.norm(matrix[1] - matrix[2])
 
 
-def test_palette_describe_names_dominant_color():
-    encoder = PaletteEncoder()
-    encoder.fit_transform([palette((20, 40, 230)), palette((240, 240, 240))])
-    assert encoder.describe(np.array([0]), TERMS)[0] == "blue"
-    assert encoder.describe(np.array([1]), TERMS) == ["white", "bright"]
-
-
 def test_palette_is_not_auto_detected_and_is_the_only_key_group():
     assert "palette" in ENCODERS and PaletteEncoder not in auto_encoders()
     assert [cls.NAME for cls in ENCODERS.values() if cls.KEY_GROUP] == ["palette"]
-
-
-DESCRIBE_CASES = [
-    (NumericEncoder, [PathValue("1", 1.0), PathValue("5", 5.0), None, PathValue("9", 9.0)]),
-    (TokenSetEncoder, values("cat, sky", "dog, sea", "cat, sea", "(cat:1.2), [sky]")),
-    (TextEncoder, values("blue hair girl", "night city street", "blue sky", "")),
-    (CategoryEncoder, values("a", "b", "a", "")),
-    (PaletteEncoder, [palette((250, 10, 10), (20, 20, 20)), palette((10, 10, 250)), None, palette((240, 240, 240))]),
-]
-
-
-@pytest.mark.parametrize("encoder_cls, inputs", DESCRIBE_CASES)
-def test_fit_describe_labels_match_fit_transform(encoder_cls, inputs):
-    terms = 3
-    fitted, described = encoder_cls(), encoder_cls()
-    fitted.fit_transform(inputs)
-    assert described.fit_describe(inputs) is None
-    for members in ([0], [1], [0, 2], [1, 3], [0, 1, 2, 3]):
-        assert described.describe(np.array(members), terms) == fitted.describe(np.array(members), terms)
-
-
-def test_palette_first_colors_match_per_row_lab():
-    inputs = [palette((250, 10, 10), (20, 20, 20)), None, palette((0, 128, 255)), []]
-    encoder = PaletteEncoder()
-    encoder.fit_describe(inputs)
-    expected = rgb_to_lab(np.array([[250, 10, 10], [0, 128, 255]], dtype=np.uint8))
-    assert np.allclose(encoder.first_colors[[0, 2]], expected)
-    assert np.isnan(encoder.first_colors[[1, 3]]).all()
 
 
 def test_normalize_token_is_memoised():
@@ -444,39 +346,6 @@ def test_palette_transform_matches_the_per_color_definition():
     assert np.allclose(PaletteEncoder().transform(inputs), slow_palette_reference(inputs), atol=1e-6)
 
 
-def per_group_lift_reference(matrix, members, names, count):
-    inside = np.asarray(matrix[members].mean(axis=0)).ravel()
-    overall = np.asarray(matrix.mean(axis=0)).ravel()
-    lift = inside - overall
-    return [str(names[i]) for i in np.argsort(-lift, kind="stable")[:count] if lift[i] > 0]
-
-
-def test_lift_terms_for_many_groups_match_the_per_group_definition():
-    from scipy import sparse
-
-    from extensions.mapping.encoders import top_lift_terms_by_group
-
-    rng = np.random.default_rng(0)
-    binary = sparse.random(400, 60, density=0.08, random_state=1, format="csr", dtype=np.float32)
-    binary.data[:] = 1.0
-    weighted = sparse.random(400, 60, density=0.08, random_state=2, format="csr", dtype=np.float32)
-    names = np.array([f"w{i}" for i in range(60)])
-    labels = rng.integers(0, 25, 400)
-    groups = [np.flatnonzero(labels == group) for group in range(25)] + [np.array([], dtype=np.int64), np.array([7])]
-    for matrix in (binary, weighted):
-        for count in (1, 3, 10):
-            expected = [per_group_lift_reference(matrix, members, names, count) if len(members) else [] for members in groups]
-            assert top_lift_terms_by_group(matrix, groups, names, count) == expected
-
-
-def test_describe_groups_matches_describe_for_each_group():
-    encoders = [
-        (TokenSetEncoder(), [PathValue(t) for t in ("cat, sky", "cat, sea", "dog, sea", "dog, sky", "cat, dog")]),
-        (PathEncoder(), [PathValue(t) for t in ("c:/a/b/1.png", "c:/a/b/2.png", "c:/a/c/3.png", "d:/x/4.png", "d:/x/5.png")]),
-        (TextEncoder(), [PathValue(t) for t in ("red apple pie", "red apple tart", "blue sky", "blue sea", "green tea")]),
-        (PaletteEncoder(), [palette((250, 10, 10)), palette((240, 20, 20)), palette((10, 10, 250)), palette((20, 20, 240)), palette((250, 250, 250))]),
-    ]
-    groups = [np.array([0, 1]), np.array([2, 3]), np.array([4]), np.array([], dtype=np.int64)]
-    for encoder, inputs in encoders:
-        encoder.fit_transform(inputs)
-        assert encoder.describe_groups(groups, TERMS) == [encoder.describe(members, TERMS) for members in groups]
+def test_encoders_no_longer_describe_groups():
+    for cls in ENCODERS.values():
+        assert not any(hasattr(cls, name) for name in ("describe", "describe_groups", "fit_describe", "compact")), cls.NAME

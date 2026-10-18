@@ -117,7 +117,6 @@ class ViewParams(ParamSet):
     point_size: float = param(3.0, label="Point size", description="Size of the dots in pixels.", minimum=1.0, maximum=16.0, step=1.0)
     image_spacing: float = param(0.01, label="Image spacing", description="Space between images, relative to their size. Lower lets them overlap more.", minimum=0.01, maximum=2.0, step=0.05)
     max_images: int = param(300, label="Image limit", description="Most images shown at once. Other files stay as dots.", minimum=0, maximum=2000, step=50)
-    label_terms: int = param(3, label="Label words", description="Number of words in each group label.", minimum=1, maximum=10)
     hover_size: int = param(256, label="Hover size", description="Size of the enlarged image shown under the cursor. 0 turns it off.", minimum=0, maximum=1024, step=32)
 
 

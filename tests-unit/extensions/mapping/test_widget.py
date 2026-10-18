@@ -257,7 +257,6 @@ def clickable_point(view):
 
 
 def test_right_click_on_selected_point_keeps_selection(mapping, qtbot):
-    mapping.tab.set_labels_shown(False)
     view = mapping.map_view
     pos, hit = clickable_point(view)
     view.select_rows([hit, (hit + 1) % 27])
@@ -269,7 +268,6 @@ def test_right_click_on_selected_point_keeps_selection(mapping, qtbot):
 
 
 def test_right_click_on_unselected_point_selects_only_it(mapping, qtbot):
-    mapping.tab.set_labels_shown(False)
     view = mapping.map_view
     pos, hit = clickable_point(view)
     view.select_rows([(hit + 1) % 27])
@@ -277,16 +275,6 @@ def test_right_click_on_unselected_point_selects_only_it(mapping, qtbot):
     qtbot.mouseClick(view.viewport(), QtCore.Qt.RightButton, pos=pos)
     assert mapping.context_for_selection()["paths"] == [f"c:/{hit}.png"]
     assert mapping.file_list.selected_rows() == [hit]
-
-
-def test_label_checkbox_hides_labels_without_recomputing(mapping):
-    previous = mapping.current_result()
-    mapping.toolbar.label_check.setChecked(False)
-    assert mapping.tab.labels_shown is False
-    mapping.toolbar.thumbnail_check.setChecked(False)
-    assert mapping.tab.thumbnails_shown is False and not mapping.map_view.thumbnails and mapping.current_result() is previous
-    assert not any(label.isVisible() for label in mapping.map_view.label_items())
-    assert mapping.current_result().labels is not None
 
 
 def test_cancel_button_stops_computation(mapping):
@@ -366,7 +354,6 @@ def test_relayout_settings_recompute_the_map(mapping, qtbot):
 
 
 def test_group_selection_is_always_available(mapping):
-    mapping.tab.set_labels_shown(False)
     assert mapping.toolbar.mode_buttons["group"].isEnabled()
 
 
@@ -452,11 +439,10 @@ def test_widget_state_leaves_the_shared_view_settings_to_the_plugin(mapping):
 
 def test_loaded_settings_reach_the_map(mapping):
     settings().load({"image_scale": 2.0})
-    mapping.restore_state({"toolbar": {"labels": False, "thumbnails": False, "selection_mode": "group"}})
+    mapping.restore_state({"toolbar": {"thumbnails": False, "selection_mode": "group"}})
     assert not mapping.map_view.thumbnails and not mapping.toolbar.thumbnail_check.isChecked()
     assert mapping.map_view.image_scale == 2.0 and mapping.map_view.selection_mode == "group"
-    assert mapping.toolbar.mode_buttons["group"].isChecked() and not mapping.toolbar.label_check.isChecked()
-    assert mapping.map_view.label_items() and not any(label.isVisible() for label in mapping.map_view.label_items())
+    assert mapping.toolbar.mode_buttons["group"].isChecked()
 
 
 @pytest.mark.parametrize("bad", ["x", None, float("nan"), float("inf")])
@@ -476,8 +462,6 @@ def test_image_scale_is_clamped(mapping):
 def test_toolbar_drives_its_own_tab(mapping):
     mapping.toolbar.mode_buttons["group"].click()
     assert mapping.tab.selection_mode == "group" and mapping.map_view.selection_mode == "group"
-    mapping.toolbar.label_check.setChecked(False)
-    assert mapping.tab.labels_shown is False
     mapping.toolbar.thumbnail_check.setChecked(False)
     assert mapping.tab.thumbnails_shown is False and not mapping.map_view.thumbnails
 
@@ -610,8 +594,8 @@ def test_each_tab_keeps_its_own_toolbar_settings(qtbot, space_data):
     mapping = open_widget(qtbot)
     space = MappingSpaceWidget()
     qtbot.addWidget(space)
-    mapping.toolbar.label_check.setChecked(False)
-    assert not mapping.tab.labels_shown and space.tab.labels_shown
+    mapping.toolbar.thumbnail_check.setChecked(False)
+    assert not mapping.tab.thumbnails_shown and space.tab.thumbnails_shown
     space.toolbar.mode_buttons["group"].setChecked(True)
     assert space.tab.selection_mode == "group" and mapping.tab.selection_mode == "single"
     assert mapping.map_view.selection_mode == "single" and space.map_view.selection_mode == "group"
@@ -623,7 +607,7 @@ def test_toolbar_settings_are_saved_per_tab(qtbot, space_data):
     mapping = open_widget(qtbot)
     mapping.tab.set_thumbnails_shown(False)
     state = mapping.save_state()
-    assert state["toolbar"] == {"labels": True, "thumbnails": False, "selection_mode": "single"}
+    assert state["toolbar"] == {"thumbnails": False, "selection_mode": "single"}
     other = MappingWidget()
     qtbot.addWidget(other)
     other.restore_state(state)

@@ -50,10 +50,6 @@ class MapToolbar(QtWidgets.QWidget):
         self.tuning_popup: PopupBase | None = None
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.label_check = QtWidgets.QCheckBox(t("Labels"))
-        self.label_check.setToolTip(t("Show group labels."))
-        self.label_check.toggled.connect(self.tab.set_labels_shown)
-        layout.addWidget(self.label_check)
         self.thumbnail_check = QtWidgets.QCheckBox(t("Thumbnails"))
         self.thumbnail_check.setToolTip(t("Show thumbnails instead of dots."))
         self.thumbnail_check.toggled.connect(self.tab.set_thumbnails_shown)
@@ -133,7 +129,6 @@ class MapToolbar(QtWidgets.QWidget):
 
     def sync(self, *_) -> None:
         settings = self.settings
-        set_quietly(self.label_check, self.tab.labels_shown)
         set_quietly(self.thumbnail_check, self.tab.thumbnails_shown)
         source = self.slider_source()
         for name, slider in self.sliders.items():

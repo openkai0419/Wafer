@@ -16,7 +16,7 @@ def test_training_and_view_settings_are_separate():
     train = {name for name, _spec, _default in param_specs(TrainParams)}
     view = {name for name, _spec, _default in param_specs(ViewParams)}
     assert train == {"neighbors", "train_limit", "min_dist", "seed"}
-    assert view == {"outlier_percent", "subgroup_size", "point_size", "image_spacing", "max_images", "label_terms", "hover_size"}
+    assert view == {"outlier_percent", "subgroup_size", "point_size", "image_spacing", "max_images", "hover_size"}
     assert not train & {"ngram_min", "ngram_max", "svd_dims", "min_cluster_size", "min_samples"}
 
 
@@ -37,7 +37,7 @@ def test_dict_roundtrip_ignores_unknown_and_bad_values():
 
 
 def test_saved_view_values_in_a_training_preset_are_ignored():
-    saved = TrainParams(seed=3).to_dict() | ViewParams(label_terms=9).to_dict()
+    saved = TrainParams(seed=3).to_dict() | ViewParams(point_size=9).to_dict()
     assert TrainParams.from_dict(saved) == TrainParams(seed=3)
 
 
@@ -144,3 +144,7 @@ def test_group_factors_reach_sixteen():
     spec = next(spec for key, spec, _ in param_specs(Grouping) if key == "strictness")
     assert (spec.minimum, spec.maximum) == (0.25, 16.0)
     assert Grouping(strictness=99).normalized().strictness == 16.0
+
+
+def test_there_is_no_label_word_setting():
+    assert "label_terms" not in {name for name, _spec, _default in param_specs(ViewParams)}

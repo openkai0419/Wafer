@@ -87,23 +87,6 @@ def test_status_roundtrip(tmp_path):
     assert read_status(tmp_path) == SpaceStatus("ready", 2, trained=40, built_at=1.0, sources_at_training=55)
 
 
-def test_saved_model_drops_training_texts_and_still_places(tmp_path):
-    import pickle
-
-    texts = {f"c:/{i}.png": {"tags": PathValue("cat, sky" if i < 20 else "dog, sea"), "prompt": PathValue(f"a long prompt number {i}")} for i in range(40)}
-    features = Preset([FeatureSpec("tags", "token_set"), FeatureSpec("prompt", "text")], TrainParams(), 1)
-    model = SpaceModel.fit(features, texts)
-    before = model.place([{"tags": PathValue("cat, sky"), "prompt": PathValue("a long prompt number 3")}])
-    model.save(tmp_path)
-    state = pickle.loads((tmp_path / "model-v1.pkl").read_bytes())
-    tag_encoder, text_encoder = state["encoders"]
-    assert tag_encoder.matrix is None and tag_encoder.names == []
-    assert text_encoder.texts == []
-    loaded = SpaceModel.load(tmp_path, features)
-    after = loaded.place([{"tags": PathValue("cat, sky"), "prompt": PathValue("a long prompt number 3")}])
-    assert np.allclose(before, after)
-
-
 def colored_values(count=40):
     values = {}
     for i in range(count):

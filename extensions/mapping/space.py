@@ -323,8 +323,6 @@ class SpaceModel:
 
     def save(self, directory: Path) -> None:
         directory.mkdir(parents=True, exist_ok=True)
-        for encoder in self.encoders:
-            encoder.compact()
         stem = f"model-v{self.version}"
         arrays = directory / f"{stem}.npz.tmp"
         with open(arrays, "wb") as handle:

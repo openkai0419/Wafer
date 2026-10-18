@@ -3,35 +3,9 @@ import json
 from wafer.plugin import BaseSingletonParser, ParserResult
 from wafer.core.logs import AppLogger
 
-from ._common import as_json_dict, stringify_meta_info
+from ._common import join_list_field, stringify_meta_info
 
-CHARACTER_PROMPT_KEYS = ("v4_prompt", "v4_negative_prompt")
-
-
-def format_centers(centers) -> str:
-    if not isinstance(centers, list):
-        return str(centers)
-    return "; ".join(f"{center.get('x')},{center.get('y')}" if isinstance(center, dict) else str(center) for center in centers)
-
-
-def character_caption_meta(fields: dict) -> dict[str, str]:
-    meta_info: dict[str, str] = {}
-    for prompt_key in CHARACTER_PROMPT_KEYS:
-        prompt = fields.get(prompt_key)
-        caption = prompt.get("caption") if isinstance(prompt, dict) else None
-        characters = caption.get("char_captions") if isinstance(caption, dict) else None
-        if not isinstance(characters, list):
-            continue
-        characters_key = f"{prompt_key}/caption/char_captions"
-        meta_info[characters_key] = "\n".join(str(character["char_caption"]) for character in characters if isinstance(character, dict) and "char_caption" in character)
-        for index, character in enumerate(characters):
-            if not isinstance(character, dict):
-                continue
-            character_key = f"{characters_key}/{index}"
-            meta_info.update(stringify_meta_info(character, character_key))
-            if "centers" in character:
-                meta_info[f"{character_key}/centers"] = format_centers(character["centers"])
-    return meta_info
+CHARACTER_CAPTION_KEYS = ("v4_prompt/caption/char_captions", "v4_negative_prompt/caption/char_captions")
 
 
 class NovelAiImageParser(BaseSingletonParser):
@@ -57,5 +31,6 @@ class NovelAiImageParser(BaseSingletonParser):
             AppLogger.debug(f"NovelAiImageParser failed to parse JSON in {path}: {exc}")
             return ParserResult(source=path, status=False)
         meta_info = stringify_meta_info(parsed)
-        meta_info.update(character_caption_meta(as_json_dict(parsed.get("Comment")) or parsed))
+        for caption_key in CHARACTER_CAPTION_KEYS:
+            join_list_field(meta_info, caption_key, "char_caption")
         return ParserResult(source=path, status=True, meta_info=meta_info, delete_meta_keys=[key])

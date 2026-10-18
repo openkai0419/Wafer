@@ -536,3 +536,20 @@ def test_mapping_only_group_size_does_not_regroup_the_preview(widget, monkeypatc
     assert regroups == [] and w.map_view.point_base == 6
     settings.set_params(ViewParams(subgroup_size=0.5, point_size=6, outlier_percent=5.0))
     assert regroups == [1]
+
+
+def test_snapshot_samples_at_most_the_given_number_of_files(database):
+    snapshot = read_snapshot("map", ViewParams(), size=4)
+    assert len(snapshot.result.paths) == 4
+
+
+def test_whole_map_size_is_kept_and_changing_it_resamples(widget, monkeypatch, qtbot):
+    w, _saved, _resets = widget
+    refreshes = []
+    monkeypatch.setattr(MappingSpaceWidget, "refresh", lambda self: refreshes.append(self.preview_size.value()))
+    w.preview_size.setValue(8000)
+    qtbot.waitUntil(lambda: refreshes == [8000], timeout=2000)
+    state = w.save_state()
+    w.preview_size.setValue(space_panel.PREVIEW_FILES)
+    w.restore_state(state)
+    assert w.preview_size.value() == 8000 and (w.preview_size.minimum(), w.preview_size.maximum()) == space_panel.PREVIEW_RANGE

@@ -25,6 +25,7 @@ from wafer.plugin.settings import PluginSettings
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 from wafer.qt.common.dispatcher import CancelSlot, CancelToken, Dispatcher
 from wafer.qt.common.dpi import dpix
+from wafer.qt.common.rate_limit import qt_debounce
 from wafer.qt.common.thread import utility_pool
 from wafer.qt.theme import ThemeManager
 
@@ -42,7 +43,9 @@ from .widget import cancel_work, prepare_layout_engine, result_colors, same_layo
 
 LOAD_PRIORITY = 7
 STATUS_REFRESH_MS = 1000
-PREVIEW_SAMPLE = 5000
+PREVIEW_FILES = 5000
+PREVIEW_RANGE = (100, 200_000)
+RESAMPLE_DELAY_MS = 300
 QUICK_TRAIN_FILES = 3000
 QUICK_TRAIN_RANGE = (100, 100_000)
 DETECT_SAMPLE = 300
@@ -133,7 +136,17 @@ def read_space_status(db_name: str) -> SpaceSnapshot:
     return snapshot
 
 
-def read_snapshot(db_name: str, view: ViewParams) -> SpaceSnapshot:
+def file_count_box(value_range: tuple[int, int], value: int) -> QtWidgets.QSpinBox:
+    box = QtWidgets.QSpinBox()
+    box.setRange(*value_range)
+    box.setSingleStep(1000)
+    box.setGroupSeparatorShown(True)
+    box.setValue(value)
+    box.setSuffix(" " + t("files"))
+    return box
+
+
+def read_snapshot(db_name: str, view: ViewParams, size: int = PREVIEW_FILES) -> SpaceSnapshot:
     snapshot = read_space_status(db_name)
     preset = snapshot.preset
     db_path = data_db_path(db_name)
@@ -142,7 +155,7 @@ def read_snapshot(db_name: str, view: ViewParams) -> SpaceSnapshot:
     space = whole_space(db_name, preset) if has_saved_space(preset) and snapshot.status.state == "ready" else None
     if space is None or not space.size:
         return snapshot
-    rows = np.random.default_rng().choice(space.size, min(PREVIEW_SAMPLE, space.size), replace=False)
+    rows = np.random.default_rng().choice(space.size, min(size, space.size), replace=False)
     sample = [space.paths[row] for row in rows]
     values = fetch_path_values(db_path, sample, keys=preset.value_keys())
     snapshot.sources = fetch_sources(db_path, sample)
@@ -310,15 +323,14 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.quick_button = QtWidgets.QPushButton(t("Quick Train"))
         self.quick_button.setToolTip(t("Train on random files with the current settings for a rough check. Nothing is saved."))
         self.quick_button.clicked.connect(self.toggle_quick_train)
-        self.quick_size = QtWidgets.QSpinBox()
-        self.quick_size.setRange(*QUICK_TRAIN_RANGE)
-        self.quick_size.setSingleStep(1000)
-        self.quick_size.setGroupSeparatorShown(True)
-        self.quick_size.setValue(QUICK_TRAIN_FILES)
-        self.quick_size.setSuffix(" " + t("files"))
+        self.quick_size = file_count_box(QUICK_TRAIN_RANGE, QUICK_TRAIN_FILES)
         quick.addWidget(self.quick_button)
         quick.addWidget(self.quick_size, stretch=1)
         form_layout.addLayout(quick)
+        self.preview_size = file_count_box(PREVIEW_RANGE, PREVIEW_FILES)
+        self.preview_size.setToolTip(t("Number of files on the whole map."))
+        self.preview_size.valueChanged.connect(self.resample)
+        form_layout.addWidget(self.preview_size)
         form_layout.addStretch(1)
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
@@ -620,6 +632,10 @@ class MappingSpaceWidget(QtWidgets.QWidget):
             text += "\n" + self.notice
         self.status_label.setText(text if self.db_name else t("No database is open."))
 
+    @qt_debounce(RESAMPLE_DELAY_MS)
+    def resample(self, *_) -> None:
+        self.refresh()
+
     def refresh(self) -> None:
         self.sync_host()
         self.update_buttons()
@@ -632,14 +648,14 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         if self.quick_sample is not None and self.quick_sample.db_name != db_name:
             self.quick_sample, self.quick_layout, self.showing_quick = None, None, False
         cancel = self.refresh_cancel.renew()
-        params = self.settings.params
+        params, size = self.settings.params, self.preview_size.value()
         self.preview_loading = True
         if not self.showing_quick and not self.quick_running:
             self.count_label.setText(t("Loading values") + ELLIPSIS)
 
         def task():
             try:
-                snapshot = read_snapshot(db_name, params)
+                snapshot = read_snapshot(db_name, params, size)
             except Exception as e:
                 AppLogger.error(f"[Mapping] Reading the space state of {db_name} failed", exc=e)
                 self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.preview_failed())
@@ -723,7 +739,12 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         super().hideEvent(event)
 
     def save_state(self) -> dict[str, Any]:
-        return {"splitter": bytes(self.splitter.saveState().toHex()).decode("ascii"), "quick_train_files": self.quick_size.value(), "toolbar": self.tab.to_dict()}
+        return {
+            "splitter": bytes(self.splitter.saveState().toHex()).decode("ascii"),
+            "quick_train_files": self.quick_size.value(),
+            "preview_files": self.preview_size.value(),
+            "toolbar": self.tab.to_dict(),
+        }
 
     def restore_state(self, state: dict[str, Any]) -> None:
         toolbar = state.get("toolbar")
@@ -735,6 +756,11 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         files = state.get("quick_train_files")
         if isinstance(files, int):
             self.quick_size.setValue(files)
+        preview = state.get("preview_files")
+        if isinstance(preview, int):
+            self.preview_size.blockSignals(True)
+            self.preview_size.setValue(preview)
+            self.preview_size.blockSignals(False)
 
 
 class MappingSpacePlugin(BasePanelPlugin):

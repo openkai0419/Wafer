@@ -21,20 +21,20 @@ if TYPE_CHECKING:
     from .space import Preset, SpaceModel
 
 OUTPUT_PREFIX = "mapping"
-KEY_X, KEY_Y, KEY_GROUP, KEY_MODEL = (f"{OUTPUT_PREFIX}.{name}" for name in ("x", "y", "group", "model"))
-SPACE_KEYS = (KEY_X, KEY_Y, KEY_GROUP, KEY_MODEL)
+KEY_2D, KEY_GROUP, KEY_MODEL = (f"{OUTPUT_PREFIX}.{name}" for name in ("2d", "group", "model"))
+SPACE_KEYS = (KEY_2D, KEY_GROUP, KEY_MODEL)
 SPACE_COLUMNS = 2 + projection.GROUPING_DIMS
-GROUPING_SEPARATOR = ","
+COORDINATE_SEPARATOR = ","
 MIN_LAYOUT_FILES = 3
 
 
-def grouping_text(numbers) -> str:
-    return GROUPING_SEPARATOR.join(f"{float(value):.6g}" for value in numbers)
+def coordinate_text(numbers) -> str:
+    return COORDINATE_SEPARATOR.join(f"{float(value):.6g}" for value in numbers)
 
 
-def grouping_values(text: str) -> np.ndarray | None:
-    parts = text.split(GROUPING_SEPARATOR) if text else []
-    if len(parts) != projection.GROUPING_DIMS:
+def coordinate_values(text: str, dims: int) -> np.ndarray | None:
+    parts = text.split(COORDINATE_SEPARATOR) if text else []
+    if len(parts) != dims:
         return None
     try:
         numbers = np.array([float(part) for part in parts], dtype=np.float64)
@@ -260,12 +260,12 @@ class SpaceLayout:
             for row, path in enumerate(self.paths):
                 entry = self.values.get(path, {})
                 model = entry.get(KEY_MODEL)
-                if model is None or model.text != version or KEY_GROUP not in entry:
+                if model is None or model.text != version or KEY_2D not in entry or KEY_GROUP not in entry:
                     continue
-                x, y = (entry[key].number if key in entry else None for key in (KEY_X, KEY_Y))
-                grouping = grouping_values(entry[KEY_GROUP].text)
-                if x is not None and y is not None and grouping is not None:
-                    raw[row, :2] = x, y
+                display = coordinate_values(entry[KEY_2D].text, 2)
+                grouping = coordinate_values(entry[KEY_GROUP].text, projection.GROUPING_DIMS)
+                if display is not None and grouping is not None:
+                    raw[row, :2] = display
                     raw[row, 2:] = grouping
             missing = np.flatnonzero(~np.isfinite(raw).all(axis=1))
             model = self.space_model(diagnostics) if missing.size else None

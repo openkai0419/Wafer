@@ -10,7 +10,7 @@ from PySide6 import QtCore
 from extensions.mapping import projection, space, space_panel
 from extensions.mapping.params import Grouping, TrainParams, ViewParams
 from extensions.mapping.projection import GROUPING_DIMS
-from extensions.mapping.session import FeatureSpec, MapError, grouping_text
+from extensions.mapping.session import FeatureSpec, MapError, coordinate_text
 from extensions.mapping.space import Preset, SpaceModel, SpaceStatus, save_preset, write_status
 from extensions.mapping.view_settings import ViewSettings
 from extensions.mapping.space_panel import MappingSpaceWidget, SpaceSnapshot, current_status, read_snapshot, status_text
@@ -148,8 +148,9 @@ def database(tmp_path, monkeypatch):
     db.upsert_basic_sources([(f"c:/{i}.png", f"h{i}", 100, 1.0, 1.0, 1.0) for i in range(count)], [(f"c:/{i}.png", f"c:/{i}.png", f"{i}.png", 1.0, None) for i in range(count)])
     meta = []
     for i in range(count - 2):
-        meta += [(f"c:/{i}.png", key, str(value), float(value)) for key, value in (("mapping.x", i), ("mapping.y", i % 3), ("mapping.model", 1))]
-        meta.append((f"c:/{i}.png", "mapping.group", grouping_text([float(i), float(i % 3)] + [0.0] * (GROUPING_DIMS - 2)), None))
+        meta.append((f"c:/{i}.png", "mapping.model", "1", 1.0))
+        meta.append((f"c:/{i}.png", "mapping.2d", coordinate_text([float(i), float(i % 3)]), None))
+        meta.append((f"c:/{i}.png", "mapping.group", coordinate_text([float(i), float(i % 3)] + [0.0] * (GROUPING_DIMS - 2)), None))
     db.upsert_collection_results([], meta, [(f"c:/{i}.png", "wd14.tags", "cat, sky", None) for i in range(count)], [])
     settings = lambda name: str(tmp_path / f"{name}.settings.db")
     monkeypatch.setattr(space_panel, "data_db_path", lambda name: str(db_path))
@@ -459,9 +460,8 @@ def test_label_and_outlier_changes_relayout_the_shown_sample(widget, qtbot, monk
     values = {
         f"c:/{i}.png": {
             "tags": PathValue("cat" if i < 6 else "dog"),
-            "mapping.x": PathValue(str(i), float(i)),
-            "mapping.y": PathValue("0", 0.0),
-            "mapping.group": PathValue(grouping_text([float(i)] + [0.0] * (GROUPING_DIMS - 1))),
+            "mapping.2d": PathValue(coordinate_text([float(i), 0.0])),
+            "mapping.group": PathValue(coordinate_text([float(i)] + [0.0] * (GROUPING_DIMS - 1))),
             "mapping.model": PathValue("1", 1.0),
         }
         for i in range(12)

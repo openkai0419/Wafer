@@ -12,7 +12,7 @@ from extensions.mapping import map_view as map_view_module
 from extensions.mapping import widget as widget_module
 from extensions.mapping.params import Grouping, TrainParams, ViewParams, param_specs
 from extensions.mapping.projection import GROUPING_DIMS
-from extensions.mapping.session import FeatureSpec, grouping_text
+from extensions.mapping.session import FeatureSpec, coordinate_text
 from extensions.mapping.space import Preset
 from extensions.mapping.view_settings import ViewSettings
 from extensions.mapping.widget import MappingWidget
@@ -59,9 +59,8 @@ def space_values() -> dict:
             x = float(i // 15) * 10 + i * 0.01
             entry.update(
                 {
-                    "mapping.x": PathValue(str(x), x),
-                    "mapping.y": PathValue("0", 0.0),
-                    "mapping.group": PathValue(grouping_text([x] + [0.0] * (GROUPING_DIMS - 1))),
+                    "mapping.2d": PathValue(coordinate_text([x, 0.0])),
+                    "mapping.group": PathValue(coordinate_text([x] + [0.0] * (GROUPING_DIMS - 1))),
                     "mapping.model": PathValue("2", 2.0),
                 }
             )

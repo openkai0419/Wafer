@@ -10,7 +10,7 @@ from wafer.core.db.path_values import fetch_path_values
 from wafer.core.logs import AppLogger
 from wafer.plugin import BaseParserPlugin, ParserResult
 
-from .session import KEY_MODEL, SPACE_KEYS, grouping_text
+from .session import KEY_MODEL, SPACE_KEYS, coordinate_text
 from .space import OUTPUT_PREFIX, Preset, SpaceLoadError, SpaceModel, SpaceStatus, load_preset, model_dir, write_status
 
 IDLE_TIMEOUT = 60.0
@@ -66,8 +66,7 @@ class MappingParser(BaseParserPlugin):
             return ParserResult(source=path, status=False)
         if point is None:
             return ParserResult(source=path, status=True, delete_meta_keys=list(SPACE_KEYS))
-        x, y, *grouping = point
-        return ParserResult(source=path, status=True, meta_info={"x": repr(x), "y": repr(y), "group": grouping_text(grouping), "model": str(model.version)})
+        return ParserResult(source=path, status=True, meta_info={"2d": coordinate_text(point[:2]), "group": coordinate_text(point[2:]), "model": str(model.version)})
 
     def ensure_model(self, preset: Preset) -> SpaceModel | None:
         if self.model is not None and self.model.preset.to_dict() == preset.to_dict():

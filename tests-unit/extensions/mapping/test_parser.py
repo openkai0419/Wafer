@@ -9,7 +9,7 @@ from extensions.mapping import parser as parser_module
 from extensions.mapping import projection, space
 from extensions.mapping.params import TrainParams
 from extensions.mapping.parser import MappingParser
-from extensions.mapping.session import FeatureSpec, MapError, grouping_values
+from extensions.mapping.session import FeatureSpec, MapError, coordinate_values
 from extensions.mapping.space import Preset, SpaceStatus, read_status, save_preset, write_status
 from wafer.core.db.file_db import FileDB
 
@@ -52,7 +52,7 @@ def test_trigger_keys_follow_the_preset(env):
 def test_first_call_trains_and_writes_training_coordinates(env):
     plugin, _db, tmp = env
     result = run(plugin, "c:/0.png")
-    assert result.status and set(result.meta_info) == {"x", "y", "group", "model"}
+    assert result.status and set(result.meta_info) == {"2d", "group", "model"}
     assert result.meta_info["model"] == "1"
     status = read_status(tmp / "cache" / "mapping" / "map")
     assert status.state == "ready" and status.trained == 30 and status.sources_at_training == 30
@@ -65,7 +65,7 @@ def test_new_file_is_placed_near_similar_files(env):
     db.upsert_collection_results([], [], [("c:/new.png", "wd14.tags", "cat, sky", None)], [])
     placed = run(plugin, "c:/new.png").meta_info
     cat, dog = run(plugin, "c:/1.png").meta_info, run(plugin, "c:/20.png").meta_info
-    point = lambda m: np.array([float(m["x"]), float(m["y"])])
+    point = lambda m: coordinate_values(m["2d"], 2)
     assert np.linalg.norm(point(placed) - point(cat)) < np.linalg.norm(point(placed) - point(dog))
 
 
@@ -73,7 +73,7 @@ def test_file_without_values_clears_coordinates(env):
     plugin, db, _tmp = env
     db.upsert_basic_sources([("c:/empty.png", "he", 1, 1.0, 1.0, 1.0)], [("c:/empty.png", "c:/empty.png", "empty.png", 1.0, None)])
     result = run(plugin, "c:/empty.png")
-    assert result.status and result.delete_meta_keys == ["mapping.x", "mapping.y", "mapping.group", "mapping.model"]
+    assert result.status and result.delete_meta_keys == ["mapping.2d", "mapping.group", "mapping.model"]
 
 
 def test_version_change_retrains(env, monkeypatch):
@@ -133,7 +133,7 @@ def test_first_call_values_equal_training_coordinates(env):
     plugin, _db, _tmp = env
     meta = run(plugin, "c:/3.png").meta_info
     expected = plugin.model.coords_for("c:/3.png")
-    written = (float(meta["x"]), float(meta["y"]), *grouping_values(meta["group"]))
+    written = (*coordinate_values(meta["2d"], 2), *coordinate_values(meta["group"], projection.GROUPING_DIMS))
     assert written == pytest.approx(expected, rel=1e-5)
 
 
@@ -143,7 +143,7 @@ def test_current_version_file_is_placed_by_neighbours(env):
     trained = plugin.model.coords_for("c:/0.png")[:2]
     db.upsert_collection_results([], [("c:/0.png", "mapping.model", "1", None)], [("c:/0.png", "wd14.tags", "dog, sea", None)], [])
     meta = run(plugin, "c:/0.png").meta_info
-    point = np.array([float(meta["x"]), float(meta["y"])])
+    point = coordinate_values(meta["2d"], 2)
     dog = np.array(plugin.model.coords_for("c:/20.png"))[:2]
     assert np.linalg.norm(point - dog) < np.linalg.norm(point - np.array(trained))
 

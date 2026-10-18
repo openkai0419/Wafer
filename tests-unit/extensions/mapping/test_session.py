@@ -4,7 +4,7 @@ import pytest
 from extensions.mapping import projection, session
 from extensions.mapping.encoders import ENCODERS
 from extensions.mapping.params import Grouping, TrainParams, ViewParams
-from extensions.mapping.session import FeatureSpec, MapError, SpaceLayout, WholeSpace, grouping_text
+from extensions.mapping.session import FeatureSpec, MapError, SpaceLayout, WholeSpace, coordinate_text, coordinate_values
 from extensions.mapping.space import Preset
 from wafer.core.db.path_values import PathValue
 
@@ -38,9 +38,8 @@ def space_values(count=12, version="2"):
         x = 0.0 if i < count // 2 else 10.0
         values[f"c:/{i}.png"] = {
             "tags": PathValue("cat" if i < count // 2 else "dog"),
-            "mapping.x": PathValue(str(x + i * 0.01), x + i * 0.01),
-            "mapping.y": PathValue("0", 0.0),
-            "mapping.group": PathValue(grouping_text([x] + [0.0] * (projection.GROUPING_DIMS - 1))),
+            "mapping.2d": PathValue(coordinate_text([x + i * 0.01, 0.0])),
+            "mapping.group": PathValue(coordinate_text([x] + [0.0] * (projection.GROUPING_DIMS - 1))),
             "mapping.model": PathValue(version, float(version)),
         }
     return values
@@ -73,7 +72,7 @@ def test_space_layout_without_placed_files_raises():
 def test_space_layout_ignores_other_versions_and_missing_numbers():
     values = space_values(count=6)
     values["c:/0.png"]["mapping.model"] = PathValue("3", 3.0)
-    values["c:/1.png"]["mapping.x"] = PathValue("n/a")
+    values["c:/1.png"]["mapping.2d"] = PathValue("n/a")
     result = SpaceLayout(list(values), values, space_preset()).run(ViewParams())
     assert result.unset.tolist() == [True, True, False, False, False, False]
 
@@ -110,7 +109,7 @@ def test_space_layout_groups_by_the_grouping_coordinates():
     values = space_values()
     order = np.random.default_rng(3).permutation(len(values))
     for rank, entry in zip(order, values.values()):
-        entry["mapping.x"] = PathValue(str(rank), float(rank))
+        entry["mapping.2d"] = PathValue(coordinate_text([float(rank), 0.0]))
     paths = list(values)
     result = SpaceLayout(paths, values, space_preset()).run(ViewParams())
     half = len(paths) // 2
@@ -147,13 +146,17 @@ def test_space_layout_can_show_the_map_before_grouping(monkeypatch):
     assert np.array_equal(plain.positions, grouped.positions)
 
 
-def test_grouping_text_roundtrip_and_bad_values():
-    from extensions.mapping.session import grouping_values
-
+def test_coordinate_text_roundtrip_and_bad_values():
     numbers = np.linspace(-3.5, 7.25, projection.GROUPING_DIMS)
-    assert np.allclose(grouping_values(grouping_text(numbers)), numbers, rtol=1e-5)
-    assert grouping_values("1,2") is None and grouping_values("") is None
-    assert grouping_values(",".join(["x"] * projection.GROUPING_DIMS)) is None
+    assert np.allclose(coordinate_values(coordinate_text(numbers), projection.GROUPING_DIMS), numbers, rtol=1e-5)
+    assert coordinate_values("1,2", projection.GROUPING_DIMS) is None and coordinate_values("", 2) is None
+    assert coordinate_values(",".join(["x"] * projection.GROUPING_DIMS), projection.GROUPING_DIMS) is None
+    assert np.allclose(coordinate_values("1.5,-2", 2), [1.5, -2.0]) and coordinate_values("1,inf", 2) is None
+
+
+def test_space_layout_reads_the_2d_key():
+    values = {"a": {"mapping.2d": PathValue("1.5,-2"), "mapping.group": PathValue(coordinate_text([0.0] * projection.GROUPING_DIMS)), "mapping.model": PathValue("2", 2.0)}}
+    assert np.allclose(SpaceLayout(["a"], values, space_preset()).space_coords()[0, :2], [1.5, -2.0])
 
 
 def test_group_size_regroups_the_shown_files_without_moving_them(monkeypatch):

@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import time
 from contextlib import closing
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from functools import partial
 from typing import Any
 
@@ -32,11 +32,11 @@ from .feature_bar import FeatureBar
 from .map_host import MapHost
 from .map_toolbar import MapToolbar
 from .map_view import MapView
-from .params import MapParams
-from .session import KEY_MODEL, OUTPUT_PREFIX, SPACE_KEYS, MapError, MapPipeline, MapRequest, MapResult, SpaceLayout
-from .space import Preset, SpaceStatus, count_placed, load_preset, model_dir, read_status, save_preset, space_groups
+from .params import TrainParams, ViewParams
+from .session import KEY_MODEL, OUTPUT_PREFIX, SPACE_KEYS, MapError, MapResult, SpaceLayout
+from .space import Preset, SpaceModel, SpaceStatus, count_placed, load_preset, model_dir, read_status, save_preset, space_groups
 from .tuning import TuningPanel
-from .view_settings import GroupingStore, ViewSettings
+from .view_settings import RELAYOUT_PARAMS, GroupingStore, ViewSettings
 from .widget import cancel_work, prepare_layout_engine, result_colors, same_layout
 
 LOAD_PRIORITY = 7
@@ -48,7 +48,6 @@ QUICK_TRAIN_RANGE = (100, 100_000)
 DETECT_SAMPLE = 300
 RETRAIN_RATIO = 0.2
 MEGABYTE = 1024 * 1024
-TUNING_STAGES = ("layout",)
 ELLIPSIS = "\N{HORIZONTAL ELLIPSIS}"
 SEPARATOR = "\N{MIDDLE DOT}"
 PROVISIONAL_ENCODER = "text"
@@ -118,7 +117,7 @@ def has_saved_space(preset: Preset) -> bool:
 
 
 def read_space_status(db_name: str) -> SpaceSnapshot:
-    preset = load_preset(db_name) or Preset([], MapParams(), 0)
+    preset = load_preset(db_name) or Preset([], TrainParams(), 0)
     directory = model_dir(db_name)
     status = current_status(read_status(directory), preset.version)
     snapshot = SpaceSnapshot(preset, status, parser_enabled=parser_enabled(db_name))
@@ -134,7 +133,7 @@ def read_space_status(db_name: str) -> SpaceSnapshot:
     return snapshot
 
 
-def read_snapshot(db_name: str, view: MapParams) -> SpaceSnapshot:
+def read_snapshot(db_name: str, view: ViewParams) -> SpaceSnapshot:
     snapshot = read_space_status(db_name)
     preset = snapshot.preset
     db_path = data_db_path(db_name)
@@ -151,7 +150,7 @@ def read_snapshot(db_name: str, view: MapParams) -> SpaceSnapshot:
     return snapshot
 
 
-def run_preview(layout: SpaceLayout, view: MapParams, db_name: str, grouped: bool = True, cancelled=lambda: False) -> tuple[MapResult | None, str]:
+def run_preview(layout: SpaceLayout, view: ViewParams, db_name: str, grouped: bool = True, cancelled=lambda: False) -> tuple[MapResult | None, str]:
     try:
         return layout.run(view, grouping=GroupingStore.instance().get(db_name), grouped=grouped, cancelled=cancelled), ""
     except MapError as e:
@@ -169,7 +168,6 @@ class QuickTrainSample:
     paths: list[str]
     values: dict[str, dict[str, PathValue]]
     sources: dict[str, str]
-    pipeline: MapPipeline = field(default_factory=MapPipeline)
 
     def covers(self, db_name: str, size: int, keys: frozenset[str]) -> bool:
         return self.db_name == db_name and self.size == size and keys <= self.keys
@@ -233,7 +231,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.status_cancel = CancelSlot()
         self.db_name = ""
         self.keys_db: str | None = None
-        self.saved = Preset([], MapParams(), 0)
+        self.saved = Preset([], TrainParams(), 0)
         self.status = SpaceStatus("none", 0)
         self.total = 0
         self.placed = 0
@@ -246,7 +244,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.preview_layout: SpaceLayout | None = None
         self.preview_sources: dict[str, str] = {}
         self.quick_sample: QuickTrainSample | None = None
-        self.quick_request: MapRequest | None = None
+        self.quick_layout: SpaceLayout | None = None
         self.quick_cancel = CancelSlot()
         self.quick_running = False
         self.showing_quick = False
@@ -286,7 +284,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.feature_bar = FeatureBar(self.detect)
         self.feature_bar.features_changed.connect(self.update_buttons)
         form_layout.addWidget(self.feature_bar)
-        self.tuning = TuningPanel(stages=TUNING_STAGES)
+        self.tuning = TuningPanel(TrainParams)
         self.tuning.params_changed.connect(self.update_buttons)
         form_layout.addWidget(self.tuning)
         self.status_label = QtWidgets.QLabel()
@@ -424,12 +422,15 @@ class MappingSpaceWidget(QtWidgets.QWidget):
 
     def on_grouping_changed(self, db_name: str) -> None:
         if db_name == self.db_name:
-            self.on_view_settings(True)
+            self.regroup()
 
-    def on_view_settings(self, relayout: bool) -> None:
-        if not relayout:
-            self.settings.apply(self.map_view, self.host)
-        elif self.showing_quick:
+    def on_view_settings(self, changed: frozenset[str]) -> None:
+        self.settings.apply(self.map_view, self.host)
+        if changed & RELAYOUT_PARAMS:
+            self.regroup()
+
+    def regroup(self) -> None:
+        if self.showing_quick:
             self.regroup_quick_train()
         elif self.preview_layout is not None and not self.preview_loading:
             self.relayout_preview(self.preview_layout)
@@ -488,8 +489,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
     def is_dirty(self) -> bool:
         if [f.to_dict() for f in self.feature_bar.features()] != [f.to_dict() for f in self.saved.features]:
             return True
-        edited = self.tuning.params()
-        return any(edited.values_for(stage) != self.saved.params.values_for(stage) for stage in TUNING_STAGES)
+        return self.tuning.params() != self.saved.params
 
     def update_buttons(self) -> None:
         ready = bool(self.db_name) and bool(self.feature_bar.features()) and not self.detecting
@@ -539,25 +539,26 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         features = self.feature_bar.features()
         if not self.db_name or not features:
             return
-        db_name, size, params = self.db_name, self.quick_size.value(), self.settings.merged(self.tuning.params())
+        db_name, size, view = self.db_name, self.quick_size.value(), self.settings.params
+        preset = Preset(features, self.tuning.params(), 0)
         grouping = GroupingStore.instance().get(db_name)
-        keys = frozenset(Preset(features, params, 0).value_keys())
+        keys = frozenset(preset.value_keys())
         reusable = self.quick_sample if self.quick_sample is not None and self.quick_sample.covers(db_name, size, keys) else None
         cancel = self.quick_cancel.renew()
         self.quick_running = True
         self.update_buttons()
         self.count_label.setText(t("Picking {count} files", count=f"{size:,}") + ELLIPSIS)
 
-        def progress(stage, fraction):
-            name = t(STAGE_NAMES.get(stage, stage)) + ELLIPSIS
-            text = f"{name} {fraction:.0%}" if fraction else name
+        def progress(stage):
+            text = t(STAGE_NAMES.get(stage, stage)) + ELLIPSIS
             self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.count_label.setText(text))
 
         def task():
             try:
                 sample = reusable or read_quick_train_sample(db_name, size, keys)
-                request = MapRequest(sample.paths, sample.values, features, params, grouping)
-                result = sample.pipeline.run(request, cancelled=cancel.is_cancelled, progress=progress)
+                layout = SpaceModel.fit(preset, sample.values, cancelled=cancel.is_cancelled, progress=progress).layout(sample.values)
+                progress("cluster")
+                result = layout.run(view, grouping=grouping, cancelled=cancel.is_cancelled)
             except MapError as e:
                 self.dispatcher.invoke(lambda m=str(e): cancel.is_cancelled() or self.finish_quick_train(t(m)))
                 return
@@ -565,27 +566,24 @@ class MappingSpaceWidget(QtWidgets.QWidget):
                 AppLogger.error(f"[Mapping] Quick training on {db_name} failed", exc=e)
                 self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.finish_quick_train(t("Mapping failed. See the log for details.")))
                 return
-            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.apply_quick_train(sample, request, result))
+            if result is not None:
+                self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.apply_quick_train(sample, layout, result))
 
         self.dispatcher.post(task, priority=LOAD_PRIORITY, cancel=cancel)
 
     def regroup_quick_train(self) -> None:
-        sample, shown = self.quick_sample, self.quick_request
-        if sample is None or shown is None:
+        sample, layout = self.quick_sample, self.quick_layout
+        if sample is None or layout is None:
             return
-        request = replace(shown, params=self.settings.merged(shown.params), grouping=GroupingStore.instance().get(sample.db_name))
         cancel = self.quick_cancel.renew()
+        view = self.settings.params
         self.count_label.setText(t("Grouping") + ELLIPSIS)
 
         def task():
-            try:
-                result = sample.pipeline.run(request, cancelled=cancel.is_cancelled)
-            except Exception as e:
-                AppLogger.error(f"[Mapping] Regrouping the quick train of {sample.db_name} failed", exc=e)
-                self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.count_label.setText(t("Mapping failed. See the log for details.")))
+            result, problem = run_preview(layout, view, sample.db_name, cancelled=cancel.is_cancelled)
+            if result is None and not problem:
                 return
-            if result is not None:
-                self.dispatcher.invoke(lambda: cancel.is_cancelled() or not self.showing_quick or self.apply_quick_train(sample, request, result))
+            self.dispatcher.invoke(lambda: cancel.is_cancelled() or not self.showing_quick or self.show_quick_train(sample, result, problem))
 
         self.dispatcher.post(task, priority=LOAD_PRIORITY, cancel=cancel)
 
@@ -594,18 +592,20 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.update_buttons()
         self.count_label.setText(message)
 
-    def apply_quick_train(self, sample: QuickTrainSample, request: MapRequest, result: MapResult | None) -> None:
-        self.quick_sample, self.quick_request = sample, request
-        if result is None:
-            self.finish_quick_train(t("Cancelled"))
-            return
+    def apply_quick_train(self, sample: QuickTrainSample, layout: SpaceLayout, result: MapResult) -> None:
+        self.quick_sample, self.quick_layout = sample, layout
         self.quick_running = False
         self.update_buttons()
         if sample.db_name != self.db_name:
             return
         self.showing_quick = True
+        self.show_quick_train(sample, result, "")
+
+    def show_quick_train(self, sample: QuickTrainSample, result: MapResult | None, problem: str) -> None:
+        if result is None:
+            self.count_label.setText(t(problem))
+            return
         self.show_preview(result, sample.sources, t("Quick train: {count} files (not saved)", count=f"{len(result.paths):,}"))
-        AppLogger.info(result.diagnostics.summary())
 
     def show_space(self) -> None:
         self.quick_cancel.cancel()
@@ -633,7 +633,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         if self.keys_db != db_name:
             self.load_keys(db_name)
         if self.quick_sample is not None and self.quick_sample.db_name != db_name:
-            self.quick_sample, self.showing_quick = None, False
+            self.quick_sample, self.quick_layout, self.showing_quick = None, None, False
         cancel = self.refresh_cancel.renew()
         params = self.settings.params
         self.preview_loading = True

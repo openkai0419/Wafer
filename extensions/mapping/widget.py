@@ -28,7 +28,7 @@ from .map_toolbar import MapToolbar
 from .map_view import MapView
 from .session import MapError, MapResult, SpaceLayout
 from .space import Preset, load_preset, space_groups
-from .view_settings import GroupingStore, ViewSettings
+from .view_settings import RELAYOUT_PARAMS, TOOLBAR_PARAMS, GroupingStore, ViewSettings
 
 COMPUTE_PRIORITY = 7
 WARM_UP_PRIORITY = 1
@@ -38,7 +38,7 @@ ELLIPSIS = "\N{HORIZONTAL ELLIPSIS}"
 SEPARATOR = "\N{MIDDLE DOT}"
 CRUMB_ARROW = "\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}"
 SPACE_PANEL_NAME = "Mapping Space"
-STAGE_NAMES = {"encode": "Encoding", "layout": "Laying out (the first run takes longer)", "cluster": "Grouping"}
+RELAYOUT_NAMES = RELAYOUT_PARAMS | TOOLBAR_PARAMS
 
 
 def local_file_paths(mime: QtCore.QMimeData | None) -> list[str]:
@@ -167,16 +167,18 @@ class MappingWidget(QtWidgets.QWidget):
 
     def on_grouping_changed(self, db_name: str) -> None:
         if db_name == self.db_name:
-            self.on_view_settings(True)
+            self.regroup()
 
-    def on_view_settings(self, relayout: bool) -> None:
-        if relayout:
-            if self.shown is not None:
-                self.grouping = True
-                self.show_counts(self.shown)
-            self.schedule_recompute()
-        else:
-            self.settings.apply(self.map_view, self.host)
+    def on_view_settings(self, changed: frozenset[str]) -> None:
+        self.settings.apply(self.map_view, self.host)
+        if changed & RELAYOUT_NAMES:
+            self.regroup()
+
+    def regroup(self) -> None:
+        if self.shown is not None:
+            self.grouping = True
+            self.show_counts(self.shown)
+        self.schedule_recompute()
 
     def message_text(self) -> str:
         return self.message.text()

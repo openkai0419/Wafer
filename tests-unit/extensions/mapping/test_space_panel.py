@@ -7,9 +7,9 @@ import pytest
 from PySide6 import QtCore
 
 from extensions.mapping import space, space_panel
-from extensions.mapping.params import Grouping, MapParams
+from extensions.mapping.params import Grouping, TrainParams, ViewParams
 from extensions.mapping.projection import GROUPING_DIMS
-from extensions.mapping.session import FeatureSpec, grouping_text
+from extensions.mapping.session import FeatureSpec, MapError, grouping_text
 from extensions.mapping.space import Preset, SpaceStatus, save_preset, write_status
 from extensions.mapping.view_settings import ViewSettings
 from extensions.mapping.space_panel import MappingSpacePlugin, MappingSpaceWidget, SpaceSnapshot, current_status, read_snapshot, status_text
@@ -60,7 +60,7 @@ def widget(qtbot, monkeypatch, tmp_path):
     w = MappingSpaceWidget()
     qtbot.addWidget(w)
     w.db_name = "db1"
-    w.apply_preset(Preset([FeatureSpec("tags", "token_set")], MapParams(), 1))
+    w.apply_preset(Preset([FeatureSpec("tags", "token_set")], TrainParams(), 1))
     yield w, saved, resets
     w.close()
 
@@ -80,7 +80,7 @@ def test_param_edits_mark_dirty(widget):
     w.tuning.controls["neighbors"].setValue(2.0)
     assert w.is_dirty()
     w.revert()
-    assert not w.is_dirty() and w.tuning.params() == MapParams()
+    assert not w.is_dirty() and w.tuning.params() == TrainParams()
 
 
 def test_form_shows_layout_stage_only(widget):
@@ -167,7 +167,7 @@ def database(tmp_path, monkeypatch):
     monkeypatch.setattr(space, "setting_db_path", settings)
     monkeypatch.setattr(space, "resolve_cache_path", lambda rel: str(tmp_path / "cache" / rel))
     monkeypatch.setattr(space_panel.PluginSettings, "resolve_default_collectors", lambda self: [])
-    save_preset("map", Preset([FeatureSpec("wd14.tags", "token_set")], MapParams(), 1))
+    save_preset("map", Preset([FeatureSpec("wd14.tags", "token_set")], TrainParams(), 1))
     write_status(tmp_path / "cache" / "mapping" / "map", SpaceStatus("ready", 1, trained=10))
     (tmp_path / "cache" / "mapping" / "map" / "model-v1.npz").write_bytes(b"x" * 2048)
     yield db
@@ -175,7 +175,7 @@ def database(tmp_path, monkeypatch):
 
 
 def test_snapshot_reads_counts_status_and_preview(database):
-    snapshot = read_snapshot("map", MapParams())
+    snapshot = read_snapshot("map", ViewParams())
     assert snapshot.preset.version == 1 and snapshot.status.state == "ready"
     assert snapshot.total == 12 and snapshot.placed == 10 and snapshot.waiting == 0
     assert snapshot.model_bytes == 2048
@@ -186,21 +186,21 @@ def test_snapshot_reads_counts_status_and_preview(database):
 
 def test_snapshot_without_a_saved_preset_has_no_preview(database, monkeypatch):
     monkeypatch.setattr(space_panel, "load_preset", lambda name: None)
-    snapshot = read_snapshot("map", MapParams())
+    snapshot = read_snapshot("map", ViewParams())
     assert snapshot.preset.version == 0 and snapshot.preset.features == []
     assert snapshot.total == 12 and snapshot.placed == 0 and snapshot.result is None
 
 
 def test_snapshot_is_empty_when_the_database_is_missing(database, monkeypatch, tmp_path):
     monkeypatch.setattr(space_panel, "data_db_path", lambda name: str(tmp_path / "missing.db"))
-    snapshot = read_snapshot("map", MapParams())
+    snapshot = read_snapshot("map", ViewParams())
     assert snapshot.total == 0 and snapshot.result is None
 
 
 def test_apply_snapshot_shows_preview_and_keeps_unsaved_edits(widget, database, monkeypatch):
     w, _saved, _resets = widget
     monkeypatch.setattr(space_panel, "load_preset", space.load_preset)
-    snapshot = read_snapshot("map", MapParams())
+    snapshot = read_snapshot("map", ViewParams())
     w.feature_bar.add_feature("path")
     w.apply_snapshot(snapshot)
     assert w.saved.version == 1 and [f.key for f in w.feature_bar.features()] == ["tags", "path"]
@@ -279,7 +279,7 @@ def test_snapshot_counts_waiting_from_mapping_collection_status(database):
     database.upsert_collection_results(
         [], [], [], [("c:/0.png", "mapping", "pending", None), ("c:/1.png", "mapping", "dispatched", None), ("c:/2.png", "mapping", "done", 1.0), ("c:/3.png", "wd14", "pending", None)]
     )
-    assert read_snapshot("map", MapParams()).waiting == 2
+    assert read_snapshot("map", ViewParams()).waiting == 2
 
 
 def test_save_after_the_database_changed_only_refreshes(widget, monkeypatch):
@@ -319,7 +319,7 @@ def test_snapshot_keeps_counts_when_the_preview_fails(database, monkeypatch):
         raise ValueError("bad layout")
 
     monkeypatch.setattr(space_panel.SpaceLayout, "run", broken)
-    snapshot = read_snapshot("map", MapParams())
+    snapshot = read_snapshot("map", ViewParams())
     assert snapshot.result is None and snapshot.problem == "bad layout"
     assert snapshot.total == 12 and snapshot.placed == 10 and snapshot.status.state == "ready"
 
@@ -380,7 +380,7 @@ def test_preview_reloads_when_training_finishes_and_while_files_are_placed(widge
     w, _saved, _resets = widget
     reloads = []
     monkeypatch.setattr(MappingSpaceWidget, "refresh", lambda self: reloads.append(1))
-    preset = Preset([FeatureSpec("tags", "token_set")], MapParams(), 2)
+    preset = Preset([FeatureSpec("tags", "token_set")], TrainParams(), 2)
     snapshot = lambda placed, waiting, state="ready": SpaceSnapshot(preset, SpaceStatus(state, 2), total=100, placed=placed, waiting=waiting)
     w.preview_mark, w.preview_placed = ("training", 2), 0
     w.on_status(snapshot(5, 90))
@@ -410,7 +410,7 @@ def test_quick_train_shows_a_sample_without_saving_and_reuses_it(widget, databas
     original = space_panel.read_quick_train_sample
     monkeypatch.setattr(space_panel, "read_quick_train_sample", lambda *args: reads.append(args) or original(*args))
     w.db_name = "map"
-    w.apply_preset(Preset([FeatureSpec("wd14.tags", "token_set")], MapParams(), 1))
+    w.apply_preset(Preset([FeatureSpec("wd14.tags", "token_set")], TrainParams(), 1))
     w.quick_size.setValue(100)
     w.toggle_quick_train()
     assert w.quick_button.text() == "Cancel"
@@ -433,11 +433,12 @@ def test_cancelling_quick_train_keeps_the_space_preview(widget, monkeypatch, qtb
     release = threading.Event()
     runs = []
 
-    class RecordingPipeline:
-        def run(self, request, cancelled, progress):
-            runs.append(cancelled())
+    def recording_fit(preset, values, *, cancelled, progress):
+        runs.append(cancelled())
+        raise MapError("Cancelled")
 
-    sample = space_panel.QuickTrainSample("db1", 100, frozenset(), [], {}, {}, RecordingPipeline())
+    monkeypatch.setattr(space_panel.SpaceModel, "fit", recording_fit)
+    sample = space_panel.QuickTrainSample("db1", 100, frozenset(), [], {}, {})
     started = threading.Event()
     monkeypatch.setattr(space_panel, "read_quick_train_sample", lambda *args: started.set() or (release.wait(10) and sample))
     w.toggle_quick_train()
@@ -477,7 +478,7 @@ def test_label_and_outlier_changes_relayout_the_shown_sample(widget, qtbot, monk
     }
     w.preview_layout = SpaceLayout(list(values), values, w.saved)
     monkeypatch.setattr(space_panel, "read_snapshot", lambda *args: pytest.fail("a view change must not read a new sample"))
-    ViewSettings.instance().set_params(MapParams(label_terms=1))
+    ViewSettings.instance().set_params(ViewParams(label_terms=1))
     qtbot.waitUntil(lambda: w.shown is not None, timeout=5000)
     assert w.shown.paths == list(values) and "12 files" in w.count_label.text()
 
@@ -498,7 +499,7 @@ def test_preview_is_shown_before_its_groups(qtbot, database, monkeypatch):
 def test_grouping_changes_regroup_the_quick_train_view(widget, database, qtbot):
     w, _saved, _resets = widget
     w.db_name = "map"
-    w.apply_preset(Preset([FeatureSpec("wd14.tags", "token_set")], MapParams(), 1))
+    w.apply_preset(Preset([FeatureSpec("wd14.tags", "token_set")], TrainParams(), 1))
     w.quick_size.setValue(100)
     w.toggle_quick_train()
     qtbot.waitUntil(lambda: w.showing_quick and not w.quick_running, timeout=30000)
@@ -507,5 +508,17 @@ def test_grouping_changes_regroup_the_quick_train_view(widget, database, qtbot):
 
     GroupingStore.instance().set("map", Grouping(size=0.25))
     qtbot.waitUntil(lambda: w.shown is not previous, timeout=30000)
-    assert w.showing_quick and w.quick_request.grouping.size == 0.25
+    assert w.showing_quick and (Grouping(size=0.25), 1.0) in w.quick_layout.labels_by_options
     assert w.shown.paths == previous.paths
+
+
+def test_mapping_only_group_size_does_not_regroup_the_preview(widget, monkeypatch):
+    w, _saved, _resets = widget
+    regroups = []
+    monkeypatch.setattr(MappingSpaceWidget, "regroup", lambda self: regroups.append(1))
+    settings = ViewSettings.instance()
+    settings.set_params(ViewParams(subgroup_size=0.5))
+    settings.set_params(ViewParams(subgroup_size=0.5, point_size=6))
+    assert regroups == [] and w.map_view.point_base == 6
+    settings.set_params(ViewParams(subgroup_size=0.5, point_size=6, outlier_percent=5.0))
+    assert regroups == [1]

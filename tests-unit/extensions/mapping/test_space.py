@@ -3,7 +3,7 @@ import pytest
 
 from extensions.mapping import projection, space
 from extensions.mapping.encoders import ENCODERS
-from extensions.mapping.params import MapParams
+from extensions.mapping.params import TrainParams
 from extensions.mapping.session import FeatureSpec, MapError
 from extensions.mapping.space import Preset, SpaceLoadError, SpaceModel, SpaceStatus, load_preset, read_status, save_preset, write_status
 from wafer.core.db.path_values import PathValue
@@ -34,7 +34,7 @@ def tag_values(count=40):
 
 
 def preset(version=1):
-    return Preset([FeatureSpec("tags", "token_set"), FeatureSpec("color.palette", "palette")], MapParams(), version)
+    return Preset([FeatureSpec("tags", "token_set"), FeatureSpec("color.palette", "palette")], TrainParams(), version)
 
 
 def test_preset_roundtrip_and_keys(settings):
@@ -91,7 +91,7 @@ def test_saved_model_drops_training_texts_and_still_places(tmp_path):
     import pickle
 
     texts = {f"c:/{i}.png": {"tags": PathValue("cat, sky" if i < 20 else "dog, sea"), "prompt": PathValue(f"a long prompt number {i}")} for i in range(40)}
-    features = Preset([FeatureSpec("tags", "token_set"), FeatureSpec("prompt", "text")], MapParams(), 1)
+    features = Preset([FeatureSpec("tags", "token_set"), FeatureSpec("prompt", "text")], TrainParams(), 1)
     model = SpaceModel.fit(features, texts)
     before = model.place([{"tags": PathValue("cat, sky"), "prompt": PathValue("a long prompt number 3")}])
     model.save(tmp_path)
@@ -191,9 +191,9 @@ def test_mismatched_model_raises_load_error(tmp_path):
 
 def test_load_ignores_a_model_built_from_another_preset(tmp_path):
     SpaceModel.fit(preset(1), tag_values()).save(tmp_path)
-    other = Preset([FeatureSpec("tags", "text")], MapParams(), 1)
+    other = Preset([FeatureSpec("tags", "text")], TrainParams(), 1)
     assert SpaceModel.load(tmp_path, other) is None
-    retuned = Preset(preset(1).features, MapParams(neighbors=2.0), 1)
+    retuned = Preset(preset(1).features, TrainParams(neighbors=2.0), 1)
     assert SpaceModel.load(tmp_path, retuned) is None
     assert SpaceModel.load(tmp_path, preset(1)) is not None
 
@@ -206,8 +206,8 @@ def test_grouping_coordinates_do_not_depend_on_spacing(monkeypatch):
         return np.full((matrix.shape[0], dims), min_dist, dtype=np.float32) + matrix[:, :1]
 
     monkeypatch.setattr(projection, "embed", spacing_embed)
-    tight = SpaceModel.fit(Preset([FeatureSpec("tags", "token_set")], MapParams(min_dist=0.05), 1), tag_values())
-    loose = SpaceModel.fit(Preset([FeatureSpec("tags", "token_set")], MapParams(min_dist=0.9), 1), tag_values())
+    tight = SpaceModel.fit(Preset([FeatureSpec("tags", "token_set")], TrainParams(min_dist=0.05), 1), tag_values())
+    loose = SpaceModel.fit(Preset([FeatureSpec("tags", "token_set")], TrainParams(min_dist=0.9), 1), tag_values())
     grouping = (projection.GROUPING_DIMS, projection.GROUPING_MIN_DIST)
     assert calls == [(2, 0.05), grouping, (2, 0.9), grouping]
     assert tight.coords.shape[1] == 2 + projection.GROUPING_DIMS
@@ -228,7 +228,7 @@ def test_model_with_two_dimensional_grouping_must_be_retrained(tmp_path):
 
 
 def limited(limit, seed=42):
-    return Preset([FeatureSpec("tags", "token_set")], MapParams(train_limit=limit, seed=seed), 1)
+    return Preset([FeatureSpec("tags", "token_set")], TrainParams(train_limit=limit, seed=seed), 1)
 
 
 def is_cat(path):
@@ -339,7 +339,7 @@ def test_space_groups_are_read_from_the_database_and_reloaded_when_files_are_pla
 
     place(range(5))
     place([5], version="2")
-    current = Preset([FeatureSpec("tags", "token_set")], MapParams(), 3)
+    current = Preset([FeatureSpec("tags", "token_set")], TrainParams(), 3)
     space.forget_space_groups()
     groups = space.space_groups(str(db_path), current)
     assert sorted(groups.paths) == [f"c:/{i}.png" for i in range(5)]
@@ -349,3 +349,56 @@ def test_space_groups_are_read_from_the_database_and_reloaded_when_files_are_pla
     reloaded = space.space_groups(str(db_path), current)
     assert reloaded is not groups and reloaded.size == 7
     db.close()
+
+
+def test_fit_reports_its_stages_and_logs_each_key_share(monkeypatch):
+    stages, logged = [], []
+    monkeypatch.setattr(space.AppLogger, "info", lambda message, *a, **k: logged.append(message))
+    SpaceModel.fit(preset(), tag_values(), progress=stages.append)
+    assert stages == ["encode", "layout"]
+    assert any("tags=" in message and "color.palette=" in message for message in logged)
+
+
+def test_cancelling_before_encoding_encodes_nothing(monkeypatch):
+    encoded = []
+    original = ENCODERS["token_set"].fit_transform
+    monkeypatch.setattr(ENCODERS["token_set"], "fit_transform", lambda self, inputs: encoded.append(1) or original(self, inputs))
+    with pytest.raises(MapError):
+        SpaceModel.fit(preset(), tag_values(), cancelled=lambda: True)
+    assert encoded == []
+
+
+def test_both_layouts_share_one_neighbor_search_of_the_resolved_size(monkeypatch):
+    searched, used = [], []
+    real_search = projection.nearest_neighbors
+
+    def search(matrix, n_neighbors, seed):
+        searched.append(n_neighbors)
+        return real_search(matrix, n_neighbors, seed)
+
+    def record(matrix, neighbors, min_dist, seed, dims=2):
+        used.append(neighbors)
+        return np.zeros((matrix.shape[0], dims), dtype=np.float32) + matrix[:, :1]
+
+    monkeypatch.setattr(projection, "nearest_neighbors", search)
+    monkeypatch.setattr(projection, "embed", record)
+    SpaceModel.fit(limited(10), tag_values(40))
+    assert searched == [TrainParams().resolved_neighbors(10)]
+    assert len(used) == 2 and used[0] is used[1]
+
+
+def test_model_layout_shows_the_fitted_files_grouped_by_their_own_count(monkeypatch):
+    from extensions.mapping.params import Grouping, ViewParams
+
+    built = []
+    real_tree = projection.ClusterTree
+    monkeypatch.setattr(projection, "ClusterTree", lambda points, samples: built.append(len(points)) or real_tree(points, samples))
+    values = {**tag_values(40), "c:/empty.png": {}}
+    model = SpaceModel.fit(limited(10), values)
+    layout = model.layout(values)
+    first = layout.run(ViewParams())
+    assert first.paths == model.paths and not first.unset.any()
+    assert np.isfinite(first.positions).all() and first.labels is not None
+    assert built == [40]
+    layout.run(ViewParams(), grouping=Grouping(fine=1))
+    assert built == [40]

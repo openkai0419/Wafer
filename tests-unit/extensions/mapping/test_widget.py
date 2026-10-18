@@ -9,7 +9,7 @@ from extensions.mapping import commands
 from extensions.mapping import map_host as map_host_module
 from extensions.mapping import map_view as map_view_module
 from extensions.mapping import widget as widget_module
-from extensions.mapping.params import Grouping, MapParams, param_specs
+from extensions.mapping.params import Grouping, TrainParams, ViewParams, param_specs
 from extensions.mapping.projection import GROUPING_DIMS
 from extensions.mapping.session import FeatureSpec, grouping_text
 from extensions.mapping.space import Preset
@@ -76,7 +76,7 @@ def deterministic_groups(fake_cluster):
 @pytest.fixture()
 def space_data(monkeypatch):
     values = space_values()
-    state = SimpleNamespace(preset=Preset([FeatureSpec("tags", "token_set")], MapParams(), 2), values=values, groups=None)
+    state = SimpleNamespace(preset=Preset([FeatureSpec("tags", "token_set")], TrainParams(), 2), values=values, groups=None)
     monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps: {p: state.values[p] for p in ps if p in state.values})
     monkeypatch.setattr(widget_module, "fetch_sources", lambda db, ps: {p: p.replace(".png", ".zip") for p in ps})
     monkeypatch.setattr(widget_module, "load_preset", lambda db_name: state.preset)
@@ -115,14 +115,14 @@ def test_set_files_places_files_from_the_space(mapping):
 
 
 def test_only_view_settings_and_no_keys_are_shown(mapping):
-    view_params = {name for name, spec, _ in param_specs() if spec.stage == "view"}
+    view_params = {name for name, _spec, _default in param_specs(ViewParams)}
     assert set(mapping.toolbar.tuning.controls) == view_params - {"subgroup_size"}
     assert set(mapping.toolbar.sliders) == {"subgroup_size"} and mapping.toolbar.fine_check is None
     assert not hasattr(mapping, "feature_bar")
     assert mapping.edit_space_button.isVisibleTo(mapping)
 
 
-@pytest.mark.parametrize("preset", [None, Preset([FeatureSpec("tags", "token_set")], MapParams(), 0)])
+@pytest.mark.parametrize("preset", [None, Preset([FeatureSpec("tags", "token_set")], TrainParams(), 0)])
 def test_without_a_trained_space_it_points_to_mapping_space(qtbot, space_data, preset):
     space_data.preset = preset
     w = open_widget(qtbot, wait=False)
@@ -358,9 +358,9 @@ def test_smallest_thumbnail_bucket_matches_map_view():
 
 
 def test_point_size_comes_from_the_settings_without_relayout(mapping):
-    assert mapping.map_view.point_base == MapParams().point_size == 3.0
+    assert mapping.map_view.point_base == ViewParams().point_size == 3.0
     previous = mapping.current_result()
-    settings().set_params(MapParams(point_size=6))
+    settings().set_params(ViewParams(point_size=6))
     assert mapping.map_view.point_base == 6 and mapping.current_result() is previous
     settings().set_image_scale(3.0)
     assert mapping.map_view.point_base == 6
@@ -368,7 +368,7 @@ def test_point_size_comes_from_the_settings_without_relayout(mapping):
 
 def test_relayout_settings_recompute_the_map(mapping, qtbot):
     previous = mapping.current_result()
-    settings().set_params(MapParams(outlier_percent=5.0))
+    settings().set_params(ViewParams(outlier_percent=5.0))
     wait_for_new_result(qtbot, mapping, previous)
 
 
@@ -408,9 +408,9 @@ def test_hover_goes_through_host_and_hides_with_the_panel(mapping):
 
 
 def test_hover_size_param_reaches_host(mapping):
-    settings().set_params(MapParams(hover_size=0))
+    settings().set_params(ViewParams(hover_size=0))
     assert mapping.host.hover_size == 0
-    assert mapping.map_view.image_cap == MapParams().hover_size
+    assert mapping.map_view.image_cap == ViewParams().hover_size
     mapping.show_hover("c:/1.png", QtCore.QPoint(300, 300))
     assert not mapping.host.preview.isVisible()
 
@@ -432,7 +432,7 @@ def test_computation_outranks_thumbnail_requests(mapping):
 def test_retrained_preset_is_picked_up_on_refresh(mapping, qtbot, space_data):
     drill(mapping, qtbot, range(10))
     drilled = list(mapping.levels[-1].paths)
-    retrained = Preset([FeatureSpec("tags", "token_set"), FeatureSpec("prompt", "text")], MapParams(), 2)
+    retrained = Preset([FeatureSpec("tags", "token_set"), FeatureSpec("prompt", "text")], TrainParams(), 2)
     space_data.preset = retrained
     previous = mapping.current_result()
     mapping.refresh()
@@ -587,7 +587,7 @@ def test_regrouping_swaps_colors_and_labels_and_keeps_the_view(mapping, qtbot, m
     mapping.map_view.scale(2.0, 2.0)
     transform = mapping.map_view.transform()
     previous = mapping.current_result()
-    settings().set_params(MapParams(subgroup_size=0.25))
+    settings().set_params(ViewParams(subgroup_size=0.25))
     assert "Grouping" in mapping.message_text()
     wait_for_new_result(qtbot, mapping, previous)
     assert calls == [] and mapping.map_view.transform() == transform
@@ -598,8 +598,8 @@ def test_only_the_latest_regroup_is_computed(space_data):
     from extensions.mapping.session import SpaceLayout
 
     layout = SpaceLayout(list(space_data.values), space_data.values, space_data.preset)
-    assert layout.run(MapParams(), cancelled=lambda: True) is None
-    assert layout.run(MapParams()) is not None
+    assert layout.run(ViewParams(), cancelled=lambda: True) is None
+    assert layout.run(ViewParams()) is not None
 
 
 def test_groups_start_from_the_size_of_the_whole_space(mapping, space_data):

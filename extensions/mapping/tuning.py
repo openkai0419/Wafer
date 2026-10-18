@@ -8,17 +8,17 @@ from wafer.core.lang.manager import t
 from wafer.qt.common.dpi import dpix
 from wafer.qt.theme import ThemeManager
 
-from .params import MapParams, param_specs
-from .session import MapDiagnostics
+from .params import ParamSet, param_specs
 
 
 class TuningPanel(QtWidgets.QWidget):
     params_changed = QtCore.Signal(object)
 
-    def __init__(self, stages: tuple[str, ...] | None = None, exclude: frozenset[str] = frozenset(), parent=None):
+    def __init__(self, params_class: type[ParamSet], exclude: frozenset[str] = frozenset(), parent=None):
         super().__init__(parent)
         palette = ThemeManager.instance().palette
-        self.current = MapParams()
+        self.params_class = params_class
+        self.current = params_class()
         self.syncing = False
         self.controls: dict[str, QtWidgets.QAbstractSpinBox] = {}
         root = QtWidgets.QVBoxLayout(self)
@@ -26,8 +26,8 @@ class TuningPanel(QtWidgets.QWidget):
         grid = QtWidgets.QGridLayout()
         grid.setVerticalSpacing(dpix(2))
         row = 0
-        for name, spec, default in param_specs():
-            if (stages is not None and spec.stage not in stages) or name in exclude:
+        for name, spec, default in param_specs(params_class):
+            if name in exclude:
                 continue
             label = QtWidgets.QLabel(t(spec.label))
             label.setToolTip(t(spec.description))
@@ -55,15 +55,11 @@ class TuningPanel(QtWidgets.QWidget):
         self.reset_button = QtWidgets.QPushButton(t("Reset to defaults"))
         self.reset_button.clicked.connect(self.reset)
         root.addWidget(self.reset_button)
-        self.diagnostics_label = QtWidgets.QLabel()
-        self.diagnostics_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        self.diagnostics_label.setStyleSheet(f"color: {palette.text_secondary}; font-family: monospace;")
-        root.addWidget(self.diagnostics_label)
 
-    def params(self) -> MapParams:
+    def params(self) -> ParamSet:
         return self.current
 
-    def set_params(self, params: MapParams):
+    def set_params(self, params: ParamSet):
         self.current = params
         self.syncing = True
         try:
@@ -72,16 +68,6 @@ class TuningPanel(QtWidgets.QWidget):
         finally:
             self.syncing = False
 
-    def set_diagnostics(self, diagnostics: MapDiagnostics | None):
-        if diagnostics is None:
-            self.diagnostics_label.clear()
-            return
-        lines = [" ".join(f"{name} {seconds:.2f}s" for name, seconds in diagnostics.timings.items())]
-        for block in diagnostics.blocks:
-            lines.append(f"{block.label}: {block.dims}d, {t('missing')} {block.missing}, {t('share')} {block.contribution:.0%}")
-        lines.append(f"{t('groups')} {diagnostics.groups}, {t('noise')} {diagnostics.noise_ratio:.0%}, {t('outliers')} {diagnostics.outliers}")
-        self.diagnostics_label.setText("\n".join(lines))
-
     def on_value(self, name: str, value):
         if self.syncing:
             return
@@ -89,5 +75,5 @@ class TuningPanel(QtWidgets.QWidget):
         self.params_changed.emit(self.current)
 
     def reset(self):
-        self.set_params(MapParams())
+        self.set_params(self.params_class())
         self.params_changed.emit(self.current)

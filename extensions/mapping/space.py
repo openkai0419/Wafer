@@ -21,8 +21,8 @@ from wafer.core.logs import AppLogger
 
 from . import projection
 from .encoders import ENCODERS, BaseEncoder, expand_group_keys, feature_input
-from .params import Grouping, MapParams
-from .session import KEY_GROUP, KEY_MODEL, OUTPUT_PREFIX, SPACE_COLUMNS, FeatureSpec, MapError, SpaceGroups, grouping_values
+from .params import Grouping, TrainParams
+from .session import KEY_GROUP, KEY_MODEL, OUTPUT_PREFIX, SPACE_COLUMNS, FeatureSpec, MapError, SpaceGroups, SpaceLayout, grouping_values
 
 PRESET_KEY = "mapping.preset"
 GROUPING_KEY = "mapping.grouping"
@@ -38,7 +38,7 @@ class SpaceLoadError(Exception):
 @dataclass
 class Preset:
     features: list[FeatureSpec]
-    params: MapParams
+    params: TrainParams
     version: int = 0
 
     def to_dict(self) -> dict[str, Any]:
@@ -53,7 +53,7 @@ class Preset:
             version = int(data.get("version", 0))
         except (TypeError, ValueError):
             version = 0
-        return cls(features, MapParams.from_dict(data.get("params") or {}), max(version, 0))
+        return cls(features, TrainParams.from_dict(data.get("params") or {}), max(version, 0))
 
     def value_keys(self) -> list[str]:
         keys: list[str] = []
@@ -205,19 +205,20 @@ class SpaceModel:
         self.neighbor_index: projection.NeighborIndex | None = None
 
     @classmethod
-    def fit(cls, preset: Preset, values: dict[str, dict[str, PathValue]], *, cancelled=lambda: False) -> SpaceModel:
+    def fit(cls, preset: Preset, values: dict[str, dict[str, PathValue]], *, cancelled=lambda: False, progress=lambda stage: None) -> SpaceModel:
         params = preset.params.normalized()
         valued = valued_paths(values, preset.value_keys())
         paths = [valued[i] for i in projection.sample_rows(len(valued), params.train_limit, params.seed)]
         encoders, reducers, blocks = [], [], []
         has_value = np.zeros(len(paths), dtype=bool)
+        progress("encode")
         for feature in preset.features:
             if cancelled():
                 raise MapError("Cancelled")
             encoder_cls = ENCODERS[feature.encoder]
             encoder = encoder_cls(feature.options)
             inputs = [feature_input(values[path], feature.key, encoder_cls) for path in paths]
-            raw = encoder.fit_transform(inputs, params)
+            raw = encoder.fit_transform(inputs)
             reducer = projection.BlockReducer(encoder.summary_dims(feature.options), params.seed)
             present = encoder.present(inputs)
             blocks.append((feature.label(), reducer.fit_transform(raw), present, feature.weight))
@@ -227,7 +228,9 @@ class SpaceModel:
         active = np.flatnonzero(has_value)
         if active.size < 3:
             raise MapError("Not enough files have values for the selected keys.")
-        combined, _stats, scales = projection.combine_blocks([(label, dense[active], present[active], weight) for label, dense, present, weight in blocks], params.seed)
+        combined, stats, scales = projection.combine_blocks([(label, dense[active], present[active], weight) for label, dense, present, weight in blocks], params.seed)
+        AppLogger.info("[Mapping] Key shares: " + " ".join(f"{stat.label}={stat.contribution:.0%} (missing {stat.missing})" for stat in stats))
+        progress("layout")
         neighbors = projection.nearest_neighbors(combined, params.resolved_neighbors(active.size), params.seed)
         if cancelled():
             raise MapError("Cancelled")
@@ -256,6 +259,9 @@ class SpaceModel:
             self.paths = self.paths + placed_paths
             self.index = {path: i for i, path in enumerate(self.paths)}
             self.coords = np.vstack([self.coords, *placed_coords])
+
+    def layout(self, values: dict[str, dict[str, PathValue]]) -> SpaceLayout:
+        return SpaceLayout(self.paths, values, self.preset, SpaceGroups(self.paths, self.coords[:, 2:].astype(np.float32)), coords=self.coords.astype(np.float64))
 
     def coords_for(self, path: str) -> tuple[float, ...] | None:
         index = self.index.get(path)

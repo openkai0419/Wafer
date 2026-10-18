@@ -13,14 +13,14 @@ from wafer.qt.common.icon_engine import themed_icon
 from wafer.qt.theme import ThemeManager
 from wafer.qt.widgets.popup import PopupBase
 
-from .params import Grouping, param_specs
+from .params import Grouping, ViewParams, param_specs
 from .tuning import TuningPanel
-from .view_settings import TOOLBAR_PARAMS, VIEW_STAGES, GroupingStore, ViewSettings
+from .view_settings import TOOLBAR_PARAMS, GroupingStore, ViewSettings
 
 TUNING_HEIGHT = 600
 SLIDER_WIDTH = 110
 STEPS_PER_DOUBLING = 4
-SPECS = {name: spec for name, spec, _ in param_specs()}
+SPECS = {name: spec for name, spec, _ in param_specs(ViewParams)}
 GROUPING_SPECS = {name: spec for name, spec, _ in param_specs(Grouping)}
 MULTIPLY = "\N{MULTIPLICATION SIGN}"
 
@@ -82,7 +82,7 @@ class MapToolbar(QtWidgets.QWidget):
             group.addButton(button)
             layout.addWidget(button)
             self.mode_buttons[mode] = button
-        self.tuning = TuningPanel(stages=VIEW_STAGES, exclude=TOOLBAR_PARAMS)
+        self.tuning = TuningPanel(ViewParams, exclude=TOOLBAR_PARAMS)
         self.tuning.params_changed.connect(self.settings.set_params)
         self.tuning_button = QtWidgets.QToolButton()
         self.tuning_button.setIcon(themed_icon("gear_small"))

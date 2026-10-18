@@ -16,7 +16,6 @@ from wafer.core.db.path_values import PathValue
 from wafer.core.lang.manager import t
 from wafer.core.logs import AppLogger
 
-from .params import MapParams
 
 PALETTE_KEY = "color.palette"
 PALETTE_MAX_SLOTS = 30
@@ -93,19 +92,19 @@ class BaseEncoder(ABC):
         return cls.number_option(options, SUMMARY_OPTION.name) if SUMMARY_OPTION in cls.OPTIONS else SUMMARY_DIMS
 
     @abstractmethod
-    def fit_transform(self, inputs: Sequence[Any], params: MapParams): ...
+    def fit_transform(self, inputs: Sequence[Any]): ...
 
     @abstractmethod
     def transform(self, inputs: Sequence[Any]): ...
 
-    def fit_describe(self, inputs: Sequence[Any], params: MapParams) -> None:
-        self.fit_transform(inputs, params)
+    def fit_describe(self, inputs: Sequence[Any]) -> None:
+        self.fit_transform(inputs)
 
     @abstractmethod
-    def describe(self, members: np.ndarray, params: MapParams) -> list[str]: ...
+    def describe(self, members: np.ndarray, terms: int) -> list[str]: ...
 
-    def describe_groups(self, groups: list[np.ndarray], params: MapParams) -> list[list[str]]:
-        return [self.describe(members, params) for members in groups]
+    def describe_groups(self, groups: list[np.ndarray], terms: int) -> list[list[str]]:
+        return [self.describe(members, terms) for members in groups]
 
     def compact(self) -> None:
         return None
@@ -183,7 +182,7 @@ class NumericEncoder(BaseEncoder):
     def present(self, inputs):
         return np.array([item is not None and item.number is not None and np.isfinite(item.number) for item in inputs], dtype=bool)
 
-    def fit_transform(self, inputs, params):
+    def fit_transform(self, inputs):
         present = self.present(inputs)
         self.numbers = np.array([item.number if ok else np.nan for item, ok in zip(inputs, present)], dtype=np.float64)
         values = self.scaled(self.numbers[present])
@@ -216,7 +215,7 @@ class NumericEncoder(BaseEncoder):
     def compact(self):
         self.numbers = np.zeros(0, dtype=np.float64)
 
-    def describe(self, members, params):
+    def describe(self, members, terms):
         if self.numbers.size == 0:
             return []
         numbers = self.numbers[members]
@@ -312,7 +311,7 @@ class TokenSetEncoder(BaseEncoder):
             documents.append(tokens)
         return documents
 
-    def fit_transform(self, inputs, params):
+    def fit_transform(self, inputs):
         from sklearn.feature_extraction import DictVectorizer
         from sklearn.feature_extraction.text import TfidfTransformer
 
@@ -337,11 +336,11 @@ class TokenSetEncoder(BaseEncoder):
     def compact(self):
         self.matrix, self.names = None, []
 
-    def describe(self, members, params):
-        return self.describe_groups([members], params)[0]
+    def describe(self, members, terms):
+        return self.describe_groups([members], terms)[0]
 
-    def describe_groups(self, groups, params):
-        return top_lift_terms_by_group(self.matrix, groups, self.names, params.label_terms)
+    def describe_groups(self, groups, terms):
+        return top_lift_terms_by_group(self.matrix, groups, self.names, terms)
 
 
 @lru_cache(maxsize=65536)
@@ -372,8 +371,8 @@ class PathEncoder(TokenSetEncoder):
     def documents(self, texts):
         return [dict.fromkeys(folder_prefixes(text), 1.0) for text in texts]
 
-    def describe_groups(self, groups, params):
-        return [deepest_folders(terms) for terms in super().describe_groups(groups, params)]
+    def describe_groups(self, groups, terms):
+        return [deepest_folders(terms) for terms in super().describe_groups(groups, terms)]
 
 
 def deepest_folders(terms: list[str]) -> list[str]:
@@ -406,7 +405,7 @@ class TextEncoder(BaseEncoder):
     def detect(cls, values):
         return 0.5 if any(value.text.strip() for value in values) else 0.0
 
-    def fit_transform(self, inputs, params):
+    def fit_transform(self, inputs):
         from sklearn.feature_extraction.text import TfidfVectorizer
 
         self.texts = [item.text if item is not None else "" for item in inputs]
@@ -431,7 +430,7 @@ class TextEncoder(BaseEncoder):
         low, high = self.number_option(self.options, "min_chars"), self.number_option(self.options, "max_chars")
         return min(low, high), max(low, high)
 
-    def fit_describe(self, inputs, params):
+    def fit_describe(self, inputs):
         self.texts = [item.text if item is not None else "" for item in inputs]
         self.words_matrix, self.word_names = None, []
 
@@ -444,10 +443,10 @@ class TextEncoder(BaseEncoder):
         self.texts = []
         self.words_matrix, self.word_names = None, []
 
-    def describe(self, members, params):
-        return self.describe_groups([members], params)[0]
+    def describe(self, members, terms):
+        return self.describe_groups([members], terms)[0]
 
-    def describe_groups(self, groups, params):
+    def describe_groups(self, groups, terms):
         from scipy import sparse
         from sklearn.feature_extraction.text import CountVectorizer
 
@@ -462,7 +461,7 @@ class TextEncoder(BaseEncoder):
                 AppLogger.warning("[Mapping] Text key has no words to label groups", exc=e)
                 self.words_matrix = sparse.csr_matrix((len(self.texts), 0), dtype=np.float32)
                 self.word_names = []
-        return top_lift_terms_by_group(self.words_matrix, groups, self.word_names, params.label_terms)
+        return top_lift_terms_by_group(self.words_matrix, groups, self.word_names, terms)
 
 
 class CategoryEncoder(BaseEncoder):
@@ -483,7 +482,7 @@ class CategoryEncoder(BaseEncoder):
             return 0.0
         return 0.7 if len(set(texts)) <= max(2, len(texts) * 0.2) else 0.0
 
-    def fit_transform(self, inputs, params):
+    def fit_transform(self, inputs):
         self.values = [item.text.strip() if item is not None else "" for item in inputs]
         self.codes = {value: i for i, value in enumerate(sorted({v for v in self.values if v}))}
         return self.transform(inputs)
@@ -499,7 +498,7 @@ class CategoryEncoder(BaseEncoder):
     def compact(self):
         self.values = []
 
-    def describe(self, members, params):
+    def describe(self, members, terms):
         if not self.values:
             return []
         counts = Counter(self.values[i] for i in members if self.values[i])
@@ -574,11 +573,11 @@ class PaletteEncoder(BaseEncoder):
         super().__init__(options)
         self.first_colors = np.zeros((0, 3), dtype=np.float32)
 
-    def fit_transform(self, inputs, params):
+    def fit_transform(self, inputs):
         self.first_colors = first_slot_lab(inputs)
         return self.transform(inputs)
 
-    def fit_describe(self, inputs, params):
+    def fit_describe(self, inputs):
         self.first_colors = first_slot_lab(inputs)
 
     def transform(self, inputs):
@@ -599,7 +598,7 @@ class PaletteEncoder(BaseEncoder):
     def compact(self):
         self.first_colors = np.zeros((0, 3), dtype=np.float32)
 
-    def describe(self, members, params):
+    def describe(self, members, terms):
         if self.first_colors.shape[0] == 0:
             return []
         colors = self.first_colors[members]

@@ -38,4 +38,4 @@ def test_loading_unchanged_view_settings_does_not_notify():
     assert events == []
     settings.load({"params": {"label_terms": 5}})
     settings.load({"params": {"label_terms": 5}, "labels": False})
-    assert events == [True, False]
+    assert events == [frozenset({"label_terms"}), frozenset({"labels"})]

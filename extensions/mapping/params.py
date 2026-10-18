@@ -6,12 +6,9 @@ from typing import Any
 
 from wafer.core.logs import AppLogger
 
-STAGES = ("layout", "view")
-
 
 @dataclass(frozen=True, slots=True)
 class ParamSpec:
-    stage: str
     label: str
     description: str
     minimum: float
@@ -19,8 +16,8 @@ class ParamSpec:
     step: float = 1.0
 
 
-def param(default, *, stage: str, label: str, description: str, minimum: float, maximum: float, step: float = 1.0):
-    return field(default=default, metadata={"spec": ParamSpec(stage, label, description, minimum, maximum, step)})
+def param(default, *, label: str, description: str, minimum: float, maximum: float, step: float = 1.0):
+    return field(default=default, metadata={"spec": ParamSpec(label, description, minimum, maximum, step)})
 
 
 AUTO_GROUP_MIN = 5
@@ -32,12 +29,10 @@ AUTO_NEIGHBORS_SHARE = 0.005
 MIN_NEIGHBORS = 2
 MAX_NEIGHBORS = 1000
 TRAIN_LIMIT = 10000
+FLOAT_DIGITS = 6
 
 
 class ParamSet:
-    def values_for(self, stage: str) -> tuple:
-        return tuple(getattr(self, f.name) for f in fields(self) if f.metadata["spec"].stage == stage)
-
     def normalized(self):
         changes: dict[str, Any] = {}
         for f in fields(self):
@@ -47,7 +42,7 @@ class ParamSet:
                 changes[f.name] = f.default
                 continue
             value = min(max(current, spec.minimum), spec.maximum)
-            changes[f.name] = round(value) if isinstance(f.default, int) else float(value)
+            changes[f.name] = round(value) if isinstance(f.default, int) else round(float(value), FLOAT_DIGITS)
         return replace(self, **changes)
 
     def to_dict(self) -> dict[str, Any]:
@@ -70,10 +65,9 @@ class ParamSet:
 
 
 @dataclass(frozen=True)
-class MapParams(ParamSet):
+class TrainParams(ParamSet):
     neighbors: float = param(
         1.0,
-        stage="layout",
         label="Neighbors",
         description="How many nearby files shape the layout, as a multiple of about 0.5% of the training files (at most 1000). Lower shows small clusters, higher the overall structure.",
         minimum=0.25,
@@ -82,7 +76,6 @@ class MapParams(ParamSet):
     )
     train_limit: int = param(
         TRAIN_LIMIT,
-        stage="layout",
         label="Training files",
         description="Learn the layout from this many random files and place the rest next to their most similar ones. 0 = learn from every file (slow on large databases).",
         minimum=0,
@@ -91,17 +84,22 @@ class MapParams(ParamSet):
     )
     min_dist: float = param(
         0.1,
-        stage="layout",
         label="Spacing",
         description="How tightly points are packed on the map. Lower makes dense clusters, higher spreads points evenly. Groups do not change.",
         minimum=0.0,
         maximum=1.0,
         step=0.05,
     )
-    seed: int = param(42, stage="layout", label="Random seed", description="Change to try a different layout.", minimum=0, maximum=9999)
+    seed: int = param(42, label="Random seed", description="Change to try a different layout.", minimum=0, maximum=9999)
+
+    def resolved_neighbors(self, count: int) -> int:
+        return min(MAX_NEIGHBORS, max(MIN_NEIGHBORS, round(max(AUTO_NEIGHBORS_MIN, count * AUTO_NEIGHBORS_SHARE) * self.neighbors)))
+
+
+@dataclass(frozen=True)
+class ViewParams(ParamSet):
     outlier_percent: float = param(
         1.0,
-        stage="view",
         label="Outliers (%)",
         description="Share of far points marked as outliers and left outside the first view. Higher zooms the first view into the center.",
         minimum=0.0,
@@ -110,30 +108,23 @@ class MapParams(ParamSet):
     )
     subgroup_size: float = param(
         1.0,
-        stage="view",
         label="Group size",
         description="Split the Mapping Space groups into smaller ones, as a share of their size. 1 = the Mapping Space groups.",
         minimum=0.0625,
         maximum=1.0,
         step=0.25,
     )
-    point_size: float = param(3.0, stage="view", label="Point size", description="Size of the dots in pixels.", minimum=1.0, maximum=16.0, step=1.0)
-    image_spacing: float = param(
-        0.01, stage="view", label="Image spacing", description="Space between images, relative to their size. Lower lets them overlap more.", minimum=0.01, maximum=2.0, step=0.05
-    )
-    max_images: int = param(300, stage="view", label="Image limit", description="Most images shown at once. Other files stay as dots.", minimum=0, maximum=2000, step=50)
-    label_terms: int = param(3, stage="view", label="Label words", description="Number of words in each group label.", minimum=1, maximum=10)
-    hover_size: int = param(256, stage="view", label="Hover size", description="Size of the enlarged image shown under the cursor. 0 turns it off.", minimum=0, maximum=1024, step=32)
-
-    def resolved_neighbors(self, count: int) -> int:
-        return min(MAX_NEIGHBORS, max(MIN_NEIGHBORS, round(max(AUTO_NEIGHBORS_MIN, count * AUTO_NEIGHBORS_SHARE) * self.neighbors)))
+    point_size: float = param(3.0, label="Point size", description="Size of the dots in pixels.", minimum=1.0, maximum=16.0, step=1.0)
+    image_spacing: float = param(0.01, label="Image spacing", description="Space between images, relative to their size. Lower lets them overlap more.", minimum=0.01, maximum=2.0, step=0.05)
+    max_images: int = param(300, label="Image limit", description="Most images shown at once. Other files stay as dots.", minimum=0, maximum=2000, step=50)
+    label_terms: int = param(3, label="Label words", description="Number of words in each group label.", minimum=1, maximum=10)
+    hover_size: int = param(256, label="Hover size", description="Size of the enlarged image shown under the cursor. 0 turns it off.", minimum=0, maximum=1024, step=32)
 
 
 @dataclass(frozen=True)
 class Grouping(ParamSet):
     size: float = param(
         1.0,
-        stage="grouping",
         label="Group size",
         description="Smallest group in the whole space, as a multiple of the automatic size (1 in 500 files, at least 5). Lower makes more, smaller groups.",
         minimum=0.25,
@@ -142,14 +133,13 @@ class Grouping(ParamSet):
     )
     strictness: float = param(
         1.0,
-        stage="grouping",
         label="Strictness",
         description="How crowded files must be to form a group, as a multiple of the automatic value. Lower leaves fewer files without a group.",
         minimum=0.25,
         maximum=16.0,
         step=0.25,
     )
-    fine: int = param(0, stage="grouping", label="Fine groups", description="Split large groups into the smaller crowds inside them.", minimum=0, maximum=1)
+    fine: int = param(0, label="Fine groups", description="Split large groups into the smaller crowds inside them.", minimum=0, maximum=1)
 
     def cluster_options(self, count: int, share: float = 1.0) -> tuple[int, int, str]:
         automatic = max(AUTO_GROUP_MIN, count // AUTO_GROUP_DIVISOR)
@@ -158,12 +148,5 @@ class Grouping(ParamSet):
         return size, samples, "leaf" if self.fine else "eom"
 
 
-def param_specs(cls: type[ParamSet] | None = None) -> list[tuple[str, ParamSpec, int | float]]:
-    return [(f.name, f.metadata["spec"], f.default) for f in fields(cls or MapParams)]
-
-
-def changed_stage(old: MapParams, new: MapParams) -> str | None:
-    for stage in STAGES:
-        if old.values_for(stage) != new.values_for(stage):
-            return stage
-    return None
+def param_specs(cls: type[ParamSet]) -> list[tuple[str, ParamSpec, int | float]]:
+    return [(f.name, f.metadata["spec"], f.default) for f in fields(cls)]

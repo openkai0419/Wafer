@@ -7,7 +7,7 @@ import pytest
 
 from extensions.mapping import parser as parser_module
 from extensions.mapping import projection, space
-from extensions.mapping.params import MapParams
+from extensions.mapping.params import TrainParams
 from extensions.mapping.parser import MappingParser
 from extensions.mapping.session import FeatureSpec, MapError, grouping_values
 from extensions.mapping.space import Preset, SpaceStatus, read_status, save_preset, write_status
@@ -32,7 +32,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(space, "resolve_cache_path", lambda rel: str(tmp_path / "cache" / rel))
     monkeypatch.setattr(parser_module, "data_db_path", lambda name: str(db_path))
     monkeypatch.setattr(projection, "embed", lambda m, neighbors, d, s, dims=2: np.tile(np.asarray(m, dtype=np.float32), (1, dims))[:, :dims])
-    save_preset("map", Preset([FeatureSpec("wd14.tags", "token_set")], MapParams(), 1))
+    save_preset("map", Preset([FeatureSpec("wd14.tags", "token_set")], TrainParams(), 1))
     plugin = MappingParser()
     plugin.db_name = "map"
     yield plugin, db, tmp_path
@@ -82,7 +82,7 @@ def test_version_change_retrains(env, monkeypatch):
     calls = []
     original = space.SpaceModel.fit
     monkeypatch.setattr(space.SpaceModel, "fit", classmethod(lambda cls, *a, **k: calls.append(1) or original.__func__(cls, *a, **k)))
-    save_preset("map", Preset([FeatureSpec("wd14.tags", "token_set")], MapParams(), 2))
+    save_preset("map", Preset([FeatureSpec("wd14.tags", "token_set")], TrainParams(), 2))
     monkeypatch.setattr(parser_module, "PRESET_TTL", 0.0)
     assert run(plugin, "c:/0.png").meta_info["model"] == "2"
     assert calls == [1]
@@ -108,7 +108,7 @@ def test_unreadable_model_passes_files_through(env):
 
 def test_training_failure_marks_failed_and_is_not_retried(env, monkeypatch):
     plugin, _db, tmp = env
-    save_preset("map", Preset([FeatureSpec("missing.key", "text")], MapParams(), 3))
+    save_preset("map", Preset([FeatureSpec("missing.key", "text")], TrainParams(), 3))
     calls = []
     original = space.SpaceModel.fit
     monkeypatch.setattr(space.SpaceModel, "fit", classmethod(lambda cls, *a, **k: calls.append(1) or original.__func__(cls, *a, **k)))
@@ -205,7 +205,7 @@ def test_default_enabled_loads_class_but_not_per_database():
 def test_model_of_another_preset_with_the_same_version_is_retrained(env, monkeypatch):
     plugin, _db, _tmp = env
     run(plugin, "c:/0.png")
-    recreated = Preset([FeatureSpec("wd14.tags", "text")], MapParams(), 1)
+    recreated = Preset([FeatureSpec("wd14.tags", "text")], TrainParams(), 1)
     save_preset("map", recreated)
     calls = []
     original = space.SpaceModel.fit
@@ -221,7 +221,7 @@ def test_model_of_another_preset_with_the_same_version_is_retrained(env, monkeyp
 def test_loaded_model_is_dropped_when_the_preset_changes_without_a_new_version(env, monkeypatch):
     plugin, _db, _tmp = env
     run(plugin, "c:/0.png")
-    save_preset("map", Preset([FeatureSpec("wd14.tags", "text")], MapParams(), 1))
+    save_preset("map", Preset([FeatureSpec("wd14.tags", "text")], TrainParams(), 1))
     monkeypatch.setattr(parser_module, "PRESET_TTL", 0.0)
     run(plugin, "c:/0.png")
     assert plugin.model.preset.features[0].encoder == "text"

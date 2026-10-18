@@ -377,7 +377,8 @@ def test_group_size_regroups_the_shown_files_without_moving_them(monkeypatch):
     layout.run(MapParams(), grouping=Grouping(fine=1))
     samples = [samples for _count, samples in FakeTree.built]
     default, strict = Grouping().cluster_options(40)[1], Grouping(strictness=2.0).cluster_options(40)[1]
-    assert samples == [default, default, strict, default]
+    smaller = Grouping().cluster_options(40, 0.5)[1]
+    assert samples == [default, smaller, strict, default]
     assert ("leaf" in [method for _size, method in FakeTree.cuts]) and layout.is_grouped()
 
 
@@ -431,15 +432,17 @@ def test_selections_take_their_groups_from_the_whole_space(monkeypatch):
 def test_whole_space_labels_are_cut_per_size_and_rebuilt_per_strictness(monkeypatch):
     monkeypatch.setattr(projection, "ClusterTree", FakeTree)
     FakeTree.built, FakeTree.cuts = [], []
-    groups = whole_space()
-    paths = ["c:/0.png", "c:/59.png", "c:/missing.png"]
+    groups = whole_space(12_000)
+    paths = ["c:/0.png", "c:/11999.png", "c:/missing.png"]
     assert groups.labels_for(paths, Grouping()).tolist() == [0, 7, -1]
     groups.labels_for(paths, Grouping(size=0.5))
     groups.labels_for(paths, Grouping(fine=1))
-    groups.labels_for(paths, Grouping(), share=0.25)
+    groups.labels_for(paths, Grouping(), share=0.5)
     assert len(FakeTree.built) == 1
+    groups.labels_for(paths, Grouping(), share=0.25)
+    assert [samples for _count, samples in FakeTree.built] == [10, 6]
     groups.labels_for(paths, Grouping(strictness=2.0))
-    assert len(FakeTree.built) == 2
+    assert len(FakeTree.built) == 3
 
 
 def test_smaller_groups_stay_inside_their_base_group():

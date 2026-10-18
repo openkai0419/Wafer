@@ -112,16 +112,22 @@ def test_neighbors_never_exceed_the_cap():
 def test_group_size_setting_scales_the_automatic_size():
     spec = next(spec for name, spec, _ in param_specs(Grouping) if name == "size")
     assert spec.stage == "grouping" and (spec.minimum, spec.maximum) == (0.25, 16.0) and Grouping().size == 1.0
-    assert Grouping(size=0.5).cluster_options(5000) == (5, 10, "eom")
-    assert Grouping(size=0.25).cluster_options(100) == (2, 5, "eom")
+    assert Grouping(size=0.5).cluster_options(5000) == (5, 5, "eom")
+    assert Grouping(size=0.25).cluster_options(100) == (2, 2, "eom")
     assert Grouping(size=4.0).cluster_options(5000) == (40, 10, "eom")
+
+
+def test_strictness_follows_the_final_group_size_up_to_ten():
+    assert Grouping(size=0.5, strictness=2.0).cluster_options(3000) == (3, 6, "eom")
+    assert Grouping(size=0.25).cluster_options(111_500) == (56, 10, "eom")
+    assert Grouping().cluster_options(111_500, share=0.0625) == (14, 10, "eom")
     assert Grouping(size=99.0).normalized().size == 16.0
 
 
 def test_mapping_share_shrinks_the_base_group_size():
     assert Grouping().cluster_options(1_000_000, share=0.5) == (1000, 10, "eom")
     assert Grouping(size=0.5).cluster_options(1_000_000, share=0.25) == (250, 10, "eom")
-    assert Grouping().cluster_options(100, share=0.0625) == (2, 5, "eom")
+    assert Grouping().cluster_options(100, share=0.0625) == (2, 2, "eom")
     spec = next(spec for name, spec, _ in param_specs() if name == "subgroup_size")
     assert spec.stage == "view" and (spec.minimum, spec.maximum) == (0.0625, 1.0) and MapParams().subgroup_size == 1.0
     assert changed_stage(MapParams(), MapParams(subgroup_size=0.5)) == "view"

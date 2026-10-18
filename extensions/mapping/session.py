@@ -285,8 +285,7 @@ class MapPipeline:
         if cluster_key != self._cluster_key:
             _key, grouping, space_size = cluster_key
             with timed(diagnostics, "cluster"):
-                tree = projection.ClusterTree(self._group_points, grouping.cluster_options(space_size)[1])
-                self._labels = group_labels(tree, grouping, space_size)
+                self._labels = group_labels(TreeCache(self._group_points), grouping, space_size)
             self._cluster_key = cluster_key
         labels = np.full(count, -1, dtype=np.int32)
         labels[self._active] = self._labels
@@ -298,11 +297,25 @@ class MapPipeline:
         return describe_groups([(block.encoder, block.present) for block in ranked], labels, params)
 
 
-def group_labels(tree: projection.ClusterTree, grouping: Grouping, count: int, share: float = 1.0) -> np.ndarray:
-    size, _samples, method = grouping.cluster_options(count)
-    base = tree.labels(size, method)
-    smaller = grouping.cluster_options(count, share)[0]
-    return base if smaller >= size else nested_labels(base, tree.labels(smaller, method))
+class TreeCache:
+    def __init__(self, points: np.ndarray, keep: int = 2):
+        self.points = points
+        self.keep = keep
+        self.trees: dict[int, projection.ClusterTree] = {}
+
+    def __call__(self, samples: int) -> projection.ClusterTree:
+        tree = self.trees.pop(samples, None) or projection.ClusterTree(self.points, samples)
+        self.trees[samples] = tree
+        while len(self.trees) > self.keep:
+            self.trees.pop(next(iter(self.trees)))
+        return tree
+
+
+def group_labels(trees: Callable[[int], projection.ClusterTree], grouping: Grouping, count: int, share: float = 1.0) -> np.ndarray:
+    size, samples, method = grouping.cluster_options(count)
+    base = trees(samples).labels(size, method)
+    smaller, smaller_samples, _ = grouping.cluster_options(count, share)
+    return base if smaller >= size else nested_labels(base, trees(smaller_samples).labels(smaller, method))
 
 
 def nested_labels(base: np.ndarray, finer: np.ndarray) -> np.ndarray:
@@ -319,7 +332,7 @@ class SpaceGroups:
         self.points = points
         self.index = {path: row for row, path in enumerate(paths)}
         self.lock = threading.Lock()
-        self.trees: dict[int, projection.ClusterTree] = {}
+        self.trees = TreeCache(points)
         self.labels_by_options: dict[tuple[Grouping, float], np.ndarray] = {}
 
     @property
@@ -327,12 +340,9 @@ class SpaceGroups:
         return len(self.paths)
 
     def labels(self, grouping: Grouping, share: float = 1.0) -> np.ndarray:
-        samples = grouping.cluster_options(self.size)[1]
         with self.lock:
             if (grouping, share) not in self.labels_by_options:
-                if samples not in self.trees:
-                    self.trees = {samples: projection.ClusterTree(self.points, samples)}
-                self.labels_by_options[(grouping, share)] = group_labels(self.trees[samples], grouping, self.size, share)
+                self.labels_by_options[(grouping, share)] = group_labels(self.trees, grouping, self.size, share)
             return self.labels_by_options[(grouping, share)]
 
     def labels_for(self, paths: list[str], grouping: Grouping, share: float = 1.0) -> np.ndarray:
@@ -355,6 +365,7 @@ class SpaceLayout:
         self.preset = preset
         self.groups = groups
         self.load_groups = load_groups
+        self.local_trees: TreeCache | None = None
         self.lock = threading.Lock()
         self.coords: np.ndarray | None = None
         self.describers: list[tuple[BaseEncoder, np.ndarray]] | None = None
@@ -423,8 +434,9 @@ class SpaceLayout:
                 if self.groups is not None:
                     self.labels_by_options[key] = self.groups.labels_for([self.paths[row] for row in active], grouping, share)
                 else:
-                    tree = projection.ClusterTree(points, grouping.cluster_options(len(points))[1])
-                    self.labels_by_options[key] = group_labels(tree, grouping, len(points), share)
+                    if self.local_trees is None:
+                        self.local_trees = TreeCache(points)
+                    self.labels_by_options[key] = group_labels(self.local_trees, grouping, len(points), share)
         return self.labels_by_options[key]
 
     def space_describers(self, active: np.ndarray, params: MapParams) -> list[tuple[BaseEncoder, np.ndarray]]:

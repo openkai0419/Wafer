@@ -154,7 +154,7 @@ class Grouping(ParamSet):
     def cluster_options(self, count: int, share: float = 1.0) -> tuple[int, int, str]:
         automatic = max(AUTO_GROUP_MIN, count // AUTO_GROUP_DIVISOR)
         size = max(MIN_GROUP_SIZE, round(max(MIN_GROUP_SIZE, round(automatic * self.size)) * share))
-        samples = max(1, round(min(automatic, AUTO_STRICTNESS_MAX) * self.strictness))
+        samples = max(1, round(min(size, AUTO_STRICTNESS_MAX) * self.strictness))
         return size, samples, "leaf" if self.fine else "eom"
 
 

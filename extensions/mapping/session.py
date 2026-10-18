@@ -18,14 +18,14 @@ from .encoders import ENCODERS, BaseEncoder, feature_input
 from .params import Grouping, ViewParams
 
 if TYPE_CHECKING:
-    from .space import Preset
+    from .space import Preset, SpaceModel
 
 OUTPUT_PREFIX = "mapping"
 KEY_X, KEY_Y, KEY_GROUP, KEY_MODEL = (f"{OUTPUT_PREFIX}.{name}" for name in ("x", "y", "group", "model"))
 SPACE_KEYS = (KEY_X, KEY_Y, KEY_GROUP, KEY_MODEL)
 SPACE_COLUMNS = 2 + projection.GROUPING_DIMS
 GROUPING_SEPARATOR = ","
-LOCAL_LAYOUT_RANGE = (20, 5000)
+MIN_LAYOUT_FILES = 3
 
 
 def grouping_text(numbers) -> str:
@@ -186,14 +186,14 @@ class SpaceLayout:
         paths: list[str],
         values: dict[str, dict[str, PathValue]],
         preset: Preset,
-        space: WholeSpace | None = None,
-        load_space: Callable[[], WholeSpace | None] | None = None,
+        model: SpaceModel | None = None,
+        load_model: Callable[[], SpaceModel | None] | None = None,
     ):
         self.paths = paths
         self.values = values
         self.preset = preset
-        self.space = space
-        self.load_space = load_space
+        self.model = model
+        self.load_model = load_model
         self.local_trees: TreeCache | None = None
         self.lock = threading.Lock()
         self.coords: np.ndarray | None = None
@@ -240,11 +240,15 @@ class SpaceLayout:
     def is_local(self) -> bool:
         return self.local is not None
 
-    def whole_space(self, diagnostics: MapDiagnostics | None = None) -> WholeSpace | None:
-        if self.space is None and self.load_space is not None:
+    def space_model(self, diagnostics: MapDiagnostics | None = None) -> SpaceModel | None:
+        if self.model is None and self.load_model is not None:
             with timed(diagnostics or MapDiagnostics(), "space"):
-                self.space, self.load_space = self.load_space(), None
-        return self.space
+                self.model, self.load_model = self.load_model(), None
+        return self.model
+
+    def whole_space(self, diagnostics: MapDiagnostics | None = None) -> WholeSpace | None:
+        model = self.space_model(diagnostics)
+        return None if model is None else model.whole_space()
 
     def shown_coords(self, diagnostics: MapDiagnostics | None = None) -> np.ndarray:
         return self.local if self.local is not None else self.space_coords(diagnostics)
@@ -264,31 +268,28 @@ class SpaceLayout:
                     raw[row, :2] = x, y
                     raw[row, 2:] = grouping
             missing = np.flatnonzero(~np.isfinite(raw).all(axis=1))
-            space = self.whole_space(diagnostics) if missing.size else None
-            if space is not None:
+            model = self.space_model(diagnostics) if missing.size else None
+            if model is not None:
+                space = model.whole_space()
                 rows = space.rows([self.paths[row] for row in missing])
                 found = rows >= 0
                 raw[missing[found]] = space.coords[rows[found]]
+                new = missing[~found]
+                if new.size:
+                    raw[new] = model.place([self.values.get(self.paths[row], {}) for row in new])
             self.coords = raw
         return self.coords
 
-    def local_rows(self) -> np.ndarray | None:
+    def refine(self, cancelled: Callable[[], bool] = lambda: False, progress: Callable[[str], None] = lambda stage: None) -> bool:
         with self.lock:
             if self.local is not None:
-                return None
+                return False
             active = np.flatnonzero(np.isfinite(self.space_coords()).all(axis=1))
-            space = self.whole_space()
-            low, high = LOCAL_LAYOUT_RANGE
-            if space is None or not low <= active.size <= high or active.size >= space.size:
-                return None
-            return active
-
-    def refine(self, relayout: Callable[[list[dict[str, PathValue]], np.ndarray], np.ndarray]) -> bool:
-        active = self.local_rows()
-        if active is None:
-            return False
-        start = self.space_coords()[active]
-        coords = relayout([self.values.get(self.paths[row], {}) for row in active], start)
+            model = self.space_model()
+            if model is None or active.size < MIN_LAYOUT_FILES:
+                return False
+            start = self.space_coords()[active]
+        coords = model.relayout([self.values.get(self.paths[row], {}) for row in active], start, cancelled=cancelled, progress=progress)
         with self.lock:
             local = np.array(self.space_coords(), copy=True)
             found = np.isfinite(coords).all(axis=1)

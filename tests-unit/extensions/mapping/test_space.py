@@ -3,8 +3,8 @@ import pytest
 
 from extensions.mapping import projection, space
 from extensions.mapping.encoders import ENCODERS
-from extensions.mapping.params import TrainParams
-from extensions.mapping.session import FeatureSpec, MapError
+from extensions.mapping.params import TrainParams, ViewParams
+from extensions.mapping.session import FeatureSpec, MapError, SpaceLayout
 from extensions.mapping.space import Preset, SpaceLoadError, SpaceModel, SpaceStatus, load_preset, read_status, save_preset, write_status
 from wafer.core.db.path_values import PathValue
 
@@ -322,14 +322,14 @@ def test_viewer_reads_the_saved_model_once_per_version(tmp_path, monkeypatch):
     monkeypatch.setattr(space, "model_dir", lambda name: tmp_path / name)
     space.forget_space_models()
     current = preset(3)
-    assert space.space_model("db1", current) is None and space.whole_space("db1", current) is None
+    assert space.space_model("db1", current) is None
     SpaceModel.fit(current, tag_values()).save(tmp_path / "db1")
     loads = []
     original = SpaceModel.load
     monkeypatch.setattr(SpaceModel, "load", classmethod(lambda cls, *a: loads.append(1) or original.__func__(cls, *a)))
     model = space.space_model("db1", current)
     assert model is not None and space.space_model("db1", current) is model and loads == [1]
-    whole = space.whole_space("db1", current)
+    whole = model.whole_space()
     assert whole is model.whole_space() and whole.size == 40 and whole.coords.shape == (40, 2 + projection.GROUPING_DIMS)
     SpaceModel.fit(preset(4), tag_values()).save(tmp_path / "db1")
     assert space.space_model("db1", preset(4)) is not model and loads == [1, 1]
@@ -435,3 +435,21 @@ def test_model_layout_shows_the_fitted_files_grouped_by_their_own_count(monkeypa
     assert built == [40]
     layout.run(ViewParams(), grouping=Grouping(fine=1))
     assert built == [40]
+
+
+def test_relayout_reports_encode_then_layout(monkeypatch):
+    model = SpaceModel.fit(preset(), tag_values())
+    monkeypatch.setattr(projection, "embed", lambda matrix, neighbors, d, s, dims=2, init=None, **_: np.asarray(init, dtype=np.float32))
+    stages = []
+    start = np.zeros((4, 2 + projection.GROUPING_DIMS), dtype=np.float32)
+    model.relayout([{"tags": PathValue("cat, sky")}] * 4, start, progress=stages.append)
+    assert stages == ["encode", "layout"]
+
+
+def test_model_layout_keeps_the_model_for_placing_new_files():
+    model = SpaceModel.fit(preset(), tag_values())
+    values = {**tag_values(), "c:/new.png": {"tags": PathValue("cat, sky")}}
+    layout = SpaceLayout([*model.paths, "c:/new.png"], values, model.preset, model)
+    assert layout.model is model
+    plain = layout.run(ViewParams(), grouped=False)
+    assert not plain.unset.any()

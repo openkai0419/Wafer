@@ -26,7 +26,7 @@ from .map_host import MapHost
 from .map_toolbar import MapToolbar
 from .map_view import MapView
 from .session import MapError, MapResult, SpaceLayout
-from .space import Preset, load_preset, space_model, whole_space
+from .space import Preset, load_preset, space_model
 from .view_settings import RELAYOUT_PARAMS, TOOLBAR_PARAMS, GroupingStore, TabSettings, ViewSettings
 
 COMPUTE_PRIORITY = 7
@@ -35,8 +35,9 @@ RECOMPUTE_DELAY_MS = 300
 MIN_DRILL_FILES = 3
 ELLIPSIS = "\N{HORIZONTAL ELLIPSIS}"
 SEPARATOR = "\N{MIDDLE DOT}"
-GROUPING_TEXT = "Grouping"
-LAYING_OUT_TEXT = "Laying out (the first run takes longer)"
+STAGE_TEXTS = {"load": "Loading values", "encode": "Encoding", "layout": "Laying out (the first run takes longer)", "group": "Grouping"}
+STAGES = tuple(STAGE_TEXTS)
+PROGRESS_HEIGHT = 3
 CRUMB_ARROW = "\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}"
 RELAYOUT_NAMES = RELAYOUT_PARAMS | TOOLBAR_PARAMS
 
@@ -97,7 +98,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.tab = TabSettings(self)
         self.levels: list[MapLevel] = []
         self.shown: MapResult | None = None
-        self.pending = ""
+        self.stage = ""
         self.host = MapHost(self)
         self.build_ui()
         self.host.map_views = [self.map_view]
@@ -146,6 +147,12 @@ class MappingWidget(QtWidgets.QWidget):
         self.cancel_button.clicked.connect(self.cancel_compute)
         status.addWidget(self.cancel_button)
         layout.addLayout(status)
+        self.progress = QtWidgets.QProgressBar()
+        self.progress.setRange(0, len(STAGES))
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(dpix(PROGRESS_HEIGHT))
+        self.progress.hide()
+        layout.addWidget(self.progress)
         self.splitter = QtWidgets.QSplitter(Qt.Horizontal)
         self.file_list = FileList(self)
         self.map_view = MapView(self)
@@ -170,10 +177,21 @@ class MappingWidget(QtWidgets.QWidget):
         self.tab.apply(self.map_view)
 
     def regroup(self) -> None:
-        if self.shown is not None:
-            self.pending = GROUPING_TEXT
-            self.show_counts(self.shown)
+        self.set_stage("group")
         self.schedule_recompute()
+
+    def set_stage(self, stage: str) -> None:
+        self.stage = stage
+        self.progress.setValue(STAGES.index(stage))
+        self.progress.show()
+        if self.shown is not None:
+            self.show_counts(self.shown)
+        else:
+            self.set_message(t(STAGE_TEXTS[stage]) + ELLIPSIS)
+
+    def end_stages(self) -> None:
+        self.stage = ""
+        self.progress.hide()
 
     def message_text(self) -> str:
         return self.message.text()
@@ -222,6 +240,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.file_list.clear_rows()
         self.update_crumbs()
         self.cancel_button.hide()
+        self.end_stages()
         self.set_message("")
         self.stack.setCurrentIndex(0)
 
@@ -229,7 +248,7 @@ class MappingWidget(QtWidgets.QWidget):
         cancel = self.fetch_cancel.renew()
         self.compute_cancel.cancel()
         paths, db_path, db_name = list(self.paths), self.db_path, self.db_name
-        self.set_message(t("Loading values") + ELLIPSIS)
+        self.set_stage("load")
 
         def task():
             try:
@@ -274,13 +293,16 @@ class MappingWidget(QtWidgets.QWidget):
         level, params = self.levels[-1], self.settings.params
         grouping, share = GroupingStore.instance().get(self.db_name), params.subgroup_size
         if level.layout is None or level.layout.preset is not self.preset:
-            level.layout = SpaceLayout(level.paths, self.values, self.preset, load_space=partial(whole_space, self.db_name, self.preset))
-        layout, db_name, preset = level.layout, self.db_name, self.preset
+            level.layout = SpaceLayout(level.paths, self.values, self.preset, load_model=partial(space_model, self.db_name, self.preset))
+        layout = level.layout
         cancel = self.compute_cancel.renew()
         self.cancel_button.show()
 
-        def show(result: MapResult, pending: str) -> None:
-            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self._apply_result(level, result, pending))
+        def show(result: MapResult, stage: str) -> None:
+            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self._apply_result(level, result, stage))
+
+        def report(stage: str) -> None:
+            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.set_stage(stage))
 
         def task():
             try:
@@ -288,14 +310,14 @@ class MappingWidget(QtWidgets.QWidget):
                     plain = layout.run(params, grouping=grouping, share=share, grouped=False, cancelled=cancel.is_cancelled)
                     if plain is None:
                         return
-                    local = layout.local_rows() is not None
-                    show(plain, LAYING_OUT_TEXT if local else GROUPING_TEXT)
-                    model = space_model(db_name, preset) if local else None
-                    if model is not None and layout.refine(partial(model.relayout, cancelled=cancel.is_cancelled)):
+                    show(plain, "encode")
+                    if layout.refine(cancelled=cancel.is_cancelled, progress=report):
                         refined = layout.run(params, grouping=grouping, share=share, grouped=False, cancelled=cancel.is_cancelled)
                         if refined is None:
                             return
-                        show(refined, GROUPING_TEXT)
+                        show(refined, "group")
+                    else:
+                        report("group")
                 result = layout.run(params, grouping=grouping, share=share, cancelled=cancel.is_cancelled)
                 if result is None:
                     return
@@ -316,15 +338,20 @@ class MappingWidget(QtWidgets.QWidget):
 
     def finish(self, message: str):
         self.cancel_button.hide()
+        self.end_stages()
         self.set_message(message)
 
-    def _apply_result(self, level: MapLevel, result: MapResult, pending: str = ""):
-        if not pending:
+    def _apply_result(self, level: MapLevel, result: MapResult, stage: str = ""):
+        if not stage:
             self.cancel_button.hide()
             level.result = result
         if not self.levels or level is not self.levels[-1]:
             return
-        self.pending = pending
+        if stage:
+            self.stage = stage
+            self.progress.setValue(STAGES.index(stage))
+        else:
+            self.end_stages()
         if same_layout(self.shown, result):
             self.apply_groups(result)
         else:
@@ -352,7 +379,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.show_counts(result)
 
     def show_counts(self, result: MapResult) -> None:
-        groups = t(self.pending) + ELLIPSIS if self.pending else t("{count} groups", count=result.diagnostics.groups)
+        groups = t(STAGE_TEXTS[self.stage]) + ELLIPSIS if self.stage else t("{count} groups", count=result.diagnostics.groups)
         parts = [t("{count} files", count=len(result.paths)), groups]
         if result.diagnostics.unset:
             parts.append(t("{count} waiting for placement", count=result.diagnostics.unset))

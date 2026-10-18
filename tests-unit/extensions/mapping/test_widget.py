@@ -1,3 +1,4 @@
+import threading
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -76,11 +77,10 @@ def deterministic_groups(fake_cluster):
 @pytest.fixture()
 def space_data(monkeypatch):
     values = space_values()
-    state = SimpleNamespace(preset=Preset([FeatureSpec("tags", "token_set")], TrainParams(), 2), values=values, space=None, model=None)
+    state = SimpleNamespace(preset=Preset([FeatureSpec("tags", "token_set")], TrainParams(), 2), values=values, model=None)
     monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps: {p: state.values[p] for p in ps if p in state.values})
     monkeypatch.setattr(widget_module, "fetch_sources", lambda db, ps: {p: p.replace(".png", ".zip") for p in ps})
     monkeypatch.setattr(widget_module, "load_preset", lambda db_name: state.preset)
-    monkeypatch.setattr(widget_module, "whole_space", lambda db_name, preset: state.space)
     monkeypatch.setattr(widget_module, "space_model", lambda db_name, preset: state.model)
     return state
 
@@ -601,40 +601,8 @@ def test_only_the_latest_regroup_is_computed(space_data):
 
 def test_groups_start_from_the_size_of_the_whole_space(mapping, space_data):
     level = mapping.levels[-1]
-    assert level.layout.space is space_data.space and level.layout.load_space is None
+    assert level.layout.model is space_data.model and level.layout.load_model is None
     assert mapping.toolbar.sliders["subgroup_size"].value() == mapping.toolbar.sliders["subgroup_size"].maximum()
-
-
-class MirroringModel:
-    def __init__(self):
-        self.calls = []
-
-    def relayout(self, entries, start, cancelled=lambda: False):
-        self.calls.append(len(entries))
-        local = np.array(start, dtype=np.float32)
-        local[:, 0] = -local[:, 0]
-        return local
-
-
-def test_small_maps_are_laid_out_again_from_their_own_files(qtbot, space_data, monkeypatch):
-    from extensions.mapping.session import WholeSpace
-
-    paths = PATHS + [f"c:/extra/{i}.png" for i in range(30)]
-    coords = np.zeros((len(paths), 2 + GROUPING_DIMS))
-    coords[:, 0] = np.arange(len(paths))
-    space_data.space, space_data.model = WholeSpace(paths, coords), MirroringModel()
-    messages = []
-    original = MappingWidget.set_message
-    monkeypatch.setattr(MappingWidget, "set_message", lambda self, text: messages.append(text) or original(self, text))
-    w = open_widget(qtbot, wait=False)
-    qtbot.waitUntil(lambda: w.current_result() is not None, timeout=FIRST_RUN_TIMEOUT)
-    assert space_data.model.calls == [len(PATHS)] and w.levels[-1].layout.is_local()
-    assert not w.current_result().unset.any() and "waiting" not in w.message_text()
-    assert any("Laying out" in text for text in messages)
-    result = w.current_result()
-    xs = result.positions[~result.unset, 0]
-    assert xs[0] > xs[-1]
-    w.close()
 
 
 def test_each_tab_keeps_its_own_toolbar_settings(qtbot, space_data):
@@ -662,3 +630,107 @@ def test_toolbar_settings_are_saved_per_tab(qtbot, space_data):
     other.restore_state(state)
     assert not other.tab.thumbnails_shown and not other.toolbar.thumbnail_check.isChecked()
     mapping.close()
+
+
+class MirroringModel:
+    def __init__(self, paths=PATHS):
+        from extensions.mapping.session import WholeSpace
+
+        coords = np.zeros((len(paths), 2 + GROUPING_DIMS))
+        coords[:, 0] = np.arange(len(paths))
+        self.space = WholeSpace(list(paths), coords)
+        self.calls = []
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.release.set()
+
+    def whole_space(self):
+        return self.space
+
+    def place(self, entries):
+        return np.full((len(entries), 2 + GROUPING_DIMS), np.nan, dtype=np.float32)
+
+    def relayout(self, entries, start, cancelled=lambda: False, progress=lambda stage: None):
+        progress("encode")
+        self.started.set()
+        self.release.wait(10)
+        progress("layout")
+        self.calls.append(len(entries))
+        local = np.array(start, dtype=np.float32)
+        local[:, 0] = -local[:, 0]
+        return local
+
+
+def record_messages(monkeypatch):
+    messages = []
+    original = MappingWidget.set_message
+    monkeypatch.setattr(MappingWidget, "set_message", lambda self, text: messages.append(text) or original(self, text))
+    return messages
+
+
+def first_seen(messages, names):
+    order = []
+    for text in messages:
+        for name in names:
+            if text.endswith(name + "\N{HORIZONTAL ELLIPSIS}") and name not in order:
+                order.append(name)
+    return order
+
+
+STAGE_TEXTS = ["Loading values", "Encoding", "Laying out (the first run takes longer)", "Grouping"]
+
+
+def test_every_map_is_laid_out_again_from_its_own_files(qtbot, space_data):
+    space_data.model = MirroringModel(PATHS + [f"c:/extra/{i}.png" for i in range(30)])
+    w = open_widget(qtbot, wait=False)
+    qtbot.waitUntil(lambda: w.current_result() is not None, timeout=FIRST_RUN_TIMEOUT)
+    assert space_data.model.calls == [len(PATHS)] and w.levels[-1].layout.is_local()
+    assert not w.current_result().unset.any() and "waiting" not in w.message_text()
+    result = w.current_result()
+    xs = result.positions[~result.unset, 0]
+    assert xs[0] > xs[-1]
+    w.close()
+
+
+def test_map_tab_shows_each_stage_and_hides_the_bar_when_done(qtbot, space_data, monkeypatch):
+    space_data.model = MirroringModel()
+    messages = record_messages(monkeypatch)
+    w = open_widget(qtbot)
+    assert first_seen(messages, STAGE_TEXTS) == STAGE_TEXTS
+    assert not w.progress.isVisible() and "groups" in w.message_text()
+    w.close()
+
+
+def test_cancel_during_relayout_keeps_the_shown_points(qtbot, space_data):
+    space_data.model = MirroringModel()
+    space_data.model.release.clear()
+    w = open_widget(qtbot, wait=False)
+    qtbot.waitUntil(lambda: space_data.model.started.is_set() and w.shown is not None, timeout=FIRST_RUN_TIMEOUT)
+    first = w.shown
+    assert w.progress.isVisible()
+    w.cancel_compute()
+    space_data.model.release.set()
+    qtbot.wait(300)
+    assert w.shown is first and w.message_text() == "Cancelled" and not w.progress.isVisible()
+    w.close()
+
+
+def test_refresh_after_retraining_uses_the_new_model(qtbot, space_data):
+    from dataclasses import replace
+
+    w = open_widget(qtbot)
+    old = w.levels[-1].layout
+    space_data.preset = replace(space_data.preset, version=3)
+    space_data.model = MirroringModel()
+    w.refresh()
+    qtbot.waitUntil(lambda: w.levels[-1].layout is not old and w.current_result() is not None, timeout=FIRST_RUN_TIMEOUT)
+    assert w.levels[-1].layout.preset.version == 3 and space_data.model.calls
+    w.close()
+
+
+def test_without_a_model_the_database_coordinates_are_shown(qtbot, space_data):
+    space_data.model = None
+    w = open_widget(qtbot)
+    assert not w.levels[-1].layout.is_local() and "failed" not in w.message_text()
+    assert len(w.current_result().paths) == 30 and not w.progress.isVisible()
+    w.close()

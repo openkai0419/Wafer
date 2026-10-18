@@ -164,11 +164,6 @@ def space_model(db_name: str, preset: Preset) -> SpaceModel | None:
         return model
 
 
-def whole_space(db_name: str, preset: Preset) -> WholeSpace | None:
-    model = space_model(db_name, preset)
-    return None if model is None else model.whole_space()
-
-
 def forget_space_models() -> None:
     with _model_lock:
         _model_cache.clear()
@@ -272,7 +267,7 @@ class SpaceModel:
         return self.space
 
     def layout(self, values: dict[str, dict[str, PathValue]]) -> SpaceLayout:
-        return SpaceLayout(self.paths, values, self.preset, self.whole_space())
+        return SpaceLayout(self.paths, values, self.preset, self)
 
     def coords_for(self, path: str) -> tuple[float, ...] | None:
         index = self.index.get(path)
@@ -301,12 +296,14 @@ class SpaceModel:
         output[rows] = self.neighbor_index.placement(query).apply(self.coords)
         return output
 
-    def relayout(self, entries: list[dict[str, PathValue]], start: np.ndarray, cancelled=lambda: False) -> np.ndarray:
+    def relayout(self, entries: list[dict[str, PathValue]], start: np.ndarray, cancelled=lambda: False, progress=lambda stage: None) -> np.ndarray:
         params = self.preset.params.normalized()
         output = np.full((len(entries), SPACE_COLUMNS), np.nan, dtype=np.float32)
+        progress("encode")
         rows, features = self.features(entries)
         if rows.size == 0:
             return output
+        progress("layout")
         train = projection.sample_rows(rows.size, params.train_limit, params.seed)
         trained = embed_space(features[train], params, cancelled, init=start[rows[train]], epochs=projection.LOCAL_EPOCHS)
         coords = np.empty((rows.size, SPACE_COLUMNS), dtype=np.float32)

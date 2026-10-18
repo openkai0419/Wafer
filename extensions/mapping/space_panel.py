@@ -35,7 +35,7 @@ from .map_toolbar import MapToolbar
 from .map_view import MapView
 from .params import TrainParams, ViewParams
 from .session import KEY_MODEL, OUTPUT_PREFIX, SPACE_KEYS, MapError, MapResult, SpaceLayout
-from .space import Preset, SpaceModel, SpaceStatus, count_placed, load_preset, model_dir, read_status, save_preset, whole_space
+from .space import Preset, SpaceModel, SpaceStatus, count_placed, load_preset, model_dir, read_status, save_preset, space_model
 from .tuning import TuningPanel
 from .view_settings import RELAYOUT_PARAMS, GroupingStore, TabSettings, ViewSettings
 from .widget import cancel_work, prepare_layout_engine, result_colors, same_layout
@@ -151,14 +151,15 @@ def read_snapshot(db_name: str, view: ViewParams, size: int = PREVIEW_FILES) -> 
     db_path = data_db_path(db_name)
     if not os.path.isfile(db_path):
         return snapshot
-    space = whole_space(db_name, preset) if has_saved_space(preset) and snapshot.status.state == "ready" else None
+    model = space_model(db_name, preset) if has_saved_space(preset) and snapshot.status.state == "ready" else None
+    space = None if model is None else model.whole_space()
     if space is None or not space.size:
         return snapshot
     rows = np.random.default_rng().choice(space.size, min(size, space.size), replace=False)
     sample = [space.paths[row] for row in rows]
     values = fetch_path_values(db_path, sample, keys=preset.value_keys())
     snapshot.sources = fetch_sources(db_path, sample)
-    snapshot.layout = SpaceLayout(sample, values, preset, space)
+    snapshot.layout = SpaceLayout(sample, values, preset, model)
     snapshot.result, snapshot.problem = run_preview(snapshot.layout, view, db_name, grouped=False)
     return snapshot
 

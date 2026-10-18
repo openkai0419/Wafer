@@ -198,13 +198,42 @@ def point(x):
     return np.array([[x] + [0.0] * (projection.GROUPING_DIMS - 1)])
 
 
+class FakeModel:
+    def __init__(self, space):
+        self.space = space
+        self.calls = []
+        self.placed = 0
+        self.stages = []
+
+    def whole_space(self):
+        return self.space
+
+    def place(self, entries):
+        output = np.full((len(entries), 2 + projection.GROUPING_DIMS), np.nan, dtype=np.float32)
+        for row, entry in enumerate(entries):
+            if "tags" in entry:
+                output[row] = 0.0
+                output[row, 0] = 100.0 + row
+                self.placed += 1
+        return output
+
+    def relayout(self, entries, start, cancelled=lambda: False, progress=lambda stage: None):
+        progress("encode")
+        progress("layout")
+        self.calls.append(len(entries))
+        local = np.array(start, dtype=np.float32)
+        local[:, 0] = -local[:, 0]
+        local[:, 2] = np.where(np.arange(len(start)) % 2, 5.0, -5.0)
+        return local
+
+
 def test_selections_take_their_groups_from_the_whole_space(monkeypatch):
     monkeypatch.setattr(projection, "ClusterTree", FakeTree)
     FakeTree.built, FakeTree.cuts = [], []
-    groups = whole_space()
+    model = FakeModel(whole_space())
     values = space_values(12)
-    first = SpaceLayout(list(values)[:6], values, space_preset(), groups).run(ViewParams())
-    both = SpaceLayout(list(values), values, space_preset(), groups).run(ViewParams())
+    first = SpaceLayout(list(values)[:6], values, space_preset(), model).run(ViewParams())
+    both = SpaceLayout(list(values), values, space_preset(), model).run(ViewParams())
     assert first.labels.tolist() == [0] * 6
     assert both.labels.tolist() == [0] * 12
     assert FakeTree.built == [(60, Grouping().cluster_options(60)[1])]
@@ -240,80 +269,85 @@ def test_smaller_groups_stay_inside_their_base_group():
     assert len(set(nested.tolist()) - {-1}) == 5
 
 
-def test_selection_without_a_whole_space_groups_by_itself(monkeypatch):
+def test_selection_without_a_model_groups_by_itself(monkeypatch):
     monkeypatch.setattr(projection, "ClusterTree", FakeTree)
     FakeTree.built, FakeTree.cuts = [], []
     values = space_values(40)
-    SpaceLayout(list(values), values, space_preset()).run(ViewParams())
+    layout = SpaceLayout(list(values), values, space_preset())
+    layout.run(ViewParams())
     assert FakeTree.built == [(40, Grouping().cluster_options(40)[1])]
+    assert not layout.refine()
 
 
-def test_whole_space_is_loaded_only_when_grouping_or_coordinates_are_missing(monkeypatch):
+def test_model_is_loaded_only_when_grouping_or_coordinates_are_missing(monkeypatch):
     monkeypatch.setattr(projection, "ClusterTree", FakeTree)
     loads = []
-    space = whole_space()
+    model = FakeModel(whole_space())
     values = space_values(12)
-    layout = SpaceLayout(list(values), values, space_preset(), load_space=lambda: loads.append(1) or space)
+    layout = SpaceLayout(list(values), values, space_preset(), load_model=lambda: loads.append(1) or model)
     layout.run(ViewParams(), grouped=False)
     assert loads == []
     layout.run(ViewParams())
     layout.run(ViewParams(), share=0.5)
-    assert loads == [1] and layout.space is space
+    assert loads == [1] and layout.model is model
 
 
-def test_files_not_yet_written_take_their_coordinates_from_the_whole_space():
-    space = whole_space()
-    values = {path: {"tags": PathValue("cat")} for path in space.paths[:5]}
+def test_files_not_yet_written_take_their_coordinates_from_the_model():
+    model = FakeModel(whole_space())
+    values = {path: {"tags": PathValue("cat")} for path in model.space.paths[:5]}
     values["c:/3.png"] = space_values(1)["c:/0.png"]
-    values["c:/new.png"] = {"tags": PathValue("cat")}
-    layout = SpaceLayout(list(values), values, space_preset(), load_space=lambda: space)
+    values["c:/empty.png"] = {}
+    layout = SpaceLayout(list(values), values, space_preset(), load_model=lambda: model)
     result = layout.run(ViewParams(), grouped=False)
     assert result.unset.tolist() == [False] * 5 + [True]
     raw = layout.space_coords()
-    assert raw[3, 0] == 10.0 and space.coords[3, 0] == 3.0
-    assert np.array_equal(raw[[0, 1, 2, 4]], space.coords[[0, 1, 2, 4]])
+    assert raw[3, 0] == 10.0 and model.space.coords[3, 0] == 3.0
+    assert np.array_equal(raw[[0, 1, 2, 4]], model.space.coords[[0, 1, 2, 4]])
+
+
+def test_new_files_are_placed_from_the_model_and_laid_out_with_the_rest():
+    layout = refining_layout(count=40, space_count=60, new_files=2)
+    plain = layout.run(ViewParams(), grouped=False)
+    assert not plain.unset.any() and layout.model.placed == 2
+    assert layout.refine() and layout.model.calls == [42]
 
 
 def test_files_placed_after_training_join_the_group_of_their_nearest_file(monkeypatch):
     monkeypatch.setattr(projection, "ClusterTree", FakeTree)
-    space = whole_space()
+    model = FakeModel(whole_space())
     values = {"c:/0.png": {}, "c:/59.png": {}, "c:/late.png": space_values(12)["c:/11.png"]}
-    result = SpaceLayout(list(values), values, space_preset(), space).run(ViewParams())
+    result = SpaceLayout(list(values), values, space_preset(), model).run(ViewParams())
     assert result.labels.tolist()[2] == result.labels.tolist()[1] != result.labels.tolist()[0]
 
 
-def refining_layout(count=40, space_count=60):
-    space = whole_space(space_count)
-    values = {path: {"tags": PathValue("cat")} for path in space.paths[:count]}
-    return SpaceLayout(list(values), values, space_preset(), space)
+def refining_layout(count=40, space_count=60, new_files=0):
+    model = FakeModel(whole_space(space_count))
+    values = {path: {"tags": PathValue("cat")} for path in model.space.paths[:count]}
+    values.update({f"c:/new/{i}.png": {"tags": PathValue("cat")} for i in range(new_files)})
+    return SpaceLayout(list(values), values, space_preset(), model)
 
 
-def local_relayout(calls):
-    def relayout(entries, start):
-        calls.append(len(entries))
-        local = np.array(start, dtype=np.float32)
-        local[:, 0] = -local[:, 0]
-        local[:, 2] = np.where(np.arange(len(start)) % 2, 5.0, -5.0)
-        return local
-
-    return relayout
-
-
-def test_small_selections_are_laid_out_again_on_their_own():
-    calls = []
+def test_each_map_is_laid_out_again_on_its_own():
     layout = refining_layout()
     before = layout.run(ViewParams(), grouped=False)
-    assert layout.refine(local_relayout(calls)) and calls == [40] and layout.is_local()
+    stages = []
+    assert layout.refine(progress=stages.append) and layout.model.calls == [40] and layout.is_local()
+    assert stages == ["encode", "layout"]
     after = layout.run(ViewParams(), grouped=False)
     assert np.allclose(after.positions[:, 0], 1.0 - before.positions[:, 0], atol=1e-6)
-    assert not layout.refine(local_relayout(calls)) and calls == [40]
+    assert not layout.refine() and layout.model.calls == [40]
 
 
-@pytest.mark.parametrize("count, space_count", [(10, 60), (60, 60), (session.LOCAL_LAYOUT_RANGE[1] + 1, 6000)])
-def test_tiny_huge_or_whole_selections_keep_the_whole_space_layout(count, space_count):
-    calls = []
+@pytest.mark.parametrize("count, space_count", [(10, 60), (60, 60), (6000, 6000)])
+def test_every_selection_is_laid_out_again_whatever_its_size(count, space_count):
     layout = refining_layout(count, space_count)
-    assert layout.local_rows() is None and not layout.refine(local_relayout(calls)) and calls == []
+    assert layout.refine() and layout.model.calls == [count]
+
+
+def test_two_files_are_shown_without_grouping():
+    layout = refining_layout(count=2)
+    assert not layout.refine() and layout.model.calls == []
+    assert layout.run(ViewParams()).labels is None
 
 
 def test_local_groups_split_the_whole_space_groups_by_the_same_size(monkeypatch):
@@ -321,7 +355,7 @@ def test_local_groups_split_the_whole_space_groups_by_the_same_size(monkeypatch)
     FakeTree.built, FakeTree.cuts = [], []
     layout = refining_layout()
     base = layout.run(ViewParams()).labels
-    layout.refine(local_relayout([]))
+    layout.refine()
     same = layout.run(ViewParams()).labels
     assert same.tolist() == base.tolist()
     finer = layout.run(ViewParams(), share=0.5).labels

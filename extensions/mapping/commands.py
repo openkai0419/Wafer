@@ -99,22 +99,31 @@ def recompute(ctx):
         panel.refresh()
 
 
+def current_tab(ctx=None):
+    panel = map_panel(ctx or {})
+    return None if panel is None else panel.tab
+
+
 def toggle_labels(ctx):
-    settings = ViewSettings.instance()
-    settings.set_labels_shown(not settings.labels_shown)
+    tab = current_tab(ctx)
+    if tab is not None:
+        tab.set_labels_shown(not tab.labels_shown)
 
 
 def _labels_checked() -> bool:
-    return ViewSettings.instance().labels_shown
+    tab = current_tab()
+    return tab is not None and tab.labels_shown
 
 
 def toggle_thumbnails(ctx):
-    settings = ViewSettings.instance()
-    settings.set_thumbnails_shown(not settings.thumbnails_shown)
+    tab = current_tab(ctx)
+    if tab is not None:
+        tab.set_thumbnails_shown(not tab.thumbnails_shown)
 
 
 def _thumbnails_checked() -> bool:
-    return ViewSettings.instance().thumbnails_shown
+    tab = current_tab()
+    return tab is not None and tab.thumbnails_shown
 
 
 def image_scale_up(ctx, ratio: float = 1.1):
@@ -128,12 +137,14 @@ def image_scale_down(ctx, ratio: float = 1.1):
 
 
 def toggle_selection_mode(ctx):
-    settings = ViewSettings.instance()
-    settings.set_selection_mode("single" if settings.selection_mode == "group" else "group")
+    tab = current_tab(ctx)
+    if tab is not None:
+        tab.set_selection_mode("single" if tab.selection_mode == "group" else "group")
 
 
 def _group_mode_checked() -> bool:
-    return ViewSettings.instance().selection_mode == "group"
+    tab = current_tab()
+    return tab is not None and tab.selection_mode == "group"
 
 
 class MappingGridCommands(MenuGroup):

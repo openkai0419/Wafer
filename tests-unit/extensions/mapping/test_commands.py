@@ -72,21 +72,30 @@ def test_image_scale_commands_take_a_ratio():
         assert (param.name, param.default) == ("ratio", 1.1)
 
 
-def test_view_commands_change_the_shared_settings():
+def test_image_scale_commands_change_the_shared_settings():
     from extensions.mapping.view_settings import ViewSettings
 
     settings = ViewSettings.instance()
-    ctx = Ctx()
-    commands.image_scale_up(ctx, ratio=2.0)
+    commands.image_scale_up(Ctx(), ratio=2.0)
     assert settings.image_scale == 2.0
-    commands.image_scale_down(ctx, ratio=4.0)
+    commands.image_scale_down(Ctx(), ratio=4.0)
     assert settings.image_scale == 0.5
-    commands.toggle_selection_mode(ctx)
-    assert settings.selection_mode == "group" and commands._group_mode_checked()
+
+
+def test_view_commands_toggle_the_tab_they_came_from(monkeypatch):
+    from types import SimpleNamespace
+
+    from extensions.mapping.view_settings import TabSettings
+
+    panel, other = SimpleNamespace(tab=TabSettings()), SimpleNamespace(tab=TabSettings())
+    monkeypatch.setattr(commands, "map_panel", lambda ctx: ctx.get("map_panel", panel))
+    ctx = Ctx(map_panel=panel)
     commands.toggle_labels(ctx)
-    assert settings.labels_shown is False and not commands._labels_checked()
     commands.toggle_thumbnails(ctx)
-    assert settings.thumbnails_shown is False and not commands._thumbnails_checked()
+    commands.toggle_selection_mode(ctx)
+    assert not panel.tab.labels_shown and not panel.tab.thumbnails_shown and panel.tab.selection_mode == "group"
+    assert other.tab.labels_shown and other.tab.selection_mode == "single"
+    assert not commands._labels_checked() and not commands._thumbnails_checked() and commands._group_mode_checked()
 
 
 def test_panel_commands_target_the_panel_the_command_came_from(monkeypatch):

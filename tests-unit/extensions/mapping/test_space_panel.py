@@ -93,11 +93,11 @@ def test_form_shows_layout_stage_only(widget):
 
 def test_space_panel_does_not_restore_view_settings(qtbot, monkeypatch):
     monkeypatch.setattr(MappingSpaceWidget, "refresh", lambda self: None)
-    MappingSpacePlugin.saved_state = {"view": {"labels": False}}
+    MappingSpacePlugin.saved_state = {"view": {"image_scale": 2.0}}
     try:
         w = MappingSpacePlugin().create_widget()
         qtbot.addWidget(w)
-        assert ViewSettings.instance().labels_shown and "view" not in w.save_state()
+        assert ViewSettings.instance().image_scale == 1.0 and "view" not in w.save_state()
         w.close()
     finally:
         MappingSpacePlugin.saved_state = {}

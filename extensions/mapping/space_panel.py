@@ -37,7 +37,7 @@ from .params import TrainParams, ViewParams
 from .session import KEY_MODEL, OUTPUT_PREFIX, SPACE_KEYS, MapError, MapResult, SpaceLayout
 from .space import Preset, SpaceModel, SpaceStatus, count_placed, load_preset, model_dir, read_status, save_preset, whole_space
 from .tuning import TuningPanel
-from .view_settings import RELAYOUT_PARAMS, GroupingStore, ViewSettings
+from .view_settings import RELAYOUT_PARAMS, GroupingStore, TabSettings, ViewSettings
 from .widget import cancel_work, prepare_layout_engine, result_colors, same_layout
 
 LOAD_PRIORITY = 7
@@ -253,9 +253,11 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.preview_mark: tuple[str, int] | None = None
         self.host = MapHost(self)
         self.settings = ViewSettings.instance()
+        self.tab = TabSettings(self)
         self.build_ui()
         self.host.map_views = [self.map_view]
         self.settings.changed.connect(self.on_view_settings)
+        self.tab.changed.connect(lambda _changed: self.tab.apply(self.map_view))
         GroupingStore.instance().changed.connect(self.on_grouping_changed)
         self.sync_host()
         self.update_buttons()
@@ -330,7 +332,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.count_label = QtWidgets.QLabel()
         self.count_label.setStyleSheet(f"color: {palette.text_secondary};")
         header.addWidget(self.count_label, stretch=1)
-        self.toolbar = MapToolbar(edits_space_groups=True)
+        self.toolbar = MapToolbar(self.tab, edits_space_groups=True)
         header.addWidget(self.toolbar)
         preview_layout.addLayout(header)
         self.map_view = MapView(self)
@@ -706,6 +708,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         else:
             keep_view = self.shown is not None and self.shown.paths == result.paths
             self.settings.apply(self.map_view, self.host)
+            self.tab.apply(self.map_view)
             self.map_view.show_result(result, colors, keep_view)
         self.shown = result
         self.count_label.setText(caption)
@@ -720,9 +723,12 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         super().hideEvent(event)
 
     def save_state(self) -> dict[str, Any]:
-        return {"splitter": bytes(self.splitter.saveState().toHex()).decode("ascii"), "quick_train_files": self.quick_size.value()}
+        return {"splitter": bytes(self.splitter.saveState().toHex()).decode("ascii"), "quick_train_files": self.quick_size.value(), "toolbar": self.tab.to_dict()}
 
     def restore_state(self, state: dict[str, Any]) -> None:
+        toolbar = state.get("toolbar")
+        if isinstance(toolbar, dict):
+            self.tab.load(toolbar)
         splitter = state.get("splitter")
         if isinstance(splitter, str) and splitter:
             self.splitter.restoreState(QtCore.QByteArray.fromHex(splitter.encode("ascii")))

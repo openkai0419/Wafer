@@ -15,7 +15,7 @@ from wafer.qt.widgets.popup import PopupBase
 
 from .params import Grouping, ViewParams, param_specs
 from .tuning import TuningPanel
-from .view_settings import TOOLBAR_PARAMS, GroupingStore, ViewSettings
+from .view_settings import TOOLBAR_PARAMS, GroupingStore, TabSettings, ViewSettings
 
 TUNING_HEIGHT = 600
 SLIDER_WIDTH = 110
@@ -40,9 +40,10 @@ def set_quietly(button: QtWidgets.QAbstractButton, checked: bool) -> None:
 
 
 class MapToolbar(QtWidgets.QWidget):
-    def __init__(self, edits_space_groups: bool = False, parent=None):
+    def __init__(self, tab: TabSettings, edits_space_groups: bool = False, parent=None):
         super().__init__(parent)
         self.settings = ViewSettings.instance()
+        self.tab = tab
         self.groupings = GroupingStore.instance()
         self.edits_space_groups = edits_space_groups
         self.db_name = ""
@@ -51,11 +52,11 @@ class MapToolbar(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         self.label_check = QtWidgets.QCheckBox(t("Labels"))
         self.label_check.setToolTip(t("Show group labels."))
-        self.label_check.toggled.connect(self.settings.set_labels_shown)
+        self.label_check.toggled.connect(self.tab.set_labels_shown)
         layout.addWidget(self.label_check)
         self.thumbnail_check = QtWidgets.QCheckBox(t("Thumbnails"))
         self.thumbnail_check.setToolTip(t("Show thumbnails instead of dots."))
-        self.thumbnail_check.toggled.connect(self.settings.set_thumbnails_shown)
+        self.thumbnail_check.toggled.connect(self.tab.set_thumbnails_shown)
         layout.addWidget(self.thumbnail_check)
         self.sliders: dict[str, QtWidgets.QSlider] = {}
         self.slider_values: dict[str, QtWidgets.QLabel] = {}
@@ -90,6 +91,7 @@ class MapToolbar(QtWidgets.QWidget):
         self.tuning_button.clicked.connect(self.toggle_tuning)
         layout.addWidget(self.tuning_button)
         self.settings.changed.connect(self.sync)
+        self.tab.changed.connect(self.sync)
         self.sync()
 
     def add_slider(self, layout: QtWidgets.QHBoxLayout, name: str, spec, apply) -> None:
@@ -127,12 +129,12 @@ class MapToolbar(QtWidgets.QWidget):
 
     def on_mode_toggled(self, mode: str, checked: bool) -> None:
         if checked:
-            self.settings.set_selection_mode(mode)
+            self.tab.set_selection_mode(mode)
 
     def sync(self, *_) -> None:
         settings = self.settings
-        set_quietly(self.label_check, settings.labels_shown)
-        set_quietly(self.thumbnail_check, settings.thumbnails_shown)
+        set_quietly(self.label_check, self.tab.labels_shown)
+        set_quietly(self.thumbnail_check, self.tab.thumbnails_shown)
         source = self.slider_source()
         for name, slider in self.sliders.items():
             value = getattr(source, name)
@@ -143,7 +145,7 @@ class MapToolbar(QtWidgets.QWidget):
         if self.fine_check is not None:
             set_quietly(self.fine_check, bool(source.fine))
         for mode, button in self.mode_buttons.items():
-            set_quietly(button, mode == settings.selection_mode)
+            set_quietly(button, mode == self.tab.selection_mode)
         if self.tuning.params() != settings.params:
             self.tuning.set_params(settings.params)
 

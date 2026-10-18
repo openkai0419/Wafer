@@ -28,7 +28,7 @@ from .map_toolbar import MapToolbar
 from .map_view import MapView
 from .session import MapError, MapResult, SpaceLayout
 from .space import Preset, load_preset, space_model, whole_space
-from .view_settings import RELAYOUT_PARAMS, TOOLBAR_PARAMS, GroupingStore, ViewSettings
+from .view_settings import RELAYOUT_PARAMS, TOOLBAR_PARAMS, GroupingStore, TabSettings, ViewSettings
 
 COMPUTE_PRIORITY = 7
 WARM_UP_PRIORITY = 1
@@ -97,6 +97,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.paths: list[str] = []
         self.values: dict[str, dict[str, PathValue]] = {}
         self.settings = ViewSettings.instance()
+        self.tab = TabSettings(self)
         self.levels: list[MapLevel] = []
         self.shown: MapResult | None = None
         self.pending = ""
@@ -106,6 +107,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.host.list_views = [self.file_list]
         self.setAcceptDrops(True)
         self.settings.changed.connect(self.on_view_settings)
+        self.tab.changed.connect(self.on_tab_settings)
         GroupingStore.instance().changed.connect(self.on_grouping_changed)
         self.destroyed.connect(partial(cancel_work, self.fetch_cancel, self.compute_cancel))
 
@@ -133,7 +135,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.edit_space_button.clicked.connect(self.open_space_panel)
         toolbar.addWidget(self.edit_space_button)
         toolbar.addStretch(1)
-        self.toolbar = MapToolbar()
+        self.toolbar = MapToolbar(self.tab)
         toolbar.addWidget(self.toolbar)
         refresh = QtWidgets.QToolButton()
         refresh.setIcon(themed_icon("refresh"))
@@ -175,6 +177,9 @@ class MappingWidget(QtWidgets.QWidget):
         self.settings.apply(self.map_view, self.host)
         if changed & RELAYOUT_NAMES:
             self.regroup()
+
+    def on_tab_settings(self, _changed: frozenset[str]) -> None:
+        self.tab.apply(self.map_view)
 
     def regroup(self) -> None:
         if self.shown is not None:
@@ -352,6 +357,7 @@ class MappingWidget(QtWidgets.QWidget):
         keep_view = self.shown is not None and self.shown.paths == result.paths
         colors = self.colors_for(result)
         self.settings.apply(self.map_view, self.host)
+        self.tab.apply(self.map_view)
         self.map_view.show_result(result, colors, keep_view)
         self.file_list.set_rows(result.paths, result.order, colors)
         self.shown = result
@@ -393,7 +399,7 @@ class MappingWidget(QtWidgets.QWidget):
 
     def on_list_selection(self):
         rows = self.file_list.selected_rows()
-        if self.settings.selection_mode == "group":
+        if self.tab.selection_mode == "group":
             expanded = self.map_view.expand_to_groups(rows)
             if expanded != rows:
                 rows = expanded
@@ -486,9 +492,12 @@ class MappingWidget(QtWidgets.QWidget):
         self.handle_drop(event)
 
     def save_state(self) -> dict:
-        return {"splitter": bytes(self.splitter.saveState().toHex()).decode("ascii")}
+        return {"splitter": bytes(self.splitter.saveState().toHex()).decode("ascii"), "toolbar": self.tab.to_dict()}
 
     def restore_state(self, state: dict) -> None:
+        toolbar = state.get("toolbar")
+        if isinstance(toolbar, dict):
+            self.tab.load(toolbar)
         splitter = state.get("splitter")
         if isinstance(splitter, str) and splitter:
             self.splitter.restoreState(QtCore.QByteArray.fromHex(splitter.encode("ascii")))

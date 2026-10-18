@@ -15,6 +15,7 @@ from wafer.qt.theme import ThemeManager
 from .session import MapResult
 
 SCENE_SIZE = 1000.0
+CAPTION_MARGIN = 6
 UNSET_GAP = SCENE_SIZE * 0.08
 UNSET_SPACING = 20.0
 UNSET_PER_ROW = 50
@@ -97,6 +98,11 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.setRenderHints(QtGui.QPainter.Antialiasing | QtGui.QPainter.SmoothPixmapTransform)
         self.setAcceptDrops(True)
         self.init_command_binding("MappingView", use_existing_events=True)
+        palette = ThemeManager.instance().palette
+        self.caption = QtWidgets.QLabel(self.viewport())
+        self.caption.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.caption.setStyleSheet(f"QLabel {{ color: {palette.text_secondary}; background: {palette.bg_elevated}; border-radius: {dpix(4)}px; padding: {dpix(2)}px {dpix(6)}px; }}")
+        self.caption.hide()
         self.paths: list[str] = []
         self.rows_by_path: dict[str, int] = {}
         self.colors: list[QtGui.QColor] = []
@@ -182,6 +188,20 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if limit != self.image_limit:
             self.image_limit = max(int(limit), 0)
             self.invalidate()
+
+    def set_caption(self, text: str) -> None:
+        self.caption.setText(text)
+        self.caption.setVisible(bool(text))
+        self.place_caption()
+
+    def place_caption(self) -> None:
+        self.caption.adjustSize()
+        margin = dpix(CAPTION_MARGIN)
+        self.caption.move(margin, self.viewport().height() - self.caption.height() - margin)
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self.place_caption()
 
     def set_image_spacing(self, spacing: float) -> None:
         if spacing != self.image_spacing:

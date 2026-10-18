@@ -529,3 +529,16 @@ def test_the_map_has_no_group_labels():
 
     assert not hasattr(module, "GroupLabelItem") and not hasattr(module.MapView, "set_labels_visible")
     assert "group_terms" not in MapResult.__dataclass_fields__
+
+
+def test_caption_sits_in_the_bottom_left_corner_of_the_map(view, qtbot):
+    view.resize(400, 300)
+    view.show()
+    view.set_caption("nai · 12 files")
+    assert view.caption.text() == "nai · 12 files" and view.caption.isVisible()
+    corner = view.caption.geometry()
+    assert corner.left() < 20 and view.viewport().height() - corner.bottom() < 20
+    view.resize(500, 400)
+    qtbot.waitUntil(lambda: view.viewport().height() - view.caption.geometry().bottom() < 20, timeout=1000)
+    view.set_caption("")
+    assert not view.caption.isVisible()

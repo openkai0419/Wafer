@@ -147,6 +147,7 @@ def test_selection_sync_and_context(mapping):
 
 
 def test_list_selection_updates_map(mapping):
+    mapping.tab.set_selection_mode("single")
     mapping.file_list.select_rows([2, 5])
     mapping.file_list.selection_changed.emit()
     assert mapping.map_view.selected_rows() == [2, 5]
@@ -370,6 +371,7 @@ def test_list_selection_expands_to_whole_group(mapping):
 
 
 def test_list_selection_stays_single_in_single_mode(mapping):
+    mapping.tab.set_selection_mode("single")
     labels = mapping.current_result().labels
     row = int(np.flatnonzero(labels >= 0)[0])
     mapping.file_list.select_rows([row])
@@ -432,7 +434,7 @@ def test_recompute_command_refreshes(mapping):
 def test_widget_state_leaves_the_shared_view_settings_to_the_plugin(mapping):
     settings().set_image_scale(2.0)
     state = mapping.save_state()
-    assert set(state) == {"splitter", "toolbar"}
+    assert set(state) == {"splitter", "toolbar", "list"}
     mapping.restore_state({**state, "view": {"image_scale": 1.0}})
     assert settings().image_scale == 2.0
 
@@ -495,7 +497,7 @@ def test_group_size_slider_regroups_the_map(mapping, qtbot):
     previous = mapping.current_result()
     slider = mapping.toolbar.sliders["subgroup_size"]
     slider.setValue(slider.minimum())
-    assert settings().params.subgroup_size == 0.0625 and mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}0.0625"
+    assert settings().params.subgroup_size == 0.03125 and mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}0.031"
     wait_for_new_result(qtbot, mapping, previous)
     assert np.array_equal(mapping.current_result().positions, previous.positions, equal_nan=True)
     slider.setValue(slider.maximum())
@@ -516,7 +518,7 @@ def test_mapping_space_sets_the_base_groups_of_its_database(mapping, qtbot, fres
     space.toolbar.fine_check.setChecked(True)
     assert GroupingStore.instance().get("db") == Grouping(size=0.25, fine=1) == fresh_grouping_store["db"]
     wait_for_new_result(qtbot, mapping, previous)
-    assert mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}1"
+    assert mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}0.05"
     assert space.toolbar.slider_values["size"].text() == "\N{MULTIPLICATION SIGN}0.25"
     space.toolbar.set_db("other")
     assert space.toolbar.slider_values["size"].text() == "\N{MULTIPLICATION SIGN}1" and not space.toolbar.fine_check.isChecked()
@@ -545,7 +547,7 @@ def test_group_sliders_step_by_the_same_ratio(mapping):
     space_toolbar = MapToolbar(TabSettings(), edits_space_groups=True)
     space_toolbar.set_db("db")
     cases = (
-        (mapping.toolbar, "subgroup_size", lambda: settings().params.subgroup_size, 0.0625, 1.0, {0.125, 0.25, 0.5}),
+        (mapping.toolbar, "subgroup_size", lambda: settings().params.subgroup_size, 0.03125, 1.0, {0.0625, 0.125, 0.25, 0.5}),
         (space_toolbar, "size", lambda: GroupingStore.instance().get("db").size, 0.25, 16.0, {0.5, 1.0, 2.0, 4.0, 8.0}),
         (space_toolbar, "strictness", lambda: GroupingStore.instance().get("db").strictness, 0.25, 16.0, {0.5, 1.0, 2.0, 4.0, 8.0}),
     )
@@ -585,7 +587,7 @@ def test_only_the_latest_regroup_is_computed(space_data):
 def test_groups_start_from_the_size_of_the_whole_space(mapping, space_data):
     level = mapping.levels[-1]
     assert level.layout.model is space_data.model and level.layout.load_model is None
-    assert mapping.toolbar.sliders["subgroup_size"].value() == mapping.toolbar.sliders["subgroup_size"].maximum()
+    assert settings().params.subgroup_size == 0.05 and mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}0.05"
 
 
 def test_each_tab_keeps_its_own_toolbar_settings(qtbot, space_data):
@@ -596,9 +598,9 @@ def test_each_tab_keeps_its_own_toolbar_settings(qtbot, space_data):
     qtbot.addWidget(space)
     mapping.toolbar.thumbnail_check.setChecked(False)
     assert not mapping.tab.thumbnails_shown and space.tab.thumbnails_shown
-    space.toolbar.mode_buttons["group"].setChecked(True)
-    assert space.tab.selection_mode == "group" and mapping.tab.selection_mode == "single"
-    assert mapping.map_view.selection_mode == "single" and space.map_view.selection_mode == "group"
+    space.toolbar.mode_buttons["single"].setChecked(True)
+    assert space.tab.selection_mode == "single" and mapping.tab.selection_mode == "group"
+    assert mapping.map_view.selection_mode == "group" and space.map_view.selection_mode == "single"
     mapping.close()
     space.close()
 
@@ -607,7 +609,7 @@ def test_toolbar_settings_are_saved_per_tab(qtbot, space_data):
     mapping = open_widget(qtbot)
     mapping.tab.set_thumbnails_shown(False)
     state = mapping.save_state()
-    assert state["toolbar"] == {"thumbnails": False, "selection_mode": "single", "spacing": 0.1}
+    assert state["toolbar"] == {"thumbnails": False, "selection_mode": "group", "spacing": 0.1}
     other = MappingWidget()
     qtbot.addWidget(other)
     other.restore_state(state)
@@ -791,3 +793,36 @@ def test_only_the_map_tab_has_a_spacing_slider(qtbot):
 
 def test_the_map_tab_names_its_database(mapping):
     assert mapping.message_text().startswith("db \N{MIDDLE DOT} ")
+
+
+def test_map_tab_keeps_its_controls_in_one_row_and_gives_the_rest_to_the_map(mapping, qtbot):
+    from wafer.qt.common.dpi import dpix
+
+    row = mapping.bar.flow.single_line_size()
+    mapping.resize(row.width() + dpix(30), 600)
+    qtbot.waitUntil(lambda: mapping.bar.width() >= row.width(), timeout=2000)
+    assert mapping.bar.height() <= row.height() + dpix(4)
+    assert mapping.map_view.height() >= mapping.height() - row.height() - dpix(24)
+    assert mapping.map_view.width() >= mapping.width() - dpix(20)
+
+
+def test_file_list_is_hidden_until_asked(mapping):
+    assert not mapping.file_list.isVisibleTo(mapping)
+    mapping.list_button.click()
+    assert mapping.file_list.isVisibleTo(mapping) and mapping.save_state()["list"] is True
+    other = MappingWidget()
+    other.restore_state(mapping.save_state())
+    assert other.list_button.isChecked() and not other.file_list.isHidden()
+    other.close()
+
+
+def test_thumbnails_switch_lives_in_the_display_popup(mapping):
+    assert not mapping.toolbar.thumbnail_check.isVisibleTo(mapping.toolbar)
+    mapping.toolbar.toggle_tuning()
+    assert mapping.toolbar.thumbnail_check.isVisible()
+    mapping.toolbar.tuning_popup.close()
+
+
+def test_single_and_group_stay_together_when_the_bar_wraps(mapping):
+    single, group = mapping.toolbar.mode_buttons.values()
+    assert single.parentWidget() is group.parentWidget() is not mapping.toolbar

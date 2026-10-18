@@ -20,7 +20,7 @@ from .view_settings import TOOLBAR_PARAMS, GroupingStore, TabSettings, ViewSetti
 
 TUNING_HEIGHT = 600
 TOOLBAR_SPACING = 6
-SLIDER_WIDTH = 110
+SLIDER_WIDTH = 80
 STEPS_PER_DOUBLING = 4
 SPECS = {name: spec for name, spec, _ in param_specs(ViewParams)}
 GROUPING_SPECS = {name: spec for name, spec, _ in param_specs(Grouping)}
@@ -35,15 +35,6 @@ def slider_position(factor: float) -> int:
 
 def slider_factor(position: int) -> float:
     return 2.0 ** (position / STEPS_PER_DOUBLING)
-
-
-def cluster(*widgets: QtWidgets.QWidget) -> QtWidgets.QWidget:
-    box = QtWidgets.QWidget()
-    layout = QtWidgets.QHBoxLayout(box)
-    layout.setContentsMargins(0, 0, 0, 0)
-    for widget in widgets:
-        layout.addWidget(widget)
-    return box
 
 
 def set_quietly(button: QtWidgets.QAbstractButton, checked: bool) -> None:
@@ -62,10 +53,10 @@ class MapToolbar(QtWidgets.QWidget):
         self.db_name = ""
         self.tuning_popup: PopupBase | None = None
         layout = FlowLayout(self, spacing=dpix(TOOLBAR_SPACING))
+        self.flow = layout
         self.thumbnail_check = QtWidgets.QCheckBox(t("Thumbnails"))
         self.thumbnail_check.setToolTip(t("Show thumbnails instead of dots."))
         self.thumbnail_check.toggled.connect(self.tab.set_thumbnails_shown)
-        layout.addWidget(self.thumbnail_check)
         self.sliders: dict[str, QtWidgets.QSlider] = {}
         self.slider_values: dict[str, QtWidgets.QLabel] = {}
         self.fine_check: QtWidgets.QCheckBox | None = None
@@ -76,13 +67,16 @@ class MapToolbar(QtWidgets.QWidget):
             self.fine_check = QtWidgets.QCheckBox(t(fine.label))
             self.fine_check.setToolTip(t(fine.description))
             self.fine_check.toggled.connect(lambda checked: self.set_grouping("fine", int(checked)))
-            layout.addWidget(self.fine_check)
             self.groupings.changed.connect(self.on_grouping_changed)
         else:
             self.add_slider(layout, "subgroup_size", SPECS["subgroup_size"], self.set_param)
             self.add_spacing_slider(layout)
         self.mode_buttons: dict[str, QtWidgets.QToolButton] = {}
         group = QtWidgets.QButtonGroup(self)
+        modes = QtWidgets.QWidget()
+        pair = QtWidgets.QHBoxLayout(modes)
+        pair.setContentsMargins(0, 0, 0, 0)
+        pair.setSpacing(dpix(2))
         for mode, text, tip in (("single", t("Single"), t("Select one file at a time.")), ("group", t("Group"), t("Select whole groups."))):
             button = QtWidgets.QToolButton()
             button.setText(text)
@@ -91,9 +85,18 @@ class MapToolbar(QtWidgets.QWidget):
             button.toggled.connect(partial(self.on_mode_toggled, mode))
             group.addButton(button)
             self.mode_buttons[mode] = button
-        layout.addWidget(cluster(*self.mode_buttons.values()))
+            pair.addWidget(button)
+        layout.addWidget(modes)
         self.tuning = TuningPanel(ViewParams, exclude=TOOLBAR_PARAMS)
         self.tuning.params_changed.connect(self.settings.set_params)
+        self.popup_content = QtWidgets.QWidget()
+        content = QtWidgets.QVBoxLayout(self.popup_content)
+        content.setContentsMargins(dpix(10), dpix(8), dpix(10), 0)
+        content.addWidget(self.thumbnail_check)
+        if self.fine_check is not None:
+            content.addWidget(self.fine_check)
+        content.addWidget(self.tuning)
+        self.popup_content.hide()
         self.tuning_button = QtWidgets.QToolButton()
         self.tuning_button.setIcon(themed_icon("gear_small"))
         self.tuning_button.setToolTip(t("Display settings"))
@@ -112,8 +115,9 @@ class MapToolbar(QtWidgets.QWidget):
         slider.setToolTip(t(spec.description))
         slider.valueChanged.connect(lambda position: apply(name, slider_factor(position)))
         value = QtWidgets.QLabel()
-        value.setFixedWidth(value.fontMetrics().horizontalAdvance(f"{MULTIPLY}0.0625") + dpix(2))
-        layout.addWidget(cluster(label, slider, value))
+        value.setFixedWidth(value.fontMetrics().horizontalAdvance(f"{MULTIPLY}0.031") + dpix(2))
+        for widget in (label, slider, value):
+            layout.addWidget(widget)
         self.sliders[name], self.slider_values[name] = slider, value
 
     def add_spacing_slider(self, layout: FlowLayout) -> None:
@@ -126,8 +130,15 @@ class MapToolbar(QtWidgets.QWidget):
         slider.valueChanged.connect(lambda position: self.tab.set_spacing(SPACING_SPEC.minimum + position * SPACING_SPEC.step))
         value = QtWidgets.QLabel()
         value.setFixedWidth(value.fontMetrics().horizontalAdvance("0.00") + dpix(2))
-        layout.addWidget(cluster(label, slider, value))
+        for widget in (label, slider, value):
+            layout.addWidget(widget)
         self.sliders["spacing"], self.slider_values["spacing"] = slider, value
+
+    def prepend(self, widget: QtWidgets.QWidget) -> None:
+        self.flow.insertWidget(0, widget)
+
+    def append(self, widget: QtWidgets.QWidget) -> None:
+        self.flow.addWidget(widget)
 
     def set_param(self, name: str, value) -> None:
         self.settings.set_params(replace(self.settings.params, **{name: value}))
@@ -167,7 +178,7 @@ class MapToolbar(QtWidgets.QWidget):
             slider.blockSignals(True)
             slider.setValue(slider_position(value))
             slider.blockSignals(False)
-            self.slider_values[name].setText(f"{MULTIPLY}{value:.3g}")
+            self.slider_values[name].setText(f"{MULTIPLY}{value:.2g}")
         if self.fine_check is not None:
             set_quietly(self.fine_check, bool(source.fine))
         for mode, button in self.mode_buttons.items():
@@ -187,7 +198,8 @@ class MapToolbar(QtWidgets.QWidget):
             QtWidgets.QVBoxLayout(popup).setContentsMargins(0, 0, 0, 0)
             scroll = QtWidgets.QScrollArea()
             scroll.setWidgetResizable(True)
-            scroll.setWidget(self.tuning)
+            scroll.setWidget(self.popup_content)
+            self.popup_content.show()
             popup.set_content_widget(scroll)
             self.tuning_popup = popup
         popup.show_below(self.tuning_button, align=Qt.AlignRight, max_height=dpix(TUNING_HEIGHT))

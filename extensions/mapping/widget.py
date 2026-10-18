@@ -127,32 +127,31 @@ class MappingWidget(QtWidgets.QWidget):
         self.stack.addWidget(empty)
         self.page = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(self.page)
-        layout.setContentsMargins(dpix(6), dpix(6), dpix(6), dpix(6))
-        toolbar = QtWidgets.QHBoxLayout()
-        toolbar.addStretch(1)
-        self.toolbar = MapToolbar(self.tab)
-        toolbar.addWidget(self.toolbar)
+        layout.setContentsMargins(dpix(4), dpix(4), dpix(4), dpix(4))
+        layout.setSpacing(dpix(2))
+        self.toolbar = self.bar = MapToolbar(self.tab)
+        crumbs_box = QtWidgets.QWidget()
+        self.crumbs = QtWidgets.QHBoxLayout(crumbs_box)
+        self.crumbs.setContentsMargins(0, 0, 0, 0)
+        self.toolbar.prepend(crumbs_box)
+        self.list_button = QtWidgets.QToolButton()
+        self.list_button.setIcon(themed_icon("menu"))
+        self.list_button.setToolTip(t("Show the file list"))
+        self.list_button.setCheckable(True)
+        self.list_button.toggled.connect(self.show_list)
         refresh = QtWidgets.QToolButton()
         refresh.setIcon(themed_icon("refresh"))
         refresh.setToolTip(t("Recompute"))
         refresh.clicked.connect(self.refresh)
-        toolbar.addWidget(refresh)
-        layout.addLayout(toolbar)
-        status = QtWidgets.QHBoxLayout()
-        self.crumbs = QtWidgets.QHBoxLayout()
-        status.addLayout(self.crumbs)
-        status.addStretch(1)
-        self.message = QtWidgets.QLabel()
-        self.message.setStyleSheet(f"color: {palette.text_secondary};")
-        status.addWidget(self.message)
         self.cancel_button = QtWidgets.QToolButton()
         self.cancel_button.setIcon(themed_icon("cross"))
         self.cancel_button.setToolTip(t("Cancel"))
         self.cancel_button.setAutoRaise(True)
         self.cancel_button.hide()
         self.cancel_button.clicked.connect(self.cancel_compute)
-        status.addWidget(self.cancel_button)
-        layout.addLayout(status)
+        for widget in (self.list_button, refresh, self.cancel_button):
+            self.toolbar.append(widget)
+        layout.addWidget(self.bar)
         self.progress = QtWidgets.QProgressBar()
         self.progress.setRange(0, len(STAGES))
         self.progress.setTextVisible(False)
@@ -165,10 +164,14 @@ class MappingWidget(QtWidgets.QWidget):
         self.splitter.addWidget(self.file_list)
         self.splitter.addWidget(self.map_view)
         self.splitter.setStretchFactor(1, 3)
+        self.file_list.hide()
         layout.addWidget(self.splitter, stretch=1)
         self.stack.addWidget(self.page)
         self.map_view.selection_changed.connect(self.on_map_selection)
         self.file_list.selection_changed.connect(self.on_list_selection)
+
+    def show_list(self, shown: bool) -> None:
+        self.file_list.setVisible(shown)
 
     def on_grouping_changed(self, db_name: str) -> None:
         if db_name == self.db_name:
@@ -205,7 +208,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.progress.hide()
 
     def message_text(self) -> str:
-        return self.message.text()
+        return self.map_view.caption.text()
 
     def current_result(self) -> MapResult | None:
         return self.levels[-1].result if self.levels else None
@@ -410,7 +413,7 @@ class MappingWidget(QtWidgets.QWidget):
         return result_colors(result, self.palette_colors)
 
     def set_message(self, text: str):
-        self.message.setText(text)
+        self.map_view.set_caption(text)
 
     def selected_paths(self) -> list[str]:
         if self.shown is None:
@@ -529,7 +532,7 @@ class MappingWidget(QtWidgets.QWidget):
         self.handle_drop(event)
 
     def save_state(self) -> dict:
-        return {"splitter": bytes(self.splitter.saveState().toHex()).decode("ascii"), "toolbar": self.tab.to_dict()}
+        return {"splitter": bytes(self.splitter.saveState().toHex()).decode("ascii"), "toolbar": self.tab.to_dict(), "list": self.list_button.isChecked()}
 
     def restore_state(self, state: dict) -> None:
         toolbar = state.get("toolbar")
@@ -538,3 +541,5 @@ class MappingWidget(QtWidgets.QWidget):
         splitter = state.get("splitter")
         if isinstance(splitter, str) and splitter:
             self.splitter.restoreState(QtCore.QByteArray.fromHex(splitter.encode("ascii")))
+        self.list_button.setChecked(state.get("list") is True)
+        self.show_list(self.list_button.isChecked())

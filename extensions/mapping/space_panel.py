@@ -198,6 +198,9 @@ def read_snapshot(db_name: str, view: ViewParams, size: int = PREVIEW_FILES) -> 
     if not os.path.isfile(db_path):
         return snapshot
     model = space_model(db_name, preset) if has_saved_space(preset) and snapshot.status.state == "ready" else None
+    if snapshot.status.state == "training":
+        snapshot.problem = "Training. The whole map appears when it finishes."
+        return snapshot
     space = None if model is None else model.whole_space()
     if space is None or not space.size:
         return snapshot
@@ -364,15 +367,16 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.revert_button = QtWidgets.QPushButton(t("Revert"))
         self.revert_button.setToolTip(t("Discard unsaved changes."))
         self.revert_button.clicked.connect(self.revert)
-        self.refresh_button = QtWidgets.QPushButton(t("Refresh"))
-        self.refresh_button.setToolTip(t("Show the saved space."))
-        self.refresh_button.clicked.connect(self.show_space)
-        for button in (self.save_button, self.revert_button, self.refresh_button):
+        for button in (self.save_button, self.revert_button):
             buttons.addWidget(button)
         form_layout.addLayout(buttons)
         self.preview_size = file_count_box(PREVIEW_RANGE, PREVIEW_FILES)
         self.preview_size.valueChanged.connect(self.resample)
         form_layout.addLayout(labelled_row("Files on the whole map", self.preview_size, "Number of files on the whole map."))
+        self.whole_map_button = QtWidgets.QPushButton(t("Show whole map"))
+        self.whole_map_button.setToolTip(t("Show random files of the saved map on the right. It also appears by itself when this tab opens."))
+        self.whole_map_button.clicked.connect(self.show_space)
+        form_layout.addWidget(self.whole_map_button)
         form_layout.addWidget(section_title("Quick Train"))
         hint = QtWidgets.QLabel(t("Train on random files with the current settings for a rough check. Nothing is saved."))
         hint.setWordWrap(True)
@@ -393,11 +397,8 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         preview = QtWidgets.QWidget()
         preview_layout = QtWidgets.QVBoxLayout(preview)
         preview_layout.setContentsMargins(dpix(6), dpix(6), dpix(6), dpix(6))
-        self.toolbar = MapToolbar(self.tab, edits_space_groups=True)
-        preview_layout.addWidget(self.toolbar)
-        self.count_label = QtWidgets.QLabel()
-        self.count_label.setStyleSheet(f"color: {palette.text_secondary};")
-        preview_layout.addWidget(self.count_label)
+        self.toolbar = self.bar = MapToolbar(self.tab, edits_space_groups=True)
+        preview_layout.addWidget(self.bar)
         self.map_view = MapView(self)
         self.map_view.setMinimumSize(dpix(MAP_MIN_WIDTH) // 2, dpix(MAP_MIN_WIDTH) // 2)
         preview_layout.addWidget(self.map_view, stretch=1)
@@ -531,7 +532,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         cancel = self.refresh_cancel.renew()
         db_name, view = self.db_name, self.settings.params
 
-        self.count_label.setText(t("Grouping") + ELLIPSIS)
+        self.map_view.set_caption(t("Grouping") + ELLIPSIS)
 
         def task():
             result, problem = run_preview(layout, view, db_name, cancelled=cancel.is_cancelled)
@@ -631,11 +632,11 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         cancel = self.quick_cancel.renew()
         self.quick_running = True
         self.update_buttons()
-        self.count_label.setText(t("Picking {count} files", count=f"{size:,}") + ELLIPSIS)
+        self.map_view.set_caption(t("Picking {count} files", count=f"{size:,}") + ELLIPSIS)
 
         def progress(stage):
             text = t(STAGE_NAMES.get(stage, stage)) + ELLIPSIS
-            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.count_label.setText(text))
+            self.dispatcher.invoke(lambda: cancel.is_cancelled() or self.map_view.set_caption(text))
 
         def task():
             try:
@@ -661,7 +662,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
             return
         cancel = self.quick_cancel.renew()
         view = self.settings.params
-        self.count_label.setText(t("Grouping") + ELLIPSIS)
+        self.map_view.set_caption(t("Grouping") + ELLIPSIS)
 
         def task():
             result, problem = run_preview(layout, view, sample.db_name, cancelled=cancel.is_cancelled)
@@ -674,7 +675,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
     def finish_quick_train(self, message: str) -> None:
         self.quick_running = False
         self.update_buttons()
-        self.count_label.setText(message)
+        self.map_view.set_caption(message)
 
     def apply_quick_train(self, sample: QuickTrainSample, layout: SpaceLayout, result: MapResult) -> None:
         self.quick_sample, self.quick_layout = sample, layout
@@ -687,7 +688,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
 
     def show_quick_train(self, sample: QuickTrainSample, result: MapResult | None, problem: str) -> None:
         if result is None:
-            self.count_label.setText(t(problem))
+            self.map_view.set_caption(t(problem))
             return
         self.show_preview(result, sample.sources, t("Quick train: {count} files (not saved)", count=f"{len(result.paths):,}"))
 
@@ -726,7 +727,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.preview_key = (db_name, size)
         self.preview_loading = True
         if not self.showing_quick and not self.quick_running:
-            self.count_label.setText(t("Loading values") + ELLIPSIS)
+            self.map_view.set_caption(t("Loading values") + ELLIPSIS)
 
         def task():
             try:
@@ -761,7 +762,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
     def preview_failed(self) -> None:
         self.preview_loading = False
         if not self.showing_quick and not self.quick_running:
-            self.count_label.setText(t("Mapping failed. See the log for details."))
+            self.map_view.set_caption(t("Mapping failed. See the log for details."))
 
     def apply_snapshot(self, snapshot: SpaceSnapshot) -> None:
         dirty = self.is_dirty()
@@ -781,10 +782,10 @@ class MappingSpaceWidget(QtWidgets.QWidget):
     def show_space_result(self, result: MapResult | None, problem: str) -> None:
         if result is None:
             self.clear_preview()
-            self.count_label.setText(t(problem) if problem else t("Nothing to preview yet."))
+            self.map_view.set_caption(t(problem) if problem else t("Nothing to preview yet."))
             return
         placed = len(result.paths) - result.diagnostics.unset
-        self.show_preview(result, self.preview_sources, t("Preview: {count} files", count=f"{placed:,}"))
+        self.show_preview(result, self.preview_sources, t("Whole map: {count} files", count=f"{placed:,}"))
 
     def clear_preview(self) -> None:
         self.shown = None
@@ -802,7 +803,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
             self.tab.apply(self.map_view)
             self.map_view.show_result(result, colors, keep_view)
         self.shown = result
-        self.count_label.setText(caption)
+        self.map_view.set_caption(caption)
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
         super().showEvent(event)

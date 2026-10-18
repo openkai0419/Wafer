@@ -92,9 +92,9 @@ def test_view_commands_toggle_the_tab_they_came_from(monkeypatch):
     ctx = Ctx(map_panel=panel)
     commands.toggle_thumbnails(ctx)
     commands.toggle_selection_mode(ctx)
-    assert not panel.tab.thumbnails_shown and panel.tab.selection_mode == "group"
-    assert other.tab.thumbnails_shown and other.tab.selection_mode == "single"
-    assert not commands._thumbnails_checked() and commands._group_mode_checked()
+    assert not panel.tab.thumbnails_shown and panel.tab.selection_mode == "single"
+    assert other.tab.thumbnails_shown and other.tab.selection_mode == "group"
+    assert not commands._thumbnails_checked() and not commands._group_mode_checked()
 
 
 def test_panel_commands_target_the_panel_the_command_came_from(monkeypatch):
@@ -150,3 +150,9 @@ def test_there_is_no_label_command():
 
     assert "mapping.toggle_labels" not in {c.path for c in MappingViewCommands.commands() if not isinstance(c, str)}
     assert "labels" not in TabSettings().to_dict()
+
+
+def test_both_tabs_select_whole_groups_by_default():
+    from extensions.mapping.view_settings import TabSettings
+
+    assert TabSettings().selection_mode == "group"

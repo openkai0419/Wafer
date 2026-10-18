@@ -396,7 +396,7 @@ def test_quick_train_shows_a_sample_without_saving_and_reuses_it(widget, databas
     w.toggle_quick_train()
     assert w.quick_button.text() == "Cancel"
     qtbot.waitUntil(lambda: w.showing_quick, timeout=30000)
-    assert len(w.map_view.paths) == 12 and "not saved" in w.count_label.text()
+    assert len(w.map_view.paths) == 12 and "not saved" in w.map_view.caption.text()
     assert w.quick_button.text() == "Quick Train" and not saved and not resets
     w.tuning.controls["neighbors"].setValue(0.5)
     w.showing_quick = False
@@ -426,11 +426,11 @@ def test_cancelling_quick_train_keeps_the_space_preview(widget, monkeypatch, qtb
     assert w.quick_running
     qtbot.waitUntil(started.is_set, timeout=5000)
     w.toggle_quick_train()
-    assert not w.quick_running and w.quick_button.text() == "Quick Train" and w.count_label.text() == "Cancelled"
+    assert not w.quick_running and w.quick_button.text() == "Quick Train" and w.map_view.caption.text() == "Cancelled"
     release.set()
     qtbot.waitUntil(lambda: runs == [True], timeout=5000)
     qtbot.wait(50)
-    assert not w.showing_quick and w.quick_sample is None and w.count_label.text() == "Cancelled"
+    assert not w.showing_quick and w.quick_sample is None and w.map_view.caption.text() == "Cancelled"
 
 
 def test_quick_train_size_is_kept_in_the_panel_state(widget):
@@ -460,7 +460,7 @@ def test_outlier_changes_relayout_the_shown_sample(widget, qtbot, monkeypatch):
     monkeypatch.setattr(space_panel, "read_snapshot", lambda *args: pytest.fail("a view change must not read a new sample"))
     ViewSettings.instance().set_params(ViewParams(outlier_percent=5.0))
     qtbot.waitUntil(lambda: w.shown is not None, timeout=5000)
-    assert w.shown.paths == list(values) and "12 files" in w.count_label.text()
+    assert w.shown.paths == list(values) and "12 files" in w.map_view.caption.text()
 
 
 def test_preview_is_shown_before_its_groups(qtbot, database, monkeypatch):
@@ -607,4 +607,32 @@ def test_no_open_window_leaves_the_database_choice_alone(qtbot, monkeypatch):
     w.db_box.show_quietly("nai")
     w.showEvent(QtGui.QShowEvent())
     assert w.db_box.currentText() == "nai" and "" not in [w.db_box.itemText(i) for i in range(w.db_box.count())]
+    w.close()
+
+
+def test_the_whole_map_has_its_own_button(widget, monkeypatch):
+    w, _saved, _resets = widget
+    shown = []
+    monkeypatch.setattr(MappingSpaceWidget, "show_space", lambda self: shown.append(1))
+    assert w.whole_map_button.text() == "Show whole map"
+    w.whole_map_button.click()
+    assert shown == [1]
+
+
+def test_while_training_the_whole_map_says_so(database, tmp_path):
+    write_status(tmp_path / "cache" / "mapping" / "map", SpaceStatus("training", 1))
+    snapshot = read_snapshot("map", ViewParams())
+    assert snapshot.result is None and snapshot.problem.startswith("Training")
+
+
+def test_settings_map_controls_fit_in_one_row(qtbot):
+    from wafer.qt.common.dpi import dpix
+
+    w = MappingSpaceWidget()
+    qtbot.addWidget(w)
+    row = w.bar.flow.single_line_size()
+    w.resize(w.splitter.widget(0).minimumSizeHint().width() + row.width() * 2, 600)
+    w.show()
+    qtbot.waitUntil(lambda: w.bar.width() >= row.width(), timeout=2000)
+    assert w.bar.height() <= row.height() + dpix(4)
     w.close()

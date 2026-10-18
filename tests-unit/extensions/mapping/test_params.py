@@ -125,7 +125,7 @@ def test_mapping_share_shrinks_the_base_group_size():
     assert Grouping(size=0.5).cluster_options(1_000_000, share=0.25) == (250, 10, "eom")
     assert Grouping().cluster_options(100, share=0.0625) == (2, 2, "eom")
     spec = next(spec for name, spec, _ in param_specs(ViewParams) if name == "subgroup_size")
-    assert (spec.minimum, spec.maximum) == (0.0625, 1.0) and ViewParams().subgroup_size == 1.0
+    assert (spec.minimum, spec.maximum) == (0.03125, 1.0) and ViewParams().subgroup_size == 0.05
 
 
 def test_strictness_scales_how_dense_a_group_must_be():
@@ -148,3 +148,9 @@ def test_group_factors_reach_sixteen():
 
 def test_there_is_no_label_word_setting():
     assert "label_terms" not in {name for name, _spec, _default in param_specs(ViewParams)}
+
+
+def test_map_group_size_starts_small():
+    assert ViewParams().subgroup_size == 0.05
+    spec = next(spec for name, spec, _ in param_specs(ViewParams) if name == "subgroup_size")
+    assert spec.minimum <= 0.05

@@ -61,13 +61,13 @@ def test_panel_state_keeps_the_tab_and_both_tabs(qtbot):
     qtbot.addWidget(panel)
     panel.show_settings()
     panel.settings_tab.tab.set_thumbnails_shown(False)
-    panel.map_tab.tab.set_selection_mode("group")
+    panel.map_tab.tab.set_selection_mode("single")
     state = panel.save_state()
     other = MappingPanel()
     qtbot.addWidget(other)
     other.restore_state(state)
     assert other.tabs.currentIndex() == 1 and not other.settings_tab.tab.thumbnails_shown
-    assert other.map_tab.tab.selection_mode == "group" and other.settings_tab.tab.selection_mode == "single"
+    assert other.map_tab.tab.selection_mode == "single" and other.settings_tab.tab.selection_mode == "group"
 
 
 def test_switching_tabs_hides_the_hover(qtbot):

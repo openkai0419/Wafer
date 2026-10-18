@@ -107,10 +107,10 @@ class ViewParams(ParamSet):
         step=0.5,
     )
     subgroup_size: float = param(
-        1.0,
+        0.05,
         label="Group size",
         description="Split the base groups from Settings into smaller ones, as a share of their size. 1 = the base groups.",
-        minimum=0.0625,
+        minimum=0.03125,
         maximum=1.0,
         step=0.25,
     )

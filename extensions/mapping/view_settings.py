@@ -81,7 +81,7 @@ class TabSettings(QtCore.QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.thumbnails_shown = True
-        self.selection_mode = "single"
+        self.selection_mode = "group"
         self.spacing = DEFAULT_SPACING
 
     def set_thumbnails_shown(self, shown: bool) -> None:
@@ -107,7 +107,7 @@ class TabSettings(QtCore.QObject):
 
     def load(self, state: dict[str, Any]) -> None:
         self.set_thumbnails_shown(state.get("thumbnails", True) is not False)
-        self.set_selection_mode(state.get("selection_mode", "single"))
+        self.set_selection_mode(state.get("selection_mode", "group"))
         self.set_spacing(state.get("spacing", DEFAULT_SPACING))
 
     def apply(self, view) -> None:

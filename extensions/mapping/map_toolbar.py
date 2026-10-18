@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 from functools import partial
 
@@ -18,8 +19,17 @@ from .view_settings import TOOLBAR_PARAMS, TOOLBAR_SLIDERS, VIEW_STAGES, ViewSet
 
 TUNING_HEIGHT = 600
 SLIDER_WIDTH = 110
+STEPS_PER_DOUBLING = 4
 SPECS = {name: spec for name, spec, _ in param_specs()}
 MULTIPLY = "\N{MULTIPLICATION SIGN}"
+
+
+def slider_position(factor: float) -> int:
+    return round(math.log2(factor) * STEPS_PER_DOUBLING)
+
+
+def slider_factor(position: int) -> float:
+    return 2.0 ** (position / STEPS_PER_DOUBLING)
 
 
 def set_quietly(button: QtWidgets.QAbstractButton, checked: bool) -> None:
@@ -78,11 +88,12 @@ class MapToolbar(QtWidgets.QWidget):
         label = QtWidgets.QLabel(t(spec.label))
         label.setToolTip(t(spec.description))
         slider = QtWidgets.QSlider(Qt.Horizontal)
-        slider.setRange(round(spec.minimum / spec.step), round(spec.maximum / spec.step))
+        slider.setRange(slider_position(spec.minimum), slider_position(spec.maximum))
         slider.setFixedWidth(dpix(SLIDER_WIDTH))
         slider.setToolTip(t(spec.description))
-        slider.valueChanged.connect(lambda position: self.set_param(name, position * spec.step))
+        slider.valueChanged.connect(lambda position: self.set_param(name, slider_factor(position)))
         value = QtWidgets.QLabel()
+        value.setFixedWidth(value.fontMetrics().horizontalAdvance(f"{MULTIPLY}0.297") + dpix(2))
         for widget in (label, slider, value):
             layout.addWidget(widget)
         self.sliders[name], self.slider_values[name] = slider, value
@@ -101,9 +112,9 @@ class MapToolbar(QtWidgets.QWidget):
         for name, slider in self.sliders.items():
             value = getattr(settings.params, name)
             slider.blockSignals(True)
-            slider.setValue(round(value / SPECS[name].step))
+            slider.setValue(slider_position(value))
             slider.blockSignals(False)
-            self.slider_values[name].setText(f"{MULTIPLY}{value:.2f}")
+            self.slider_values[name].setText(f"{MULTIPLY}{value:.3g}")
         set_quietly(self.fine_check, bool(settings.params.fine_groups))
         for mode, button in self.mode_buttons.items():
             set_quietly(button, mode == settings.selection_mode)

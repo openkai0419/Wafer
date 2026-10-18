@@ -518,7 +518,7 @@ def test_group_size_slider_regroups_the_map(mapping, qtbot):
     wait_for_new_result(qtbot, mapping, previous)
     assert np.array_equal(mapping.current_result().positions, previous.positions, equal_nan=True)
     slider.setValue(slider.maximum())
-    assert settings().params.group_size == 4.0
+    assert settings().params.group_size == 16.0 and mapping.toolbar.slider_values["group_size"].text() == "\N{MULTIPLICATION SIGN}16"
 
 
 def test_group_size_slider_follows_the_shared_settings(mapping, qtbot):
@@ -530,18 +530,30 @@ def test_group_size_slider_follows_the_shared_settings(mapping, qtbot):
     mapping.toolbar.sliders["group_size"].setValue(mapping.toolbar.sliders["group_size"].maximum())
     assert space.toolbar.sliders["group_size"].value() == space.toolbar.sliders["group_size"].maximum()
     settings().set_params(MapParams(group_size=1.0, group_strictness=0.5, fine_groups=1))
-    assert mapping.toolbar.slider_values["group_size"].text() == "\N{MULTIPLICATION SIGN}1.00"
-    assert space.toolbar.slider_values["group_strictness"].text() == "\N{MULTIPLICATION SIGN}0.50" and space.toolbar.fine_check.isChecked()
+    assert mapping.toolbar.slider_values["group_size"].text() == "\N{MULTIPLICATION SIGN}1"
+    assert space.toolbar.slider_values["group_strictness"].text() == "\N{MULTIPLICATION SIGN}0.5" and space.toolbar.fine_check.isChecked()
     space.close()
 
 
 def test_strictness_and_fine_groups_regroup_the_map(mapping, qtbot):
     previous = mapping.current_result()
     mapping.toolbar.sliders["group_strictness"].setValue(mapping.toolbar.sliders["group_strictness"].maximum())
-    assert settings().params.group_strictness == 4.0
+    assert settings().params.group_strictness == 16.0
     wait_for_new_result(qtbot, mapping, previous)
     previous = mapping.current_result()
     mapping.toolbar.fine_check.setChecked(True)
     assert settings().params.fine_groups == 1
     wait_for_new_result(qtbot, mapping, previous)
     assert np.array_equal(mapping.current_result().positions, previous.positions, equal_nan=True)
+
+
+def test_group_sliders_step_by_the_same_ratio(mapping):
+    for name in ("group_size", "group_strictness"):
+        slider = mapping.toolbar.sliders[name]
+        factors = []
+        for position in range(slider.minimum(), slider.maximum() + 1):
+            slider.setValue(position)
+            factors.append(getattr(settings().params, name))
+        ratios = np.array(factors[1:]) / np.array(factors[:-1])
+        assert factors[0] == 0.25 and factors[-1] == 16.0 and np.allclose(ratios, ratios[0])
+        assert {0.5, 1.0, 2.0, 4.0, 8.0} <= set(factors)

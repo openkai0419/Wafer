@@ -128,3 +128,11 @@ def test_fine_groups_pick_the_leaf_clusters():
     for name in ("group_strictness", "fine_groups"):
         spec = next(spec for key, spec, _ in param_specs() if key == name)
         assert spec.stage == "view"
+
+
+def test_group_factors_reach_sixteen():
+    for name in ("group_size", "group_strictness"):
+        spec = next(spec for key, spec, _ in param_specs() if key == name)
+        assert (spec.minimum, spec.maximum) == (0.25, 16.0)
+    assert MapParams(group_size=99, group_strictness=99).normalized().group_size == 16.0
+    assert MapParams(group_size=16.0).cluster_options(5000) == (160, 10, "eom")

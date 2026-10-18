@@ -80,7 +80,7 @@ class MapParams:
         label="Group size",
         description="Smallest group, as a multiple of the automatic size (about 1 in 500 shown files, 5 to 30). Lower makes more, smaller groups.",
         minimum=0.25,
-        maximum=4.0,
+        maximum=16.0,
         step=0.25,
     )
     group_strictness: float = param(
@@ -89,7 +89,7 @@ class MapParams:
         label="Strictness",
         description="How crowded files must be to form a group, as a multiple of the automatic value. Lower leaves fewer files without a group.",
         minimum=0.25,
-        maximum=4.0,
+        maximum=16.0,
         step=0.25,
     )
     fine_groups: int = param(0, stage="view", label="Fine groups", description="Split large groups into the smaller crowds inside them.", minimum=0, maximum=1)

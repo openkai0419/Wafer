@@ -53,3 +53,10 @@ def fresh_grouping_store(monkeypatch):
     monkeypatch.setattr(view_settings, "load_grouping", lambda db_name: saved.get(db_name, Grouping()))
     monkeypatch.setattr(view_settings, "save_grouping", lambda db_name, grouping: saved.__setitem__(db_name, grouping))
     return saved
+
+
+@pytest.fixture(autouse=True)
+def every_database_can_open(monkeypatch):
+    from extensions.mapping.space_panel import MappingSpaceWidget
+
+    monkeypatch.setattr(MappingSpaceWidget, "can_open", lambda self, db_name: True)

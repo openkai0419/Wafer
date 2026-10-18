@@ -110,7 +110,6 @@ class SpaceSnapshot:
     placed: int = 0
     waiting: int = 0
     model_bytes: int = 0
-    parser_enabled: bool = True
     result: MapResult | None = None
     layout: SpaceLayout | None = None
     sources: dict[str, str] = field(default_factory=dict)
@@ -125,7 +124,7 @@ def read_space_status(db_name: str) -> SpaceSnapshot:
     preset = load_preset(db_name) or Preset([], TrainParams(), 0)
     directory = model_dir(db_name)
     status = current_status(read_status(directory), preset.version)
-    snapshot = SpaceSnapshot(preset, status, parser_enabled=parser_enabled(db_name))
+    snapshot = SpaceSnapshot(preset, status)
     snapshot.model_bytes = sum(safe_getsize(path) or 0 for path in directory.glob(f"model-v{preset.version}.*"))
     db_path = data_db_path(db_name)
     if not os.path.isfile(db_path):
@@ -149,16 +148,25 @@ def file_count_box(value_range: tuple[int, int], value: int) -> QtWidgets.QSpinB
 
 
 class DatabaseBox(QtWidgets.QComboBox):
+    def __init__(self, can_open: Callable[[str], bool], parent=None):
+        super().__init__(parent)
+        self.can_open = can_open
+
     def showPopup(self) -> None:
         self.reload()
         super().showPopup()
+
+    def add_name(self, name: str) -> None:
+        self.addItem(name)
+        self.model().item(self.count() - 1).setEnabled(self.can_open(name))
 
     def reload(self) -> None:
         current = self.currentText()
         names = sorted(set(list_data_db_names()) | ({current} if current else set()))
         self.blockSignals(True)
         self.clear()
-        self.addItems(names)
+        for name in names:
+            self.add_name(name)
         self.setCurrentText(current)
         self.blockSignals(False)
 
@@ -167,7 +175,7 @@ class DatabaseBox(QtWidgets.QComboBox):
             return
         self.blockSignals(True)
         if self.findText(name) < 0:
-            self.addItem(name)
+            self.add_name(name)
         self.setCurrentText(name)
         self.blockSignals(False)
 
@@ -299,7 +307,6 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.placed = 0
         self.waiting = 0
         self.model_bytes = 0
-        self.parser_on = True
         self.notice = ""
         self.detecting: dict[str, CancelToken] = {}
         self.shown: MapResult | None = None
@@ -334,18 +341,29 @@ class MappingSpaceWidget(QtWidgets.QWidget):
 
     def build_ui(self):
         palette = self.palette_colors
-        root = QtWidgets.QHBoxLayout(self)
+        root = QtWidgets.QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        top = QtWidgets.QHBoxLayout()
+        top.setContentsMargins(dpix(8), dpix(6), dpix(8), dpix(2))
+        top.addWidget(section_title("Database"))
+        self.db_box = DatabaseBox(self.can_open)
+        self.db_box.setToolTip(t("The database whose map you train and view here."))
+        self.db_box.currentTextChanged.connect(self.choose_db)
+        top.addWidget(self.db_box, stretch=1)
+        root.addLayout(top)
+        self.content = QtWidgets.QStackedWidget()
+        root.addWidget(self.content, stretch=1)
         self.splitter = QtWidgets.QSplitter(Qt.Horizontal)
-        root.addWidget(self.splitter)
+        self.content.addWidget(self.splitter)
+        self.blocked = QtWidgets.QLabel(t("Enable the Mapping parser for this database in Plugin Manager."))
+        self.blocked.setAlignment(Qt.AlignCenter)
+        self.blocked.setWordWrap(True)
+        self.blocked.setStyleSheet(f"color: {palette.text_muted}; font-size: {dpix(13)}px;")
+        self.content.addWidget(self.blocked)
         form = QtWidgets.QWidget()
         form_layout = QtWidgets.QVBoxLayout(form)
         form_layout.setContentsMargins(dpix(8), dpix(8), dpix(8), dpix(8))
-        form_layout.addWidget(section_title("Database"))
-        self.db_box = DatabaseBox()
-        self.db_box.setToolTip(t("The database whose map you train and view here."))
-        self.db_box.currentTextChanged.connect(self.choose_db)
-        form_layout.addWidget(self.db_box)
         form_layout.addWidget(section_title("Keys"))
         self.feature_bar = FeatureBar(self.detect)
         self.feature_bar.features_changed.connect(self.update_buttons)
@@ -416,6 +434,14 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.db_box.show_quietly(name)
         self.toolbar.set_db(name)
 
+    def can_open(self, db_name: str) -> bool:
+        return bool(db_name) and parser_enabled(db_name)
+
+    def update_access(self) -> bool:
+        opened = self.can_open(self.db_name)
+        self.content.setCurrentWidget(self.splitter if opened else self.blocked)
+        return opened
+
     def choose_db(self, name: str) -> None:
         if not name or name == self.db_name:
             return
@@ -423,7 +449,8 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.toolbar.set_db(name)
         self.notice = ""
         self.preview_key = None
-        self.refresh()
+        if self.update_access():
+            self.refresh()
 
     def connect_indexer_updates(self) -> None:
         from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
@@ -465,7 +492,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
 
     def apply_status(self, snapshot: SpaceSnapshot) -> None:
         self.status, self.total, self.placed, self.waiting = snapshot.status, snapshot.total, snapshot.placed, snapshot.waiting
-        self.model_bytes, self.parser_on = snapshot.model_bytes, snapshot.parser_enabled
+        self.model_bytes = snapshot.model_bytes
         self.render_status()
 
     def selected_paths(self) -> list[str]:
@@ -702,8 +729,6 @@ class MappingSpaceWidget(QtWidgets.QWidget):
 
     def render_status(self) -> None:
         text = status_text(self.status, self.total, self.placed, self.waiting, self.model_bytes)
-        if self.db_name and not self.parser_on:
-            text += "\n" + t("Enable the Mapping parser for this database in Plugin Manager.")
         if self.db_name and self.notice:
             text += "\n" + self.notice
         self.status_label.setText(text if self.db_name else t("No database is open."))
@@ -716,6 +741,8 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         self.update_buttons()
         if not self.db_name:
             self.render_status()
+            return
+        if not self.update_access():
             return
         db_name = self.db_name
         if self.keys_db != db_name:
@@ -808,6 +835,8 @@ class MappingSpaceWidget(QtWidgets.QWidget):
     def showEvent(self, event: QtGui.QShowEvent) -> None:
         super().showEvent(event)
         self.default_db()
+        if not self.update_access():
+            return
         if self.preview_key is not None and self.preview_key == (self.db_name, self.preview_size.value()):
             self.refresh_status()
         else:

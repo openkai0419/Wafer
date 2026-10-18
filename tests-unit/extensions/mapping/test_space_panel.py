@@ -108,16 +108,6 @@ def test_save_without_features_does_nothing(widget):
     assert saved == {} and resets == []
 
 
-def test_parser_warning_is_shown_only_when_disabled(widget):
-    w, _saved, _resets = widget
-    w.parser_on = False
-    w.render_status()
-    assert "Enable the Mapping parser" in w.status_label.text()
-    w.parser_on = True
-    w.render_status()
-    assert "Enable the Mapping parser" not in w.status_label.text()
-
-
 def test_enablement_follows_the_database_setting_then_defaults(monkeypatch):
     class Setting:
         enabled = None
@@ -176,7 +166,6 @@ def test_snapshot_reads_counts_status_and_preview(database):
     assert snapshot.preset.version == 1 and snapshot.status.state == "ready"
     assert snapshot.total == 12 and snapshot.placed == 10 and snapshot.waiting == 0
     assert snapshot.model_bytes > 0
-    assert not snapshot.parser_enabled
     assert snapshot.result is not None and len(snapshot.result.paths) == 10 and not snapshot.result.unset.any()
     assert set(snapshot.sources) == set(snapshot.result.paths)
 
@@ -202,7 +191,6 @@ def test_apply_snapshot_shows_preview_and_keeps_unsaved_edits(widget, database, 
     w.apply_snapshot(snapshot)
     assert w.saved.version == 1 and [f.key for f in w.feature_bar.features()] == ["tags", "path"]
     assert len(w.map_view.paths) == 10 and "10 of 12" in w.status_label.text()
-    assert "Enable the Mapping parser" in w.status_label.text()
     w.revert()
     assert [f.key for f in w.feature_bar.features()] == ["wd14.tags"]
 
@@ -635,4 +623,53 @@ def test_settings_map_controls_fit_in_one_row(qtbot):
     w.show()
     qtbot.waitUntil(lambda: w.bar.width() >= row.width(), timeout=2000)
     assert w.bar.height() <= row.height() + dpix(4)
+    w.close()
+
+
+def blocked_widget(qtbot, monkeypatch, open_db="nai"):
+    from types import SimpleNamespace
+
+    from wafer.qt.commands.binding.instance_registry import InstanceRegistry
+
+    monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: SimpleNamespace(database_name=open_db))
+    monkeypatch.setattr(space_panel, "list_data_db_names", lambda: ["nai", "off"])
+    monkeypatch.setattr(MappingSpaceWidget, "can_open", lambda self, db_name: db_name != "off")
+    refreshed = []
+    monkeypatch.setattr(MappingSpaceWidget, "refresh", lambda self: refreshed.append(self.db_name))
+    w = MappingSpaceWidget()
+    qtbot.addWidget(w)
+    return w, refreshed
+
+
+def test_databases_without_the_parser_cannot_be_chosen(qtbot, monkeypatch):
+    w, _refreshed = blocked_widget(qtbot, monkeypatch)
+    w.db_box.reload()
+    items = {w.db_box.itemText(i): w.db_box.model().item(i).isEnabled() for i in range(w.db_box.count())}
+    assert items == {"nai": True, "off": False}
+    assert w.content.currentWidget() is w.splitter
+    w.close()
+
+
+def test_settings_stay_closed_while_the_parser_is_off(qtbot, monkeypatch):
+    w, refreshed = blocked_widget(qtbot, monkeypatch, open_db="off")
+    w.showEvent(QtGui.QShowEvent())
+    assert w.db_name == "off" and w.content.currentWidget() is w.blocked
+    assert "Enable the Mapping parser" in w.blocked.text() and refreshed == []
+    assert not w.save_button.isVisibleTo(w) and w.db_box.isVisibleTo(w)
+    w.db_box.reload()
+    w.db_box.setCurrentText("nai")
+    assert w.content.currentWidget() is w.splitter and refreshed == ["nai"]
+    w.close()
+
+
+def test_refresh_reads_nothing_while_the_parser_is_off(qtbot, monkeypatch):
+    monkeypatch.setattr(MappingSpaceWidget, "can_open", lambda self, db_name: False)
+    monkeypatch.setattr(space_panel, "read_snapshot", lambda *args: pytest.fail("a closed database must not be read"))
+    monkeypatch.setattr(space_panel, "read_key_catalog", lambda *args: pytest.fail("a closed database must not be read"))
+    w = MappingSpaceWidget()
+    qtbot.addWidget(w)
+    w.db_name = "off"
+    w.refresh()
+    qtbot.wait(200)
+    assert w.content.currentWidget() is w.blocked
     w.close()

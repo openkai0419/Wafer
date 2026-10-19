@@ -111,7 +111,7 @@ class _DateInput(QtWidgets.QWidget):
         self._drop_btn.setFocusPolicy(QtCore.Qt.NoFocus)
         on_theme_changed = self._on_theme_changed
         ThemeManager.instance().on_theme_changed.connect(on_theme_changed)
-        self.destroyed.connect(lambda: _DateInput._disconnect_theme(on_theme_changed))
+        self.destroyed.connect(lambda: ThemeManager.instance().on_theme_changed.disconnect(on_theme_changed))
         self._drop_btn.released.connect(self._show_popup)
         layout.addWidget(self._drop_btn)
 
@@ -120,15 +120,6 @@ class _DateInput(QtWidgets.QWidget):
 
     def _on_theme_changed(self, _palette):
         self._drop_btn.setIcon(themed_icon("chevron_down"))
-
-    @staticmethod
-    def _disconnect_theme(callback):
-        signal = ThemeManager.instance().on_theme_changed
-        with signal._lock:
-            try:
-                signal._callbacks.remove(callback)
-            except ValueError:
-                pass
 
     def state(self) -> str:
         return self._state

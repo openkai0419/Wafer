@@ -1416,6 +1416,21 @@ class TestThumbnailResolution:
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_higher_resolution_reloads_visible_low_resolution_thumbnails(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg._thumbs.store(str(tmp_files[0]), QtGui.QImage(10, 10, QtGui.QImage.Format_RGB32), 10)
+        dlg._results = [object()]
+        dlg._thumb_resolution = 1024
+        dlg._thumbs.set_size(1024)
+        dlg._thumb_visible.clear()
+        with patch.object(dlg, "_visible_row_range", return_value=range(1)), patch.object(dlg._thumbs, "request") as request:
+            BatchRenameWidget._update_visible_thumbnails.__wrapped__(dlg)
+        assert [list(call.args[0]) for call in request.call_args_list] == [[str(tmp_files[0])]]
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
     def test_resolution_serialised_and_restored(self, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)

@@ -750,7 +750,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         entering = new_visible - self._thumb_visible
         self._thumbs.cancel(str(self._paths[r]) for r in leaving if 0 <= r < len(self._paths))
         self._thumb_visible = new_visible
-        entering_need_load = [r for r in entering if 0 <= r < len(self._paths) and str(self._paths[r]) not in self._thumbs]
+        entering_need_load = [r for r in entering if 0 <= r < len(self._paths) and not self._thumbs.sufficient(str(self._paths[r]))]
         if not entering_need_load:
             return
         visible = self._visible_row_range()

@@ -129,6 +129,14 @@ def test_save_leaves_no_temp_files_and_keeps_status(tmp_path):
     assert sorted(p.name for p in tmp_path.iterdir()) == ["model-v1.npz", "model-v1.pkl", "status.json"]
 
 
+def test_save_writes_the_arrays_last_so_readers_never_see_them_without_the_state(tmp_path, monkeypatch):
+    replaced = []
+    original = space.os.replace
+    monkeypatch.setattr(space.os, "replace", lambda source, target: replaced.append(target.name) or original(source, target))
+    SpaceModel.fit(preset(1), tag_values()).save(tmp_path)
+    assert replaced == ["model-v1.pkl", "model-v1.npz"]
+
+
 def test_save_survives_undeletable_stale_file(tmp_path, monkeypatch):
     SpaceModel.fit(preset(1), tag_values()).save(tmp_path)
 

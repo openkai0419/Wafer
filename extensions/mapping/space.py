@@ -325,12 +325,12 @@ class SpaceModel:
     def save(self, directory: Path) -> None:
         directory.mkdir(parents=True, exist_ok=True)
         stem = f"model-v{self.version}"
+        state = {"preset": self.preset.to_dict(), "encoders": self.encoders, "reducers": self.reducers, "scales": self.scales, "built_at": self.built_at}
+        write_atomic(directory / f"{stem}.pkl", pickle.dumps(state))
         arrays = directory / f"{stem}.npz.tmp"
         with open(arrays, "wb") as handle:
             np.savez(handle, paths=encode_paths(self.paths), matrix=self.matrix, coords=self.coords)
         os.replace(arrays, directory / f"{stem}.npz")
-        state = {"preset": self.preset.to_dict(), "encoders": self.encoders, "reducers": self.reducers, "scales": self.scales, "built_at": self.built_at}
-        write_atomic(directory / f"{stem}.pkl", pickle.dumps(state))
         for stale in directory.glob("model-v*.*"):
             if stale.name.startswith(stem + "."):
                 continue

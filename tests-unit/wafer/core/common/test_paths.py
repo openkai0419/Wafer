@@ -64,6 +64,13 @@ def test_normalize_path_collapses_redundant_segments():
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows drive letters")
+def test_normalize_path_keeps_network_and_cloud_drive_names_as_given():
+    assert normalize_path(r"\\nas\share\photos\a.png") == "//nas/share/photos/a.png"
+    assert normalize_path(r"z:\photos\a.png") == "Z:/photos/a.png"
+    assert normalize_path(r"X:\マイドライブ\a.png") == "X:/マイドライブ/a.png"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows drive letters")
 def test_normalize_path_is_idempotent():
     for raw in (r"b:\x\..\Y.png", "B:/ダウン/a b.zip", "M:/x/", "C:/"):
         once = normalize_path(raw)

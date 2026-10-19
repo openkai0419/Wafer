@@ -104,6 +104,7 @@ def test_dropping_on_the_settings_tab_shows_the_files_on_the_map(qtbot, tmp_path
     panel.settings_tab.handle_drag_enter(event)
     assert event.accepted is True
     panel.settings_tab.handle_drop(event)
+    qtbot.waitUntil(lambda: len(added) == 1)
     assert len(added) == 1 and added[0][1] == "main.db" and panel.current_map() is panel.map_tab
 
 

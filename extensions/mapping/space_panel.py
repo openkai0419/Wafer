@@ -39,7 +39,7 @@ from .session import KEY_MODEL, OUTPUT_PREFIX, SPACE_KEYS, MapError, MapResult, 
 from .space import Preset, SpaceModel, SpaceStatus, count_placed, load_preset, model_dir, read_status, save_preset, space_model
 from .tuning import TuningPanel
 from .view_settings import RELAYOUT_PARAMS, GroupingStore, TabSettings, ViewSettings
-from .widget import cancel_work, local_file_paths, prepare_layout_engine, result_colors, same_layout
+from .widget import cancel_work, has_local_urls, prepare_layout_engine, result_colors, same_layout
 
 LOAD_PRIORITY = 7
 STATUS_REFRESH_MS = 1000
@@ -515,7 +515,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         return {**self.host.context_for(self.selected_paths()), "map_panel": self}
 
     def handle_drag_enter(self, event) -> None:
-        if self.on_drop is not None and local_file_paths(event.mimeData()):
+        if self.on_drop is not None and has_local_urls(event.mimeData()):
             event.setDropAction(Qt.CopyAction)
             event.accept()
         else:

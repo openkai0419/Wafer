@@ -25,7 +25,7 @@ from .file_list import FileList
 from .map_host import MapHost
 from .map_toolbar import MapToolbar
 from .map_view import MapView
-from .session import MapError, MapResult, SpaceLayout
+from .session import SPACE_KEYS, MapError, MapResult, SpaceLayout
 from .space import Preset, load_preset, space_model
 from .view_settings import RELAYOUT_PARAMS, GroupingStore, TabSettings, ViewSettings
 
@@ -41,10 +41,18 @@ PROGRESS_HEIGHT = 3
 CRUMB_ARROW = "\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}"
 
 
-def local_file_paths(mime: QtCore.QMimeData | None) -> list[str]:
+def has_local_urls(mime: QtCore.QMimeData | None) -> bool:
+    return mime is not None and mime.hasUrls() and any(url.isLocalFile() for url in mime.urls())
+
+
+def local_paths(mime: QtCore.QMimeData | None) -> list[str]:
     if mime is None or not mime.hasUrls():
         return []
-    return [normalize_path(url.toLocalFile()) for url in mime.urls() if url.isLocalFile() and safe_is_file(Path(url.toLocalFile()))]
+    return [normalize_path(url.toLocalFile()) for url in mime.urls() if url.isLocalFile()]
+
+
+def shown_keys(preset: Preset | None) -> list[str]:
+    return [*SPACE_KEYS, *(preset.value_keys() if preset is not None else [])]
 
 
 def group_color(group: int) -> QtGui.QColor:
@@ -271,9 +279,9 @@ class MappingWidget(QtWidgets.QWidget):
 
         def task():
             try:
-                values = fetch_path_values(db_path, paths)
-                sources = fetch_sources(db_path, paths)
                 preset = load_preset(db_name) if db_name else None
+                values = fetch_path_values(db_path, paths, keys=shown_keys(preset))
+                sources = fetch_sources(db_path, paths)
                 GroupingStore.instance().get(db_name)
             except Exception as e:
                 AppLogger.error("[Mapping] Loading values failed", exc=e)
@@ -507,21 +515,27 @@ class MappingWidget(QtWidgets.QWidget):
         super().hideEvent(event)
 
     def handle_drag_enter(self, event):
-        if local_file_paths(event.mimeData()):
+        if has_local_urls(event.mimeData()):
             event.setDropAction(Qt.CopyAction)
             event.accept()
         else:
             event.ignore()
 
     def handle_drop(self, event):
-        paths = local_file_paths(event.mimeData())
+        paths = local_paths(event.mimeData())
         db_path = getattr(InstanceRegistry.instance().get_host_window(), "database_path", None) or self.db_path
         if not paths or db_path is None:
             event.ignore()
             return
         event.setDropAction(Qt.IgnoreAction)
         event.accept()
-        self.add_files(paths, db_path)
+
+        def task():
+            files = [path for path in paths if safe_is_file(Path(path))]
+            if files:
+                self.dispatcher.invoke(lambda: self.add_files(files, db_path))
+
+        self.dispatcher.post(task, priority=COMPUTE_PRIORITY)
 
     def dragEnterEvent(self, event):
         self.handle_drag_enter(event)

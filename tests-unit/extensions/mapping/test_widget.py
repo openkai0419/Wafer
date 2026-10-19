@@ -12,7 +12,7 @@ from extensions.mapping import map_view as map_view_module
 from extensions.mapping import widget as widget_module
 from extensions.mapping.params import DEFAULT_SUBGROUP_SIZE, Grouping, TrainParams, ViewParams, param_specs
 from extensions.mapping.projection import GROUPING_DIMS
-from extensions.mapping.session import FeatureSpec, coordinate_text
+from extensions.mapping.session import SPACE_KEYS, FeatureSpec, coordinate_text
 from extensions.mapping.space import Preset
 from extensions.mapping.view_settings import ViewSettings
 from extensions.mapping.widget import MappingWidget
@@ -76,8 +76,8 @@ def deterministic_groups(fake_cluster):
 @pytest.fixture()
 def space_data(monkeypatch):
     values = space_values()
-    state = SimpleNamespace(preset=Preset([FeatureSpec("tags", "token_set")], TrainParams(), 2), values=values, model=None)
-    monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps: {p: state.values[p] for p in ps if p in state.values})
+    state = SimpleNamespace(preset=Preset([FeatureSpec("tags", "token_set")], TrainParams(), 2), values=values, model=None, requested_keys=[])
+    monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps, keys=None: state.requested_keys.append(keys) or {p: state.values[p] for p in ps if p in state.values})
     monkeypatch.setattr(widget_module, "fetch_sources", lambda db, ps: {p: p.replace(".png", ".zip") for p in ps})
     monkeypatch.setattr(widget_module, "load_preset", lambda db_name: state.preset)
     monkeypatch.setattr(widget_module, "space_model", lambda db_name, preset: state.model)
@@ -233,8 +233,14 @@ def test_drill_down_before_values_loaded_is_ignored(qtbot):
     w.close()
 
 
+def test_map_reads_only_the_space_and_feature_keys(qtbot, space_data):
+    w = open_widget(qtbot)
+    assert space_data.requested_keys == [[*SPACE_KEYS, "tags"]]
+    w.close()
+
+
 def test_fetch_failure_shows_error(qtbot, monkeypatch):
-    def fail(db, ps):
+    def fail(db, ps, keys=None):
         raise OSError("boom")
 
     errors = []
@@ -294,7 +300,7 @@ def dropped_file(tmp_path):
     return dropped, mime
 
 
-def test_drop_adds_files(mapping, tmp_path):
+def test_drop_adds_files(mapping, qtbot, tmp_path):
     dropped, mime = dropped_file(tmp_path)
     enter = DropEvent(mime)
     mapping.handle_drag_enter(enter)
@@ -302,7 +308,23 @@ def test_drop_adds_files(mapping, tmp_path):
     drop = DropEvent(mime)
     with patch.object(MappingWidget, "add_files") as add:
         mapping.handle_drop(drop)
-    assert drop.accepted is True
+        assert drop.accepted is True
+        qtbot.waitUntil(lambda: add.called)
+    add.assert_called_once_with([widget_module.normalize_path(str(dropped))], "db")
+
+
+def test_dragging_does_not_touch_the_disk_and_dropped_folders_are_skipped(mapping, qtbot, tmp_path, monkeypatch):
+    dropped, mime = dropped_file(tmp_path)
+    mime.setUrls([QtCore.QUrl.fromLocalFile(str(tmp_path)), QtCore.QUrl.fromLocalFile(str(dropped))])
+    checked = []
+    original = widget_module.safe_is_file
+    monkeypatch.setattr(widget_module, "safe_is_file", lambda path: checked.append(path) or original(path))
+    enter = DropEvent(mime)
+    mapping.handle_drag_enter(enter)
+    assert enter.accepted is True and checked == []
+    with patch.object(MappingWidget, "add_files") as add:
+        mapping.handle_drop(DropEvent(mime))
+        qtbot.waitUntil(lambda: add.called)
     add.assert_called_once_with([widget_module.normalize_path(str(dropped))], "db")
 
 
@@ -314,7 +336,8 @@ def test_drop_on_a_floating_panel_uses_the_main_window_database(qtbot, tmp_path,
     drop = DropEvent(mime)
     with patch.object(MappingWidget, "add_files") as add:
         w.handle_drop(drop)
-    assert drop.accepted is True
+        assert drop.accepted is True
+        qtbot.waitUntil(lambda: add.called)
     add.assert_called_once_with([widget_module.normalize_path(str(dropped))], "main.db")
     w.close()
 
@@ -761,7 +784,7 @@ def test_a_view_setting_change_during_the_layout_does_not_start_it_again(qtbot, 
 def test_loading_values_can_be_cancelled(qtbot, space_data, monkeypatch):
     release = threading.Event()
     original = widget_module.fetch_path_values
-    monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps: release.wait(10) and original(db, ps))
+    monkeypatch.setattr(widget_module, "fetch_path_values", lambda db, ps, keys=None: release.wait(10) and original(db, ps, keys))
     w = open_widget(qtbot, wait=False)
     assert w.cancel_button.isVisibleTo(w) and w.progress.isVisibleTo(w)
     w.cancel_button.click()

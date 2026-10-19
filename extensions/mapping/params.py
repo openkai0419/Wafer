@@ -30,6 +30,7 @@ MIN_NEIGHBORS = 2
 MAX_NEIGHBORS = 1000
 TRAIN_LIMIT = 10000
 FLOAT_DIGITS = 6
+RESIDUE_DIGITS = 12
 
 
 class ParamSet:
@@ -42,7 +43,7 @@ class ParamSet:
                 changes[f.name] = f.default
                 continue
             value = min(max(current, spec.minimum), spec.maximum)
-            changes[f.name] = round(value) if isinstance(f.default, int) else round(float(value), FLOAT_DIGITS)
+            changes[f.name] = round(value) if isinstance(f.default, int) else float(f"{round(float(value), RESIDUE_DIGITS):.{FLOAT_DIGITS}g}")
         return replace(self, **changes)
 
     def to_dict(self) -> dict[str, Any]:
@@ -110,7 +111,7 @@ class ViewParams(ParamSet):
         0.05,
         label="Group size",
         description="Split the base groups from Settings into smaller ones, as a share of their size. 1 = the base groups.",
-        minimum=0.03125,
+        minimum=2**-10,
         maximum=1.0,
         step=0.25,
     )

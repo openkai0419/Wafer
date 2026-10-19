@@ -29,6 +29,10 @@ SPACING_STEPS = round((SPACING_SPEC.maximum - SPACING_SPEC.minimum) / SPACING_SP
 MULTIPLY = "\N{MULTIPLICATION SIGN}"
 
 
+def factor_text(value: float) -> str:
+    return f"{MULTIPLY}{value:.2g}" if value >= 1 else f"{MULTIPLY}1/{round(1 / value)}"
+
+
 def slider_position(factor: float) -> int:
     return round(math.log2(factor) * STEPS_PER_DOUBLING)
 
@@ -115,7 +119,7 @@ class MapToolbar(QtWidgets.QWidget):
         slider.setToolTip(t(spec.description))
         slider.valueChanged.connect(lambda position: apply(name, slider_factor(position)))
         value = QtWidgets.QLabel()
-        value.setFixedWidth(value.fontMetrics().horizontalAdvance(f"{MULTIPLY}0.031") + dpix(2))
+        value.setFixedWidth(value.fontMetrics().horizontalAdvance(factor_text(2**-10)) + dpix(2))
         for widget in (label, slider, value):
             layout.addWidget(widget)
         self.sliders[name], self.slider_values[name] = slider, value
@@ -178,7 +182,7 @@ class MapToolbar(QtWidgets.QWidget):
             slider.blockSignals(True)
             slider.setValue(slider_position(value))
             slider.blockSignals(False)
-            self.slider_values[name].setText(f"{MULTIPLY}{value:.2g}")
+            self.slider_values[name].setText(factor_text(value))
         if self.fine_check is not None:
             set_quietly(self.fine_check, bool(source.fine))
         for mode, button in self.mode_buttons.items():

@@ -125,7 +125,7 @@ def test_mapping_share_shrinks_the_base_group_size():
     assert Grouping(size=0.5).cluster_options(1_000_000, share=0.25) == (250, 10, "eom")
     assert Grouping().cluster_options(100, share=0.0625) == (2, 2, "eom")
     spec = next(spec for name, spec, _ in param_specs(ViewParams) if name == "subgroup_size")
-    assert (spec.minimum, spec.maximum) == (0.03125, 1.0) and ViewParams().subgroup_size == 0.05
+    assert (spec.minimum, spec.maximum) == (2**-10, 1.0) and ViewParams().subgroup_size == 0.05
 
 
 def test_strictness_scales_how_dense_a_group_must_be():
@@ -154,3 +154,10 @@ def test_map_group_size_starts_small():
     assert ViewParams().subgroup_size == 0.05
     spec = next(spec for name, spec, _ in param_specs(ViewParams) if name == "subgroup_size")
     assert spec.minimum <= 0.05
+
+
+def test_map_group_size_reaches_the_smallest_groups_even_on_huge_databases():
+    spec = next(spec for name, spec, _ in param_specs(ViewParams) if name == "subgroup_size")
+    assert spec.minimum == 2**-10
+    assert ViewParams(subgroup_size=2**-10).normalized().subgroup_size <= 2**-10 * 1.001
+    assert Grouping().cluster_options(1_000_000, share=spec.minimum)[0] == 2

@@ -133,10 +133,9 @@ def finer_labels(base: np.ndarray, trees: Callable[[int], projection.ClusterTree
 
 
 def nested_labels(base: np.ndarray, finer: np.ndarray) -> np.ndarray:
-    grouped = base >= 0
     rest = int(finer.max()) + 1
-    codes = np.full(base.size, -1, dtype=np.int64)
-    codes[grouped] = base[grouped].astype(np.int64) * (rest + 1) + np.where(finer[grouped] >= 0, finer[grouped], rest)
+    codes = (base.astype(np.int64) + 1) * (rest + 1) + np.where(finer >= 0, finer, rest)
+    codes[(base < 0) & (finer < 0)] = -1
     return projection.relabel_by_size(codes)
 
 

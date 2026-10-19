@@ -497,7 +497,7 @@ def test_group_size_slider_regroups_the_map(mapping, qtbot):
     previous = mapping.current_result()
     slider = mapping.toolbar.sliders["subgroup_size"]
     slider.setValue(slider.minimum())
-    assert settings().params.subgroup_size == 0.03125 and mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}0.031"
+    assert settings().params.subgroup_size == pytest.approx(2**-10, rel=1e-5) and mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}1/1024"
     wait_for_new_result(qtbot, mapping, previous)
     assert np.array_equal(mapping.current_result().positions, previous.positions, equal_nan=True)
     slider.setValue(slider.maximum())
@@ -518,8 +518,8 @@ def test_mapping_space_sets_the_base_groups_of_its_database(mapping, qtbot, fres
     space.toolbar.fine_check.setChecked(True)
     assert GroupingStore.instance().get("db") == Grouping(size=0.25, fine=1) == fresh_grouping_store["db"]
     wait_for_new_result(qtbot, mapping, previous)
-    assert mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}0.05"
-    assert space.toolbar.slider_values["size"].text() == "\N{MULTIPLICATION SIGN}0.25"
+    assert mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}1/20"
+    assert space.toolbar.slider_values["size"].text() == "\N{MULTIPLICATION SIGN}1/4"
     space.toolbar.set_db("other")
     assert space.toolbar.slider_values["size"].text() == "\N{MULTIPLICATION SIGN}1" and not space.toolbar.fine_check.isChecked()
     space.close()
@@ -547,7 +547,7 @@ def test_group_sliders_step_by_the_same_ratio(mapping):
     space_toolbar = MapToolbar(TabSettings(), edits_space_groups=True)
     space_toolbar.set_db("db")
     cases = (
-        (mapping.toolbar, "subgroup_size", lambda: settings().params.subgroup_size, 0.03125, 1.0, {0.0625, 0.125, 0.25, 0.5}),
+        (mapping.toolbar, "subgroup_size", lambda: settings().params.subgroup_size, 2**-10, 1.0, {0.0625, 0.125, 0.25, 0.5}),
         (space_toolbar, "size", lambda: GroupingStore.instance().get("db").size, 0.25, 16.0, {0.5, 1.0, 2.0, 4.0, 8.0}),
         (space_toolbar, "strictness", lambda: GroupingStore.instance().get("db").strictness, 0.25, 16.0, {0.5, 1.0, 2.0, 4.0, 8.0}),
     )
@@ -558,8 +558,8 @@ def test_group_sliders_step_by_the_same_ratio(mapping):
             slider.setValue(position)
             factors.append(current())
         ratios = np.array(factors[1:]) / np.array(factors[:-1])
-        assert factors[0] == low and factors[-1] == high and np.allclose(ratios, ratios[0])
-        assert stops <= set(factors)
+        assert np.isclose(factors[0], low) and np.isclose(factors[-1], high) and np.allclose(ratios, ratios[0])
+        assert all(np.isclose(factors, stop).any() for stop in stops)
 
 
 def test_regrouping_swaps_colors_and_labels_and_keeps_the_view(mapping, qtbot, monkeypatch):
@@ -587,7 +587,7 @@ def test_only_the_latest_regroup_is_computed(space_data):
 def test_groups_start_from_the_size_of_the_whole_space(mapping, space_data):
     level = mapping.levels[-1]
     assert level.layout.model is space_data.model and level.layout.load_model is None
-    assert settings().params.subgroup_size == 0.05 and mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}0.05"
+    assert settings().params.subgroup_size == 0.05 and mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}1/20"
 
 
 def test_each_tab_keeps_its_own_toolbar_settings(qtbot, space_data):
@@ -828,3 +828,10 @@ def test_thumbnails_switch_lives_in_the_display_popup(mapping):
 def test_single_and_group_stay_together_when_the_bar_wraps(mapping):
     single, group = mapping.toolbar.mode_buttons.values()
     assert single.parentWidget() is group.parentWidget() is not mapping.toolbar
+
+
+def test_group_factors_are_shown_as_fractions():
+    from extensions.mapping.map_toolbar import MULTIPLY, factor_text
+
+    expected = [f"{MULTIPLY}{text}" for text in ("1/1024", "1/20", "1/4", "1", "2", "16")]
+    assert [factor_text(v) for v in (2**-10, 0.05, 0.25, 1.0, 2.0, 16.0)] == expected

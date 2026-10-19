@@ -242,10 +242,10 @@ def test_smaller_groups_stay_inside_their_base_group():
     base = np.array([0, 0, 0, 1, 1, 1, -1])
     finer = np.array([4, 4, 5, 4, 6, -1, 4])
     nested = nested_labels(base, finer)
-    assert nested[6] == -1
+    assert nested[6] >= 0 and nested[6] not in nested[:6]
     assert nested[0] == nested[1] != nested[2] and nested[3] not in (nested[0], nested[2], nested[4])
     assert nested[5] >= 0 and nested[5] not in (nested[3], nested[4], nested[0], nested[2])
-    assert len(set(nested.tolist()) - {-1}) == 5
+    assert len(set(nested.tolist()) - {-1}) == 6
 
 
 def test_selection_without_a_model_groups_by_itself(monkeypatch):
@@ -351,3 +351,14 @@ def test_the_map_spacing_is_used_for_its_own_layout():
     values = {path: {"tags": PathValue("cat")} for path in model.space.paths[:40]}
     layout = SpaceLayout(list(values), values, space_preset(), model, spacing=0.4)
     assert layout.refine() and model.spacings == [0.4]
+
+
+def test_files_outside_every_whole_space_group_can_form_smaller_groups():
+    from extensions.mapping.session import nested_labels
+
+    base = np.array([0, 0, 0, -1, -1, -1])
+    finer = np.array([1, 1, -1, 2, 2, -1])
+    nested = nested_labels(base, finer)
+    assert nested[3] == nested[4] >= 0 and nested[5] == -1
+    assert nested[0] == nested[1] >= 0 and nested[2] >= 0 and nested[2] != nested[0]
+    assert nested[3] not in (nested[0], nested[2])

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import sqlite3
 import threading
 import time
 
 import numpy as np
 
 from wafer.core.common.paths import data_db_path
-from wafer.core.db.path_values import fetch_path_values
+from wafer.core.db.path_values import fetch_path_values, read_path_values
 from wafer.core.logs import AppLogger
 from wafer.plugin import BaseParserPlugin, ParserResult
 
@@ -115,7 +116,11 @@ class MappingParser(BaseParserPlugin):
             trained = model.coords_for(path)
             if trained is not None:
                 return trained
-        entry = fetch_path_values(data_db_path(self.db_name), [path], keys=model.preset.value_keys()).get(path)
+        try:
+            entry = self.read_db(lambda conn: read_path_values(conn, [path], keys=model.preset.value_keys()), {}).get(path)
+        except sqlite3.Error as e:
+            AppLogger.warning(f"[Mapping] Reading the values of {path} failed; it is placed on the next run", exc=e)
+            entry = None
         if entry is None:
             return UNREAD
         point = model.place([entry])[0]

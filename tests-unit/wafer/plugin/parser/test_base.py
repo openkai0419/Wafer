@@ -137,6 +137,8 @@ def test_query_db_reads_assigned_database(tmp_path, monkeypatch):
     parser.db_name = "querydb"
     try:
         assert parser.query_db("SELECT COUNT(*) FROM sources WHERE file_hash = ?", ("hash1",)) == [(1,)]
+        connections = [parser.read_db(lambda conn: conn), parser.read_db(lambda conn: conn)]
+        assert connections[0] is connections[1] is parser._reader
     finally:
         parser.shutdown()
     assert parser._reader is None

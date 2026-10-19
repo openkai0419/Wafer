@@ -4,12 +4,21 @@ import sqlite3
 import threading
 from abc import abstractmethod
 from dataclasses import dataclass, asdict
-from collections.abc import Sequence
-from typing import Any
+from collections.abc import Callable, Sequence
+from typing import Any, TypeVar
 
 from ..registry import BasePlugin
 
 _READER_INIT_LOCK = threading.Lock()
+T = TypeVar("T")
+
+
+def _fetch_all(conn: sqlite3.Connection, sql: str, params: Sequence[Any]) -> list[tuple]:
+    cur = conn.cursor()
+    try:
+        return cur.execute(sql, tuple(params)).fetchall()
+    finally:
+        cur.close()
 
 
 @dataclass
@@ -51,17 +60,16 @@ class BaseParser(BasePlugin):
     def process(self, path: str, file_info: tuple, metadata: dict) -> ParserResult: ...
 
     def query_db(self, sql: str, params: Sequence[Any] = ()) -> list[tuple]:
+        return self.read_db(lambda conn: _fetch_all(conn, sql, params), [])
+
+    def read_db(self, read: Callable[[sqlite3.Connection], T], default: T | None = None) -> T | None:
         reader, lock = self._reader, self._reader_lock
         if reader is None or lock is None:
             reader, lock = self._open_reader()
         with lock:
             if self._reader is None:
-                return []
-            cur = reader.cursor()
-            try:
-                return cur.execute(sql, tuple(params)).fetchall()
-            finally:
-                cur.close()
+                return default
+            return read(reader)
 
     def _open_reader(self) -> tuple[sqlite3.Connection, threading.Lock]:
         from ...core.db.db_utils import open_readonly

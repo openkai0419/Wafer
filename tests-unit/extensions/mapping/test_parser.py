@@ -192,9 +192,36 @@ def test_shutdown_interrupts_training_without_blocking(env, monkeypatch):
 def test_failed_read_keeps_coordinates(env, monkeypatch):
     plugin, _db, _tmp = env
     run(plugin, "c:/0.png")
-    monkeypatch.setattr(parser_module, "fetch_path_values", lambda *a, **k: {})
+    monkeypatch.setattr(parser_module, "read_path_values", lambda *a, **k: {})
     result = run(plugin, "c:/new.png")
     assert result.status is False and not result.delete_meta_keys
+
+
+def test_a_broken_read_leaves_the_file_for_the_next_run(env, monkeypatch):
+    plugin, _db, _tmp = env
+    run(plugin, "c:/0.png")
+
+    def broken(*_args, **_kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(parser_module, "read_path_values", broken)
+    result = run(plugin, "c:/new.png")
+    assert result.status is False and not result.delete_meta_keys
+
+
+def test_new_files_are_placed_through_the_shared_reader(env, monkeypatch):
+    from wafer.core.db import path_values
+
+    plugin, db, _tmp = env
+    run(plugin, "c:/0.png")
+    db.upsert_basic_sources([(f"c:/new{i}.png", f"n{i}", 100, 1.0, 1.0, 1.0) for i in range(3)], [(f"c:/new{i}.png", f"c:/new{i}.png", f"new{i}.png", 1.0, None) for i in range(3)])
+    db.upsert_collection_results([], [], [(f"c:/new{i}.png", "wd14.tags", "cat, sky", None) for i in range(3)], [])
+    opened = []
+    original = path_values.open_readonly
+    monkeypatch.setattr(path_values, "open_readonly", lambda db_path: opened.append(db_path) or original(db_path))
+    results = [run(plugin, f"c:/new{i}.png") for i in range(3)]
+    assert all(result.status and set(result.meta_info) == {"2d", "group", "model"} for result in results)
+    assert opened == []
 
 
 def test_default_enabled_loads_class_but_not_per_database():

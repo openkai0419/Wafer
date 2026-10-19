@@ -23,6 +23,17 @@ class PathValue:
 
 def fetch_path_values(db_path: str | Path | None, paths: list[str], keys: Sequence[str] | None = None) -> dict[str, dict[str, PathValue]]:
     result: dict[str, dict[str, PathValue]] = {}
+    _read_chunks(db_path, paths, values_reader(result, keys), "path values")
+    return result
+
+
+def read_path_values(conn: sqlite3.Connection, paths: list[str], keys: Sequence[str] | None = None) -> dict[str, dict[str, PathValue]]:
+    result: dict[str, dict[str, PathValue]] = {}
+    read_in_chunks(conn, paths, values_reader(result, keys))
+    return result
+
+
+def values_reader(result: dict[str, dict[str, PathValue]], keys: Sequence[str] | None) -> Callable[[sqlite3.Connection, list[str], str], None]:
     key_list = list(dict.fromkeys(keys)) if keys is not None else None
     if key_list is not None and len(key_list) > MAX_FILTER_KEYS:
         key_list = None
@@ -55,8 +66,7 @@ def fetch_path_values(db_path: str | Path | None, paths: list[str], keys: Sequen
                 if value is not None:
                     entry[key] = PathValue(str(value), float(value) if isinstance(value, (int, float)) else None)
 
-    _read_chunks(db_path, paths, read, "path values")
-    return result
+    return read
 
 
 def fetch_sources(db_path: str | Path | None, paths: list[str]) -> dict[str, str]:
@@ -84,10 +94,14 @@ def _read_chunks(
         AppLogger.warning(f"Failed to open database for {what}: {db_path}", exc=e)
         return
     try:
-        for start in range(0, len(paths), SQL_CHUNK_SIZE):
-            chunk = paths[start : start + SQL_CHUNK_SIZE]
-            read(conn, chunk, ",".join("?" * len(chunk)))
+        read_in_chunks(conn, paths, read)
     except sqlite3.Error as e:
         AppLogger.warning(f"Failed to read {what}: {db_path}", exc=e)
     finally:
         conn.close()
+
+
+def read_in_chunks(conn: sqlite3.Connection, paths: list[str], read: Callable[[sqlite3.Connection, list[str], str], None]) -> None:
+    for start in range(0, len(paths), SQL_CHUNK_SIZE):
+        chunk = paths[start : start + SQL_CHUNK_SIZE]
+        read(conn, chunk, ",".join("?" * len(chunk)))

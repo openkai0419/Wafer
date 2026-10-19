@@ -353,3 +353,15 @@ def test_catalog_tree_click_emits_key_and_count(qtbot):
     with qtbot.waitSignal(tree.key_clicked) as blocker:
         tree.tree.itemClicked.emit(tree.tree.invisibleRootItem().child(0).child(0), 0)
     assert blocker.args == ["exif.width", 5]
+
+
+def test_restoring_many_active_keys_highlights_the_catalog_once(qtbot, monkeypatch):
+    popup = _KeySelectorPopup.instance()
+    popup.set_catalog([("exif.width", 5), ("exif.height", 5), ("nai.prompt", 3)])
+    calls = []
+    monkeypatch.setattr(popup.catalog, "set_highlighted", lambda keys: calls.append(set(keys)))
+    popup.ensure_active_keys(["exif.width", "nai.prompt", "exif.width"])
+    assert calls == [{"exif.width", "nai.prompt"}]
+    assert popup.active_key_set() == {"exif.width", "nai.prompt"}
+    popup.ensure_active_keys(["exif.width"])
+    assert len(calls) == 1

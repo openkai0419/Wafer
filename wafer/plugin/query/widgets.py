@@ -409,20 +409,25 @@ class _KeySelectorPopup(PopupBase):
 
     def ensure_active_keys(self, keys: list[str]):
         count_map = dict(self._catalog_data)
-        for key in keys:
-            if key not in self._active_items:
-                self._add_active_key(key, count_map.get(key))
+        added = [key for key in dict.fromkeys(keys) if key not in self._active_items]
+        for key in added:
+            self._insert_active_item(key, count_map.get(key))
+        if added:
+            self.catalog.set_highlighted(set(self._active_items))
 
     def _add_active_key(self, key: str, count: int | None = None, checked: bool = False):
         if key in self._active_items:
             return
+        self._insert_active_item(key, count, checked)
+        self.catalog.set_highlighted(set(self._active_items))
+
+    def _insert_active_item(self, key: str, count: int | None, checked: bool = False):
         widget = _ActiveKeyItem(key, count, checked=checked)
         widget.toggled.connect(self._on_check_toggled)
         widget.remove_clicked.connect(self._on_remove_key)
         insert_idx = self._active_list_layout.count() - 1
         self._active_list_layout.insertWidget(insert_idx, widget)
         self._active_items[key] = widget
-        self.catalog.set_highlighted(set(self._active_items))
 
     def _valid_splitter_sizes(self, value) -> list[int] | None:
         if not isinstance(value, (list, tuple)) or len(value) != 2:

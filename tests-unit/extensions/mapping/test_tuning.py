@@ -30,12 +30,11 @@ def test_set_params_is_silent(qtbot):
     assert panel.params().seed == 7 and received == []
 
 
-def test_excluded_params_have_no_control_but_are_kept(qtbot):
-    panel = TuningPanel(ViewParams, exclude=frozenset({"subgroup_size"}))
+def test_view_tuning_has_a_control_for_every_shared_value(qtbot):
+    panel = TuningPanel(ViewParams)
     qtbot.addWidget(panel)
-    assert set(panel.controls) == {name for name, _spec, _default in param_specs(ViewParams)} - {"subgroup_size"}
-    panel.set_params(ViewParams(subgroup_size=0.5))
+    assert set(panel.controls) == {name for name, _spec, _default in param_specs(ViewParams)}
     panel.controls["max_images"].setValue(700)
-    assert panel.params() == ViewParams(subgroup_size=0.5, max_images=700)
+    assert panel.params() == ViewParams(max_images=700)
     panel.reset_button.click()
     assert panel.params() == ViewParams()

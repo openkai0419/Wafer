@@ -360,14 +360,18 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         else:
             painter.drawEllipse(frame)
         if selected or outlier:
-            self.set_ring_pen(painter, color, selected, outlier)
-            painter.drawEllipse(frame.adjusted(-dpix(RING), -dpix(RING), dpix(RING), dpix(RING)))
+            self.set_ring_pen(painter, color, selected)
+            ring = frame.adjusted(-dpix(RING), -dpix(RING), dpix(RING), dpix(RING))
+            if outlier:
+                painter.drawRect(ring)
+            else:
+                painter.drawEllipse(ring)
         painter.end()
         return sprite
 
-    def set_ring_pen(self, painter: QtGui.QPainter, color: QtGui.QColor, selected: bool, outlier: bool) -> None:
+    def set_ring_pen(self, painter: QtGui.QPainter, color: QtGui.QColor, selected: bool, dashed: bool = False) -> None:
         pen = QtGui.QPen(QtGui.QColor(ThemeManager.instance().palette.accent) if selected else color, dpix(RING))
-        if outlier:
+        if dashed:
             pen.setStyle(Qt.DashLine)
         painter.setPen(pen)
         painter.setBrush(Qt.NoBrush)

@@ -165,6 +165,19 @@ def test_outlier_is_drawn_with_a_ring_even_when_unselected(view, thumbnails):
     assert render_point(view, 1) != plain
 
 
+def test_outlier_dots_get_a_square_ring_and_selected_dots_a_round_one(view):
+    view.set_point_size(12)
+    corner = round(map_view_module.dpix(map_view_module.RING) * view.devicePixelRatioF())
+
+    def corner_alpha(selected, outlier):
+        sprite = view.build_sprite(QtGui.QColor("red"), selected, outlier).toImage()
+        return sprite.pixelColor(corner, corner).alpha()
+
+    assert corner_alpha(selected=False, outlier=True) > 0
+    assert corner_alpha(selected=True, outlier=True) > 0
+    assert corner_alpha(selected=True, outlier=False) == 0
+
+
 def test_image_scale_changes_extent_and_clamps(view):
     view.show_result(result(), colors(6), keep_view=False)
     point, display = view.point_size(), view.display_size()

@@ -7,11 +7,10 @@ from typing import Any
 from PySide6 import QtCore
 
 from .map_view import MAX_IMAGE_SCALE, MIN_IMAGE_SCALE
-from .params import Grouping, TrainParams, ViewParams, param_specs
+from .params import DEFAULT_SUBGROUP_SIZE, SUBGROUP_SIZE, Grouping, TrainParams, ViewParams, fitted, param_specs
 from .space import load_grouping, save_grouping
 
 VIEW_PARAMS = tuple(name for name, _spec, _default in param_specs(ViewParams))
-TOOLBAR_PARAMS = frozenset({"subgroup_size"})
 RELAYOUT_PARAMS = frozenset({"outlier_percent"})
 SELECTION_MODES = ("single", "group")
 DEFAULT_IMAGE_CAP = ViewParams().hover_size
@@ -36,7 +35,6 @@ class ViewSettings(QtCore.QObject):
     def __init__(self):
         super().__init__()
         self.params = ViewParams()
-        self.image_scale = 1.0
 
     def set_params(self, params: ViewParams) -> None:
         changed = frozenset(name for name in VIEW_PARAMS if getattr(params, name) != getattr(self.params, name))
@@ -44,26 +42,12 @@ class ViewSettings(QtCore.QObject):
             self.params = params
             self.changed.emit(changed)
 
-    def set_image_scale(self, scale: float) -> None:
-        scale = clamped_scale(scale)
-        if scale != self.image_scale:
-            self.image_scale = scale
-            self.changed.emit(frozenset({"image_scale"}))
-
     def to_dict(self) -> dict[str, Any]:
-        return {"params": {name: getattr(self.params, name) for name in VIEW_PARAMS}, "image_scale": self.image_scale}
+        return {"params": self.params.to_dict()}
 
     def load(self, state: dict[str, Any]) -> None:
-        before = self.to_dict()
         params = state.get("params")
-        self.params = ViewParams.from_dict(params) if isinstance(params, dict) else ViewParams()
-        self.image_scale = clamped_scale(state.get("image_scale", 1.0))
-        after = self.to_dict()
-        changed = {name for name in VIEW_PARAMS if before["params"][name] != after["params"][name]}
-        if before["image_scale"] != after["image_scale"]:
-            changed.add("image_scale")
-        if changed:
-            self.changed.emit(frozenset(changed))
+        self.set_params(ViewParams.from_dict(params) if isinstance(params, dict) else ViewParams())
 
     def apply(self, view, host) -> None:
         params = self.params
@@ -72,7 +56,6 @@ class ViewSettings(QtCore.QObject):
         view.set_image_spacing(params.image_spacing)
         view.set_image_cap(params.hover_size or DEFAULT_IMAGE_CAP)
         view.set_point_size(params.point_size)
-        view.set_image_scale(self.image_scale)
 
 
 class TabSettings(QtCore.QObject):
@@ -83,6 +66,8 @@ class TabSettings(QtCore.QObject):
         self.thumbnails_shown = True
         self.selection_mode = "group"
         self.spacing = DEFAULT_SPACING
+        self.subgroup_size = DEFAULT_SUBGROUP_SIZE
+        self.image_scale = 1.0
 
     def set_thumbnails_shown(self, shown: bool) -> None:
         if bool(shown) != self.thumbnails_shown:
@@ -102,17 +87,38 @@ class TabSettings(QtCore.QObject):
             self.spacing = spacing
             self.changed.emit(frozenset({"spacing"}))
 
+    def set_subgroup_size(self, size: float) -> None:
+        size = fitted(size, SUBGROUP_SIZE, DEFAULT_SUBGROUP_SIZE)
+        if size != self.subgroup_size:
+            self.subgroup_size = size
+            self.changed.emit(frozenset({"subgroup_size"}))
+
+    def set_image_scale(self, scale: float) -> None:
+        scale = clamped_scale(scale)
+        if scale != self.image_scale:
+            self.image_scale = scale
+            self.changed.emit(frozenset({"image_scale"}))
+
     def to_dict(self) -> dict[str, Any]:
-        return {"thumbnails": self.thumbnails_shown, "selection_mode": self.selection_mode, "spacing": self.spacing}
+        return {
+            "thumbnails": self.thumbnails_shown,
+            "selection_mode": self.selection_mode,
+            "spacing": self.spacing,
+            "subgroup_size": self.subgroup_size,
+            "image_scale": self.image_scale,
+        }
 
     def load(self, state: dict[str, Any]) -> None:
         self.set_thumbnails_shown(state.get("thumbnails", True) is not False)
         self.set_selection_mode(state.get("selection_mode", "group"))
         self.set_spacing(state.get("spacing", DEFAULT_SPACING))
+        self.set_subgroup_size(state.get("subgroup_size", DEFAULT_SUBGROUP_SIZE))
+        self.set_image_scale(state.get("image_scale", 1.0))
 
     def apply(self, view) -> None:
         view.set_thumbnails_visible(self.thumbnails_shown)
         view.set_selection_mode(self.selection_mode)
+        view.set_image_scale(self.image_scale)
 
 
 class GroupingStore(QtCore.QObject):

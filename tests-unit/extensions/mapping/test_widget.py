@@ -10,7 +10,7 @@ from extensions.mapping import commands
 from extensions.mapping import map_host as map_host_module
 from extensions.mapping import map_view as map_view_module
 from extensions.mapping import widget as widget_module
-from extensions.mapping.params import Grouping, TrainParams, ViewParams, param_specs
+from extensions.mapping.params import DEFAULT_SUBGROUP_SIZE, Grouping, TrainParams, ViewParams, param_specs
 from extensions.mapping.projection import GROUPING_DIMS
 from extensions.mapping.session import FeatureSpec, coordinate_text
 from extensions.mapping.space import Preset
@@ -327,7 +327,7 @@ def test_drop_without_files_is_ignored(mapping):
 
 def test_thumbnail_bucket_uses_the_logical_size(mapping, monkeypatch):
     monkeypatch.setattr(map_view_module, "dpix", lambda value: value * 2)
-    settings().set_image_scale(3.0)
+    mapping.tab.set_image_scale(3.0)
     view = mapping.map_view
     assert view.display_size() == pytest.approx(map_view_module.FIT_IMAGE_SIZE * 3.0)
     view.viewport().repaint()
@@ -344,7 +344,7 @@ def test_point_size_comes_from_the_settings_without_relayout(mapping):
     previous = mapping.current_result()
     settings().set_params(ViewParams(point_size=6))
     assert mapping.map_view.point_base == 6 and mapping.current_result() is previous
-    settings().set_image_scale(3.0)
+    mapping.tab.set_image_scale(3.0)
     assert mapping.map_view.point_base == 6
 
 
@@ -432,16 +432,15 @@ def test_recompute_command_refreshes(mapping):
 
 
 def test_widget_state_leaves_the_shared_view_settings_to_the_plugin(mapping):
-    settings().set_image_scale(2.0)
+    settings().set_params(ViewParams(point_size=6))
     state = mapping.save_state()
     assert set(state) == {"splitter", "toolbar", "list"}
-    mapping.restore_state({**state, "view": {"image_scale": 1.0}})
-    assert settings().image_scale == 2.0
+    mapping.restore_state({**state, "view": {"params": {"point_size": 2}}})
+    assert settings().params.point_size == 6
 
 
 def test_loaded_settings_reach_the_map(mapping):
-    settings().load({"image_scale": 2.0})
-    mapping.restore_state({"toolbar": {"thumbnails": False, "selection_mode": "group"}})
+    mapping.restore_state({"toolbar": {"thumbnails": False, "selection_mode": "group", "image_scale": 2.0}})
     assert not mapping.map_view.thumbnails and not mapping.toolbar.thumbnail_check.isChecked()
     assert mapping.map_view.image_scale == 2.0 and mapping.map_view.selection_mode == "group"
     assert mapping.toolbar.mode_buttons["group"].isChecked()
@@ -449,15 +448,15 @@ def test_loaded_settings_reach_the_map(mapping):
 
 @pytest.mark.parametrize("bad", ["x", None, float("nan"), float("inf")])
 def test_loading_settings_ignores_bad_values(mapping, bad):
-    settings().load({"image_scale": bad})
-    mapping.restore_state({"toolbar": {"selection_mode": "weird"}})
-    assert settings().image_scale == 1.0 and mapping.tab.selection_mode == "single"
+    mapping.restore_state({"toolbar": {"selection_mode": "weird", "image_scale": bad, "subgroup_size": bad}})
+    assert mapping.tab.image_scale == 1.0 and mapping.tab.selection_mode == "single"
+    assert mapping.tab.subgroup_size == DEFAULT_SUBGROUP_SIZE
 
 
 def test_image_scale_is_clamped(mapping):
-    settings().set_image_scale(99)
+    mapping.tab.set_image_scale(99)
     assert mapping.map_view.image_scale == map_view_module.MAX_IMAGE_SCALE
-    settings().set_image_scale(0)
+    mapping.tab.set_image_scale(0)
     assert mapping.map_view.image_scale == map_view_module.MIN_IMAGE_SCALE
 
 
@@ -468,17 +467,22 @@ def test_toolbar_drives_its_own_tab(mapping):
     assert mapping.tab.thumbnails_shown is False and not mapping.map_view.thumbnails
 
 
-def test_view_settings_reach_the_mapping_space_panel(mapping, qtbot):
+def test_only_the_gear_values_are_shared_with_the_settings_tab(mapping, qtbot):
     from extensions.mapping.space_panel import MappingSpaceWidget
 
     with patch.object(MappingSpaceWidget, "refresh"):
         space = MappingSpaceWidget()
     qtbot.addWidget(space)
-    settings().set_image_scale(3.0)
     settings().set_params(ViewParams(point_size=6))
-    assert space.map_view.image_scale == 3.0 == mapping.map_view.image_scale
     assert space.map_view.point_base == 6 == mapping.map_view.point_base
     assert set(space.toolbar.tuning.controls) == set(mapping.toolbar.tuning.controls)
+    mapping.tab.set_image_scale(3.0)
+    mapping.tab.set_thumbnails_shown(False)
+    mapping.map_view.scale(2.0, 2.0)
+    assert mapping.map_view.image_scale == 3.0 and space.map_view.image_scale == 1.0
+    assert space.tab.thumbnails_shown and space.map_view.transform() != mapping.map_view.transform()
+    space.tab.set_image_scale(0.5)
+    assert mapping.map_view.image_scale == 3.0
     space.close()
 
 
@@ -497,11 +501,11 @@ def test_group_size_slider_regroups_the_map(mapping, qtbot):
     previous = mapping.current_result()
     slider = mapping.toolbar.sliders["subgroup_size"]
     slider.setValue(slider.minimum())
-    assert settings().params.subgroup_size == pytest.approx(2**-10, rel=1e-5) and mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}1/1024"
+    assert mapping.tab.subgroup_size == pytest.approx(2**-10, rel=1e-5) and mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}1/1024"
     wait_for_new_result(qtbot, mapping, previous)
     assert np.array_equal(mapping.current_result().positions, previous.positions, equal_nan=True)
     slider.setValue(slider.maximum())
-    assert settings().params.subgroup_size == 1.0 and mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}1"
+    assert mapping.tab.subgroup_size == 1.0 and mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}1"
 
 
 def test_mapping_space_sets_the_base_groups_of_its_database(mapping, qtbot, fresh_grouping_store):
@@ -547,7 +551,7 @@ def test_group_sliders_step_by_the_same_ratio(mapping):
     space_toolbar = MapToolbar(TabSettings(), edits_space_groups=True)
     space_toolbar.set_db("db")
     cases = (
-        (mapping.toolbar, "subgroup_size", lambda: settings().params.subgroup_size, 2**-10, 1.0, {0.0625, 0.125, 0.25, 0.5}),
+        (mapping.toolbar, "subgroup_size", lambda: mapping.tab.subgroup_size, 2**-10, 1.0, {0.0625, 0.125, 0.25, 0.5}),
         (space_toolbar, "size", lambda: GroupingStore.instance().get("db").size, 0.25, 16.0, {0.5, 1.0, 2.0, 4.0, 8.0}),
         (space_toolbar, "strictness", lambda: GroupingStore.instance().get("db").strictness, 0.25, 16.0, {0.5, 1.0, 2.0, 4.0, 8.0}),
     )
@@ -569,7 +573,7 @@ def test_regrouping_swaps_colors_and_labels_and_keeps_the_view(mapping, qtbot, m
     mapping.map_view.scale(2.0, 2.0)
     transform = mapping.map_view.transform()
     previous = mapping.current_result()
-    settings().set_params(ViewParams(subgroup_size=0.25))
+    mapping.tab.set_subgroup_size(0.25)
     assert "Grouping" in mapping.message_text()
     wait_for_new_result(qtbot, mapping, previous)
     assert calls == [] and mapping.map_view.transform() == transform
@@ -587,7 +591,7 @@ def test_only_the_latest_regroup_is_computed(space_data):
 def test_groups_start_from_the_size_of_the_whole_space(mapping, space_data):
     level = mapping.levels[-1]
     assert level.layout.model is space_data.model and level.layout.load_model is None
-    assert settings().params.subgroup_size == 0.05 and mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}1/20"
+    assert mapping.tab.subgroup_size == 0.05 and mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}1/20"
 
 
 def test_each_tab_keeps_its_own_toolbar_settings(qtbot, space_data):
@@ -609,7 +613,7 @@ def test_toolbar_settings_are_saved_per_tab(qtbot, space_data):
     mapping = open_widget(qtbot)
     mapping.tab.set_thumbnails_shown(False)
     state = mapping.save_state()
-    assert state["toolbar"] == {"thumbnails": False, "selection_mode": "group", "spacing": 0.1}
+    assert state["toolbar"] == {"thumbnails": False, "selection_mode": "group", "spacing": 0.1, "subgroup_size": 0.05, "image_scale": 1.0}
     other = MappingWidget()
     qtbot.addWidget(other)
     other.restore_state(state)

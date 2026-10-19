@@ -14,15 +14,14 @@ from wafer.qt.theme import ThemeManager
 from wafer.qt.widgets.flow_layout import FlowLayout
 from wafer.qt.widgets.popup import PopupBase
 
-from .params import Grouping, TrainParams, ViewParams, param_specs
+from .params import SUBGROUP_SIZE, Grouping, TrainParams, ViewParams, param_specs
 from .tuning import TuningPanel
-from .view_settings import TOOLBAR_PARAMS, GroupingStore, TabSettings, ViewSettings
+from .view_settings import GroupingStore, TabSettings, ViewSettings
 
 TUNING_HEIGHT = 600
 TOOLBAR_SPACING = 6
 SLIDER_WIDTH = 80
 STEPS_PER_DOUBLING = 4
-SPECS = {name: spec for name, spec, _ in param_specs(ViewParams)}
 GROUPING_SPECS = {name: spec for name, spec, _ in param_specs(Grouping)}
 SPACING_SPEC = next(spec for name, spec, _ in param_specs(TrainParams) if name == "min_dist")
 SPACING_STEPS = round((SPACING_SPEC.maximum - SPACING_SPEC.minimum) / SPACING_SPEC.step)
@@ -73,7 +72,7 @@ class MapToolbar(QtWidgets.QWidget):
             self.fine_check.toggled.connect(lambda checked: self.set_grouping("fine", int(checked)))
             self.groupings.changed.connect(self.on_grouping_changed)
         else:
-            self.add_slider(layout, "subgroup_size", SPECS["subgroup_size"], self.set_param)
+            self.add_slider(layout, "subgroup_size", SUBGROUP_SIZE, lambda _name, size: self.tab.set_subgroup_size(size))
             self.add_spacing_slider(layout)
         self.mode_buttons: dict[str, QtWidgets.QToolButton] = {}
         group = QtWidgets.QButtonGroup(self)
@@ -91,7 +90,7 @@ class MapToolbar(QtWidgets.QWidget):
             self.mode_buttons[mode] = button
             pair.addWidget(button)
         layout.addWidget(modes)
-        self.tuning = TuningPanel(ViewParams, exclude=TOOLBAR_PARAMS)
+        self.tuning = TuningPanel(ViewParams)
         self.tuning.params_changed.connect(self.settings.set_params)
         self.popup_content = QtWidgets.QWidget()
         content = QtWidgets.QVBoxLayout(self.popup_content)
@@ -144,9 +143,6 @@ class MapToolbar(QtWidgets.QWidget):
     def append(self, widget: QtWidgets.QWidget) -> None:
         self.flow.addWidget(widget)
 
-    def set_param(self, name: str, value) -> None:
-        self.settings.set_params(replace(self.settings.params, **{name: value}))
-
     def set_grouping(self, name: str, value) -> None:
         if self.db_name:
             self.groupings.set(self.db_name, replace(self.groupings.get(self.db_name), **{name: value}))
@@ -161,7 +157,7 @@ class MapToolbar(QtWidgets.QWidget):
             self.sync()
 
     def slider_source(self):
-        return self.groupings.get(self.db_name) if self.edits_space_groups else self.settings.params
+        return self.groupings.get(self.db_name) if self.edits_space_groups else self.tab
 
     def on_mode_toggled(self, mode: str, checked: bool) -> None:
         if checked:

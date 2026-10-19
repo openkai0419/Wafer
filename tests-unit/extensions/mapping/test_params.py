@@ -1,6 +1,6 @@
 import pytest
 
-from extensions.mapping.params import MAX_NEIGHBORS, Grouping, TrainParams, ViewParams, param_specs
+from extensions.mapping.params import DEFAULT_SUBGROUP_SIZE, MAX_NEIGHBORS, SUBGROUP_SIZE, Grouping, TrainParams, ViewParams, fitted, param_specs
 
 
 @pytest.mark.parametrize("params_class", [TrainParams, ViewParams, Grouping])
@@ -16,7 +16,7 @@ def test_training_and_view_settings_are_separate():
     train = {name for name, _spec, _default in param_specs(TrainParams)}
     view = {name for name, _spec, _default in param_specs(ViewParams)}
     assert train == {"neighbors", "train_limit", "min_dist", "seed"}
-    assert view == {"outlier_percent", "subgroup_size", "point_size", "image_spacing", "max_images", "hover_size"}
+    assert view == {"outlier_percent", "point_size", "image_spacing", "max_images", "hover_size"}
     assert not train & {"ngram_min", "ngram_max", "svd_dims", "min_cluster_size", "min_samples"}
 
 
@@ -124,8 +124,7 @@ def test_mapping_share_shrinks_the_base_group_size():
     assert Grouping().cluster_options(1_000_000, share=0.5) == (1000, 10, "eom")
     assert Grouping(size=0.5).cluster_options(1_000_000, share=0.25) == (250, 10, "eom")
     assert Grouping().cluster_options(100, share=0.0625) == (2, 2, "eom")
-    spec = next(spec for name, spec, _ in param_specs(ViewParams) if name == "subgroup_size")
-    assert (spec.minimum, spec.maximum) == (2**-10, 1.0) and ViewParams().subgroup_size == 0.05
+    assert (SUBGROUP_SIZE.minimum, SUBGROUP_SIZE.maximum) == (2**-10, 1.0) and DEFAULT_SUBGROUP_SIZE == 0.05
 
 
 def test_strictness_scales_how_dense_a_group_must_be():
@@ -150,14 +149,14 @@ def test_there_is_no_label_word_setting():
     assert "label_terms" not in {name for name, _spec, _default in param_specs(ViewParams)}
 
 
-def test_map_group_size_starts_small():
-    assert ViewParams().subgroup_size == 0.05
-    spec = next(spec for name, spec, _ in param_specs(ViewParams) if name == "subgroup_size")
-    assert spec.minimum <= 0.05
+def test_fitted_clamps_rounds_and_replaces_bad_values():
+    assert fitted(5.0, SUBGROUP_SIZE, DEFAULT_SUBGROUP_SIZE) == 1.0
+    assert fitted(0.0, SUBGROUP_SIZE, DEFAULT_SUBGROUP_SIZE) == pytest.approx(2**-10, rel=1e-5)
+    assert fitted(1 / 3, SUBGROUP_SIZE, DEFAULT_SUBGROUP_SIZE) == 0.333333
+    for bad in (float("nan"), float("inf"), None, "x"):
+        assert fitted(bad, SUBGROUP_SIZE, DEFAULT_SUBGROUP_SIZE) == DEFAULT_SUBGROUP_SIZE
 
 
 def test_map_group_size_reaches_the_smallest_groups_even_on_huge_databases():
-    spec = next(spec for name, spec, _ in param_specs(ViewParams) if name == "subgroup_size")
-    assert spec.minimum == 2**-10
-    assert ViewParams(subgroup_size=2**-10).normalized().subgroup_size <= 2**-10 * 1.001
-    assert Grouping().cluster_options(1_000_000, share=spec.minimum)[0] == 2
+    assert SUBGROUP_SIZE.minimum == 2**-10
+    assert Grouping().cluster_options(1_000_000, share=SUBGROUP_SIZE.minimum)[0] == 2

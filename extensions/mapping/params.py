@@ -33,18 +33,16 @@ FLOAT_DIGITS = 6
 RESIDUE_DIGITS = 12
 
 
+def fitted(value, spec: ParamSpec, default):
+    if not isinstance(value, (int, float)) or not math.isfinite(value):
+        return default
+    value = min(max(value, spec.minimum), spec.maximum)
+    return round(value) if isinstance(default, int) else float(f"{round(float(value), RESIDUE_DIGITS):.{FLOAT_DIGITS}g}")
+
+
 class ParamSet:
     def normalized(self):
-        changes: dict[str, Any] = {}
-        for f in fields(self):
-            spec: ParamSpec = f.metadata["spec"]
-            current = getattr(self, f.name)
-            if not math.isfinite(current):
-                changes[f.name] = f.default
-                continue
-            value = min(max(current, spec.minimum), spec.maximum)
-            changes[f.name] = round(value) if isinstance(f.default, int) else float(f"{round(float(value), RESIDUE_DIGITS):.{FLOAT_DIGITS}g}")
-        return replace(self, **changes)
+        return replace(self, **{f.name: fitted(getattr(self, f.name), f.metadata["spec"], f.default) for f in fields(self)})
 
     def to_dict(self) -> dict[str, Any]:
         return {f.name: getattr(self, f.name) for f in fields(self)}
@@ -107,18 +105,19 @@ class ViewParams(ParamSet):
         maximum=20.0,
         step=0.5,
     )
-    subgroup_size: float = param(
-        0.05,
-        label="Group size",
-        description="Split the base groups from Settings into smaller ones, as a share of their size. 1 = the base groups.",
-        minimum=2**-10,
-        maximum=1.0,
-        step=0.25,
-    )
     point_size: float = param(3.0, label="Point size", description="Size of the dots in pixels.", minimum=1.0, maximum=16.0, step=1.0)
     image_spacing: float = param(0.01, label="Image spacing", description="Space between images, relative to their size. Lower lets them overlap more.", minimum=0.01, maximum=2.0, step=0.05)
     max_images: int = param(300, label="Image limit", description="Most images shown at once. Other files stay as dots.", minimum=0, maximum=2000, step=50)
     hover_size: int = param(256, label="Hover size", description="Size of the enlarged image shown under the cursor. 0 turns it off.", minimum=0, maximum=1024, step=32)
+
+
+SUBGROUP_SIZE = ParamSpec(
+    "Group size",
+    "Split the base groups from Settings into smaller ones, as a share of their size. 1 = the base groups.",
+    minimum=2**-10,
+    maximum=1.0,
+)
+DEFAULT_SUBGROUP_SIZE = 0.05
 
 
 @dataclass(frozen=True)

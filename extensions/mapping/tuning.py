@@ -14,7 +14,7 @@ from .params import ParamSet, param_specs
 class TuningPanel(QtWidgets.QWidget):
     params_changed = QtCore.Signal(object)
 
-    def __init__(self, params_class: type[ParamSet], exclude: frozenset[str] = frozenset(), parent=None):
+    def __init__(self, params_class: type[ParamSet], parent=None):
         super().__init__(parent)
         palette = ThemeManager.instance().palette
         self.params_class = params_class
@@ -27,8 +27,6 @@ class TuningPanel(QtWidgets.QWidget):
         grid.setVerticalSpacing(dpix(2))
         row = 0
         for name, spec, default in param_specs(params_class):
-            if name in exclude:
-                continue
             label = QtWidgets.QLabel(t(spec.label))
             label.setToolTip(t(spec.description))
             if isinstance(default, int):

@@ -480,15 +480,14 @@ def test_grouping_changes_regroup_the_quick_train_view(widget, database, qtbot):
     assert w.shown.paths == previous.paths
 
 
-def test_mapping_only_group_size_does_not_regroup_the_preview(widget, monkeypatch):
+def test_only_outliers_regroup_the_preview(widget, monkeypatch):
     w, _saved, _resets = widget
     regroups = []
     monkeypatch.setattr(MappingSpaceWidget, "regroup", lambda self: regroups.append(1))
     settings = ViewSettings.instance()
-    settings.set_params(ViewParams(subgroup_size=0.5))
-    settings.set_params(ViewParams(subgroup_size=0.5, point_size=6))
+    settings.set_params(ViewParams(point_size=6))
     assert regroups == [] and w.map_view.point_base == 6
-    settings.set_params(ViewParams(subgroup_size=0.5, point_size=6, outlier_percent=5.0))
+    settings.set_params(ViewParams(point_size=6, outlier_percent=5.0))
     assert regroups == [1]
 
 

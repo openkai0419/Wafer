@@ -1,6 +1,7 @@
 from PySide6 import QtCore
 
 from extensions.mapping.panel import MappingPanel, MappingPlugin
+from extensions.mapping.params import ViewParams
 from extensions.mapping.view_settings import ViewSettings
 from extensions.mapping.widget import MappingWidget
 
@@ -25,13 +26,14 @@ def test_plugin_restores_the_shared_view_settings_before_the_widget_exists(qtbot
 
 
 def test_shared_view_settings_keep_only_the_gear_values():
-    assert set(ViewSettings.instance().to_dict()) == {"params", "image_scale"}
+    assert ViewSettings.instance().to_dict() == {"params": ViewParams().to_dict()}
+    assert set(ViewParams().to_dict()) == {"outlier_percent", "point_size", "image_spacing", "max_images", "hover_size"}
 
 
 def test_plugin_saves_the_current_view_settings():
     MappingPlugin.saved_state = {}
-    ViewSettings.instance().set_image_scale(2.0)
-    assert MappingPlugin().save_ui_state()["view"]["image_scale"] == 2.0
+    ViewSettings.instance().set_params(ViewParams(point_size=6))
+    assert MappingPlugin().save_ui_state()["view"]["params"]["point_size"] == 6
 
 
 def test_loading_unchanged_view_settings_does_not_notify():
@@ -41,8 +43,8 @@ def test_loading_unchanged_view_settings_does_not_notify():
     settings.load(settings.to_dict())
     assert events == []
     settings.load({"params": {"point_size": 5}})
-    settings.load({"params": {"point_size": 5}, "image_scale": 2.0})
-    assert events == [frozenset({"point_size"}), frozenset({"image_scale"})]
+    settings.load({"params": {"point_size": 5, "subgroup_size": 0.5}, "image_scale": 2.0})
+    assert events == [frozenset({"point_size"})]
 
 
 def test_mapping_is_one_panel_with_a_map_and_a_settings_tab(qtbot):

@@ -27,7 +27,7 @@ from .map_toolbar import MapToolbar
 from .map_view import MapView
 from .session import MapError, MapResult, SpaceLayout
 from .space import Preset, load_preset, space_model
-from .view_settings import RELAYOUT_PARAMS, TOOLBAR_PARAMS, GroupingStore, TabSettings, ViewSettings
+from .view_settings import RELAYOUT_PARAMS, GroupingStore, TabSettings, ViewSettings
 
 COMPUTE_PRIORITY = 7
 WARM_UP_PRIORITY = 1
@@ -39,7 +39,6 @@ STAGE_TEXTS = {"load": "Loading values", "encode": "Encoding", "layout": "Laying
 STAGES = tuple(STAGE_TEXTS)
 PROGRESS_HEIGHT = 3
 CRUMB_ARROW = "\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}"
-RELAYOUT_NAMES = RELAYOUT_PARAMS | TOOLBAR_PARAMS
 
 
 def local_file_paths(mime: QtCore.QMimeData | None) -> list[str]:
@@ -179,11 +178,13 @@ class MappingWidget(QtWidgets.QWidget):
 
     def on_view_settings(self, changed: frozenset[str]) -> None:
         self.settings.apply(self.map_view, self.host)
-        if changed & RELAYOUT_NAMES:
+        if changed & RELAYOUT_PARAMS:
             self.regroup()
 
     def on_tab_settings(self, changed: frozenset[str]) -> None:
         self.tab.apply(self.map_view)
+        if "subgroup_size" in changed:
+            self.regroup()
         if "spacing" in changed and self.levels:
             for level in self.levels:
                 level.drop_layout()
@@ -308,7 +309,7 @@ class MappingWidget(QtWidgets.QWidget):
             self.finish(t("This database has no trained map yet. Train one in Settings."))
             return
         level, params = self.levels[-1], self.settings.params
-        grouping, share = GroupingStore.instance().get(self.db_name), params.subgroup_size
+        grouping, share = GroupingStore.instance().get(self.db_name), self.tab.subgroup_size
         if level.layout is not None and level.layout.preset is not self.preset:
             level.drop_layout()
         if level.layout_token.is_cancelled():

@@ -72,14 +72,15 @@ def test_image_scale_commands_take_a_ratio():
         assert (param.name, param.default) == ("ratio", 1.1)
 
 
-def test_image_scale_commands_change_the_shared_settings():
-    from extensions.mapping.view_settings import ViewSettings
+def test_image_scale_commands_change_only_the_current_tab():
+    from extensions.mapping.view_settings import TabSettings
 
-    settings = ViewSettings.instance()
-    commands.image_scale_up(Ctx(), ratio=2.0)
-    assert settings.image_scale == 2.0
-    commands.image_scale_down(Ctx(), ratio=4.0)
-    assert settings.image_scale == 0.5
+    tab, other = TabSettings(), TabSettings()
+    ctx = Ctx(map_panel=MagicMock(tab=tab))
+    commands.image_scale_up(ctx, ratio=2.0)
+    assert tab.image_scale == 2.0
+    commands.image_scale_down(ctx, ratio=4.0)
+    assert tab.image_scale == 0.5 and other.image_scale == 1.0
 
 
 def test_view_commands_toggle_the_tab_they_came_from(monkeypatch):

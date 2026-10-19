@@ -3,8 +3,6 @@ from __future__ import annotations
 from wafer.plugin import CommandMeta, CommandParam, MenuGroup, require
 from wafer.qt.common.notifier import Notifier
 
-from .view_settings import ViewSettings
-
 PANEL_NAME = "Mapping"
 
 
@@ -118,13 +116,15 @@ def _thumbnails_checked() -> bool:
 
 
 def image_scale_up(ctx, ratio: float = 1.1):
-    settings = ViewSettings.instance()
-    settings.set_image_scale(settings.image_scale * float(ratio))
+    tab = current_tab(ctx)
+    if tab is not None:
+        tab.set_image_scale(tab.image_scale * float(ratio))
 
 
 def image_scale_down(ctx, ratio: float = 1.1):
-    settings = ViewSettings.instance()
-    settings.set_image_scale(settings.image_scale / float(ratio))
+    tab = current_tab(ctx)
+    if tab is not None:
+        tab.set_image_scale(tab.image_scale / float(ratio))
 
 
 def toggle_selection_mode(ctx):

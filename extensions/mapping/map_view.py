@@ -355,17 +355,13 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         frame = QtCore.QRectF((side - size) / 2, (side - size) / 2, size, size)
         painter.setPen(Qt.NoPen)
         painter.setBrush(color)
-        if size < ROUND_POINT_SIZE:
+        if outlier or size < ROUND_POINT_SIZE:
             painter.drawRect(frame)
         else:
             painter.drawEllipse(frame)
-        if selected or outlier:
+        if selected:
             self.set_ring_pen(painter, color, selected)
-            ring = frame.adjusted(-dpix(RING), -dpix(RING), dpix(RING), dpix(RING))
-            if outlier:
-                painter.drawRect(ring)
-            else:
-                painter.drawEllipse(ring)
+            painter.drawEllipse(frame.adjusted(-dpix(RING), -dpix(RING), dpix(RING), dpix(RING)))
         painter.end()
         return sprite
 

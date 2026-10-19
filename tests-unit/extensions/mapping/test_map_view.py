@@ -154,7 +154,7 @@ def render_point(view, row):
 
 
 @pytest.mark.parametrize("thumbnails", [False, True])
-def test_outlier_is_drawn_with_a_ring_even_when_unselected(view, thumbnails):
+def test_outlier_looks_different_even_when_unselected(view, thumbnails):
     image = QtGui.QPixmap(32, 32)
     image.fill(QtGui.QColor("white"))
     view.owner.pixmaps = {f"c:/{i}.png": image for i in range(6)}
@@ -165,17 +165,17 @@ def test_outlier_is_drawn_with_a_ring_even_when_unselected(view, thumbnails):
     assert render_point(view, 1) != plain
 
 
-def test_outlier_dots_get_a_square_ring_and_selected_dots_a_round_one(view):
+def test_outlier_dots_are_squares_of_the_same_size_without_a_ring(view):
     view.set_point_size(12)
-    corner = round(map_view_module.dpix(map_view_module.RING) * view.devicePixelRatioF())
+    ring = round(map_view_module.dpix(map_view_module.RING) * view.devicePixelRatioF())
+    dot_corner = ring * 2 + 1
 
-    def corner_alpha(selected, outlier):
+    def alpha(at, selected, outlier):
         sprite = view.build_sprite(QtGui.QColor("red"), selected, outlier).toImage()
-        return sprite.pixelColor(corner, corner).alpha()
+        return sprite.pixelColor(at, at).alpha()
 
-    assert corner_alpha(selected=False, outlier=True) > 0
-    assert corner_alpha(selected=True, outlier=True) > 0
-    assert corner_alpha(selected=True, outlier=False) == 0
+    assert alpha(dot_corner, selected=False, outlier=True) == 255 and alpha(ring, selected=False, outlier=True) == 0
+    assert alpha(dot_corner, selected=False, outlier=False) < 128
 
 
 def test_image_scale_changes_extent_and_clamps(view):

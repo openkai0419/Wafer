@@ -159,6 +159,16 @@ def test_order_rows_groups_then_noise():
     assert set(order[:2]) == {0, 1} and set(order[2:4]) == {3, 4} and order[4] == 2
 
 
+def test_order_rows_follows_each_groups_main_axis():
+    line = np.linspace(0.0, 1.0, 6)
+    points = np.vstack([np.stack([line, line], axis=1), np.stack([line, 5.0 - line * 0.2], axis=1)])
+    labels = np.array([1] * 6 + [0] * 6)
+    order = projection.order_rows(points, labels).tolist()
+    first, second = order[:6], order[6:]
+    assert sorted(first) == list(range(6, 12)) and sorted(second) == list(range(6))
+    assert first in (list(range(6, 12)), list(range(11, 5, -1))) and second in (list(range(6)), list(range(5, -1, -1)))
+
+
 @pytest.mark.slow
 def test_embed_real_umap_keeps_blobs_apart():
     rng = np.random.default_rng(0)
@@ -224,6 +234,15 @@ def test_large_inputs_use_the_approximate_search(monkeypatch):
     _, indices = brute_neighbors(matrix, 10)
     recall = np.mean([len(set(a) & set(b)) / 10 for a, b in zip(found.indices.tolist(), indices.tolist())])
     assert recall > 0.9
+
+
+@pytest.mark.slow
+def test_approximate_search_lists_duplicates_themselves_first(monkeypatch):
+    monkeypatch.setattr(projection, "EXACT_NEIGHBORS_LIMIT", 50)
+    base = np.random.default_rng(7).normal(size=(60, 5)).astype(np.float32)
+    matrix = np.vstack([base, np.repeat(base[:20], 4, axis=0)])
+    found = projection.nearest_neighbors(matrix, 10, 0)
+    assert (found.indices[:, 0] == np.arange(len(matrix))).all() and np.allclose(found.distances[:, 0], 0.0)
 
 
 def test_layout_reuses_the_given_neighbors_with_fixed_epochs(monkeypatch):

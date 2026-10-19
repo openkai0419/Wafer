@@ -136,7 +136,7 @@ def nearest_neighbors(matrix: np.ndarray, n_neighbors: int, seed: int) -> Neighb
         from pynndescent import NNDescent
 
         indices, distances = NNDescent(matrix, n_neighbors=k, metric="euclidean", random_state=seed, n_jobs=1, low_memory=True).neighbor_graph
-        return Neighbors(indices, distances)
+        return own_first(indices.astype(np.int32), distances.astype(np.float32))
     return exact_neighbors(matrix, k)
 
 
@@ -290,14 +290,14 @@ def normalize_to_core(points: np.ndarray, percent: float) -> tuple[np.ndarray, n
 
 
 def order_rows(points: np.ndarray, labels: np.ndarray) -> np.ndarray:
-    order: list[int] = []
-    for group in sorted(set(labels.tolist()), key=lambda g: (g < 0, g)):
-        members = np.flatnonzero(labels == group)
-        centered = points[members] - points[members].mean(axis=0)
-        if len(members) > 2:
-            axis = np.linalg.svd(centered, full_matrices=False)[2][0]
-            keys = centered @ axis
-        else:
-            keys = centered[:, 0]
-        order.extend(members[np.argsort(keys, kind="stable")].tolist())
-    return np.array(order, dtype=np.int64)
+    labels = np.asarray(labels)
+    if labels.size == 0:
+        return np.zeros(0, dtype=np.int64)
+    rank = np.unique(np.where(labels < 0, np.iinfo(np.int64).max, labels.astype(np.int64)), return_inverse=True)[1].reshape(-1)
+    sizes = np.bincount(rank).astype(np.float64)
+    points = np.asarray(points, dtype=np.float64)
+    centered = points - np.stack([np.bincount(rank, points[:, 0]), np.bincount(rank, points[:, 1])], axis=1)[rank] / sizes[rank, None]
+    xx, yy, xy = (np.bincount(rank, a * b) for a, b in ((centered[:, 0], centered[:, 0]), (centered[:, 1], centered[:, 1]), (centered[:, 0], centered[:, 1])))
+    angle = np.where(sizes > 2, 0.5 * np.arctan2(2 * xy, xx - yy), 0.0)[rank]
+    keys = centered[:, 0] * np.cos(angle) + centered[:, 1] * np.sin(angle)
+    return np.lexsort((keys, rank)).astype(np.int64)

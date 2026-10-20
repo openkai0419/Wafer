@@ -1,5 +1,7 @@
 from wafer.plugin import PluginConfig
 
+from ._downloader import DEFAULT_MODEL
+
 
 def parse_blacklist(raw: str) -> list[str]:
     if not raw:
@@ -10,6 +12,7 @@ def parse_blacklist(raw: str) -> list[str]:
 wd14_config = PluginConfig(
     "wd14",
     {
+        "model": DEFAULT_MODEL,
         "general_threshold": 0.057,
         "character_threshold": 0.8,
         "enable_rating": True,

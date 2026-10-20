@@ -15,26 +15,17 @@ from wafer.qt.common.notifier import Notifier
 from wafer.core.common.paths import list_setting_db_names
 from wafer.core.lang.manager import t
 from wafer.qt.common.dispatcher import Dispatcher
+from ._downloader import DEFAULT_MODEL
+from ._models import NAMED_CATEGORIES, list_models
 from .settings import parse_blacklist, wd14_config
 
 _DST = "collector-wd14"
-_REQUEST_TIMEOUT = 60.0
-
-_ALL_WD14_KEYS = [
-    "wd14.rating",
-    "wd14.rating_score",
-    "wd14.rating_general",
-    "wd14.rating_sensitive",
-    "wd14.rating_questionable",
-    "wd14.rating_explicit",
-    "wd14.character",
-    "wd14.tags",
-]
+_REQUEST_TIMEOUT = 120.0
 
 
 class WD14SettingsPanelPlugin(BasePanelPlugin):
     NAME = "wd14_settings"
-    DISPLAY_NAME = "WD14 Tagger Settings"
+    DISPLAY_NAME = "AI Tagger Settings"
     DEFAULT_ENABLED = True
     CLOSABLE = True
     PRIORITY = 50
@@ -72,7 +63,7 @@ class WD14SettingsPanelPlugin(BasePanelPlugin):
 
 
 class WD14SettingsWidget(QtWidgets.QWidget):
-    _preview_result = QtCore.Signal(dict)
+    _preview_result = QtCore.Signal(object)
     _device_result = QtCore.Signal(dict)
 
     def __init__(self, parent=None):
@@ -129,12 +120,12 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         right_layout.setSpacing(dpix(6))
         right_scroll.setWidget(right_inner)
 
-        filtered_group = QtWidgets.QGroupBox(t("Output"))
-        filt_group_layout = QtWidgets.QVBoxLayout(filtered_group)
+        self._output_group = QtWidgets.QGroupBox(t("Output"))
+        filt_group_layout = QtWidgets.QVBoxLayout(self._output_group)
         filt_group_layout.setContentsMargins(dpix(4), dpix(4), dpix(4), dpix(4))
         self._filtered_label = self._make_result_label()
         filt_group_layout.addWidget(self._filtered_label)
-        right_layout.addWidget(filtered_group)
+        right_layout.addWidget(self._output_group)
 
         raw_group = QtWidgets.QGroupBox(t("Raw"))
         raw_group_layout = QtWidgets.QVBoxLayout(raw_group)
@@ -186,6 +177,21 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         revert_btn.clicked.connect(self._on_revert)
         header.addWidget(revert_btn)
         bottom_layout.addLayout(header)
+
+        model_row = QtWidgets.QHBoxLayout()
+        model_row.addWidget(QtWidgets.QLabel(t("Model:")))
+        self._model_combo = QtWidgets.QComboBox()
+        self._model_combo.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        model_row.addWidget(self._model_combo, 1)
+        reload_btn = QtWidgets.QToolButton()
+        reload_btn.setIcon(themed_icon("refresh"))
+        reload_btn.setToolTip(t("Reload models folder"))
+        reload_btn.clicked.connect(self._reload_models)
+        model_row.addWidget(reload_btn)
+        bottom_layout.addLayout(model_row)
+        self._reload_models()
+        self._select_model(self._settings.get("model", DEFAULT_MODEL))
+        self._model_combo.currentTextChanged.connect(self._on_model_changed)
 
         self._rating_group = QtWidgets.QGroupBox(t("Rating"))
         self._rating_group.setCheckable(True)
@@ -276,6 +282,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         self.setAcceptDrops(True)
         self._current_path: str = ""
         self._requesting = False
+        self._preview_pending = False
         self._device_fetched = False
         self._device_ok = False
         self._saved_settings = dict(self._settings)
@@ -356,26 +363,29 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         blackset = set(self._blacklist)
         parts: list[str] = []
 
-        ratings = raw.get("ratings", {})
+        ratings = raw.get("rating", {})
         if ratings:
             items = [f"{html.escape(name)}({score:.4f})" for name, score in ratings.items()]
             parts.append(self._format_kv("Rating", ", ".join(items)))
 
-        character = raw.get("character", {})
-        if character:
-            items = [f"{html.escape(k)}({v:.3f})" for k, v in character.items()]
-            parts.append(self._format_kv("Character", ", ".join(items)))
+        for category in NAMED_CATEGORIES:
+            values = raw.get(category, {})
+            if values:
+                items = [f"{html.escape(k)}({v:.3f})" for k, v in values.items()]
+                parts.append(self._format_kv(category.capitalize(), ", ".join(items)))
 
-        general = raw.get("general", {})
-        if general:
+        for category, label in (("general", "Tags"), ("meta", "Meta")):
+            values = raw.get(category, {})
+            if not values:
+                continue
             items = []
-            for k, v in general.items():
+            for k, v in values.items():
                 escaped = html.escape(k)
                 if k in blackset:
                     items.append(f'<a href="bl:{escaped}" style="color:gray; text-decoration:line-through">{escaped}({v:.3f})</a>')
                 else:
                     items.append(f'<a href="bl:{escaped}" style="text-decoration:none">{escaped}({v:.3f})</a>')
-            parts.append(self._format_kv("Tags", ", ".join(items)))
+            parts.append(self._format_kv(label, ", ".join(items)))
 
         self._raw_label.setText(self._wrap_kv_table(parts) if parts else t("(no tags)"))
 
@@ -388,7 +398,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         char_th = self._character_spin.value()
         parts: list[str] = []
 
-        ratings = raw.get("ratings", {})
+        ratings = raw.get("rating", {})
         if ratings and self._rating_group.isChecked():
             mode = self._rating_mode()
             if mode == "name":
@@ -402,17 +412,17 @@ class WD14SettingsWidget(QtWidgets.QWidget):
                 for name, score in ratings.items():
                     parts.append(self._format_kv(f"rating_{html.escape(name)}", f"{score:.4f}"))
 
-        character = raw.get("character", {})
-        if character and self._char_group.isChecked():
-            filtered = {k: v for k, v in character.items() if v >= char_th}
-            if filtered:
-                parts.append(self._format_kv("character", ", ".join(html.escape(k) for k in filtered)))
+        if self._char_group.isChecked():
+            for category in NAMED_CATEGORIES:
+                filtered = [k for k, v in raw.get(category, {}).items() if v >= char_th]
+                if filtered:
+                    parts.append(self._format_kv(category, ", ".join(html.escape(k) for k in filtered)))
 
-        general = raw.get("general", {})
-        if general and self._gen_group.isChecked():
-            filtered = [k for k, v in general.items() if v >= gen_th and k not in blackset]
-            if filtered:
-                parts.append(self._format_kv("tags", ", ".join(html.escape(k) for k in filtered)))
+        if self._gen_group.isChecked():
+            for category, key in (("general", "tags"), ("meta", "meta")):
+                filtered = [k for k, v in raw.get(category, {}).items() if v >= gen_th and k not in blackset]
+                if filtered:
+                    parts.append(self._format_kv(key, ", ".join(html.escape(k) for k in filtered)))
 
         self._filtered_label.setText(self._wrap_kv_table(parts) if parts else t("(no tags)"))
 
@@ -480,6 +490,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
 
     def _current_settings(self) -> dict:
         return {
+            "model": self._model_combo.currentText(),
             "general_threshold": self._general_spin.value(),
             "character_threshold": self._character_spin.value(),
             "enable_rating": self._rating_group.isChecked(),
@@ -493,7 +504,10 @@ class WD14SettingsWidget(QtWidgets.QWidget):
     # ── Preview IPC ──
 
     def _on_preview_clicked(self):
-        if not self._current_path or self._requesting:
+        if not self._current_path:
+            return
+        if self._requesting:
+            self._preview_pending = True
             return
         self._requesting = True
         self._preview_btn.setEnabled(False)
@@ -523,10 +537,14 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         else:
             self._preview_result.emit({"error": "Unexpected response"})
 
-    @QtCore.Slot(dict)
+    @QtCore.Slot(object)
     def _on_preview_result(self, result: dict):
         self._requesting = False
         self._preview_btn.setEnabled(bool(self._current_path))
+        if self._preview_pending:
+            self._preview_pending = False
+            self._on_preview_clicked()
+            return
         error = result.get("error")
         if error:
             self._raw_label.setText(t("Error: {error}").format(error=error))
@@ -534,6 +552,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
             return
 
         self._last_raw = result
+        self._output_group.setTitle(t("Output  ({model}, {ms} ms)").format(model=result.get("model", ""), ms=result.get("elapsed_ms", 0)))
         self._update_raw_display()
         self._update_filtered_display()
 
@@ -575,7 +594,26 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         device = result.get("device", "unknown")
         name = result.get("device_name", "")
         self._device_ok = device != "unknown"
-        self._device_label.setText(t("Device: {device}  ({name})\nModel: wd-swinv2-tagger-v3 (SmilingWolf)").format(device=device.upper(), name=name))
+        self._device_label.setText(t("Device: {device}  ({name})").format(device=device.upper(), name=name))
+
+    # ── Model ──
+
+    def _reload_models(self):
+        current = self._model_combo.currentText()
+        self._model_combo.blockSignals(True)
+        self._model_combo.clear()
+        self._model_combo.addItems(list_models())
+        if current:
+            self._select_model(current)
+        self._model_combo.blockSignals(False)
+
+    def _select_model(self, name: str):
+        if self._model_combo.findText(name) < 0:
+            self._model_combo.addItem(name)
+        self._model_combo.setCurrentText(name)
+
+    def _on_model_changed(self, _name: str):
+        self._on_preview_clicked()
 
     # ── Save / Reset / Revert ──
 
@@ -628,6 +666,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
 
     def _on_reset(self):
         d = wd14_config._defaults
+        self._select_model(d["model"])
         self._general_spin.setValue(d["general_threshold"])
         self._character_spin.setValue(d["character_threshold"])
         self._rating_group.setChecked(d["enable_rating"])
@@ -642,6 +681,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
 
     def _on_revert(self):
         s = self._saved_settings
+        self._select_model(s.get("model", DEFAULT_MODEL))
         self._general_spin.setValue(s.get("general_threshold", 0.057))
         self._character_spin.setValue(s.get("character_threshold", 0.8))
         self._rating_group.setChecked(s.get("enable_rating", True))
@@ -659,8 +699,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
     def _send_delete_and_recollect(db_names: list[str], *, delete: bool, re_collect: bool):
         from wafer.core.db.recollect import Recollect
 
-        keys = list(_ALL_WD14_KEYS) if delete else []
-        Recollect.reset(db_scope=list(db_names), collector="wd14", keys=keys, re_collect=re_collect)
+        Recollect.reset(db_scope=list(db_names), collector="wd14", delete=delete, re_collect=re_collect)
 
 
 # ── Flow layout for blacklist chips ──

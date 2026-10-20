@@ -188,3 +188,30 @@ class TestEntryViewer:
 
         claim.assert_called_once_with(None)
         run.assert_called_once_with(app, lock)
+
+    def test_pick_hands_over_to_the_picker_instead_of_claiming_directly(self, _title, _profiler):
+        app = MagicMock()
+        with (
+            patch("wafer.app.viewer.workspace_launch.run_pick", side_effect=SystemExit) as pick,
+            patch("wafer.app.viewer.workspace_launch.claim_workspace") as claim,
+        ):
+            from main import _entry_viewer
+
+            with pytest.raises(SystemExit):
+                _entry_viewer(app, pick=True, seed_slot="s1")
+
+        pick.assert_called_once_with(app, "s1")
+        claim.assert_not_called()
+
+
+class TestViewerArguments:
+    @patch("main._entry_viewer")
+    @patch("main._wait_install_then_load_plugins")
+    @patch("main._create_app")
+    def test_pick_flags_reach_the_viewer_entry(self, mock_create, _wait, mock_viewer):
+        with patch("sys.argv", ["main.py", "--viewer", "--pick", "--seed-slot", "s1"]):
+            from main import main
+
+            main()
+
+        mock_viewer.assert_called_once_with(mock_create.return_value, slot_id=None, pick=True, seed_slot="s1")

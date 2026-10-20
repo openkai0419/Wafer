@@ -8,7 +8,7 @@ from ...plugin import installer_queue
 from ...plugin.loader import get_plugin_dir
 from ...core.logs import AppLogger
 from ...qt.common.notifier import Notifier
-from .workspace import new_window
+from .workspace import open_workspace
 
 
 def _win(ctx):
@@ -155,7 +155,7 @@ class WindowRestartCommands(ActionKit.MenuBase):
     def commands(cls):
         return [
             ":Process",
-            ActionKit.Command(path="win.new_window", display="New Window", func=new_window),
+            ActionKit.Command(path="ws.open_workspace", display="Open Workspace", func=open_workspace),
             ActionKit.Command(path="webui.open", display="Open WebUI", func=open_webui),
             "-",
             ":Restart",

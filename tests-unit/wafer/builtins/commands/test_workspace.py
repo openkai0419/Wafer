@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -236,34 +236,26 @@ class TestWorkspaceCommands:
 
         store.forget_slot_snapshot.assert_not_called()
 
-    def test_new_window_reserves_slot_before_spawning_viewer(self):
-        store = MagicMock()
-        store.reserve_next_window_slot.return_value = ("slot1", WindowSlot(slot_id="slot1"), True)
+    def test_open_workspace_saves_then_spawns_picker(self):
+        win = MagicMock()
+        win.slot_id = "s1"
+        order = MagicMock()
+        order.attach_mock(win._save_slot, "save")
+        with patch.object(workspace_commands.AppProcess, "new_main") as new_main:
+            order.attach_mock(new_main, "spawn")
+            workspace_commands.open_workspace(_Ctx(win))
 
-        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store), patch.object(workspace_commands.AppProcess, "new_main") as new_main:
-            workspace_commands.new_window(_Ctx())
+        assert order.mock_calls == [
+            call.save(),
+            call.spawn("--viewer", "--pick", "--seed-slot", "s1"),
+        ]
 
-        store.reserve_next_window_slot.assert_called_once_with()
-        new_main.assert_called_once_with("--viewer", "--slot", "slot1")
+    def test_process_menu_has_open_workspace_instead_of_new_window(self):
+        from wafer.builtins.commands.window import WindowRestartCommands
 
-    def test_new_window_falls_back_when_slot_reservation_fails(self):
-        store = MagicMock()
-        store.reserve_next_window_slot.side_effect = TimeoutError("locked")
-
-        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store), patch.object(workspace_commands.AppProcess, "new_main") as new_main:
-            workspace_commands.new_window(_Ctx())
-
-        new_main.assert_called_once_with("--viewer")
-
-    def test_new_window_releases_reserved_slot_when_spawn_fails(self):
-        store = MagicMock()
-        store.reserve_next_window_slot.return_value = ("slot1", WindowSlot(slot_id="slot1"), True)
-
-        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store), patch.object(workspace_commands.AppProcess, "new_main", side_effect=RuntimeError("spawn failed")):
-            with pytest.raises(RuntimeError, match="spawn failed"):
-                workspace_commands.new_window(_Ctx())
-
-        store.release_slot.assert_called_once_with("slot1")
+        commands = {item.path: item for item in WindowRestartCommands.commands() if hasattr(item, "path")}
+        assert "ws.open_workspace" in commands
+        assert "win.new_window" not in commands
 
     def test_workspace_menu_uses_popup_commands_instead_of_panel_toggle(self):
         from wafer.qt.layout.manager import LayoutManager

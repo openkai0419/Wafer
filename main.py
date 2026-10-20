@@ -96,17 +96,23 @@ def _create_app():
     install_instant_tooltips(app)
     return app
 
-def _entry_viewer(app, slot_id=None):
-    setproctitle.setproctitle(f'{APP_NAME}')
-    from wafer.app.viewer.workspace_launch import claim_workspace, run_viewer
-    lock = claim_workspace(slot_id)
-    if lock is None:
-        sys.exit(0)
+def _start_viewer_profiling():
     if constants.DEV_MODE:
         profiler.start()
     if constants.MEMWATCH:
         from wafer.core.profiling import memwatch
         memwatch.start(trace=constants.MEMWATCH_TRACE)
+
+def _entry_viewer(app, slot_id=None, pick=False, seed_slot=None):
+    setproctitle.setproctitle(f'{APP_NAME}')
+    from wafer.app.viewer.workspace_launch import claim_workspace, run_pick, run_viewer
+    if pick:
+        _start_viewer_profiling()
+        run_pick(app, seed_slot)
+    lock = claim_workspace(slot_id)
+    if lock is None:
+        sys.exit(0)
+    _start_viewer_profiling()
     run_viewer(app, lock)
 
 def _entry_tray():
@@ -227,6 +233,8 @@ def main():
     parser.add_argument('--plugin', type=str, default='image', help='collector/parser plugin name')
     parser.add_argument('--parent-pid', type=int, default=None)
     parser.add_argument('--slot', type=str, default=None, help='window slot ID for viewer')
+    parser.add_argument('--pick', action='store_true', help='viewer: choose the workspace to open first')
+    parser.add_argument('--seed-slot', type=str, default=None, help='viewer --pick: slot ID that new workspaces copy their layout from')
     parser.add_argument('--host', default=None, help='webui bind host (overrides webui_settings.ini)')
     parser.add_argument('--port', type=int, default=None, help='webui bind port (overrides webui_settings.ini)')
     parser.add_argument('--no-browser', action='store_true', help='webui: do not open the browser on start')
@@ -274,7 +282,7 @@ def main():
     elif args.viewer:
         app = _create_app()
         _wait_install_then_load_plugins(app)
-        _entry_viewer(app, slot_id=args.slot)
+        _entry_viewer(app, slot_id=args.slot, pick=args.pick, seed_slot=args.seed_slot)
 if __name__ == '__main__':
     atexit.register(lambda: AppLogger.info(f'process exit (pid={os.getpid()})'))
     try:

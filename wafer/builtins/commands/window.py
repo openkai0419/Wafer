@@ -133,7 +133,7 @@ def open_webui(ctx=None):
 
 class WindowPanelCommands(ActionKit.MenuBase):
     NAME = ActionKit.MenuPath.WINDOW
-    PRIORITY = 83
+    PRIORITY = 26
 
     @classmethod
     def commands(cls):

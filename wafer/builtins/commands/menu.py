@@ -8,7 +8,7 @@ from .setting import _restore_thumbnail_size
 
 class AppMenuRegistrar(ActionKit.MenuBase):
     NAME = ActionKit.MenuPath.MENUS
-    PRIORITY = 110
+    PRIORITY = 27
 
     @classmethod
     def commands(cls):

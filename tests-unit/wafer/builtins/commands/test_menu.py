@@ -53,3 +53,12 @@ def test_viewer_top_level_menus_are_the_fixed_roots():
             roots.append(root)
     assert [r for r in roots if r in MenuPath.ROOTS] == list(MenuPath.ROOTS)
     assert roots[: len(MenuPath.ROOTS)] == list(MenuPath.ROOTS)
+
+
+def test_widgets_lists_general_folders_before_the_panel_folders():
+    submenus = []
+    for token in MenuMaker().from_folder(MenuPath.WIDGETS).resolve_tokens():
+        parts = token.split("/")
+        if len(parts) > 1 and parts[0] not in submenus:
+            submenus.append(parts[0])
+    assert submenus[:5] == ["Window", "Menus", "FolderTree", "GridView", "FileViewer"]

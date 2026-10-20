@@ -3,6 +3,7 @@ from __future__ import annotations
 import _winapi
 import argparse
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -11,8 +12,9 @@ from pathlib import Path
 BASE_BRANCH = "main_develop"
 BRANCH_PREFIX = "wt/"
 WORKTREES_DIR = ".worktrees"
-SHARED_DIRS = [".venv", ".claude", "docs", ".sample", "extensions/.packages"]
+SHARED_DIRS = [".venv", ".claude/commands", "docs", ".sample", "extensions/.packages"]
 SHARED_GLOBS = ["extensions/*/lib"]
+READ_ONLY_COPIES = [".claude/rules", ".claude/structure.md"]
 RUNTIME_WRITTEN = ["_resources/translations.json"]
 
 
@@ -42,6 +44,31 @@ def is_junction(path: Path) -> bool:
         return False
 
 
+def files_under(path: Path) -> list[Path]:
+    return [p for p in path.rglob("*") if p.is_file()] if path.is_dir() else [path]
+
+
+def copy_read_only(source: Path, target: Path):
+    if source.is_dir():
+        shutil.copytree(source, target)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    for file in files_under(target):
+        file.chmod(stat.S_IREAD)
+
+
+def delete_copy(path: Path):
+    if not path.exists():
+        return
+    for file in files_under(path):
+        file.chmod(stat.S_IWRITE)
+    if path.is_dir():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
 def ensure_clean(tree: Path):
     git("checkout", "--", *RUNTIME_WRITTEN, cwd=tree)
     if git("status", "--porcelain", cwd=tree):
@@ -60,6 +87,9 @@ def new(name: str):
         link = tree / source.relative_to(root)
         link.parent.mkdir(parents=True, exist_ok=True)
         _winapi.CreateJunction(str(source), str(link))
+    for relative in READ_ONLY_COPIES:
+        if (root / relative).exists():
+            copy_read_only(root / relative, tree / relative)
     print(tree)
 
 
@@ -67,6 +97,8 @@ def remove(name: str, force: bool = False):
     root, tree, branch = worktree_paths(name)
     if not force:
         ensure_clean(tree)
+    for relative in READ_ONLY_COPIES:
+        delete_copy(tree / relative)
     for link in shared_dirs(tree):
         if is_junction(link):
             os.rmdir(link)

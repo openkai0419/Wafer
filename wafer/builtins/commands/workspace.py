@@ -313,8 +313,11 @@ def show_recent_popup(ctx, tb):
     tb.show_recent_popup()
 
 
-@require(w="MainWindow")
-def open_workspace(ctx, w):
+def open_workspace(ctx):
+    w = ctx.get_instance("MainWindow")
+    if w is None:
+        AppProcess.new_main("--viewer", "--pick")
+        return
     w._save_slot()
     AppProcess.new_main("--viewer", "--pick", "--seed-slot", w.slot_id)
 

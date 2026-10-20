@@ -142,6 +142,17 @@ def test_run_pick_new_seeds_from_caller(pick_flow):
     assert pick_flow["claimed"] == new_ids
 
 
+def test_run_pick_new_without_seed_uses_the_latest_slot(pick_flow, monkeypatch):
+    seeds = []
+    create = pick_flow["store"].create_slot_from
+    monkeypatch.setattr(pick_flow["store"], "create_slot_from", lambda seed: seeds.append(seed) or create(seed))
+    pick_flow["answer"] = PickResult(None, "")
+    pick_flow["lock"] = "lock"
+    with pytest.raises(Viewed):
+        workspace_launch.run_pick(object(), None)
+    assert seeds == ["seed"]
+
+
 def test_run_pick_existing_claims_it(pick_flow):
     pick_flow["answer"] = PickResult("seed", "")
     pick_flow["lock"] = "lock"

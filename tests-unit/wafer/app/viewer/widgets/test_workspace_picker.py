@@ -1,15 +1,22 @@
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 import pytest
 
 from wafer.app.viewer.widgets.workspace_picker import PickResult, WorkspacePickerDialog
 from wafer.core.lang.manager import t
 from wafer.core.store.workspace import WindowSlot
 from wafer.qt.common.dpi import dpix
+from wafer.qt.palette import DARK
+from wafer.qt.theme import ThemeManager
 
 
 @pytest.fixture(autouse=True)
 def isolated_dialog_layout(tmp_path, monkeypatch):
     monkeypatch.setattr("wafer.core.common.paths.resolve_data_path", lambda relative: tmp_path / relative)
+
+
+@pytest.fixture(autouse=True)
+def dark_theme(monkeypatch):
+    monkeypatch.setattr(ThemeManager.instance(), "_palette", DARK)
 
 
 def make_slots():
@@ -21,6 +28,9 @@ def make_slots():
 
 def make_dialog(qtbot, *, open_ids=frozenset(), allow_open=True, databases=()):
     dlg = WorkspacePickerDialog(make_slots(), set(open_ids), allow_open=allow_open, databases=list(databases))
+    palette = dlg.list_widget.palette()
+    palette.setColor(QtGui.QPalette.Base, QtGui.QColor(DARK.bg_primary))
+    dlg.list_widget.setPalette(palette)
     qtbot.addWidget(dlg)
     return dlg
 

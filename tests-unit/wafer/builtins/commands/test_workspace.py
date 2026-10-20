@@ -250,6 +250,12 @@ class TestWorkspaceCommands:
             call.spawn("--viewer", "--pick", "--seed-slot", "s1"),
         ]
 
+    def test_open_workspace_without_a_window_spawns_picker_without_seed(self):
+        with patch.object(workspace_commands.AppProcess, "new_main") as new_main:
+            workspace_commands.open_workspace(_Ctx())
+
+        new_main.assert_called_once_with("--viewer", "--pick")
+
     def test_process_menu_has_open_workspace_instead_of_new_window(self):
         from wafer.builtins.commands.window import WindowRestartCommands
 

@@ -42,7 +42,7 @@ def run_pick(app, seed_slot_id: str | None) -> NoReturn:
     picked = WorkspacePickerDialog.ask(slots, open_ids, allow_open=False, databases=[])
     if picked is None:
         sys.exit(0)
-    slot_id = picked.slot_id if picked.slot_id is not None else store.create_slot_from(seed_slot_id)
+    slot_id = picked.slot_id if picked.slot_id is not None else store.create_slot_from(seed_slot_id or store.latest_slot_id())
     lock = claim_workspace(slot_id)
     if lock is None:
         sys.exit(0)

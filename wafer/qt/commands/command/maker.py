@@ -225,7 +225,15 @@ class MenuMaker:
             resolved.extend(self._resolve_one(self._hub, str(it)))
         return MenuPlan(self._hub, resolved, has_inline=has_inline)
 
-    def from_folder(self, folder: str) -> MenuPlan:
+    def from_folder(self, folder: str | list[str]) -> MenuPlan:
+        items: list[str] = []
+        for name in [folder] if isinstance(folder, str) else folder:
+            if items:
+                items.append(MENU_SEPARATOR)
+            items.extend(self.folder_items(name))
+        return self.menu(items)
+
+    def folder_items(self, folder: str) -> list[str]:
         s = (str(folder or "")).strip("/")
         if not s:
             raise ValueError("Folder is required")
@@ -245,16 +253,7 @@ class MenuMaker:
             names = self._hub.collect_items_by_folder(pref, rebase_to=s)
         if not names:
             raise ValueError(f"No items under folder: {s}")
-        flat = [self._flatten_for_use(n, s) for n in names]
-        return self.menu(flat)
-
-    def from_folders(self, folders: list[str]) -> MenuPlan:
-        items: list[_ResolvedItem] = []
-        for i, folder in enumerate(folders):
-            if i:
-                items.append(self._item_to_resolved(self._hub, MENU_SEPARATOR))
-            items.extend(self.from_folder(folder).resolve_items())
-        return MenuPlan(self._hub, items)
+        return [self._flatten_for_use(n, s) for n in names]
 
     def all_roots(self) -> MenuPlan:
         root_priority: dict[str, int] = {}

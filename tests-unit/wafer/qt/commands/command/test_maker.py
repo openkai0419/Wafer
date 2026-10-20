@@ -244,10 +244,10 @@ def test_from_folder_with_a_nested_path_flattens_to_that_folder():
     assert tokens == [":Viewer", "__mnest_zoom__"]
 
 
-def test_from_folders_joins_folders_with_a_separator():
+def test_from_folder_joins_a_list_of_folders_with_a_separator():
     _group("__MJoinA__", 10, [CommandMeta(path="__mjoin_a__", display="A", func=_noop)]).register()
     _group("__MJoinB__", 10, [CommandMeta(path="__mjoin_b__", display="B", func=_noop)]).register()
-    assert MenuMaker().from_folders(["__MJoinA__", "__MJoinB__"]).resolve_tokens() == ["__mjoin_a__", "-", "__mjoin_b__"]
+    assert MenuMaker().from_folder(["__MJoinA__", "__MJoinB__"]).resolve_tokens() == ["__mjoin_a__", "-", "__mjoin_b__"]
 
 
 def test_hide_folder_also_drops_its_sections_and_separators():

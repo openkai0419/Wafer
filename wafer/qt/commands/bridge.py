@@ -331,7 +331,7 @@ class Menu:
         s = Menu.from_context(ctx)
         if s is None:
             return
-        spec = s.from_folder(folder) if isinstance(folder, str) else s.from_folders(folder)
+        spec = s.from_folder(folder)
         if spec is None:
             return
         spec.exec()

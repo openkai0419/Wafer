@@ -112,19 +112,14 @@ def _start_viewer_profiling():
         from wafer.core.profiling import memwatch
         memwatch.start(trace=constants.MEMWATCH_TRACE)
 
-def _entry_viewer(app, slot_id=None, pick=False, seed_slot=None, open_path=None):
+def _entry_viewer(app, lock=None, pick=False, seed_slot=None, open_path=None):
     setproctitle.setproctitle(f'{APP_NAME}')
-    from wafer.app.viewer.workspace_launch import claim_workspace, run_open_path, run_pick, run_viewer
+    _start_viewer_profiling()
+    from wafer.app.viewer.workspace_launch import run_open_path, run_pick, run_viewer
     if open_path:
-        _start_viewer_profiling()
         run_open_path(app, open_path)
     if pick:
-        _start_viewer_profiling()
         run_pick(app, seed_slot)
-    lock = claim_workspace(slot_id)
-    if lock is None:
-        sys.exit(0)
-    _start_viewer_profiling()
     run_viewer(app, lock)
 
 def _entry_tray():
@@ -259,17 +254,20 @@ def main():
         if os.environ.pop('WAFER_REPLACE_TRAY', None):
             AppProcess.terminate_cmd('--tray', wait=True)
         _ensure_tray_unless_pending()
-        _wait_install_then_load_plugins(app)
         _sync_explorer_menu()
-        from wafer.app.viewer.workspace_launch import is_openable_path, restore_session
+        from wafer.app.viewer.workspace_launch import claim_workspace, first_restore_slot_id, is_openable_path, restore_session
         if args.path and is_openable_path(args.path):
+            _wait_install_then_load_plugins(app)
             _entry_viewer(app, open_path=args.path)
             return
-        from wafer.core.store.workspace import WorkspaceStore
-        restore_ids = WorkspaceStore.instance().get_restore_slot_ids()
-        first_slot_id = restore_ids[0] if restore_ids else None
+        first_slot_id = first_restore_slot_id()
+        lock = claim_workspace(first_slot_id)
+        if lock is None:
+            restore_session(first_slot_id)
+            sys.exit(0)
+        _wait_install_then_load_plugins(app)
         restore_session(first_slot_id)
-        _entry_viewer(app, slot_id=first_slot_id)
+        _entry_viewer(app, lock=lock)
         return
     if args.tray:
         _entry_tray()
@@ -295,8 +293,14 @@ def main():
             AppLogger.warning('--parser requires a db name')
     elif args.viewer:
         app = _create_app()
+        lock = None
+        if not args.pick:
+            from wafer.app.viewer.workspace_launch import claim_workspace
+            lock = claim_workspace(args.slot)
+            if lock is None:
+                sys.exit(0)
         _wait_install_then_load_plugins(app)
-        _entry_viewer(app, slot_id=args.slot, pick=args.pick, seed_slot=args.seed_slot)
+        _entry_viewer(app, lock=lock, pick=args.pick, seed_slot=args.seed_slot)
 if __name__ == '__main__':
     atexit.register(lambda: AppLogger.info(f'process exit (pid={os.getpid()})'))
     try:

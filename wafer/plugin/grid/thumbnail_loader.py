@@ -22,6 +22,12 @@ def long_side(image: QtGui.QImage | QtGui.QPixmap | None) -> int:
     return 0 if image is None or image.isNull() else max(image.width(), image.height())
 
 
+def fitted_pixmap(image: QtGui.QImage | QtGui.QPixmap, side: int) -> QtGui.QPixmap:
+    if long_side(image) > side:
+        image = image.scaled(side, side, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+    return image if isinstance(image, QtGui.QPixmap) else QtGui.QPixmap.fromImage(image)
+
+
 class ThumbnailLoader:
     def __init__(self, on_loaded: Callable[[str], None], *, size: int, cache_limit: int, dispatcher: Dispatcher | None = None):
         self._on_loaded = on_loaded
@@ -49,8 +55,11 @@ class ThumbnailLoader:
     def get(self, path: str) -> QtGui.QPixmap | None:
         pixmap = self._cache.get(path)
         image = self._images.get(path)
-        if long_side(image) > long_side(pixmap):
-            return self.remember(path, QtGui.QPixmap.fromImage(image))
+        side = dpix(self._size)
+        if long_side(pixmap) < min(long_side(image), side):
+            return self.remember(path, fitted_pixmap(image, side))
+        if long_side(pixmap) > side:
+            return self.remember(path, fitted_pixmap(pixmap, side))
         if pixmap is not None:
             self._cache.move_to_end(path)
         return pixmap
@@ -98,8 +107,9 @@ class ThumbnailLoader:
         if loaded:
             if long_side(self._images.peek(path)) < loaded:
                 self._images[path] = image
-            if long_side(self._cache.get(path)) < loaded:
-                self.remember(path, QtGui.QPixmap.fromImage(image))
+            side = dpix(self._size)
+            if long_side(self._cache.get(path)) < min(loaded, side):
+                self.remember(path, fitted_pixmap(image, side))
         elif path not in self._cache:
             self.remember(path, QtGui.QPixmap())
         self._on_loaded(path)

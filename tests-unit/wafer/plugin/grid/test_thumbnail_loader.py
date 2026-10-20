@@ -114,7 +114,7 @@ def test_set_size_keeps_the_cache_and_larger_images_serve_smaller_sizes(qtbot, c
     assert loader.size == 32 and "a" in loader
     loader.request(["a"])
     assert calls == []
-    assert loader.get("a").width() == 64
+    assert loader.get("a").width() == 32 and shared_image_cache().peek("a").width() == 64
 
 
 def test_smaller_image_is_shown_while_a_larger_one_loads(qtbot, calls, monkeypatch):
@@ -147,10 +147,10 @@ def test_images_are_shared_with_other_loaders_and_the_grid_cache(qtbot, calls, m
     first.store("a", _image(64))
     assert shared_image_cache().peek("a").width() == 64
     second.request(["a"])
-    assert calls == [] and second.get("a").width() == 64
+    assert calls == [] and second.get("a").width() == 32
     shared_image_cache()["b"] = _image(48)
     second.request(["b"])
-    assert calls == [] and second.get("b").width() == 48
+    assert calls == [] and second.get("b").width() == 32
 
 
 def test_smaller_result_does_not_replace_a_larger_cached_image(qtbot, monkeypatch):
@@ -158,4 +158,21 @@ def test_smaller_result_does_not_replace_a_larger_cached_image(qtbot, monkeypatc
     loader = ThumbnailLoader(lambda _p: None, size=32, cache_limit=10)
     loader.store("a", _image(64))
     loader.store("a", _image(32))
-    assert shared_image_cache().peek("a").width() == 64 and loader.get("a").width() == 64
+    assert shared_image_cache().peek("a").width() == 64 and loader.get("a").width() == 32
+
+
+def test_large_shared_images_are_kept_at_the_loader_size(qtbot, monkeypatch):
+    monkeypatch.setattr(thumbnail_loader, "dpix", lambda value: value)
+    loader = ThumbnailLoader(lambda _p: None, size=64, cache_limit=10)
+    shared_image_cache()["a"] = _image(1024)
+    assert loader.get("a").width() == 64
+    assert loader.get("a").width() == 64 and shared_image_cache().peek("a").width() == 1024
+
+
+def test_shrinking_the_size_shrinks_kept_pixmaps(qtbot, monkeypatch):
+    monkeypatch.setattr(thumbnail_loader, "dpix", lambda value: value)
+    loader = ThumbnailLoader(lambda _p: None, size=256, cache_limit=10)
+    loader.store("a", _image(256))
+    shared_image_cache().clear()
+    loader.set_size(64)
+    assert loader.get("a").width() == 64

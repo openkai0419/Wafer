@@ -162,3 +162,29 @@ class TestTrayStartup:
         mock_bootstrap.assert_called_once_with()
         mock_terminate.assert_called_once_with([])
         mock_list_names.assert_called_once_with()
+
+
+@patch("main.constants.MEMWATCH", False)
+@patch("main.profiler")
+@patch("main.setproctitle")
+class TestEntryViewer:
+    def test_exits_without_a_window_when_the_workspace_is_already_open(self, _title, _profiler):
+        with patch("wafer.app.viewer.workspace_launch.claim_workspace", return_value=None) as claim, patch("wafer.app.viewer.workspace_launch.run_viewer") as run:
+            from main import _entry_viewer
+
+            with pytest.raises(SystemExit) as exited:
+                _entry_viewer(MagicMock(), slot_id="s1")
+
+        assert exited.value.code == 0
+        claim.assert_called_once_with("s1")
+        run.assert_not_called()
+
+    def test_runs_the_viewer_with_the_claimed_lock(self, _title, _profiler):
+        app, lock = MagicMock(), MagicMock()
+        with patch("wafer.app.viewer.workspace_launch.claim_workspace", return_value=lock) as claim, patch("wafer.app.viewer.workspace_launch.run_viewer") as run:
+            from main import _entry_viewer
+
+            _entry_viewer(app, slot_id=None)
+
+        claim.assert_called_once_with(None)
+        run.assert_called_once_with(app, lock)

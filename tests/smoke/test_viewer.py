@@ -149,7 +149,7 @@ class TestSmokeViewer:
                 with patch("wafer.core.logs.AppLogger.set_node"):
                     from wafer.app.viewer.mainwindow import MainWindow
 
-                    win = MainWindow(icon=None, slot_id=None)
+                    win = MainWindow(icon=None)
                     qtbot.addWidget(win)
                     win.show()
 
@@ -216,7 +216,7 @@ class TestSmokeViewer:
                 with patch("wafer.core.logs.AppLogger.set_node"):
                     from wafer.app.viewer.mainwindow import MainWindow
 
-                    win = MainWindow(icon=None, slot_id=None)
+                    win = MainWindow(icon=None)
                     qtbot.addWidget(win)
 
                     win.database_path = db_path

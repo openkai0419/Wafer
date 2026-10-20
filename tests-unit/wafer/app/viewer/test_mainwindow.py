@@ -371,3 +371,85 @@ class TestPanelPluginStartup:
 
         assert healthy_plugin.calls == 1
         warning.assert_called_once()
+
+
+class TestWorkspaceLock:
+    def _make_win(self):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            win._workspace_lock = MagicMock()
+            return win
+
+    def test_close_by_restart_releases_lock_before_spawning(self):
+        from wafer.app.lifecycle import CloseReason
+
+        win = self._make_win()
+        order = MagicMock()
+        win.slot_id = "s1"
+        win._save_slot = order._save_slot
+        win._workspace_lock = order.workspace_lock
+        win.close = MagicMock()
+
+        with patch("wafer.core.platform.process.AppProcess.new_main", order.new_main):
+            win.close_by_restart()
+
+        assert order.mock_calls == [
+            call._save_slot(),
+            call.workspace_lock.release(),
+            call.new_main("--viewer", "--slot", "s1"),
+        ]
+        assert win._close_reason == CloseReason.RESTART
+        win.close.assert_called_once_with()
+
+    def test_on_close_releases_lock_after_stopping_ipc(self):
+        from wafer.app.lifecycle import CloseReason
+
+        win = self._make_win()
+        order = MagicMock()
+        win._closed = False
+        win._folder_callout = None
+        win._close_reason = CloseReason.SHUTDOWN
+        win._save_slot = MagicMock()
+        win._layout_manager = MagicMock()
+        win._bridge = order.bridge
+        win._workspace_lock = order.workspace_lock
+
+        with patch("wafer.app.viewer.mainwindow.app_settings"), patch("wafer.app.viewer.mainwindow.t"):
+            win.on_close()
+
+        assert order.mock_calls == [call.bridge.stop(), call.workspace_lock.release()]
+
+    def test_window_handle_change_rewrites_the_lock_owner(self):
+        from PySide6 import QtCore, QtWidgets
+
+        win = self._make_win()
+        win.winId = MagicMock(return_value=77)
+
+        with patch.object(QtWidgets.QMainWindow, "event", return_value=True):
+            assert win.event(QtCore.QEvent(QtCore.QEvent.WinIdChange)) is True
+            win.event(QtCore.QEvent(QtCore.QEvent.LayoutRequest))
+
+        win._workspace_lock.set_window.assert_called_once_with(77)
+
+    def test_slot_acquired_always_restores_from_the_slot(self):
+        from wafer.core.store.workspace import WindowSlot
+
+        win = self._make_win()
+        win.start_ipc_listener = MagicMock()
+        win._update_title = MagicMock()
+        win.workspace_toolbar_widget = MagicMock()
+        win._restore_from_slot = MagicMock()
+        win.reload_database = MagicMock()
+        win._run_panel_plugin_startups = MagicMock()
+        entry = WindowSlot(slot_id="s1")
+        prompt = MagicMock()
+
+        with patch("wafer.app.startup.StartupTasks") as tasks:
+            tasks.return_value.run.side_effect = lambda on_ready: on_ready(prompt)
+            win._on_slot_acquired("s1", entry)
+
+        assert win.slot_id == "s1"
+        win._restore_from_slot.assert_called_once_with(entry, on_complete=prompt)
+        win.reload_database.assert_not_called()

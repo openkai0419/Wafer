@@ -42,15 +42,17 @@ from ...qt.common.window_state import WindowStateController
 from ...qt.common.dispatcher import Dispatcher, CancelToken
 from ...qt.common.thread import utility_pool
 from ...core.platform.taskbar import apply_window_identity
+from ...core.platform.workspace_lock import WorkspaceLock
 
 AppMenuRegistrar.setup_menu()
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, icon=None, parent=None, slot_id=None):
+    def __init__(self, icon=None, parent=None, workspace_lock: WorkspaceLock | None = None):
         super().__init__(parent=parent)
+        self._workspace_lock = workspace_lock
         self._workspace_store = WorkspaceStore.instance()
-        self.slot_id = None
+        self.slot_id = workspace_lock.slot_id if workspace_lock is not None else None
         self._slot_entry: WindowSlot | None = None
         self._close_reason = CloseReason.NORMAL
         self._slot_ready = False
@@ -80,19 +82,24 @@ class MainWindow(QtWidgets.QMainWindow):
         self._closed = False
         self.setup_ui()
         self._show_loading()
-        self._acquire_slot_async(slot_id)
+        self._acquire_slot_async(self.slot_id)
         apply_window_identity(self.winId())
+
+    def event(self, event):
+        if event.type() == QtCore.QEvent.WinIdChange and self._workspace_lock is not None:
+            self._workspace_lock.set_window(int(self.winId()))
+        return super().event(event)
 
     def _acquire_slot_async(self, requested_id):
         store = self._workspace_store
 
         def task():
-            sid, entry, existed = store.acquire_slot(requested_id)
-            self._dispatcher.invoke(lambda: self._on_slot_acquired(sid, entry, existed))
+            sid, entry, _ = store.acquire_slot(requested_id)
+            self._dispatcher.invoke(lambda: self._on_slot_acquired(sid, entry))
 
         self._dispatcher.post(task, priority=9)
 
-    def _on_slot_acquired(self, sid, entry, existed):
+    def _on_slot_acquired(self, sid, entry):
         self.slot_id = sid
         self._slot_entry = entry
         self._slot_ready = True
@@ -102,13 +109,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.workspace_toolbar_widget.refresh()
         from ..startup import StartupTasks
 
-        def start(prompt):
-            if existed and entry:
-                self._restore_from_slot(entry, on_complete=prompt)
-            else:
-                self.reload_database(self.get_last_used_db_name(), on_complete=prompt)
-
-        StartupTasks().run(on_ready=start)
+        StartupTasks().run(on_ready=lambda prompt: self._restore_from_slot(entry, on_complete=prompt))
         self._run_panel_plugin_startups()
 
     @profiler.profile
@@ -631,6 +632,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def close_by_restart(self):
         self._close_reason = CloseReason.RESTART
         self._save_slot()
+        if self._workspace_lock is not None:
+            self._workspace_lock.release()
         from ...core.platform.process import AppProcess
 
         args = ["--viewer"]
@@ -788,6 +791,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._bridge.stop()
         except Exception as e:
             AppLogger.debug(f"on_close bridge.stop failed: {e}")
+        if self._workspace_lock is not None:
+            self._workspace_lock.release()
 
     def _register_panel_plugin_states(self, store):
         from ...plugin.panel.base import BasePanelPlugin

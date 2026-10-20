@@ -48,15 +48,8 @@ from wafer.plugin.loader import load_plugins, get_plugin_dir
 from wafer.plugin.startup_install import run_pending_installs
 from wafer.core.platform.process import AppProcess
 from wafer.core.platform.process_checker import ParentProcessChecker
+from wafer.qt.common.app_icon import get_icon
 import wafer.constants as constants
-
-def get_icon():
-    from PySide6 import QtGui
-    from wafer.core.common.paths import get_resource_path
-    icon = QtGui.QIcon(str(get_resource_path() / 'icon.ico'))
-    if icon.isNull():
-        icon = QtGui.QIcon()
-    return icon
 
 def set_app_user_model_id(app_id):
     if sys.platform == 'win32':
@@ -103,19 +96,18 @@ def _create_app():
     install_instant_tooltips(app)
     return app
 
-def _entry_viewer(app=None, slot_id=None):
+def _entry_viewer(app, slot_id=None):
     setproctitle.setproctitle(f'{APP_NAME}')
-    from wafer.app.viewer.mainwindow import MainWindow
+    from wafer.app.viewer.workspace_launch import claim_workspace, run_viewer
+    lock = claim_workspace(slot_id)
+    if lock is None:
+        sys.exit(0)
     if constants.DEV_MODE:
         profiler.start()
     if constants.MEMWATCH:
         from wafer.core.profiling import memwatch
         memwatch.start(trace=constants.MEMWATCH_TRACE)
-    if app is None:
-        app = _create_app()
-    window = MainWindow(get_icon(), slot_id=slot_id)
-    window.show()
-    sys.exit(app.exec())
+    run_viewer(app, lock)
 
 def _entry_tray():
     try:

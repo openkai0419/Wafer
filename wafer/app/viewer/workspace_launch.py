@@ -1,9 +1,13 @@
 import os
 import sys
 from dataclasses import dataclass
+from time import sleep
 from typing import NoReturn
 
+from PySide6 import QtWidgets
+
 from ...core.common.paths import normalize_path
+from ...core.lang.manager import t
 from ...core.db.path_scope import databases_containing
 from ...core.ipc.node import Node
 from ...core.logs import AppLogger
@@ -16,6 +20,9 @@ from .widgets.workspace_labels import slot_title
 from .widgets.workspace_picker import WorkspacePickerDialog
 
 OPEN_PATH_TIMEOUT = 5
+CLAIM_RETRIES = 5
+CLAIM_RETRY_INTERVAL = 0.05
+LOCK_DIR: str | None = None
 
 
 @dataclass(frozen=True)
@@ -24,12 +31,13 @@ class OpenRequest:
     database_name: str
 
 
-def _lock_dir() -> str | None:
-    return None
-
-
 def slots_to_restore(restore_ids: list[str], chosen_slot_id: str | None) -> list[str]:
     return [slot_id for slot_id in restore_ids if slot_id != chosen_slot_id]
+
+
+def first_restore_slot_id() -> str | None:
+    restore_ids = WorkspaceStore.instance().get_restore_slot_ids()
+    return restore_ids[0] if restore_ids else None
 
 
 def restore_session(skip_slot_id: str | None) -> None:
@@ -48,17 +56,26 @@ def is_openable_path(path: str | None) -> bool:
     return False
 
 
+def activate_workspace_window(slot_id: str) -> bool:
+    owner = WorkspaceLock.read_owner(slot_id, lock_dir=LOCK_DIR)
+    if owner is None:
+        return False
+    activate_window(owner.hwnd)
+    return True
+
+
 def claim_workspace(slot_id: str | None) -> WorkspaceLock | None:
     store = WorkspaceStore.instance()
     if slot_id is None or store.get_slot(slot_id) is None:
         slot_id = store.create_slot_from(None)
-    lock = WorkspaceLock.acquire(slot_id, lock_dir=_lock_dir())
-    if lock is not None:
-        return lock
-    owner = WorkspaceLock.read_owner(slot_id, lock_dir=_lock_dir())
-    if owner is not None:
-        activate_window(owner.hwnd)
-    AppLogger.info(f"workspace {slot_id} is already open in another window (owner={owner}); not opening a duplicate")
+    for attempt in range(CLAIM_RETRIES + 1):
+        lock = WorkspaceLock.acquire(slot_id, lock_dir=LOCK_DIR)
+        if lock is not None:
+            return lock
+        if activate_workspace_window(slot_id) or attempt == CLAIM_RETRIES:
+            break
+        sleep(CLAIM_RETRY_INTERVAL)
+    AppLogger.info(f"workspace {slot_id} is already open in another window; not opening a duplicate")
     return None
 
 
@@ -73,7 +90,7 @@ def run_viewer(app, lock: WorkspaceLock, open_request: OpenRequest | None = None
 def run_pick(app, seed_slot_id: str | None) -> NoReturn:
     store = WorkspaceStore.instance()
     slots = store.list_slots()
-    open_ids = WorkspaceLock.open_slot_ids([slot.slot_id for slot in slots], lock_dir=_lock_dir())
+    open_ids = WorkspaceLock.open_slot_ids([slot.slot_id for slot in slots], lock_dir=LOCK_DIR)
     picked = WorkspacePickerDialog.ask(slots, open_ids, allow_open=False, databases=[])
     if picked is None:
         sys.exit(0)
@@ -84,45 +101,58 @@ def run_pick(app, seed_slot_id: str | None) -> NoReturn:
     run_viewer(app, lock)
 
 
-def send_open_request(slot: WindowSlot, request: OpenRequest) -> None:
+def deliver_open_request(slot: WindowSlot, request: OpenRequest) -> bool:
     node = Node("launcher")
     node.start()
     try:
-        reply = None
-        if node.wait_registered(OPEN_PATH_TIMEOUT):
-            payload = {"slot_id": slot.slot_id, "path": request.path, "database_name": request.database_name}
-            reply = node.request("slot.open_path", payload, dst="viewer", timeout=OPEN_PATH_TIMEOUT)
-        if reply is None:
-            AppLogger.warning(f"Workspace '{slot_title(slot)}' did not answer; could not open {request.path} there. Try again or pick another workspace.")
-            return
-        owner = WorkspaceLock.read_owner(slot.slot_id, lock_dir=_lock_dir())
-        if owner is not None:
-            activate_window(owner.hwnd)
+        if not node.wait_registered(OPEN_PATH_TIMEOUT):
+            return False
+        payload = {"slot_id": slot.slot_id, "path": request.path, "database_name": request.database_name}
+        return node.request("slot.open_path", payload, dst="viewer", timeout=OPEN_PATH_TIMEOUT) is not None
     finally:
         node.stop()
+
+
+def send_open_request(slot: WindowSlot, request: OpenRequest) -> None:
+    if deliver_open_request(slot, request):
+        activate_workspace_window(slot.slot_id)
+        return
+    AppLogger.warning(f"Workspace '{slot_title(slot)}' did not answer; could not open {request.path} there. Try again or pick another workspace.")
+    QtWidgets.QMessageBox.warning(None, t("Open Path"), t("{name} did not respond. Try again.", name=slot_title(slot)))
 
 
 def run_open_path(app, path: str) -> NoReturn:
     store = WorkspaceStore.instance()
     slots = store.list_slots()
-    open_ids = WorkspaceLock.open_slot_ids([slot.slot_id for slot in slots], lock_dir=_lock_dir())
+    open_ids = WorkspaceLock.open_slot_ids([slot.slot_id for slot in slots], lock_dir=LOCK_DIR)
     running = bool(open_ids)
+    first_slot_id = None
     if not running:
         open_ids = set(store.get_restore_slot_ids())
+        first_slot_id = first_restore_slot_id()
     path = normalize_path(path)
     databases = databases_containing(path)
     picked = WorkspacePickerDialog.ask(slots, open_ids, allow_open=True, databases=databases if len(databases) >= 2 else [])
     if picked is None:
-        sys.exit(0)
+        if running:
+            sys.exit(0)
+        lock = claim_workspace(first_slot_id)
+        restore_session(first_slot_id)
+        if lock is None:
+            sys.exit(0)
+        run_viewer(app, lock)
     fixed_database = databases[0] if len(databases) == 1 else ""
     request = OpenRequest(path, picked.database_name or fixed_database)
     if running and picked.slot_id in open_ids:
         send_open_request(next(slot for slot in slots if slot.slot_id == picked.slot_id), request)
         sys.exit(0)
-    slot_id = picked.slot_id or store.create_slot_from(store.latest_slot_id())
+    slot_id = picked.slot_id or store.create_slot_from(first_slot_id or store.latest_slot_id())
     if not running:
         restore_session(slot_id)
     lock = claim_workspace(slot_id)
     if lock is None:
+        taken_slot = store.get_slot(slot_id)
+        if taken_slot is not None:
+            send_open_request(taken_slot, request)
         sys.exit(0)
     run_viewer(app, lock, open_request=request)

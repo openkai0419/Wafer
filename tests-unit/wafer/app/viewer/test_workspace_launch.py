@@ -3,6 +3,7 @@ import pytest
 from wafer.app.viewer import workspace_launch
 from wafer.app.viewer.widgets.workspace_picker import PickResult
 from wafer.core.common.paths import normalize_path
+from wafer.core.lang.manager import t
 from wafer.core.platform.workspace_lock import WorkspaceLock
 from wafer.core.store.workspace import WindowSlot, WorkspaceStore
 
@@ -10,8 +11,15 @@ from wafer.core.store.workspace import WindowSlot, WorkspaceStore
 @pytest.fixture
 def lock_dir(tmp_path, monkeypatch):
     path = str(tmp_path / "locks")
-    monkeypatch.setattr(workspace_launch, "_lock_dir", lambda: path)
+    monkeypatch.setattr(workspace_launch, "LOCK_DIR", path)
     return path
+
+
+@pytest.fixture(autouse=True)
+def retry_waits(monkeypatch):
+    waits = []
+    monkeypatch.setattr(workspace_launch, "sleep", waits.append)
+    return waits
 
 
 @pytest.fixture
@@ -29,23 +37,62 @@ def store_with_slot(monkeypatch, tmp_path, slot_id=None):
     return store
 
 
-def test_claim_workspace_activates_owner_when_already_open(tmp_path, monkeypatch, lock_dir, activated):
+def test_claim_workspace_activates_owner_when_already_open(tmp_path, monkeypatch, lock_dir, activated, retry_waits):
     held = WorkspaceLock.acquire("s1", lock_dir=lock_dir)
     held.set_window(77)
     store_with_slot(monkeypatch, tmp_path, "s1")
     try:
         assert workspace_launch.claim_workspace("s1") is None
         assert activated == [77]
+        assert retry_waits == []
     finally:
         held.release()
 
 
-def test_claim_workspace_skips_activation_when_owner_has_no_window_yet(tmp_path, monkeypatch, lock_dir, activated):
+def test_claim_workspace_gives_up_when_the_owner_never_shows_a_window(tmp_path, monkeypatch, lock_dir, activated, retry_waits):
     held = WorkspaceLock.acquire("s1", lock_dir=lock_dir)
     store_with_slot(monkeypatch, tmp_path, "s1")
     try:
         assert workspace_launch.claim_workspace("s1") is None
         assert activated == []
+        assert retry_waits == [workspace_launch.CLAIM_RETRY_INTERVAL] * workspace_launch.CLAIM_RETRIES
+    finally:
+        held.release()
+
+
+def test_claim_workspace_retries_while_a_status_probe_holds_the_lock(tmp_path, monkeypatch, lock_dir, activated, retry_waits):
+    probe = WorkspaceLock.acquire("s1", lock_dir=lock_dir)
+    store_with_slot(monkeypatch, tmp_path, "s1")
+    monkeypatch.setattr(workspace_launch, "sleep", lambda seconds: retry_waits.append(seconds) or probe.release())
+    lock = workspace_launch.claim_workspace("s1")
+    try:
+        assert lock is not None
+        assert lock.slot_id == "s1"
+        assert retry_waits == [workspace_launch.CLAIM_RETRY_INTERVAL]
+        assert activated == []
+    finally:
+        lock.release()
+
+
+def test_claim_workspace_stops_retrying_once_the_owner_shows_its_window(tmp_path, monkeypatch, lock_dir, activated, retry_waits):
+    held = WorkspaceLock.acquire("s1", lock_dir=lock_dir)
+    store_with_slot(monkeypatch, tmp_path, "s1")
+    monkeypatch.setattr(workspace_launch, "sleep", lambda seconds: retry_waits.append(seconds) or held.set_window(88))
+    try:
+        assert workspace_launch.claim_workspace("s1") is None
+        assert activated == [88]
+        assert len(retry_waits) == 1
+    finally:
+        held.release()
+
+
+def test_activate_workspace_window_brings_the_owner_forward(lock_dir, activated):
+    held = WorkspaceLock.acquire("s1", lock_dir=lock_dir)
+    try:
+        assert workspace_launch.activate_workspace_window("s1") is False
+        held.set_window(55)
+        assert workspace_launch.activate_workspace_window("s1") is True
+        assert activated == [55]
     finally:
         held.release()
 
@@ -83,7 +130,7 @@ def test_claim_workspace_creates_slot_instead_of_adopting_unknown_id(tmp_path, m
 
 
 def test_lock_dir_uses_the_default_location():
-    assert workspace_launch._lock_dir() is None
+    assert workspace_launch.LOCK_DIR is None
 
 
 class Viewed(Exception):
@@ -248,6 +295,8 @@ def open_flow(tmp_path, monkeypatch, lock_dir, activated):
         "registered": True,
         "reply": None,
         "warnings": [],
+        "dialogs": [],
+        "lock": "lock",
         "activated": activated,
     }
 
@@ -257,7 +306,7 @@ def open_flow(tmp_path, monkeypatch, lock_dir, activated):
 
     def claim(slot_id):
         flow["claimed"].append(slot_id)
-        return "lock"
+        return flow["lock"]
 
     def run_viewer(app, lock, **kwargs):
         raise Viewed(kwargs)
@@ -269,6 +318,7 @@ def open_flow(tmp_path, monkeypatch, lock_dir, activated):
     monkeypatch.setattr(workspace_launch, "databases_containing", lambda path: flow["databases"])
     monkeypatch.setattr(workspace_launch, "Node", lambda role: FakeNode(role, flow))
     monkeypatch.setattr(workspace_launch.AppLogger, "warning", lambda message, **kwargs: flow["warnings"].append(message))
+    monkeypatch.setattr(workspace_launch.QtWidgets.QMessageBox, "warning", lambda *args: flow["dialogs"].append(args))
     return flow
 
 
@@ -298,6 +348,7 @@ def test_running_and_open_choice_sends_request_and_activates(open_flow, lock_dir
     assert open_flow["activated"] == [77]
     assert open_flow["claimed"] == []
     assert open_flow["restored"] == []
+    assert open_flow["dialogs"] == []
 
 
 def test_open_choice_without_reply_warns_and_exits(open_flow, lock_dir):
@@ -310,12 +361,23 @@ def test_open_choice_without_reply_warns_and_exits(open_flow, lock_dir):
     assert open_flow["claimed"] == []
 
 
+def test_open_choice_without_reply_tells_the_user(open_flow, lock_dir):
+    open_flow["answer"] = PickResult("s2", "")
+    assert run_open_path_with_open_slot(open_flow, lock_dir) == 0
+    assert len(open_flow["dialogs"]) == 1
+    parent, title, text = open_flow["dialogs"][0]
+    assert parent is None
+    assert title == t("Open Path")
+    assert "Second" in text
+
+
 def test_open_choice_without_broker_warns_without_requesting(open_flow, lock_dir):
     open_flow["answer"] = PickResult("s2", "")
     open_flow["registered"] = False
     assert run_open_path_with_open_slot(open_flow, lock_dir) == 0
     assert open_flow["nodes"][0].events == ["start", ("wait_registered", 5), "stop"]
     assert len(open_flow["warnings"]) == 1
+    assert len(open_flow["dialogs"]) == 1
     assert open_flow["activated"] == []
 
 
@@ -347,10 +409,14 @@ def test_not_running_marks_restore_ids_open_and_restores_others(open_flow):
     assert open_flow["nodes"] == []
 
 
-def test_cancel_opens_nothing(open_flow):
+def test_cancel_while_running_opens_nothing(open_flow, lock_dir):
     open_flow["store"].set_restore_slot_ids(["s1"])
-    with pytest.raises(SystemExit) as exit_info:
-        workspace_launch.run_open_path(object(), open_flow["path"])
+    held = WorkspaceLock.acquire("s2", lock_dir=lock_dir)
+    try:
+        with pytest.raises(SystemExit) as exit_info:
+            workspace_launch.run_open_path(object(), open_flow["path"])
+    finally:
+        held.release()
     assert exit_info.value.code == 0
     assert open_flow["restored"] == []
     assert open_flow["claimed"] == []
@@ -358,11 +424,36 @@ def test_cancel_opens_nothing(open_flow):
     assert len(open_flow["store"].list_slots()) == 2
 
 
-def test_new_from_path_seeds_from_latest_slot(open_flow, monkeypatch):
-    store = open_flow["store"]
+def test_cancel_while_not_running_restores_the_previous_windows(open_flow):
+    open_flow["store"].set_restore_slot_ids(["s1", "s2"])
+    with pytest.raises(Viewed) as viewed:
+        workspace_launch.run_open_path(object(), open_flow["path"])
+    assert viewed.value.args[0] == {}
+    assert open_flow["claimed"] == ["s1"]
+    assert open_flow["restored"] == ["s1"]
+    assert open_flow["nodes"] == []
+    assert len(open_flow["store"].list_slots()) == 2
+
+
+def test_cancel_while_not_running_exits_when_the_first_window_is_taken(open_flow):
+    open_flow["store"].set_restore_slot_ids(["s1"])
+    open_flow["lock"] = None
+    with pytest.raises(SystemExit) as exit_info:
+        workspace_launch.run_open_path(object(), open_flow["path"])
+    assert exit_info.value.code == 0
+    assert open_flow["restored"] == ["s1"]
+
+
+def record_seeds(store, monkeypatch):
     seeds = []
     create = store.create_slot_from
     monkeypatch.setattr(store, "create_slot_from", lambda seed: seeds.append(seed) or create(seed))
+    return seeds
+
+
+def test_new_from_path_without_restore_ids_seeds_from_latest_slot(open_flow, monkeypatch):
+    store = open_flow["store"]
+    seeds = record_seeds(store, monkeypatch)
     latest = store.latest_slot_id()
     open_flow["answer"] = PickResult(None, "")
     with pytest.raises(Viewed):
@@ -371,6 +462,48 @@ def test_new_from_path_seeds_from_latest_slot(open_flow, monkeypatch):
     new_id = open_flow["claimed"][0]
     assert new_id not in ("s1", "s2")
     assert open_flow["restored"] == [new_id]
+
+
+def test_new_from_path_while_not_running_seeds_from_the_first_restored_window(open_flow, monkeypatch):
+    store = open_flow["store"]
+    store.set_restore_slot_ids(["s1"])
+    assert store.latest_slot_id() == "s2"
+    seeds = record_seeds(store, monkeypatch)
+    open_flow["answer"] = PickResult(None, "")
+    with pytest.raises(Viewed):
+        workspace_launch.run_open_path(object(), open_flow["path"])
+    assert seeds == ["s1"]
+
+
+def test_new_from_path_while_running_seeds_from_latest_slot(open_flow, monkeypatch, lock_dir):
+    store = open_flow["store"]
+    store.set_restore_slot_ids(["s1"])
+    seeds = record_seeds(store, monkeypatch)
+    open_flow["answer"] = PickResult(None, "")
+    held = WorkspaceLock.acquire("s1", lock_dir=lock_dir)
+    try:
+        with pytest.raises(Viewed):
+            workspace_launch.run_open_path(object(), open_flow["path"])
+    finally:
+        held.release()
+    assert seeds == ["s2"]
+    assert open_flow["restored"] == []
+
+
+def test_closed_choice_taken_meanwhile_sends_the_file_to_its_window(open_flow, lock_dir):
+    held = WorkspaceLock.acquire("s2", lock_dir=lock_dir)
+    open_flow["answer"] = PickResult("s1", "")
+    open_flow["lock"] = None
+    open_flow["reply"] = object()
+    try:
+        with pytest.raises(SystemExit) as exit_info:
+            workspace_launch.run_open_path(object(), open_flow["path"])
+    finally:
+        held.release()
+    assert exit_info.value.code == 0
+    assert open_flow["claimed"] == ["s1"]
+    payload = {"slot_id": "s1", "path": normalize_path(open_flow["path"]), "database_name": ""}
+    assert ("request", "slot.open_path", payload, "viewer", 5) in open_flow["nodes"][0].events
 
 
 def test_single_database_is_used_without_choice(open_flow):

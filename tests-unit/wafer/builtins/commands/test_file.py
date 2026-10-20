@@ -1,9 +1,13 @@
+import os
 import sys
+from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
+import pytest
 from PySide6 import QtWidgets
 
-from wafer.qt.commands.bridge import Menu
+from wafer.qt.commands.bridge import Command, Menu
 from wafer.builtins.commands import file as file_mod
 from wafer.builtins.commands.file import FileCommands
 from wafer.core.platform.path_utils import get_os_new_folder_name
@@ -279,3 +283,54 @@ def test_make_new_folder_here_rejects_virtual_source(tmp_path):
 
     assert file_mod.make_new_folder_here(_Ctx(source=logical)) is None
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.fixture
+def option_store(tmp_path):
+    from wafer.qt.commands.command.state import CommandOptionStore
+
+    previous_path = CommandOptionStore._default_path
+    store = CommandOptionStore.configure(tmp_path / "opts.json")
+    FileCommands.register()
+    try:
+        yield store
+    finally:
+        CommandOptionStore._default_path = previous_path
+        store._reconfigure(previous_path if previous_path is not None else Path(os.devnull))
+
+
+class _WindowCtx:
+    def __init__(self, window):
+        self.window = window
+
+    def get(self, key, default=None):
+        return default
+
+    def get_instance(self, name):
+        return self.window if name == "MainWindow" else None
+
+
+def test_default_args_only_show_in_viewer(option_store):
+    assert Command.get_args("file.open_path") == {"path": "", "select_folder": False, "scroll_grid": False, "show_viewer": True}
+
+
+def test_open_path_is_in_the_file_menu():
+    paths = [getattr(item, "path", None) for item in FileCommands.commands()]
+    assert "file.open_path" in paths
+
+
+def test_open_path_reveals_the_normalized_path():
+    window = MagicMock()
+
+    file_mod.open_path(_WindowCtx(window), path="f:\\p\\sub\\a.png", select_folder=True, scroll_grid=True, show_viewer=False)
+
+    window.path_revealer.reveal.assert_called_once_with("F:/p/sub/a.png", select_folder=True, scroll_grid=True, show_viewer=False)
+
+
+def test_open_path_without_path_asks_for_it(option_store, monkeypatch):
+    asked = []
+    monkeypatch.setattr(Command, "_show_options_for_required", staticmethod(lambda command_id, *a, **k: asked.append(command_id)))
+
+    Command.invoke("file.open_path")
+
+    assert asked == ["file.open_path"]

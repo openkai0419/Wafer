@@ -19,6 +19,7 @@ from .preview.file_viewer import FileViewerController
 from .preview.file_list_provider import FileListProvider
 from .preview.content_viewer import ContentViewerWidget
 from .preview.meta_panel import MetaViewerWidget
+from .path_reveal import PathRevealer
 from ...core.store.settings import app_settings
 from .widgets.button_bar import IconButtonBar, IconButtonConfig
 from .widgets.foldertree import LazyFolderTreeView
@@ -340,6 +341,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.meta_viewer_widget = MetaViewerWidget()
         self.file_list_provider = FileListProvider(self.file_model, self.grid_items, self)
         self.file_viewer = FileViewerController(self.file_model, self.content_viewer, self.meta_viewer_widget, self.file_list_provider, self)
+        self.path_revealer = PathRevealer(self)
         self.meta_viewer_widget.reload_requested.connect(self.file_viewer.reload_meta)
         UI.register_instance("FileViewerController", self.file_viewer)
         UI.register_instance("FileListProvider", self.file_list_provider)

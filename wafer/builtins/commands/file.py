@@ -15,7 +15,8 @@ from ...core.platform.file_operations import PastePlanItem, delete_to_trash
 from ...core.platform.folders import show_in_explorer as reveal_in_explorer, open_file as platform_open_file, make_directory
 from ...core.logs import AppLogger
 from ...qt.common.notifier import Notifier
-from ...core.common.paths import containing_dir
+from ...core.common.paths import containing_dir, normalize_path
+from ...app.viewer.path_reveal import scroll_grid_to_path
 from ...core.common.virtual_paths import is_virtual_path
 from ...qt.common.dispatcher import Dispatcher
 from ...qt.common.thread import SimpleThreadPool
@@ -206,14 +207,7 @@ def scroll_to_file(ctx, items, view):
     path = _ctx_path(ctx)
     if not path:
         return
-    idx = items.index_of_path(path)
-    if idx is None:
-        Notifier.info("File not found in view")
-        return
-    if idx >= len(view.rects):
-        Notifier.info("File out of visible area")
-        return
-    view.scroll_to_index(idx, animated=True)
+    scroll_grid_to_path(items, view, path)
 
 
 @require(provider="FileListProvider")
@@ -222,6 +216,11 @@ def show_file(ctx, provider):
     if not path:
         return
     provider.on_file_set(path)
+
+
+@require(w="MainWindow")
+def open_path(ctx, w, path: str = "", select_folder: bool = False, scroll_grid: bool = False, show_viewer: bool = True):
+    w.path_revealer.reveal(normalize_path(path), select_folder=bool(select_folder), scroll_grid=bool(scroll_grid), show_viewer=bool(show_viewer))
 
 
 def make_new_folder_here(ctx, folder_name: str | None = None) -> str | None:
@@ -380,6 +379,17 @@ class FileCommands(ActionKit.MenuBase):
         return [
             ":File",
             ActionKit.Command(path="file.open", display="Open File", func=open_file),
+            ActionKit.Command(
+                path="file.open_path",
+                display="Open Path",
+                params=[
+                    ActionKit.Param(name="path", value="", description="File path", required=True),
+                    ActionKit.Param(name="select_folder", value=False, description="Select its folder"),
+                    ActionKit.Param(name="scroll_grid", value=False, description="Scroll the grid to it"),
+                    ActionKit.Param(name="show_viewer", value=True, description="Show in the viewer"),
+                ],
+                func=open_path,
+            ),
             ActionKit.Command(
                 path="file.show_explorer",
                 display="Reveal in Explorer",

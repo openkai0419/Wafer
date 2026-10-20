@@ -45,12 +45,13 @@ from ...qt.common.dispatcher import Dispatcher, CancelToken
 from ...qt.common.thread import utility_pool
 from ...core.platform.taskbar import apply_window_identity
 from ...core.platform.workspace_lock import WorkspaceLock
+from .workspace_launch import OpenRequest
 
 AppMenuRegistrar.setup_menu()
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, icon=None, parent=None, workspace_lock: WorkspaceLock | None = None):
+    def __init__(self, icon=None, parent=None, workspace_lock: WorkspaceLock | None = None, open_request: OpenRequest | None = None):
         super().__init__(parent=parent)
         self._workspace_lock = workspace_lock
         self._workspace_store = WorkspaceStore.instance()
@@ -58,6 +59,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._slot_entry: WindowSlot | None = None
         self._close_reason = CloseReason.NORMAL
         self._slot_ready = False
+        self._slot_restored = False
+        self._open_request = open_request
         self._folder_callout: CalloutOverlay | None = None
         if icon:
             self.setWindowIcon(icon)
@@ -111,8 +114,32 @@ class MainWindow(QtWidgets.QMainWindow):
         self.workspace_toolbar_widget.refresh()
         from ..startup import StartupTasks
 
-        StartupTasks().run(on_ready=lambda prompt: self._restore_from_slot(entry, on_complete=prompt))
+        StartupTasks().run(on_ready=lambda prompt: self._restore_from_slot(entry, on_complete=lambda: self._finish_slot_restore(prompt)))
         self._run_panel_plugin_startups()
+
+    def _finish_slot_restore(self, prompt):
+        self._slot_restored = True
+        request, self._open_request = self._open_request, None
+        if request is not None:
+            self.open_path_request(request.path, request.database_name)
+        prompt()
+
+    def open_path_request(self, path: str, database_name: str) -> None:
+        if not self._slot_restored:
+            self._open_request = OpenRequest(path, database_name)
+            return
+
+        def open_path():
+            Command.invoke("file.open_path", path=path)
+
+        def search_then_open_path():
+            self.refresh_search()
+            open_path()
+
+        if database_name and database_name != self.database_name:
+            self.reload_database(database_name, on_complete=search_then_open_path)
+        else:
+            open_path()
 
     @profiler.profile
     def get_last_used_db_name(self):
@@ -167,17 +194,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setting_db = sdb
         self.folder_view.set_folders(roots, excluded, ignore_pattern_re)
         self.grid_overlay_host.reload()
-        if on_complete:
-            on_complete()
-        else:
-            self.search_row_widget.run_folder_worker(
-                self.database_path,
-                self.folder_view.get_selected_paths(),
-                self.search_service.get("include_subfolders", True),
-                self.search_service.get("include_contained_files", True),
-            )
-            QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
+        (on_complete or self.refresh_search)()
         self._check_folder_callout(roots)
+
+    def refresh_search(self):
+        self.search_row_widget.run_folder_worker(
+            self.database_path,
+            self.folder_view.get_selected_paths(),
+            self.search_service.get("include_subfolders", True),
+            self.search_service.get("include_contained_files", True),
+        )
+        QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
 
     def _on_db_reload_failed(self, name, exc, on_complete=None):
         self._db_reload_cancel = None
@@ -271,6 +298,7 @@ class MainWindow(QtWidgets.QMainWindow):
         b.slot_restarted.connect(self._on_slot_restarted)
         b.slot_shutdown.connect(self._on_slot_shutdown)
         b.slot_renamed.connect(self._on_slot_renamed)
+        b.open_path_requested.connect(self.open_path_request)
         b.app_shutdown.connect(self._on_app_shutdown)
         b.db_created.connect(self._on_db_created)
         b.db_deleted.connect(self._on_db_deleted)

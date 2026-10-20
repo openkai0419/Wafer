@@ -18,6 +18,7 @@ class ViewerIpcBridge(QtCore.QObject):
     slot_restarted = QtCore.Signal(str)
     slot_shutdown = QtCore.Signal(str)
     slot_renamed = QtCore.Signal(str, str)
+    open_path_requested = QtCore.Signal(str, str)
     app_shutdown = QtCore.Signal()
     db_created = QtCore.Signal(str)
     db_deleted = QtCore.Signal(str)
@@ -59,6 +60,7 @@ class ViewerIpcBridge(QtCore.QObject):
         n.subscribe("slot.restart", self._on_slot_restart)
         n.subscribe("slot.shutdown", self._on_slot_shutdown)
         n.subscribe("slot.renamed", self._on_slot_renamed)
+        n.subscribe("slot.open_path", self._on_slot_open_path)
         n.subscribe("app.shutdown", self._on_app_shutdown)
         n.subscribe("db.created", self._on_db_created)
         n.subscribe("db.deleted", self._on_db_deleted)
@@ -123,6 +125,17 @@ class ViewerIpcBridge(QtCore.QObject):
         if not isinstance(slot_id, str) or not slot_id:
             return True
         return self._invoke("_emit_slot_renamed", QtCore.Q_ARG(str, slot_id), QtCore.Q_ARG(str, str(p.get("name") or "")))
+
+    def _on_slot_open_path(self, msg):
+        p = msg.payload if isinstance(msg.payload, dict) else {}
+        if not self._node.session_id or p.get("slot_id") != self._node.session_id:
+            return True
+        path = p.get("path")
+        if not isinstance(path, str) or not path:
+            AppLogger.warning(f"[IPC] slot.open_path without a path: {msg.payload!r}")
+            return True
+        self._node.enqueue(msg.reply({"ok": True}))
+        return self._invoke("_emit_open_path_requested", QtCore.Q_ARG(str, path), QtCore.Q_ARG(str, str(p.get("database_name") or "")))
 
     def _on_app_shutdown(self, msg):
         return self._invoke("_emit_app_shutdown")
@@ -196,6 +209,10 @@ class ViewerIpcBridge(QtCore.QObject):
     @QtCore.Slot(str, str)
     def _emit_slot_renamed(self, slot_id: str, name: str):
         self.slot_renamed.emit(slot_id, name)
+
+    @QtCore.Slot(str, str)
+    def _emit_open_path_requested(self, path: str, database_name: str):
+        self.open_path_requested.emit(path, database_name)
 
     @QtCore.Slot()
     def _emit_app_shutdown(self):

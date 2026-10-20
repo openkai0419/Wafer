@@ -71,6 +71,70 @@ class TestIpcHandlers:
             bridge._on_progress(_FakeMsg(topic="progress", payload="50", db="mydb"))
         assert received == [("mydb", 50)]
 
+    def test_bridge_replies_only_for_own_slot(self, qtbot, bridge, mock_node):
+        from wafer.core.ipc.message import Message
+
+        topics = [c.args[0] for c in mock_node.subscribe.call_args_list]
+        assert "slot.open_path" in topics
+        mock_node.session_id = "s1"
+        received = []
+        bridge.open_path_requested.connect(lambda path, db: received.append((path, db)))
+
+        def request(slot_id):
+            payload = {"slot_id": slot_id, "path": "C:/a.png", "database_name": "db"}
+            return Message.build("slot.open_path", payload, src="launcher-9", dst="viewer", rid="r1")
+
+        assert bridge._on_slot_open_path(request("s2")) is True
+        mock_node.enqueue.assert_not_called()
+
+        with qtbot.waitSignal(bridge.open_path_requested, timeout=1000):
+            assert bridge._on_slot_open_path(request("s1")) is True
+        reply = mock_node.enqueue.call_args.args[0]
+        assert (reply.request_id, reply.destination, reply.payload) == ("r1", "launcher-9", {"ok": True})
+        assert received == [("C:/a.png", "db")]
+
+    def test_open_path_ignores_malformed_payload(self, bridge, mock_node):
+        from wafer.core.ipc.message import Message
+
+        mock_node.session_id = "s1"
+        received = []
+        bridge.open_path_requested.connect(lambda path, db: received.append((path, db)))
+        for payload in ("oops", {"slot_id": "s1"}, {"slot_id": "s1", "path": 3}):
+            assert bridge._on_slot_open_path(Message.build("slot.open_path", payload, rid="r")) is True
+        mock_node.enqueue.assert_not_called()
+        assert received == []
+
+    def test_open_path_round_trip_through_the_broker(self, qtbot, tmp_path, monkeypatch):
+        from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
+        from wafer.core.ipc.broker import Broker
+        from wafer.core.ipc.node import Node
+
+        monkeypatch.setattr("wafer.core.ipc.transport._PORT_FILE", tmp_path / "broker.json")
+        broker = Broker()
+        broker.start()
+        viewer = Node("viewer")
+        viewer.session_id = "s1"
+        bridge = ViewerIpcBridge(viewer)
+        launcher = Node("launcher")
+        received = []
+        bridge.open_path_requested.connect(lambda path, db: received.append((path, db)))
+        try:
+            viewer.start(broker.port)
+            launcher.start(broker.port)
+            assert viewer.wait_registered(3.0) and launcher.wait_registered(3.0)
+
+            payload = {"slot_id": "s2", "path": "C:/a.png", "database_name": ""}
+            assert launcher.request("slot.open_path", payload, dst="viewer", timeout=0.3) is None
+
+            payload["slot_id"] = "s1"
+            reply = launcher.request("slot.open_path", payload, dst="viewer", timeout=3.0)
+            assert reply is not None and reply.payload == {"ok": True}
+            qtbot.waitUntil(lambda: received == [("C:/a.png", "")], timeout=1000)
+        finally:
+            launcher.stop()
+            viewer.stop()
+            broker.stop()
+
     def test_on_dev_log_emits_only_dict_payload(self, qtbot, bridge):
         received = []
         bridge.remote_log_received.connect(lambda *a: received.append(a))

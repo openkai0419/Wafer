@@ -1,73 +1,54 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 
-class TestDirectLaunchSlotRestore:
-    @patch("main._entry_viewer")
-    @patch("main.AppProcess")
-    @patch("main._wait_install_then_load_plugins")
-    @patch("main._create_app")
-    def test_no_restore_ids_passes_none(self, mock_create, mock_wait, mock_proc, mock_viewer):
-        mock_app = MagicMock()
-        mock_create.return_value = mock_app
+class TestDirectLaunch:
+    def launch(self, restore_ids, *argv):
         store = MagicMock()
-        store.get_restore_slot_ids.return_value = []
+        store.get_restore_slot_ids.return_value = restore_ids
         store.get_restore_webui.return_value = False
+        with (
+            patch("main._create_app") as create,
+            patch("main._wait_install_then_load_plugins") as wait,
+            patch("main.AppProcess"),
+            patch("main._entry_viewer") as viewer,
+            patch("wafer.app.viewer.workspace_launch.AppProcess") as spawner,
+            patch("wafer.core.store.workspace.WorkspaceStore.instance", return_value=store),
+            patch("sys.argv", ["main.py", *argv]),
+        ):
+            from main import main
 
-        with patch("main.argparse.ArgumentParser.parse_args") as mock_args:
-            mock_args.return_value = MagicMock(tray=False, viewer=False, webui=False, indexer=None, collector=None, parser=None, dev=False, slot=None)
-            with patch("wafer.core.store.workspace.WorkspaceStore.instance", return_value=store):
-                from main import main
+            main()
+        wait.assert_called_once()
+        return create.return_value, viewer, spawner
 
-                main()
+    def test_no_restore_ids_passes_none(self):
+        app, viewer, spawner = self.launch([])
+        viewer.assert_called_once_with(app, slot_id=None)
+        spawner.new_main.assert_not_called()
 
-        mock_viewer.assert_called_once_with(mock_app, slot_id=None)
-        mock_wait.assert_called_once()
+    def test_single_restore_id(self):
+        app, viewer, spawner = self.launch(["s1"])
+        viewer.assert_called_once_with(app, slot_id="s1")
+        spawner.new_main.assert_not_called()
 
-    @patch("main._entry_viewer")
-    @patch("main.AppProcess")
-    @patch("main._wait_install_then_load_plugins")
-    @patch("main._create_app")
-    def test_single_restore_id(self, mock_create, mock_wait, mock_proc, mock_viewer):
-        mock_app = MagicMock()
-        mock_create.return_value = mock_app
-        store = MagicMock()
-        store.get_restore_slot_ids.return_value = ["s1"]
-        store.get_restore_webui.return_value = False
+    def test_multiple_restore_ids(self):
+        app, viewer, spawner = self.launch(["s1", "s2", "Work"])
+        viewer.assert_called_once_with(app, slot_id="s1")
+        assert spawner.new_main.call_args_list == [call("--viewer", "--slot", "s2"), call("--viewer", "--slot", "Work")]
 
-        with patch("main.argparse.ArgumentParser.parse_args") as mock_args:
-            mock_args.return_value = MagicMock(tray=False, viewer=False, webui=False, indexer=None, collector=None, parser=None, dev=False, slot=None)
-            with patch("wafer.core.store.workspace.WorkspaceStore.instance", return_value=store):
-                from main import main
+    def test_file_path_opens_through_the_picker_without_restoring(self, tmp_path):
+        file_path = tmp_path / "a.png"
+        file_path.write_bytes(b"x")
+        app, viewer, spawner = self.launch(["s1", "s2"], str(file_path))
+        viewer.assert_called_once_with(app, open_path=str(file_path))
+        spawner.new_main.assert_not_called()
 
-                main()
-
-        mock_viewer.assert_called_once_with(mock_app, slot_id="s1")
-        viewer_spawn_calls = [c for c in mock_proc.new_main.call_args_list if "--viewer" in c.args]
-        assert viewer_spawn_calls == []
-
-    @patch("main._entry_viewer")
-    @patch("main.AppProcess")
-    @patch("main._wait_install_then_load_plugins")
-    @patch("main._create_app")
-    def test_multiple_restore_ids(self, mock_create, mock_wait, mock_proc, mock_viewer):
-        mock_app = MagicMock()
-        mock_create.return_value = mock_app
-        store = MagicMock()
-        store.get_restore_slot_ids.return_value = ["s1", "s2", "Work"]
-        store.get_restore_webui.return_value = False
-
-        with patch("main.argparse.ArgumentParser.parse_args") as mock_args:
-            mock_args.return_value = MagicMock(tray=False, viewer=False, webui=False, indexer=None, collector=None, parser=None, dev=False, slot=None)
-            with patch("wafer.core.store.workspace.WorkspaceStore.instance", return_value=store):
-                from main import main
-
-                main()
-
-        mock_viewer.assert_called_once_with(mock_app, slot_id="s1")
-        mock_proc.new_main.assert_any_call("--viewer", "--slot", "s2")
-        mock_proc.new_main.assert_any_call("--viewer", "--slot", "Work")
+    def test_folder_path_falls_back_to_a_normal_launch(self, tmp_path):
+        app, viewer, spawner = self.launch(["s1", "s2"], str(tmp_path))
+        viewer.assert_called_once_with(app, slot_id="s1")
+        assert spawner.new_main.call_args_list == [call("--viewer", "--slot", "s2")]
 
 
 class TestTrayStartup:
@@ -201,6 +182,20 @@ class TestEntryViewer:
                 _entry_viewer(app, pick=True, seed_slot="s1")
 
         pick.assert_called_once_with(app, "s1")
+        claim.assert_not_called()
+
+    def test_open_path_hands_over_to_the_path_launcher(self, _title, _profiler):
+        app = MagicMock()
+        with (
+            patch("wafer.app.viewer.workspace_launch.run_open_path", side_effect=SystemExit) as open_path,
+            patch("wafer.app.viewer.workspace_launch.claim_workspace") as claim,
+        ):
+            from main import _entry_viewer
+
+            with pytest.raises(SystemExit):
+                _entry_viewer(app, open_path="C:/a.png")
+
+        open_path.assert_called_once_with(app, "C:/a.png")
         claim.assert_not_called()
 
 

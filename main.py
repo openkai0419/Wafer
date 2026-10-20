@@ -103,9 +103,12 @@ def _start_viewer_profiling():
         from wafer.core.profiling import memwatch
         memwatch.start(trace=constants.MEMWATCH_TRACE)
 
-def _entry_viewer(app, slot_id=None, pick=False, seed_slot=None):
+def _entry_viewer(app, slot_id=None, pick=False, seed_slot=None, open_path=None):
     setproctitle.setproctitle(f'{APP_NAME}')
-    from wafer.app.viewer.workspace_launch import claim_workspace, run_pick, run_viewer
+    from wafer.app.viewer.workspace_launch import claim_workspace, run_open_path, run_pick, run_viewer
+    if open_path:
+        _start_viewer_profiling()
+        run_open_path(app, open_path)
     if pick:
         _start_viewer_profiling()
         run_pick(app, seed_slot)
@@ -240,6 +243,7 @@ def main():
     parser.add_argument('--no-browser', action='store_true', help='webui: do not open the browser on start')
     parser.add_argument('--no-ui', action='store_true', help='webui: run headless without management window')
     parser.add_argument('--no-tray', action='store_true', help='webui: do not spawn the tray process')
+    parser.add_argument('path', nargs='?', help='file to open through the workspace picker')
     args = parser.parse_args()
     if not any([args.tray, args.viewer, args.webui, args.indexer, args.collector, args.parser]):
         app = _create_app()
@@ -247,15 +251,15 @@ def main():
             AppProcess.terminate_cmd('--tray', wait=True)
         _ensure_tray_unless_pending()
         _wait_install_then_load_plugins(app)
+        from wafer.app.viewer.workspace_launch import is_openable_path, restore_session
+        if args.path and is_openable_path(args.path):
+            _entry_viewer(app, open_path=args.path)
+            return
         from wafer.core.store.workspace import WorkspaceStore
-        store = WorkspaceStore.instance()
-        restore_ids = store.get_restore_slot_ids()
-        for sid in restore_ids[1:]:
-            AppProcess.new_main('--viewer', '--slot', sid)
-        if store.get_restore_webui():
-            store.set_restore_webui(False)
-            AppProcess.new_main('--webui', '--no-browser')
-        _entry_viewer(app, slot_id=restore_ids[0] if restore_ids else None)
+        restore_ids = WorkspaceStore.instance().get_restore_slot_ids()
+        first_slot_id = restore_ids[0] if restore_ids else None
+        restore_session(first_slot_id)
+        _entry_viewer(app, slot_id=first_slot_id)
         return
     if args.tray:
         _entry_tray()

@@ -501,5 +501,87 @@ class TestWorkspaceLock:
             win._on_slot_acquired("s1", entry)
 
         assert win.slot_id == "s1"
-        win._restore_from_slot.assert_called_once_with(entry, on_complete=prompt)
+        win._restore_from_slot.assert_called_once_with(entry, on_complete=ANY)
         win.reload_database.assert_not_called()
+
+
+class TestOpenRequest:
+    def _make_win(self, database_name="a", open_request=None, slot_restored=True):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            win.database_name = database_name
+            win._open_request = open_request
+            win._slot_restored = slot_restored
+            win.reload_database = MagicMock()
+            win.refresh_search = MagicMock()
+            return win
+
+    def _acquire_slot(self, win, prompt):
+        from wafer.core.store.workspace import WindowSlot
+
+        win._workspace_lock = None
+        win.start_ipc_listener = MagicMock()
+        win._update_title = MagicMock()
+        win.workspace_toolbar_widget = MagicMock()
+        win._run_panel_plugin_startups = MagicMock()
+        restored = []
+        win._restore_from_slot = lambda entry, on_complete: restored.append(on_complete)
+        with patch("wafer.app.startup.StartupTasks") as tasks:
+            tasks.return_value.run.side_effect = lambda on_ready: on_ready(prompt)
+            win._on_slot_acquired("s1", WindowSlot(slot_id="s1"))
+        return restored
+
+    def test_open_path_request_switches_database_first(self):
+        win = self._make_win(database_name="a")
+        with patch("wafer.app.viewer.mainwindow.Command") as command:
+            win.open_path_request("C:/x.png", "b")
+            win.reload_database.assert_called_once_with("b", on_complete=ANY)
+            command.invoke.assert_not_called()
+            win.reload_database.call_args.kwargs["on_complete"]()
+        win.refresh_search.assert_called_once_with()
+        command.invoke.assert_called_once_with("file.open_path", path="C:/x.png")
+
+    def test_open_path_request_in_current_database_opens_now(self):
+        for database_name in ("a", ""):
+            win = self._make_win(database_name="a")
+            with patch("wafer.app.viewer.mainwindow.Command") as command:
+                win.open_path_request("C:/x.png", database_name)
+            win.reload_database.assert_not_called()
+            command.invoke.assert_called_once_with("file.open_path", path="C:/x.png")
+
+    def test_open_path_request_waits_for_the_slot_restore(self):
+        from wafer.app.viewer.workspace_launch import OpenRequest
+
+        win = self._make_win(slot_restored=False, open_request=OpenRequest("C:/old.png", ""))
+        with patch("wafer.app.viewer.mainwindow.Command") as command:
+            win.open_path_request("C:/x.png", "b")
+        command.invoke.assert_not_called()
+        win.reload_database.assert_not_called()
+        assert win._open_request == OpenRequest("C:/x.png", "b")
+
+    def test_open_request_runs_once_after_the_slot_restore(self):
+        from wafer.app.viewer.workspace_launch import OpenRequest
+
+        win = self._make_win(slot_restored=False, open_request=OpenRequest("C:/x.png", "b"))
+        order = MagicMock()
+        win.open_path_request = order.open_path_request
+        restored = self._acquire_slot(win, order.prompt)
+        order.open_path_request.assert_not_called()
+
+        restored[0]()
+        restored[0]()
+
+        assert order.mock_calls == [call.open_path_request("C:/x.png", "b"), call.prompt(), call.prompt()]
+        assert win._open_request is None
+        assert win._slot_restored is True
+
+    def test_slot_restore_without_open_request_only_prompts(self):
+        win = self._make_win(slot_restored=False)
+        win.open_path_request = MagicMock()
+        prompt = MagicMock()
+        restored = self._acquire_slot(win, prompt)
+        restored[0]()
+        win.open_path_request.assert_not_called()
+        prompt.assert_called_once_with()

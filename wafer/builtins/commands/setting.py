@@ -53,7 +53,7 @@ def toggle_language(ctx):
 
 
 class SettingCommands(ActionKit.MenuBase):
-    NAME = "Setting"
+    NAME = ActionKit.MenuPath.SETTING
     PRIORITY = 90
 
     @classmethod

@@ -213,7 +213,7 @@ def child_folder(ctx, trigger_search: bool = True):
 
 
 class FolderTreeCommands(ActionKit.MenuBase):
-    NAME = "FolderTree"
+    NAME = ActionKit.MenuPath.FOLDER_TREE
     PRIORITY = 30
 
     @classmethod

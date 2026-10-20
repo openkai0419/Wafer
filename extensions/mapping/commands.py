@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from wafer.plugin import CommandMeta, CommandParam, MenuGroup, require
+from wafer.plugin import CommandMeta, CommandParam, MenuGroup, MenuPath, require
 from wafer.qt.common.notifier import Notifier
 
 PANEL_NAME = "Mapping"
@@ -139,7 +139,7 @@ def _group_mode_checked() -> bool:
 
 
 class MappingGridCommands(MenuGroup):
-    NAME = "File"
+    NAME = MenuPath.SELECTION
     PRIORITY = 1000
     DEFAULT_ENABLED = True
 
@@ -154,7 +154,7 @@ class MappingGridCommands(MenuGroup):
 
 
 class MappingViewCommands(MenuGroup):
-    NAME = "Mapping View"
+    NAME = f"{MenuPath.WIDGETS}/{PANEL_NAME}"
     PRIORITY = 1001
     DEFAULT_ENABLED = True
 

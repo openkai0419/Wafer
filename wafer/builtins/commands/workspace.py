@@ -322,7 +322,7 @@ def new_window(ctx):
 
 
 class WorkspaceCommands(ActionKit.MenuBase):
-    NAME = "Workspace"
+    NAME = ActionKit.MenuPath.WORKSPACE
     PRIORITY = 70
 
     @classmethod

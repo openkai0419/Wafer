@@ -1,4 +1,4 @@
-from wafer.plugin import MenuGroup, CommandMeta, CommandParam, require, require_v
+from wafer.plugin import MenuGroup, MenuPath, CommandMeta, CommandParam, require, require_v
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
 
@@ -44,7 +44,7 @@ def toggle_pause_in_background(ctx, sm):
 
 
 class VideoGridCommands(MenuGroup):
-    NAME = "Video"
+    NAME = f"{MenuPath.WIDGETS}/Video"
     PRIORITY = 1000
     DEFAULT_ENABLED = True
 

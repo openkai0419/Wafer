@@ -77,7 +77,7 @@ def remove_database(ctx, w):
 
 
 class DatabaseCommands(ActionKit.MenuBase):
-    NAME = "Workspace"
+    NAME = ActionKit.MenuPath.WORKSPACE
     PRIORITY = 72
 
     @classmethod

@@ -1,4 +1,4 @@
-from wafer.plugin import MenuGroup, CommandMeta, require
+from wafer.plugin import MenuGroup, MenuPath, CommandMeta, require
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
 
@@ -12,7 +12,7 @@ def toggle_fit_mode(ctx, vw):
 
 
 class AnimatedViewerCommands(MenuGroup):
-    NAME = "FileViewer"
+    NAME = f"{MenuPath.WIDGETS}/Animated"
     PRIORITY = 1200
     DEFAULT_ENABLED = True
 

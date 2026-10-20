@@ -149,7 +149,7 @@ def _delete_param():
 
 
 class FileRecollectCommands(ActionKit.MenuBase):
-    NAME = "File"
+    NAME = ActionKit.MenuPath.SELECTION
     SCOPE = "*"
     PRIORITY = 12
 

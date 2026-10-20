@@ -31,30 +31,30 @@ def test_build_menu_does_not_expand_string_to_chars(qtbot):
 
 class TestRebaseToken:
     def test_command_strips_root(self):
-        assert MenuMaker._flatten_for_use(None, "file/open", "file") == "open"
+        assert MenuMaker._flatten_for_use("file/open", "file") == "open"
 
     def test_command_nested_strips_root(self):
-        assert MenuMaker._flatten_for_use(None, "file/edit/paste", "file") == "edit/paste"
+        assert MenuMaker._flatten_for_use("file/edit/paste", "file") == "edit/paste"
 
     def test_command_different_root_unchanged(self):
-        assert MenuMaker._flatten_for_use(None, "view/zoom", "file") == "view/zoom"
+        assert MenuMaker._flatten_for_use("view/zoom", "file") == "view/zoom"
 
     def test_sep_strips_root(self):
-        result = MenuMaker._flatten_for_use(None, "file/-", "file")
+        result = MenuMaker._flatten_for_use("file/-", "file")
         assert result == "-"
         assert is_sep_token(result)
 
     def test_sep_nested_strips_root(self):
-        result = MenuMaker._flatten_for_use(None, "file/edit/-", "file")
+        result = MenuMaker._flatten_for_use("file/edit/-", "file")
         assert result == "edit/-"
         assert is_sep_token(result)
 
     def test_section_strips_root(self):
-        result = MenuMaker._flatten_for_use(None, "file/:Section", "file")
+        result = MenuMaker._flatten_for_use("file/:Section", "file")
         assert result == ":Section"
         assert is_section_token(result)
 
     def test_section_nested_strips_root(self):
-        result = MenuMaker._flatten_for_use(None, "file/sub/:Label", "file")
+        result = MenuMaker._flatten_for_use("file/sub/:Label", "file")
         assert result == "sub/:Label"
         assert is_section_token(result)

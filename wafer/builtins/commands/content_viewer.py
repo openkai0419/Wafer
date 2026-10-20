@@ -116,7 +116,7 @@ def toggle_open_contained_files_as_list(ctx, provider):
 
 
 class FileViewerCommands(ActionKit.MenuBase):
-    NAME = "FileViewer"
+    NAME = ActionKit.MenuPath.FILE_VIEWER
     PRIORITY = 50
 
     @classmethod

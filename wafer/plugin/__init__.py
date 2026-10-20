@@ -39,6 +39,7 @@ _EXPORTS = {
     "CommandParam": ("..qt.commands.bridge", "ActionKit.Param"),
     "MenuGroup": ("..qt.commands.bridge", "ActionKit.MenuBase"),
     "DragMenuGroup": ("..qt.commands.bridge", "ActionKit.DragMenuBase"),
+    "MenuPath": ("..qt.commands.bridge", "ActionKit.MenuPath"),
 }
 
 

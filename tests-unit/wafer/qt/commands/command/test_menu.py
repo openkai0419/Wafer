@@ -224,3 +224,64 @@ class TestMenuHub:
             assert reg.has_command("__test_sep_cmd2__")
         finally:
             MenuGroup._flags.pop(SepGroup, None)
+
+
+def _group(name: str, priority: int, items: list):
+    return type(f"_G_{name.replace('/', '_')}_{priority}", (MenuGroup,), {"NAME": name, "PRIORITY": priority, "commands": classmethod(lambda cls: list(items))})
+
+
+def _noop(ctx):
+    return None
+
+
+class TestNestedMenuGroups:
+    def test_nested_name_places_commands_under_the_parent_folder(self):
+        _group("__TNest__/Grid", 10, [":Grid", CommandMeta(path="__tnest_grid__", display="G", func=_noop)]).register()
+        hub = MenuHub.instance()
+        assert hub.get_path_by_command_id("__tnest_grid__") == "__TNest__/Grid/__tnest_grid__"
+        assert hub.find_folder_prefixes("Grid") == ["__TNest__/Grid"]
+
+    def test_no_separator_between_blocks_that_are_each_one_submenu(self):
+        _group("__TSep__", 10, [CommandMeta(path="__tsep_direct__", display="D", func=_noop)]).register()
+        _group("__TSep__/A", 20, [CommandMeta(path="__tsep_a__", display="A", func=_noop)]).register()
+        _group("__TSep__/B", 30, [CommandMeta(path="__tsep_b__", display="B", func=_noop)]).register()
+        assert MenuHub.instance().collect_items_by_folder("__TSep__") == [
+            "__TSep__/__tsep_direct__",
+            "__TSep__/-",
+            "__TSep__/A/__tsep_a__",
+            "__TSep__/B/__tsep_b__",
+        ]
+
+    def test_placing_a_registered_command_elsewhere_keeps_its_path_without_warning(self, monkeypatch):
+        warnings = []
+        monkeypatch.setattr("wafer.qt.commands.command.menu.AppLogger.warning", lambda msg, *a, **k: warnings.append(msg))
+        _group("__TPlace__", 10, [CommandMeta(path="__tplace_cmd__", display="C", func=_noop)]).register()
+        _group("__TPlaceOther__", 20, ["__tplace_cmd__"]).register()
+        hub = MenuHub.instance()
+        assert hub.get_path_by_command_id("__tplace_cmd__") == "__TPlace__/__tplace_cmd__"
+        assert "__TPlaceOther__/__tplace_cmd__" in hub.collect_items_by_folder("__TPlaceOther__")
+        assert warnings == []
+
+    def test_definition_replaces_a_path_that_only_came_from_a_placement(self):
+        _group("__TPlaceFirst__", 10, ["__tplace_late__"]).register()
+        _group("__TPlaceDef__", 20, [CommandMeta(path="__tplace_late__", display="L", func=_noop)]).register()
+        assert MenuHub.instance().get_path_by_command_id("__tplace_late__") == "__TPlaceDef__/__tplace_late__"
+
+    def test_menu_order_moves_listed_blocks_after_the_unlisted_ones(self):
+        first = _group("__TOrder__/First", 10, [CommandMeta(path="__torder_first__", display="F", func=_noop)])
+        second = _group("__TOrder__/Second", 20, [CommandMeta(path="__torder_second__", display="S", func=_noop)])
+        builtin = _group("__TOrder__", 5, [CommandMeta(path="__torder_builtin__", display="B", func=_noop)])
+        first.register()
+        second.register()
+        builtin.register()
+        hub = MenuHub.instance()
+        prev = list(hub._menu_order)
+        try:
+            hub.set_menu_order(["__TOrder__/Second", "__TOrder__/First"])
+            assert [s for s in hub.collect_items_by_folder("__TOrder__") if not s.endswith("/-")] == [
+                "__TOrder__/__torder_builtin__",
+                "__TOrder__/Second/__torder_second__",
+                "__TOrder__/First/__torder_first__",
+            ]
+        finally:
+            hub.set_menu_order(prev)

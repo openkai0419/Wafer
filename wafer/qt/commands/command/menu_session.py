@@ -39,6 +39,14 @@ class MenuSession:
             return None
         return MenuSpec(self, plan)
 
+    def from_folders(self, folders: list[str]):
+        try:
+            plan = self.maker.from_folders([str(f) for f in folders])
+        except Exception as e:
+            AppLogger.warning(str(e), exc=e)
+            return None
+        return MenuSpec(self, plan)
+
     def all_roots(self):
         try:
             plan = self.maker.all_roots()

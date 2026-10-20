@@ -48,8 +48,8 @@ def show_readme(ctx):
 
 
 class ToolCommands(ActionKit.MenuBase):
-    NAME = "Setting"
-    PRIORITY = 95
+    NAME = ActionKit.MenuPath.WIDGETS
+    PRIORITY = 25
     SCOPE = "*"
 
     @classmethod
@@ -81,7 +81,7 @@ class ToolCommands(ActionKit.MenuBase):
 
 
 class HelpCommands(ActionKit.MenuBase):
-    NAME = "Setting"
+    NAME = ActionKit.MenuPath.SETTING
     PRIORITY = 97
     SCOPE = "*"
 

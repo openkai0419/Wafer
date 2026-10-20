@@ -10,6 +10,24 @@ MENU_SEPARATOR = "-"
 MENU_SECTION_PREFIX = ":"
 
 
+class MenuPath:
+    FILE = "File"
+    SELECTION = "Selection"
+    QUERY = "Query"
+    WIDGETS = "Widgets"
+    PANEL = "Panel"
+    WORKSPACE = "Workspace"
+    PROCESS = "Process"
+    SETTING = "Setting"
+    ROOTS = (FILE, SELECTION, QUERY, WIDGETS, PANEL, WORKSPACE, PROCESS, SETTING)
+
+    FOLDER_TREE = f"{WIDGETS}/FolderTree"
+    GRID_VIEW = f"{WIDGETS}/GridView"
+    FILE_VIEWER = f"{WIDGETS}/FileViewer"
+    WINDOW = f"{WIDGETS}/Window"
+    MENUS = f"{WIDGETS}/Menus"
+
+
 def split_menu_path(raw: str) -> list[str]:
     return [p for p in raw.split("/") if p]
 
@@ -107,6 +125,7 @@ class MenuGroup(PluginBase):
         defs: list[CommandMeta] = []
         items: list[str] = []
         cmd_paths: dict[str, str] = {}
+        placed_ids: set[str] = set()
         if not isinstance(res, list):
             raise ValueError("commands() must return list[str|CommandMeta]")
         for e in res:
@@ -140,6 +159,7 @@ class MenuGroup(PluginBase):
                     raise ValueError(f"Duplicate command id in {t.__name__}: {cid}")
                 continue
             cmd_paths[cid] = s
+            placed_ids.add(cid)
         if defs:
             register_command_defs(defs)
         if items:
@@ -147,7 +167,7 @@ class MenuGroup(PluginBase):
         if cmd_paths:
             self._cmd_paths[t] = cmd_paths
         try:
-            MenuHub.instance().register_paths(t, cmd_paths, items)
+            MenuHub.instance().register_paths(t, cmd_paths, items, placed_ids=placed_ids)
         except Exception as e:
             AppLogger.warning(f"MenuHub.register_paths failed: {t.__name__}", exc=e)
         self._flags[t] = True
@@ -198,29 +218,48 @@ class MenuHub:
             inst._folder_set = set()
             inst._folder_prefix_map = {}
             inst._menu_order = []
+            inst._placed_only = set()
             cls._instance = inst
         return cls._instance
 
     def set_menu_order(self, order: list[str]):
         self._menu_order = list(order)
+        self._reindex_folder_blocks()
+
+    def ordered_menu_classes(self) -> list[type]:
+        order_map = {name: i for i, name in enumerate(self._menu_order)}
+
+        def block_key(cls: type) -> tuple[int, int]:
+            name = getattr(cls, "NAME", "")
+            return (1, order_map[name]) if name in order_map else (0, 0)
+
+        return sorted(self._menu_items, key=block_key)
 
     @profiler.profile
-    def register_paths(self, menu_cls: type, cmd_paths: dict[str, str], items: list[str] | None = None):
+    def register_paths(self, menu_cls: type, cmd_paths: dict[str, str], items: list[str] | None = None, *, placed_ids: set[str] | frozenset[str] = frozenset()):
         if cmd_paths:
             self._by_menu[menu_cls] = dict(cmd_paths)
             for k, v in cmd_paths.items():
                 existing = self._all_paths.get(k)
-                if existing is not None:
-                    if existing != v:
-                        AppLogger.warning(f"Command '{k}' path conflict: '{existing}' vs '{v}', keeping existing")
-                        continue
+                if k in placed_ids:
+                    if existing is None:
+                        self._all_paths[k] = v
+                        self._placed_only.add(k)
+                    continue
+                if existing is not None and existing != v and k not in self._placed_only:
+                    AppLogger.warning(f"Command '{k}' path conflict: '{existing}' vs '{v}', keeping existing")
+                    continue
                 self._all_paths[k] = v
+                self._placed_only.discard(k)
         if items is not None:
             self._menu_items[menu_cls] = list(items)
-            self._folder_blocks.clear()
-            for stored_items in self._menu_items.values():
-                self._index_folder_blocks(stored_items)
+            self._reindex_folder_blocks()
         self._rebuild_folder_caches()
+
+    def _reindex_folder_blocks(self):
+        self._folder_blocks.clear()
+        for cls in self.ordered_menu_classes():
+            self._index_folder_blocks(self._menu_items[cls])
 
     def get_path_by_command_id(self, command_id: str) -> str:
         return self._all_paths.get(command_id, "")
@@ -257,11 +296,12 @@ class MenuHub:
         filtered: list[list[str]] = self._folder_blocks.get(f, [])
         out: list[str] = []
         pre = rebase_to.strip("/") if rebase_to else f
-        first = True
-        for b in filtered:
-            if not first:
+        prev_submenu: str | None = None
+        for i, b in enumerate(filtered):
+            submenu = self._single_submenu(b, fparts)
+            if i > 0 and not (prev_submenu and submenu):
                 out.append(f"{pre}/{MENU_SEPARATOR}")
-            first = False
+            prev_submenu = submenu
             for s in b:
                 if not isinstance(s, str) or not s:
                     continue
@@ -294,6 +334,25 @@ class MenuHub:
                     rel = pfull[len(f) + 1 :]
                     out.append(f"{pre}/{rel}".lstrip("/"))
         return out
+
+    def _token_parts(self, s: str) -> list[str]:
+        if is_sep_token(s) or is_section_token(s) or "/" in s:
+            return split_menu_path(s)
+        return split_menu_path(self._all_paths.get(s, ""))
+
+    def _single_submenu(self, block: list[str], fparts: list[str]) -> str | None:
+        submenus: set[str] = set()
+        for s in block:
+            if not isinstance(s, str) or not s:
+                continue
+            parts = self._token_parts(s)
+            if parts[: len(fparts)] != fparts:
+                continue
+            rel = parts[len(fparts) :]
+            if len(rel) < 2:
+                return None
+            submenus.add(rel[0])
+        return submenus.pop() if len(submenus) == 1 else None
 
     @profiler.profile
     def _index_folder_blocks(self, items: list[str]):

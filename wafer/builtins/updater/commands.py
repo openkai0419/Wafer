@@ -13,7 +13,7 @@ def check_for_updates(ctx):
 
 
 class UpdateCommands(ActionKit.MenuBase):
-    NAME = "Setting"
+    NAME = ActionKit.MenuPath.SETTING
     PRIORITY = 90
     SCOPE = "*"
 

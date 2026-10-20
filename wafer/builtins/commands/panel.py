@@ -127,7 +127,7 @@ def solo_current_panel(ctx, *, w):
 
 
 class PanelCommands(ActionKit.MenuBase):
-    NAME = "Panels"
+    NAME = ActionKit.MenuPath.PANEL
     PRIORITY = 60
 
     _CORE_PANELS = ["Toolbar", "Folder Tree", "Search", "Grid View", "Content Viewer", "Meta Viewer"]

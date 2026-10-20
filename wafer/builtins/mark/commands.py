@@ -6,7 +6,7 @@ from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...core.db.dispatch import send_to_db_scope
 from ...core.db.key_value import normalize_data_scope
 from ...core.lang.manager import t
-from ...plugin import CommandMeta, CommandParam, MenuGroup, require
+from ...plugin import CommandMeta, CommandParam, MenuGroup, MenuPath, require
 from ...core.logs import AppLogger
 from ...qt.common.notifier import Notifier
 from . import dialogs
@@ -163,7 +163,7 @@ def _mark_name_choices() -> list[str]:
 
 
 class MarkCommands(MenuGroup):
-    NAME = "File"
+    NAME = MenuPath.SELECTION
     DEFAULT_ENABLED = True
     PRIORITY = 35
 

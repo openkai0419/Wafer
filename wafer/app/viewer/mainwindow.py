@@ -6,7 +6,7 @@ from ...core.logs import AppLogger
 from ...qt.common.notifier import Notifier
 from ...constants import APP_NAME, DEFAULT_DB_NAME
 from ...core.db.setting_db import SettingDB
-from ..indexer.watch.path_scope import compile_ignore_patterns
+from ...core.db.path_scope import compile_ignore_patterns
 from wafer.core.lang.manager import t
 
 from ...qt.common.rate_limit import qt_debounce

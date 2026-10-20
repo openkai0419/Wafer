@@ -14,7 +14,8 @@ from ...core.common.paths import normalize_path
 from ...core.profiling import profiler
 from .db_writer import DatabaseWriter
 from .receivers.parser_receiver import trigger_parser_pending
-from .watch.path_scope import compile_ignore_patterns, contains_path_prefix, normalize_prefixes
+from ...core.db.path_scope import compile_ignore_patterns
+from .watch.path_scope import contains_path_prefix, normalize_prefixes
 from .runtime.progress_aggregator import ProgressAggregator
 from .runtime.scheduler import TaskScheduler
 from .runtime.task import CancelToken, Task, TaskPriority

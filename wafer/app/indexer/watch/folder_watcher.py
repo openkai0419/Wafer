@@ -8,7 +8,8 @@ from ....core.logs import AppLogger
 from ....core.common.paths import normalize_path
 from ....core.profiling import profiler
 from ..db_writer import DatabaseWriter
-from .path_scope import compile_ignore_patterns, contains_path_prefix, normalize_prefixes
+from ....core.db.path_scope import compile_ignore_patterns
+from .path_scope import contains_path_prefix, normalize_prefixes
 from ..runtime.progress_aggregator import ProgressAggregator
 from ..scanner import DirectoryScanner
 from ..runtime.scheduler import TaskScheduler

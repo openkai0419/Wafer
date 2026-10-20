@@ -32,7 +32,7 @@ def icon_path() -> str:
     return str(launcher) if launcher else dev_interpreter()
 
 
-def is_enabled(key: str = MENU_KEY) -> bool:
+def key_exists(key: str) -> bool:
     if sys.platform != "win32":
         return False
     try:
@@ -40,6 +40,10 @@ def is_enabled(key: str = MENU_KEY) -> bool:
     except FileNotFoundError:
         return False
     return True
+
+
+def is_enabled(key: str = MENU_KEY) -> bool:
+    return key_exists(key)
 
 
 def stored_command(key: str = MENU_KEY) -> str | None:
@@ -62,10 +66,9 @@ def enable(command: str, key: str = MENU_KEY) -> None:
 def disable(key: str = MENU_KEY) -> None:
     if not is_enabled(key):
         return
-    try:
-        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key + r"\command")
-    except FileNotFoundError:
-        pass
+    command_key = key + r"\command"
+    if key_exists(command_key):
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, command_key)
     winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key)
 
 

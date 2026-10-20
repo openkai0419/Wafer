@@ -36,6 +36,13 @@ def test_visible_window_is_not_restored(monkeypatch):
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="win32-only")
+def test_any_pointer_sized_handle_is_accepted():
+    assert foreground.activate_window(2**31 + 12345) is False
+    assert foreground.activate_window(2**32 + 5) is False
+    assert foreground.activate_window(2**40) is False
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="win32-only")
 def test_failed_foreground_returns_false(monkeypatch):
     calls = []
     monkeypatch.setattr(ctypes, "windll", SimpleNamespace(user32=fake_user32(0, 0, calls)), raising=False)

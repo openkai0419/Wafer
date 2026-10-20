@@ -679,7 +679,8 @@ class Program
             catch (Exception ex)
             {
                 summary = "Failed to remove the install folder:\n" + ex.Message
-                    + "\n\nPlease end all Wafer processes and remove the remaining files manually:\n" + appRoot;
+                    + "\n\nPlease end all Wafer processes and remove the remaining files manually:\n" + appRoot
+                    + menuNote;
                 return false;
             }
             summary = "Wafer has been uninstalled." + menuNote;

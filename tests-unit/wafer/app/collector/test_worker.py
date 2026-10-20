@@ -226,3 +226,23 @@ def test_stop_shuts_plugin_down_before_waiting_for_workers(make_worker):
 
     assert released.is_set()
     assert elapsed < 5, f"stop() waited {elapsed:.1f}s for in-flight work instead of releasing it first"
+
+
+def test_process_batch_passes_source_key_unchanged(make_worker):
+    from unittest.mock import MagicMock
+    from wafer.plugin.collector.base import CollectorResult
+
+    worker = make_worker()
+    worker._node = MagicMock()
+    received = []
+
+    def record(path, info):
+        received.append(path)
+        return CollectorResult(source=path, status=True)
+
+    worker._plugin.process = record
+    key = "b:/Data/./Archive.zip"
+    worker._process_batch([key], {key: [0.0, 0]}, "test_db")
+
+    assert received == [key]
+    assert worker._node.send_reliable.call_args[0][1]["results"][0]["source"] == key

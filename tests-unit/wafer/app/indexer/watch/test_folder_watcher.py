@@ -599,3 +599,14 @@ class TestZipWatchScenarios:
         assert scanner.request_update.called
         paths = scanner.request_update.call_args[0][0]
         assert "archive.zip" in paths
+
+
+def test_exec_rename_keeps_case_only_rename(tmp_path):
+    wf, scheduler, _, _, _ = _make_watcher()
+    new_path = tmp_path / "Foo.png"
+    new_path.write_bytes(b"")
+
+    wf._exec("rename", [(str(tmp_path / "foo.png"), str(new_path))])
+
+    task = scheduler.submit.call_args[0][0]
+    assert task.name == "rename_paths"

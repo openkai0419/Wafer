@@ -4,12 +4,21 @@ import sqlite3
 import threading
 from abc import abstractmethod
 from dataclasses import dataclass, asdict
-from collections.abc import Sequence
-from typing import Any
+from collections.abc import Callable, Sequence
+from typing import Any, TypeVar
 
 from ..registry import BasePlugin
 
 _READER_INIT_LOCK = threading.Lock()
+T = TypeVar("T")
+
+
+def _fetch_all(conn: sqlite3.Connection, sql: str, params: Sequence[Any]) -> list[tuple]:
+    cur = conn.cursor()
+    try:
+        return cur.execute(sql, tuple(params)).fetchall()
+    finally:
+        cur.close()
 
 
 @dataclass
@@ -43,21 +52,24 @@ class BaseParser(BasePlugin):
     _reader: sqlite3.Connection | None = None
     _reader_lock: threading.Lock | None = None
 
+    @classmethod
+    def trigger_keys(cls, db_name: str) -> tuple[str, ...]:
+        return cls.TRIGGER_KEYS
+
     @abstractmethod
     def process(self, path: str, file_info: tuple, metadata: dict) -> ParserResult: ...
 
     def query_db(self, sql: str, params: Sequence[Any] = ()) -> list[tuple]:
+        return self.read_db(lambda conn: _fetch_all(conn, sql, params), [])
+
+    def read_db(self, read: Callable[[sqlite3.Connection], T], default: T | None = None) -> T | None:
         reader, lock = self._reader, self._reader_lock
         if reader is None or lock is None:
             reader, lock = self._open_reader()
         with lock:
             if self._reader is None:
-                return []
-            cur = reader.cursor()
-            try:
-                return cur.execute(sql, tuple(params)).fetchall()
-            finally:
-                cur.close()
+                return default
+            return read(reader)
 
     def _open_reader(self) -> tuple[sqlite3.Connection, threading.Lock]:
         from ...core.db.db_utils import open_readonly
@@ -87,12 +99,12 @@ class BaseParser(BasePlugin):
         pass
 
     @staticmethod
-    def notify_to(name: str, payload: Any = None) -> None:
+    def notify_to(name: str, payload: Any = None, db: str = "") -> None:
         from ...qt.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
         if node:
-            node.send("plugin.notify", payload, dst=f"parser-{name}")
+            node.send("plugin.notify", payload, dst=f"parser-{name}", db=db)
 
 
 class BaseParserPlugin(BaseParser):

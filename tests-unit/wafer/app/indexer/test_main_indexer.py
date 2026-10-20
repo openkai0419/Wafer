@@ -1,7 +1,9 @@
 import threading
 from unittest.mock import MagicMock, patch
 
-from wafer.app.indexer.main_indexer import IndexerProcess
+from types import SimpleNamespace
+
+from wafer.app.indexer.main_indexer import IndexerProcess, saved_parser_names
 from wafer.app.indexer.runtime.task import TaskPriority
 
 
@@ -274,6 +276,39 @@ class TestOnRecollect:
         proc.scheduler.submit.assert_not_called()
 
 
+class TestRecollectDispatch:
+    @patch("wafer.app.indexer.main_indexer.parser_resolver")
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_rereads_trigger_keys_before_backfill(self, mock_node_cls, mock_resolver):
+        mock_node_cls.return_value = MagicMock()
+        mock_resolver.status_name.side_effect = lambda n: f"status_{n}"
+        mock_resolver.trigger_keys.side_effect = lambda n: (f"{n}.k",)
+        order = MagicMock()
+        order.attach_mock(mock_resolver.refresh_trigger_keys, "refresh")
+        proc = IndexerProcess("test")
+        proc.scanner = MagicMock()
+        proc._progress = MagicMock()
+        proc.parser_names = ["p1", "p2"]
+        order.attach_mock(proc.scanner.set_parsers, "set_parsers")
+        order.attach_mock(proc.scanner.backfill_pending, "backfill")
+        proc._recollect_dispatch()
+        assert [c[0] for c in order.mock_calls] == ["refresh", "set_parsers", "backfill"]
+        proc.scanner.set_parsers.assert_called_once_with([("status_p1", ("p1.k",)), ("status_p2", ("p2.k",))])
+        proc._progress.send_event.assert_called_with("update")
+
+    @patch("wafer.app.indexer.main_indexer.parser_resolver")
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_without_parsers_only_backfills(self, mock_node_cls, mock_resolver):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        proc.scanner = MagicMock()
+        proc._progress = MagicMock()
+        proc._recollect_dispatch()
+        mock_resolver.refresh_trigger_keys.assert_not_called()
+        proc.scanner.set_parsers.assert_not_called()
+        proc.scanner.backfill_pending.assert_called_once_with()
+
+
 class TestOnKvConvertScope:
     @patch("wafer.app.indexer.main_indexer.Node")
     def test_invalid_payload_returns_true(self, mock_node_cls):
@@ -326,3 +361,27 @@ class TestOnKvConvertScope:
             },
             dst="viewer",
         )
+
+
+class TestSavedParserNames:
+    @patch("wafer.app.indexer.main_indexer.parser_resolver")
+    def test_unknown_parser_follows_per_db_default(self, mock_resolver):
+        registry = {
+            "plain": SimpleNamespace(DEFAULT_ENABLED=True),
+            "off_per_db": SimpleNamespace(DEFAULT_ENABLED=True, DEFAULT_ENABLED_PER_DB=False),
+            "on_per_db": SimpleNamespace(DEFAULT_ENABLED=False, DEFAULT_ENABLED_PER_DB=True),
+            "off": SimpleNamespace(DEFAULT_ENABLED=False),
+        }
+        mock_resolver.registry = registry
+        assert saved_parser_names(list(registry), {"collector_a"}, ["collector_a"]) == ["plain", "on_per_db"]
+
+    @patch("wafer.app.indexer.main_indexer.parser_resolver")
+    def test_saved_or_known_parsers_are_not_auto_enabled(self, mock_resolver):
+        registry = {
+            "saved": SimpleNamespace(DEFAULT_ENABLED=False),
+            "known": SimpleNamespace(DEFAULT_ENABLED=True),
+            "off_per_db": SimpleNamespace(DEFAULT_ENABLED=True, DEFAULT_ENABLED_PER_DB=False),
+        }
+        mock_resolver.registry = registry
+        assert saved_parser_names(list(registry), {"known"}, ["saved"]) == ["saved"]
+        assert saved_parser_names(list(registry), {"known"}, ["saved", "off_per_db"]) == ["saved", "off_per_db"]

@@ -61,7 +61,7 @@ Run `Wafer-Web.exe` (or `python main.py --webui`) to access Wafer from a browser
 | Viewer / Grid | File rendering, thumbnails, and viewer behavior | `image`, `animated`, `video` |
 | Collector / Parser | Collecting metadata, or tagging with AI to make your files searchable | `exiftool`, `ffmpeg`, `color`, `wd14`, `florence`, `duplicate` |
 | Search / Filter | Additional ways to search and narrow results, such as date ranges, regular expressions, and color distance | `additional_filters`, `color` |
-| Layout / UI | Grid layouts, custom panels, and others | `additional_layout`, extension settings panels |
+| Layout / UI | Grid layouts, custom panels, and others | `additional_layout`, `mapping`, extension settings panels |
 | Archive Support | Treat archive contents as logical child paths and delegate rendering to existing plugins | `zip` |
 
 - **Enable Extensions**: Choose which extensions to enable in the tab above, and choose which Database stores metadata collection in the tab below.

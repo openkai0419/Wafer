@@ -4,7 +4,6 @@ import signal
 import threading
 
 from ...core.logs import AppLogger
-from ...core.common.paths import normalize_path
 from ...core.ipc.node import Node
 from ...core.ipc.transport import BROKER_LOST_TIMEOUT
 from ...plugin.parser.handler import parser_resolver
@@ -101,7 +100,7 @@ class ParserWorker:
                 try:
                     info = file_info.get(p, (0.0, 0))
                     meta = metadata.get(p, {})
-                    result = self._plugin.process(normalize_path(p), info, meta)
+                    result = self._plugin.process(p, info, meta)
                     return result.to_dict() if isinstance(result, ParserResult) else result
                 except Exception as e:
                     AppLogger.warning(f"[Parser] process failed: {p}: {e}", exc=e)

@@ -11,8 +11,18 @@ export const DEFAULT_LABELS = {
   slideshowStop: 'stop slideshow',
   notFound: 'error: item not found',
   loadError: (message) => `error: ${message}`,
+  mediaError: (name) => `error: failed to load ${name}`,
   download: (name) => `download: ${name}`,
 };
+
+function loaded(element) {
+  const done = element instanceof HTMLVideoElement ? 'loadeddata' : 'load';
+  if (!(element instanceof HTMLImageElement || element instanceof HTMLVideoElement)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    element.addEventListener(done, resolve, { once: true });
+    element.addEventListener('error', reject, { once: true });
+  });
+}
 
 export class Viewer {
   constructor(onIndexChange, onInfo, onSelectFolder, labels = {}) {
@@ -158,49 +168,64 @@ export class Viewer {
   async open(index, item) {
     if (index < 0 || index >= this.total) return;
     this.clearTimer();
-    this.token++;
+    const token = ++this.token;
     this.index = index;
+    this.item = null;
+    this.stage.replaceChildren();
+    this.caption.textContent = `${index + 1}/${this.total}`;
     this.el.classList.remove('hidden');
+    this.el.classList.add('loading');
+    const settle = (message) => {
+      this.el.classList.remove('loading');
+      if (message !== undefined) this.caption.textContent = message;
+    };
     if (!item) {
       try {
         const data = await this.client.items(index, 1);
         item = data.items[0];
       } catch (e) {
-        if (this.index !== index) return;
-        this.caption.textContent = this.labels.loadError(e.message);
+        if (token === this.token) settle(this.labels.loadError(e.message));
         return;
       }
       if (!item) {
-        if (this.index !== index) return;
-        this.caption.textContent = this.labels.notFound;
+        if (token === this.token) settle(this.labels.notFound);
         return;
       }
     }
-    if (this.index !== index) return;
-    this.item = item;
-    this.caption.textContent = `${index + 1}/${this.total}  ${item.name}`;
+    if (token !== this.token) return;
     const url = fileUrl(this.client.db, item.path);
+    const media = this.render(item, url);
+    this.caption.textContent = `${index + 1}/${this.total}  ${item.name}`;
+    this.item = item;
+    this.stage.replaceChildren(media);
+    this.onIndexChange(index, item);
+    this.armSlideshow();
+    loaded(media).then(
+      () => token === this.token && settle(),
+      () => token === this.token && settle(this.labels.mediaError(item.name)),
+    );
+  }
+
+  render(item, url) {
     if (item.kind === 'image') {
       const img = document.createElement('img');
       img.src = url;
-      this.stage.replaceChildren(img);
-    } else if (item.kind === 'video') {
+      return img;
+    }
+    if (item.kind === 'video') {
       const video = document.createElement('video');
       video.src = url;
       video.controls = true;
       video.autoplay = true;
       video.volume = load('volume', 1);
       video.addEventListener('volumechange', () => save('volume', video.volume));
-      this.stage.replaceChildren(video);
-    } else {
-      const link = document.createElement('a');
-      link.href = url;
-      link.textContent = this.labels.download(item.name);
-      link.download = item.name;
-      this.stage.replaceChildren(link);
+      return video;
     }
-    this.onIndexChange(index, item);
-    this.armSlideshow();
+    const link = document.createElement('a');
+    link.href = url;
+    link.textContent = this.labels.download(item.name);
+    link.download = item.name;
+    return link;
   }
 
   step(delta) {
@@ -214,7 +239,9 @@ export class Viewer {
     if (this.slideshowToggle) this.updateMenu();
     if (this.menu) this.menu.classList.add('hidden');
     this.el.classList.add('hidden');
+    this.el.classList.remove('loading');
     this.stage.replaceChildren();
+    this.caption.textContent = '';
     this.index = -1;
     this.item = null;
   }

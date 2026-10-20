@@ -205,6 +205,10 @@
         "GridView": {
           "id": "grid.scale_up",
           "args": {}
+        },
+        "MappingView": {
+          "id": "mapping.image_scale_up",
+          "args": {}
         }
       }
     },
@@ -220,6 +224,10 @@
       "scopes": {
         "GridView": {
           "id": "grid.scale_down",
+          "args": {}
+        },
+        "MappingView": {
+          "id": "mapping.image_scale_down",
           "args": {}
         }
       }

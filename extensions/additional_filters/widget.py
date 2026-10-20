@@ -109,12 +109,17 @@ class _DateInput(QtWidgets.QWidget):
         self._drop_btn.setIcon(themed_icon("chevron_down"))
         self._drop_btn.setMinimumSize(dpix(20), dpix(22))
         self._drop_btn.setFocusPolicy(QtCore.Qt.NoFocus)
-        ThemeManager.instance().on_theme_changed.connect(lambda _: self._drop_btn.setIcon(themed_icon("chevron_down")))
+        on_theme_changed = self._on_theme_changed
+        ThemeManager.instance().on_theme_changed.connect(on_theme_changed)
+        self.destroyed.connect(lambda: ThemeManager.instance().on_theme_changed.disconnect(on_theme_changed))
         self._drop_btn.released.connect(self._show_popup)
         layout.addWidget(self._drop_btn)
 
         self._popup: _CalendarPopup | None = None
         self._refresh_display()
+
+    def _on_theme_changed(self, _palette):
+        self._drop_btn.setIcon(themed_icon("chevron_down"))
 
     def state(self) -> str:
         return self._state

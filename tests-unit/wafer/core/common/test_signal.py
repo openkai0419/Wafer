@@ -102,3 +102,17 @@ def test_emit_from_multiple_threads():
 
     _run_all([threading.Thread(target=emitter, args=(i,)) for i in range(4)])
     assert len(results) == 200
+
+
+def test_disconnect_stops_delivery_and_reports_unknown_callbacks():
+    sig = Signal()
+    received = []
+
+    def callback(value):
+        received.append(value)
+
+    sig.connect(callback)
+    assert sig.disconnect(callback) is True
+    sig.emit(1)
+    assert received == []
+    assert sig.disconnect(callback) is False

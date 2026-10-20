@@ -31,6 +31,10 @@
         "*": {
           "id": "grid.select_all",
           "args": {}
+        },
+        "MappingView": {
+          "id": "mapping.select_all",
+          "args": {}
         }
       }
     },
@@ -177,6 +181,17 @@
       "scopes": {
         "*": {
           "id": "ft.prev_folder",
+          "args": {}
+        }
+      }
+    },
+    {
+      "key": {
+        "key": "F"
+      },
+      "scopes": {
+        "MappingView": {
+          "id": "mapping.frame_selection",
           "args": {}
         }
       }

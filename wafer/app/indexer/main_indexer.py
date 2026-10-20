@@ -24,6 +24,14 @@ from .watch.setting_watcher import SettingWatcher
 _IDLE_GRACE_SECONDS = 60.0
 
 
+def saved_parser_names(all_parsers, collector_names, enabled) -> list[str]:
+    from ...plugin.settings import default_enabled_per_db
+
+    enabled_set = set(enabled)
+    all_known = set(collector_names) | enabled_set
+    return [n for n in all_parsers if n in enabled_set or (n not in all_known and default_enabled_per_db(parser_resolver.registry.get(n)))]
+
+
 class IndexerProcess:
     def __init__(self, name, stop_event=None, tray_pid=None):
         self.db_name = name
@@ -40,6 +48,7 @@ class IndexerProcess:
         self.parser_dispatcher = None
         self.parser_receiver = None
         self._progress = None
+        self.parser_names: list[str] = []
         self.zmq = Node("indexer", db=name, consumer=True, broker_lost_timeout=BROKER_LOST_TIMEOUT)
         self.zmq.subscribe("cleanup", lambda msg: self.cleanup() or True)
         self.zmq.subscribe("rescan", lambda msg: self.rescan() or True)
@@ -77,11 +86,11 @@ class IndexerProcess:
 
         all_parsers = parser_resolver.names()
         if enabled is not None:
-            all_known = {c[0] for c in all_collectors} | set(enabled)
-            parser_names = [n for n in all_parsers if n in enabled_set or (n not in all_known and getattr(parser_resolver.registry.get(n), "DEFAULT_ENABLED", False))]
+            parser_names = saved_parser_names(all_parsers, {c[0] for c in all_collectors}, enabled)
         else:
             parser_names = [n for n in all_parsers if n in default_set]
 
+        self.parser_names = parser_names
         self.scheduler = TaskScheduler()
         self._register_periodic_tasks(collector_names, parser_names)
         self.scheduler.start()
@@ -107,6 +116,7 @@ class IndexerProcess:
         self.dispatcher.start(self.zmq)
 
         if parser_names:
+            parser_resolver.bind_db(self.db_name)
             self.parser_receiver = ParserReceiver(self.scheduler, self.writer, progress)
             self.zmq.subscribe("parse.result", self.parser_receiver.handle_result)
             self.parser_dispatcher = ParserDispatcher(
@@ -124,7 +134,7 @@ class IndexerProcess:
                 self.parser_dispatcher.request_dispatch,
                 self.writer,
             )
-            self.scanner.set_parsers([(parser_resolver.status_name(n), parser_resolver.trigger_keys(n)) for n in parser_names])
+            self.refresh_parser_triggers()
 
         self.scanner.backfill_pending()
 
@@ -330,7 +340,14 @@ class IndexerProcess:
             )
         )
 
+    def refresh_parser_triggers(self):
+        if not self.scanner or not self.parser_names:
+            return
+        parser_resolver.refresh_trigger_keys()
+        self.scanner.set_parsers([(parser_resolver.status_name(n), parser_resolver.trigger_keys(n)) for n in self.parser_names])
+
     def _recollect_dispatch(self):
+        self.refresh_parser_triggers()
         self._progress.send_event("update")
         self._request_backfill()
 

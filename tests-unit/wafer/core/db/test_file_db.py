@@ -236,6 +236,32 @@ def test_upsert_collection_results(tmp_path):
     db.close()
 
 
+def test_upsert_collection_results_skips_unregistered_entries_and_keeps_the_rest(tmp_path, monkeypatch):
+    from wafer.core.db import file_db as file_db_module
+
+    warnings = []
+    monkeypatch.setattr(file_db_module.AppLogger, "warning", lambda msg, *a, **k: warnings.append(msg))
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    db.upsert_basic_sources([("c:/a.zip", "hash1", 100, 1.0)], [("c:/a.zip", "c:/a.zip", None)])
+
+    db.upsert_collection_results(
+        [("c:/a.zip::1.png", "c:/a.zip", "1.png", 1.0, "zip"), ("//?/c:/a.zip::1.png", "//?/c:/a.zip", "1.png", 1.0, "zip")],
+        [("c:/a.zip", "zip.entries", "1", 1.0), ("//?/c:/a.zip", "zip.entries", "1", 1.0), ("c:/deleted.png", "exif.w", "1", 1.0)],
+        [("c:/a.zip", "zip.k", "v", None), ("//?/c:/a.zip", "zip.k", "v", None)],
+        [("c:/a.zip", "zip", "ok", 1.0), ("//?/c:/a.zip", "zip", "ok", 1.0)],
+    )
+
+    conn = db.read_conn
+    assert [r[0] for r in conn.execute("SELECT path FROM files ORDER BY path")] == ["c:/a.zip", "c:/a.zip::1.png"]
+    assert conn.execute("SELECT path, value FROM meta_info").fetchall() == [("c:/a.zip", "1")]
+    assert conn.execute("SELECT file_hash, value FROM tags").fetchall() == [("hash1", "v")]
+    assert conn.execute("SELECT source, status FROM collection_status").fetchall() == [("c:/a.zip", "ok")]
+    assert len(warnings) == 1 and "1 sources, 2 paths" in warnings[0]
+    db.close()
+
+
 def test_insert_pending_collection(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()

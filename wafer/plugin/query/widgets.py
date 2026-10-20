@@ -109,6 +109,174 @@ _CATALOG_KEY_ROLE = QtCore.Qt.UserRole + 1
 _CATALOG_COUNT_ROLE = QtCore.Qt.UserRole + 2
 
 
+class KeyCatalogTree(QtWidgets.QWidget):
+    key_clicked = QtCore.Signal(str, object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.datas: list[tuple[str, int]] = []
+        self.extras: list[tuple[str, str]] = []
+        self.highlighted: set[str] = set()
+        self.pending_expanded: set[str] | None = None
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(dpix(2))
+
+        self.search = QtWidgets.QLineEdit()
+        self.search.setPlaceholderText(t("Search keys..."))
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self.apply_filter)
+        layout.addWidget(self.search)
+
+        self.tree = QtWidgets.QTreeWidget()
+        self.tree.setHeaderHidden(True)
+        self.tree.setRootIsDecorated(True)
+        self.tree.setIndentation(dpix(16))
+        self.tree.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.tree.setFocusPolicy(QtCore.Qt.NoFocus)
+        self.tree.setStyleSheet(f"QTreeWidget {{ background: {ThemeManager.instance().palette.bg_secondary}; }}")
+        self.tree.itemClicked.connect(self.on_item_clicked)
+        layout.addWidget(self.tree, 1)
+
+    def set_catalog(self, datas: list[tuple[str, int]], extras: list[tuple[str, str]] = ()):
+        self.datas = list(datas)
+        self.extras = list(extras)
+        self.rebuild()
+
+    def set_highlighted(self, keys: set[str]):
+        self.highlighted = set(keys)
+        self.paint_items()
+
+    def expanded_prefixes(self) -> set[str]:
+        expanded = set()
+        root = self.tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            node = root.child(i)
+            if node.isExpanded() and node.data(0, _CATALOG_KEY_ROLE) is None:
+                text = node.text(0)
+                expanded.add(text.split("  (")[0] if "  (" in text else text)
+        return expanded
+
+    def set_expanded_prefixes(self, prefixes: set[str] | None):
+        self.pending_expanded = None if prefixes is None else set(prefixes)
+        if self.pending_expanded is not None and self.datas:
+            self.rebuild()
+
+    def reset_filter(self):
+        self.search.setFocus()
+        self.search.clear()
+
+    def rebuild(self):
+        expanded = self.expanded_prefixes()
+        consume_pending = self.pending_expanded is not None and bool(self.datas)
+        if self.pending_expanded is not None:
+            expanded = set(self.pending_expanded)
+        self.tree.clear()
+        for key, label in self.extras:
+            item = QtWidgets.QTreeWidgetItem(self.tree, [label])
+            item.setData(0, _CATALOG_KEY_ROLE, key)
+            item.setFlags(QtCore.Qt.ItemIsEnabled)
+        groups: dict[str, list[tuple[str, str, int]]] = {}
+        for key, count in self.datas:
+            prefix, suffix = _split_prefix(key)
+            groups.setdefault(prefix, []).append((key, suffix, count))
+
+        self.add_group_items(None, groups.pop("", []))
+        for prefix in sorted(groups.keys()):
+            items = groups[prefix]
+            group_node = QtWidgets.QTreeWidgetItem(self.tree, [f"{prefix}  ({len(items)})"])
+            group_node.setFlags(QtCore.Qt.ItemIsEnabled)
+            font = group_node.font(0)
+            font.setBold(True)
+            group_node.setFont(0, font)
+            self.add_group_items(group_node, items)
+            group_node.setExpanded(prefix in expanded)
+
+        if consume_pending:
+            self.pending_expanded = None
+        self.paint_items()
+        self.apply_filter(self.search.text())
+
+    def add_group_items(self, parent_node, items: list[tuple[str, str, int]]):
+        for key, suffix, count in items:
+            if parent_node is not None:
+                item = QtWidgets.QTreeWidgetItem(parent_node, [f"{suffix} ({count})"])
+            else:
+                item = QtWidgets.QTreeWidgetItem(self.tree, [f"{display_prefixed_key(key)} ({count})"])
+            item.setData(0, _CATALOG_KEY_ROLE, key)
+            item.setData(0, _CATALOG_COUNT_ROLE, count)
+            item.setFlags(QtCore.Qt.ItemIsEnabled)
+
+    def paint_items(self):
+        p = ThemeManager.instance().palette
+        root = self.tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            top_item = root.child(i)
+            nodes = [top_item] if top_item.data(0, _CATALOG_KEY_ROLE) is not None else [top_item.child(j) for j in range(top_item.childCount())]
+            for node in nodes:
+                color = p.text_primary if node.data(0, _CATALOG_KEY_ROLE) in self.highlighted else p.text_muted
+                node.setForeground(0, QtGui.QColor(color))
+
+    def on_item_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int):
+        key = item.data(0, _CATALOG_KEY_ROLE)
+        if key is not None:
+            self.key_clicked.emit(key, item.data(0, _CATALOG_COUNT_ROLE))
+
+    def apply_filter(self, text: str):
+        text = text.strip().lower()
+        root = self.tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            top_item = root.child(i)
+            key = top_item.data(0, _CATALOG_KEY_ROLE)
+            if key is not None:
+                visible = not text or text in key.lower()
+                top_item.setHidden(not visible)
+            else:
+                any_child_visible = False
+                for j in range(top_item.childCount()):
+                    child = top_item.child(j)
+                    child_key = child.data(0, _CATALOG_KEY_ROLE) or ""
+                    child_visible = not text or text in child_key.lower()
+                    child.setHidden(not child_visible)
+                    if child_visible:
+                        any_child_visible = True
+                top_item.setHidden(not any_child_visible)
+                if any_child_visible and text:
+                    top_item.setExpanded(True)
+
+
+class KeyPickerPopup(PopupBase):
+    picked = QtCore.Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(dpix(6), dpix(6), dpix(6), dpix(6))
+        self.catalog = KeyCatalogTree()
+        self.catalog.key_clicked.connect(self.on_key_clicked)
+        layout.addWidget(self.catalog)
+        p = ThemeManager.instance().palette
+        self.setStyleSheet(f"KeyPickerPopup {{ background: {p.bg_primary}; border: {dpix(1)}px solid {p.border_default}; border-radius: {dpix(4)}px; }}")
+
+    def set_catalog(self, datas: list[tuple[str, int]], *, extras: list[tuple[str, str]] = ()):
+        self.catalog.set_catalog(datas, extras=list(extras))
+
+    def set_used(self, keys: set[str]):
+        self.catalog.set_highlighted(set(keys))
+
+    def on_key_clicked(self, key: str, _count):
+        self.hide()
+        self.picked.emit(key)
+
+    def open_below(self, anchor: QtWidgets.QWidget):
+        self.catalog.reset_filter()
+        self.show_below(anchor)
+
+    def sizeHint(self):
+        return QtCore.QSize(dpix(320), dpix(420))
+
+
 class _KeySelectorPopup(PopupBase):
     _instance = None
     active_keys_changed = QtCore.Signal(set)
@@ -125,7 +293,6 @@ class _KeySelectorPopup(PopupBase):
         self._catalog_data: list[tuple[str, int]] = []
         self._active_items: dict[str, _ActiveKeyItem] = {}
         self._pending_active_keys: list[str] = []
-        self._pending_expanded_keys: set[str] | None = None
         self._pending_splitter_sizes: list[int] | None = None
         self._suppress_signals = False
         self._current_combo = None
@@ -136,7 +303,7 @@ class _KeySelectorPopup(PopupBase):
     def _save_state(self) -> dict:
         state = {
             "keys": list(self._active_items.keys()),
-            "expanded": sorted(self._save_expansion_state()),
+            "expanded": sorted(self.catalog.expanded_prefixes()),
         }
         sizes = self._splitter.sizes()
         if any(sizes):
@@ -149,7 +316,7 @@ class _KeySelectorPopup(PopupBase):
         keys = [k for k in (state.get("keys") or []) if isinstance(k, str)]
         expanded = state.get("expanded") or []
         if isinstance(expanded, (list, tuple, set)):
-            self._pending_expanded_keys = {k for k in expanded if isinstance(k, str)}
+            self.catalog.set_expanded_prefixes({k for k in expanded if isinstance(k, str)})
         self._pending_splitter_sizes = self._valid_splitter_sizes(state.get("splitter_sizes"))
         self._apply_pending_splitter_sizes()
         self._pending_active_keys = keys
@@ -185,28 +352,11 @@ class _KeySelectorPopup(PopupBase):
         self._active_scroll.setWidget(self._active_list_widget)
         active_layout.addWidget(self._active_scroll, 1)
 
-        catalog_container = QtWidgets.QWidget()
-        catalog_layout = QtWidgets.QVBoxLayout(catalog_container)
-        catalog_layout.setContentsMargins(0, 0, 0, 0)
-        catalog_layout.setSpacing(dpix(2))
-
-        self._search_input = QtWidgets.QLineEdit()
-        self._search_input.setPlaceholderText(t("Search keys..."))
-        self._search_input.setClearButtonEnabled(True)
-        self._search_input.textChanged.connect(self._apply_filter)
-        catalog_layout.addWidget(self._search_input)
-
-        self._catalog_tree = QtWidgets.QTreeWidget()
-        self._catalog_tree.setHeaderHidden(True)
-        self._catalog_tree.setRootIsDecorated(True)
-        self._catalog_tree.setIndentation(dpix(16))
-        self._catalog_tree.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
-        self._catalog_tree.setFocusPolicy(QtCore.Qt.NoFocus)
-        self._catalog_tree.itemClicked.connect(self._on_catalog_clicked)
-        catalog_layout.addWidget(self._catalog_tree, 1)
+        self.catalog = KeyCatalogTree()
+        self.catalog.key_clicked.connect(self._on_catalog_key_clicked)
 
         self._splitter.addWidget(self._active_group)
-        self._splitter.addWidget(catalog_container)
+        self._splitter.addWidget(self.catalog)
         self._splitter.setStretchFactor(0, 1)
         self._splitter.setStretchFactor(1, 3)
         root.addWidget(self._splitter, 1)
@@ -228,7 +378,6 @@ class _KeySelectorPopup(PopupBase):
             f"  color: {p.text_secondary};"
             f"}}"
         )
-        self._catalog_tree.setStyleSheet(f"QTreeWidget {{ background: {p.bg_secondary}; }}")
 
     def active_key_set(self) -> set[str]:
         return set(self._active_items.keys())
@@ -241,76 +390,14 @@ class _KeySelectorPopup(PopupBase):
         count_map = dict(datas)
         for key, item in self._active_items.items():
             item.update_count(count_map.get(key))
-        self._rebuild_catalog_tree()
+        self.catalog.set_catalog(datas)
 
-    def _rebuild_catalog_tree(self):
-        expanded = self._save_expansion_state()
-        consume_pending = self._pending_expanded_keys is not None and bool(self._catalog_data)
-        if self._pending_expanded_keys is not None:
-            expanded = set(self._pending_expanded_keys)
-        self._catalog_tree.clear()
-        groups: dict[str, list[tuple[str, str, int]]] = {}
-        for key, count in self._catalog_data:
-            prefix, suffix = _split_prefix(key)
-            groups.setdefault(prefix, []).append((key, suffix, count))
-
-        active_keys = set(self._active_items.keys())
-
-        general_items = groups.pop("", [])
-        if general_items:
-            self._add_group_items(None, general_items, active_keys)
-
-        for prefix in sorted(groups.keys()):
-            items = groups[prefix]
-            group_node = QtWidgets.QTreeWidgetItem(self._catalog_tree, [f"{prefix}  ({len(items)})"])
-            group_node.setFlags(QtCore.Qt.ItemIsEnabled)
-            font = group_node.font(0)
-            font.setBold(True)
-            group_node.setFont(0, font)
-            self._add_group_items(group_node, items, active_keys)
-            group_node.setExpanded(prefix in expanded)
-
-        if consume_pending:
-            self._pending_expanded_keys = None
-        self._apply_filter(self._search_input.text())
-
-    def _save_expansion_state(self) -> set[str]:
-        expanded = set()
-        root = self._catalog_tree.invisibleRootItem()
-        for i in range(root.childCount()):
-            node = root.child(i)
-            if node.isExpanded() and node.data(0, _CATALOG_KEY_ROLE) is None:
-                text = node.text(0)
-                prefix = text.split("  (")[0] if "  (" in text else text
-                expanded.add(prefix)
-        return expanded
-
-    def _add_group_items(self, parent_node, items: list[tuple[str, str, int]], active_keys: set[str]):
-        p = ThemeManager.instance().palette
-        for key, suffix, count in items:
-            label = f"{suffix} ({count})" if parent_node is not None else f"{display_prefixed_key(key)} ({count})"
-            if parent_node is not None:
-                item = QtWidgets.QTreeWidgetItem(parent_node, [label])
-            else:
-                item = QtWidgets.QTreeWidgetItem(self._catalog_tree, [label])
-            item.setData(0, _CATALOG_KEY_ROLE, key)
-            item.setData(0, _CATALOG_COUNT_ROLE, count)
-            item.setFlags(QtCore.Qt.ItemIsEnabled)
-            color = p.text_primary if key in active_keys else p.text_muted
-            item.setForeground(0, QtGui.QColor(color))
-
-    def _on_catalog_clicked(self, item: QtWidgets.QTreeWidgetItem, column: int):
-        key = item.data(0, _CATALOG_KEY_ROLE)
-        if key is None:
-            return
+    def _on_catalog_key_clicked(self, key: str, count):
         if key in self._active_items:
             self._remove_active_key(key)
-            self._rebuild_catalog_tree()
             self._notify_active_keys_changed({key})
         else:
-            count = item.data(0, _CATALOG_COUNT_ROLE)
             self._add_active_key(key, count, checked=True)
-            self._rebuild_catalog_tree()
             self._notify_active_keys_changed(set())
             self._on_check_toggled()
 
@@ -318,22 +405,23 @@ class _KeySelectorPopup(PopupBase):
         if key in self._active_items:
             return False
         self._add_active_key(key, count)
-        self._rebuild_catalog_tree()
         return True
 
     def ensure_active_keys(self, keys: list[str]):
         count_map = dict(self._catalog_data)
-        added = False
-        for key in keys:
-            if key not in self._active_items:
-                self._add_active_key(key, count_map.get(key))
-                added = True
+        added = [key for key in dict.fromkeys(keys) if key not in self._active_items]
+        for key in added:
+            self._insert_active_item(key, count_map.get(key))
         if added:
-            self._rebuild_catalog_tree()
+            self.catalog.set_highlighted(set(self._active_items))
 
     def _add_active_key(self, key: str, count: int | None = None, checked: bool = False):
         if key in self._active_items:
             return
+        self._insert_active_item(key, count, checked)
+        self.catalog.set_highlighted(set(self._active_items))
+
+    def _insert_active_item(self, key: str, count: int | None, checked: bool = False):
         widget = _ActiveKeyItem(key, count, checked=checked)
         widget.toggled.connect(self._on_check_toggled)
         widget.remove_clicked.connect(self._on_remove_key)
@@ -360,7 +448,6 @@ class _KeySelectorPopup(PopupBase):
 
     def _on_remove_key(self, key: str):
         self._remove_active_key(key)
-        self._rebuild_catalog_tree()
         self._notify_active_keys_changed({key})
 
     def _remove_active_key(self, key: str):
@@ -369,6 +456,7 @@ class _KeySelectorPopup(PopupBase):
             self._active_list_layout.removeWidget(widget)
             widget.setParent(None)
             widget.deleteLater()
+            self.catalog.set_highlighted(set(self._active_items))
 
     def _on_check_toggled(self):
         if not self._suppress_signals:
@@ -378,28 +466,6 @@ class _KeySelectorPopup(PopupBase):
         self._pending_active_keys = list(self._active_items.keys())
         if not self._suppress_signals:
             self.active_keys_changed.emit(removed_keys)
-
-    def _apply_filter(self, text: str):
-        text = text.strip().lower()
-        root = self._catalog_tree.invisibleRootItem()
-        for i in range(root.childCount()):
-            top_item = root.child(i)
-            key = top_item.data(0, _CATALOG_KEY_ROLE)
-            if key is not None:
-                visible = not text or text in key.lower()
-                top_item.setHidden(not visible)
-            else:
-                any_child_visible = False
-                for j in range(top_item.childCount()):
-                    child = top_item.child(j)
-                    child_key = child.data(0, _CATALOG_KEY_ROLE) or ""
-                    child_visible = not text or text in child_key.lower()
-                    child.setHidden(not child_visible)
-                    if child_visible:
-                        any_child_visible = True
-                top_item.setHidden(not any_child_visible)
-                if any_child_visible and text:
-                    top_item.setExpanded(True)
 
     def open_for(self, combo):
         self._current_combo = combo
@@ -424,8 +490,7 @@ class _KeySelectorPopup(PopupBase):
     def showEvent(self, event):
         super().showEvent(event)
         self._apply_pending_splitter_sizes()
-        self._search_input.setFocus()
-        self._search_input.clear()
+        self.catalog.reset_filter()
 
 
 class CheckableCombo(QtWidgets.QToolButton):

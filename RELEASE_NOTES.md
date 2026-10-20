@@ -4,15 +4,18 @@ User-facing highlights for each Wafer release. These notes are shown in the Upda
 
 ## [v0.7.10]
 
+### Highlights
+- New Mapping panel places files on a 2D map by similar tags, metadata or colors, and groups them.
+
 ### Improvements
-- WebUI now adapts to smartphone screens.
-- WebUI settings add a "direct-child files only" option to hide files in subfolders.
+- WebUI adapts to smartphone screens and loads pages and metadata faster.
+- WebUI adds a "direct-child files only" setting, and search matches keywords with OR by default.
 - Search can keep spaces around keywords via a new "Trim spaces" option.
-- WebUI search now matches keywords with OR by default.
+- NovelAI V4 character prompts are now searchable.
 
 ### Fixes
-- Tags from slow collectors (e.g. WD14) are no longer lost when a file's hash changes mid-collection.
-- The Explorer right-click menu no longer leaks shell extensions with repeated use.
+- Tags and collection results are no longer lost when a file changes or moves mid-collection.
+- Password-protected ZIP entries are skipped, and the Explorer right-click menu no longer leaks.
 
 ## [v0.7.9]
 

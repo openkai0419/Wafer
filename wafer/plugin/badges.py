@@ -19,6 +19,7 @@ KNOWN_EXTENSIONS: dict[str, ExtensionBadge | None] = {
     "text_generation": None,
     "additional_filters": None,
     "additional_layout": None,
+    "mapping": None,
     "wd14": ExtensionBadge.HEAVY,
     "florence": ExtensionBadge.HEAVY,
 }

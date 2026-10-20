@@ -641,28 +641,21 @@ class FileDB:
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             try:
-                image_entries = self._normalize_file_entries(image_entries)
+                image_entries, meta_info_entries, tag_entries, collector_status_entries = self._drop_unregistered_results(
+                    cur,
+                    self._normalize_file_entries(image_entries),
+                    meta_info_entries or [],
+                    tag_entries or [],
+                    collector_status_entries or [],
+                )
                 if image_entries:
-                    try:
-                        cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
-                    except sqlite3.IntegrityError:
-                        existing = self._existing_sources(cur)
-                        image_entries = [e for e in image_entries if e[1] in existing]
-                        collector_status_entries = [e for e in (collector_status_entries or []) if e[0] in existing]
-                        if image_entries:
-                            cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
+                    cur.executemany(_SQL_UPSERT_FILES_COALESCE, image_entries)
                 if meta_info_entries:
                     cur.executemany(_SQL_UPSERT_META, meta_info_entries)
                 if tag_entries:
                     cur.executemany(_SQL_UPSERT_SOURCE_TAGS, [(key, value, num, source) for source, key, value, num in tag_entries])
                 if collector_status_entries:
-                    try:
-                        cur.executemany(_SQL_UPSERT_COLLECTION_STATUS, collector_status_entries)
-                    except sqlite3.IntegrityError:
-                        existing = self._existing_sources(cur)
-                        collector_status_entries = [e for e in collector_status_entries if e[0] in existing]
-                        if collector_status_entries:
-                            cur.executemany(_SQL_UPSERT_COLLECTION_STATUS, collector_status_entries)
+                    cur.executemany(_SQL_UPSERT_COLLECTION_STATUS, collector_status_entries)
                 if cleanup:
                     self._delete_missing_source_extension_children(cur, image_entries, collector_status_entries)
             finally:
@@ -702,9 +695,32 @@ class FileDB:
         if deleted:
             AppLogger.info(f"[DB] Deleted stale source extension child rows: {deleted}")
 
-    def _existing_sources(self, cur):
-        cur.execute("SELECT source FROM sources")
-        return {row[0] for row in cur.fetchall()}
+    def _drop_unregistered_results(self, cur, image_entries, meta_info_entries, tag_entries, collector_status_entries):
+        sources = {e[1] for e in image_entries} | {e[0] for e in tag_entries} | {e[0] for e in collector_status_entries}
+        registered = self._existing_values(cur, "sources", "source", sources)
+        if len(registered) < len(sources):
+            image_entries = [e for e in image_entries if e[1] in registered]
+            tag_entries = [e for e in tag_entries if e[0] in registered]
+            collector_status_entries = [e for e in collector_status_entries if e[0] in registered]
+        meta_paths = {e[0] for e in meta_info_entries}
+        file_paths = {e[0] for e in image_entries}
+        file_paths |= self._existing_values(cur, "files", "path", meta_paths - file_paths)
+        missing_paths = meta_paths - file_paths
+        if missing_paths:
+            meta_info_entries = [e for e in meta_info_entries if e[0] in file_paths]
+        missing_sources = sources - registered
+        if missing_sources or missing_paths:
+            sample = next(iter(missing_sources or missing_paths))
+            AppLogger.warning(f"[DB] Skipped results not in the database (deleted or moved while processing): {len(missing_sources)} sources, {len(missing_paths)} paths, e.g. {sample}")
+        return image_entries, meta_info_entries, tag_entries, collector_status_entries
+
+    @staticmethod
+    def _existing_values(cur, table, column, values):
+        found = set()
+        for chunk in _chunked(values):
+            placeholders = ",".join(["?"] * len(chunk))
+            found.update(row[0] for row in cur.execute(f"SELECT {column} FROM {table} WHERE {column} IN ({placeholders})", chunk))
+        return found
 
     @profiler.profile
     def insert_pending_collection(self, sources, collectors):
@@ -724,7 +740,7 @@ class FileDB:
                         entries,
                     )
                 except sqlite3.IntegrityError:
-                    existing = self._existing_sources(cur)
+                    existing = self._existing_values(cur, "sources", "source", sources)
                     entries = [e for e in entries if e[0] in existing]
                     if entries:
                         cur.executemany(

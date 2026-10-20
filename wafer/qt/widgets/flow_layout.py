@@ -13,6 +13,11 @@ class FlowLayout(QtWidgets.QLayout):
     def addItem(self, item):
         self._items.append(item)
 
+    def insertWidget(self, index: int, widget: QtWidgets.QWidget) -> None:
+        self.addWidget(widget)
+        self._items.insert(index, self._items.pop())
+        self.invalidate()
+
     def count(self):
         return len(self._items)
 
@@ -40,26 +45,37 @@ class FlowLayout(QtWidgets.QLayout):
 
     def minimumSize(self):
         size = QtCore.QSize()
-        for item in self._items:
+        for item in self.visible_items():
             size = size.expandedTo(item.minimumSize())
-        margins = self.contentsMargins()
-        size += QtCore.QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
-        return size
+        return size.grownBy(self.contentsMargins())
+
+    def single_line_size(self) -> QtCore.QSize:
+        items = self.visible_items()
+        width = sum(item.sizeHint().width() for item in items) + self._spacing * max(len(items) - 1, 0)
+        height = max((item.sizeHint().height() for item in items), default=0)
+        return QtCore.QSize(width, height).grownBy(self.contentsMargins())
+
+    def visible_items(self) -> list[QtWidgets.QLayoutItem]:
+        return [item for item in self._items if not item.isEmpty()]
 
     def _do_layout(self, rect: QtCore.QRect, test_only: bool) -> int:
-        x = rect.x()
-        y = rect.y()
+        area = rect.marginsRemoved(self.contentsMargins())
+        x = area.x()
+        y = area.y()
         line_height = 0
-        for item in self._items:
+        for item in self.visible_items():
             hint = item.sizeHint()
-            next_x = x + hint.width() + self._spacing
-            if next_x - self._spacing > rect.right() and line_height > 0:
-                x = rect.x()
+            width = min(hint.width(), area.width()) if area.width() > 0 else hint.width()
+            height = item.heightForWidth(width) if item.hasHeightForWidth() else hint.height()
+            next_x = x + width + self._spacing
+            if next_x - self._spacing > area.right() + 1 and line_height > 0:
+                x = area.x()
                 y += line_height + self._spacing
-                next_x = x + hint.width() + self._spacing
+                next_x = x + width + self._spacing
                 line_height = 0
             if not test_only:
-                item.setGeometry(QtCore.QRect(QtCore.QPoint(x, y), hint))
+                item.setGeometry(QtCore.QRect(x, y, width, height))
             x = next_x
-            line_height = max(line_height, hint.height())
-        return y + line_height - rect.y()
+            line_height = max(line_height, height)
+        margins = self.contentsMargins()
+        return y + line_height - rect.y() + margins.bottom()

@@ -10,7 +10,7 @@ import { connectEvents } from './ws.js';
 import { debounce } from './ratelimit.js';
 import { AutoScroll, SPEED_STEPS, SPEED_DEFAULT, nearestSpeedIndex } from './autoscroll.js';
 import { load, save } from './store.js';
-import { setIcon } from './icons.js';
+import { setIcon, setTip } from './icons.js';
 
 const SEARCH_DEBOUNCE_MS = 250;
 const UPDATE_REFRESH_MS = 1500;
@@ -216,7 +216,7 @@ searchInput.addEventListener('keydown', (e) => {
 
 function setOrderIcon() {
   setIcon(orderToggle, state.ascending ? 'chevron-up' : 'chevron-down');
-  orderToggle.setAttribute('aria-label', state.ascending ? 'sort ascending' : 'sort descending');
+  setTip(orderToggle, state.ascending ? 'sort ascending' : 'sort descending');
 }
 
 setupSidebar();
@@ -229,7 +229,7 @@ function setupSidebar() {
   const setCollapsed = (collapsed) => {
     sidebar.classList.toggle('collapsed', collapsed);
     setIcon(toggle, collapsed ? 'chevron-right' : 'chevron-left');
-    toggle.setAttribute('aria-label', collapsed ? 'show sidebar' : 'hide sidebar');
+    setTip(toggle, collapsed ? 'show sidebar' : 'hide sidebar');
     save('sidebarCollapsed', collapsed);
   };
 
@@ -294,6 +294,7 @@ connectEvents(
   (event) => {
     if (event.topic === 'update' && event.db === state.db) {
       keyPicker.invalidate();
+      meta.invalidate();
       refreshQuery();
     } else if (event.topic === 'db.created' || event.topic === 'db.deleted') {
       location.reload();

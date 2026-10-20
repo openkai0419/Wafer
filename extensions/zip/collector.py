@@ -32,6 +32,11 @@ class ZipCollectorPlugin(BaseSingletonCollector):
             AppLogger.warning(f"[zip] Failed to enumerate archive: {path}", exc=e)
             return [CollectorResult(source=path, status=False)]
 
+        readable = [entry for entry in entries if not (entry.record and entry.record.encrypted)]
+        if skipped := len(entries) - len(readable):
+            AppLogger.warning(f"[zip] Skipped {skipped} password-protected entries (extract the archive to view them): {path}")
+        entries = readable
+
         results = [CollectorResult(source=path, status=True, meta_info={"entries": len(entries)})]
         for entry in entries:
             logical_path = build_virtual_path(path, entry.member)

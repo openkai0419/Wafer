@@ -14,6 +14,7 @@ class PluginBase:
     PRIORITY: int = 0
     SCOPE: str = "viewer"
     DEFAULT_ENABLED: bool = False
+    DEFAULT_ENABLED_PER_DB: bool | None = None
     POST_INSTALL_VERSION: str = ""
 
     @classmethod

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 
+import shiboken6
 from PySide6 import QtCore, QtGui
 
 from extensions.additional_filters.widget import (
@@ -10,6 +11,7 @@ from extensions.additional_filters.widget import (
     _CalendarPopup,
 )
 from extensions.additional_filters.filter import is_date_key
+from wafer.qt.theme import ThemeManager
 
 
 class TestSectionCombo:
@@ -116,6 +118,16 @@ class TestDateInput:
         assert di._popup is not None
         di._popup.close()
         assert not di._drop_btn.isDown()
+
+    def test_destroyed_input_is_unsubscribed_from_theme(self, qtbot):
+        manager = ThemeManager.instance()
+        before = len(manager.on_theme_changed._callbacks)
+        di = _DateInput()
+        assert len(manager.on_theme_changed._callbacks) == before + 1
+        shiboken6.delete(di)
+        assert len(manager.on_theme_changed._callbacks) == before
+        manager.set_light()
+        manager.set_dark()
 
 
 class TestCalendarPopup:

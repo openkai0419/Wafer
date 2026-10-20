@@ -3,7 +3,6 @@ import { load } from './store.js';
 
 const GAP = 4;
 const PAGE = 200;
-const OVERSCAN = 600;
 
 function thumbStepFor(width, height) {
   const needed = Math.ceil(Math.max(width, height) * devicePixelRatio);
@@ -71,8 +70,9 @@ export class Grid {
   }
 
   visibleRows() {
-    const top = this.scroll.scrollTop - OVERSCAN;
-    const bottom = this.scroll.scrollTop + this.scroll.clientHeight + OVERSCAN;
+    const screen = this.scroll.clientHeight;
+    const top = this.scroll.scrollTop - screen;
+    const bottom = this.scroll.scrollTop + screen * 2;
     return this.rows.filter((r) => r.y + r.h >= top && r.y <= bottom);
   }
 
@@ -148,20 +148,23 @@ export class Grid {
     for (const i of wanted) {
       if (!this.items.has(i)) pages.add(Math.floor(i / PAGE));
     }
-    for (const page of pages) {
-      if (this.pending.has(page)) continue;
-      this.pending.add(page);
-      const client = this.client;
-      try {
-        const data = await client.items(page * PAGE, PAGE);
-        if (client !== this.client) continue;
-        for (const item of data.items) this.items.set(item.i, item);
-        this.render();
-      } catch (e) {
-        console.error(e);
-      } finally {
-        this.pending.delete(page);
-      }
+    await Promise.all([...pages].filter((page) => !this.pending.has(page)).map((page) => this.fetchPage(page)));
+  }
+
+  async fetchPage(page) {
+    this.pending.add(page);
+    const client = this.client;
+    try {
+      const data = await client.items(page * PAGE, PAGE);
+      if (client !== this.client) return;
+      const end = Math.min(page * PAGE + PAGE, this.total);
+      for (let i = page * PAGE; i < end; i++) this.items.set(i, null);
+      for (const item of data.items) this.items.set(item.i, item);
+      this.render();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      this.pending.delete(page);
     }
   }
 

@@ -63,6 +63,7 @@ class _MarkBadgeRow(QtWidgets.QWidget):
         self._add_btn.setToolTip(t("Add new mark..."))
         self._add_btn.setMaximumHeight(dpix(_BADGE_HEIGHT))
         self._add_btn.clicked.connect(lambda: dialogs.prompt_new_mark(self, scope=self._scope))
+        self._layout.addWidget(self._add_btn)
         self._rebuild()
         MarkRegistry.instance().changed.connect(self._rebuild)
 
@@ -94,19 +95,17 @@ class _MarkBadgeRow(QtWidgets.QWidget):
                 self._layout.removeWidget(badge)
                 badge.setParent(None)
                 badge.deleteLater()
-        self._layout.removeWidget(self._add_btn)
         for mid in current_ids:
             if mid not in self._badges:
                 badge = _MarkBadge(mid, self)
                 badge.clicked.connect(lambda checked, m=mid: self._on_clicked(m, checked))
                 self._badges[mid] = badge
-                self._layout.addWidget(badge)
+                self._layout.insertWidget(self._layout.indexOf(self._add_btn), badge)
         for mid, badge in self._badges.items():
             badge.refresh()
             badge.blockSignals(True)
             badge.setChecked(mid in self._active)
             badge.blockSignals(False)
-        self._layout.addWidget(self._add_btn)
         self.updateGeometry()
 
     def _on_clicked(self, mark_id: str, checked: bool):

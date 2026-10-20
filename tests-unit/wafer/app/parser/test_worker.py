@@ -122,3 +122,21 @@ def test_stop_continues_when_plugin_shutdown_fails(make_worker):
     worker.stop()
     assert worker._stop.is_set()
     worker._node.stop.assert_called()
+
+
+def test_process_batch_passes_source_key_unchanged(make_worker):
+    from wafer.plugin.parser.base import ParserResult
+
+    worker = make_worker()
+    received = []
+
+    def record(path, file_info, metadata):
+        received.append(path)
+        return ParserResult(source=path, status=True)
+
+    worker._plugin.process = record
+    key = "b:/Data/./image.png"
+    worker._process_batch([key], {key: [0.0, 0]}, {}, "test_db")
+
+    assert received == [key]
+    assert worker._node.send_reliable.call_args[0][1]["results"][0]["source"] == key

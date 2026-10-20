@@ -439,3 +439,17 @@ def test_zip_collector_returns_failure_on_unicode_decode_error(monkeypatch):
     assert len(results) == 1
     assert results[0].source == "broken.zip"
     assert results[0].status is False
+
+
+def test_zip_collector_skips_encrypted_entries(tmp_path, monkeypatch):
+    zip_path = tmp_path / "locked.zip"
+    _create_raw_zip(zip_path, [_raw_entry("open.png", b"open"), _raw_entry("locked.png", b"locked", flags=0x1)])
+    probed = []
+    monkeypatch.setattr(ZipCollectorPlugin, "_probe_aspect", lambda self, source, entry, logical_path: probed.append(entry.member) or 1.0)
+
+    results = ZipCollectorPlugin().process(str(zip_path), (0.0, zip_path.stat().st_size))
+
+    assert [child_path(result.path) for result in results[1:]] == ["open.png"]
+    assert results[0].meta_info == {"entries": 1}
+    assert probed == ["open.png"]
+    assert [record.encrypted for record in archive.list_member_records(str(zip_path))] == [False, True]

@@ -11,7 +11,7 @@ from pathlib import Path
 
 BASE_BRANCH = "main_develop"
 BRANCH_PREFIX = "wt/"
-WORKTREES_DIR = ".worktrees"
+WORKTREES_DIR = ".claude/worktrees"
 SHARED_DIRS = [".venv", ".claude/commands", "docs", ".sample", "extensions/.packages"]
 SHARED_GLOBS = ["extensions/*/lib"]
 READ_ONLY_COPIES = [".claude/rules", ".claude/structure.md"]
@@ -75,13 +75,19 @@ def ensure_clean(tree: Path):
         sys.exit(f"{tree} has uncommitted changes.")
 
 
-def worktree_paths(name: str) -> tuple[Path, Path, str]:
+def existing_worktree(name: str) -> tuple[Path, Path, str]:
     root = main_root()
-    return root, root / WORKTREES_DIR / name, BRANCH_PREFIX + name
+    branch = BRANCH_PREFIX + name
+    for entry in git("worktree", "list", "--porcelain", cwd=root).split("\n\n"):
+        fields = dict(line.split(" ", 1) for line in entry.splitlines() if " " in line)
+        if fields.get("branch") == f"refs/heads/{branch}":
+            return root, Path(fields["worktree"]), branch
+    sys.exit(f"No worktree is on {branch}.")
 
 
 def new(name: str):
-    root, tree, branch = worktree_paths(name)
+    root = main_root()
+    tree, branch = root / WORKTREES_DIR / name, BRANCH_PREFIX + name
     git("worktree", "add", "-b", branch, str(tree), BASE_BRANCH, cwd=root)
     for source in shared_dirs(root):
         link = tree / source.relative_to(root)
@@ -94,7 +100,7 @@ def new(name: str):
 
 
 def remove(name: str, force: bool = False):
-    root, tree, branch = worktree_paths(name)
+    root, tree, branch = existing_worktree(name)
     if not force:
         ensure_clean(tree)
     for relative in READ_ONLY_COPIES:
@@ -108,7 +114,7 @@ def remove(name: str, force: bool = False):
 
 
 def finish(name: str):
-    root, tree, branch = worktree_paths(name)
+    root, tree, branch = existing_worktree(name)
     ensure_clean(tree)
     current = git("symbolic-ref", "--short", "HEAD", cwd=root)
     if current != BASE_BRANCH:

@@ -226,3 +226,47 @@ def test_unfound_does_not_break_other_items():
     assert "__unfound__:missing.cmd" in tokens
     assert "-" in tokens
     assert "t.file.run" in tokens
+
+
+def _group(name: str, priority: int, items: list):
+    from wafer.qt.commands.command.menu import MenuGroup
+
+    return type(f"_MG_{name.replace('/', '_')}_{priority}", (MenuGroup,), {"NAME": name, "PRIORITY": priority, "commands": classmethod(lambda cls: list(items))})
+
+
+def _noop(ctx):
+    return None
+
+
+def test_from_folder_with_a_nested_path_flattens_to_that_folder():
+    _group("__MNest__/Viewer", 10, [":Viewer", CommandMeta(path="__mnest_zoom__", display="Zoom", func=_noop)]).register()
+    tokens = MenuMaker().from_folder("__MNest__/Viewer").resolve_tokens()
+    assert tokens == [":Viewer", "__mnest_zoom__"]
+
+
+def test_from_folder_joins_a_list_of_folders_with_a_separator():
+    _group("__MJoinA__", 10, [CommandMeta(path="__mjoin_a__", display="A", func=_noop)]).register()
+    _group("__MJoinB__", 10, [CommandMeta(path="__mjoin_b__", display="B", func=_noop)]).register()
+    assert MenuMaker().from_folder(["__MJoinA__", "__MJoinB__"]).resolve_tokens() == ["__mjoin_a__", "-", "__mjoin_b__"]
+
+
+def test_hide_folder_also_drops_its_sections_and_separators():
+    _group("__MHide__", 10, [":Header", CommandMeta(path="__mhide_a__", display="A", func=_noop), "-", CommandMeta(path="__mhide_b__", display="B", func=_noop)]).register()
+    _group("__MKeep__", 10, [CommandMeta(path="__mkeep_a__", display="K", func=_noop)]).register()
+    tokens = MenuMaker().menu(["__MHide__", "__MKeep__"]).hide(["__MHide__"]).resolve_tokens()
+    assert tokens == ["__MKeep__/__mkeep_a__"]
+
+
+def test_all_roots_puts_the_fixed_roots_first_in_their_order():
+    from wafer.qt.commands.command.menu import MenuPath
+
+    _group("__MExtraRoot__", -1000, [CommandMeta(path="__mextra_root__", display="E", func=_noop)]).register()
+    roots = []
+    for token in MenuMaker().all_roots().resolve_tokens():
+        root = token.split("/")[0]
+        if root not in roots:
+            roots.append(root)
+    fixed = [r for r in roots if r in MenuPath.ROOTS]
+    assert fixed == [r for r in MenuPath.ROOTS if r in fixed]
+    assert roots[: len(fixed)] == fixed
+    assert roots.index("__MExtraRoot__") >= len(fixed)

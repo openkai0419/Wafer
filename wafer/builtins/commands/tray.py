@@ -70,7 +70,7 @@ def quit_app(ctx=None):
 
 
 class TrayViewerCommands(ActionKit.MenuBase):
-    NAME = "Viewer"
+    NAME = ActionKit.MenuPath.PROCESS
     SCOPE = "tray"
     PRIORITY = 70
 
@@ -82,7 +82,7 @@ class TrayViewerCommands(ActionKit.MenuBase):
 
 
 class TrayDatabaseCommands(ActionKit.MenuBase):
-    NAME = "Database"
+    NAME = ActionKit.MenuPath.WORKSPACE
     SCOPE = "tray"
     PRIORITY = 72
 
@@ -96,7 +96,7 @@ class TrayDatabaseCommands(ActionKit.MenuBase):
 
 
 class TraySystemCommands(ActionKit.MenuBase):
-    NAME = "Tray"
+    NAME = ActionKit.MenuPath.PROCESS
     SCOPE = "tray"
     PRIORITY = 100
 
@@ -110,6 +110,6 @@ class TraySystemCommands(ActionKit.MenuBase):
                 "-",
             ]
         items += [
-            ActionKit.Command(path="tray.quit", display="Quit", func=quit_app),
+            ActionKit.Command(path="tray.quit", display="Quit Tray", func=quit_app),
         ]
         return items

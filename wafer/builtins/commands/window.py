@@ -132,8 +132,8 @@ def open_webui(ctx=None):
 
 
 class WindowPanelCommands(ActionKit.MenuBase):
-    NAME = "Window"
-    PRIORITY = 83
+    NAME = ActionKit.MenuPath.WINDOW
+    PRIORITY = 26
 
     @classmethod
     def commands(cls):
@@ -145,7 +145,7 @@ class WindowPanelCommands(ActionKit.MenuBase):
 
 
 class WindowRestartCommands(ActionKit.MenuBase):
-    NAME = "Window"
+    NAME = ActionKit.MenuPath.PROCESS
     PRIORITY = 82
     SCOPE = "*"
 

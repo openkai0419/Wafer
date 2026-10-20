@@ -51,7 +51,8 @@ def test_command_ids():
     grid = {c.path.split("/")[-1] for c in MappingGridCommands.commands() if not isinstance(c, str)}
     view = {c.path for c in MappingViewCommands.commands() if not isinstance(c, str)}
     assert grid == {"mapping.set", "mapping.add", "mapping.remove"}
-    assert MappingGridCommands.NAME == "File"
+    assert MappingGridCommands.NAME == "Selection"
+    assert MappingViewCommands.NAME == "Widgets/Mapping"
     assert view == {
         "mapping.select_all",
         "mapping.frame_selection",

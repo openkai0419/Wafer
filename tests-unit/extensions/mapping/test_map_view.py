@@ -292,7 +292,7 @@ def test_images_are_capped_one_per_cell_and_the_rest_stay_dots(view):
     view.set_image_limit(10_000)
     view.set_image_spacing(1.0)
     view.viewport().repaint()
-    cells = np.floor(view.device_positions()[view.image_rows] / view.item_extent()).astype(int)
+    cells = np.floor(view.positions[view.image_rows] / (view.item_extent() / view.viewportTransform().m11())).astype(int)
     assert len({tuple(cell) for cell in cells}) == len(view.image_rows) < 2000
     spaced = len(view.image_rows)
     view.set_image_spacing(0.5)
@@ -300,14 +300,16 @@ def test_images_are_capped_one_per_cell_and_the_rest_stay_dots(view):
     assert len(view.image_rows) > spaced
 
 
-def test_selected_files_get_images_first(view):
+def test_selection_does_not_change_which_files_get_images(view):
     loaded_owner(view, 2000)
     view.set_thumbnails_visible(True)
     view.show_result(image_result(2000, spread=0.01), colors(2000), keep_view=False)
-    view.set_image_limit(1)
-    view.select_rows([1234])
+    view.set_image_limit(20)
     view.viewport().repaint()
-    assert view.image_rows.tolist() == [1234]
+    shown = sorted(view.image_rows.tolist())
+    view.select_rows([row for row in range(2000) if row not in shown])
+    view.viewport().repaint()
+    assert sorted(view.image_rows.tolist()) == shown
 
 
 def test_image_choice_is_stable_across_repaints(view):
@@ -319,6 +321,119 @@ def test_image_choice_is_stable_across_repaints(view):
     view.invalidate()
     view.viewport().repaint()
     assert sorted(view.image_rows.tolist()) == first
+
+
+def colored_owner(view, count):
+    pixmaps = {}
+    for i in range(count):
+        pixmap = QtGui.QPixmap(16, 12)
+        pixmap.fill(QtGui.QColor.fromHsv(i * 37 % 360, 200, 120 + i % 120))
+        pixmaps[f"c:/{i}.png"] = pixmap
+    view.owner.pixmaps = pixmaps
+
+
+def zoomed_map(view, count, zoom=4.0):
+    colored_owner(view, count)
+    view.set_thumbnails_visible(True)
+    view.show_result(image_result(count), colors(count), keep_view=False)
+    view.scale(zoom, zoom)
+    view.viewport().repaint()
+
+
+def pan(view, dx, dy=0):
+    view.horizontalScrollBar().setValue(view.horizontalScrollBar().value() + dx)
+    view.verticalScrollBar().setValue(view.verticalScrollBar().value() + dy)
+    return view.current_layer()
+
+
+def full_repaint(view, monkeypatch):
+    with monkeypatch.context() as patch:
+        patch.setattr(view, "update_layer", lambda *args: False)
+        view.layer_key = (view.layer_key[0], None, None)
+        return view.current_layer().toImage()
+
+
+def inner_image_rows(view, share=0.6):
+    size = view.viewport().size()
+    margin = np.array([size.width(), size.height()]) * (1 - share) / 2
+    device = view.device_positions()[view.image_rows]
+    inside = ((device >= margin) & (device <= np.array([size.width(), size.height()]) - margin)).all(axis=1)
+    return set(view.image_rows[inside].tolist())
+
+
+def test_panning_repaints_only_what_changed_and_matches_a_full_repaint(view, monkeypatch):
+    zoomed_map(view, 3000)
+    view.select_rows(range(0, 3000, 3))
+    view.current_layer()
+    for dx, dy in ((7, 0), (0, -5), (-13, 9), (40, 3), *[(9, 2)] * 12, *[(-6, -7)] * 12):
+        layer = pan(view, dx, dy)
+        assert layer is view.layer
+        assert layer.toImage() == full_repaint(view, monkeypatch)
+
+
+def test_only_the_image_nearest_the_center_comes_to_the_front_and_stays_there(view):
+    zoomed_map(view, 3000)
+    first = int(view.image_rows[-1])
+    center = np.array([view.viewport().width() / 2, view.viewport().height() / 2])
+    device = view.device_positions()[view.image_rows]
+    assert first == int(view.image_rows[np.argmin(((device - center) ** 2).sum(axis=1))])
+    for _ in range(20):
+        pan(view, 6)
+        if int(view.image_rows[-1]) != first:
+            break
+    second = int(view.image_rows[-1])
+    assert second != first
+    rows = view.image_rows.tolist()
+    assert first in rows and rows.index(first) == len(rows) - 2
+    view.show_result(image_result(3000), colors(3000), keep_view=True)
+    view.viewport().repaint()
+    assert view.depth[second] > view.depth[first] > 0
+
+
+def test_panning_keeps_the_images_in_the_middle(view):
+    zoomed_map(view, 3000)
+    for _ in range(10):
+        middle = inner_image_rows(view)
+        pan(view, 9, 4)
+        assert middle <= set(view.image_rows.tolist())
+
+
+def test_panning_in_from_the_corner_keeps_the_images_in_the_middle(view):
+    zoomed_map(view, 3000)
+    view.horizontalScrollBar().setValue(view.horizontalScrollBar().minimum())
+    view.verticalScrollBar().setValue(view.verticalScrollBar().minimum())
+    view.current_layer()
+    target = round(view.image_limit * map_view_module.IMAGE_FILL_TARGET)
+    for _ in range(40):
+        middle = inner_image_rows(view)
+        pan(view, 9, 9)
+        assert middle <= set(view.image_rows.tolist())
+        assert len(view.image_rows) <= view.image_limit
+    assert len(view.image_rows) >= target * 0.9
+
+
+def test_a_raised_image_stays_raised_only_while_the_next_result_has_it(view):
+    zoomed_map(view, 3000)
+    front = int(view.image_rows[-1])
+    path = view.paths[front]
+    view.show_result(image_result(3000), colors(3000), keep_view=True)
+    assert view.depth[view.rows_by_path[path]] > 0
+    view.show_result(image_result(10), colors(10), keep_view=True)
+    view.show_result(image_result(3000), colors(3000), keep_view=True)
+    assert view.depth[view.rows_by_path[path]] <= 0
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_point_index_finds_exactly_the_points_in_a_box(seed):
+    rng = np.random.default_rng(seed)
+    points = np.vstack([rng.normal(500, 150, (5000, 2)), rng.random((200, 2)) * (4000, 300) - (500, 0)])
+    index = map_view_module.PointIndex(points)
+    for _ in range(50):
+        left, top = rng.random(2) * 4000 - 1000
+        box = (left, top, left + rng.random() * 800, top + rng.random() * 800)
+        expected = np.flatnonzero(map_view_module.inside(points, box))
+        assert np.array_equal(np.sort(index.rows_in(box)), expected)
+        assert index.count(box) >= expected.size
 
 
 def test_hover_and_click_reach_points_drawn_as_dots(view):
@@ -352,8 +467,10 @@ def test_arrived_thumbnail_repaints_once_after_a_short_wait(view, qtbot):
     view.update_path("c:/0.png")
     view.update_path("c:/1.png")
     view.update_path("c:/unknown.png")
+    epoch = view.image_epoch
     assert view.version == version and view.image_timer.isActive()
-    qtbot.waitUntil(lambda: view.version == version + 1, timeout=2000)
+    qtbot.waitUntil(lambda: view.image_epoch == epoch + 1, timeout=2000)
+    assert view.version == version
 
 
 def test_rows_in_rect_uses_viewport_pixels(view):

@@ -19,6 +19,7 @@ class ActionKit:
     from .command.core import MenuAction as Action
     from .command.menu import MenuGroup as MenuBase
     from .command.menu import DragMenuGroup as DragMenuBase
+    from .command.menu import MenuPath
     from .command.payload import ScopedPayloads
     from .command.menu_builder import CommandMenuBuilder
     from .binding.key.sequence import Key as Key
@@ -326,11 +327,11 @@ class Menu:
         return Menu.session(target, seed_ctx=seed, maker=maker, pos=pos)
 
     @staticmethod
-    def exec_menu(prefix: str, ctx) -> None:
+    def exec_menu(folder: str | list[str], ctx) -> None:
         s = Menu.from_context(ctx)
         if s is None:
             return
-        spec = s.from_folder(prefix)
+        spec = s.from_folder(folder)
         if spec is None:
             return
         spec.exec()

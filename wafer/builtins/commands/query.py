@@ -161,7 +161,7 @@ _SORT_DISPLAY = {
 
 
 class QueryCommands(ActionKit.MenuBase):
-    NAME = "Query"
+    NAME = ActionKit.MenuPath.QUERY
     PRIORITY = 20
 
     @classmethod

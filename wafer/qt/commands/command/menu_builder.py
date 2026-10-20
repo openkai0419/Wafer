@@ -695,7 +695,7 @@ class MenuBuilder:
         return result
 
     @profiler.profile
-    def from_folder(self, folder: str) -> QtWidgets.QMenu:
+    def from_folder(self, folder: str | list[str]) -> QtWidgets.QMenu:
         plan = self._maker.from_folder(folder)
         return self.build(plan)
 

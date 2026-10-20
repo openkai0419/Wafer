@@ -371,7 +371,7 @@ def shell_context_menu(ctx):
 
 
 class FileCommands(ActionKit.MenuBase):
-    NAME = "File"
+    NAME = ActionKit.MenuPath.FILE
     SCOPE = "*"
     PRIORITY = 10
 
@@ -394,7 +394,7 @@ class FileCommands(ActionKit.MenuBase):
             ),
             ActionKit.Command(path="file.shell_context_menu", display="Shell Context Menu", func=shell_context_menu),
             "-",
-            ActionKit.Command(path="file.copy_path", display="Copy Paths(s)", func=copy_path),
+            ActionKit.Command(path="file.copy_path", display="Copy Path(s)", func=copy_path),
             ActionKit.Command(path="file.copy_filename", display="Copy FileName(s)", func=copy_filename),
             "-",
             ActionKit.Command(path="file.copy", display="Copy", func=copy_files),
@@ -435,13 +435,13 @@ class FileCommands(ActionKit.MenuBase):
 
 
 class FileNavigationCommands(ActionKit.MenuBase):
-    NAME = "File"
+    NAME = ActionKit.MenuPath.SELECTION
     PRIORITY = 10
 
     @classmethod
     def commands(cls):
         return [
-            ":Wafer",
+            ":Selection",
             ActionKit.Command(path="file.select_path", display="Select FolderTree", func=select_path),
             ActionKit.Command(path="file.scroll_to_file", display="Scroll to GridView", func=scroll_to_file),
             ActionKit.Command(path="file.show_file", display="Show at ContentViewer", func=show_file),

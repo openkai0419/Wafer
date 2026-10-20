@@ -5,7 +5,7 @@ from typing import Any
 from collections.abc import Iterable
 
 from .core import CommandMeta, CommandRegistry, MenuAction, register_command_defs
-from .menu import MenuHub, MENU_SEPARATOR, MENU_SECTION_PREFIX, is_section_token, is_sep_token, split_menu_path, normalize_command_meta
+from .menu import MenuHub, MenuPath, MENU_SEPARATOR, MENU_SECTION_PREFIX, is_section_token, is_sep_token, split_menu_path, normalize_command_meta
 from ....core.logs import AppLogger
 
 
@@ -47,7 +47,7 @@ class MenuPlan:
                 items = [x for x in items if not (x.kind in ("cmd", "action") and (x.token.strip("/") == t or x.canonical_path.strip("/") == t))]
             else:
                 prefix = t + "/"
-                items = [x for x in items if not (x.kind in ("cmd", "action") and (x.command_id == t or x.token.startswith(prefix) or x.canonical_path.startswith(prefix)))]
+                items = [x for x in items if not (x.token.startswith(prefix) or (x.kind in ("cmd", "action") and (x.command_id == t or x.canonical_path.startswith(prefix))))]
             if len(items) == before:
                 AppLogger.warning(f"[MenuPlan.hide] target not found, skipped: {t}")
         return MenuPlan(self._hub, items, has_inline=self.has_inline)
@@ -203,26 +203,12 @@ class MenuMaker:
         return [_ResolvedItem(token=s, kind="unfound", command_id=s, canonical_path="")]
 
     @staticmethod
-    def _flatten_for_use(hub: MenuHub, token: str, base: str) -> str:
-        s = str(token)
-        if is_sep_token(s):
-            parts = split_menu_path(s.strip())
-            if parts and parts[0] == base:
-                rel = parts[1:-1]
-                return "/".join(rel + [MENU_SEPARATOR]) if rel else MENU_SEPARATOR
-            return s
-        if is_section_token(s):
-            parts = split_menu_path(s)
-            if parts and parts[0] == base:
-                head = parts[1:-1]
-                label = parts[-1]
-                return "/".join(head + [label]) if head else label
-            return s
-        parts = split_menu_path(s)
-        if parts and parts[0] == base:
-            rel = parts[1:]
-            return "/".join(rel)
-        return s
+    def _flatten_for_use(token: str, base: str) -> str:
+        bparts = split_menu_path(base)
+        parts = split_menu_path(str(token).strip())
+        if parts[: len(bparts)] != bparts:
+            return str(token)
+        return "/".join(parts[len(bparts) :])
 
     def menu(self, items: Any) -> MenuPlan:
         resolved: list[_ResolvedItem] = []
@@ -239,7 +225,15 @@ class MenuMaker:
             resolved.extend(self._resolve_one(self._hub, str(it)))
         return MenuPlan(self._hub, resolved, has_inline=has_inline)
 
-    def from_folder(self, folder: str) -> MenuPlan:
+    def from_folder(self, folder: str | list[str]) -> MenuPlan:
+        items: list[str] = []
+        for name in [folder] if isinstance(folder, str) else folder:
+            if items:
+                items.append(MENU_SEPARATOR)
+            items.extend(self.folder_items(name))
+        return self.menu(items)
+
+    def folder_items(self, folder: str) -> list[str]:
         s = (str(folder or "")).strip("/")
         if not s:
             raise ValueError("Folder is required")
@@ -259,8 +253,7 @@ class MenuMaker:
             names = self._hub.collect_items_by_folder(pref, rebase_to=s)
         if not names:
             raise ValueError(f"No items under folder: {s}")
-        flat = [self._flatten_for_use(self._hub, n, s) for n in names]
-        return self.menu(flat)
+        return [self._flatten_for_use(n, s) for n in names]
 
     def all_roots(self) -> MenuPlan:
         root_priority: dict[str, int] = {}
@@ -277,10 +270,15 @@ class MenuMaker:
                     root_priority[r] = priority
         if not root_priority:
             raise ValueError("No top-level menus registered")
-        menu_order = self._hub._menu_order
-        if menu_order:
-            order_map = {name: i for i, name in enumerate(menu_order)}
-            roots = sorted(root_priority, key=lambda r: (1, order_map[r]) if r in order_map else (0, root_priority[r]))
-        else:
-            roots = sorted(root_priority, key=lambda r: root_priority[r])
+        root_index = {name: i for i, name in enumerate(MenuPath.ROOTS)}
+        order_map = {name: i for i, name in enumerate(self._hub._menu_order)}
+
+        def root_key(r: str) -> tuple[int, int]:
+            if r in root_index:
+                return (0, root_index[r])
+            if r in order_map:
+                return (2, order_map[r])
+            return (1, root_priority[r])
+
+        roots = sorted(root_priority, key=root_key)
         return self.menu(roots)

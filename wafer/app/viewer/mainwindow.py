@@ -35,6 +35,7 @@ from ..lifecycle import CloseReason
 from .search import SearchService
 from ...core.store.workspace import WorkspaceStore, WindowSlot
 from ...qt.commands.bridge import UI, Command, Menu
+from ...qt.commands.command.menu import MenuPath
 from ...qt.layout.manager import LayoutManager
 from ...core.store.state import StateStore
 from ...qt.common.window_state import WindowStateController
@@ -297,12 +298,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.iconbar = IconButtonBar(
             left_buttons=[
                 IconButtonConfig("menu", "All Menu", lambda: Menu.session(self).all_roots().exec()),
-                IconButtonConfig("gear", "Settings", lambda: Menu.session(self).from_folder("Setting").exec()),
-                IconButtonConfig("window", "Window", lambda: Menu.session(self).from_folder("Window").exec()),
+                IconButtonConfig("gear", "Settings", lambda: Menu.session(self).from_folder(MenuPath.SETTING).exec()),
+                IconButtonConfig("window", "Process", lambda: Menu.session(self).from_folder(MenuPath.PROCESS).exec()),
                 IconButtonConfig(
                     "layout_edit",
                     "Edit Layout",
-                    lambda: Menu.session(self).from_folder("Panels").exec(),
+                    lambda: Menu.session(self).from_folder(MenuPath.PANEL).exec(),
                 ),
             ],
             right_buttons=[
@@ -693,7 +694,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.close()
 
     def _show_query_menu(self):
-        Menu.session(self).from_folder("Query").exec()
+        Menu.session(self).from_folder(MenuPath.QUERY).exec()
 
     def _show_loading(self):
         self.loading_indicator.start()

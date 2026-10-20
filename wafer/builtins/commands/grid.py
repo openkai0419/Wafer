@@ -95,7 +95,7 @@ def _autoscroll_checked():
 
 
 class GridViewCommands(ActionKit.MenuBase):
-    NAME = "GridView"
+    NAME = ActionKit.MenuPath.GRID_VIEW
     PRIORITY = 40
 
     @staticmethod

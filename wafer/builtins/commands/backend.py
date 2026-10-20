@@ -68,7 +68,7 @@ def open_settings(ctx=None):
 
 
 class WebUIBackendCommands(ActionKit.MenuBase):
-    NAME = "WebUI"
+    NAME = ActionKit.MenuPath.PROCESS
     SCOPE = "webui"
     PRIORITY = 84
 

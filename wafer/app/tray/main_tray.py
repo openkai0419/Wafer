@@ -3,6 +3,7 @@ from ...core.profiling import profiler
 from ...core.logs import AppLogger
 from ...constants import APP_NAME
 from ...qt.commands.bridge import Command, Context, Menu, UI
+from ...qt.commands.command.menu import MenuPath
 
 from ...qt.common.rate_limit import qt_debounce
 from ...core.ipc.broker import Broker
@@ -50,7 +51,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         spec = session.all_roots()
         if spec is None:
             return QtWidgets.QMenu()
-        return spec.hide(["File"]).build()
+        return spec.hide([MenuPath.FILE, MenuPath.SELECTION]).build()
 
     def _ctx(self):
         return Context.create_context(None, "Tray", source="tray", extras={"tray": self})

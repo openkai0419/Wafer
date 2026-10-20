@@ -31,9 +31,9 @@ class MenuSession:
             return None
         return MenuSpec(self, plan)
 
-    def from_folder(self, folder: str):
+    def from_folder(self, folder: str | list[str]):
         try:
-            plan = self.maker.from_folder(str(folder))
+            plan = self.maker.from_folder(folder)
         except Exception as e:
             AppLogger.warning(str(e), exc=e)
             return None

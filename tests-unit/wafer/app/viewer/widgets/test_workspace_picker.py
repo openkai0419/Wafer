@@ -192,6 +192,42 @@ def test_database_choice_shown_for_two(qtbot):
     assert dlg.result_value() == PickResult(None, "b")
 
 
+def make_database_dialog(qtbot, databases=("main", "other")):
+    slots = [
+        WindowSlot(slot_id="a", path={"database_name": "other"}),
+        WindowSlot(slot_id="b", path={"database_name": "main"}),
+        WindowSlot(slot_id="c", path={"database_name": "gone"}),
+    ]
+    dlg = WorkspacePickerDialog(slots, set(), allow_open=True, databases=list(databases))
+    qtbot.addWidget(dlg)
+    return dlg
+
+
+def test_database_choice_starts_at_the_default_workspace_database(qtbot):
+    dlg = make_database_dialog(qtbot)
+    assert dlg.list_widget.currentRow() == 1
+    assert dlg.database_combo.currentText() == "other"
+    dlg.accept()
+    assert dlg.result_value() == PickResult("a", "other")
+
+
+def test_database_choice_follows_the_selected_workspace(qtbot):
+    dlg = make_database_dialog(qtbot)
+    dlg.list_widget.setCurrentRow(2)
+    assert dlg.database_combo.currentText() == "main"
+    dlg.list_widget.setCurrentRow(1)
+    assert dlg.database_combo.currentText() == "other"
+
+
+def test_database_choice_stays_for_new_and_unknown_databases(qtbot):
+    dlg = make_database_dialog(qtbot)
+    dlg.list_widget.setCurrentRow(2)
+    dlg.list_widget.setCurrentRow(0)
+    assert dlg.database_combo.currentText() == "main"
+    dlg.list_widget.setCurrentRow(3)
+    assert dlg.database_combo.currentText() == "main"
+
+
 def test_ask_returns_none_when_rejected(qtbot, monkeypatch):
     monkeypatch.setattr(WorkspacePickerDialog, "exec", lambda self: self.reject())
     assert WorkspacePickerDialog.ask(make_slots(), set(), allow_open=True, databases=[]) is None

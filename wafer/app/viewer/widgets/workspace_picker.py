@@ -14,6 +14,7 @@ from .workspace_labels import slot_subtitle, slot_title, slot_tooltip
 SLOT_ID_ROLE = QtCore.Qt.UserRole
 SUBTITLE_ROLE = QtCore.Qt.UserRole + 1
 MARKER_ROLE = QtCore.Qt.UserRole + 2
+DATABASE_ROLE = QtCore.Qt.UserRole + 3
 LAYOUT_KEY = "workspace_picker"
 DEFAULT_SIZE = (460, 420)
 ROW_PADDING_H = 10
@@ -162,6 +163,7 @@ class WorkspacePickerDialog(QtWidgets.QDialog):
         cancel_button.clicked.connect(self.reject)
         self.list_widget.itemDoubleClicked.connect(self.on_item_double_clicked)
         self.list_widget.currentItemChanged.connect(self.update_open_button)
+        self.list_widget.currentItemChanged.connect(self.select_database_of)
 
         self.resize(dpix(DEFAULT_SIZE[0]), dpix(DEFAULT_SIZE[1]))
         self.layout_store.restore(self)
@@ -177,6 +179,7 @@ class WorkspacePickerDialog(QtWidgets.QDialog):
             item.setData(SLOT_ID_ROLE, slot.slot_id)
             item.setData(SUBTITLE_ROLE, slot_subtitle(slot))
             item.setData(MARKER_ROLE, t("Open") if is_open else "")
+            item.setData(DATABASE_ROLE, str(slot.path.get("database_name") or ""))
             item.setToolTip(slot_tooltip(slot))
             if is_open and not allow_open:
                 item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEnabled)
@@ -194,6 +197,11 @@ class WorkspacePickerDialog(QtWidgets.QDialog):
     def update_open_button(self, *_):
         item = self.list_widget.currentItem()
         self.open_button.setEnabled(item is not None and bool(item.flags() & QtCore.Qt.ItemIsEnabled))
+
+    def select_database_of(self, item: QtWidgets.QListWidgetItem | None, *_):
+        database_name = item.data(DATABASE_ROLE) if item is not None else None
+        if database_name in self.databases:
+            self.database_combo.setCurrentIndex(self.databases.index(database_name))
 
     def on_item_double_clicked(self, item: QtWidgets.QListWidgetItem):
         if item.flags() & QtCore.Qt.ItemIsEnabled:

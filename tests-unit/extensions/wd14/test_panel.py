@@ -65,6 +65,43 @@ class TestModelSelection:
         assert requests == ["pixai-tagger-v1.0"]
 
 
+class TestSearch:
+    def test_highlights_matches_in_output_and_raw_and_counts_them(self, qtbot):
+        w = make_widget(qtbot)
+        w._general_spin.setValue(0.35)
+        w._on_preview_result(RAW)
+        w._search_edit.setText("MIKU, high")
+        for label in (w._raw_label, w._filtered_label):
+            text = label.text()
+            assert "<span" in text and ">miku</span>" in text
+            assert ">high</span>res" in text
+            assert "1girl" in text and ">1girl</span>" not in text
+        assert w._search_hits.text() == "Hits: 2"
+
+    def test_search_survives_new_result(self, qtbot):
+        w = make_widget(qtbot)
+        w._search_edit.setText("smile")
+        assert w._search_hits.text() == ""
+        w._on_preview_result(RAW)
+        assert ">smile</span>" in w._raw_label.text()
+        assert w._search_hits.text() == "Hits: 1"
+
+    def test_clearing_search_removes_highlight(self, qtbot):
+        w = make_widget(qtbot)
+        w._on_preview_result(RAW)
+        w._search_edit.setText("miku")
+        w._search_edit.clear()
+        assert "<span" not in w._raw_label.text()
+        assert w._search_hits.text() == ""
+
+    def test_blacklisted_tag_keeps_link_when_highlighted(self, qtbot):
+        w = make_widget(qtbot)
+        w._blacklist = ["smile"]
+        w._on_preview_result(RAW)
+        w._search_edit.setText("smile")
+        assert 'href="bl:smile"' in w._raw_label.text()
+
+
 class TestPreviewDisplay:
     def test_shows_all_categories_and_timing(self, qtbot):
         w = make_widget(qtbot)

@@ -15,8 +15,9 @@ from wafer.qt.common.notifier import Notifier
 from wafer.core.common.paths import list_setting_db_names
 from wafer.core.lang.manager import t
 from wafer.qt.common.dispatcher import Dispatcher
+from wafer.qt.meta.searchable import build_highlight_ctx, highlight_html
 from ._downloader import DEFAULT_MODEL
-from ._models import NAMED_CATEGORIES, list_models
+from ._models import CATEGORIES, NAMED_CATEGORIES, list_models
 from .settings import parse_blacklist, wd14_config
 
 _DST = "collector-wd14"
@@ -120,6 +121,24 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         right_layout.setSpacing(dpix(6))
         right_scroll.setWidget(right_inner)
 
+        right_container = QtWidgets.QWidget()
+        right_container_layout = QtWidgets.QVBoxLayout(right_container)
+        right_container_layout.setContentsMargins(0, 0, 0, 0)
+        right_container_layout.setSpacing(dpix(4))
+        search_row = QtWidgets.QHBoxLayout()
+        search_row.setSpacing(dpix(6))
+        self._search_edit = QtWidgets.QLineEdit()
+        self._search_edit.setPlaceholderText(t("Search tags (comma separated)"))
+        self._search_edit.setClearButtonEnabled(True)
+        self._search_edit.textChanged.connect(self._on_search_changed)
+        search_row.addWidget(self._search_edit, 1)
+        self._search_hits = QtWidgets.QLabel()
+        self._search_hits.setStyleSheet(f"color: {muted};")
+        search_row.addWidget(self._search_hits)
+        right_container_layout.addLayout(search_row)
+        right_container_layout.addWidget(right_scroll, 1)
+        self._search_terms: list[tuple[str, tuple]] = []
+
         self._output_group = QtWidgets.QGroupBox(t("Output"))
         filt_group_layout = QtWidgets.QVBoxLayout(self._output_group)
         filt_group_layout.setContentsMargins(dpix(4), dpix(4), dpix(4), dpix(4))
@@ -136,7 +155,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         right_layout.addWidget(raw_group)
 
         right_layout.addStretch()
-        self._hsplitter.addWidget(right_scroll)
+        self._hsplitter.addWidget(right_container)
         self._hsplitter.setStretchFactor(0, 1)
         self._hsplitter.setStretchFactor(1, 1)
 
@@ -365,13 +384,13 @@ class WD14SettingsWidget(QtWidgets.QWidget):
 
         ratings = raw.get("rating", {})
         if ratings:
-            items = [f"{html.escape(name)}({score:.4f})" for name, score in ratings.items()]
+            items = [f"{self._tag_html(name)}({score:.4f})" for name, score in ratings.items()]
             parts.append(self._format_kv("Rating", ", ".join(items)))
 
         for category in NAMED_CATEGORIES:
             values = raw.get(category, {})
             if values:
-                items = [f"{html.escape(k)}({v:.3f})" for k, v in values.items()]
+                items = [f"{self._tag_html(k)}({v:.3f})" for k, v in values.items()]
                 parts.append(self._format_kv(category.capitalize(), ", ".join(items)))
 
         for category, label in (("general", "Tags"), ("meta", "Meta")):
@@ -381,13 +400,15 @@ class WD14SettingsWidget(QtWidgets.QWidget):
             items = []
             for k, v in values.items():
                 escaped = html.escape(k)
+                shown = self._tag_html(k)
                 if k in blackset:
-                    items.append(f'<a href="bl:{escaped}" style="color:gray; text-decoration:line-through">{escaped}({v:.3f})</a>')
+                    items.append(f'<a href="bl:{escaped}" style="color:gray; text-decoration:line-through">{shown}({v:.3f})</a>')
                 else:
-                    items.append(f'<a href="bl:{escaped}" style="text-decoration:none">{escaped}({v:.3f})</a>')
+                    items.append(f'<a href="bl:{escaped}" style="text-decoration:none">{shown}({v:.3f})</a>')
             parts.append(self._format_kv(label, ", ".join(items)))
 
         self._raw_label.setText(self._wrap_kv_table(parts) if parts else t("(no tags)"))
+        self._update_search_hits()
 
     def _update_filtered_display(self, *_args):
         raw = self._last_raw
@@ -403,10 +424,10 @@ class WD14SettingsWidget(QtWidgets.QWidget):
             mode = self._rating_mode()
             if mode == "name":
                 top = max(ratings, key=ratings.get)
-                parts.append(self._format_kv("rating", html.escape(top)))
+                parts.append(self._format_kv("rating", self._tag_html(top)))
             elif mode == "top":
                 top = max(ratings, key=ratings.get)
-                parts.append(self._format_kv("rating", html.escape(top)))
+                parts.append(self._format_kv("rating", self._tag_html(top)))
                 parts.append(self._format_kv("rating_score", f"{ratings[top]:.4f}"))
             elif mode == "all":
                 for name, score in ratings.items():
@@ -416,15 +437,38 @@ class WD14SettingsWidget(QtWidgets.QWidget):
             for category in NAMED_CATEGORIES:
                 filtered = [k for k, v in raw.get(category, {}).items() if v >= char_th]
                 if filtered:
-                    parts.append(self._format_kv(category, ", ".join(html.escape(k) for k in filtered)))
+                    parts.append(self._format_kv(category, ", ".join(self._tag_html(k) for k in filtered)))
 
         if self._gen_group.isChecked():
             for category, key in (("general", "tags"), ("meta", "meta")):
                 filtered = [k for k, v in raw.get(category, {}).items() if v >= gen_th and k not in blackset]
                 if filtered:
-                    parts.append(self._format_kv(key, ", ".join(html.escape(k) for k in filtered)))
+                    parts.append(self._format_kv(key, ", ".join(self._tag_html(k) for k in filtered)))
 
         self._filtered_label.setText(self._wrap_kv_table(parts) if parts else t("(no tags)"))
+
+    # ── Search ──
+
+    def _on_search_changed(self, text: str):
+        terms = {term.strip().lower() for term in text.split(",") if term.strip()}
+        self._search_terms = [(term, build_highlight_ctx(term)) for term in sorted(terms, key=len, reverse=True)]
+        self._update_raw_display()
+        self._update_filtered_display()
+
+    def _matching_term(self, tag: str) -> tuple[str, tuple] | None:
+        lowered = tag.lower()
+        return next((entry for entry in self._search_terms if entry[0] in lowered), None)
+
+    def _tag_html(self, tag: str) -> str:
+        match = self._matching_term(tag)
+        return highlight_html(tag, match[0], match[1]) if match else html.escape(tag)
+
+    def _update_search_hits(self):
+        if not self._search_terms or self._last_raw is None:
+            self._search_hits.clear()
+            return
+        hits = sum(1 for category in CATEGORIES for tag in self._last_raw.get(category, {}) if self._matching_term(tag))
+        self._search_hits.setText(t("Hits: {count}").format(count=hits))
 
     # ── Events ──
 

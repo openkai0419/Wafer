@@ -51,7 +51,8 @@ class Preset:
         features = [spec for spec in (FeatureSpec.from_dict(item) for item in data["features"]) if spec is not None]
         try:
             version = int(data.get("version", 0))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as e:
+            AppLogger.warning(f"[Mapping] Ignored invalid saved space version {data.get('version')!r}", exc=e)
             version = 0
         return cls(features, TrainParams.from_dict(data.get("params") or {}), max(version, 0))
 

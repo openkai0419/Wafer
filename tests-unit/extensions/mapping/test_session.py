@@ -24,6 +24,13 @@ def test_feature_spec_sanitizes_weight(weight, expected):
     assert spec.weight == expected
 
 
+def test_feature_spec_logs_an_unreadable_weight(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(session.AppLogger, "warning", lambda message, exc=None: warnings.append(message))
+    assert FeatureSpec.from_dict({"key": "tags", "encoder": "token_set", "weight": "x"}).weight == 1.0
+    assert len(warnings) == 1 and "tags" in warnings[0]
+
+
 def test_feature_spec_ignores_non_dict_options_and_data():
     spec = FeatureSpec.from_dict({"key": "tags", "encoder": "token_set", "options": "space"})
     assert spec is not None and spec.options == {}

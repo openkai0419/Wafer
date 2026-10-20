@@ -70,7 +70,8 @@ class FeatureSpec:
             return None
         try:
             weight = float(data.get("weight", 1.0))
-        except (TypeError, ValueError, OverflowError):
+        except (TypeError, ValueError, OverflowError) as e:
+            AppLogger.warning(f"[Mapping] Ignored invalid saved weight {data.get('weight')!r} for {key}", exc=e)
             weight = 1.0
         weight = min(max(weight, 0.0), 3.0) if math.isfinite(weight) else 1.0
         raw_options = data.get("options") or {}

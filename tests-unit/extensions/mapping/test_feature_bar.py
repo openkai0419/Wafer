@@ -205,3 +205,16 @@ def test_option_order_survives_an_encoder_switch(qtbot):
     order = [layout.itemAt(i).widget() for i in range(layout.count())]
     assert order[-2:] == [chip.weight_spin, chip.remove_button]
     assert order.index(chip.option_combos["separator"]) > order.index(chip.encoder_combo)
+
+
+def test_unreadable_number_option_falls_back_to_the_default_and_is_logged(qtbot, monkeypatch):
+    from extensions.mapping import encoders
+
+    warnings = []
+    monkeypatch.setattr(encoders.AppLogger, "warning", lambda message, exc=None: warnings.append(message))
+    bar = FeatureBar(lambda key: "text")
+    qtbot.addWidget(bar)
+    bar.set_features([FeatureSpec("prompt", "text", 1.0, {"min_chars": "x", "max_chars": "99"})])
+    spins = bar.chips()[0].option_spins
+    assert spins["min_chars"].value() == 2 and spins["max_chars"].value() == 12
+    assert len(warnings) == 1 and "min_chars" in warnings[0]

@@ -47,6 +47,13 @@ def test_preset_roundtrip_and_keys(settings):
     assert Preset.from_dict({"features": "bad"}) is None
 
 
+def test_unreadable_preset_version_reads_as_zero_and_is_logged(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(space.AppLogger, "warning", lambda message, exc=None: warnings.append(message))
+    assert Preset.from_dict({"features": [], "version": "x"}).version == 0
+    assert len(warnings) == 1
+
+
 def test_fit_places_training_files_and_new_files_near_neighbours():
     model = SpaceModel.fit(preset(), tag_values())
     assert model.trained == len(model.paths) == 40

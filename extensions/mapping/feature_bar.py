@@ -98,10 +98,7 @@ class FeatureChip(QtWidgets.QFrame):
         spin = QtWidgets.QSpinBox()
         spin.setRange(option.minimum, option.maximum)
         spin.setPrefix(f"{t(option.label)} ")
-        try:
-            spin.setValue(int(values.get(option.name, option.default)))
-        except ValueError:
-            spin.setValue(int(option.default))
+        spin.setValue(ENCODERS[self.encoder_combo.currentData()].number_option(values, option.name))
         spin.setToolTip(t(option.description))
         spin.valueChanged.connect(lambda _value: self.changed.emit())
         self.add_option_widget(spin)

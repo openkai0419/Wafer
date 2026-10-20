@@ -1,7 +1,8 @@
 import sys
+from pathlib import Path
 
 from ..common.paths import get_launcher_path
-from .process import AppProcess
+from .process import MAIN_SCRIPT, AppProcess
 
 if sys.platform == "win32":
     import winreg
@@ -10,19 +11,25 @@ MENU_KEY = r"Software\Classes\*\shell\Wafer"
 MENU_LABEL = "Open with Wafer"
 
 
+def dev_interpreter() -> str:
+    if not AppProcess._in_venv():
+        return AppProcess.base_command()[0]
+    windowless = Path(sys.executable).with_name("pythonw.exe")
+    return str(windowless if windowless.is_file() else sys.executable)
+
+
 def launch_command() -> str | None:
     if sys.platform != "win32":
         return None
     launcher = get_launcher_path()
     if launcher:
         return f'"{launcher}" "%1"'
-    exe, script = AppProcess.base_command()
-    return f'"{exe}" "{script}" "%1"'
+    return f'"{dev_interpreter()}" "{MAIN_SCRIPT}" "%1"'
 
 
 def icon_path() -> str:
     launcher = get_launcher_path()
-    return str(launcher) if launcher else AppProcess.base_command()[0]
+    return str(launcher) if launcher else dev_interpreter()
 
 
 def is_enabled(key: str = MENU_KEY) -> bool:
@@ -55,7 +62,10 @@ def enable(command: str, key: str = MENU_KEY) -> None:
 def disable(key: str = MENU_KEY) -> None:
     if not is_enabled(key):
         return
-    winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key + r"\command")
+    try:
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key + r"\command")
+    except FileNotFoundError:
+        pass
     winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key)
 
 

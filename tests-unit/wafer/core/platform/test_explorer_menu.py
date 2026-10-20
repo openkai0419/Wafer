@@ -61,6 +61,17 @@ def test_disable_missing_key_is_noop(test_key):
     assert not explorer_menu.is_enabled(test_key)
 
 
+def test_disable_removes_key_without_command_subkey(test_key):
+    import winreg
+
+    from wafer.core.platform import explorer_menu
+
+    winreg.CloseKey(winreg.CreateKey(winreg.HKEY_CURRENT_USER, test_key))
+    assert explorer_menu.is_enabled(test_key)
+    explorer_menu.disable(test_key)
+    assert not explorer_menu.is_enabled(test_key)
+
+
 def test_sync_rewrites_moved_command(test_key, monkeypatch):
     from wafer.core.platform import explorer_menu
 
@@ -87,13 +98,41 @@ def test_launch_command_prefers_launcher(monkeypatch):
     assert explorer_menu.launch_command() == f'"{launcher}" "%1"'
 
 
-def test_launch_command_falls_back_to_main_script(monkeypatch):
+def test_launch_command_outside_venv_uses_base_command(monkeypatch):
     from wafer.core.platform import explorer_menu
     from wafer.core.platform.process import AppProcess
 
     monkeypatch.setattr(explorer_menu, "get_launcher_path", lambda: None)
+    monkeypatch.setattr(AppProcess, "_in_venv", staticmethod(lambda: False))
     exe, script = AppProcess.base_command()
     assert explorer_menu.launch_command() == f'"{exe}" "{script}" "%1"'
+
+
+def test_launch_command_in_venv_uses_venv_pythonw(monkeypatch, tmp_path):
+    from wafer.core.platform import explorer_menu
+    from wafer.core.platform.process import MAIN_SCRIPT, AppProcess
+
+    python = tmp_path / "python.exe"
+    pythonw = tmp_path / "pythonw.exe"
+    python.touch()
+    pythonw.touch()
+    monkeypatch.setattr(explorer_menu, "get_launcher_path", lambda: None)
+    monkeypatch.setattr(AppProcess, "_in_venv", staticmethod(lambda: True))
+    monkeypatch.setattr(sys, "executable", str(python))
+    assert explorer_menu.launch_command() == f'"{pythonw}" "{MAIN_SCRIPT}" "%1"'
+    assert explorer_menu.icon_path() == str(pythonw)
+
+
+def test_launch_command_in_venv_without_pythonw_uses_python(monkeypatch, tmp_path):
+    from wafer.core.platform import explorer_menu
+    from wafer.core.platform.process import MAIN_SCRIPT, AppProcess
+
+    python = tmp_path / "python.exe"
+    python.touch()
+    monkeypatch.setattr(explorer_menu, "get_launcher_path", lambda: None)
+    monkeypatch.setattr(AppProcess, "_in_venv", staticmethod(lambda: True))
+    monkeypatch.setattr(sys, "executable", str(python))
+    assert explorer_menu.launch_command() == f'"{python}" "{MAIN_SCRIPT}" "%1"'
 
 
 def test_toggle_command_follows_registry(test_key, monkeypatch):

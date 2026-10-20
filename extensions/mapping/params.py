@@ -112,7 +112,7 @@ class ViewParams(ParamSet):
 
 
 SUBGROUP_SIZE = ParamSpec(
-    "Group size",
+    "Subgroup size",
     "Split the base groups from Settings into smaller ones, as a share of their size. 1 = the base groups.",
     minimum=2**-10,
     maximum=1.0,

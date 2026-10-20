@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
-from PySide6 import QtCore
+from PySide6 import QtCore, QtWidgets
 
 from extensions.mapping import commands
 from extensions.mapping import map_host as map_host_module
@@ -845,10 +845,43 @@ def test_file_list_is_shown_until_hidden(mapping):
     other.close()
 
 
-def test_thumbnails_switch_lives_in_the_display_popup(mapping):
-    assert not mapping.toolbar.thumbnail_check.isVisibleTo(mapping.toolbar)
+def bar_order(toolbar):
+    texts = []
+    for index in range(toolbar.flow.count()):
+        widget = toolbar.flow.itemAt(index).widget()
+        parts = [widget, *widget.findChildren(QtWidgets.QWidget)]
+        texts += [part.text() for part in parts if isinstance(part, (QtWidgets.QLabel, QtWidgets.QCheckBox)) and part.text()]
+    return texts
+
+
+def test_each_slider_wraps_together_with_its_label_and_value(mapping):
+    for name, slider in mapping.toolbar.sliders.items():
+        assert slider.parentWidget() is mapping.toolbar.slider_values[name].parentWidget() is not mapping.toolbar
+
+
+def test_map_bar_shows_thumbnails_spacing_then_subgroup_size(mapping):
+    order = bar_order(mapping.toolbar)
+    assert mapping.toolbar.thumbnail_check.isVisibleTo(mapping.toolbar)
+    assert order.index("Thumbnails") < order.index("Spacing") < order.index("Subgroup size")
+    assert "Group size" not in order and "Strictness" not in order
+
+
+def test_settings_bar_keeps_every_base_group_setting_together(qtbot):
+    from extensions.mapping.map_toolbar import MapToolbar
+    from extensions.mapping.view_settings import TabSettings
+
+    toolbar = MapToolbar(TabSettings(), edits_space_groups=True)
+    qtbot.addWidget(toolbar)
+    order = bar_order(toolbar)
+    assert toolbar.fine_check.isVisibleTo(toolbar) and toolbar.thumbnail_check.isVisibleTo(toolbar)
+    assert order.index("Thumbnails") < order.index("Group size") < order.index("Strictness") < order.index("Fine groups")
+    assert "Subgroup size" not in order and "Spacing" not in order
+
+
+def test_display_popup_holds_only_the_shared_display_settings(mapping):
     mapping.toolbar.toggle_tuning()
-    assert mapping.toolbar.thumbnail_check.isVisible()
+    popup = mapping.toolbar.popup_content
+    assert not popup.findChildren(QtWidgets.QCheckBox) and mapping.toolbar.tuning.isVisible()
     mapping.toolbar.tuning_popup.close()
 
 

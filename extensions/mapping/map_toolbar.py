@@ -21,6 +21,7 @@ from .view_settings import GroupingStore, TabSettings, ViewSettings
 TUNING_HEIGHT = 600
 TOOLBAR_SPACING = 6
 SLIDER_WIDTH = 80
+SEPARATOR_HEIGHT = 16
 STEPS_PER_DOUBLING = 4
 GROUPING_SPECS = {name: spec for name, spec, _ in param_specs(Grouping)}
 SPACING_SPEC = next(spec for name, spec, _ in param_specs(TrainParams) if name == "min_dist")
@@ -38,6 +39,14 @@ def slider_position(factor: float) -> int:
 
 def slider_factor(position: int) -> float:
     return 2.0 ** (position / STEPS_PER_DOUBLING)
+
+
+def separator() -> QtWidgets.QFrame:
+    line = QtWidgets.QFrame()
+    line.setFrameShape(QtWidgets.QFrame.VLine)
+    line.setFrameShadow(QtWidgets.QFrame.Sunken)
+    line.setFixedHeight(dpix(SEPARATOR_HEIGHT))
+    return line
 
 
 def set_quietly(button: QtWidgets.QAbstractButton, checked: bool) -> None:
@@ -60,6 +69,8 @@ class MapToolbar(QtWidgets.QWidget):
         self.thumbnail_check = QtWidgets.QCheckBox(t("Thumbnails"))
         self.thumbnail_check.setToolTip(t("Show thumbnails instead of dots."))
         self.thumbnail_check.toggled.connect(self.tab.set_thumbnails_shown)
+        layout.addWidget(self.thumbnail_check)
+        layout.addWidget(separator())
         self.sliders: dict[str, QtWidgets.QSlider] = {}
         self.slider_values: dict[str, QtWidgets.QLabel] = {}
         self.fine_check: QtWidgets.QCheckBox | None = None
@@ -70,10 +81,13 @@ class MapToolbar(QtWidgets.QWidget):
             self.fine_check = QtWidgets.QCheckBox(t(fine.label))
             self.fine_check.setToolTip(t(fine.description))
             self.fine_check.toggled.connect(lambda checked: self.set_grouping("fine", int(checked)))
+            layout.addWidget(self.fine_check)
             self.groupings.changed.connect(self.on_grouping_changed)
         else:
-            self.add_slider(layout, "subgroup_size", SUBGROUP_SIZE, lambda _name, size: self.tab.set_subgroup_size(size))
             self.add_spacing_slider(layout)
+            layout.addWidget(separator())
+            self.add_slider(layout, "subgroup_size", SUBGROUP_SIZE, lambda _name, size: self.tab.set_subgroup_size(size))
+        layout.addWidget(separator())
         self.mode_buttons: dict[str, QtWidgets.QToolButton] = {}
         group = QtWidgets.QButtonGroup(self)
         modes = QtWidgets.QWidget()
@@ -94,10 +108,7 @@ class MapToolbar(QtWidgets.QWidget):
         self.tuning.params_changed.connect(self.settings.set_params)
         self.popup_content = QtWidgets.QWidget()
         content = QtWidgets.QVBoxLayout(self.popup_content)
-        content.setContentsMargins(dpix(10), dpix(8), dpix(10), 0)
-        content.addWidget(self.thumbnail_check)
-        if self.fine_check is not None:
-            content.addWidget(self.fine_check)
+        content.setContentsMargins(0, 0, 0, 0)
         content.addWidget(self.tuning)
         self.popup_content.hide()
         self.tuning_button = QtWidgets.QToolButton()
@@ -110,32 +121,32 @@ class MapToolbar(QtWidgets.QWidget):
         self.sync()
 
     def add_slider(self, layout: FlowLayout, name: str, spec, apply) -> None:
+        slider = self.add_slider_unit(layout, name, spec, factor_text(2**-10))
+        slider.setRange(slider_position(spec.minimum), slider_position(spec.maximum))
+        slider.valueChanged.connect(lambda position: apply(name, slider_factor(position)))
+
+    def add_spacing_slider(self, layout: FlowLayout) -> None:
+        slider = self.add_slider_unit(layout, "spacing", SPACING_SPEC, "0.00")
+        slider.setRange(0, SPACING_STEPS)
+        slider.valueChanged.connect(lambda position: self.tab.set_spacing(SPACING_SPEC.minimum + position * SPACING_SPEC.step))
+
+    def add_slider_unit(self, layout: FlowLayout, name: str, spec, widest_value: str) -> QtWidgets.QSlider:
+        unit = QtWidgets.QWidget()
+        row = QtWidgets.QHBoxLayout(unit)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(dpix(TOOLBAR_SPACING))
         label = QtWidgets.QLabel(t(spec.label))
         label.setToolTip(t(spec.description))
         slider = QtWidgets.QSlider(Qt.Horizontal)
-        slider.setRange(slider_position(spec.minimum), slider_position(spec.maximum))
         slider.setFixedWidth(dpix(SLIDER_WIDTH))
         slider.setToolTip(t(spec.description))
-        slider.valueChanged.connect(lambda position: apply(name, slider_factor(position)))
         value = QtWidgets.QLabel()
-        value.setFixedWidth(value.fontMetrics().horizontalAdvance(factor_text(2**-10)) + dpix(2))
+        value.setFixedWidth(value.fontMetrics().horizontalAdvance(widest_value) + dpix(2))
         for widget in (label, slider, value):
-            layout.addWidget(widget)
+            row.addWidget(widget)
+        layout.addWidget(unit)
         self.sliders[name], self.slider_values[name] = slider, value
-
-    def add_spacing_slider(self, layout: FlowLayout) -> None:
-        label = QtWidgets.QLabel(t(SPACING_SPEC.label))
-        label.setToolTip(t(SPACING_SPEC.description))
-        slider = QtWidgets.QSlider(Qt.Horizontal)
-        slider.setRange(0, SPACING_STEPS)
-        slider.setFixedWidth(dpix(SLIDER_WIDTH))
-        slider.setToolTip(t(SPACING_SPEC.description))
-        slider.valueChanged.connect(lambda position: self.tab.set_spacing(SPACING_SPEC.minimum + position * SPACING_SPEC.step))
-        value = QtWidgets.QLabel()
-        value.setFixedWidth(value.fontMetrics().horizontalAdvance("0.00") + dpix(2))
-        for widget in (label, slider, value):
-            layout.addWidget(widget)
-        self.sliders["spacing"], self.slider_values["spacing"] = slider, value
+        return slider
 
     def prepend(self, widget: QtWidgets.QWidget) -> None:
         self.flow.insertWidget(0, widget)

@@ -7,10 +7,13 @@ import pytest
 from wafer.constants import APP_DATA_DIR_NAME
 from wafer.core.common.paths import (
     containing_dir,
+    data_db_path,
     list_files,
     normalize_path,
     resolve_cache_path,
+    resolve_config_path,
     resolve_temp_path,
+    setting_db_path,
     safe_exists,
     safe_getsize,
     safe_is_dir,
@@ -134,6 +137,13 @@ def test_resolve_temp_path_uses_app_temp_dir(monkeypatch):
     result = resolve_temp_path("comfyui_workflows/abc.json")
 
     assert result.endswith(f"/wafer-data/{APP_DATA_DIR_NAME}/.temp/comfyui_workflows/abc.json")
+
+
+def test_tests_never_touch_the_real_app_data():
+    from test_support.app_data import REAL_APP_DATA_DIR
+
+    for path in (setting_db_path("db"), data_db_path("db"), resolve_config_path("x.ini"), resolve_temp_path("x")):
+        assert not Path(path).is_relative_to(REAL_APP_DATA_DIR)
 
 
 def test_get_name_without_ext():

@@ -14,7 +14,7 @@ from wafer.core.db.file_db import _TABLES, _VIEWS, _INDEXES_SQL
 from wafer.core.db.db_utils import apply_read_pragmas
 from wafer.core.db.query import FileSearchEngine
 from wafer.plugin.query.composer import SearchComposer
-from wafer.core.common.paths import resolve_data_path
+from test_support.app_data import REAL_APP_DATA_DIR
 
 pytestmark = pytest.mark.benchmark
 
@@ -26,7 +26,7 @@ ITERATIONS = 5
 
 def _resolve_real_db_dir() -> Path:
     configured = os.environ.get("WAFER_DATA_DIR", "").strip()
-    return Path(configured) if configured else Path(resolve_data_path("data/"))
+    return Path(configured) if configured else REAL_APP_DATA_DIR / "data"
 
 
 REAL_DB_DIR = _resolve_real_db_dir()

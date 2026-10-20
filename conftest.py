@@ -7,6 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from test_support.app_data import isolate_app_data
+
+isolate_app_data()
+
 from wafer.core.logs import AppLogger
 from wafer.core.logs import debug_non_recursive
 from wafer.core.logs import set_suppress_dialog

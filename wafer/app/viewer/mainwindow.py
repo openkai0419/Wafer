@@ -51,11 +51,11 @@ AppMenuRegistrar.setup_menu()
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, icon=None, parent=None, workspace_lock: WorkspaceLock | None = None, open_request: OpenRequest | None = None):
+    def __init__(self, icon=None, parent=None, *, workspace_lock: WorkspaceLock, open_request: OpenRequest | None = None):
         super().__init__(parent=parent)
         self._workspace_lock = workspace_lock
         self._workspace_store = WorkspaceStore.instance()
-        self.slot_id = workspace_lock.slot_id if workspace_lock is not None else None
+        self.slot_id = workspace_lock.slot_id
         self._slot_entry: WindowSlot | None = None
         self._close_reason = CloseReason.NORMAL
         self._slot_ready = False
@@ -91,7 +91,7 @@ class MainWindow(QtWidgets.QMainWindow):
         apply_window_identity(self.winId())
 
     def event(self, event):
-        if event.type() == QtCore.QEvent.WinIdChange and self._workspace_lock is not None:
+        if event.type() == QtCore.QEvent.WinIdChange:
             self._workspace_lock.set_window(int(self.winId()))
         return super().event(event)
 
@@ -99,7 +99,7 @@ class MainWindow(QtWidgets.QMainWindow):
         store = self._workspace_store
 
         def task():
-            sid, entry, _ = store.acquire_slot(requested_id)
+            sid, entry = store.acquire_slot(requested_id)
             self._dispatcher.invoke(lambda: self._on_slot_acquired(sid, entry))
 
         self._dispatcher.post(task, priority=9)
@@ -828,8 +828,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.release_workspace()
 
     def release_workspace(self):
-        if self._workspace_lock is not None:
-            self._workspace_lock.release()
+        self._workspace_lock.release()
 
     def _register_panel_plugin_states(self, store):
         from ...plugin.panel.base import BasePanelPlugin

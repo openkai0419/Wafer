@@ -296,14 +296,17 @@ class TestWorkspaceToolbarWidget:
         assert items["s2"].is_open is True
         assert items["s1"].is_open is False
 
-    def test_recent_current_slot_has_marker_and_enabled_open(self, qtbot):
+    def test_recent_current_slot_has_marker_and_disabled_open(self, qtbot):
         from wafer.app.viewer.widgets import workspace_toolbar
         from wafer.core.store.workspace import WindowSlot
 
         item = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s1", path={"database_name": "db"}), is_current=True)
+        other = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s2", path={"database_name": "db"}))
         qtbot.addWidget(item)
+        qtbot.addWidget(other)
         assert item._current_marker.property("current") is True
-        assert item._open_button.isEnabled() is True
+        assert item._open_button.isEnabled() is False
+        assert other._open_button.isEnabled() is True
         assert item._open_button.toolTip() == "Open in new window"
 
     def test_recent_slot_name_is_displayed_over_summary(self, qtbot):

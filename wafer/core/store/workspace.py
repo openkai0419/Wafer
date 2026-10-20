@@ -402,13 +402,8 @@ class WorkspaceStore:
         slots = self.list_slots()
         return slots[0].slot_id if slots else None
 
-    def list_recent_slots(self, limit: int = 10, include_active: bool = False) -> list[WindowSlot]:
-        raw = self._load_raw()
-        slots = _slots_newest_first(raw)
-        if not include_active:
-            active = set(raw.get("active_slot_ids", []))
-            slots = [s for s in slots if s.slot_id not in active]
-        return slots[: max(0, int(limit))]
+    def list_recent_slots(self, limit: int = 10) -> list[WindowSlot]:
+        return self.list_slots()[: max(0, int(limit))]
 
     def get_last_used_database_name(self) -> str:
         slots = self._load_raw().get("slots", {})
@@ -502,17 +497,16 @@ class WorkspaceStore:
 
         self._locked_update(_u)
 
-    def acquire_slot(self, slot_id: str | None = None) -> tuple[str, WindowSlot, bool]:
+    def acquire_slot(self, slot_id: str | None = None) -> tuple[str, WindowSlot]:
         def _u(raw):
             slots = raw.setdefault("slots", {})
-            existed = bool(slot_id and slot_id in slots)
-            if existed:
+            if slot_id and slot_id in slots:
                 entry = WindowSlot.from_dict(slots[slot_id])
             else:
                 entry = WindowSlot()
                 slots[entry.slot_id] = entry.to_dict()
             self._activate_slot(raw, entry.slot_id)
-            return entry.slot_id, entry, existed
+            return entry.slot_id, entry
 
         return self._locked_update(_u)
 
@@ -559,11 +553,3 @@ class WorkspaceStore:
             return True
 
         return bool(self._locked_update(_u))
-
-    def release_slot(self, slot_id: str) -> None:
-        def _u(raw):
-            active = raw.get("active_slot_ids", [])
-            if slot_id in active:
-                active.remove(slot_id)
-
-        self._locked_update(_u)

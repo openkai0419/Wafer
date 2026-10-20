@@ -378,6 +378,7 @@ class _RecentSlotItem(QtWidgets.QWidget):
 
         open_btn = _icon_button("external_link", t("Open in new window"), self)
         open_btn.clicked.connect(lambda: self.open_requested.emit(self.slot.slot_id))
+        open_btn.setEnabled(not self.is_current)
         layout.addWidget(open_btn)
         self._open_button = open_btn
 
@@ -488,7 +489,7 @@ class WorkspaceToolbarWidget(QtWidgets.QWidget):
 
         def load():
             ui, path, query = store.snapshot()
-            slots = store.list_recent_slots(limit=8, include_active=True)
+            slots = store.list_recent_slots(limit=8)
             open_ids = WorkspaceLock.open_slot_ids([slot.slot_id for slot in slots])
             self._dispatcher.invoke(lambda: self._apply_loaded(mtime, ui, path, query, slots, current_slot_id, open_ids))
 

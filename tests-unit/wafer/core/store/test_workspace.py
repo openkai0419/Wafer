@@ -52,23 +52,20 @@ class TestPresetRoundtrip:
 class TestSlotLifecycle:
     def test_acquire_creates_new_slot(self, tmp_path):
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-        sid, slot, existed = store.acquire_slot()
-        assert existed is False
+        sid, slot = store.acquire_slot()
         assert sid == slot.slot_id
         assert sid in store.get_active_slot_ids()
 
     def test_acquire_with_existing_returns_it(self, tmp_path):
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-        sid1, _, _ = store.acquire_slot()
-        store.release_slot(sid1)
-        sid2, slot, existed = store.acquire_slot(sid1)
-        assert existed is True
+        sid1, _ = store.acquire_slot()
+        sid2, slot = store.acquire_slot(sid1)
         assert sid2 == sid1
+        assert slot.slot_id == sid1
 
     def test_acquire_unknown_id_issues_new_id(self, tmp_path):
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-        sid, slot, existed = store.acquire_slot("not-a-slot")
-        assert existed is False
+        sid, slot = store.acquire_slot("not-a-slot")
         assert sid != "not-a-slot"
         assert sid == slot.slot_id
         assert store.get_slot("not-a-slot") is None
@@ -118,12 +115,12 @@ class TestSlotLifecycle:
 
     def test_list_slots_includes_active_slots(self, tmp_path):
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-        sid, _, _ = store.acquire_slot()
+        sid, _ = store.acquire_slot()
         assert [s.slot_id for s in store.list_slots()] == [sid]
 
     def test_save_and_get_slot(self, tmp_path):
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-        sid, slot, _ = store.acquire_slot()
+        sid, slot = store.acquire_slot()
         slot.name = "Work"
         slot.path = {"database_name": "main", "expanded": [], "selected": []}
         slot.query = {"bars": [], "sort_by": "path", "ascending": False}
@@ -164,15 +161,9 @@ class TestSlotLifecycle:
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
         assert store.rename_slot("missing", "Name") is False
 
-    def test_release_removes_from_active(self, tmp_path):
-        store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-        sid, _, _ = store.acquire_slot()
-        store.release_slot(sid)
-        assert sid not in store.get_active_slot_ids()
-
     def test_restore_ids_filtered_by_existence(self, tmp_path):
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-        sid, _, _ = store.acquire_slot()
+        sid, _ = store.acquire_slot()
         store.set_restore_slot_ids([sid, "nonexistent"])
         assert store.get_restore_slot_ids() == [sid]
 
@@ -186,7 +177,7 @@ class TestSlotLifecycle:
 
     def test_delete_slot_cleans_active_and_restore(self, tmp_path):
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-        sid, _, _ = store.acquire_slot()
+        sid, _ = store.acquire_slot()
         store.set_restore_slot_ids([sid])
         assert store.delete_slot(sid) is True
         assert sid not in store.get_active_slot_ids()
@@ -199,7 +190,7 @@ class TestSlotLifecycle:
 
     def test_forget_slot_snapshot_keeps_active_and_restore_ids(self, tmp_path):
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-        sid, _, _ = store.acquire_slot()
+        sid, _ = store.acquire_slot()
         store.set_restore_slot_ids([sid])
 
         assert store.forget_slot_snapshot(sid) is True
@@ -215,9 +206,9 @@ class TestSlotLifecycle:
 
     def test_viewer_startup_generation_starts_on_empty_to_active_transition(self, tmp_path):
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-        sid1, _, _ = store.acquire_slot()
+        sid1, _ = store.acquire_slot()
         run1 = store.viewer_startup_state()
-        sid2, _, _ = store.acquire_slot()
+        sid2, _ = store.acquire_slot()
         run2 = store.viewer_startup_state()
 
         assert sid1 != sid2
@@ -228,8 +219,8 @@ class TestSlotLifecycle:
 
     def test_viewer_startup_claim_allows_only_first_slot_once_per_scope(self, tmp_path):
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-        first, _, _ = store.acquire_slot()
-        second, _, _ = store.acquire_slot()
+        first, _ = store.acquire_slot()
+        second, _ = store.acquire_slot()
 
         assert store.claim_viewer_startup_once("updates", second) is False
         assert store.claim_viewer_startup_once("updates", first) is True
@@ -238,11 +229,11 @@ class TestSlotLifecycle:
 
     def test_viewer_startup_claim_resets_after_all_slots_released(self, tmp_path):
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-        first, _, _ = store.acquire_slot()
+        first, _ = store.acquire_slot()
         assert store.claim_viewer_startup_once("updates", first) is True
-        store.release_slot(first)
+        store.set_active_slot_ids([])
 
-        second, _, _ = store.acquire_slot()
+        second, _ = store.acquire_slot()
 
         assert store.viewer_startup_state()["generation"] == 2
         assert store.claim_viewer_startup_once("updates", second) is True
@@ -305,7 +296,7 @@ class TestSnapshot:
 
 
 class TestRecentSlots:
-    def test_recent_slots_excludes_active_and_sorts_latest_first(self, tmp_path):
+    def test_recent_slots_include_active_and_sort_latest_first(self, tmp_path):
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
         first = WindowSlot(slot_id="old", updated_at="2026-04-27T09:00:00+00:00")
         second = WindowSlot(slot_id="new", updated_at="2026-04-27T10:00:00+00:00")
@@ -313,8 +304,8 @@ class TestRecentSlots:
         store._locked_update(lambda raw: raw.update({"slots": {"old": first.to_dict(), "new": second.to_dict(), "active": active.to_dict()}}))
         store.set_active_slot_ids(["active"])
 
-        assert [s.slot_id for s in store.list_recent_slots(limit=10)] == ["new", "old"]
-        assert [s.slot_id for s in store.list_recent_slots(limit=2, include_active=True)] == ["active", "new"]
+        assert [s.slot_id for s in store.list_recent_slots(limit=10)] == ["active", "new", "old"]
+        assert [s.slot_id for s in store.list_recent_slots(limit=2)] == ["active", "new"]
 
 
 class TestStoreMtime:

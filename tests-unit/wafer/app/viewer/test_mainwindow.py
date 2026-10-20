@@ -448,10 +448,31 @@ class TestWorkspaceLock:
         win.release_workspace()
         win._workspace_lock.release.assert_called_once_with()
 
-    def test_release_workspace_without_a_lock_is_a_noop(self):
+    def test_a_window_needs_its_workspace_lock(self):
+        import inspect
+
+        from wafer.app.viewer.mainwindow import MainWindow
+
+        parameter = inspect.signature(MainWindow.__init__).parameters["workspace_lock"]
+        assert parameter.default is inspect.Parameter.empty
+        assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+
+    def test_slot_is_acquired_for_the_locked_workspace(self):
+        from wafer.core.store.workspace import WindowSlot
+
         win = self._make_win()
-        win._workspace_lock = None
-        win.release_workspace()
+        entry = WindowSlot(slot_id="s1")
+        win._workspace_store = MagicMock()
+        win._workspace_store.acquire_slot.return_value = ("s1", entry)
+        win._dispatcher = MagicMock()
+        win._dispatcher.post.side_effect = lambda task, priority: task()
+        win._dispatcher.invoke.side_effect = lambda callback: callback()
+        win._on_slot_acquired = MagicMock()
+
+        win._acquire_slot_async("s1")
+
+        win._workspace_store.acquire_slot.assert_called_once_with("s1")
+        win._on_slot_acquired.assert_called_once_with("s1", entry)
 
     def test_on_close_releases_lock_after_stopping_ipc(self):
         from wafer.app.lifecycle import CloseReason
@@ -521,7 +542,7 @@ class TestOpenRequest:
     def _acquire_slot(self, win, prompt):
         from wafer.core.store.workspace import WindowSlot
 
-        win._workspace_lock = None
+        win._workspace_lock = MagicMock()
         win.start_ipc_listener = MagicMock()
         win._update_title = MagicMock()
         win.workspace_toolbar_widget = MagicMock()

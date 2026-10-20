@@ -108,6 +108,8 @@ def _shutdown_all(ctx, *, then_restart):
     AppLogger.info(f"shutdown_all(restart={then_restart}): tray unreachable, force-terminating all app processes")
     webui_running = bool(AppProcess.get_by_args_subset("--webui"))
     AppProcess.force_close_all()
+    if hasattr(w, "release_workspace"):
+        w.release_workspace()
     if then_restart:
         if webui_running:
             WorkspaceStore.instance().set_restore_webui(True)

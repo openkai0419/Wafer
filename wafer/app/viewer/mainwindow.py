@@ -632,8 +632,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def close_by_restart(self):
         self._close_reason = CloseReason.RESTART
         self._save_slot()
-        if self._workspace_lock is not None:
-            self._workspace_lock.release()
+        self.release_workspace()
         from ...core.platform.process import AppProcess
 
         args = ["--viewer"]
@@ -791,6 +790,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._bridge.stop()
         except Exception as e:
             AppLogger.debug(f"on_close bridge.stop failed: {e}")
+        self.release_workspace()
+
+    def release_workspace(self):
         if self._workspace_lock is not None:
             self._workspace_lock.release()
 

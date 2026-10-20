@@ -403,6 +403,16 @@ class TestWorkspaceLock:
         assert win._close_reason == CloseReason.RESTART
         win.close.assert_called_once_with()
 
+    def test_release_workspace_releases_the_lock(self):
+        win = self._make_win()
+        win.release_workspace()
+        win._workspace_lock.release.assert_called_once_with()
+
+    def test_release_workspace_without_a_lock_is_a_noop(self):
+        win = self._make_win()
+        win._workspace_lock = None
+        win.release_workspace()
+
     def test_on_close_releases_lock_after_stopping_ipc(self):
         from wafer.app.lifecycle import CloseReason
 

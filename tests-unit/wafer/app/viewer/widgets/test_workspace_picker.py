@@ -2,7 +2,9 @@ from PySide6 import QtCore, QtWidgets
 import pytest
 
 from wafer.app.viewer.widgets.workspace_picker import PickResult, WorkspacePickerDialog
+from wafer.core.lang.manager import t
 from wafer.core.store.workspace import WindowSlot
+from wafer.qt.common.dpi import dpix
 
 
 @pytest.fixture(autouse=True)
@@ -63,10 +65,67 @@ def test_open_rows_selectable_when_allowed(qtbot):
     assert dlg.result_value() == PickResult("a", "")
 
 
-def test_open_rows_are_marked_in_subtitle(qtbot):
+def test_open_rows_carry_a_separate_marker(qtbot):
+    from wafer.app.viewer.widgets.workspace_labels import slot_subtitle
+    from wafer.app.viewer.widgets.workspace_picker import MARKER_ROLE, SUBTITLE_ROLE
+
     dlg = make_dialog(qtbot, open_ids={"a"})
-    assert dlg.list_widget.item(1).data(QtCore.Qt.UserRole + 1).endswith("Open")
-    assert not dlg.list_widget.item(2).data(QtCore.Qt.UserRole + 1).endswith("Open")
+    assert dlg.list_widget.item(1).data(MARKER_ROLE) == t("Open")
+    assert dlg.list_widget.item(2).data(MARKER_ROLE) == ""
+    assert dlg.list_widget.item(1).data(SUBTITLE_ROLE) == slot_subtitle(make_slots()[0])
+
+
+def test_open_marker_stays_visible_with_a_long_subtitle(qtbot):
+    from wafer.app.viewer.widgets.workspace_picker import WorkspaceRowDelegate
+
+    slots = [WindowSlot(slot_id="a", name="Alpha", path={"database_name": "d" * 80, "selected": ["C:/x/" + "p" * 80]})]
+    dlg = WorkspacePickerDialog(slots, {"a"}, allow_open=True, databases=[])
+    qtbot.addWidget(dlg)
+    dlg.resize(260, 300)
+    dlg.show()
+    dlg.list_widget.setCurrentRow(0)
+    image = dlg.list_widget.viewport().grab().toImage()
+    row_rect = dlg.list_widget.visualItemRect(dlg.list_widget.item(1))
+    delegate = dlg.list_widget.itemDelegate()
+    inner = row_rect.adjusted(dpix(10), dpix(6), -dpix(10), -dpix(6))
+    marker = delegate.marker_rect(inner, delegate.subtitle_font(QtWidgets.QStyleOptionViewItem()), t("Open"))
+    assert marker.left() > inner.left()
+    background = image.pixelColor(row_rect.left() + 1, row_rect.top() + 1)
+    painted = {
+        image.pixelColor(x, y).rgb()
+        for x in range(marker.left(), marker.right())
+        for y in range(marker.top(), marker.bottom())
+    }
+    assert len(painted | {background.rgb()}) > 1
+
+
+def test_disabled_rows_are_dimmed_as_a_whole(qtbot):
+    dlg = make_dialog(qtbot, open_ids={"a"}, allow_open=False)
+    dlg.resize(420, 300)
+    dlg.show()
+    dlg.list_widget.setCurrentRow(2)
+    image = dlg.list_widget.viewport().grab().toImage()
+
+    def brightest(row):
+        rect = dlg.list_widget.visualItemRect(dlg.list_widget.item(row))
+        return max(
+            image.pixelColor(x, y).lightness()
+            for x in range(rect.left(), rect.right())
+            for y in range(rect.top(), rect.bottom())
+        )
+
+    other = make_dialog(qtbot, open_ids={"a"}, allow_open=True)
+    other.resize(420, 300)
+    other.show()
+    other.list_widget.setCurrentRow(2)
+    enabled_image = other.list_widget.viewport().grab().toImage()
+    rect = other.list_widget.visualItemRect(other.list_widget.item(1))
+    enabled_brightest = max(
+        enabled_image.pixelColor(x, y).lightness()
+        for x in range(rect.left(), rect.right())
+        for y in range(rect.top(), rect.bottom())
+    )
+    assert brightest(1) < enabled_brightest * 0.7
 
 
 def test_open_button_disabled_without_enabled_selection(qtbot):

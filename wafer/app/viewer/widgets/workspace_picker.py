@@ -13,11 +13,15 @@ from .workspace_labels import slot_subtitle, slot_title, slot_tooltip
 
 SLOT_ID_ROLE = QtCore.Qt.UserRole
 SUBTITLE_ROLE = QtCore.Qt.UserRole + 1
+MARKER_ROLE = QtCore.Qt.UserRole + 2
 LAYOUT_KEY = "workspace_picker"
 DEFAULT_SIZE = (460, 420)
 ROW_PADDING_H = 10
 ROW_PADDING_V = 6
 ROW_GAP = 2
+MARKER_PADDING_H = 6
+MARKER_GAP = 8
+DISABLED_OPACITY = 0.4
 
 
 @dataclass(frozen=True)
@@ -44,38 +48,57 @@ class WorkspaceRowDelegate(QtWidgets.QStyledItemDelegate):
             height += QtGui.QFontMetrics(self.subtitle_font(option)).height() + dpix(ROW_GAP)
         return QtCore.QSize(option.rect.width(), height)
 
+    def marker_rect(self, row_rect: QtCore.QRect, font: QtGui.QFont, text: str) -> QtCore.QRect:
+        metrics = QtGui.QFontMetrics(font)
+        width = metrics.horizontalAdvance(text) + 2 * dpix(MARKER_PADDING_H)
+        height = metrics.height() + dpix(2)
+        return QtCore.QRect(row_rect.right() - width + 1, row_rect.y(), width, height)
+
     def paint(self, painter: QtGui.QPainter, option, index):
         p = ThemeManager.instance().palette
         enabled = bool(option.state & QtWidgets.QStyle.State_Enabled)
         selected = bool(option.state & QtWidgets.QStyle.State_Selected) and enabled
         hovered = bool(option.state & QtWidgets.QStyle.State_MouseOver) and enabled
         painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
         if selected:
             painter.fillRect(option.rect, QtGui.QColor(p.accent))
-            title_color, subtitle_color = p.accent_text, p.accent_text
+            title_color, subtitle_color, marker_color = p.accent_text, p.accent_text, p.accent_text
         else:
             if hovered:
                 painter.fillRect(option.rect, QtGui.QColor(p.bg_hover))
-            title_color = p.text_primary if enabled else p.text_muted
-            subtitle_color = p.text_secondary if enabled else p.text_muted
+            title_color, subtitle_color, marker_color = p.text_primary, p.text_secondary, p.text_accent
+        if not enabled:
+            painter.setOpacity(DISABLED_OPACITY)
         rect = option.rect.adjusted(dpix(ROW_PADDING_H), dpix(ROW_PADDING_V), -dpix(ROW_PADDING_H), -dpix(ROW_PADDING_V))
         title_font = self.title_font(option)
-        title_h = QtGui.QFontMetrics(title_font).height()
+        subtitle_font = self.subtitle_font(option)
+        title_metrics = QtGui.QFontMetrics(title_font)
+        title_width = rect.width()
+        marker = index.data(MARKER_ROLE)
+        if marker:
+            marker_rect = self.marker_rect(rect, subtitle_font, marker)
+            marker_rect.moveTop(rect.y() + (title_metrics.height() - marker_rect.height()) // 2)
+            title_width -= marker_rect.width() + dpix(MARKER_GAP)
+            painter.setFont(subtitle_font)
+            painter.setPen(QtGui.QPen(QtGui.QColor(marker_color), 1))
+            radius = marker_rect.height() / 2
+            painter.drawRoundedRect(QtCore.QRectF(marker_rect).adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
+            painter.drawText(marker_rect, QtCore.Qt.AlignCenter, marker)
         painter.setFont(title_font)
         painter.setPen(QtGui.QColor(title_color))
         painter.drawText(
-            QtCore.QRect(rect.x(), rect.y(), rect.width(), title_h),
+            QtCore.QRect(rect.x(), rect.y(), title_width, title_metrics.height()),
             QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter,
-            QtGui.QFontMetrics(title_font).elidedText(index.data(QtCore.Qt.DisplayRole) or "", QtCore.Qt.ElideRight, rect.width()),
+            title_metrics.elidedText(index.data(QtCore.Qt.DisplayRole) or "", QtCore.Qt.ElideRight, title_width),
         )
         subtitle = index.data(SUBTITLE_ROLE)
         if subtitle:
-            subtitle_font = self.subtitle_font(option)
             metrics = QtGui.QFontMetrics(subtitle_font)
             painter.setFont(subtitle_font)
             painter.setPen(QtGui.QColor(subtitle_color))
             painter.drawText(
-                QtCore.QRect(rect.x(), rect.y() + title_h + dpix(ROW_GAP), rect.width(), metrics.height()),
+                QtCore.QRect(rect.x(), rect.y() + title_metrics.height() + dpix(ROW_GAP), rect.width(), metrics.height()),
                 QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter,
                 metrics.elidedText(subtitle, QtCore.Qt.ElideMiddle, rect.width()),
             )
@@ -150,12 +173,10 @@ class WorkspacePickerDialog(QtWidgets.QDialog):
         self.list_widget.addItem(new_item)
         for slot in slots:
             is_open = slot.slot_id in open_ids
-            subtitle = slot_subtitle(slot)
-            if is_open:
-                subtitle = f"{subtitle} · {t('Open')}" if subtitle else t("Open")
             item = QtWidgets.QListWidgetItem(slot_title(slot))
             item.setData(SLOT_ID_ROLE, slot.slot_id)
-            item.setData(SUBTITLE_ROLE, subtitle)
+            item.setData(SUBTITLE_ROLE, slot_subtitle(slot))
+            item.setData(MARKER_ROLE, t("Open") if is_open else "")
             item.setToolTip(slot_tooltip(slot))
             if is_open and not allow_open:
                 item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEnabled)

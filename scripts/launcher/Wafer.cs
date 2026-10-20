@@ -6,6 +6,7 @@ using System.IO;
 using System.Reflection;
 using System.Threading;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 [assembly: AssemblyTitle("Wafer")]
 [assembly: AssemblyDescription("Wafer File Viewer")]
@@ -30,6 +31,7 @@ class Program
     const string NoLaunchFlag = "--wafer-no-launch";
     const string AppDataDirName = "Wafer";
     const string UninstallerTitle = "Wafer Uninstaller";
+    const string ExplorerMenuKey = @"Software\Classes\*\shell\Wafer";
     const int DefaultWaitSeconds = 15;
 
     static string logPath;
@@ -661,6 +663,15 @@ class Program
 
         bool RemoveAll(bool deleteUserData, out string summary)
         {
+            string menuNote = "";
+            try
+            {
+                Registry.CurrentUser.DeleteSubKeyTree(ExplorerMenuKey, false);
+            }
+            catch (Exception ex)
+            {
+                menuNote = "\n\nThe Explorer menu entry could not be removed: " + ex.Message;
+            }
             try
             {
                 Directory.Delete(appRoot, true);
@@ -671,7 +682,7 @@ class Program
                     + "\n\nPlease end all Wafer processes and remove the remaining files manually:\n" + appRoot;
                 return false;
             }
-            summary = "Wafer has been uninstalled.";
+            summary = "Wafer has been uninstalled." + menuNote;
             if (deleteUserData)
             {
                 string dataDir = UserDataDir();

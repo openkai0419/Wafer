@@ -78,6 +78,15 @@ def _ensure_tray_unless_pending():
         AppProcess.ensure_tray()
 
 
+def _sync_explorer_menu():
+    from wafer.core.platform import explorer_menu
+
+    try:
+        explorer_menu.sync()
+    except OSError as exc:
+        AppLogger.warning(f'Could not update the Explorer "Open with Wafer" entry: {exc}')
+
+
 def _enable_shared_opengl_contexts():
     from PySide6 import QtCore
 
@@ -251,6 +260,7 @@ def main():
             AppProcess.terminate_cmd('--tray', wait=True)
         _ensure_tray_unless_pending()
         _wait_install_then_load_plugins(app)
+        _sync_explorer_menu()
         from wafer.app.viewer.workspace_launch import is_openable_path, restore_session
         if args.path and is_openable_path(args.path):
             _entry_viewer(app, open_path=args.path)

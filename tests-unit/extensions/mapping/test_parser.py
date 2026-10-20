@@ -88,6 +88,15 @@ def test_version_change_retrains(env, monkeypatch):
     assert calls == [1]
 
 
+def test_notify_reloads_the_preset_before_the_cache_expires(env):
+    plugin, _db, _tmp = env
+    run(plugin, "c:/0.png")
+    save_preset("map", Preset([FeatureSpec("wd14.tags", "token_set")], TrainParams(), 2))
+    assert run(plugin, "c:/0.png").meta_info["model"] == "1"
+    plugin.on_notify()
+    assert run(plugin, "c:/0.png").meta_info["model"] == "2"
+
+
 def test_stuck_training_status_is_retrained(env):
     plugin, _db, tmp = env
     write_status(tmp / "cache" / "mapping" / "map", SpaceStatus("training", 1))

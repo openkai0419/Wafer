@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import sqlite3
 import threading
 import time
@@ -50,6 +51,9 @@ class MappingParser(BaseParserPlugin):
             self.preset = load_preset(self.db_name)
             self.preset_loaded = time.monotonic()
         return self.preset
+
+    def on_notify(self, payload: dict | None = None) -> None:
+        self.preset_loaded = -math.inf
 
     def process(self, path, file_info, metadata):
         preset = self.current_preset()

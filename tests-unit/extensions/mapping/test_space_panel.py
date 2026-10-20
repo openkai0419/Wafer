@@ -101,6 +101,21 @@ def test_save_and_retrain_bumps_version_and_resets_collection(widget):
     assert "Training" in w.status_label.text() and "v2" in w.status_label.text()
 
 
+def test_save_tells_the_parser_of_that_database_before_retraining(widget, monkeypatch):
+    w, _saved, resets = widget
+    events = []
+    monkeypatch.setattr(space_panel.MappingParser, "notify_to", staticmethod(lambda name, payload=None, db="": events.append((name, db, len(resets)))))
+    w.save_and_retrain()
+    assert events == [("mapping", "db1", 0)] and len(resets) == 1
+
+
+def test_save_continues_from_the_version_in_the_database(widget):
+    w, saved, _resets = widget
+    saved["db1"] = Preset([FeatureSpec("tags", "token_set")], TrainParams(), 5)
+    w.save_and_retrain()
+    assert saved["db1"].version == 6
+
+
 def test_save_without_features_does_nothing(widget):
     w, saved, resets = widget
     w.feature_bar.set_features([])

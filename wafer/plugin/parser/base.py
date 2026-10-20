@@ -99,12 +99,12 @@ class BaseParser(BasePlugin):
         pass
 
     @staticmethod
-    def notify_to(name: str, payload: Any = None) -> None:
+    def notify_to(name: str, payload: Any = None, db: str = "") -> None:
         from ...qt.commands.binding.instance_registry import InstanceRegistry
 
         node = InstanceRegistry.instance().resolve_node()
         if node:
-            node.send("plugin.notify", payload, dst=f"parser-{name}")
+            node.send("plugin.notify", payload, dst=f"parser-{name}", db=db)
 
 
 class BaseParserPlugin(BaseParser):

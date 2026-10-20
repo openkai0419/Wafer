@@ -160,7 +160,20 @@ def test_notify_to_sends_ipc():
     with patch("wafer.qt.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
         BaseParserPlugin.notify_to("novelai")
 
-    mock_node.send.assert_called_once_with("plugin.notify", None, dst="parser-novelai")
+    mock_node.send.assert_called_once_with("plugin.notify", None, dst="parser-novelai", db="")
+
+
+def test_notify_to_reaches_the_parser_of_the_given_database():
+    from unittest.mock import MagicMock, patch
+
+    mock_node = MagicMock()
+    mock_registry = MagicMock()
+    mock_registry.resolve_node.return_value = mock_node
+
+    with patch("wafer.qt.commands.binding.instance_registry.InstanceRegistry.instance", return_value=mock_registry):
+        BaseParserPlugin.notify_to("mapping", db="work")
+
+    mock_node.send.assert_called_once_with("plugin.notify", None, dst="parser-mapping", db="work")
 
 
 def test_notify_to_no_node():

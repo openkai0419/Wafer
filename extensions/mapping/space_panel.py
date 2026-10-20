@@ -35,6 +35,7 @@ from .map_host import MapHost
 from .map_toolbar import MapToolbar
 from .map_view import MapView
 from .params import TrainParams, ViewParams
+from .parser import MappingParser
 from .session import KEY_MODEL, OUTPUT_PREFIX, SPACE_KEYS, MapError, MapResult, SpaceLayout
 from .space import Preset, SpaceModel, SpaceStatus, count_placed, load_preset, model_dir, read_status, save_preset, space_model
 from .tuning import TuningPanel
@@ -622,8 +623,9 @@ class MappingSpaceWidget(QtWidgets.QWidget):
         features = self.feature_bar.features()
         if not db_name or not features:
             return
-        preset = Preset(features, self.tuning.params(), self.saved.version + 1)
         try:
+            current = load_preset(db_name)
+            preset = Preset(features, self.tuning.params(), max(self.saved.version, current.version if current else 0) + 1)
             save_preset(db_name, preset)
         except Exception as e:
             AppLogger.error(f"[Mapping] Saving the space settings for {db_name} failed", exc=e)
@@ -632,6 +634,7 @@ class MappingSpaceWidget(QtWidgets.QWidget):
             return
         self.apply_preset(preset)
         self.status = SpaceStatus("training", preset.version)
+        MappingParser.notify_to(MappingParser.NAME, db=db_name)
         if Recollect.reset(collector=OUTPUT_PREFIX, db_scope=db_name) == 0:
             AppLogger.warning(f"[Mapping] Saved space preset v{preset.version} for {db_name}, but no indexer received the retraining request; save again to retry")
             self.notice = t("Could not reach the indexer; try again.")

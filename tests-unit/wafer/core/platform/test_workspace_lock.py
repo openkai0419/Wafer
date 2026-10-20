@@ -69,6 +69,23 @@ def test_read_owner_is_none_after_release(tmp_path):
     assert WorkspaceLock.read_owner("s1", lock_dir=str(tmp_path)) is None
 
 
+def test_acquire_clears_stale_owner_from_crashed_process(tmp_path):
+    (tmp_path / "s1.lock").write_text('{"pid": 99999, "hwnd": 1234}')
+    assert WorkspaceLock.read_owner("s1", lock_dir=str(tmp_path)) == WorkspaceOwner(pid=99999, hwnd=1234)
+    lock = WorkspaceLock.acquire("s1", lock_dir=str(tmp_path))
+    assert lock is not None
+    assert WorkspaceLock.read_owner("s1", lock_dir=str(tmp_path)) is None
+    lock.release()
+
+
+def test_failed_acquire_keeps_owner_of_holder(tmp_path):
+    lock = WorkspaceLock.acquire("s1", lock_dir=str(tmp_path))
+    lock.set_window(321)
+    assert WorkspaceLock.acquire("s1", lock_dir=str(tmp_path)) is None
+    assert WorkspaceLock.read_owner("s1", lock_dir=str(tmp_path)) == WorkspaceOwner(pid=os.getpid(), hwnd=321)
+    lock.release()
+
+
 def test_read_owner_ignores_corrupt_file(tmp_path):
     (tmp_path / "bad.lock").write_text("not json")
     assert WorkspaceLock.read_owner("bad", lock_dir=str(tmp_path)) is None

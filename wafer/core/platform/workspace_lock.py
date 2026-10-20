@@ -60,6 +60,7 @@ class WorkspaceLock:
         except OSError:
             os.close(fd)
             return None
+        os.ftruncate(fd, 0)
         return cls(slot_id, fd)
 
     def set_window(self, hwnd: int) -> None:

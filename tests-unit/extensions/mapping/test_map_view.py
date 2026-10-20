@@ -387,7 +387,7 @@ def test_only_the_image_nearest_the_center_comes_to_the_front_and_stays_there(vi
     assert first in rows and rows.index(first) == len(rows) - 2
     view.show_result(image_result(3000), colors(3000), keep_view=True)
     view.viewport().repaint()
-    assert view.raise_order[second] > view.raise_order[first] > 0
+    assert view.depth[second] > view.depth[first] > 0
 
 
 def test_panning_keeps_the_images_in_the_middle(view):
@@ -396,6 +396,44 @@ def test_panning_keeps_the_images_in_the_middle(view):
         middle = inner_image_rows(view)
         pan(view, 9, 4)
         assert middle <= set(view.image_rows.tolist())
+
+
+def test_panning_in_from_the_corner_keeps_the_images_in_the_middle(view):
+    zoomed_map(view, 3000)
+    view.horizontalScrollBar().setValue(view.horizontalScrollBar().minimum())
+    view.verticalScrollBar().setValue(view.verticalScrollBar().minimum())
+    view.current_layer()
+    target = round(view.image_limit * map_view_module.IMAGE_FILL_TARGET)
+    for _ in range(40):
+        middle = inner_image_rows(view)
+        pan(view, 9, 9)
+        assert middle <= set(view.image_rows.tolist())
+        assert len(view.image_rows) <= view.image_limit
+    assert len(view.image_rows) >= target * 0.9
+
+
+def test_a_raised_image_stays_raised_only_while_the_next_result_has_it(view):
+    zoomed_map(view, 3000)
+    front = int(view.image_rows[-1])
+    path = view.paths[front]
+    view.show_result(image_result(3000), colors(3000), keep_view=True)
+    assert view.depth[view.rows_by_path[path]] > 0
+    view.show_result(image_result(10), colors(10), keep_view=True)
+    view.show_result(image_result(3000), colors(3000), keep_view=True)
+    assert view.depth[view.rows_by_path[path]] <= 0
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_point_index_finds_exactly_the_points_in_a_box(seed):
+    rng = np.random.default_rng(seed)
+    points = np.vstack([rng.normal(500, 150, (5000, 2)), rng.random((200, 2)) * (4000, 300) - (500, 0)])
+    index = map_view_module.PointIndex(points)
+    for _ in range(50):
+        left, top = rng.random(2) * 4000 - 1000
+        box = (left, top, left + rng.random() * 800, top + rng.random() * 800)
+        expected = np.flatnonzero(map_view_module.inside(points, box))
+        assert np.array_equal(np.sort(index.rows_in(box)), expected)
+        assert index.count(box) >= expected.size
 
 
 def test_hover_and_click_reach_points_drawn_as_dots(view):

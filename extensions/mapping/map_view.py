@@ -36,8 +36,9 @@ IMAGE_LIMIT = 300
 IMAGE_SPACING = 0.01
 IMAGE_REFRESH_MS = 50
 IMAGE_SCAN_MIN = 4096
-IMAGE_FILL_LOW = 0.75
 IMAGE_FILL_TARGET = 0.9
+IMAGE_KEEP_SHARE = 0.8
+INDEX_CELLS = 256
 FULL_REPAINT_SHARE = 0.5
 PRIORITY_SEED = 0
 NO_ROWS = np.zeros(0, dtype=np.int64)
@@ -60,14 +61,74 @@ def combine_selection(base: np.ndarray, target: np.ndarray, operation: str) -> n
     return target.copy()
 
 
+def cell_keys(points: np.ndarray, cell: float) -> np.ndarray:
+    cells = np.floor(points / cell).astype(np.int64)
+    return (cells[:, 0] << 32) ^ (cells[:, 1] & 0xFFFFFFFF)
+
+
 def first_per_cell(points: np.ndarray, cell: float, limit: int) -> np.ndarray:
     scanned = min(len(points), max(limit * 4, IMAGE_SCAN_MIN))
     while True:
-        cells = np.floor(points[:scanned] / cell).astype(np.int64)
-        _, first = np.unique((cells[:, 0] << 32) ^ (cells[:, 1] & 0xFFFFFFFF), return_index=True)
+        _, first = np.unique(cell_keys(points[:scanned], cell), return_index=True)
         if first.size >= limit or scanned == len(points):
             return np.sort(first)[:limit]
         scanned = min(len(points), scanned * 4)
+
+
+def inside(points: np.ndarray, box: tuple[float, float, float, float]) -> np.ndarray:
+    left, top, right, bottom = box
+    x, y = points[:, 0], points[:, 1]
+    return (x >= left) & (x <= right) & (y >= top) & (y <= bottom)
+
+
+class PointIndex:
+    def __init__(self, positions: np.ndarray):
+        self.positions = positions
+        self.low = positions.min(axis=0) if len(positions) else np.zeros(2)
+        span = positions.max(axis=0) - self.low if len(positions) else np.ones(2)
+        self.cell = np.maximum(span, 1e-9) / INDEX_CELLS
+        columns, rows = self.cells_of(positions)
+        ids = (rows * INDEX_CELLS + columns).astype(np.uint16)
+        self.order = np.argsort(ids, kind="stable")
+        self.starts = np.zeros(INDEX_CELLS * INDEX_CELLS + 1, dtype=np.int64)
+        np.cumsum(np.bincount(ids, minlength=INDEX_CELLS * INDEX_CELLS), out=self.starts[1:])
+
+    def cells_of(self, points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        cells = np.clip(((points - self.low) / self.cell).astype(np.int64), 0, INDEX_CELLS - 1)
+        return cells[:, 0], cells[:, 1]
+
+    def spans(self, box: tuple[float, float, float, float]) -> list[tuple[int, int]]:
+        if box[2] < self.low[0] or box[3] < self.low[1]:
+            return []
+        (left, right), (top, bottom) = (cells.tolist() for cells in self.cells_of(np.array([box[:2], box[2:]])))
+        return [(int(self.starts[row * INDEX_CELLS + left]), int(self.starts[row * INDEX_CELLS + right + 1])) for row in range(top, bottom + 1)]
+
+    def count(self, box: tuple[float, float, float, float]) -> int:
+        return sum(end - start for start, end in self.spans(box))
+
+    def rows_near(self, boxes: list[tuple[float, float, float, float]]) -> np.ndarray:
+        slots = [np.arange(start, end) for box in boxes for start, end in self.spans(box) if end > start]
+        if not slots:
+            return NO_ROWS
+        slots = np.concatenate(slots)
+        return self.order[slots if len(boxes) == 1 else np.unique(slots)]
+
+    def rows_in(self, box: tuple[float, float, float, float]) -> np.ndarray:
+        rows = self.rows_near([box])
+        return rows[inside(self.positions[rows], box)]
+
+
+@dataclass(frozen=True)
+class Projection:
+    scale: tuple[float, float]
+    offset: tuple[float, float]
+
+    def pixels(self, points: np.ndarray) -> np.ndarray:
+        return points * self.scale + self.offset
+
+    def scene_box(self, left: float, top: float, right: float, bottom: float) -> tuple[float, float, float, float]:
+        (sx, sy), (ox, oy) = self.scale, self.offset
+        return ((left - ox) / sx, (top - oy) / sy, (right - ox) / sx, (bottom - oy) / sy)
 
 
 def color_keys(colors: list[QtGui.QColor], count: int) -> np.ndarray:
@@ -98,14 +159,14 @@ class ImagePlan:
     keys: np.ndarray
 
     @classmethod
-    def of(cls, images: list[tuple[int, QtGui.QPixmap]], device: np.ndarray, extent: float) -> ImagePlan:
+    def of(cls, images: list[tuple[int, QtGui.QPixmap]], positions: np.ndarray, projection: Projection, extent: float) -> ImagePlan:
         rows = np.fromiter((row for row, _ in images), dtype=np.int64, count=len(images))
         keys = np.fromiter((pixmap.cacheKey() for _, pixmap in images), dtype=np.int64, count=len(images))
         if not images:
             return cls(images, rows, NO_RECTS, keys)
         sizes = np.array([(pixmap.width(), pixmap.height()) for _, pixmap in images], dtype=np.float64)
         spans = np.rint(sizes * (extent / np.maximum(sizes.max(axis=1), 1.0))[:, None])
-        corners = np.floor(device[rows] - spans / 2 + 0.5)
+        corners = np.floor(projection.pixels(positions[rows]) - spans / 2 + 0.5)
         return cls(images, rows, np.hstack([corners, corners + spans]), keys)
 
 
@@ -159,12 +220,14 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.selected = np.zeros(0, dtype=bool)
         self.outliers = np.zeros(0, dtype=bool)
         self.group_of = np.zeros(0, dtype=np.int32)
+        self.index = PointIndex(self.positions)
         self.priority = NO_ROWS
         self.by_priority = NO_ROWS
-        self.rank_limit = 0
-        self.raised: dict[str, int] = {}
-        self.raise_order = NO_ROWS
-        self.raise_count = 0
+        self.depth = NO_ROWS
+        self.depth_top = 0
+        self.image_choice = NO_ROWS
+        self.image_cell = 0.0
+        self.rank_hint = 0
         self.color_keys = NO_ROWS
         self.color_ids = NO_ROWS
         self.sprites: dict[int, QtGui.QPixmap] = {}
@@ -249,7 +312,7 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     def set_image_limit(self, limit: int) -> None:
         if limit != self.image_limit:
             self.image_limit = max(int(limit), 0)
-            self.rank_limit = 0
+            self.forget_image_choice()
             self.invalidate()
 
     def minimumSizeHint(self) -> QtCore.QSize:
@@ -272,8 +335,11 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
     def set_image_spacing(self, spacing: float) -> None:
         if spacing != self.image_spacing:
             self.image_spacing = max(float(spacing), 0.01)
-            self.rank_limit = 0
+            self.forget_image_choice()
             self.invalidate()
+
+    def forget_image_choice(self) -> None:
+        self.image_choice, self.image_cell, self.rank_hint = NO_ROWS, 0.0, 0
 
     def set_selection_mode(self, mode: str):
         self.selection_mode = "group" if mode == "group" else "single"
@@ -298,28 +364,35 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.scene().clear()
         self.paths, self.rows_by_path, self.colors = [], {}, []
         self.positions = np.zeros((0, 2), dtype=np.float64)
+        self.index = PointIndex(self.positions)
         self.selected = np.zeros(0, dtype=bool)
-        self.priority = self.by_priority = self.raise_order = self.color_keys = self.color_ids = NO_ROWS
+        self.priority = self.by_priority = self.depth = self.color_keys = self.color_ids = NO_ROWS
         self.image_rows, self.image_rects, self.image_pixels, self.image_keys, self.wanted_paths = NO_ROWS, NO_RECTS, NO_RECTS, NO_ROWS, set()
+        self.forget_image_choice()
         self.sprites = {}
         self.invalidate()
 
+    def raised_paths(self) -> list[tuple[str, int]]:
+        return [(self.paths[row], int(self.depth[row])) for row in np.flatnonzero(self.depth > 0).tolist()]
+
     def show_result(self, result: MapResult, colors: list[QtGui.QColor], keep_view: bool):
+        raised = self.raised_paths()
         self.clear_map()
         count = len(result.paths)
         self.paths = list(result.paths)
         self.rows_by_path = {path: row for row, path in enumerate(self.paths)}
         self.outliers = np.asarray(result.outliers, dtype=bool)
         self.positions = scene_positions(result)
+        self.index = PointIndex(self.positions)
         self.selected = np.zeros(count, dtype=bool)
         self.by_priority = np.random.default_rng(PRIORITY_SEED).permutation(count)
-        self.priority = np.argsort(self.by_priority)
-        self.rank_limit = 0
-        self.raise_order = np.zeros(count, dtype=np.int64)
-        for path, order in self.raised.items():
+        self.priority = np.empty(count, dtype=np.int64)
+        self.priority[self.by_priority] = np.arange(count)
+        self.depth = -self.priority
+        for path, depth in raised:
             row = self.rows_by_path.get(path)
             if row is not None:
-                self.raise_order[row] = order
+                self.depth[row] = depth
         self.set_groups(result, colors)
         core = QtCore.QRectF(0, 0, SCENE_SIZE, SCENE_SIZE)
         rect = core
@@ -347,9 +420,21 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.thumbnails = bool(visible)
         self.invalidate()
 
-    def device_positions(self) -> np.ndarray:
+    def device_positions(self, rows: np.ndarray | None = None) -> np.ndarray:
         transform = self.viewportTransform()
-        return self.positions * (transform.m11(), transform.m22()) + (transform.dx(), transform.dy())
+        points = self.positions if rows is None else self.positions[rows]
+        return points * (transform.m11(), transform.m22()) + (transform.dx(), transform.dy())
+
+    def device_projection(self) -> Projection:
+        transform = self.viewportTransform()
+        return Projection((transform.m11(), transform.m22()), (transform.dx(), transform.dy()))
+
+    def view_box(self, share: float = 1.0) -> tuple[float, float, float, float]:
+        size = self.viewport().size()
+        margin_x, margin_y = (np.array([size.width(), size.height()]) * (1 - share) / 2).tolist()
+        if share >= 1.0:
+            margin_x = margin_y = -(self.item_extent() / 2 + dpix(RING) * 2)
+        return self.device_projection().scene_box(margin_x, margin_y, size.width() - margin_x, size.height() - margin_y)
 
     def current_layer(self) -> QtGui.QPixmap | None:
         if not self.paths:
@@ -362,21 +447,20 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         key = (frame, origin, self.image_epoch)
         if self.layer is not None and key == self.layer_key:
             return self.layer
-        device = self.device_positions()
-        visible = self.visible_rows(device, size)
-        chosen = self.choose_image_rows(visible, transform.m11()) if self.thumbnails else NO_ROWS
+        view = self.view_box()
+        chosen = self.choose_image_rows(view) if self.thumbnails else NO_ROWS
         paths = [self.paths[row] for row in chosen.tolist()]
         self.wanted_paths = set(paths)
         pixmaps = self.owner.map_thumbnails(paths, self.display_size()) if paths else []
         loaded = [(row, pixmap) for row, pixmap in zip(chosen.tolist(), pixmaps) if pixmap is not None and not pixmap.isNull()]
-        images, raised = self.stack_images(device, loaded, size)
+        images, raised = self.stack_images(loaded, size)
         reusable = self.layer is not None and self.layer_key is not None and self.layer_key[0] == frame
         shift = (round(origin[0] * ratio - self.layer_anchor[0]), round(origin[1] * ratio - self.layer_anchor[1])) if reusable else None
         anchor = (self.layer_anchor[0] + shift[0], self.layer_anchor[1] + shift[1]) if shift else (origin[0] * ratio, origin[1] * ratio)
-        pixels = self.positions * (transform.m11() * ratio, transform.m22() * ratio) + anchor
-        plan = ImagePlan.of(images, pixels, self.item_extent() * ratio)
-        if shift is None or not self.update_layer(shift, pixels, visible, plan, raised):
-            self.layer = self.render_layer(size, ratio, pixels, visible, plan)
+        projection = Projection((transform.m11() * ratio, transform.m22() * ratio), anchor)
+        plan = ImagePlan.of(images, self.positions, projection, self.item_extent() * ratio)
+        if shift is None or not self.update_layer(shift, projection, view, plan, raised):
+            self.layer = self.render_layer(size, ratio, projection, view, plan)
         self.layer_key, self.layer_anchor = key, anchor
         self.image_rows, self.image_pixels, self.image_keys = plan.rows, plan.rects, plan.keys
         self.image_rects = plan.rects / ratio
@@ -392,14 +476,14 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         painter.drawPixmap(0, 0, layer)
         painter.restore()
 
-    def render_layer(self, size: QtCore.QSize, ratio: float, pixels: np.ndarray, visible: np.ndarray, plan: ImagePlan) -> QtGui.QPixmap:
+    def render_layer(self, size: QtCore.QSize, ratio: float, projection: Projection, view: tuple[float, float, float, float], plan: ImagePlan) -> QtGui.QPixmap:
         layer = QtGui.QPixmap(max(1, math.ceil(size.width() * ratio)), max(1, math.ceil(size.height() * ratio)))
         layer.setDevicePixelRatio(ratio)
         layer.fill(Qt.transparent)
-        self.paint_layer(layer, pixels, visible, plan)
+        self.paint_layer(layer, projection, self.index.rows_in(view), plan)
         return layer
 
-    def update_layer(self, shift: tuple[int, int], pixels: np.ndarray, visible: np.ndarray, plan: ImagePlan, raised: int | None) -> bool:
+    def update_layer(self, shift: tuple[int, int], projection: Projection, view: tuple[float, float, float, float], plan: ImagePlan, raised: int | None) -> bool:
         layer = self.layer
         bounds = layer.rect()
         if abs(shift[0]) >= bounds.width() or abs(shift[1]) >= bounds.height():
@@ -417,69 +501,81 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if any(shift):
             layer.scroll(shift[0], shift[1], bounds)
         if not region.isEmpty():
-            self.paint_layer(layer, pixels, visible, plan, region)
+            boxes = np.array([(rect.left(), rect.top(), rect.right() + 1, rect.bottom() + 1) for rect in region], dtype=np.float64)
+            half = self.sprite_pixels() / 2
+            reach = boxes + (-half, -half, half, half)
+            near = self.index.rows_near([projection.scene_box(*box) for box in reach.tolist()])
+            near = near[inside(self.positions[near], view)]
+            dots = near[touching(projection.pixels(self.positions[near]), reach)]
+            self.paint_layer(layer, projection, dots, plan, region, boxes)
         return True
 
-    def paint_layer(self, layer: QtGui.QPixmap, pixels: np.ndarray, visible: np.ndarray, plan: ImagePlan, region: QtGui.QRegion | None = None) -> None:
-        drawn = np.zeros(len(self.paths), dtype=bool)
-        drawn[plan.rows] = True
-        dots = visible[~drawn[visible]]
+    def paint_layer(self, layer: QtGui.QPixmap, projection: Projection, dots: np.ndarray, plan: ImagePlan, region: QtGui.QRegion | None = None, boxes: np.ndarray | None = None) -> None:
+        dots = dots[~np.isin(dots, plan.rows)]
         images = np.arange(len(plan.images))
         ratio = layer.devicePixelRatio()
         layer.setDevicePixelRatio(1.0)
         painter = QtGui.QPainter(layer)
         if region is not None:
-            boxes = np.array([(rect.left(), rect.top(), rect.right() + 1, rect.bottom() + 1) for rect in region], dtype=np.float64)
-            half = self.sprite_pixels() / 2
             ring = self.ring_pixels()
-            dots = dots[touching(pixels[dots], boxes + (-half, -half, half, half))]
             images = images[touching(plan.rects, boxes + (-ring, -ring, ring, ring))]
             painter.setClipRegion(region)
             painter.setCompositionMode(QtGui.QPainter.CompositionMode_Source)
             painter.fillRect(region.boundingRect(), Qt.transparent)
             painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
-        self.paint_dots(painter, pixels, dots[np.argsort(self.selected[dots], kind="stable")])
+        self.paint_dots(painter, projection, dots[np.argsort(self.selected[dots], kind="stable")])
         painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
         self.paint_images(painter, [plan.images[index] for index in images.tolist()], plan.rects[images])
         painter.end()
         layer.setDevicePixelRatio(ratio)
 
-    def visible_rows(self, device: np.ndarray, size: QtCore.QSize) -> np.ndarray:
-        margin = self.item_extent() / 2 + dpix(RING) * 2
-        x, y = device[:, 0], device[:, 1]
-        return np.flatnonzero((x >= -margin) & (x <= size.width() + margin) & (y >= -margin) & (y <= size.height() + margin))
-
-    def choose_image_rows(self, visible: np.ndarray, scale: float) -> np.ndarray:
-        if self.image_limit <= 0 or visible.size == 0:
-            return NO_ROWS
-        shown = np.zeros(len(self.paths), dtype=bool)
-        shown[visible] = True
-        ranked = self.by_priority[shown[self.by_priority]]
-        cell = max(self.item_extent() * self.image_spacing, 1.0) / scale
-        if self.rank_limit:
-            within = ranked[: np.searchsorted(self.priority[ranked], self.rank_limit)]
-            chosen = within[first_per_cell(self.positions[within], cell, self.image_limit + 1)]
-            if chosen.size <= self.image_limit and (chosen.size >= self.image_limit * IMAGE_FILL_LOW or within.size == ranked.size):
-                return chosen
+    def choose_image_rows(self, view: tuple[float, float, float, float]) -> np.ndarray:
         target = max(1, round(self.image_limit * IMAGE_FILL_TARGET))
-        chosen = ranked[first_per_cell(self.positions[ranked], cell, target)]
-        self.rank_limit = int(self.priority[chosen[-1]]) + 1 if chosen.size == target else len(self.paths)
+        if self.image_limit <= 0 or not self.index.count(view):
+            self.forget_image_choice()
+            return NO_ROWS
+        cell = max(self.item_extent() * self.image_spacing, 1.0) / self.viewportTransform().m11()
+        middle = self.view_box(IMAGE_KEEP_SHARE)
+        kept = self.image_choice[inside(self.positions[self.image_choice], middle)] if self.image_cell == cell else NO_ROWS
+        chosen = kept
+        if kept.size < target:
+            chosen = np.concatenate([kept, self.rows_by_rank(view, cell, kept, middle, target - kept.size)])
+        self.image_choice, self.image_cell = chosen, cell
         return chosen
 
-    def stack_images(self, device: np.ndarray, images: list[tuple[int, QtGui.QPixmap]], size: QtCore.QSize) -> tuple[list[tuple[int, QtGui.QPixmap]], int | None]:
+    def rows_by_rank(self, view: tuple[float, float, float, float], cell: float, kept: np.ndarray, middle: tuple[float, float, float, float], count: int) -> np.ndarray:
+        kept_cells = cell_keys(self.positions[kept], cell)
+        visible = self.index.count(view)
+        scanned = min(len(self.paths), max(self.rank_hint * 2, IMAGE_SCAN_MIN))
+        while True:
+            exhaustive = scanned >= visible or scanned >= len(self.paths)
+            if exhaustive:
+                ranked = self.index.rows_in(view)
+                ranked = ranked[np.argsort(self.priority[ranked], kind="stable")]
+            else:
+                ranked = self.by_priority[:scanned]
+                ranked = ranked[inside(self.positions[ranked], view)]
+            chosen = ranked[first_per_cell(self.positions[ranked], cell, len(ranked))]
+            if kept.size:
+                chosen = chosen[~inside(self.positions[chosen], middle) & ~np.isin(cell_keys(self.positions[chosen], cell), kept_cells)]
+            chosen = chosen[:count]
+            if chosen.size >= count or exhaustive:
+                self.rank_hint = int(self.priority[chosen[-1]]) + 1 if chosen.size >= count else len(self.paths)
+                return chosen
+            scanned = min(len(self.paths), scanned * 4)
+
+    def stack_images(self, images: list[tuple[int, QtGui.QPixmap]], size: QtCore.QSize) -> tuple[list[tuple[int, QtGui.QPixmap]], int | None]:
         if not images:
             return images, None
         rows = np.fromiter((row for row, _ in images), dtype=np.int64, count=len(images))
-        images = [images[index] for index in np.lexsort((-self.priority[rows], self.raise_order[rows])).tolist()]
         center = np.array([size.width() / 2, size.height() / 2])
-        front = int(rows[np.argmin(((device[rows] - center) ** 2).sum(axis=1))])
-        if self.raise_count and self.raise_order[front] == self.raise_count:
-            return images, None
-        self.raise_count += 1
-        self.raise_order[front] = self.raise_count
-        self.raised[self.paths[front]] = self.raise_count
-        images.sort(key=lambda image: image[0] == front)
-        return images, front
+        front = int(rows[np.argmin(((self.device_positions(rows) - center) ** 2).sum(axis=1))])
+        raised = None
+        if not (self.depth_top and self.depth[front] == self.depth_top):
+            self.depth_top += 1
+            self.depth[front] = self.depth_top
+            raised = front
+        return [images[index] for index in np.argsort(self.depth[rows], kind="stable").tolist()], raised
 
     def sprite(self, index: int) -> QtGui.QPixmap:
         if self.sprite_size != (self.point_size(), self.devicePixelRatioF()):
@@ -525,12 +621,12 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         painter.setPen(pen)
         painter.setBrush(Qt.NoBrush)
 
-    def paint_dots(self, painter: QtGui.QPainter, pixels: np.ndarray, rows: np.ndarray) -> None:
+    def paint_dots(self, painter: QtGui.QPainter, projection: Projection, rows: np.ndarray) -> None:
         if rows.size == 0:
             return
         indexes = (self.color_ids[rows] << 2) | self.selected[rows].astype(np.int64) | (self.outliers[rows].astype(np.int64) << 1)
         sprites = {index: self.sprite(index) for index in np.unique(indexes).tolist()}
-        corners = np.floor(pixels[rows] - self.sprite_pixels() / 2 + 0.5).astype(np.int64)
+        corners = np.floor(projection.pixels(self.positions[rows]) - self.sprite_pixels() / 2 + 0.5).astype(np.int64)
         draw = painter.drawPixmap
         for index, x, y in zip(indexes.tolist(), corners[:, 0].tolist(), corners[:, 1].tolist()):
             draw(x, y, sprites[index])
@@ -556,20 +652,20 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         return self.point_at(position)
 
     def point_at(self, position: QtCore.QPoint) -> int | None:
-        if not self.paths:
-            return None
-        distance = ((self.device_positions() - (position.x(), position.y())) ** 2).sum(axis=1)
-        row = int(np.argmin(distance))
         radius = self.dot_size() / 2
-        return row if distance[row] <= radius * radius else None
+        x, y = position.x(), position.y()
+        rows = self.index.rows_near([self.device_projection().scene_box(x - radius, y - radius, x + radius, y + radius)])
+        if rows.size == 0:
+            return None
+        distance = ((self.device_positions(rows) - (x, y)) ** 2).sum(axis=1)
+        nearest = int(np.argmin(distance))
+        return int(rows[nearest]) if distance[nearest] <= radius * radius else None
 
     def rows_in_rect(self, rect: QtCore.QRectF) -> np.ndarray:
-        if not self.paths:
-            return NO_ROWS
-        device = self.device_positions()
         half = self.item_extent() / 2
-        x, y = device[:, 0], device[:, 1]
-        return np.flatnonzero((x >= rect.left() - half) & (x <= rect.right() + half) & (y >= rect.top() - half) & (y <= rect.bottom() + half))
+        box = (rect.left() - half, rect.top() - half, rect.right() + half, rect.bottom() + half)
+        rows = self.index.rows_near([self.device_projection().scene_box(*box)])
+        return rows[inside(self.device_positions(rows), box)]
 
     def selected_rows(self) -> list[int]:
         return np.flatnonzero(self.selected).tolist()

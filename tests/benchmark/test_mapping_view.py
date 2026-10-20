@@ -7,7 +7,7 @@ from PySide6 import QtCore, QtGui
 from extensions.mapping.map_view import MapView
 from extensions.mapping.session import MapDiagnostics, MapResult
 
-SIZES = [10_000, 100_000]
+SIZES = [10_000, 100_000, 1_000_000]
 ZOOMS = [2, 4, 16]
 PAN_STEPS = 30
 PAN_PIXELS = 12

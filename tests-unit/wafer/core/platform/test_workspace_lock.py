@@ -134,6 +134,28 @@ def test_other_process_holds_lock_and_owner_is_readable(tmp_path):
     lock.release()
 
 
+def test_delete_file_if_unused_removes_a_free_lock_file(tmp_path):
+    WorkspaceLock.acquire("s1", lock_dir=str(tmp_path)).release()
+    assert (tmp_path / "s1.lock").exists()
+    assert WorkspaceLock.delete_file_if_unused("s1", lock_dir=str(tmp_path)) is True
+    assert not (tmp_path / "s1.lock").exists()
+
+
+def test_delete_file_if_unused_keeps_a_held_lock_file(tmp_path):
+    lock = WorkspaceLock.acquire("s1", lock_dir=str(tmp_path))
+    try:
+        assert WorkspaceLock.delete_file_if_unused("s1", lock_dir=str(tmp_path)) is False
+        assert (tmp_path / "s1.lock").exists()
+        assert WorkspaceLock.acquire("s1", lock_dir=str(tmp_path)) is None
+    finally:
+        lock.release()
+
+
+def test_delete_file_if_unused_without_a_file_creates_nothing(tmp_path):
+    assert WorkspaceLock.delete_file_if_unused("s1", lock_dir=str(tmp_path / "locks")) is False
+    assert not (tmp_path / "locks").exists()
+
+
 def test_default_lock_dir_is_under_temp_workspaces(tmp_path, monkeypatch):
     from wafer.core.platform import workspace_lock
 

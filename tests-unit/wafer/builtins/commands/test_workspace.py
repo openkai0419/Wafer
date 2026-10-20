@@ -3,7 +3,6 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from wafer.builtins.commands import workspace as workspace_commands
-from wafer.core.platform.workspace_lock import WorkspaceOwner
 from wafer.core.store.workspace import BarSpec, QueryPreset, UIPreset, WindowSlot
 
 
@@ -106,61 +105,50 @@ class TestWorkspaceCommands:
         assert args[2] == "path"
         assert args[3] is False
 
-    def test_open_slot_activates_open_workspace(self):
+    def open_slot(self, slot_id, *, current="current", known=True, open_ids=frozenset(), activated=True):
         win = MagicMock()
-        win.slot_id = "current"
+        win.slot_id = current
+        store = MagicMock()
+        store.get_slot.return_value = WindowSlot(slot_id=slot_id) if known else None
         with (
-            patch.object(workspace_commands.WorkspaceLock, "open_slot_ids", return_value={"s2"}),
-            patch.object(workspace_commands.WorkspaceLock, "read_owner", return_value=WorkspaceOwner(1, 55)),
-            patch.object(workspace_commands, "activate_window") as activate,
+            patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store),
+            patch.object(workspace_commands.WorkspaceLock, "open_slot_ids", return_value=set(open_ids)) as open_slot_ids,
+            patch.object(workspace_commands, "activate_workspace_window", return_value=activated) as activate,
             patch.object(workspace_commands.AppProcess, "new_main") as new_main,
+            patch.object(workspace_commands.AppLogger, "info") as info,
         ):
-            workspace_commands.open_slot(_Ctx(win), slot_id="s2")
+            workspace_commands.open_slot(_Ctx(win), slot_id=slot_id)
+        return open_slot_ids, activate, new_main, info
 
-        activate.assert_called_once_with(55)
+    def test_open_slot_activates_open_workspace(self):
+        _, activate, new_main, _ = self.open_slot("s2", open_ids={"s2"})
+        activate.assert_called_once_with("s2")
         new_main.assert_not_called()
 
     def test_open_slot_spawns_closed_workspace(self):
-        win = MagicMock()
-        win.slot_id = "current"
-        with (
-            patch.object(workspace_commands.WorkspaceLock, "open_slot_ids", return_value=set()) as open_ids,
-            patch.object(workspace_commands, "activate_window") as activate,
-            patch.object(workspace_commands.AppProcess, "new_main") as new_main,
-        ):
-            workspace_commands.open_slot(_Ctx(win), slot_id="s2")
-
+        open_ids, activate, new_main, _ = self.open_slot("s2")
         open_ids.assert_called_once_with(["s2"])
         new_main.assert_called_once_with("--viewer", "--slot", "s2")
         activate.assert_not_called()
 
     def test_open_slot_ignores_current_window(self):
-        win = MagicMock()
-        win.slot_id = "s2"
-        with (
-            patch.object(workspace_commands.WorkspaceLock, "open_slot_ids") as open_ids,
-            patch.object(workspace_commands, "activate_window") as activate,
-            patch.object(workspace_commands.AppProcess, "new_main") as new_main,
-        ):
-            workspace_commands.open_slot(_Ctx(win), slot_id="s2")
-
+        open_ids, activate, new_main, _ = self.open_slot("s2", current="s2")
         open_ids.assert_not_called()
         activate.assert_not_called()
         new_main.assert_not_called()
 
-    def test_open_slot_without_owner_does_nothing(self):
-        win = MagicMock()
-        win.slot_id = "current"
-        with (
-            patch.object(workspace_commands.WorkspaceLock, "open_slot_ids", return_value={"s2"}),
-            patch.object(workspace_commands.WorkspaceLock, "read_owner", return_value=None),
-            patch.object(workspace_commands, "activate_window") as activate,
-            patch.object(workspace_commands.AppProcess, "new_main") as new_main,
-        ):
-            workspace_commands.open_slot(_Ctx(win), slot_id="s2")
+    def test_open_slot_without_owner_window_logs_and_does_nothing(self):
+        _, activate, new_main, info = self.open_slot("s2", open_ids={"s2"}, activated=False)
+        activate.assert_called_once_with("s2")
+        new_main.assert_not_called()
+        info.assert_called_once()
 
+    def test_open_slot_ignores_an_unknown_workspace(self):
+        open_ids, activate, new_main, info = self.open_slot("ghost", known=False)
+        open_ids.assert_not_called()
         activate.assert_not_called()
         new_main.assert_not_called()
+        info.assert_called_once()
 
     def test_workspace_menu_registers_open_slot_not_restore_slot(self):
         paths = [item.path for item in workspace_commands.WorkspaceCommands.commands() if hasattr(item, "path")]
@@ -216,25 +204,35 @@ class TestWorkspaceCommands:
 
         store.rename_slot.assert_not_called()
 
-    def test_delete_slot_forgets_saved_snapshot(self):
+    def delete_slot(self, slot_id, *, known=True, open_ids=frozenset()):
         store = MagicMock()
-        store.get_slot.return_value = WindowSlot(slot_id="slot1")
+        store.get_slot.return_value = WindowSlot(slot_id=slot_id) if known else None
         store.forget_slot_snapshot.return_value = True
+        with (
+            patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store),
+            patch.object(workspace_commands.WorkspaceLock, "open_slot_ids", return_value=set(open_ids)),
+            patch.object(workspace_commands.WorkspaceLock, "delete_file_if_unused") as delete_file,
+            patch.object(workspace_commands.Notifier, "info") as notify,
+        ):
+            workspace_commands.delete_slot(_Ctx(MagicMock()), slot_id=slot_id)
+        return store, delete_file, notify
 
-        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store):
-            workspace_commands.delete_slot(_Ctx(MagicMock()), slot_id="slot1")
-
+    def test_delete_slot_forgets_saved_snapshot_and_its_lock_file(self):
+        store, delete_file, _ = self.delete_slot("slot1")
         store.forget_slot_snapshot.assert_called_once_with("slot1")
         store.get_active_slot_ids.assert_not_called()
+        delete_file.assert_called_once_with("slot1")
 
     def test_delete_slot_missing_does_not_mutate_store(self):
-        store = MagicMock()
-        store.get_slot.return_value = None
-
-        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store):
-            workspace_commands.delete_slot(_Ctx(MagicMock()), slot_id="missing")
-
+        store, delete_file, _ = self.delete_slot("missing", known=False)
         store.forget_slot_snapshot.assert_not_called()
+        delete_file.assert_not_called()
+
+    def test_delete_slot_refuses_an_open_workspace(self):
+        store, delete_file, notify = self.delete_slot("slot1", open_ids={"slot1"})
+        store.forget_slot_snapshot.assert_not_called()
+        delete_file.assert_not_called()
+        notify.assert_called_once()
 
     def test_open_workspace_saves_then_spawns_picker(self):
         win = MagicMock()

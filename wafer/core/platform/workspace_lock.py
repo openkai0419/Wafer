@@ -104,6 +104,23 @@ class WorkspaceLock:
         return WorkspaceOwner(pid=pid, hwnd=hwnd)
 
     @staticmethod
+    def delete_file_if_unused(slot_id: str, *, lock_dir: str | None = None) -> bool:
+        path = lock_path(slot_id, lock_dir)
+        if not os.path.exists(path):
+            return False
+        probe = WorkspaceLock.acquire(slot_id, lock_dir=lock_dir)
+        if probe is None:
+            AppLogger.info(f"WorkspaceLock: kept the lock file of open workspace {slot_id}")
+            return False
+        probe.release()
+        try:
+            os.remove(path)
+        except OSError as exc:
+            AppLogger.warning(f"WorkspaceLock: could not delete the lock file of workspace {slot_id}", exc=exc)
+            return False
+        return True
+
+    @staticmethod
     def open_slot_ids(slot_ids: Iterable[str], *, lock_dir: str | None = None) -> set[str]:
         held = set()
         for slot_id in slot_ids:

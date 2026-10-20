@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from ...app.viewer.workspace_launch import activate_workspace_window
 from ...qt.commands.bridge import ActionKit
 from ...qt.commands.command.require import require
-from ...core.platform.foreground import activate_window
+from ...core.lang.manager import t
 from ...core.platform.process import AppProcess
 from ...core.platform.workspace_lock import WorkspaceLock
 from ...core.store.workspace import (
@@ -250,12 +251,12 @@ def query_preset_overwrite(ctx, w, preset_id: str = ""):
 def open_slot(ctx, w, slot_id: str = ""):
     if not slot_id or slot_id == w.slot_id:
         return
+    if _store().get_slot(slot_id) is None:
+        AppLogger.info(f"open_slot: unknown workspace {slot_id}")
+        return
     if WorkspaceLock.open_slot_ids([slot_id]):
-        owner = WorkspaceLock.read_owner(slot_id)
-        if owner is None:
-            AppLogger.info(f"open_slot: workspace is open but its owner is unreadable ({slot_id})")
-            return
-        activate_window(owner.hwnd)
+        if not activate_workspace_window(slot_id):
+            AppLogger.info(f"open_slot: workspace is open but its window is not ready yet ({slot_id})")
         return
     AppProcess.new_main("--viewer", "--slot", slot_id)
 
@@ -288,7 +289,12 @@ def delete_slot(ctx, w, slot_id: str = ""):
     if not store.get_slot(slot_id):
         Notifier.warning("Workspace slot not found")
         return
+    if WorkspaceLock.open_slot_ids([slot_id]):
+        AppLogger.info(f"workspace slot not deleted, it is open in a window: {slot_id}")
+        Notifier.info(t("Close this workspace's window before deleting it"))
+        return
     if store.forget_slot_snapshot(slot_id):
+        WorkspaceLock.delete_file_if_unused(slot_id)
         Notifier.info("Workspace slot removed from Recent")
         AppLogger.info(f"workspace slot snapshot removed: {slot_id}")
 

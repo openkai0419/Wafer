@@ -6,16 +6,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [v0.7.10]
 ### Added
+- Mapping extension: a panel that places files on a database-wide 2D map by similar tags, metadata, numbers, colors or folders, and groups them; a per-database background parser keeps new files placed.
+- Mapping view: Ctrl+A selects all, F frames the selection, and Ctrl+wheel resizes images.
+- NovelAI parser joins V4 character captions into `caption/char_captions` for both prompt and negative prompt.
 - WebUI: "direct-child files only" setting limits folder results to files directly inside the selected folder.
 - Search filter: "Trim spaces" option to keep or strip spaces around separated keywords.
+- Parsers can choose trigger keys per database and be loaded but off by default per database.
 
 ### Changed
 - WebUI layout adapts to narrow screens, stacking the sidebar and metadata panel and enlarging touch inputs.
 - WebUI grid rows fill the width evenly with matching gaps on both edges.
 - WebUI keyword matching defaults to OR.
+- WebUI grid fetches pages in parallel and further ahead, the metadata panel reuses recent results, and the viewer shows a loading bar.
+- WebUI settings use toggle switches and evenly sized rows.
+- Grid and Batch Renamer share one thumbnail cache across sizes.
+- Text generation parsers expand lists of objects into indexed keys (`parent/0/child`).
+- Path normalization no longer touches the disk, so network and cloud drive names are kept as given.
 
 ### Fixed
 - Tags from slow collectors (e.g. WD14) were lost when Full Hash updated a file's hash during collection.
+- A result for a file removed or moved mid-collection discarded the whole batch.
+- The same file could get two different path keys, and case-only renames were missed by file watching.
+- Password-protected ZIP entries are skipped with a warning instead of failing collection.
+- Batch Renamer thumbnails stayed blurry after raising the resolution.
+- WebUI viewer now reports media that fails to load and ignores stale responses.
 - The Explorer context menu leaked shell extension objects on each use.
 
 ### Removed

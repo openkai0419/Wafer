@@ -58,7 +58,7 @@ Tray 起動中はファイル更新も即時検知されるため、バックグ
 | Viewer / Grid | ファイルの表示、サムネイル、ビューア操作等 | `image`, `animated`, `video` |
 | Collector / Parser | メタデータ収集やAIタグ付けでファイルを検索可能にする拡張 | `exiftool`, `ffmpeg`, `color`, `wd14`, `florence` |
 | Search / Filter | 日付範囲、正規表現、色距離など、探し方や絞り込み方法を追加 | `additional_filters`, `color` |
-| Layout / UI | グリッドレイアウト、カスタムパネルなど | `additional_layout`, extension 設定パネル |
+| Layout / UI | グリッドレイアウト、カスタムパネルなど | `additional_layout`, `mapping`, extension 設定パネル |
 | Archive Support | 特定ファイルの中身を論理的な子パスとして扱い、表示を既存 plugin へ委譲する | `zip` |
 
 - **Enable Extensions**: 上のタブでインストールした拡張機能を有効にし、下のタブでメタデータの収集を有効にするデータベースを選択します。

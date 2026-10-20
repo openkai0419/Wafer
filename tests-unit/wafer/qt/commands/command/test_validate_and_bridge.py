@@ -408,3 +408,88 @@ class TestShowOptionsForRequiredAutoPersist:
         Command._show_options_for_required("t.persist", cmd_class, None)
         assert captured["name"] == "B"
         assert Command.get_args("t.persist") == {"name": "B"}
+
+
+class TestNonPersistedParams:
+    def _register_transient(self, captured):
+        def fn(ctx, target="", remember=False):
+            captured.update(target=target, remember=remember)
+
+        return _register(
+            CommandMeta(
+                path="t.transient",
+                display="TR",
+                func=fn,
+                params=[
+                    CommandParam(name="target", value="", required=True, persist=False),
+                    CommandParam(name="remember", value=False),
+                ],
+            )
+        )
+
+    def test_param_persists_by_default(self):
+        assert CommandParam(name="x", value=0).persist is True
+
+    def test_set_args_does_not_store_non_persisted_params(self):
+        from wafer.qt.commands.bridge import Command
+
+        self._register_transient({})
+        Command.set_args("t.transient", {"target": "F:/a.png", "remember": True})
+        assert CommandOptionStore.instance().get("t.transient").args == {"remember": True}
+        assert Command.get_args("t.transient") == {"target": "", "remember": True}
+
+    def test_required_dialog_value_reaches_the_run_but_is_not_stored(self, monkeypatch):
+        from wafer.qt.commands.bridge import Command
+        from wafer.qt.commands.command import option_dialog as od
+
+        captured = {}
+        self._register_transient(captured)
+
+        class FakeDialog:
+            def __init__(self, cls, parent, execute_callback=None, auto_required=False, **kw):
+                self._cb = execute_callback
+
+            def exec(self):
+                self._cb({"target": "F:/a.png", "remember": True})
+                return 1
+
+        monkeypatch.setattr(od, "CommandOptionsDialog", FakeDialog)
+        Command.invoke("t.transient")
+        assert captured == {"target": "F:/a.png", "remember": True}
+        assert Command.get_args("t.transient") == {"target": "", "remember": True}
+
+        captured.clear()
+        asked = []
+        monkeypatch.setattr(Command, "_show_options_for_required", staticmethod(lambda command_id, *a, **k: asked.append(command_id)))
+        Command.invoke("t.transient")
+        assert asked == ["t.transient"]
+        assert captured == {}
+
+    def test_menu_options_dialog_does_not_store_non_persisted_params(self, qtbot, monkeypatch):
+        from PySide6 import QtWidgets
+
+        from wafer.qt.commands.command import menu_builder
+
+        captured = {}
+        self._register_transient(captured)
+
+        class FakeDialog:
+            def __init__(self, cls, parent, execute_callback=None, binding_mode=False, **kw):
+                self._cb = execute_callback
+
+            def exec(self):
+                self._cb(self.get_values())
+                return QtWidgets.QDialog.Accepted
+
+            def did_save(self):
+                return True
+
+            def get_values(self):
+                return {"target": "F:/a.png", "remember": True}
+
+        monkeypatch.setattr(menu_builder, "CommandOptionsDialog", FakeDialog)
+        parent = QtWidgets.QWidget()
+        qtbot.addWidget(parent)
+        menu_builder.CommandMenuBuilder.instance()._show_options("t.transient", parent)
+        assert captured == {"target": "F:/a.png", "remember": True}
+        assert CommandOptionStore.instance().get("t.transient").args == {"remember": True}

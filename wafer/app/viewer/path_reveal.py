@@ -5,9 +5,13 @@ from functools import partial
 from PySide6 import QtCore
 
 from ...core.common.paths import normalize_path
-from ...core.db.path_scope import comparable_path, is_under
+from ...core.db.path_scope import comparable_path, path_in_scope
 from ...core.logs import AppLogger
 from ...qt.common.notifier import Notifier
+
+
+def parent_folder(path: str) -> str:
+    return normalize_path(os.path.dirname(path))
 
 
 def scroll_grid_to_path(items, view, path: str) -> None:
@@ -42,24 +46,32 @@ class PathRevealer(QtCore.QObject):
         if (select_folder or scroll_grid) and not self.is_in_database_folders(path):
             AppLogger.info(f"[open_path] outside the database folders, showing in the viewer only: {path}")
             select_folder = scroll_grid = False
-        folder = normalize_path(os.path.dirname(path))
+        folder = parent_folder(path)
         if select_folder and not self.is_only_selected_folder(folder):
             pending = PendingReveal(path, scroll_grid, show_viewer)
             self.pending = pending
-            self.window.folder_view.expand_and_select_paths([folder], on_complete=partial(self.wait_for_layout, pending))
+            self.window.folder_view.expand_and_select_paths([folder], on_complete=partial(self.on_folder_selection_applied, pending))
             return
         self.finish(path, scroll_grid=scroll_grid, show_viewer=show_viewer)
 
     def is_in_database_folders(self, path: str) -> bool:
-        setting_db = self.window.setting_db
-        return setting_db is not None and any(is_under(path, root) for root in setting_db.get_all_parent_folders())
+        folders = self.window.folder_view.model_
+        return path_in_scope(path, folders.roots or (), folders.excluded, folders.ignore_pattern_re)
 
     def is_only_selected_folder(self, folder: str) -> bool:
         selected = self.window.folder_view.get_selected_paths()
         return [comparable_path(p) for p in selected] == [comparable_path(folder)]
 
-    def wait_for_layout(self, pending: PendingReveal) -> None:
+    def on_folder_selection_applied(self, pending: PendingReveal) -> None:
         if pending is not self.pending:
+            return
+        folder = parent_folder(pending.path)
+        if not self.is_only_selected_folder(folder):
+            AppLogger.info(f"[open_path] folder could not be selected in the folder tree: {folder}")
+            self.finish_pending(pending)
+            return
+        if not self.window.search_service.get("auto_execute", True):
+            self.finish_pending(pending)
             return
         self.window.grid_view.layout_ready.connect(self.on_layout_ready)
         self.waiting_for_layout = True

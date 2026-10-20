@@ -97,6 +97,7 @@ class TestSearchResultDiffCheck:
         win = self._make_win(last_paths=paths)
         win._on_search_finished(paths, ["a.png", "b.png"], [1.0, 1.5])
         win.grid_view.set_paths.assert_not_called()
+        win.grid_view.layout_ready.emit.assert_called_once_with()
         win.search_row_widget.run_folder_worker.assert_called_once()
 
     def test_update_when_paths_changed(self):

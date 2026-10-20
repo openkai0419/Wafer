@@ -30,26 +30,27 @@ def test_case_is_ignored_on_windows():
 
 
 def test_path_in_scope_under_root():
-    assert path_in_scope("F:/p/a.png", ["F:/p"], [], [])
-    assert not path_in_scope("F:/q/a.png", ["F:/p"], [], [])
+    assert path_in_scope("F:/p/a.png", ["F:/p"], [], None)
+    assert not path_in_scope("F:/q/a.png", ["F:/p"], [], None)
 
 
 def test_any_root_is_enough():
-    assert path_in_scope("F:/q/a.png", ["F:/p", "F:/q"], [], [])
+    assert path_in_scope("F:/q/a.png", ["F:/p", "F:/q"], [], None)
 
 
 def test_no_roots_is_never_in_scope():
-    assert not path_in_scope("F:/p/a.png", [], [], [])
+    assert not path_in_scope("F:/p/a.png", [], [], None)
 
 
 def test_ignore_folder_excludes():
-    assert not path_in_scope("F:/p/skip/a.png", ["F:/p"], ["F:/p/skip"], [])
-    assert path_in_scope("F:/p/skipped/a.png", ["F:/p"], ["F:/p/skip"], [])
+    assert not path_in_scope("F:/p/skip/a.png", ["F:/p"], ["F:/p/skip"], None)
+    assert path_in_scope("F:/p/skipped/a.png", ["F:/p"], ["F:/p/skip"], None)
 
 
 def test_ignore_pattern_excludes():
-    assert not path_in_scope("F:/p/a.tmp", ["F:/p"], [], ["*.tmp"])
-    assert path_in_scope("F:/p/a.png", ["F:/p"], [], ["*.tmp"])
+    pattern_re = compile_ignore_patterns(["*.tmp"])
+    assert not path_in_scope("F:/p/a.tmp", ["F:/p"], [], pattern_re)
+    assert path_in_scope("F:/p/a.png", ["F:/p"], [], pattern_re)
 
 
 def test_compile_ignore_patterns_empty_returns_none():

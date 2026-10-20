@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from PySide6 import QtCore, QtGui, QtWidgets
 from ....core.lang.manager import t
 from ....core.profiling import profiler
-from .core import COMMAND_MENU_MARKER, CommandMeta, CommandRegistry, MenuAction, call_with_matching_args
+from .core import COMMAND_MENU_MARKER, CommandMeta, CommandRegistry, MenuAction, call_with_matching_args, persistent_args
 from .context import CommandContext
 from ....core.logs import AppLogger
 from .payload import CommandPayload
@@ -552,7 +552,7 @@ class CommandMenuBuilder:
             options = dialog.get_values()
             if not callable(selection_callback):
                 store = CommandOptionStore.instance()
-                store.set(command_name, options)
+                store.set(command_name, persistent_args(command_class.meta, options))
                 if not store.commit():
                     AppLogger.warning(f"Failed to save command options: {command_name}")
             if callable(selection_callback):

@@ -732,7 +732,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.grid_overlay_host.reload()
         if paths == self._last_paths:
-            self._hide_loading()
+            self.grid_view.layout_ready.emit()
             return
         self._last_paths = paths
         self.grid_view.set_paths(paths, sources, aspects, keep_scroll=keep_scroll)

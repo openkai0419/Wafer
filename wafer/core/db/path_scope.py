@@ -3,7 +3,7 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from ..common.paths import list_setting_db_names, normalize_path, setting_db_path
 from .setting_db import SettingDB
@@ -28,19 +28,18 @@ def is_under(path: str, root: str) -> bool:
     return target.startswith(base if base.endswith("/") else f"{base}/")
 
 
-def path_in_scope(path: str, roots: Sequence[str], ignore_folders: Sequence[str], ignore_patterns: Sequence[str]) -> bool:
+def path_in_scope(path: str, roots: Iterable[str], ignore_folders: Iterable[str], ignore_pattern_re: re.Pattern[str] | None) -> bool:
     if not any(is_under(path, root) for root in roots):
         return False
     if any(is_under(path, folder) for folder in ignore_folders):
         return False
-    pattern_re = compile_ignore_patterns(ignore_patterns)
-    return pattern_re is None or pattern_re.match(normalize_path(path)) is None
+    return ignore_pattern_re is None or ignore_pattern_re.match(normalize_path(path)) is None
 
 
 def databases_containing(path: str) -> list[str]:
     names = []
     for name in list_setting_db_names():
         roots, ignore_folders, ignore_patterns = SettingDB(str(setting_db_path(name))).get_all_folder_settings()
-        if path_in_scope(path, roots, ignore_folders, ignore_patterns):
+        if path_in_scope(path, roots, ignore_folders, compile_ignore_patterns(ignore_patterns)):
             names.append(name)
     return names

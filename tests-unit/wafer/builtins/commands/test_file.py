@@ -334,3 +334,26 @@ def test_open_path_without_path_asks_for_it(option_store, monkeypatch):
     Command.invoke("file.open_path")
 
     assert asked == ["file.open_path"]
+
+
+def test_open_path_forgets_the_path_but_remembers_the_toggles(option_store, monkeypatch):
+    from wafer.qt.commands.command import option_dialog
+
+    class FakeDialog:
+        def __init__(self, cls, parent, execute_callback=None, auto_required=False, **kw):
+            self.execute_callback = execute_callback
+
+        def exec(self):
+            self.execute_callback({"path": "F:/p/a.png", "select_folder": True, "scroll_grid": True, "show_viewer": False})
+            return 1
+
+    monkeypatch.setattr(option_dialog, "CommandOptionsDialog", FakeDialog)
+    Command.invoke("file.open_path")
+
+    assert Command.get_args("file.open_path") == {"path": "", "select_folder": True, "scroll_grid": True, "show_viewer": False}
+
+    asked = []
+    monkeypatch.setattr(Command, "_show_options_for_required", staticmethod(lambda command_id, *a, **k: asked.append(command_id)))
+    Command.invoke("file.open_path")
+
+    assert asked == ["file.open_path"]

@@ -383,7 +383,7 @@ class FileCommands(ActionKit.MenuBase):
                 path="file.open_path",
                 display="Open Path",
                 params=[
-                    ActionKit.Param(name="path", value="", description="File path", required=True),
+                    ActionKit.Param(name="path", value="", description="File path", required=True, persist=False),
                     ActionKit.Param(name="select_folder", value=False, description="Select its folder"),
                     ActionKit.Param(name="scroll_grid", value=False, description="Scroll the grid to it"),
                     ActionKit.Param(name="show_viewer", value=True, description="Show in the viewer"),

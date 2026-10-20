@@ -240,17 +240,40 @@ class TestWorkspaceToolbarWidget:
         assert "pencil" in keys
         assert captured == ["s1"]
 
-    def test_recent_open_button_emits_slot_id(self, qtbot):
+    def test_recent_text_area_click_emits_open(self, qtbot):
         from wafer.app.viewer.widgets import workspace_toolbar
         from wafer.core.store.workspace import WindowSlot
 
         item = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s1", path={"database_name": "db"}))
         qtbot.addWidget(item)
+        item.show()
         captured = []
         item.open_requested.connect(captured.append)
-        open_button = next(btn for btn in item.findChildren(QtWidgets.QToolButton) if btn.toolTip() == "Open in new window")
-        qtbot.mouseClick(open_button, QtCore.Qt.LeftButton)
+        qtbot.mouseClick(item._text_area, QtCore.Qt.LeftButton, pos=item._text_area.rect().center())
         assert captured == ["s1"]
+
+    def test_recent_row_has_no_open_button(self, qtbot):
+        from wafer.app.viewer.widgets import workspace_toolbar
+        from wafer.core.store.workspace import WindowSlot
+
+        item = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s1"))
+        qtbot.addWidget(item)
+        tooltips = [btn.toolTip() for btn in item.findChildren(QtWidgets.QToolButton)]
+        assert tooltips == ["Rename", "Delete"]
+
+    def test_recent_row_marks_open_workspaces(self, qtbot):
+        from wafer.app.viewer.widgets import workspace_toolbar
+        from wafer.core.lang.manager import t
+        from wafer.core.store.workspace import WindowSlot
+
+        closed = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s1"))
+        opened = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s2"), is_open=True)
+        for item in (closed, opened):
+            qtbot.addWidget(item)
+            item.show()
+        assert closed._open_marker.isVisibleTo(closed) is False
+        assert opened._open_marker.isVisibleTo(opened) is True
+        assert opened._open_marker.text() == t("Open")
 
     def test_recent_row_disables_delete_for_open_slot(self, qtbot):
         from wafer.app.viewer.widgets import workspace_toolbar
@@ -264,7 +287,30 @@ class TestWorkspaceToolbarWidget:
         assert closed._delete_button.isEnabled() is True
         assert opened._delete_button.isEnabled() is False
         assert current._delete_button.isEnabled() is False
-        assert opened._open_button.isEnabled() is True
+
+    def test_recent_content_new_workspace_button_emits(self, qtbot):
+        from wafer.app.viewer.widgets.workspace_toolbar import _RecentSectionContent
+        from wafer.core.lang.manager import t
+
+        recent = _RecentSectionContent()
+        qtbot.addWidget(recent)
+        recent.populate([])
+        captured = []
+        recent.new_requested.connect(lambda: captured.append(True))
+        assert recent._new_button.text() == t("New workspace")
+        qtbot.mouseClick(recent._new_button, QtCore.Qt.LeftButton)
+        assert captured == [True]
+
+    def test_toolbar_new_workspace_invokes_command(self, qtbot):
+        from unittest.mock import patch
+
+        from wafer.app.viewer.widgets import workspace_toolbar as workspace_widget
+
+        panel = workspace_widget.WorkspaceToolbarWidget()
+        qtbot.addWidget(panel)
+        with patch.object(workspace_widget.Command, "invoke") as invoke:
+            panel._recent_col.new_requested.emit()
+        invoke.assert_called_once_with("ws.new_workspace")
 
     def test_recent_content_marks_open_slots(self, qtbot):
         from wafer.app.viewer.widgets.workspace_toolbar import _RecentSectionContent, _RecentSlotItem
@@ -296,7 +342,7 @@ class TestWorkspaceToolbarWidget:
         assert items["s2"].is_open is True
         assert items["s1"].is_open is False
 
-    def test_recent_current_slot_has_marker_and_disabled_open(self, qtbot):
+    def test_recent_current_slot_has_marker(self, qtbot):
         from wafer.app.viewer.widgets import workspace_toolbar
         from wafer.core.store.workspace import WindowSlot
 
@@ -305,9 +351,7 @@ class TestWorkspaceToolbarWidget:
         qtbot.addWidget(item)
         qtbot.addWidget(other)
         assert item._current_marker.property("current") is True
-        assert item._open_button.isEnabled() is False
-        assert other._open_button.isEnabled() is True
-        assert item._open_button.toolTip() == "Open in new window"
+        assert other._current_marker.property("current") is False
 
     def test_recent_slot_name_is_displayed_over_summary(self, qtbot):
         from wafer.app.viewer.widgets import workspace_toolbar

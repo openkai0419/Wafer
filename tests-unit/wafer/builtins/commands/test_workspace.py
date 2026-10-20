@@ -234,32 +234,55 @@ class TestWorkspaceCommands:
         delete_file.assert_not_called()
         notify.assert_called_once()
 
-    def test_open_workspace_saves_then_spawns_picker(self):
+    def test_open_viewer_saves_then_spawns_picker(self):
         win = MagicMock()
         win.slot_id = "s1"
         order = MagicMock()
         order.attach_mock(win._save_slot, "save")
         with patch.object(workspace_commands.AppProcess, "new_main") as new_main:
             order.attach_mock(new_main, "spawn")
-            workspace_commands.open_workspace(_Ctx(win))
+            workspace_commands.open_viewer(_Ctx(win))
 
         assert order.mock_calls == [
             call.save(),
             call.spawn("--viewer", "--pick", "--seed-slot", "s1"),
         ]
 
-    def test_open_workspace_without_a_window_spawns_picker_without_seed(self):
+    def test_open_viewer_without_a_window_spawns_picker_without_seed(self):
         with patch.object(workspace_commands.AppProcess, "new_main") as new_main:
-            workspace_commands.open_workspace(_Ctx())
+            workspace_commands.open_viewer(_Ctx())
 
         new_main.assert_called_once_with("--viewer", "--pick")
 
-    def test_process_menu_has_open_workspace_instead_of_new_window(self):
+    def test_process_menu_has_open_viewer(self):
         from wafer.builtins.commands.window import WindowRestartCommands
 
         commands = {item.path: item for item in WindowRestartCommands.commands() if hasattr(item, "path")}
-        assert "ws.open_workspace" in commands
+        assert commands["ws.open_viewer"].display == "Open Viewer"
+        assert "ws.open_workspace" not in commands
         assert "win.new_window" not in commands
+
+    def test_new_workspace_saves_then_opens_a_copy_of_this_window(self):
+        win = MagicMock()
+        win.slot_id = "s1"
+        store = MagicMock()
+        store.create_slot_from.return_value = "new1"
+        order = MagicMock()
+        order.attach_mock(win._save_slot, "save")
+        order.attach_mock(store.create_slot_from, "create")
+        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store), patch.object(workspace_commands.AppProcess, "new_main") as new_main:
+            order.attach_mock(new_main, "spawn")
+            workspace_commands.new_workspace(_Ctx(win))
+
+        assert order.mock_calls == [
+            call.save(),
+            call.create("s1"),
+            call.spawn("--viewer", "--slot", "new1"),
+        ]
+
+    def test_workspace_menu_registers_new_workspace_as_hidden(self):
+        commands = {item.path: item for item in workspace_commands.WorkspaceCommands.commands() if hasattr(item, "path")}
+        assert commands["ws.new_workspace"].hidden is True
 
     def test_workspace_menu_uses_popup_commands_instead_of_panel_toggle(self):
         from wafer.qt.layout.manager import LayoutManager

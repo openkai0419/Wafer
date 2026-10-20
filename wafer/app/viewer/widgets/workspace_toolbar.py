@@ -40,6 +40,19 @@ def _icon_button(icon_key: str, tooltip: str, parent=None) -> QtWidgets.QToolBut
     return btn
 
 
+def _dashed_button(text: str) -> QtWidgets.QPushButton:
+    p = ThemeManager.instance().palette
+    btn = QtWidgets.QPushButton(text)
+    btn.setIcon(themed_icon("plus"))
+    btn.setCursor(QtCore.Qt.PointingHandCursor)
+    btn.setStyleSheet(
+        f"QPushButton {{ background: transparent; color: {p.text_accent}; border: 1px dashed {p.border_default};"
+        f"  border-radius: {dpix(4)}px; padding: {dpix(3)}px; font-size: {dpix(12)}px; }}"
+        f"QPushButton:hover {{ background: {p.bg_hover}; }}"
+    )
+    return btn
+
+
 class _SectionButton(QtWidgets.QToolButton):
     def __init__(self, key: str, title: str, parent=None, icon_key: str | None = None, icon_only: bool = False):
         super().__init__(parent)
@@ -132,38 +145,36 @@ class _SectionPopup(PopupBase):
         self.closed.emit(self.key)
 
 
-class _PresetTextArea(QtWidgets.QFrame):
+class _ClickableTextArea(QtWidgets.QFrame):
     clicked = QtCore.Signal()
 
-    def __init__(self, name: str, updated_at: str, parent=None):
+    def __init__(self, title: str, subtitle: str, tooltip: str = "", parent=None):
         super().__init__(parent)
-        self.setObjectName("workspace_preset_text_area")
+        self.setObjectName("workspace_text_area")
         self.setCursor(QtCore.Qt.PointingHandCursor)
         self.setMinimumWidth(0)
         self.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred)
         self.setAttribute(QtCore.Qt.WA_Hover, True)
-        self._build_ui(name, updated_at)
+        self.setToolTip(tooltip)
+        self._build_ui(title, subtitle)
 
-    def _build_ui(self, name: str, updated_at: str):
+    def _build_ui(self, title: str, subtitle: str):
         p = ThemeManager.instance().palette
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(dpix(_ROW_PADDING_H), dpix(_ROW_PADDING_V), dpix(_ROW_PADDING_H), dpix(_ROW_PADDING_V))
         layout.setSpacing(0)
 
-        self.name_label = ElidingLabel(name)
-        self.name_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
-        self.name_label.setStyleSheet(f"color: {p.text_primary}; font-size: {dpix(12)}px;")
-        layout.addWidget(self.name_label)
+        self.title_label = ElidingLabel(title)
+        self.title_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        self.title_label.setStyleSheet(f"color: {p.text_primary}; font-size: {dpix(12)}px;")
+        layout.addWidget(self.title_label)
 
-        updated = format_iso(updated_at)
-        self.updated_label = QtWidgets.QLabel(updated)
-        self.updated_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
-        self.updated_label.setStyleSheet(f"color: {p.text_muted}; font-size: {dpix(10)}px;")
-        if updated:
-            self.updated_label.setToolTip(f"{t('Last updated')}: {updated}")
-        layout.addWidget(self.updated_label)
+        self.subtitle_label = ElidingLabel(subtitle)
+        self.subtitle_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        self.subtitle_label.setStyleSheet(f"color: {p.text_muted}; font-size: {dpix(10)}px;")
+        layout.addWidget(self.subtitle_label)
 
-        self.setStyleSheet(f"QFrame#workspace_preset_text_area {{ background: transparent; border-radius: {dpix(3)}px; }}QFrame#workspace_preset_text_area:hover {{ background: {p.bg_hover}; }}")
+        self.setStyleSheet(f"QFrame#workspace_text_area {{ background: transparent; border-radius: {dpix(3)}px; }}QFrame#workspace_text_area:hover {{ background: {p.bg_hover}; }}")
 
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton and self.rect().contains(event.position().toPoint()):
@@ -191,10 +202,12 @@ class _PresetItem(QtWidgets.QWidget):
         layout.setContentsMargins(dpix(_ROW_PADDING_H), dpix(_ROW_PADDING_V), dpix(_ROW_PADDING_H), dpix(_ROW_PADDING_V))
         layout.setSpacing(dpix(_COMPACT_SPACING))
 
-        self._text_area = _PresetTextArea(self.name, self.updated_at, parent=self)
+        updated = format_iso(self.updated_at)
+        tooltip = f"{t('Last updated')}: {updated}" if updated else ""
+        self._text_area = _ClickableTextArea(self.name, updated, tooltip, parent=self)
         self._text_area.clicked.connect(self._on_apply_click)
-        self._label = self._text_area.name_label
-        self._updated_label = self._text_area.updated_label
+        self._label = self._text_area.title_label
+        self._updated_label = self._text_area.subtitle_label
         layout.addWidget(self._text_area, 1)
 
         ow = self._icon_button("save", t("Overwrite"))
@@ -231,19 +244,11 @@ class _Column(QtWidgets.QWidget):
         self._build_ui()
 
     def _build_ui(self):
-        p = ThemeManager.instance().palette
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(dpix(_CONTENT_PADDING), dpix(_CONTENT_PADDING), dpix(_CONTENT_PADDING), dpix(_CONTENT_PADDING))
         outer.setSpacing(dpix(_COMPACT_SPACING))
 
-        self._save_btn = QtWidgets.QPushButton(t("Save current"))
-        self._save_btn.setIcon(themed_icon("plus"))
-        self._save_btn.setCursor(QtCore.Qt.PointingHandCursor)
-        self._save_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.text_accent}; border: 1px dashed {p.border_default};"
-            f"  border-radius: {dpix(4)}px; padding: {dpix(3)}px; font-size: {dpix(12)}px; }}"
-            f"QPushButton:hover {{ background: {p.bg_hover}; }}"
-        )
+        self._save_btn = _dashed_button(t("Save current"))
         self._save_btn.clicked.connect(self._on_save)
         outer.addWidget(self._save_btn)
 
@@ -360,27 +365,21 @@ class _RecentSlotItem(QtWidgets.QWidget):
         self._current_marker = marker
         layout.addSpacing(dpix(1))
 
-        labels = QtWidgets.QVBoxLayout()
-        labels.setContentsMargins(0, 0, 0, 0)
-        labels.setSpacing(0)
-        tooltip = slot_tooltip(self.slot)
-        title = ElidingLabel(slot_title(self.slot))
-        title.setToolTip(tooltip)
-        title.setStyleSheet(f"color: {p.text_primary}; font-size: {dpix(12)}px;")
-        labels.addWidget(title)
-        subtitle = ElidingLabel(slot_subtitle(self.slot))
-        subtitle.setToolTip(tooltip)
-        subtitle.setStyleSheet(f"color: {p.text_muted}; font-size: {dpix(10)}px;")
-        labels.addWidget(subtitle)
-        self._title_label = title
-        self._subtitle_label = subtitle
-        layout.addLayout(labels, 1)
+        self._text_area = _ClickableTextArea(slot_title(self.slot), slot_subtitle(self.slot), slot_tooltip(self.slot), parent=self)
+        self._text_area.clicked.connect(lambda: self.open_requested.emit(self.slot.slot_id))
+        self._title_label = self._text_area.title_label
+        self._subtitle_label = self._text_area.subtitle_label
+        layout.addWidget(self._text_area, 1)
 
-        open_btn = _icon_button("external_link", t("Open in new window"), self)
-        open_btn.clicked.connect(lambda: self.open_requested.emit(self.slot.slot_id))
-        open_btn.setEnabled(not self.is_current)
-        layout.addWidget(open_btn)
-        self._open_button = open_btn
+        open_marker = QtWidgets.QLabel(t("Open"), self)
+        open_marker.setStyleSheet(
+            f"QLabel {{ color: {p.text_accent}; border: 1px solid {p.text_accent}; border-radius: {dpix(7)}px;"
+            f"  padding: 0px {dpix(5)}px; font-size: {dpix(10)}px; }}"
+        )
+        open_marker.setFixedHeight(dpix(15))
+        open_marker.setVisible(self.is_open)
+        layout.addWidget(open_marker, 0, QtCore.Qt.AlignVCenter)
+        self._open_marker = open_marker
 
         rename_btn = _icon_button("pencil", t("Rename"), self)
         rename_btn.clicked.connect(lambda: self.rename_requested.emit(self.slot.slot_id))
@@ -394,6 +393,7 @@ class _RecentSlotItem(QtWidgets.QWidget):
 
 
 class _RecentSectionContent(QtWidgets.QWidget):
+    new_requested = QtCore.Signal()
     open_requested = QtCore.Signal(str)
     rename_requested = QtCore.Signal(str)
     delete_requested = QtCore.Signal(str)
@@ -405,7 +405,10 @@ class _RecentSectionContent(QtWidgets.QWidget):
     def _build_ui(self):
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(dpix(_CONTENT_PADDING), dpix(_CONTENT_PADDING), dpix(_CONTENT_PADDING), dpix(_CONTENT_PADDING))
-        outer.setSpacing(0)
+        outer.setSpacing(dpix(_COMPACT_SPACING))
+        self._new_button = _dashed_button(t("New workspace"))
+        self._new_button.clicked.connect(self.new_requested.emit)
+        outer.addWidget(self._new_button)
         self._recent_layout = QtWidgets.QVBoxLayout()
         self._recent_layout.setContentsMargins(0, 0, 0, 0)
         self._recent_layout.setSpacing(0)
@@ -460,6 +463,7 @@ class WorkspaceToolbarWidget(QtWidgets.QWidget):
             col.overwrite_requested.connect(self._on_overwrite)
             col.rename_requested.connect(self._on_rename)
             col.delete_requested.connect(self._on_delete)
+        self._recent_col.new_requested.connect(self._on_new_workspace)
         self._recent_col.open_requested.connect(self._on_open_slot)
         self._recent_col.rename_requested.connect(self._on_rename_slot)
         self._recent_col.delete_requested.connect(self._on_delete_slot)
@@ -574,6 +578,9 @@ class WorkspaceToolbarWidget(QtWidgets.QWidget):
     def _on_delete(self, kind: str, preset_id: str):
         Command.invoke(self._cmd(kind, "delete"), preset_id=preset_id)
         self.refresh(force=True)
+
+    def _on_new_workspace(self):
+        Command.invoke("ws.new_workspace")
 
     def _on_open_slot(self, slot_id: str):
         Command.invoke("ws.open_slot", slot_id=slot_id)

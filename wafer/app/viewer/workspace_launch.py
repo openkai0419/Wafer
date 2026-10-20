@@ -17,7 +17,7 @@ from ...core.platform.workspace_lock import WorkspaceLock
 from ...core.store.workspace import WindowSlot, WorkspaceStore
 from ...qt.common.app_icon import get_icon
 from .widgets.workspace_labels import slot_title
-from .widgets.workspace_picker import WorkspacePickerDialog
+from .widgets.workspace_picker import PickResult, WorkspacePickerDialog
 
 OPEN_PATH_TIMEOUT = 5
 CLAIM_RETRIES = 5
@@ -91,7 +91,10 @@ def run_pick(app, seed_slot_id: str | None) -> NoReturn:
     store = WorkspaceStore.instance()
     slots = store.list_slots()
     open_ids = WorkspaceLock.open_slot_ids([slot.slot_id for slot in slots], lock_dir=LOCK_DIR)
-    picked = WorkspacePickerDialog.ask(slots, open_ids, allow_open=False, databases=[])
+    if all(slot.slot_id in open_ids for slot in slots):
+        picked = PickResult(None, "")
+    else:
+        picked = WorkspacePickerDialog.ask(slots, open_ids, allow_open=False, databases=[])
     if picked is None:
         sys.exit(0)
     slot_id = picked.slot_id if picked.slot_id is not None else store.create_slot_from(seed_slot_id or store.latest_slot_id())

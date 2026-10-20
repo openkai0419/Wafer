@@ -168,6 +168,7 @@ def test_run_pick_cancel_exits_without_creating(pick_flow):
 
 
 def test_run_pick_asks_with_open_slots_disabled(pick_flow, lock_dir):
+    pick_flow["store"].save_slot(WindowSlot(slot_id="closed"))
     held = WorkspaceLock.acquire("seed", lock_dir=lock_dir)
     try:
         with pytest.raises(SystemExit):
@@ -175,9 +176,26 @@ def test_run_pick_asks_with_open_slots_disabled(pick_flow, lock_dir):
     finally:
         held.release()
     slots, open_ids, kwargs = pick_flow["asked"][0]
-    assert [s.slot_id for s in slots] == ["seed"]
+    assert sorted(s.slot_id for s in slots) == ["closed", "seed"]
     assert open_ids == {"seed"}
     assert kwargs == {"allow_open": False, "databases": []}
+
+
+def test_run_pick_opens_a_new_workspace_without_asking_when_every_workspace_is_open(pick_flow, lock_dir, monkeypatch):
+    seeds = []
+    create = pick_flow["store"].create_slot_from
+    monkeypatch.setattr(pick_flow["store"], "create_slot_from", lambda seed: seeds.append(seed) or create(seed))
+    pick_flow["lock"] = "lock"
+    held = WorkspaceLock.acquire("seed", lock_dir=lock_dir)
+    try:
+        with pytest.raises(Viewed):
+            workspace_launch.run_pick(object(), "seed")
+    finally:
+        held.release()
+    assert pick_flow["asked"] == []
+    assert seeds == ["seed"]
+    new_ids = [s.slot_id for s in pick_flow["store"].list_slots() if s.slot_id != "seed"]
+    assert pick_flow["claimed"] == new_ids
 
 
 def test_run_pick_new_seeds_from_caller(pick_flow):

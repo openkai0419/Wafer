@@ -319,13 +319,20 @@ def show_recent_popup(ctx, tb):
     tb.show_recent_popup()
 
 
-def open_workspace(ctx):
+def open_viewer(ctx):
     w = ctx.get_instance("MainWindow")
     if w is None:
         AppProcess.new_main("--viewer", "--pick")
         return
     w._save_slot()
     AppProcess.new_main("--viewer", "--pick", "--seed-slot", w.slot_id)
+
+
+@require(w="MainWindow")
+def new_workspace(ctx, w):
+    w._save_slot()
+    slot_id = _store().create_slot_from(w.slot_id)
+    AppProcess.new_main("--viewer", "--slot", slot_id)
 
 
 class WorkspaceCommands(ActionKit.MenuBase):
@@ -362,6 +369,12 @@ class WorkspaceCommands(ActionKit.MenuBase):
                 func=open_slot,
                 hidden=True,
                 params=[ActionKit.Param(name="slot_id", value="")],
+            ),
+            ActionKit.Command(
+                path="ws.new_workspace",
+                display="New Workspace",
+                func=new_workspace,
+                hidden=True,
             ),
             ActionKit.Command(
                 path="ws.rename_slot",

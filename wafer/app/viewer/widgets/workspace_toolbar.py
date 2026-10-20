@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-from pathlib import PurePath
-
 from PySide6 import QtCore, QtWidgets
 
 from ....qt.theme import ThemeManager
@@ -11,12 +8,13 @@ from ....core.lang.manager import t
 from ....qt.common.icon_engine import themed_icon
 from ....qt.common.dispatcher import Dispatcher
 from ....qt.common.thread import utility_pool
+from ....core.platform.workspace_lock import WorkspaceLock
 from ....core.store.workspace import WindowSlot, WorkspaceStore
 from ....qt.widgets.dialogs import ConfirmDialog
 from ....qt.widgets.eliding import ElidingLabel
 from ....qt.widgets.popup import PopupBase
 from ....qt.common.dpi import dpix
-from ....core.logs import AppLogger
+from .workspace_labels import format_iso, slot_subtitle, slot_summary, slot_title, slot_tooltip
 
 _KIND_UI = "ui"
 _KIND_PATH = "path"
@@ -31,52 +29,6 @@ _ROW_PADDING_H = 2
 _ROW_PADDING_V = 2
 _COMPACT_SPACING = 1
 _ACTION_BUTTON_SIZE = 22
-
-
-def _format_iso(value: str) -> str:
-    if not value:
-        return ""
-    try:
-        return datetime.fromisoformat(value).astimezone().strftime("%Y-%m-%d %H:%M")
-    except ValueError:
-        AppLogger.warning(f"Invalid ISO datetime in workspace store: {value!r}")
-        return value
-
-
-def _slot_summary(slot: WindowSlot) -> str:
-    path = slot.path if isinstance(slot.path, dict) else {}
-    database = str(path.get("database_name") or t("No database"))
-    selected = [str(p) for p in (path.get("selected") or []) if p]
-    if not selected:
-        return database
-    first = PurePath(selected[0]).name or selected[0]
-    if len(selected) == 1:
-        return f"{database} / {first}"
-    return f"{database} / {first} +{len(selected) - 1}"
-
-
-def _slot_title(slot: WindowSlot) -> str:
-    return str(getattr(slot, "name", "") or "").strip() or _slot_summary(slot)
-
-
-def _slot_subtitle(slot: WindowSlot) -> str:
-    updated = _format_iso(slot.updated_at)
-    if str(getattr(slot, "name", "") or "").strip():
-        summary = _slot_summary(slot)
-        return f"{summary} / {updated}" if updated else summary
-    return updated
-
-
-def _slot_tooltip(slot: WindowSlot) -> str:
-    parts = [_slot_title(slot)]
-    summary = _slot_summary(slot)
-    if summary != parts[0]:
-        parts.append(summary)
-    updated = _format_iso(slot.updated_at)
-    if updated:
-        parts.append(f"{t('Last updated')}: {updated}")
-    parts.append(f"slot_id: {slot.slot_id}")
-    return "\n".join(parts)
 
 
 def _icon_button(icon_key: str, tooltip: str, parent=None) -> QtWidgets.QToolButton:
@@ -203,7 +155,7 @@ class _PresetTextArea(QtWidgets.QFrame):
         self.name_label.setStyleSheet(f"color: {p.text_primary}; font-size: {dpix(12)}px;")
         layout.addWidget(self.name_label)
 
-        updated = _format_iso(updated_at)
+        updated = format_iso(updated_at)
         self.updated_label = QtWidgets.QLabel(updated)
         self.updated_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
         self.updated_label.setStyleSheet(f"color: {p.text_muted}; font-size: {dpix(10)}px;")
@@ -383,14 +335,15 @@ class _Column(QtWidgets.QWidget):
 
 
 class _RecentSlotItem(QtWidgets.QWidget):
-    restore_requested = QtCore.Signal(str)
+    open_requested = QtCore.Signal(str)
     rename_requested = QtCore.Signal(str)
     delete_requested = QtCore.Signal(str)
 
-    def __init__(self, slot: WindowSlot, parent=None, is_current: bool = False):
+    def __init__(self, slot: WindowSlot, parent=None, is_current: bool = False, is_open: bool = False):
         super().__init__(parent)
         self.slot = slot
         self.is_current = bool(is_current)
+        self.is_open = bool(is_open)
         self._build_ui()
 
     def _build_ui(self):
@@ -410,12 +363,12 @@ class _RecentSlotItem(QtWidgets.QWidget):
         labels = QtWidgets.QVBoxLayout()
         labels.setContentsMargins(0, 0, 0, 0)
         labels.setSpacing(0)
-        tooltip = _slot_tooltip(self.slot)
-        title = ElidingLabel(_slot_title(self.slot))
+        tooltip = slot_tooltip(self.slot)
+        title = ElidingLabel(slot_title(self.slot))
         title.setToolTip(tooltip)
         title.setStyleSheet(f"color: {p.text_primary}; font-size: {dpix(12)}px;")
         labels.addWidget(title)
-        subtitle = ElidingLabel(_slot_subtitle(self.slot))
+        subtitle = ElidingLabel(slot_subtitle(self.slot))
         subtitle.setToolTip(tooltip)
         subtitle.setStyleSheet(f"color: {p.text_muted}; font-size: {dpix(10)}px;")
         labels.addWidget(subtitle)
@@ -423,10 +376,10 @@ class _RecentSlotItem(QtWidgets.QWidget):
         self._subtitle_label = subtitle
         layout.addLayout(labels, 1)
 
-        btn = _icon_button("history", t("Restore"), self)
-        btn.clicked.connect(lambda: self.restore_requested.emit(self.slot.slot_id))
-        layout.addWidget(btn)
-        self._restore_button = btn
+        open_btn = _icon_button("external_link", t("Open in new window"), self)
+        open_btn.clicked.connect(lambda: self.open_requested.emit(self.slot.slot_id))
+        layout.addWidget(open_btn)
+        self._open_button = open_btn
 
         rename_btn = _icon_button("pencil", t("Rename"), self)
         rename_btn.clicked.connect(lambda: self.rename_requested.emit(self.slot.slot_id))
@@ -434,11 +387,13 @@ class _RecentSlotItem(QtWidgets.QWidget):
 
         delete_btn = _icon_button("trash", t("Delete"), self)
         delete_btn.clicked.connect(lambda: self.delete_requested.emit(self.slot.slot_id))
+        delete_btn.setEnabled(not (self.is_open or self.is_current))
         layout.addWidget(delete_btn)
+        self._delete_button = delete_btn
 
 
 class _RecentSectionContent(QtWidgets.QWidget):
-    restore_requested = QtCore.Signal(str)
+    open_requested = QtCore.Signal(str)
     rename_requested = QtCore.Signal(str)
     delete_requested = QtCore.Signal(str)
 
@@ -455,14 +410,14 @@ class _RecentSectionContent(QtWidgets.QWidget):
         self._recent_layout.setSpacing(0)
         outer.addLayout(self._recent_layout)
 
-    def populate(self, slots: list[WindowSlot], current_slot_id: str = ""):
+    def populate(self, slots: list[WindowSlot], current_slot_id: str = "", open_slot_ids: set[str] | frozenset[str] = frozenset()):
         while self._recent_layout.count():
             it = self._recent_layout.takeAt(0)
             if it.widget():
                 it.widget().deleteLater()
         for slot in slots:
-            row = _RecentSlotItem(slot, parent=self, is_current=slot.slot_id == current_slot_id)
-            row.restore_requested.connect(self.restore_requested.emit)
+            row = _RecentSlotItem(slot, parent=self, is_current=slot.slot_id == current_slot_id, is_open=slot.slot_id in open_slot_ids)
+            row.open_requested.connect(self.open_requested.emit)
             row.rename_requested.connect(self.rename_requested.emit)
             row.delete_requested.connect(self.delete_requested.emit)
             self._recent_layout.addWidget(row)
@@ -504,7 +459,7 @@ class WorkspaceToolbarWidget(QtWidgets.QWidget):
             col.overwrite_requested.connect(self._on_overwrite)
             col.rename_requested.connect(self._on_rename)
             col.delete_requested.connect(self._on_delete)
-        self._recent_col.restore_requested.connect(self._on_restore_slot)
+        self._recent_col.open_requested.connect(self._on_open_slot)
         self._recent_col.rename_requested.connect(self._on_rename_slot)
         self._recent_col.delete_requested.connect(self._on_delete_slot)
 
@@ -534,16 +489,17 @@ class WorkspaceToolbarWidget(QtWidgets.QWidget):
         def load():
             ui, path, query = store.snapshot()
             slots = store.list_recent_slots(limit=8, include_active=True)
-            self._dispatcher.invoke(lambda: self._apply_loaded(mtime, ui, path, query, slots, current_slot_id))
+            open_ids = WorkspaceLock.open_slot_ids([slot.slot_id for slot in slots])
+            self._dispatcher.invoke(lambda: self._apply_loaded(mtime, ui, path, query, slots, current_slot_id, open_ids))
 
         self._dispatcher.post(load, priority=4)
 
-    def _apply_loaded(self, mtime, ui_presets, path_presets, query_presets, slots, current_slot_id):
+    def _apply_loaded(self, mtime, ui_presets, path_presets, query_presets, slots, current_slot_id, open_slot_ids):
         self._last_loaded_mtime = mtime
         self._ui_col.populate([(p.preset_id, p.name, p.updated_at) for p in ui_presets])
         self._path_col.populate([(p.preset_id, p.name, p.updated_at) for p in path_presets])
         self._query_col.populate([(p.preset_id, p.name, p.updated_at) for p in query_presets])
-        self._recent_col.populate(slots, current_slot_id=current_slot_id)
+        self._recent_col.populate(slots, current_slot_id=current_slot_id, open_slot_ids=open_slot_ids)
 
     def _current_slot_id(self) -> str:
         return str(getattr(self.window(), "slot_id", "") or "")
@@ -618,8 +574,8 @@ class WorkspaceToolbarWidget(QtWidgets.QWidget):
         Command.invoke(self._cmd(kind, "delete"), preset_id=preset_id)
         self.refresh(force=True)
 
-    def _on_restore_slot(self, slot_id: str):
-        Command.invoke("ws.restore_slot", slot_id=slot_id)
+    def _on_open_slot(self, slot_id: str):
+        Command.invoke("ws.open_slot", slot_id=slot_id)
         self.refresh(force=True)
 
     def _on_rename_slot(self, slot_id: str):
@@ -628,7 +584,7 @@ class WorkspaceToolbarWidget(QtWidgets.QWidget):
 
     def _on_delete_slot(self, slot_id: str):
         slot = WorkspaceStore.instance().get_slot(slot_id)
-        summary = _slot_summary(slot) if slot is not None else slot_id
+        summary = slot_summary(slot) if slot is not None else slot_id
         result = ConfirmDialog.ask(
             f"{t('Remove this recent workspace?')}\n\n{summary}",
             title=t("Delete Workspace Slot"),

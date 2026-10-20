@@ -25,6 +25,7 @@ from .widgets.foldertree import LazyFolderTreeView
 from .widgets.loading_overlay import OverlayLoadingIndicator
 from .widgets.overlay_stack import OverlayStack
 from .widgets.progress_bar import ThinProgressBar
+from .widgets.workspace_labels import window_title
 from .widgets.search_container import SearchContainer
 from .widgets.combo_with_buttons import ComboBoxWithButtons
 from .widgets.callout_overlay import CalloutOverlay
@@ -215,12 +216,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._folder_callout = None
 
     def _update_title(self):
-        dirs = self.folder_view.get_selected_paths()
-        if dirs:
-            label = ", ".join(d.rsplit("/", 1)[-1] or d for d in dirs)
-        else:
-            label = self.database_name or ""
-        self.setWindowTitle(f"{label}" if label else APP_NAME)
+        name = self._slot_entry.name if self._slot_entry else ""
+        self.setWindowTitle(window_title(name, self.folder_view.get_selected_paths(), self.database_name or ""))
 
     @qt_debounce(200)
     def refresh_db_selector(self):
@@ -272,6 +269,7 @@ class MainWindow(QtWidgets.QMainWindow):
         b.slot_closed.connect(self._on_slot_closed)
         b.slot_restarted.connect(self._on_slot_restarted)
         b.slot_shutdown.connect(self._on_slot_shutdown)
+        b.slot_renamed.connect(self._on_slot_renamed)
         b.app_shutdown.connect(self._on_app_shutdown)
         b.db_created.connect(self._on_db_created)
         b.db_deleted.connect(self._on_db_deleted)
@@ -689,6 +687,13 @@ class MainWindow(QtWidgets.QMainWindow):
         if slot_id == self.slot_id:
             self._close_reason = CloseReason.SHUTDOWN
             self.close()
+
+    @QtCore.Slot(str, str)
+    def _on_slot_renamed(self, slot_id: str, name: str):
+        if slot_id != self.slot_id or self._slot_entry is None:
+            return
+        self._slot_entry.name = name
+        self._update_title()
 
     @QtCore.Slot()
     def _on_app_shutdown(self):

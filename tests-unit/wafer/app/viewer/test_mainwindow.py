@@ -2,12 +2,14 @@ from unittest.mock import ANY, MagicMock, call, patch
 
 
 class TestUpdateTitle:
-    def _make_win(self, db_name="default", selected_paths=None):
+    def _make_win(self, db_name="default", selected_paths=None, slot_name=None):
         with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
             from wafer.app.viewer.mainwindow import MainWindow
+            from wafer.core.store.workspace import WindowSlot
 
             win = MainWindow.__new__(MainWindow)
             win.database_name = db_name
+            win._slot_entry = WindowSlot(slot_id="s1", name=slot_name) if slot_name is not None else None
             win.folder_view = MagicMock()
             win.folder_view.get_selected_paths.return_value = selected_paths or []
             win.setWindowTitle = MagicMock()
@@ -29,6 +31,43 @@ class TestUpdateTitle:
         win = self._make_win(db_name="", selected_paths=[])
         win._update_title()
         win.setWindowTitle.assert_called_once_with(APP_NAME)
+
+
+    def test_named_workspace_shows_name_only(self):
+        win = self._make_win(selected_paths=["/home/user/photos"], slot_name="Work")
+        win._update_title()
+        win.setWindowTitle.assert_called_once_with("Work")
+
+
+class TestSlotRenamed:
+    def _make_win(self, slot_id="s1", name="Old"):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+            from wafer.core.store.workspace import WindowSlot
+
+            win = MainWindow.__new__(MainWindow)
+            win.slot_id = slot_id
+            win._slot_entry = WindowSlot(slot_id=slot_id, name=name)
+            win._update_title = MagicMock()
+            return win
+
+    def test_slot_renamed_updates_own_title(self):
+        win = self._make_win()
+        win._on_slot_renamed("s1", "New")
+        assert win._slot_entry.name == "New"
+        win._update_title.assert_called_once_with()
+
+    def test_slot_renamed_ignores_other_slots(self):
+        win = self._make_win()
+        win._on_slot_renamed("s2", "New")
+        assert win._slot_entry.name == "Old"
+        win._update_title.assert_not_called()
+
+    def test_slot_renamed_before_slot_is_acquired_is_ignored(self):
+        win = self._make_win()
+        win._slot_entry = None
+        win._on_slot_renamed("s1", "New")
+        win._update_title.assert_not_called()
 
 
 class TestSearchResultDiffCheck:

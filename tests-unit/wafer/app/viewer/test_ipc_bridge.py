@@ -47,6 +47,22 @@ class TestStart:
 
 
 class TestIpcHandlers:
+    def test_bridge_emits_slot_renamed(self, qtbot, bridge, mock_node):
+        topics = [c.args[0] for c in mock_node.subscribe.call_args_list]
+        assert "slot.renamed" in topics
+        received = []
+        bridge.slot_renamed.connect(lambda sid, name: received.append((sid, name)))
+        with qtbot.waitSignal(bridge.slot_renamed, timeout=1000):
+            bridge._on_slot_renamed(_FakeMsg(topic="slot.renamed", payload={"slot_id": "s2", "name": "New"}))
+        assert received == [("s2", "New")]
+
+    def test_slot_renamed_ignores_malformed_payload(self, bridge):
+        received = []
+        bridge.slot_renamed.connect(lambda sid, name: received.append((sid, name)))
+        assert bridge._on_slot_renamed(_FakeMsg(topic="slot.renamed", payload="oops")) is True
+        assert bridge._on_slot_renamed(_FakeMsg(topic="slot.renamed", payload={"name": "x"})) is True
+        assert received == []
+
     def test_on_progress_emits_only_valid_payload(self, qtbot, bridge):
         received = []
         bridge.progress_updated.connect(lambda db, v: received.append((db, v)))

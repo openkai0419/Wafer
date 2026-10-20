@@ -17,6 +17,7 @@ class ViewerIpcBridge(QtCore.QObject):
     slot_closed = QtCore.Signal(str)
     slot_restarted = QtCore.Signal(str)
     slot_shutdown = QtCore.Signal(str)
+    slot_renamed = QtCore.Signal(str, str)
     app_shutdown = QtCore.Signal()
     db_created = QtCore.Signal(str)
     db_deleted = QtCore.Signal(str)
@@ -57,6 +58,7 @@ class ViewerIpcBridge(QtCore.QObject):
         n.subscribe("slot.close", self._on_slot_close)
         n.subscribe("slot.restart", self._on_slot_restart)
         n.subscribe("slot.shutdown", self._on_slot_shutdown)
+        n.subscribe("slot.renamed", self._on_slot_renamed)
         n.subscribe("app.shutdown", self._on_app_shutdown)
         n.subscribe("db.created", self._on_db_created)
         n.subscribe("db.deleted", self._on_db_deleted)
@@ -114,6 +116,13 @@ class ViewerIpcBridge(QtCore.QObject):
 
     def _on_slot_shutdown(self, msg):
         return self._invoke("_emit_slot_shutdown", QtCore.Q_ARG(str, str(msg.payload)))
+
+    def _on_slot_renamed(self, msg):
+        p = msg.payload if isinstance(msg.payload, dict) else {}
+        slot_id = p.get("slot_id")
+        if not isinstance(slot_id, str) or not slot_id:
+            return True
+        return self._invoke("_emit_slot_renamed", QtCore.Q_ARG(str, slot_id), QtCore.Q_ARG(str, str(p.get("name") or "")))
 
     def _on_app_shutdown(self, msg):
         return self._invoke("_emit_app_shutdown")
@@ -183,6 +192,10 @@ class ViewerIpcBridge(QtCore.QObject):
     @QtCore.Slot(str)
     def _emit_slot_shutdown(self, slot_id: str):
         self.slot_shutdown.emit(slot_id)
+
+    @QtCore.Slot(str, str)
+    def _emit_slot_renamed(self, slot_id: str, name: str):
+        self.slot_renamed.emit(slot_id, name)
 
     @QtCore.Slot()
     def _emit_app_shutdown(self):

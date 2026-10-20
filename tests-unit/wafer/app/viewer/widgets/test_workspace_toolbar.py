@@ -240,15 +240,71 @@ class TestWorkspaceToolbarWidget:
         assert "pencil" in keys
         assert captured == ["s1"]
 
-    def test_recent_current_slot_has_marker_and_enabled_restore(self, qtbot):
+    def test_recent_open_button_emits_slot_id(self, qtbot):
+        from wafer.app.viewer.widgets import workspace_toolbar
+        from wafer.core.store.workspace import WindowSlot
+
+        item = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s1", path={"database_name": "db"}))
+        qtbot.addWidget(item)
+        captured = []
+        item.open_requested.connect(captured.append)
+        open_button = next(btn for btn in item.findChildren(QtWidgets.QToolButton) if btn.toolTip() == "Open in new window")
+        qtbot.mouseClick(open_button, QtCore.Qt.LeftButton)
+        assert captured == ["s1"]
+
+    def test_recent_row_disables_delete_for_open_slot(self, qtbot):
+        from wafer.app.viewer.widgets import workspace_toolbar
+        from wafer.core.store.workspace import WindowSlot
+
+        closed = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s1"))
+        opened = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s2"), is_open=True)
+        current = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s3"), is_current=True)
+        for item in (closed, opened, current):
+            qtbot.addWidget(item)
+        assert closed._delete_button.isEnabled() is True
+        assert opened._delete_button.isEnabled() is False
+        assert current._delete_button.isEnabled() is False
+        assert opened._open_button.isEnabled() is True
+
+    def test_recent_content_marks_open_slots(self, qtbot):
+        from wafer.app.viewer.widgets.workspace_toolbar import _RecentSectionContent, _RecentSlotItem
+        from wafer.core.store.workspace import WindowSlot
+
+        recent = _RecentSectionContent()
+        qtbot.addWidget(recent)
+        recent.populate([WindowSlot(slot_id="s1"), WindowSlot(slot_id="s2")], open_slot_ids={"s2"})
+        items = {item.slot.slot_id: item for item in recent.findChildren(_RecentSlotItem)}
+        assert items["s1"].is_open is False
+        assert items["s2"].is_open is True
+
+    def test_refresh_reads_open_slot_ids_in_background(self, qtbot):
+        from unittest.mock import MagicMock, patch
+
+        from wafer.app.viewer.widgets import workspace_toolbar as workspace_widget
+        from wafer.core.store.workspace import WindowSlot
+
+        store = MagicMock()
+        store.snapshot.return_value = ([], [], [])
+        store.list_recent_slots.return_value = [WindowSlot(slot_id="s1"), WindowSlot(slot_id="s2")]
+        store.get_store_mtime.return_value = 1.0
+        with patch.object(workspace_widget.WorkspaceStore, "instance", return_value=store), patch.object(workspace_widget.WorkspaceLock, "open_slot_ids", return_value={"s2"}) as open_ids:
+            panel = workspace_widget.WorkspaceToolbarWidget()
+            qtbot.addWidget(panel)
+            qtbot.waitUntil(lambda: panel._last_loaded_mtime == 1.0, timeout=2000)
+        open_ids.assert_called_with(["s1", "s2"])
+        items = {item.slot.slot_id: item for item in panel.findChildren(workspace_widget._RecentSlotItem)}
+        assert items["s2"].is_open is True
+        assert items["s1"].is_open is False
+
+    def test_recent_current_slot_has_marker_and_enabled_open(self, qtbot):
         from wafer.app.viewer.widgets import workspace_toolbar
         from wafer.core.store.workspace import WindowSlot
 
         item = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s1", path={"database_name": "db"}), is_current=True)
         qtbot.addWidget(item)
         assert item._current_marker.property("current") is True
-        assert item._restore_button.isEnabled() is True
-        assert item._restore_button.toolTip() == "Restore"
+        assert item._open_button.isEnabled() is True
+        assert item._open_button.toolTip() == "Open in new window"
 
     def test_recent_slot_name_is_displayed_over_summary(self, qtbot):
         from wafer.app.viewer.widgets import workspace_toolbar

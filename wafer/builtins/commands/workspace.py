@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from ...qt.commands.bridge import ActionKit
 from ...qt.commands.command.require import require
+from ...core.platform.foreground import activate_window
 from ...core.platform.process import AppProcess
+from ...core.platform.workspace_lock import WorkspaceLock
 from ...core.store.workspace import (
     BarSpec,
     PathPreset,
@@ -245,15 +247,17 @@ def query_preset_overwrite(ctx, w, preset_id: str = ""):
 
 
 @require(w="MainWindow")
-def restore_slot(ctx, w, slot_id: str = ""):
-    slot = _store().get_slot(slot_id)
-    if not slot:
-        Notifier.warning("Workspace slot not found")
+def open_slot(ctx, w, slot_id: str = ""):
+    if not slot_id or slot_id == w.slot_id:
         return
-    if slot_id != getattr(w, "slot_id", ""):
-        w._save_slot()
-    w._restore_from_slot(slot)
-    Notifier.info("Workspace restored")
+    if WorkspaceLock.open_slot_ids([slot_id]):
+        owner = WorkspaceLock.read_owner(slot_id)
+        if owner is None:
+            AppLogger.info(f"open_slot: workspace is open but its owner is unreadable ({slot_id})")
+            return
+        activate_window(owner.hwnd)
+        return
+    AppProcess.new_main("--viewer", "--slot", slot_id)
 
 
 @require(w="MainWindow")
@@ -269,6 +273,11 @@ def rename_slot(ctx, w, slot_id: str = "", name: str = ""):
     if not new_name or new_name == slot.name:
         return
     if store.rename_slot(slot_id, new_name):
+        if slot_id == w.slot_id:
+            w._slot_entry.name = new_name
+            w._update_title()
+        else:
+            w._bridge.node.send("slot.renamed", {"slot_id": slot_id, "name": new_name}, dst="viewer")
         Notifier.info(f"Workspace slot renamed: {new_name}")
         AppLogger.info(f"workspace slot renamed: {new_name} ({slot_id})")
 
@@ -350,9 +359,9 @@ class WorkspaceCommands(ActionKit.MenuBase):
                 func=show_recent_popup,
             ),
             ActionKit.Command(
-                path="ws.restore_slot",
-                display="Restore Workspace Slot",
-                func=restore_slot,
+                path="ws.open_slot",
+                display="Open Workspace Slot",
+                func=open_slot,
                 hidden=True,
                 params=[ActionKit.Param(name="slot_id", value="")],
             ),

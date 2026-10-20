@@ -74,8 +74,8 @@ def _register_main_window(window):
 
 def test_startup_check_shows_only_for_first_viewer_in_generation(tmp_path, monkeypatch):
     store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-    first, _, _ = store.acquire_slot("first")
-    second, _, _ = store.acquire_slot("second")
+    first, _, _ = store.acquire_slot()
+    second, _, _ = store.acquire_slot()
     monkeypatch.setattr(startup.WorkspaceStore, "instance", staticmethod(lambda: store))
     monkeypatch.setattr(startup.state, "is_auto_check_enabled", lambda: True)
     monkeypatch.setattr(startup.state, "skipped_version", lambda: "")
@@ -106,7 +106,7 @@ def test_startup_check_shows_only_for_first_viewer_in_generation(tmp_path, monke
 
 def test_startup_check_does_not_show_skipped_version(tmp_path, monkeypatch):
     store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-    first, _, _ = store.acquire_slot("first")
+    first, _, _ = store.acquire_slot()
     monkeypatch.setattr(startup.WorkspaceStore, "instance", staticmethod(lambda: store))
     monkeypatch.setattr(startup.state, "is_auto_check_enabled", lambda: True)
     monkeypatch.setattr(startup.state, "skipped_version", lambda: "0.6.19")
@@ -125,7 +125,7 @@ def test_startup_check_does_not_show_skipped_version(tmp_path, monkeypatch):
 
 def test_startup_check_respects_auto_check_disabled(tmp_path, monkeypatch):
     store = WorkspaceStore(path=str(tmp_path / "ws.json"))
-    first, _, _ = store.acquire_slot("first")
+    first, _, _ = store.acquire_slot()
     monkeypatch.setattr(startup.WorkspaceStore, "instance", staticmethod(lambda: store))
     monkeypatch.setattr(startup.state, "is_auto_check_enabled", lambda: False)
     monkeypatch.setattr(startup, "check_for_updates", lambda: _new_result())

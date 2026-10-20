@@ -171,6 +171,12 @@ _EMPTY_RAW = {
 }
 
 
+def _slots_newest_first(raw: dict[str, Any]) -> list[WindowSlot]:
+    slots = [WindowSlot.from_dict(data) for data in raw.get("slots", {}).values()]
+    slots.sort(key=lambda s: s.updated_at, reverse=True)
+    return slots
+
+
 class WorkspaceStore:
     _instance: WorkspaceStore | None = None
 
@@ -389,15 +395,19 @@ class WorkspaceStore:
         v = self._load_raw().get("slots", {}).get(slot_id)
         return WindowSlot.from_dict(v) if v else None
 
+    def list_slots(self) -> list[WindowSlot]:
+        return _slots_newest_first(self._load_raw())
+
+    def latest_slot_id(self) -> str | None:
+        slots = self.list_slots()
+        return slots[0].slot_id if slots else None
+
     def list_recent_slots(self, limit: int = 10, include_active: bool = False) -> list[WindowSlot]:
         raw = self._load_raw()
-        active = set(raw.get("active_slot_ids", []))
-        slots = []
-        for sid, data in raw.get("slots", {}).items():
-            if not include_active and sid in active:
-                continue
-            slots.append(WindowSlot.from_dict(data))
-        slots.sort(key=lambda s: s.updated_at, reverse=True)
+        slots = _slots_newest_first(raw)
+        if not include_active:
+            active = set(raw.get("active_slot_ids", []))
+            slots = [s for s in slots if s.slot_id not in active]
         return slots[: max(0, int(limit))]
 
     def get_last_used_database_name(self) -> str:
@@ -521,31 +531,32 @@ class WorkspaceStore:
 
         return self._locked_update(_u)
 
-    def acquire_slot(self, slot_id: str | None = None, seed: dict[str, Any] | None = None) -> tuple[str, WindowSlot, bool]:
-        """Acquire an existing slot or create a new one.
-
-        Returns (slot_id, slot, is_existing). If slot_id matches an existing slot, returns it.
-        Otherwise creates a new slot, optionally seeded with `seed` content, and registers it as active.
-        """
-
+    def acquire_slot(self, slot_id: str | None = None) -> tuple[str, WindowSlot, bool]:
         def _u(raw):
             slots = raw.setdefault("slots", {})
             existed = bool(slot_id and slot_id in slots)
             if existed:
-                sid = slot_id
-                entry = WindowSlot.from_dict(slots[sid])
+                entry = WindowSlot.from_dict(slots[slot_id])
             else:
-                sid = slot_id or _new_id()
-                base = seed or {}
-                entry = WindowSlot(
-                    slot_id=sid,
-                    ui=dict(base.get("ui") or {}),
-                    path=dict(base.get("path") or {}),
-                    query=dict(base.get("query") or {}),
-                )
-                slots[sid] = entry.to_dict()
-            self._activate_slot(raw, sid)
-            return sid, entry, existed
+                entry = WindowSlot()
+                slots[entry.slot_id] = entry.to_dict()
+            self._activate_slot(raw, entry.slot_id)
+            return entry.slot_id, entry, existed
+
+        return self._locked_update(_u)
+
+    def create_slot_from(self, template_slot_id: str | None) -> str:
+        def _u(raw):
+            slots = raw.setdefault("slots", {})
+            template = slots.get(template_slot_id) if template_slot_id else None
+            entry = WindowSlot()
+            if template:
+                source = WindowSlot.from_dict(template)
+                entry.ui = source.ui
+                database_name = source.path.get("database_name")
+                entry.path = {"database_name": database_name} if database_name is not None else {}
+            slots[entry.slot_id] = entry.to_dict()
+            return entry.slot_id
 
         return self._locked_update(_u)
 

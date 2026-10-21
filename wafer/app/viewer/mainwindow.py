@@ -319,6 +319,7 @@ class MainWindow(QtWidgets.QMainWindow):
         b.remote_log_received.connect(self._on_dev_log)
 
         b.tags_updated.connect(self._on_tags_updated_overlay)
+        b.files_changed.connect(self._on_files_changed)
 
         b.settings_received.connect(app_settings.apply_remote)
         app_settings.committed.connect(b.broadcast_settings)
@@ -700,6 +701,15 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.search_row_widget.invalidate_key_cache()
         self.search(force=True)
+
+    @QtCore.Slot(str, dict)
+    def _on_files_changed(self, db: str, changes: dict):
+        modified = changes.get("modified") or []
+        removed = changes.get("removed") or []
+        dropped = self.grid_view.image_cache.discard_paths([*modified, *removed])
+        reloaded = self.grid_view.reload_paths(modified)
+        viewer_reloaded = self.file_viewer.reload_paths(modified)
+        AppLogger.debug(f"[files.changed] db={db} modified={len(modified)} removed={len(removed)} dropped={dropped} grid={reloaded} viewer={viewer_reloaded}")
 
     @QtCore.Slot(dict)
     def _on_tags_updated_overlay(self, payload: dict):

@@ -142,3 +142,14 @@ class TestIpcHandlers:
         with qtbot.waitSignal(bridge.remote_log_received, timeout=1000):
             bridge._on_dev_log(_FakeMsg(topic="dev.log", payload={"level": "error", "text": "boom"}, source="node1", db="db1"))
         assert received == [("error", "boom", "node1", "db1")]
+
+    def test_files_changed_emits_modified_and_removed(self, bridge, mock_node):
+        topics = [c.args[0] for c in mock_node.subscribe.call_args_list]
+        assert "files.changed" in topics
+        received = []
+        bridge.files_changed.connect(lambda db, changes: received.append((db, changes)))
+
+        assert bridge._on_files_changed(_FakeMsg(topic="files.changed", payload={"modified": ["C:/a.png"]}, db="db1")) is True
+        assert bridge._on_files_changed(_FakeMsg(topic="files.changed", payload="oops")) is True
+
+        assert received == [("db1", {"modified": ["C:/a.png"], "removed": []}), ("", {"modified": [], "removed": []})]

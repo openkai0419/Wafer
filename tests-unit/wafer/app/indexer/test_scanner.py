@@ -370,3 +370,22 @@ def test_backfill_parsers_covers_source_key_parsers(tmp_path):
     writer.insert_pending.assert_called_once_with(["/a.jpg"], ["full_hash"])
     scanner.stop()
     db.close()
+
+
+def test_full_scan_reports_changed_and_removed_files_but_not_new_ones(tmp_path, monkeypatch):
+    scanner, _, _, progress = _make_scanner(tmp_path)
+    scanner.start()
+    scan_dir = tmp_path / "data"
+    scan_dir.mkdir()
+    for name in ("same.txt", "edited.txt", "new.txt"):
+        (scan_dir / name).write_text(name)
+    same, edited, new = (normalize_path(str(scan_dir / n)) for n in ("same.txt", "edited.txt", "new.txt"))
+    gone = normalize_path(str(scan_dir / "gone.txt"))
+    current = {p: info[:2] for p, info in scanner._scan_directory(str(scan_dir))}
+    monkeypatch.setattr(scanner, "_load_existing_sources", lambda: {same: current[same], edited: (0.0, 1), gone: (0.0, 1)})
+
+    scanner._do_full_scan([str(scan_dir)])
+
+    progress.send_files_changed.assert_called_once_with(modified=[edited], removed=[gone])
+    assert new not in progress.send_files_changed.call_args.kwargs["modified"]
+    scanner.stop()

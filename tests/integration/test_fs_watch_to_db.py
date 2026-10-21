@@ -354,6 +354,46 @@ class TestFsWatchToDb:
             scheduler.stop()
             writer.close()
 
+    def test_viewers_are_told_which_files_changed(self, tmp_path):
+        img_dir = tmp_path / "watched"
+        img_dir.mkdir()
+        edited, deleted, renamed = img_dir / "edited.png", img_dir / "deleted.png", img_dir / "old.png"
+        for path in (edited, deleted, renamed):
+            _create_test_image(path, 100, 80, fmt="PNG")
+
+        db_path, writer, scheduler, scanner, watcher = _build_watcher_stack(tmp_path)
+        node = scanner._progress._node
+        scheduler.start()
+        scanner.start()
+
+        def changes():
+            merged = {"modified": set(), "removed": set()}
+            for method, args, _kw in node.sent:
+                if method == "send" and args[0] == "files.changed":
+                    for kind in merged:
+                        merged[kind].update(args[1][kind])
+            return merged
+
+        try:
+            watcher.start([str(img_dir)])
+            assert _wait_for_condition(lambda: _source_count(writer.db) == 3)
+            assert _wait_for_condition(lambda: scheduler_drained(scheduler))
+
+            _create_test_image(edited, 300, 200, fmt="PNG")
+            deleted.unlink()
+            renamed.rename(img_dir / "new.png")
+
+            expected = {
+                "modified": {normalize_path(str(edited)), normalize_path(str(img_dir / "new.png"))},
+                "removed": {normalize_path(str(deleted)), normalize_path(str(renamed))},
+            }
+            assert _wait_for_condition(lambda: all(expected[k] <= changes()[k] for k in expected), timeout=20.0), changes()
+        finally:
+            watcher.stop()
+            scanner.stop()
+            scheduler.stop()
+            writer.close()
+
     def test_rescan_recovers_full_state(self, tmp_path):
         img_dir = tmp_path / "watched"
         img_dir.mkdir()

@@ -24,6 +24,7 @@ class ViewerIpcBridge(QtCore.QObject):
     db_deleted = QtCore.Signal(str)
     remote_log_received = QtCore.Signal(str, str, str, str)
     tags_updated = QtCore.Signal(dict)
+    files_changed = QtCore.Signal(str, dict)
     settings_received = QtCore.Signal(dict)
 
     def __init__(self, node: Node, parent: QtCore.QObject | None = None):
@@ -66,6 +67,7 @@ class ViewerIpcBridge(QtCore.QObject):
         n.subscribe("db.deleted", self._on_db_deleted)
         n.subscribe("dev.log", self._on_dev_log)
         n.subscribe("tags.updated", self._on_tags_updated)
+        n.subscribe("files.changed", self._on_files_changed)
         n.subscribe("settings.changed", self._on_settings_changed)
 
     def _invoke(self, slot: str, *args):
@@ -149,6 +151,11 @@ class ViewerIpcBridge(QtCore.QObject):
     def _on_tags_updated(self, msg):
         p = msg.payload if isinstance(msg.payload, dict) else {}
         self.tags_updated.emit(p)
+        return True
+
+    def _on_files_changed(self, msg):
+        p = msg.payload if isinstance(msg.payload, dict) else {}
+        self.files_changed.emit(msg.db or "", {"modified": list(p.get("modified") or ()), "removed": list(p.get("removed") or ())})
         return True
 
     def _on_settings_changed(self, msg):

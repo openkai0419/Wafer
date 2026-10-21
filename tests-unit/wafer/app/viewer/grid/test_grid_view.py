@@ -414,6 +414,35 @@ class TestSetupCellAdditionalWidget:
         fake._pipeline.schedule_render.assert_not_called()
 
 
+class TestReloadPaths:
+    @pytest.fixture(autouse=True)
+    def _import(self, qtbot):
+        from wafer.app.viewer.grid.grid_view import GridView
+
+        self.GridView = GridView
+
+    def test_reloads_only_cells_showing_the_paths(self):
+        fake = MagicMock()
+        fake.items.path_at = {0: "a.png", 1: "b.png", 2: "c.gif", 3: "d.png"}.get
+        fake.widgets = {0: MagicMock(), 1: MagicMock()}
+        fake._additional_widgets = {2: MagicMock()}
+
+        assert self.GridView.reload_paths(fake, ["a.png", "c.gif", "d.png"]) == 2
+
+        assert [c.args[0] for c in fake._recycle_widget.call_args_list] == [0, 2]
+        assert [c.args[0] for c in fake._setup_cell.call_args_list] == [0, 2]
+
+    def test_nothing_shown_reloads_nothing(self):
+        fake = MagicMock()
+        fake.items.path_at = {0: "a.png"}.get
+        fake.widgets = {0: MagicMock()}
+        fake._additional_widgets = {}
+
+        assert self.GridView.reload_paths(fake, ["z.png"]) == 0
+
+        fake._recycle_widget.assert_not_called()
+
+
 class TestRecycleWidget:
     @pytest.fixture(autouse=True)
     def _import(self, qtbot):

@@ -190,3 +190,24 @@ def test_peek_if_sufficient_does_not_update_lru(cache):
         cache[f"img_{i}"] = _make_image(100, 100)
 
     assert "img_0" not in cache
+
+
+def test_discard_paths_drops_thumbnails_originals_and_children(cache):
+    from wafer.core.files.image_cache import fullsize_key
+
+    kept = ["C:/d/a.png.bak", "C:/d/other.png", "C:/dir2/x.png"]
+    dropped = ["C:/d/a.png", fullsize_key("C:/d/a.png"), "C:/dir/sub/x.png", fullsize_key("C:/dir/y.png"), "C:/d/b.zip::in/c.png"]
+    for key in [*kept, *dropped]:
+        cache[key] = _make_image(10, 10)
+
+    assert cache.discard_paths(["C:/d/a.png", "C:/dir", "C:/d/b.zip", ""]) == len(dropped)
+
+    assert all(key not in cache for key in dropped)
+    assert all(key in cache for key in kept)
+    assert cache.current_bytes == len(kept) * 10 * 10 * 4
+
+
+def test_discard_paths_without_paths_is_noop(cache):
+    cache["C:/a.png"] = _make_image(10, 10)
+    assert cache.discard_paths([]) == 0
+    assert "C:/a.png" in cache

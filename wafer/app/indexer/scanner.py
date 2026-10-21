@@ -157,6 +157,7 @@ class DirectoryScanner:
         removed = [p for p in previous if p not in current_compare]
         self._progress.increment(0, len(added_or_modified) + len(removed))
         AppLogger.info(f"[Scanner] added/modified: {len(added_or_modified)}, removed: {len(removed)}")
+        self._progress.send_files_changed(modified=[p for p in added_or_modified if p in previous], removed=removed)
 
         if removed:
             for i in range(0, len(removed), _CHUNK):
@@ -217,6 +218,7 @@ class DirectoryScanner:
         cur.close()
 
         to_update = [p for p, (mt, sz, ct) in stat_info.items() if p not in previous or (mt, sz) != previous[p]]
+        self._progress.send_files_changed(modified=[p for p in to_update if p in previous])
         if to_update:
             self._progress.increment(0, len(to_update))
             token = self._current_token

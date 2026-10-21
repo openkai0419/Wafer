@@ -723,3 +723,47 @@ def test_image_viewer_settings_change_forces_reload_when_anchor_matches_current_
 
     viewer.model.set_path.assert_not_called()
     viewer._on_path_changed.assert_called_once_with("/archive.zip::first.png")
+
+
+def _reload_stub(current: str, contexts):
+    viewer = _make_viewer_stub()
+    viewer.model = MagicMock()
+    viewer.model.path.return_value = current
+    viewer._set_target_contexts(contexts)
+    viewer.current_render_paths = lambda: FileViewerController.current_render_paths(viewer)
+    viewer._on_path_changed = MagicMock()
+    return viewer
+
+
+def test_reload_paths_rerenders_when_a_shown_file_changed():
+    viewer = _reload_stub("/a.png", (_context("/a.png"), _context("/b.png")))
+
+    assert FileViewerController.reload_paths(viewer, ["/b.png"]) is True
+
+    viewer._on_path_changed.assert_called_once_with("/a.png")
+
+
+def test_reload_paths_matches_render_paths():
+    viewer = _reload_stub("/x.zip::a.png", (_context("/x.zip::a.png", source="/x.zip", render_path="/cache/a.png"),))
+
+    assert FileViewerController.reload_paths(viewer, ["/cache/a.png"]) is True
+
+
+def test_reload_paths_ignores_other_files():
+    viewer = _reload_stub("/a.png", (_context("/a.png"),))
+
+    assert FileViewerController.reload_paths(viewer, ["/c.png"]) is False
+
+    viewer._on_path_changed.assert_not_called()
+
+
+def test_image_viewer_reads_the_new_image_after_its_paths_are_discarded(qtbot, tmp_path):
+    path = tmp_path / "a.png"
+    _save_image(path, 40, 30)
+    viewer = ImageViewer()
+    assert viewer.load_images([str(path)])[0][1].size().toTuple() == (40, 30)
+    _save_image(path, 80, 60)
+
+    viewer._image_cache.discard_paths([str(path)])
+
+    assert viewer.load_images([str(path)])[0][1].size().toTuple() == (80, 60)

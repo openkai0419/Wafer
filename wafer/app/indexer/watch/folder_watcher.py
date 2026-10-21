@@ -365,6 +365,7 @@ class FolderWatcher:
             AppLogger.info(f"watcher rename: {len(data)} files")
             pairs = [(normalize_path(old), normalize_path(new)) for old, new in data if normalize_path(old) != normalize_path(new)]
             if pairs:
+                self._progress.send_files_changed(modified=[new for _, new in pairs], removed=[old for old, _ in pairs])
                 self._progress.increment(0, len(pairs))
                 self._scheduler.submit(
                     Task.create(
@@ -384,6 +385,7 @@ class FolderWatcher:
             AppLogger.info(f"watcher remove: {len(data)} files")
             paths = [normalize_path(p) for p in data if not os.path.exists(p)]
             if paths:
+                self._progress.send_files_changed(removed=paths)
                 self._progress.increment(0, len(paths))
                 self._scheduler.submit(
                     Task.create(

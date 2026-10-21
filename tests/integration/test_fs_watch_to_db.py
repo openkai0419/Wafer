@@ -206,6 +206,41 @@ class TestFsWatchToDb:
             scheduler.stop()
             writer.close()
 
+    @pytest.mark.skipif(os.name != "nt", reason="ReplaceFileW is Windows only")
+    def test_safe_save_with_replacefile_keeps_file_and_mark(self, tmp_path):
+        import ctypes
+
+        img_dir = tmp_path / "watched"
+        img_dir.mkdir()
+        target = img_dir / "edited.png"
+        temp = img_dir / "edited.tmp"
+        _create_test_image(target, 100, 80, fmt="PNG")
+
+        db_path, writer, scheduler, scanner, watcher = _build_watcher_stack(tmp_path)
+        scheduler.start()
+        scanner.start()
+        try:
+            watcher.start([str(img_dir)])
+            norm = normalize_path(str(target))
+            size_of = lambda: writer.db.read_conn.execute("SELECT size FROM sources WHERE source=?", (norm,)).fetchone()
+            assert _wait_for_condition(lambda: size_of() is not None)
+            writer.db.apply_user_meta_info([norm], [("mark.1", "1", None, 1)], [])
+
+            _create_test_image(temp, 300, 200, fmt="PNG")
+            assert ctypes.windll.kernel32.ReplaceFileW(str(target), str(temp), None, 0, None, None)
+            new_size = os.path.getsize(target)
+
+            assert _wait_for_condition(lambda: size_of() == (new_size,), timeout=20.0)
+            assert _wait_for_condition(lambda: scheduler_drained(scheduler))
+            assert _sources(writer.db) == [norm]
+            row = writer.db.read_conn.execute("SELECT value FROM meta_info WHERE path=? AND key='mark.1'", (norm,)).fetchone()
+            assert row == ("1",)
+        finally:
+            watcher.stop()
+            scanner.stop()
+            scheduler.stop()
+            writer.close()
+
     def test_directory_rename_inside_watched_root_tracked(self, tmp_path):
         img_dir = tmp_path / "watched"
         img_dir.mkdir()

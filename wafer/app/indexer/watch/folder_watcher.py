@@ -295,20 +295,24 @@ class FolderWatcher:
             if self._is_in_scope(src) and not self._is_in_scope(dst):
                 deleted.add(src)
         if moved:
-            new_at_dst = set()
             rename_pairs = []
+            recreated = []
             for src, dst in moved.items():
                 self._pending_deletes.pop(normalize_path(src), None)
+                if src in changed and os.path.exists(src):
+                    recreated.append(src)
+                    if self._is_in_scope(dst) and os.path.exists(dst):
+                        changed.add(dst)
+                    continue
+                changed.discard(src)
                 if self._is_in_scope(dst):
                     rename_pairs.append((src, dst))
-                    if src in changed:
-                        new_at_dst.add(dst)
                 else:
                     deleted.add(src)
-            changed -= set(moved.keys())
+            if recreated:
+                AppLogger.info(f"watcher replace: {len(recreated)} files were moved aside and recreated; updating them in place")
             if rename_pairs:
                 self._exec("rename", rename_pairs)
-            changed.update(new_at_dst)
         if deleted:
             self._exec("remove", list(deleted))
         if changed:

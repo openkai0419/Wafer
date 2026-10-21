@@ -86,13 +86,33 @@ def test_flush_basic_rename():
     assert task.name == "rename_paths"
 
 
-def test_flush_create_then_rename():
+def test_flush_recreated_source_updates_in_place_instead_of_renaming(tmp_path):
+    src = tmp_path / "a.png"
+    dst = tmp_path / "a.png.bak"
+    src.write_bytes(b"new")
+    dst.write_bytes(b"old")
     wf, scheduler, writer, scanner, _ = _make_watcher()
-    wf._flush({"A"}, set(), {"A": "B"})
+    _set_scope(wf, [tmp_path])
+
+    wf._flush({str(src)}, set(), {str(src): str(dst)})
+
     rename_names, update_paths, _ = _collect_exec_calls(scheduler, scanner)
-    assert len(rename_names) == 1
-    assert len(update_paths) == 1
-    assert "B" in update_paths[0]
+    assert rename_names == []
+    assert update_paths == [sorted([str(src), str(dst)])]
+
+
+def test_flush_stale_change_on_moved_source_still_renames(tmp_path):
+    src = tmp_path / "a.png"
+    dst = tmp_path / "b.png"
+    dst.write_bytes(b"moved")
+    wf, scheduler, writer, scanner, _ = _make_watcher()
+    _set_scope(wf, [tmp_path])
+
+    wf._flush({str(src)}, set(), {str(src): str(dst)})
+
+    rename_names, update_paths, _ = _collect_exec_calls(scheduler, scanner)
+    assert rename_names == ["rename_paths"]
+    assert update_paths == []
 
 
 def test_rename_fallback_scans_destination_when_source_missing():
@@ -543,6 +563,25 @@ class TestEventAccumulator:
         assert "rename_paths" not in ops
         paths = scanner.request_update.call_args[0][0]
         assert any("a.png" in p for p in paths)
+
+    def test_save_through_backup_swap_keeps_original(self, tmp_path):
+        target = tmp_path / "a.png"
+        backup = tmp_path / "a.png~"
+        temp = tmp_path / "a.tmp"
+        target.write_bytes(b"saved")
+        scheduler, scanner = self._run_and_flush(
+            [
+                ("created", str(temp)),
+                ("changed", str(temp)),
+                ("moved", (str(target), str(backup))),
+                ("moved", (str(temp), str(target))),
+                ("deleted", str(backup)),
+            ]
+        )
+        ops = [c[0][0].name for c in scheduler.submit.call_args_list]
+        assert "rename_paths" not in ops
+        updated = [p for c in scanner.request_update.call_args_list for p in c[0][0]]
+        assert str(target) in updated
 
 
 class TestZipWatchScenarios:

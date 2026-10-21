@@ -139,15 +139,32 @@ def open_file(path: str) -> None:
     QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(path))
 
 
+_BATCH_SUFFIXES = (".bat", ".cmd")
+
+
+def _batch_command_line(program: str, targets: list[str]) -> str | None:
+    expanded = [p for p in targets if "%" in p]
+    if expanded:
+        AppLogger.warning(f"[open_with] a batch file can't receive names containing '%': {expanded[0]}. Rename the file or choose an .exe program.")
+        return None
+    quoted = " ".join(f'"{arg}"' for arg in (os.path.normpath(program), *targets))
+    return f'"{os.environ.get("COMSPEC", "cmd.exe")}" /d /v:off /s /c "{quoted}"'
+
+
 def open_with(program: str, paths: list[str]) -> bool:
-    targets = [p for p in paths if p and not _reject_virtual_path(p, "open_with")]
+    targets = [os.path.normpath(p) for p in paths if p and not _reject_virtual_path(p, "open_with")]
     if not targets:
         return False
     if not program or not os.path.isfile(program):
         AppLogger.warning(f"[open_with] program not found: {program!r}. Set the program in the Open With options.")
         return False
+    command = [program, *targets]
+    if program.lower().endswith(_BATCH_SUFFIXES):
+        command = _batch_command_line(program, targets)
+        if command is None:
+            return False
     try:
-        subprocess.Popen([program, *targets])
+        subprocess.Popen(command)
     except OSError as e:
         AppLogger.warning(f"[open_with] failed to start {program}", exc=e)
         return False

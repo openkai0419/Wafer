@@ -96,6 +96,50 @@ def test_open_with_starts_the_program_with_all_files(tmp_path):
     assert out.read_text().splitlines() == [str(other)]
 
 
+def _recording_batch(tmp_path):
+    import sys
+
+    out = tmp_path / "argv.txt"
+    recorder = tmp_path / "record.py"
+    recorder.write_text(f"import sys, pathlib\npathlib.Path({str(out)!r}).write_text('\\n'.join(sys.argv[1:]), encoding='utf-8')\n", encoding="utf-8")
+    batch = tmp_path / "wrapper dir" / "open.bat"
+    batch.parent.mkdir()
+    batch.write_text(f'@"{sys.executable}" "{recorder}" %*\r\n', encoding="utf-8")
+    return batch, out
+
+
+def _wait_for_file(path):
+    import time
+
+    deadline = time.monotonic() + 15
+    while not path.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return path.read_text(encoding="utf-8").splitlines()
+
+
+def test_open_with_batch_program_passes_names_with_shell_characters_unchanged(tmp_path):
+    from wafer.core.platform import folders
+
+    batch, out = _recording_batch(tmp_path)
+    tricky = tmp_path / "Tom&Jerry ^(1)&cd&.png"
+    plain = tmp_path / "b.png"
+
+    assert folders.open_with(str(batch), [str(tricky), plain.as_posix()])
+
+    assert _wait_for_file(out) == [str(tricky), str(plain)]
+
+
+def test_open_with_batch_program_refuses_percent_in_names(monkeypatch, tmp_path):
+    from wafer.core.platform import folders
+
+    started = []
+    monkeypatch.setattr(folders.subprocess, "Popen", lambda *a, **k: started.append(a))
+    batch, _ = _recording_batch(tmp_path)
+
+    assert not folders.open_with(str(batch), [str(tmp_path / "100%PATH%.png")])
+    assert started == []
+
+
 def test_open_with_skips_virtual_paths(monkeypatch, tmp_path):
     from wafer.core.platform import folders
 
@@ -103,10 +147,10 @@ def test_open_with_skips_virtual_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(folders.subprocess, "Popen", lambda args: started.append(args))
     program = tmp_path / "app.exe"
     program.write_bytes(b"")
-    real = str(tmp_path / "a.png")
+    real = (tmp_path / "a.png").as_posix()
 
     assert folders.open_with(str(program), [build_virtual_path(str(tmp_path / "x.zip"), "in.png"), real])
-    assert started == [[str(program), real]]
+    assert started == [[str(program), str(tmp_path / "a.png")]]
 
 
 def test_open_with_missing_program_does_not_start(monkeypatch, tmp_path):

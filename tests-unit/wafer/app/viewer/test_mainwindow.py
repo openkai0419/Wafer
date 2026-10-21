@@ -336,6 +336,31 @@ class TestPanelLayoutReset:
         win._save_slot.assert_not_called()
 
 
+class TestFilesChanged:
+    def _make_win(self):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            win.database_name = "mine"
+            win.grid_view = MagicMock()
+            win.file_viewer = MagicMock()
+            return win
+
+    def test_changes_of_this_database_reload_the_shown_files(self):
+        win = self._make_win()
+        win._on_files_changed("mine", {"modified": ["C:/a.png"], "removed": ["C:/b.png"]})
+        win.grid_view.image_cache.discard_paths.assert_called_once_with(["C:/a.png", "C:/b.png"])
+        win.grid_view.reload_paths.assert_called_once_with(["C:/a.png"])
+        win.file_viewer.reload_paths.assert_called_once_with(["C:/a.png"])
+
+    def test_changes_of_another_database_are_ignored(self):
+        win = self._make_win()
+        win._on_files_changed("other", {"modified": ["C:/a.png"], "removed": []})
+        win.grid_view.image_cache.discard_paths.assert_not_called()
+        win.grid_view.reload_paths.assert_not_called()
+
+
 class TestToggleShow:
     def _make_win(self):
         with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):

@@ -704,6 +704,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @QtCore.Slot(str, dict)
     def _on_files_changed(self, db: str, changes: dict):
+        if not self._is_my_db(db):
+            return
         modified = changes.get("modified") or []
         removed = changes.get("removed") or []
         dropped = self.grid_view.image_cache.discard_paths([*modified, *removed])

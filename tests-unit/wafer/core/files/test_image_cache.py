@@ -207,6 +207,18 @@ def test_discard_paths_drops_thumbnails_originals_and_children(cache):
     assert cache.current_bytes == len(kept) * 10 * 10 * 4
 
 
+def test_discard_paths_reaches_nested_archive_members_and_member_folders(cache):
+    kept = ["C:/d/b.zip.png", "C:/d/b.zip::inner.zip.png", "C:/d/b.zip::in2/x.png"]
+    dropped = ["C:/d/b.zip::inner.zip::x.png", "C:/d/b.zip::in/x.png"]
+    for key in [*kept, *dropped]:
+        cache[key] = _make_image(10, 10)
+
+    assert cache.discard_paths(["C:/d/b.zip::inner.zip", "C:/d/b.zip::in"]) == len(dropped)
+
+    assert all(key not in cache for key in dropped)
+    assert all(key in cache for key in kept)
+
+
 def test_discard_paths_without_paths_is_noop(cache):
     cache["C:/a.png"] = _make_image(10, 10)
     assert cache.discard_paths([]) == 0

@@ -12,7 +12,17 @@ def fake_user32(iconic: int, result: int, calls: list):
         IsIconic=lambda hwnd: iconic,
         ShowWindow=lambda hwnd, cmd: calls.append(("ShowWindow", hwnd, cmd)),
         SetForegroundWindow=lambda hwnd: calls.append(("SetForegroundWindow", hwnd)) or result,
+        AllowSetForegroundWindow=lambda pid: calls.append(("AllowSetForegroundWindow", pid)) or result,
     )
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="win32-only")
+@pytest.mark.parametrize("result", [1, 0])
+def test_allow_foreground_hands_the_right_to_the_process(monkeypatch, result):
+    calls = []
+    monkeypatch.setattr(ctypes, "windll", SimpleNamespace(user32=fake_user32(0, result, calls)), raising=False)
+    assert foreground.allow_foreground(4321) is bool(result)
+    assert calls == [("AllowSetForegroundWindow", 4321)]
 
 
 def test_zero_hwnd_returns_false():

@@ -820,7 +820,7 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             from ...plugin.settings import PluginSettings
             from ...plugin.installer import RestartScope
-            from ...plugin.loader import get_plugin_dir
+            from ...core.common.paths import get_plugin_dir
 
             if self._close_reason == CloseReason.NORMAL:
                 ps = PluginSettings()

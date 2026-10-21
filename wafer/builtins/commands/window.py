@@ -5,7 +5,7 @@ from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...core.platform.process import AppProcess
 from ...core.store.workspace import WorkspaceStore
 from ...plugin import installer_queue
-from ...plugin.loader import get_plugin_dir
+from ...core.common.paths import get_plugin_dir
 from ...core.logs import AppLogger
 from ...qt.common.notifier import Notifier
 from .workspace import open_viewer

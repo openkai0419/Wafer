@@ -16,7 +16,18 @@ def user32_window_functions():
     user32.ShowWindow.restype = wintypes.BOOL
     user32.SetForegroundWindow.argtypes = [wintypes.HWND]
     user32.SetForegroundWindow.restype = wintypes.BOOL
+    user32.AllowSetForegroundWindow.argtypes = [wintypes.DWORD]
+    user32.AllowSetForegroundWindow.restype = wintypes.BOOL
     return user32
+
+
+def allow_foreground(pid: int) -> bool:
+    if sys.platform != "win32":
+        return False
+    allowed = bool(user32_window_functions().AllowSetForegroundWindow(pid))
+    if not allowed:
+        AppLogger.debug(f"AllowSetForegroundWindow failed: pid={pid}")
+    return allowed
 
 
 def activate_window(hwnd: int) -> bool:

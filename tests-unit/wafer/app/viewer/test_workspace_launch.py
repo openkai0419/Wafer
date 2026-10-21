@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 
 from wafer.app.viewer import workspace_launch
@@ -305,12 +307,13 @@ def open_flow(tmp_path, monkeypatch, lock_dir, activated):
         "databases": [],
         "claimed": [],
         "restored": [],
+        "spawned": [],
+        "allowed": [],
         "nodes": [],
         "registered": True,
         "reply": None,
         "warnings": [],
         "dialogs": [],
-        "lock": "lock",
         "activated": activated,
     }
 
@@ -318,17 +321,19 @@ def open_flow(tmp_path, monkeypatch, lock_dir, activated):
         flow["asked"].append((slots, open_ids, kwargs))
         return flow["answer"]
 
-    def claim(slot_id):
-        flow["claimed"].append(slot_id)
-        return flow["lock"]
-
     def run_viewer(app, lock, **kwargs):
         raise Viewed(kwargs)
 
     monkeypatch.setattr(workspace_launch.WorkspacePickerDialog, "ask", staticmethod(ask))
-    monkeypatch.setattr(workspace_launch, "claim_workspace", claim)
+    monkeypatch.setattr(workspace_launch, "claim_workspace", flow["claimed"].append)
     monkeypatch.setattr(workspace_launch, "run_viewer", run_viewer)
     monkeypatch.setattr(workspace_launch, "restore_session", flow["restored"].append)
+    def spawn(slot_id, request=None):
+        flow["spawned"].append((slot_id, request))
+        return SimpleNamespace(pid=1000 + len(flow["spawned"]))
+
+    monkeypatch.setattr(workspace_launch, "spawn_viewer", spawn)
+    monkeypatch.setattr(workspace_launch, "allow_foreground", flow["allowed"].append)
     monkeypatch.setattr(workspace_launch, "databases_containing", lambda path: flow["databases"])
     monkeypatch.setattr(workspace_launch, "Node", lambda role: FakeNode(role, flow))
     monkeypatch.setattr(workspace_launch.AppLogger, "warning", lambda message, **kwargs: flow["warnings"].append(message))
@@ -336,48 +341,52 @@ def open_flow(tmp_path, monkeypatch, lock_dir, activated):
     return flow
 
 
-def opened_request(viewed):
-    return viewed.value.args[0]["open_request"]
-
-
-def run_open_path_with_open_slot(flow, lock_dir, slot_id="s2"):
-    held = WorkspaceLock.acquire(slot_id)
-    held.set_window(77)
+def run_open_path(flow, held_slot_id=None):
+    held = WorkspaceLock.acquire(held_slot_id) if held_slot_id else None
+    if held is not None:
+        held.set_window(77)
     try:
         with pytest.raises(SystemExit) as exit_info:
             workspace_launch.run_open_path(object(), flow["path"])
     finally:
-        held.release()
+        if held is not None:
+            held.release()
+    assert flow["claimed"] == []
     return exit_info.value.code
+
+
+def request_for(flow, database_name=""):
+    return workspace_launch.OpenRequest(normalize_path(flow["path"]), database_name)
 
 
 def test_running_and_open_choice_sends_request_and_activates(open_flow, lock_dir):
     open_flow["answer"] = PickResult("s2", "")
     open_flow["reply"] = object()
-    assert run_open_path_with_open_slot(open_flow, lock_dir) == 0
+    assert run_open_path(open_flow, "s2") == 0
     node = open_flow["nodes"][0]
     assert node.role == "launcher"
     payload = {"slot_id": "s2", "path": normalize_path(open_flow["path"]), "database_name": ""}
     assert node.events == ["start", ("wait_registered", 5), ("request", "slot.open_path", payload, "viewer", 5), "stop"]
     assert open_flow["activated"] == [77]
-    assert open_flow["claimed"] == []
+    assert open_flow["spawned"] == []
+    assert open_flow["allowed"] == []
     assert open_flow["restored"] == []
     assert open_flow["dialogs"] == []
 
 
 def test_open_choice_without_reply_warns_and_exits(open_flow, lock_dir):
     open_flow["answer"] = PickResult("s2", "")
-    assert run_open_path_with_open_slot(open_flow, lock_dir) == 0
+    assert run_open_path(open_flow, "s2") == 0
     assert len(open_flow["warnings"]) == 1
     assert "Second" in open_flow["warnings"][0]
     assert open_flow["nodes"][0].events[-1] == "stop"
     assert open_flow["activated"] == []
-    assert open_flow["claimed"] == []
+    assert open_flow["spawned"] == []
 
 
 def test_open_choice_without_reply_tells_the_user(open_flow, lock_dir):
     open_flow["answer"] = PickResult("s2", "")
-    assert run_open_path_with_open_slot(open_flow, lock_dir) == 0
+    assert run_open_path(open_flow, "s2") == 0
     assert len(open_flow["dialogs"]) == 1
     parent, title, text = open_flow["dialogs"][0]
     assert parent is None
@@ -388,74 +397,51 @@ def test_open_choice_without_reply_tells_the_user(open_flow, lock_dir):
 def test_open_choice_without_broker_warns_without_requesting(open_flow, lock_dir):
     open_flow["answer"] = PickResult("s2", "")
     open_flow["registered"] = False
-    assert run_open_path_with_open_slot(open_flow, lock_dir) == 0
+    assert run_open_path(open_flow, "s2") == 0
     assert open_flow["nodes"][0].events == ["start", ("wait_registered", 5), "stop"]
     assert len(open_flow["warnings"]) == 1
     assert len(open_flow["dialogs"]) == 1
     assert open_flow["activated"] == []
 
 
-def test_running_and_closed_choice_opens_a_window_without_restoring(open_flow, lock_dir):
-    held = WorkspaceLock.acquire("s2")
+def test_running_and_closed_choice_spawns_its_viewer_without_restoring(open_flow, lock_dir):
     open_flow["answer"] = PickResult("s1", "")
-    try:
-        with pytest.raises(Viewed) as viewed:
-            workspace_launch.run_open_path(object(), open_flow["path"])
-    finally:
-        held.release()
+    assert run_open_path(open_flow, "s2") == 0
     assert open_flow["asked"][0][1] == {"s2"}
-    assert open_flow["claimed"] == ["s1"]
+    assert open_flow["spawned"] == [("s1", request_for(open_flow))]
+    assert open_flow["allowed"] == [1001]
     assert open_flow["restored"] == []
     assert open_flow["nodes"] == []
-    assert opened_request(viewed) == workspace_launch.OpenRequest(normalize_path(open_flow["path"]), "")
 
 
-def test_not_running_marks_restore_ids_open_and_restores_others(open_flow):
+def test_not_running_marks_restore_ids_open_and_spawns_every_window(open_flow):
     open_flow["store"].set_restore_slot_ids(["s1", "s2"])
     open_flow["answer"] = PickResult("s2", "")
-    with pytest.raises(Viewed):
-        workspace_launch.run_open_path(object(), open_flow["path"])
+    assert run_open_path(open_flow) == 0
     slots, open_ids, kwargs = open_flow["asked"][0]
     assert open_ids == {"s1", "s2"}
     assert kwargs["allow_open"] is True
     assert open_flow["restored"] == ["s2"]
-    assert open_flow["claimed"] == ["s2"]
+    assert open_flow["spawned"] == [("s2", request_for(open_flow))]
     assert open_flow["nodes"] == []
 
 
 def test_cancel_while_running_opens_nothing(open_flow, lock_dir):
     open_flow["store"].set_restore_slot_ids(["s1"])
-    held = WorkspaceLock.acquire("s2")
-    try:
-        with pytest.raises(SystemExit) as exit_info:
-            workspace_launch.run_open_path(object(), open_flow["path"])
-    finally:
-        held.release()
-    assert exit_info.value.code == 0
+    assert run_open_path(open_flow, "s2") == 0
     assert open_flow["restored"] == []
-    assert open_flow["claimed"] == []
+    assert open_flow["spawned"] == []
     assert open_flow["nodes"] == []
     assert len(open_flow["store"].list_slots()) == 2
 
 
 def test_cancel_while_not_running_restores_the_previous_windows(open_flow):
     open_flow["store"].set_restore_slot_ids(["s1", "s2"])
-    with pytest.raises(Viewed) as viewed:
-        workspace_launch.run_open_path(object(), open_flow["path"])
-    assert viewed.value.args[0] == {}
-    assert open_flow["claimed"] == ["s1"]
-    assert open_flow["restored"] == ["s1"]
+    assert run_open_path(open_flow) == 0
+    assert open_flow["restored"] == [None]
+    assert open_flow["spawned"] == []
     assert open_flow["nodes"] == []
     assert len(open_flow["store"].list_slots()) == 2
-
-
-def test_cancel_while_not_running_exits_when_the_first_window_is_taken(open_flow):
-    open_flow["store"].set_restore_slot_ids(["s1"])
-    open_flow["lock"] = None
-    with pytest.raises(SystemExit) as exit_info:
-        workspace_launch.run_open_path(object(), open_flow["path"])
-    assert exit_info.value.code == 0
-    assert open_flow["restored"] == ["s1"]
 
 
 def record_seeds(store, monkeypatch):
@@ -470,11 +456,12 @@ def test_new_from_path_without_restore_ids_seeds_from_latest_slot(open_flow, mon
     seeds = record_seeds(store, monkeypatch)
     latest = store.latest_slot_id()
     open_flow["answer"] = PickResult(None, "")
-    with pytest.raises(Viewed):
-        workspace_launch.run_open_path(object(), open_flow["path"])
+    run_open_path(open_flow)
     assert seeds == [latest]
-    new_id = open_flow["claimed"][0]
+    new_id, request = open_flow["spawned"][0]
     assert new_id not in ("s1", "s2")
+    assert store.get_slot(new_id) is not None
+    assert request == request_for(open_flow)
     assert open_flow["restored"] == [new_id]
 
 
@@ -484,8 +471,7 @@ def test_new_from_path_while_not_running_seeds_from_the_first_restored_window(op
     assert store.latest_slot_id() == "s2"
     seeds = record_seeds(store, monkeypatch)
     open_flow["answer"] = PickResult(None, "")
-    with pytest.raises(Viewed):
-        workspace_launch.run_open_path(object(), open_flow["path"])
+    run_open_path(open_flow)
     assert seeds == ["s1"]
 
 
@@ -494,48 +480,77 @@ def test_new_from_path_while_running_seeds_from_latest_slot(open_flow, monkeypat
     store.set_restore_slot_ids(["s1"])
     seeds = record_seeds(store, monkeypatch)
     open_flow["answer"] = PickResult(None, "")
-    held = WorkspaceLock.acquire("s1")
-    try:
-        with pytest.raises(Viewed):
-            workspace_launch.run_open_path(object(), open_flow["path"])
-    finally:
-        held.release()
+    run_open_path(open_flow, "s1")
     assert seeds == ["s2"]
     assert open_flow["restored"] == []
-
-
-def test_closed_choice_taken_meanwhile_sends_the_file_to_its_window(open_flow, lock_dir):
-    held = WorkspaceLock.acquire("s2")
-    open_flow["answer"] = PickResult("s1", "")
-    open_flow["lock"] = None
-    open_flow["reply"] = object()
-    try:
-        with pytest.raises(SystemExit) as exit_info:
-            workspace_launch.run_open_path(object(), open_flow["path"])
-    finally:
-        held.release()
-    assert exit_info.value.code == 0
-    assert open_flow["claimed"] == ["s1"]
-    payload = {"slot_id": "s1", "path": normalize_path(open_flow["path"]), "database_name": ""}
-    assert ("request", "slot.open_path", payload, "viewer", 5) in open_flow["nodes"][0].events
 
 
 def test_single_database_is_used_without_choice(open_flow):
     open_flow["databases"] = ["a"]
     open_flow["answer"] = PickResult("s1", "")
-    with pytest.raises(Viewed) as viewed:
-        workspace_launch.run_open_path(object(), open_flow["path"])
+    run_open_path(open_flow)
     assert open_flow["asked"][0][2] == {"allow_open": True, "databases": []}
-    assert opened_request(viewed) == workspace_launch.OpenRequest(normalize_path(open_flow["path"]), "a")
+    assert open_flow["spawned"] == [("s1", request_for(open_flow, "a"))]
 
 
 def test_multiple_databases_offer_a_choice(open_flow):
     open_flow["databases"] = ["a", "b"]
     open_flow["answer"] = PickResult("s1", "b")
-    with pytest.raises(Viewed) as viewed:
-        workspace_launch.run_open_path(object(), open_flow["path"])
+    run_open_path(open_flow)
     assert open_flow["asked"][0][2] == {"allow_open": True, "databases": ["a", "b"]}
-    assert opened_request(viewed).database_name == "b"
+    assert open_flow["spawned"] == [("s1", request_for(open_flow, "b"))]
+
+
+@pytest.fixture
+def spawned(monkeypatch):
+    calls = []
+    monkeypatch.setattr(workspace_launch.AppProcess, "new_main", lambda *args: calls.append(args) or f"proc{len(calls)}")
+    return calls
+
+
+def test_spawn_viewer_passes_the_file_and_database(spawned):
+    assert workspace_launch.spawn_viewer("s1", workspace_launch.OpenRequest("C:/a b.png", "db")) == "proc1"
+    assert spawned ==[("--viewer", "--slot", "s1", "--open-path", "C:/a b.png", "--open-database", "db")]
+
+
+def test_spawn_viewer_leaves_out_an_empty_database(spawned):
+    workspace_launch.spawn_viewer("s1", workspace_launch.OpenRequest("C:/a.png", ""))
+    workspace_launch.spawn_viewer("s2")
+    assert spawned == [("--viewer", "--slot", "s1", "--open-path", "C:/a.png"), ("--viewer", "--slot", "s2")]
+
+
+@pytest.fixture
+def hand_over(tmp_path, monkeypatch):
+    store = store_with_slot(monkeypatch, tmp_path, "s1")
+    flow = {"store": store, "lock": None, "claimed": [], "sent": []}
+
+    def claim(slot_id):
+        flow["claimed"].append(slot_id)
+        return flow["lock"]
+
+    monkeypatch.setattr(workspace_launch, "claim_workspace", claim)
+    monkeypatch.setattr(workspace_launch, "send_open_request", lambda slot, request: flow["sent"].append((slot.slot_id, request)))
+    return flow
+
+
+def test_claim_or_hand_over_returns_the_claimed_lock(hand_over):
+    hand_over["lock"] = "lock"
+    request = workspace_launch.OpenRequest("C:/a.png", "")
+    assert workspace_launch.claim_or_hand_over("s1", request) == "lock"
+    assert hand_over["sent"] == []
+
+
+def test_claim_or_hand_over_sends_the_file_to_the_window_that_took_the_workspace(hand_over):
+    request = workspace_launch.OpenRequest("C:/a.png", "db")
+    assert workspace_launch.claim_or_hand_over("s1", request) is None
+    assert hand_over["claimed"] == ["s1"]
+    assert hand_over["sent"] == [("s1", request)]
+
+
+def test_claim_or_hand_over_without_a_file_sends_nothing(hand_over):
+    assert workspace_launch.claim_or_hand_over("s1", None) is None
+    assert workspace_launch.claim_or_hand_over("ghost", workspace_launch.OpenRequest("C:/a.png", "")) is None
+    assert hand_over["sent"] == []
 
 
 def test_run_viewer_passes_the_open_request_to_the_window(monkeypatch):

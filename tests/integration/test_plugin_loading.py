@@ -3,10 +3,10 @@ from unittest.mock import patch
 
 import pytest
 
+from wafer.core.common.paths import get_plugin_dir
 from wafer.plugin.loader import (
     PluginLoader,
     _import_extension,
-    get_plugin_dir,
     qualify_plugin_name,
 )
 from wafer.plugin.registry import (

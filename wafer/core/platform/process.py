@@ -3,7 +3,9 @@ import subprocess
 import sys
 import threading
 import psutil
+from ...constants import TRAY_LOCK_NAME
 from ..logs import AppLogger
+from .process_lock import SafeProcessLock
 
 MAIN_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "main.py")
 
@@ -300,7 +302,7 @@ class AppProcess:
 
     @classmethod
     def ensure_tray(cls):
-        if cls.get_by_args_subset("--tray"):
+        if SafeProcessLock.is_held(TRAY_LOCK_NAME) or cls.get_by_args_subset("--tray"):
             return False
         cls.new_main("--tray")
         return True

@@ -8,6 +8,8 @@ from wafer.constants import APP_DATA_DIR_NAME
 from wafer.core.common.paths import (
     containing_dir,
     data_db_path,
+    get_app_root_dir,
+    get_plugin_dir,
     list_files,
     normalize_path,
     resolve_cache_path,
@@ -181,3 +183,9 @@ def test_list_files_no_match(tmp_path):
 def test_list_files_extension_is_case_insensitive(tmp_path):
     (tmp_path / "upper.TXT").write_text("x")
     assert len(list_files(str(tmp_path), ".txt")) == 1
+
+
+def test_plugin_dir_is_the_extensions_folder_next_to_wafer():
+    plugin_dir = get_plugin_dir()
+    assert os.path.normcase(plugin_dir) == os.path.normcase(str(get_app_root_dir() / "extensions"))
+    assert os.path.isfile(os.path.join(plugin_dir, "image", "__init__.py"))

@@ -4,6 +4,7 @@ import inspect
 import os
 import sys
 
+from ..core.common.paths import get_plugin_dir
 from ..core.logs import AppLogger
 from .installer import _PACKAGES_DIR, needs_setup
 from .registry import RegistryBase, CommandGroupRegistry
@@ -63,10 +64,6 @@ def _get_registry_map():
     if _REGISTRY_MAP is None:
         _REGISTRY_MAP = _build_registry_map()
     return _REGISTRY_MAP
-
-
-def get_plugin_dir() -> str:
-    return os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "extensions"))
 
 
 def _discover_plugins(module) -> list[tuple[str, type]]:

@@ -78,6 +78,10 @@ def get_app_root_dir():
     return Path(__file__).resolve().parent.parent.parent.parent
 
 
+def get_plugin_dir() -> str:
+    return os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "extensions"))
+
+
 def get_launcher_path():
     launcher = get_app_root_dir() / f"{APP_DATA_DIR_NAME}.exe"
     return launcher if launcher.is_file() else None

@@ -6,7 +6,7 @@ from PySide6 import QtCore, QtWidgets
 from ...core.platform.process import AppProcess
 from ...plugin import installer_queue
 from ...plugin.install_status import INSTALL_WAITER_LOCK_NAME, read_status, request_cancel
-from ...plugin.loader import get_plugin_dir
+from ...core.common.paths import get_plugin_dir
 from ...core.logs import AppLogger
 from ...core.platform.process_lock import SafeProcessLock
 from .splash import InstallSplash

@@ -8,7 +8,8 @@ from ...qt.widgets.markdown_browser import MarkdownBrowser, render_to_html
 from ...qt.theme import ThemeManager
 from ...core.lang.manager import t
 from ...qt.common.color_utils import mix_colors
-from ...plugin.loader import get_plugin_dir, PluginLoader, qualify_plugin_name
+from ...core.common.paths import get_plugin_dir
+from ...plugin.loader import PluginLoader, qualify_plugin_name
 from ...plugin.settings import PluginSettings
 from ...qt.widgets.eliding import ElidingLabel
 from ...plugin.kinds import PLUGIN_KIND_COLLECTOR, PLUGIN_KIND_PANEL, PLUGIN_KIND_PARSER, plugin_kind_color, plugin_kind_label

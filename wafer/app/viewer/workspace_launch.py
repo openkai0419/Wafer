@@ -11,7 +11,7 @@ from ...core.lang.manager import t
 from ...core.db.path_scope import databases_containing
 from ...core.ipc.node import Node
 from ...core.logs import AppLogger
-from ...core.platform.foreground import activate_window
+from ...core.platform.foreground import activate_window, allow_foreground
 from ...core.platform.process import AppProcess
 from ...core.platform.workspace_lock import WorkspaceLock
 from ...core.store.workspace import WindowSlot, WorkspaceStore
@@ -39,10 +39,19 @@ def first_restore_slot_id() -> str | None:
     return restore_ids[0] if restore_ids else None
 
 
+def spawn_viewer(slot_id: str, open_request: OpenRequest | None = None):
+    args = ["--viewer", "--slot", slot_id]
+    if open_request is not None:
+        args += ["--open-path", open_request.path]
+        if open_request.database_name:
+            args += ["--open-database", open_request.database_name]
+    return AppProcess.new_main(*args)
+
+
 def restore_session(skip_slot_id: str | None) -> None:
     store = WorkspaceStore.instance()
     for slot_id in slots_to_restore(store.get_restore_slot_ids(), skip_slot_id):
-        AppProcess.new_main("--viewer", "--slot", slot_id)
+        spawn_viewer(slot_id)
     if store.get_restore_webui():
         store.set_restore_webui(False)
         AppProcess.new_main("--webui", "--no-browser")
@@ -123,6 +132,15 @@ def send_open_request(slot: WindowSlot, request: OpenRequest) -> None:
     QtWidgets.QMessageBox.warning(None, t("Open Path"), t("{name} did not respond. Try again.", name=slot_title(slot)))
 
 
+def claim_or_hand_over(slot_id: str | None, request: OpenRequest | None) -> WorkspaceLock | None:
+    lock = claim_workspace(slot_id)
+    if lock is None and request is not None and slot_id is not None:
+        taken_slot = WorkspaceStore.instance().get_slot(slot_id)
+        if taken_slot is not None:
+            send_open_request(taken_slot, request)
+    return lock
+
+
 def run_open_path(app, path: str) -> NoReturn:
     store = WorkspaceStore.instance()
     slots = store.list_slots()
@@ -136,13 +154,9 @@ def run_open_path(app, path: str) -> NoReturn:
     databases = databases_containing(path)
     picked = WorkspacePickerDialog.ask(slots, open_ids, allow_open=True, databases=databases if len(databases) >= 2 else [])
     if picked is None:
-        if running:
-            sys.exit(0)
-        lock = claim_workspace(first_slot_id)
-        restore_session(first_slot_id)
-        if lock is None:
-            sys.exit(0)
-        run_viewer(app, lock)
+        if not running:
+            restore_session(None)
+        sys.exit(0)
     fixed_database = databases[0] if len(databases) == 1 else ""
     request = OpenRequest(path, picked.database_name or fixed_database)
     if running and picked.slot_id in open_ids:
@@ -151,10 +165,5 @@ def run_open_path(app, path: str) -> NoReturn:
     slot_id = picked.slot_id or store.create_slot_from(first_slot_id or store.latest_slot_id())
     if not running:
         restore_session(slot_id)
-    lock = claim_workspace(slot_id)
-    if lock is None:
-        taken_slot = store.get_slot(slot_id)
-        if taken_slot is not None:
-            send_open_request(taken_slot, request)
-        sys.exit(0)
-    run_viewer(app, lock, open_request=request)
+    allow_foreground(spawn_viewer(slot_id, request).pid)
+    sys.exit(0)

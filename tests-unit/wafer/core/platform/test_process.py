@@ -302,6 +302,49 @@ def test_force_close_all_no_app_processes(monkeypatch):
     assert calls["terminated"] == []
 
 
+class TestEnsureTray:
+    @pytest.fixture
+    def tray(self, monkeypatch):
+        from wafer.core.platform import process as process_mod
+
+        state = {"held": False, "found": [], "scanned": 0, "spawned": []}
+
+        def scan(cls, *args):
+            state["scanned"] += 1
+            return state["found"]
+
+        monkeypatch.setattr(process_mod.SafeProcessLock, "is_held", classmethod(lambda cls, name: state["held"]))
+        monkeypatch.setattr(AppProcess, "get_by_args_subset", classmethod(scan))
+        monkeypatch.setattr(AppProcess, "new_main", staticmethod(lambda *args: state["spawned"].append(args)))
+        return state
+
+    def test_a_held_tray_lock_skips_the_process_scan(self, tray):
+        tray["held"] = True
+        assert AppProcess.ensure_tray() is False
+        assert tray["scanned"] == 0
+        assert tray["spawned"] == []
+
+    def test_without_the_lock_a_running_tray_is_found_by_scanning(self, tray):
+        tray["found"] = ["tray-process"]
+        assert AppProcess.ensure_tray() is False
+        assert tray["scanned"] == 1
+        assert tray["spawned"] == []
+
+    def test_starts_the_tray_when_neither_finds_it(self, tray):
+        assert AppProcess.ensure_tray() is True
+        assert tray["spawned"] == [("--tray",)]
+
+    def test_checks_the_lock_the_tray_takes(self, monkeypatch):
+        from wafer.constants import APP_DATA_DIR_NAME, TRAY_LOCK_NAME
+        from wafer.core.platform import process as process_mod
+
+        names = []
+        monkeypatch.setattr(process_mod.SafeProcessLock, "is_held", classmethod(lambda cls, name: names.append(name) or True))
+        AppProcess.ensure_tray()
+        assert names == [TRAY_LOCK_NAME]
+        assert TRAY_LOCK_NAME == f"{APP_DATA_DIR_NAME}_tray"
+
+
 class TestKillWithParent:
     @staticmethod
     def _is_in_job(pid):

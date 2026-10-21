@@ -72,6 +72,18 @@ class SafeProcessLock:
             return None
 
     @classmethod
+    def is_held(cls, name) -> bool:
+        lock = cls(name)
+        if not os.path.exists(lock.lock_file):
+            return False
+        try:
+            info = lock._load_lock_info()
+        except (OSError, ValueError) as exc:
+            AppLogger.warning(f"SafeProcessLock: unreadable lock file {lock.lock_file}", exc=exc)
+            return False
+        return info is not None and cls._is_process_alive(info["pid"], info["create_time"])
+
+    @classmethod
     def read_owner_pid(cls, name):
         lock_file = resolve_data_path(f".temp/{name}.lock")
         try:

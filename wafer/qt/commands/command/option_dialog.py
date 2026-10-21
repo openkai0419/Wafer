@@ -1,10 +1,13 @@
 from __future__ import annotations
+import os
 from typing import Any
 from collections.abc import Callable
 from decimal import Decimal, InvalidOperation
 from PySide6 import QtWidgets
 from ....core.lang.manager import t
 from ....core.logs import AppLogger
+from ...common.dpi import dpix
+from ...common.icon_engine import themed_icon
 from .state import CommandOptionStore
 
 
@@ -30,7 +33,7 @@ class CommandOptionsDialog(QtWidgets.QDialog):
             label = QtWidgets.QLabel(t(param.description or param.name))
             widget = self._create_widget(param)
             self.widgets[param.name] = widget
-            form.addRow(label, widget)
+            form.addRow(label, self._with_file_button(widget) if param.widget_type == "file" else widget)
         layout.addLayout(form)
         row = QtWidgets.QHBoxLayout()
         btn_default = QtWidgets.QPushButton(t("Reset"), self)
@@ -125,6 +128,24 @@ class CommandOptionsDialog(QtWidgets.QDialog):
         factories = {bool: make_bool, int: make_int, float: make_float}
         f = factories.get(param.type, make_str)
         return f()
+
+    def _with_file_button(self, line_edit: QtWidgets.QLineEdit) -> QtWidgets.QWidget:
+        row = QtWidgets.QWidget(self)
+        layout = QtWidgets.QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        line_edit.setMinimumWidth(dpix(360))
+        layout.addWidget(line_edit, 1)
+        button = QtWidgets.QToolButton(row)
+        button.setIcon(themed_icon("folder"))
+        button.setToolTip(t("Choose File"))
+        button.clicked.connect(lambda: self._choose_file(line_edit))
+        layout.addWidget(button)
+        return row
+
+    def _choose_file(self, line_edit: QtWidgets.QLineEdit):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, t("Choose File"), os.path.dirname(line_edit.text()))
+        if path:
+            line_edit.setText(os.path.normpath(path))
 
     @staticmethod
     def _infer_int_step(v: int) -> int:

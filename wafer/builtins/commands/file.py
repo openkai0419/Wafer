@@ -12,7 +12,7 @@ from ...qt.transfer.copy import ClipboardFileTransfer
 from ...qt.transfer.paste import paste_clipboard_files, execute_paste_plans_with_ui
 from ...core.platform.path_utils import unique_path, get_os_new_folder_name, validate_filename
 from ...core.platform.file_operations import PastePlanItem, delete_to_trash
-from ...core.platform.folders import show_in_explorer as reveal_in_explorer, open_file as platform_open_file, make_directory
+from ...core.platform.folders import show_in_explorer as reveal_in_explorer, open_file as platform_open_file, open_with as platform_open_with, make_directory
 from ...core.logs import AppLogger
 from ...qt.common.notifier import Notifier
 from ...core.common.paths import containing_dir, normalize_path
@@ -77,6 +77,14 @@ def open_file(ctx):
     if not path:
         return
     platform_open_file(path)
+
+
+def open_with(ctx, program: str = ""):
+    paths = _ctx_sources(ctx)
+    if not paths:
+        return
+    if not platform_open_with(program, paths):
+        Notifier.warning(f"Could not open with {os.path.basename(program) or 'the program'}")
 
 
 def show_in_explorer(ctx, show_first_if_folder: bool = False):
@@ -379,6 +387,12 @@ class FileCommands(ActionKit.MenuBase):
         return [
             ":File",
             ActionKit.Command(path="file.open", display="Open File", func=open_file),
+            ActionKit.Command(
+                path="file.open_with",
+                display="Open With",
+                params=[ActionKit.Param(name="program", value="", description="Program", required=True, widget_type="file")],
+                func=open_with,
+            ),
             ActionKit.Command(
                 path="file.open_path",
                 display="Open Path",

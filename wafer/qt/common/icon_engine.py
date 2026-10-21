@@ -144,10 +144,7 @@ def _draw_gear_small(p: QPainter, r: QRectF, color: QColor):
     p.drawPath(path.subtracted(hole))
 
 
-@_register("folder_plus", padding=0.11)
-def _draw_folder_plus(p: QPainter, r: QRectF, color: QColor):
-    p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(color)
+def _folder_path(r: QRectF) -> tuple[QPainterPath, float]:
     tab_w = r.width() * 0.35
     tab_h = r.height() * 0.18
     top = r.top() + tab_h
@@ -160,6 +157,22 @@ def _draw_folder_plus(p: QPainter, r: QRectF, color: QColor):
     body.lineTo(r.right(), r.bottom())
     body.lineTo(r.left(), r.bottom())
     body.closeSubpath()
+    return body, top
+
+
+@_register("folder", padding=0.14)
+def _draw_folder(p: QPainter, r: QRectF, color: QColor):
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    body, _ = _folder_path(r)
+    p.drawPath(body)
+
+
+@_register("folder_plus", padding=0.11)
+def _draw_folder_plus(p: QPainter, r: QRectF, color: QColor):
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    body, top = _folder_path(r)
     s = min(r.width(), r.height())
     bw = s * 0.09
     bh = s * 0.25

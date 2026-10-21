@@ -127,3 +127,32 @@ def test_save_closes_dialog_without_execute(qtbot, tmp_path):
     d._on_save()
     assert len(called) == 0
     assert d.did_save()
+
+
+def test_file_param_has_a_button_that_fills_the_chosen_path(qtbot, tmp_path, monkeypatch):
+    import os
+
+    CommandOptionStore.configure(tmp_path / "opts.json")
+    _Cmd.meta = CommandMeta(id="__test__.file_param", display="file", params=[CommandParam(name="program", value="", widget_type="file")])
+    w = QtWidgets.QWidget()
+    qtbot.addWidget(w)
+    d = CommandOptionsDialog(_Cmd, w)
+    edit = d.widgets["program"]
+    button = edit.parentWidget().findChild(QtWidgets.QToolButton)
+    assert button is not None and not button.icon().isNull()
+
+    chosen = tmp_path / "app.exe"
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (chosen.as_posix(), "")))
+    button.click()
+
+    assert edit.text() == os.path.normpath(str(chosen))
+    assert d.get_values() == {"program": os.path.normpath(str(chosen))}
+
+
+def test_plain_str_param_has_no_file_button(qtbot, tmp_path):
+    CommandOptionStore.configure(tmp_path / "opts.json")
+    _Cmd.meta = CommandMeta(id="__test__.str_param", display="str", params=[CommandParam(name="name", value="")])
+    w = QtWidgets.QWidget()
+    qtbot.addWidget(w)
+    d = CommandOptionsDialog(_Cmd, w)
+    assert d.findChild(QtWidgets.QToolButton) is None

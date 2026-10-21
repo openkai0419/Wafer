@@ -357,3 +357,40 @@ def test_open_path_forgets_the_path_but_remembers_the_toggles(option_store, monk
     Command.invoke("file.open_path")
 
     assert asked == ["file.open_path"]
+
+
+def test_open_with_is_in_the_file_menu_and_picks_a_file():
+    command = next(item for item in FileCommands.commands() if getattr(item, "path", None) == "file.open_with")
+    (program,) = command.params
+    assert program.name == "program"
+    assert program.required
+    assert program.widget_type == "file"
+
+
+def test_open_with_sends_the_selected_sources(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(file_mod, "platform_open_with", lambda program, paths: calls.append((program, paths)) or True)
+    a, b = str(tmp_path / "a.png"), str(tmp_path / "b.png")
+
+    file_mod.open_with(_Ctx(path=a, paths=[a, b]), program="C:/apps/editor.exe")
+
+    assert calls == [("C:/apps/editor.exe", [a, b])]
+
+
+def test_open_with_tells_the_user_when_it_cannot_start(monkeypatch, tmp_path):
+    warnings = []
+    monkeypatch.setattr(file_mod, "platform_open_with", lambda program, paths: False)
+    monkeypatch.setattr(file_mod.Notifier, "warning", staticmethod(lambda message: warnings.append(message)))
+
+    file_mod.open_with(_Ctx(path=str(tmp_path / "a.png")), program="C:/apps/editor.exe")
+
+    assert warnings == ["Could not open with editor.exe"]
+
+
+def test_open_with_without_program_asks_for_it(option_store, monkeypatch):
+    asked = []
+    monkeypatch.setattr(Command, "_show_options_for_required", staticmethod(lambda command_id, *a, **k: asked.append(command_id)))
+
+    Command.invoke("file.open_with")
+
+    assert asked == ["file.open_with"]

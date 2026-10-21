@@ -139,6 +139,22 @@ def open_file(path: str) -> None:
     QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(path))
 
 
+def open_with(program: str, paths: list[str]) -> bool:
+    targets = [p for p in paths if p and not _reject_virtual_path(p, "open_with")]
+    if not targets:
+        return False
+    if not program or not os.path.isfile(program):
+        AppLogger.warning(f"[open_with] program not found: {program!r}. Set the program in the Open With options.")
+        return False
+    try:
+        subprocess.Popen([program, *targets])
+    except OSError as e:
+        AppLogger.warning(f"[open_with] failed to start {program}", exc=e)
+        return False
+    AppLogger.info(f"[open_with] {os.path.basename(program)}: {len(targets)} files")
+    return True
+
+
 def make_directory(path: str) -> str | None:
     if _reject_virtual_path(path, "mkdir"):
         return None

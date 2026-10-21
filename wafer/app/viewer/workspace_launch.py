@@ -57,6 +57,12 @@ def restore_session(skip_slot_id: str | None) -> None:
         AppProcess.new_main("--webui", "--no-browser")
 
 
+def wait_for_pending_install(app) -> None:
+    from ...qt.install.waiter import wait_for_install_complete
+
+    wait_for_install_complete(icon=get_icon(), app=app)
+
+
 def is_openable_path(path: str | None) -> bool:
     if path and os.path.isfile(path):
         return True
@@ -148,6 +154,7 @@ def run_open_path(app, path: str) -> NoReturn:
     running = bool(open_ids)
     first_slot_id = None
     if not running:
+        wait_for_pending_install(app)
         open_ids = set(store.get_restore_slot_ids())
         first_slot_id = first_restore_slot_id()
     path = normalize_path(path)

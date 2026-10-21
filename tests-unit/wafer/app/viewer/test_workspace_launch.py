@@ -315,9 +315,11 @@ def open_flow(tmp_path, monkeypatch, lock_dir, activated):
         "warnings": [],
         "dialogs": [],
         "activated": activated,
+        "events": [],
     }
 
     def ask(slots, open_ids, **kwargs):
+        flow["events"].append("ask")
         flow["asked"].append((slots, open_ids, kwargs))
         return flow["answer"]
 
@@ -333,6 +335,7 @@ def open_flow(tmp_path, monkeypatch, lock_dir, activated):
         return SimpleNamespace(pid=1000 + len(flow["spawned"]))
 
     monkeypatch.setattr(workspace_launch, "spawn_viewer", spawn)
+    monkeypatch.setattr(workspace_launch, "wait_for_pending_install", lambda app: flow["events"].append("install"))
     monkeypatch.setattr(workspace_launch, "allow_foreground", flow["allowed"].append)
     monkeypatch.setattr(workspace_launch, "databases_containing", lambda path: flow["databases"])
     monkeypatch.setattr(workspace_launch, "Node", lambda role: FakeNode(role, flow))
@@ -424,6 +427,19 @@ def test_not_running_marks_restore_ids_open_and_spawns_every_window(open_flow):
     assert open_flow["restored"] == ["s2"]
     assert open_flow["spawned"] == [("s2", request_for(open_flow))]
     assert open_flow["nodes"] == []
+
+
+def test_not_running_waits_for_pending_installs_before_asking(open_flow):
+    open_flow["store"].set_restore_slot_ids(["s1"])
+    open_flow["answer"] = PickResult("s2", "")
+    assert run_open_path(open_flow) == 0
+    assert open_flow["events"] == ["install", "ask"]
+
+
+def test_running_does_not_wait_for_installs(open_flow, lock_dir):
+    open_flow["answer"] = PickResult("s1", "")
+    assert run_open_path(open_flow, "s2") == 0
+    assert open_flow["events"] == ["ask"]
 
 
 def test_cancel_while_running_opens_nothing(open_flow, lock_dir):

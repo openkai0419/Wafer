@@ -275,6 +275,20 @@ class TestWorkspaceToolbarWidget:
         assert opened._open_marker.isVisibleTo(opened) is True
         assert opened._open_marker.text() == t("Open")
 
+    def test_recent_row_greys_out_open_workspaces_like_the_picker(self, qtbot):
+        from wafer.app.viewer.widgets import workspace_toolbar
+        from wafer.app.viewer.widgets.workspace_picker import DISABLED_OPACITY
+        from wafer.core.store.workspace import WindowSlot
+
+        closed = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s1"))
+        opened = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s2"), is_open=True)
+        for item in (closed, opened):
+            qtbot.addWidget(item)
+        assert closed._text_area.graphicsEffect() is None
+        assert opened._text_area.graphicsEffect().opacity() == DISABLED_OPACITY
+        assert opened._open_marker.graphicsEffect().opacity() == DISABLED_OPACITY
+        assert opened._text_area.isEnabled() is True
+
     def test_recent_row_disables_delete_for_open_slot(self, qtbot):
         from wafer.app.viewer.widgets import workspace_toolbar
         from wafer.core.store.workspace import WindowSlot

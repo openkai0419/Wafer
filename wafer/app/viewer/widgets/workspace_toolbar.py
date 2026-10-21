@@ -15,6 +15,7 @@ from ....qt.widgets.eliding import ElidingLabel
 from ....qt.widgets.popup import PopupBase
 from ....qt.common.dpi import dpix
 from .workspace_labels import format_iso, slot_subtitle, slot_summary, slot_title, slot_tooltip
+from .workspace_picker import DISABLED_OPACITY
 
 _KIND_UI = "ui"
 _KIND_PATH = "path"
@@ -380,6 +381,11 @@ class _RecentSlotItem(QtWidgets.QWidget):
         open_marker.setVisible(self.is_open)
         layout.addWidget(open_marker, 0, QtCore.Qt.AlignVCenter)
         self._open_marker = open_marker
+        if self.is_open:
+            for widget in (self._text_area, open_marker):
+                dim = QtWidgets.QGraphicsOpacityEffect(widget)
+                dim.setOpacity(DISABLED_OPACITY)
+                widget.setGraphicsEffect(dim)
 
         rename_btn = _icon_button("pencil", t("Rename"), self)
         rename_btn.clicked.connect(lambda: self.rename_requested.emit(self.slot.slot_id))

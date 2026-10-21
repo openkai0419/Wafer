@@ -72,6 +72,20 @@ def test_disable_removes_key_without_command_subkey(test_key):
     assert not explorer_menu.is_enabled(test_key)
 
 
+def test_disable_removes_subkeys_added_by_others_and_nothing_else(test_key):
+    import winreg
+
+    from wafer.core.platform import explorer_menu
+
+    sibling = TEST_ROOT + r"\shell\Other"
+    explorer_menu.enable("cmd", test_key)
+    winreg.CloseKey(winreg.CreateKey(winreg.HKEY_CURRENT_USER, test_key + r"\DropTarget\Nested"))
+    winreg.CloseKey(winreg.CreateKey(winreg.HKEY_CURRENT_USER, sibling))
+    explorer_menu.disable(test_key)
+    assert not explorer_menu.is_enabled(test_key)
+    assert explorer_menu.key_exists(sibling)
+
+
 def test_sync_rewrites_moved_command(test_key, monkeypatch):
     from wafer.core.platform import explorer_menu
 

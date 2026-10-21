@@ -63,13 +63,17 @@ def enable(command: str, key: str = MENU_KEY) -> None:
         winreg.SetValueEx(handle, "", 0, winreg.REG_SZ, command)
 
 
-def disable(key: str = MENU_KEY) -> None:
-    if not is_enabled(key):
-        return
-    command_key = key + r"\command"
-    if key_exists(command_key):
-        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, command_key)
+def delete_key_tree(key: str) -> None:
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key) as handle:
+        children = [winreg.EnumKey(handle, i) for i in range(winreg.QueryInfoKey(handle)[0])]
+    for child in children:
+        delete_key_tree(key + "\\" + child)
     winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key)
+
+
+def disable(key: str = MENU_KEY) -> None:
+    if is_enabled(key):
+        delete_key_tree(key)
 
 
 def sync(key: str = MENU_KEY) -> None:

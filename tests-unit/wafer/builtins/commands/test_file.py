@@ -359,6 +359,13 @@ def test_open_path_forgets_the_path_but_remembers_the_toggles(option_store, monk
     assert asked == ["file.open_path"]
 
 
+def test_open_path_and_open_with_form_their_own_block():
+    tokens = [item if isinstance(item, str) else item.path for item in FileCommands.commands()]
+    start = tokens.index("file.open_path")
+    assert tokens[start - 1 : start + 3] == ["-", "file.open_path", "file.open_with", "-"]
+    assert tokens[1:4] == ["file.open", "file.show_explorer", "file.shell_context_menu"]
+
+
 def test_open_with_is_in_the_file_menu_and_picks_a_file():
     command = next(item for item in FileCommands.commands() if getattr(item, "path", None) == "file.open_with")
     (program,) = command.params

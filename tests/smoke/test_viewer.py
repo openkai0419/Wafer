@@ -19,8 +19,8 @@ def _claim_workspace(store, tmp_path):
     from wafer.core.platform.workspace_lock import WorkspaceLock
     from wafer.core.store.workspace import WindowSlot
 
-    store.save_slot(WindowSlot(slot_id="smoke"))
-    return WorkspaceLock.acquire("smoke", lock_dir=str(tmp_path / "locks"))
+    store.save_slot(WindowSlot(slot_id=tmp_path.name))
+    return WorkspaceLock.acquire(tmp_path.name)
 
 
 def _create_test_image(path, width=200, height=150, fmt="JPEG"):

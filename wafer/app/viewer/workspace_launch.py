@@ -22,7 +22,6 @@ from .widgets.workspace_picker import PickResult, WorkspacePickerDialog
 OPEN_PATH_TIMEOUT = 5
 CLAIM_RETRIES = 5
 CLAIM_RETRY_INTERVAL = 0.05
-LOCK_DIR: str | None = None
 
 
 @dataclass(frozen=True)
@@ -57,7 +56,7 @@ def is_openable_path(path: str | None) -> bool:
 
 
 def activate_workspace_window(slot_id: str) -> bool:
-    owner = WorkspaceLock.read_owner(slot_id, lock_dir=LOCK_DIR)
+    owner = WorkspaceLock.read_owner(slot_id)
     if owner is None:
         return False
     activate_window(owner.hwnd)
@@ -69,7 +68,7 @@ def claim_workspace(slot_id: str | None) -> WorkspaceLock | None:
     if slot_id is None or store.get_slot(slot_id) is None:
         slot_id = store.create_slot_from(None)
     for attempt in range(CLAIM_RETRIES + 1):
-        lock = WorkspaceLock.acquire(slot_id, lock_dir=LOCK_DIR)
+        lock = WorkspaceLock.acquire(slot_id)
         if lock is not None:
             return lock
         if activate_workspace_window(slot_id) or attempt == CLAIM_RETRIES:
@@ -90,7 +89,7 @@ def run_viewer(app, lock: WorkspaceLock, open_request: OpenRequest | None = None
 def run_pick(app, seed_slot_id: str | None) -> NoReturn:
     store = WorkspaceStore.instance()
     slots = store.list_slots()
-    open_ids = WorkspaceLock.open_slot_ids([slot.slot_id for slot in slots], lock_dir=LOCK_DIR)
+    open_ids = WorkspaceLock.open_slot_ids([slot.slot_id for slot in slots])
     if all(slot.slot_id in open_ids for slot in slots):
         picked = PickResult(None, "")
     else:
@@ -127,7 +126,7 @@ def send_open_request(slot: WindowSlot, request: OpenRequest) -> None:
 def run_open_path(app, path: str) -> NoReturn:
     store = WorkspaceStore.instance()
     slots = store.list_slots()
-    open_ids = WorkspaceLock.open_slot_ids([slot.slot_id for slot in slots], lock_dir=LOCK_DIR)
+    open_ids = WorkspaceLock.open_slot_ids([slot.slot_id for slot in slots])
     running = bool(open_ids)
     first_slot_id = None
     if not running:

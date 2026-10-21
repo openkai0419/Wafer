@@ -4,15 +4,15 @@ from wafer.app.viewer import workspace_launch
 from wafer.app.viewer.widgets.workspace_picker import PickResult
 from wafer.core.common.paths import normalize_path
 from wafer.core.lang.manager import t
+from wafer.core.platform import workspace_lock
 from wafer.core.platform.workspace_lock import WorkspaceLock
 from wafer.core.store.workspace import WindowSlot, WorkspaceStore
 
 
 @pytest.fixture
 def lock_dir(tmp_path, monkeypatch):
-    path = str(tmp_path / "locks")
-    monkeypatch.setattr(workspace_launch, "LOCK_DIR", path)
-    return path
+    monkeypatch.setattr(workspace_lock, "resolve_temp_path", lambda name: str(tmp_path / name))
+    return tmp_path / "workspaces"
 
 
 @pytest.fixture(autouse=True)
@@ -38,7 +38,7 @@ def store_with_slot(monkeypatch, tmp_path, slot_id=None):
 
 
 def test_claim_workspace_activates_owner_when_already_open(tmp_path, monkeypatch, lock_dir, activated, retry_waits):
-    held = WorkspaceLock.acquire("s1", lock_dir=lock_dir)
+    held = WorkspaceLock.acquire("s1")
     held.set_window(77)
     store_with_slot(monkeypatch, tmp_path, "s1")
     try:
@@ -50,7 +50,7 @@ def test_claim_workspace_activates_owner_when_already_open(tmp_path, monkeypatch
 
 
 def test_claim_workspace_gives_up_when_the_owner_never_shows_a_window(tmp_path, monkeypatch, lock_dir, activated, retry_waits):
-    held = WorkspaceLock.acquire("s1", lock_dir=lock_dir)
+    held = WorkspaceLock.acquire("s1")
     store_with_slot(monkeypatch, tmp_path, "s1")
     try:
         assert workspace_launch.claim_workspace("s1") is None
@@ -61,7 +61,7 @@ def test_claim_workspace_gives_up_when_the_owner_never_shows_a_window(tmp_path, 
 
 
 def test_claim_workspace_retries_while_a_status_probe_holds_the_lock(tmp_path, monkeypatch, lock_dir, activated, retry_waits):
-    probe = WorkspaceLock.acquire("s1", lock_dir=lock_dir)
+    probe = WorkspaceLock.acquire("s1")
     store_with_slot(monkeypatch, tmp_path, "s1")
     monkeypatch.setattr(workspace_launch, "sleep", lambda seconds: retry_waits.append(seconds) or probe.release())
     lock = workspace_launch.claim_workspace("s1")
@@ -75,7 +75,7 @@ def test_claim_workspace_retries_while_a_status_probe_holds_the_lock(tmp_path, m
 
 
 def test_claim_workspace_stops_retrying_once_the_owner_shows_its_window(tmp_path, monkeypatch, lock_dir, activated, retry_waits):
-    held = WorkspaceLock.acquire("s1", lock_dir=lock_dir)
+    held = WorkspaceLock.acquire("s1")
     store_with_slot(monkeypatch, tmp_path, "s1")
     monkeypatch.setattr(workspace_launch, "sleep", lambda seconds: retry_waits.append(seconds) or held.set_window(88))
     try:
@@ -87,7 +87,7 @@ def test_claim_workspace_stops_retrying_once_the_owner_shows_its_window(tmp_path
 
 
 def test_activate_workspace_window_brings_the_owner_forward(lock_dir, activated):
-    held = WorkspaceLock.acquire("s1", lock_dir=lock_dir)
+    held = WorkspaceLock.acquire("s1")
     try:
         assert workspace_launch.activate_workspace_window("s1") is False
         held.set_window(55)
@@ -102,7 +102,7 @@ def test_claim_workspace_locks_a_known_free_slot(tmp_path, monkeypatch, lock_dir
     lock = workspace_launch.claim_workspace("s1")
     try:
         assert lock.slot_id == "s1"
-        assert WorkspaceLock.open_slot_ids(["s1"], lock_dir=lock_dir) == {"s1"}
+        assert WorkspaceLock.open_slot_ids(["s1"]) == {"s1"}
         assert activated == []
     finally:
         lock.release()
@@ -127,10 +127,6 @@ def test_claim_workspace_creates_slot_instead_of_adopting_unknown_id(tmp_path, m
         assert store.get_slot(lock.slot_id) is not None
     finally:
         lock.release()
-
-
-def test_lock_dir_uses_the_default_location():
-    assert workspace_launch.LOCK_DIR is None
 
 
 class Viewed(Exception):
@@ -169,7 +165,7 @@ def test_run_pick_cancel_exits_without_creating(pick_flow):
 
 def test_run_pick_asks_with_open_slots_disabled(pick_flow, lock_dir):
     pick_flow["store"].save_slot(WindowSlot(slot_id="closed"))
-    held = WorkspaceLock.acquire("seed", lock_dir=lock_dir)
+    held = WorkspaceLock.acquire("seed")
     try:
         with pytest.raises(SystemExit):
             workspace_launch.run_pick(object(), "seed")
@@ -186,7 +182,7 @@ def test_run_pick_opens_a_new_workspace_without_asking_when_every_workspace_is_o
     create = pick_flow["store"].create_slot_from
     monkeypatch.setattr(pick_flow["store"], "create_slot_from", lambda seed: seeds.append(seed) or create(seed))
     pick_flow["lock"] = "lock"
-    held = WorkspaceLock.acquire("seed", lock_dir=lock_dir)
+    held = WorkspaceLock.acquire("seed")
     try:
         with pytest.raises(Viewed):
             workspace_launch.run_pick(object(), "seed")
@@ -345,7 +341,7 @@ def opened_request(viewed):
 
 
 def run_open_path_with_open_slot(flow, lock_dir, slot_id="s2"):
-    held = WorkspaceLock.acquire(slot_id, lock_dir=lock_dir)
+    held = WorkspaceLock.acquire(slot_id)
     held.set_window(77)
     try:
         with pytest.raises(SystemExit) as exit_info:
@@ -400,7 +396,7 @@ def test_open_choice_without_broker_warns_without_requesting(open_flow, lock_dir
 
 
 def test_running_and_closed_choice_opens_a_window_without_restoring(open_flow, lock_dir):
-    held = WorkspaceLock.acquire("s2", lock_dir=lock_dir)
+    held = WorkspaceLock.acquire("s2")
     open_flow["answer"] = PickResult("s1", "")
     try:
         with pytest.raises(Viewed) as viewed:
@@ -429,7 +425,7 @@ def test_not_running_marks_restore_ids_open_and_restores_others(open_flow):
 
 def test_cancel_while_running_opens_nothing(open_flow, lock_dir):
     open_flow["store"].set_restore_slot_ids(["s1"])
-    held = WorkspaceLock.acquire("s2", lock_dir=lock_dir)
+    held = WorkspaceLock.acquire("s2")
     try:
         with pytest.raises(SystemExit) as exit_info:
             workspace_launch.run_open_path(object(), open_flow["path"])
@@ -498,7 +494,7 @@ def test_new_from_path_while_running_seeds_from_latest_slot(open_flow, monkeypat
     store.set_restore_slot_ids(["s1"])
     seeds = record_seeds(store, monkeypatch)
     open_flow["answer"] = PickResult(None, "")
-    held = WorkspaceLock.acquire("s1", lock_dir=lock_dir)
+    held = WorkspaceLock.acquire("s1")
     try:
         with pytest.raises(Viewed):
             workspace_launch.run_open_path(object(), open_flow["path"])
@@ -509,7 +505,7 @@ def test_new_from_path_while_running_seeds_from_latest_slot(open_flow, monkeypat
 
 
 def test_closed_choice_taken_meanwhile_sends_the_file_to_its_window(open_flow, lock_dir):
-    held = WorkspaceLock.acquire("s2", lock_dir=lock_dir)
+    held = WorkspaceLock.acquire("s2")
     open_flow["answer"] = PickResult("s1", "")
     open_flow["lock"] = None
     open_flow["reply"] = object()

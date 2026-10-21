@@ -1,5 +1,7 @@
 from unittest.mock import ANY, MagicMock, call, patch
 
+from wafer.qt.common.dispatcher import CancelToken
+
 
 class TestUpdateTitle:
     def _make_win(self, db_name="default", selected_paths=None, slot_name=None):
@@ -160,21 +162,90 @@ class TestOnDbReloadFailed:
 
             win = MainWindow.__new__(MainWindow)
             win._db_reload_cancel = MagicMock()
+            win._db_reload_callbacks = []
             win._hide_loading = MagicMock()
             return win
 
     def test_runs_on_complete_after_failure(self):
         win = self._make_win()
         prompt = MagicMock()
+        win._db_reload_callbacks = [prompt]
         with patch("wafer.app.viewer.mainwindow.Notifier"):
-            win._on_db_reload_failed("db", RuntimeError("boom"), prompt)
+            win._on_db_reload_failed("db", RuntimeError("boom"), CancelToken())
         prompt.assert_called_once_with()
+        assert win._db_reload_callbacks == []
 
     def test_no_on_complete_is_safe(self):
         win = self._make_win()
         with patch("wafer.app.viewer.mainwindow.Notifier"):
-            win._on_db_reload_failed("db", RuntimeError("boom"))
+            win._on_db_reload_failed("db", RuntimeError("boom"), CancelToken())
         assert win._db_reload_cancel is None
+
+    def test_failure_of_a_superseded_reload_leaves_its_callbacks_to_the_newer_one(self):
+        win = self._make_win()
+        prompt = MagicMock()
+        win._db_reload_callbacks = [prompt]
+        cancel = CancelToken()
+        cancel.cancel()
+        with patch("wafer.app.viewer.mainwindow.Notifier") as notifier:
+            win._on_db_reload_failed("db", RuntimeError("boom"), cancel)
+        prompt.assert_not_called()
+        notifier.error.assert_not_called()
+        assert win._db_reload_callbacks == [prompt]
+
+
+class TestSupersededDbReload:
+    def _make_win(self):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            win._db_reload_cancel = None
+            win._db_reload_callbacks = []
+            win._dispatcher = MagicMock()
+            win.folder_view = MagicMock()
+            win.grid_overlay_host = MagicMock()
+            win.refresh_search = MagicMock()
+            win._check_folder_callout = MagicMock()
+            return win
+
+    def apply(self, win, call_index):
+        task = win._dispatcher.post.call_args_list[call_index].args[0]
+        with patch("wafer.app.viewer.mainwindow.SettingDB"):
+            task()
+        win._dispatcher.invoke.call_args_list[-1].args[0]()
+
+    def test_the_newer_reload_runs_the_callback_of_the_one_it_replaced(self):
+        win = self._make_win()
+        restore_done = MagicMock()
+        win._reload_db_async("a", on_complete=restore_done)
+        win._reload_db_async("b")
+        self.apply(win, 1)
+        restore_done.assert_called_once_with()
+        win.refresh_search.assert_called_once_with()
+        assert win._db_reload_callbacks == []
+
+    def test_a_reload_with_its_own_callback_does_not_search_by_itself(self):
+        win = self._make_win()
+        first, second = MagicMock(), MagicMock()
+        win._reload_db_async("a", on_complete=first)
+        win._reload_db_async("b", on_complete=second)
+        self.apply(win, 1)
+        first.assert_called_once_with()
+        second.assert_called_once_with()
+        win.refresh_search.assert_not_called()
+
+    def test_the_replaced_reload_finishing_late_does_nothing(self):
+        win = self._make_win()
+        restore_done = MagicMock()
+        win._reload_db_async("a", on_complete=restore_done)
+        with patch("wafer.app.viewer.mainwindow.SettingDB"):
+            win._dispatcher.post.call_args.args[0]()
+        win._reload_db_async("b")
+        win._dispatcher.invoke.call_args.args[0]()
+        restore_done.assert_not_called()
+        win.folder_view.set_folders.assert_not_called()
+        assert win._db_reload_callbacks == [restore_done]
 
 
 class TestReloadFolderList:

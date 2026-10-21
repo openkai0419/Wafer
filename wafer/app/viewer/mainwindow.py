@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from PySide6 import QtCore, QtWidgets
 from ...core.common.paths import data_db_path, setting_db_path, list_setting_db_names
 from ...qt.common.dpi import dpix
@@ -74,6 +76,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._folder_changed = False
         self._dispatcher = Dispatcher(utility_pool)
         self._db_reload_cancel: CancelToken | None = None
+        self._db_reload_callbacks: list[Callable[[], None]] = []
         self.search_service = SearchService(lambda: self.database_path, parent=self)
         self.search_service.search_started.connect(self._on_search_started)
         self.search_service.search_finished.connect(self._on_search_finished)
@@ -168,6 +171,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _reload_db_async(self, name, on_complete=None):
         if self._db_reload_cancel:
             self._db_reload_cancel.cancel()
+        if on_complete:
+            self._db_reload_callbacks.append(on_complete)
+        refresh = on_complete is None
         cancel = CancelToken()
         self._db_reload_cancel = cancel
         db_path = setting_db_path(name)
@@ -180,22 +186,29 @@ class MainWindow(QtWidgets.QMainWindow):
                 ignore_pattern_re = compile_ignore_patterns(sdb.get_all_ignore_patterns())
                 if cancel.is_cancelled():
                     return
-                self._dispatcher.invoke(lambda: self._apply_db_reload(sdb, roots, excluded, ignore_pattern_re, cancel, on_complete))
+                self._dispatcher.invoke(lambda: self._apply_db_reload(sdb, roots, excluded, ignore_pattern_re, cancel, refresh))
             except Exception as e:
                 AppLogger.error(f"Failed to load database: {name}", exc=e)
-                self._dispatcher.invoke(lambda _e=e: self._on_db_reload_failed(name, _e, on_complete))
+                self._dispatcher.invoke(lambda _e=e: self._on_db_reload_failed(name, _e, cancel))
 
         self._dispatcher.post(task, priority=8, cancel=cancel)
 
-    def _apply_db_reload(self, sdb, roots, excluded, ignore_pattern_re, cancel, on_complete=None):
+    def _apply_db_reload(self, sdb, roots, excluded, ignore_pattern_re, cancel, refresh=True):
         if cancel.is_cancelled():
             return
         self._db_reload_cancel = None
         self.setting_db = sdb
         self.folder_view.set_folders(roots, excluded, ignore_pattern_re)
         self.grid_overlay_host.reload()
-        (on_complete or self.refresh_search)()
+        self._run_db_reload_callbacks()
+        if refresh:
+            self.refresh_search()
         self._check_folder_callout(roots)
+
+    def _run_db_reload_callbacks(self):
+        callbacks, self._db_reload_callbacks = self._db_reload_callbacks, []
+        for callback in callbacks:
+            callback()
 
     def refresh_search(self):
         self.search_row_widget.run_folder_worker(
@@ -206,12 +219,13 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
 
-    def _on_db_reload_failed(self, name, exc, on_complete=None):
+    def _on_db_reload_failed(self, name, exc, cancel):
+        if cancel.is_cancelled():
+            return
         self._db_reload_cancel = None
         self._hide_loading()
         Notifier.error(f'Failed to load database "{name}"')
-        if on_complete:
-            on_complete()
+        self._run_db_reload_callbacks()
 
     def _check_folder_callout(self, roots):
         if roots:

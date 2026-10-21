@@ -115,6 +115,58 @@ def test_flush_stale_change_on_moved_source_still_renames(tmp_path):
     assert update_paths == []
 
 
+def _renamed_pairs(scheduler, writer):
+    for c in scheduler.submit.call_args_list:
+        task = c[0][0]
+        if task.name == "rename_paths":
+            task.run()
+    return [pair for c in writer.rename_paths.call_args_list for pair in c[0][0]]
+
+
+def test_flush_renumbering_renames_every_file(tmp_path):
+    from wafer.core.common.paths import normalize_path
+
+    for i in (2, 3, 4):
+        (tmp_path / f"{i}.png").write_bytes(b"x")
+    p = {i: str(tmp_path / f"{i}.png") for i in (1, 2, 3, 4)}
+    wf, scheduler, writer, scanner, _ = _make_watcher()
+    _set_scope(wf, [tmp_path])
+
+    wf._flush({p[2], p[3], p[4]}, set(), {p[3]: p[4], p[2]: p[3], p[1]: p[2]})
+
+    assert _renamed_pairs(scheduler, writer) == [(normalize_path(p[i]), normalize_path(p[i + 1])) for i in (3, 2, 1)]
+
+
+def test_flush_swap_through_a_temp_name_renames_every_file(tmp_path):
+    from wafer.core.common.paths import normalize_path
+
+    a, b, t = str(tmp_path / "a.png"), str(tmp_path / "b.png"), str(tmp_path / "t.png")
+    (tmp_path / "a.png").write_bytes(b"b")
+    (tmp_path / "b.png").write_bytes(b"a")
+    wf, scheduler, writer, scanner, _ = _make_watcher()
+    _set_scope(wf, [tmp_path])
+
+    wf._flush({a, b}, set(), {a: t, b: a, t: b})
+
+    assert _renamed_pairs(scheduler, writer) == [(normalize_path(x), normalize_path(y)) for x, y in ((a, t), (b, a), (t, b))]
+
+
+def test_flush_replacement_moved_over_a_moved_aside_original_keeps_the_original(tmp_path):
+    target = tmp_path / "a.png"
+    backup = tmp_path / "a.png~RF1.TMP"
+    temp = tmp_path / "a.tmp"
+    target.write_bytes(b"saved")
+    wf, scheduler, writer, scanner, _ = _make_watcher()
+    _set_scope(wf, [tmp_path])
+
+    wf._flush({str(target)}, set(), {str(target): str(backup), str(temp): str(target)})
+
+    rename_names, update_paths, delete_names = _collect_exec_calls(scheduler, scanner)
+    assert rename_names == []
+    assert update_paths == [[str(target)]]
+    assert delete_names == ["delete_sources"]
+
+
 def test_rename_fallback_scans_destination_when_source_missing():
     wf, scheduler, writer, scanner, _ = _make_watcher()
     writer.rename_paths.return_value = ["B"]

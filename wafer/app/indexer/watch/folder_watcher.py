@@ -296,16 +296,17 @@ class FolderWatcher:
                 deleted.add(src)
         if moved:
             rename_pairs = []
-            recreated = []
+            recreated = self._recreated_sources(changed, moved)
             for src, dst in moved.items():
                 self._pending_deletes.pop(normalize_path(src), None)
-                if src in changed and os.path.exists(src):
-                    recreated.append(src)
+                if src in recreated:
                     if self._is_in_scope(dst) and os.path.exists(dst):
                         changed.add(dst)
                     continue
                 changed.discard(src)
-                if self._is_in_scope(dst):
+                if dst in recreated:
+                    deleted.add(src)
+                elif self._is_in_scope(dst):
                     rename_pairs.append((src, dst))
                 else:
                     deleted.add(src)
@@ -317,6 +318,15 @@ class FolderWatcher:
             self._exec("remove", list(deleted))
         if changed:
             self._exec("update", list(changed))
+
+    @staticmethod
+    def _recreated_sources(changed: set[str], moved: dict[str, str]) -> set[str]:
+        destinations = set(moved.values())
+
+        def moved_aside(dst: str) -> bool:
+            return dst not in moved and not os.path.exists(dst)
+
+        return {src for src, dst in moved.items() if src in changed and os.path.exists(src) and (src not in destinations or moved_aside(dst))}
 
     def _infer_moves_from_delete_create(self, changed: set[str], deleted: set[str], moved: dict[str, str], created: set[str]) -> None:
         now = time.monotonic()

@@ -9,6 +9,7 @@ from . import _dev
 FALLBACK_VERSION = "0.7.3.dev1+g1d36add"
 
 _NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+GIT_DESCRIBE_TIMEOUT = 5
 
 
 def get_version() -> str:
@@ -17,9 +18,10 @@ def get_version() -> str:
             ["git", "describe", "--tags", "--always"],
             stderr=subprocess.DEVNULL,
             text=True,
+            timeout=GIT_DESCRIBE_TIMEOUT,
             **_NO_WINDOW,
         ).strip()
-    except (FileNotFoundError, subprocess.CalledProcessError, OSError):
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
         return FALLBACK_VERSION
     if out.startswith("v"):
         out = out[1:]

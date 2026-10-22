@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from PySide6 import QtCore, QtWidgets
 from ...core.common.paths import data_db_path, setting_db_path, list_setting_db_names
 from ...qt.common.dpi import dpix
@@ -6,7 +8,7 @@ from ...core.logs import AppLogger
 from ...qt.common.notifier import Notifier
 from ...constants import APP_NAME, DEFAULT_DB_NAME
 from ...core.db.setting_db import SettingDB
-from ..indexer.watch.path_scope import compile_ignore_patterns
+from ...core.db.path_scope import compile_ignore_patterns
 from wafer.core.lang.manager import t
 
 from ...qt.common.rate_limit import qt_debounce
@@ -19,12 +21,14 @@ from .preview.file_viewer import FileViewerController
 from .preview.file_list_provider import FileListProvider
 from .preview.content_viewer import ContentViewerWidget
 from .preview.meta_panel import MetaViewerWidget
+from .path_reveal import PathRevealer
 from ...core.store.settings import app_settings
 from .widgets.button_bar import IconButtonBar, IconButtonConfig
 from .widgets.foldertree import LazyFolderTreeView
 from .widgets.loading_overlay import OverlayLoadingIndicator
 from .widgets.overlay_stack import OverlayStack
 from .widgets.progress_bar import ThinProgressBar
+from .widgets.workspace_labels import window_title
 from .widgets.search_container import SearchContainer
 from .widgets.combo_with_buttons import ComboBoxWithButtons
 from .widgets.callout_overlay import CalloutOverlay
@@ -42,18 +46,23 @@ from ...qt.common.window_state import WindowStateController
 from ...qt.common.dispatcher import Dispatcher, CancelToken
 from ...qt.common.thread import utility_pool
 from ...core.platform.taskbar import apply_window_identity
+from ...core.platform.workspace_lock import WorkspaceLock
+from .workspace_launch import OpenRequest
 
 AppMenuRegistrar.setup_menu()
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, icon=None, parent=None, slot_id=None):
+    def __init__(self, icon=None, parent=None, *, workspace_lock: WorkspaceLock, open_request: OpenRequest | None = None):
         super().__init__(parent=parent)
+        self._workspace_lock = workspace_lock
         self._workspace_store = WorkspaceStore.instance()
-        self.slot_id = None
+        self.slot_id = workspace_lock.slot_id
         self._slot_entry: WindowSlot | None = None
         self._close_reason = CloseReason.NORMAL
         self._slot_ready = False
+        self._slot_restored = False
+        self._open_request = open_request
         self._folder_callout: CalloutOverlay | None = None
         if icon:
             self.setWindowIcon(icon)
@@ -67,6 +76,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._folder_changed = False
         self._dispatcher = Dispatcher(utility_pool)
         self._db_reload_cancel: CancelToken | None = None
+        self._db_reload_callbacks: list[Callable[[], None]] = []
         self.search_service = SearchService(lambda: self.database_path, parent=self)
         self.search_service.search_started.connect(self._on_search_started)
         self.search_service.search_finished.connect(self._on_search_finished)
@@ -80,19 +90,24 @@ class MainWindow(QtWidgets.QMainWindow):
         self._closed = False
         self.setup_ui()
         self._show_loading()
-        self._acquire_slot_async(slot_id)
+        self._acquire_slot_async(self.slot_id)
         apply_window_identity(self.winId())
+
+    def event(self, event):
+        if event.type() == QtCore.QEvent.WinIdChange:
+            self._workspace_lock.set_window(int(self.winId()))
+        return super().event(event)
 
     def _acquire_slot_async(self, requested_id):
         store = self._workspace_store
 
         def task():
-            sid, entry, existed = store.acquire_slot(requested_id)
-            self._dispatcher.invoke(lambda: self._on_slot_acquired(sid, entry, existed))
+            sid, entry = store.acquire_slot(requested_id)
+            self._dispatcher.invoke(lambda: self._on_slot_acquired(sid, entry))
 
         self._dispatcher.post(task, priority=9)
 
-    def _on_slot_acquired(self, sid, entry, existed):
+    def _on_slot_acquired(self, sid, entry):
         self.slot_id = sid
         self._slot_entry = entry
         self._slot_ready = True
@@ -102,14 +117,32 @@ class MainWindow(QtWidgets.QMainWindow):
         self.workspace_toolbar_widget.refresh()
         from ..startup import StartupTasks
 
-        def start(prompt):
-            if existed and entry:
-                self._restore_from_slot(entry, on_complete=prompt)
-            else:
-                self.reload_database(self.get_last_used_db_name(), on_complete=prompt)
-
-        StartupTasks().run(on_ready=start)
+        StartupTasks().run(on_ready=lambda prompt: self._restore_from_slot(entry, on_complete=lambda: self._finish_slot_restore(prompt)))
         self._run_panel_plugin_startups()
+
+    def _finish_slot_restore(self, prompt):
+        self._slot_restored = True
+        request, self._open_request = self._open_request, None
+        if request is not None:
+            self.open_path_request(request.path, request.database_name)
+        prompt()
+
+    def open_path_request(self, path: str, database_name: str) -> None:
+        if not self._slot_restored:
+            self._open_request = OpenRequest(path, database_name)
+            return
+
+        def open_path():
+            Command.invoke("file.open_path", path=path)
+
+        def search_then_open_path():
+            self.refresh_search()
+            open_path()
+
+        if database_name and database_name != self.database_name:
+            self.reload_database(database_name, on_complete=search_then_open_path)
+        else:
+            open_path()
 
     @profiler.profile
     def get_last_used_db_name(self):
@@ -138,6 +171,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _reload_db_async(self, name, on_complete=None):
         if self._db_reload_cancel:
             self._db_reload_cancel.cancel()
+        if on_complete:
+            self._db_reload_callbacks.append(on_complete)
+        refresh = on_complete is None
         cancel = CancelToken()
         self._db_reload_cancel = cancel
         db_path = setting_db_path(name)
@@ -150,38 +186,46 @@ class MainWindow(QtWidgets.QMainWindow):
                 ignore_pattern_re = compile_ignore_patterns(sdb.get_all_ignore_patterns())
                 if cancel.is_cancelled():
                     return
-                self._dispatcher.invoke(lambda: self._apply_db_reload(sdb, roots, excluded, ignore_pattern_re, cancel, on_complete))
+                self._dispatcher.invoke(lambda: self._apply_db_reload(sdb, roots, excluded, ignore_pattern_re, cancel, refresh))
             except Exception as e:
                 AppLogger.error(f"Failed to load database: {name}", exc=e)
-                self._dispatcher.invoke(lambda _e=e: self._on_db_reload_failed(name, _e, on_complete))
+                self._dispatcher.invoke(lambda _e=e: self._on_db_reload_failed(name, _e, cancel))
 
         self._dispatcher.post(task, priority=8, cancel=cancel)
 
-    def _apply_db_reload(self, sdb, roots, excluded, ignore_pattern_re, cancel, on_complete=None):
+    def _apply_db_reload(self, sdb, roots, excluded, ignore_pattern_re, cancel, refresh=True):
         if cancel.is_cancelled():
             return
         self._db_reload_cancel = None
         self.setting_db = sdb
         self.folder_view.set_folders(roots, excluded, ignore_pattern_re)
         self.grid_overlay_host.reload()
-        if on_complete:
-            on_complete()
-        else:
-            self.search_row_widget.run_folder_worker(
-                self.database_path,
-                self.folder_view.get_selected_paths(),
-                self.search_service.get("include_subfolders", True),
-                self.search_service.get("include_contained_files", True),
-            )
-            QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
+        self._run_db_reload_callbacks()
+        if refresh:
+            self.refresh_search()
         self._check_folder_callout(roots)
 
-    def _on_db_reload_failed(self, name, exc, on_complete=None):
+    def _run_db_reload_callbacks(self):
+        callbacks, self._db_reload_callbacks = self._db_reload_callbacks, []
+        for callback in callbacks:
+            callback()
+
+    def refresh_search(self):
+        self.search_row_widget.run_folder_worker(
+            self.database_path,
+            self.folder_view.get_selected_paths(),
+            self.search_service.get("include_subfolders", True),
+            self.search_service.get("include_contained_files", True),
+        )
+        QtCore.QTimer.singleShot(0, lambda: self.search(force=True))
+
+    def _on_db_reload_failed(self, name, exc, cancel):
+        if cancel.is_cancelled():
+            return
         self._db_reload_cancel = None
         self._hide_loading()
         Notifier.error(f'Failed to load database "{name}"')
-        if on_complete:
-            on_complete()
+        self._run_db_reload_callbacks()
 
     def _check_folder_callout(self, roots):
         if roots:
@@ -214,12 +258,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._folder_callout = None
 
     def _update_title(self):
-        dirs = self.folder_view.get_selected_paths()
-        if dirs:
-            label = ", ".join(d.rsplit("/", 1)[-1] or d for d in dirs)
-        else:
-            label = self.database_name or ""
-        self.setWindowTitle(f"{label}" if label else APP_NAME)
+        name = self._slot_entry.name if self._slot_entry else ""
+        self.setWindowTitle(window_title(name, self.folder_view.get_selected_paths(), self.database_name or ""))
 
     @qt_debounce(200)
     def refresh_db_selector(self):
@@ -271,12 +311,15 @@ class MainWindow(QtWidgets.QMainWindow):
         b.slot_closed.connect(self._on_slot_closed)
         b.slot_restarted.connect(self._on_slot_restarted)
         b.slot_shutdown.connect(self._on_slot_shutdown)
+        b.slot_renamed.connect(self._on_slot_renamed)
+        b.open_path_requested.connect(self.open_path_request)
         b.app_shutdown.connect(self._on_app_shutdown)
         b.db_created.connect(self._on_db_created)
         b.db_deleted.connect(self._on_db_deleted)
         b.remote_log_received.connect(self._on_dev_log)
 
         b.tags_updated.connect(self._on_tags_updated_overlay)
+        b.files_changed.connect(self._on_files_changed)
 
         b.settings_received.connect(app_settings.apply_remote)
         app_settings.committed.connect(b.broadcast_settings)
@@ -341,6 +384,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.meta_viewer_widget = MetaViewerWidget()
         self.file_list_provider = FileListProvider(self.file_model, self.grid_items, self)
         self.file_viewer = FileViewerController(self.file_model, self.content_viewer, self.meta_viewer_widget, self.file_list_provider, self)
+        self.path_revealer = PathRevealer(self)
         self.meta_viewer_widget.reload_requested.connect(self.file_viewer.reload_meta)
         UI.register_instance("FileViewerController", self.file_viewer)
         UI.register_instance("FileListProvider", self.file_list_provider)
@@ -631,6 +675,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def close_by_restart(self):
         self._close_reason = CloseReason.RESTART
         self._save_slot()
+        self.release_workspace()
         from ...core.platform.process import AppProcess
 
         args = ["--viewer"]
@@ -656,6 +701,17 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.search_row_widget.invalidate_key_cache()
         self.search(force=True)
+
+    @QtCore.Slot(str, dict)
+    def _on_files_changed(self, db: str, changes: dict):
+        if not self._is_my_db(db):
+            return
+        modified = changes.get("modified") or []
+        removed = changes.get("removed") or []
+        dropped = self.grid_view.image_cache.discard_paths([*modified, *removed])
+        reloaded = self.grid_view.reload_paths(modified)
+        viewer_reloaded = self.file_viewer.reload_paths(modified)
+        AppLogger.debug(f"[files.changed] db={db} modified={len(modified)} removed={len(removed)} dropped={dropped} grid={reloaded} viewer={viewer_reloaded}")
 
     @QtCore.Slot(dict)
     def _on_tags_updated_overlay(self, payload: dict):
@@ -687,6 +743,13 @@ class MainWindow(QtWidgets.QMainWindow):
         if slot_id == self.slot_id:
             self._close_reason = CloseReason.SHUTDOWN
             self.close()
+
+    @QtCore.Slot(str, str)
+    def _on_slot_renamed(self, slot_id: str, name: str):
+        if slot_id != self.slot_id or self._slot_entry is None:
+            return
+        self._slot_entry.name = name
+        self._update_title()
 
     @QtCore.Slot()
     def _on_app_shutdown(self):
@@ -723,7 +786,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.grid_overlay_host.reload()
         if paths == self._last_paths:
-            self._hide_loading()
+            self.grid_view.layout_ready.emit()
             return
         self._last_paths = paths
         self.grid_view.set_paths(paths, sources, aspects, keep_scroll=keep_scroll)
@@ -769,7 +832,7 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             from ...plugin.settings import PluginSettings
             from ...plugin.installer import RestartScope
-            from ...plugin.loader import get_plugin_dir
+            from ...core.common.paths import get_plugin_dir
 
             if self._close_reason == CloseReason.NORMAL:
                 ps = PluginSettings()
@@ -788,6 +851,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._bridge.stop()
         except Exception as e:
             AppLogger.debug(f"on_close bridge.stop failed: {e}")
+        self.release_workspace()
+
+    def release_workspace(self):
+        self._workspace_lock.release()
 
     def _register_panel_plugin_states(self, store):
         from ...plugin.panel.base import BasePanelPlugin

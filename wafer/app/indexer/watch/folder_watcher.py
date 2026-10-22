@@ -8,7 +8,8 @@ from ....core.logs import AppLogger
 from ....core.common.paths import normalize_path
 from ....core.profiling import profiler
 from ..db_writer import DatabaseWriter
-from .path_scope import compile_ignore_patterns, contains_path_prefix, normalize_prefixes
+from ....core.db.path_scope import compile_ignore_patterns
+from .path_scope import contains_path_prefix, normalize_prefixes
 from ..runtime.progress_aggregator import ProgressAggregator
 from ..scanner import DirectoryScanner
 from ..runtime.scheduler import TaskScheduler
@@ -294,24 +295,38 @@ class FolderWatcher:
             if self._is_in_scope(src) and not self._is_in_scope(dst):
                 deleted.add(src)
         if moved:
-            new_at_dst = set()
             rename_pairs = []
+            recreated = self._recreated_sources(changed, moved)
             for src, dst in moved.items():
                 self._pending_deletes.pop(normalize_path(src), None)
-                if self._is_in_scope(dst):
+                if src in recreated:
+                    if self._is_in_scope(dst) and os.path.exists(dst):
+                        changed.add(dst)
+                    continue
+                changed.discard(src)
+                if dst in recreated:
+                    deleted.add(src)
+                elif self._is_in_scope(dst):
                     rename_pairs.append((src, dst))
-                    if src in changed:
-                        new_at_dst.add(dst)
                 else:
                     deleted.add(src)
-            changed -= set(moved.keys())
+            if recreated:
+                AppLogger.info(f"watcher replace: {len(recreated)} files were moved aside and recreated; updating them in place")
             if rename_pairs:
                 self._exec("rename", rename_pairs)
-            changed.update(new_at_dst)
         if deleted:
             self._exec("remove", list(deleted))
         if changed:
             self._exec("update", list(changed))
+
+    @staticmethod
+    def _recreated_sources(changed: set[str], moved: dict[str, str]) -> set[str]:
+        destinations = set(moved.values())
+
+        def moved_aside(dst: str) -> bool:
+            return dst not in moved and not os.path.exists(dst)
+
+        return {src for src, dst in moved.items() if src in changed and os.path.exists(src) and (src not in destinations or moved_aside(dst))}
 
     def _infer_moves_from_delete_create(self, changed: set[str], deleted: set[str], moved: dict[str, str], created: set[str]) -> None:
         now = time.monotonic()
@@ -360,6 +375,7 @@ class FolderWatcher:
             AppLogger.info(f"watcher rename: {len(data)} files")
             pairs = [(normalize_path(old), normalize_path(new)) for old, new in data if normalize_path(old) != normalize_path(new)]
             if pairs:
+                self._progress.send_files_changed(modified=[new for _, new in pairs], removed=[old for old, _ in pairs])
                 self._progress.increment(0, len(pairs))
                 self._scheduler.submit(
                     Task.create(
@@ -379,6 +395,7 @@ class FolderWatcher:
             AppLogger.info(f"watcher remove: {len(data)} files")
             paths = [normalize_path(p) for p in data if not os.path.exists(p)]
             if paths:
+                self._progress.send_files_changed(removed=paths)
                 self._progress.increment(0, len(paths))
                 self._scheduler.submit(
                     Task.create(

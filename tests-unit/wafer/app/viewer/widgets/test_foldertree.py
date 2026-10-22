@@ -12,7 +12,7 @@ from wafer.app.viewer.widgets.foldertree import (
     _collect_segments_for_paths,
 )
 from wafer.core.common.paths import normalize_path
-from wafer.app.indexer.watch.path_scope import compile_ignore_patterns
+from wafer.core.db.path_scope import compile_ignore_patterns
 
 
 def create_fs_tree(base):

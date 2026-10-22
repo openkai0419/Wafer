@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-from pathlib import PurePath
-
 from PySide6 import QtCore, QtWidgets
 
 from ....qt.theme import ThemeManager
@@ -11,12 +8,14 @@ from ....core.lang.manager import t
 from ....qt.common.icon_engine import themed_icon
 from ....qt.common.dispatcher import Dispatcher
 from ....qt.common.thread import utility_pool
+from ....core.platform.workspace_lock import WorkspaceLock
 from ....core.store.workspace import WindowSlot, WorkspaceStore
 from ....qt.widgets.dialogs import ConfirmDialog
 from ....qt.widgets.eliding import ElidingLabel
 from ....qt.widgets.popup import PopupBase
 from ....qt.common.dpi import dpix
-from ....core.logs import AppLogger
+from .workspace_labels import format_iso, slot_subtitle, slot_summary, slot_title, slot_tooltip
+from .workspace_picker import DISABLED_OPACITY
 
 _KIND_UI = "ui"
 _KIND_PATH = "path"
@@ -33,58 +32,25 @@ _COMPACT_SPACING = 1
 _ACTION_BUTTON_SIZE = 22
 
 
-def _format_iso(value: str) -> str:
-    if not value:
-        return ""
-    try:
-        return datetime.fromisoformat(value).astimezone().strftime("%Y-%m-%d %H:%M")
-    except ValueError:
-        AppLogger.warning(f"Invalid ISO datetime in workspace store: {value!r}")
-        return value
-
-
-def _slot_summary(slot: WindowSlot) -> str:
-    path = slot.path if isinstance(slot.path, dict) else {}
-    database = str(path.get("database_name") or t("No database"))
-    selected = [str(p) for p in (path.get("selected") or []) if p]
-    if not selected:
-        return database
-    first = PurePath(selected[0]).name or selected[0]
-    if len(selected) == 1:
-        return f"{database} / {first}"
-    return f"{database} / {first} +{len(selected) - 1}"
-
-
-def _slot_title(slot: WindowSlot) -> str:
-    return str(getattr(slot, "name", "") or "").strip() or _slot_summary(slot)
-
-
-def _slot_subtitle(slot: WindowSlot) -> str:
-    updated = _format_iso(slot.updated_at)
-    if str(getattr(slot, "name", "") or "").strip():
-        summary = _slot_summary(slot)
-        return f"{summary} / {updated}" if updated else summary
-    return updated
-
-
-def _slot_tooltip(slot: WindowSlot) -> str:
-    parts = [_slot_title(slot)]
-    summary = _slot_summary(slot)
-    if summary != parts[0]:
-        parts.append(summary)
-    updated = _format_iso(slot.updated_at)
-    if updated:
-        parts.append(f"{t('Last updated')}: {updated}")
-    parts.append(f"slot_id: {slot.slot_id}")
-    return "\n".join(parts)
-
-
 def _icon_button(icon_key: str, tooltip: str, parent=None) -> QtWidgets.QToolButton:
     btn = QtWidgets.QToolButton(parent)
     btn.setIcon(themed_icon(icon_key, margin=0.06))
     btn.setFixedSize(dpix(_ACTION_BUTTON_SIZE), dpix(_ACTION_BUTTON_SIZE))
     btn.setToolTip(tooltip)
     btn.setCursor(QtCore.Qt.PointingHandCursor)
+    return btn
+
+
+def _dashed_button(text: str) -> QtWidgets.QPushButton:
+    p = ThemeManager.instance().palette
+    btn = QtWidgets.QPushButton(text)
+    btn.setIcon(themed_icon("plus"))
+    btn.setCursor(QtCore.Qt.PointingHandCursor)
+    btn.setStyleSheet(
+        f"QPushButton {{ background: transparent; color: {p.text_accent}; border: 1px dashed {p.border_default};"
+        f"  border-radius: {dpix(4)}px; padding: {dpix(3)}px; font-size: {dpix(12)}px; }}"
+        f"QPushButton:hover {{ background: {p.bg_hover}; }}"
+    )
     return btn
 
 
@@ -180,38 +146,36 @@ class _SectionPopup(PopupBase):
         self.closed.emit(self.key)
 
 
-class _PresetTextArea(QtWidgets.QFrame):
+class _ClickableTextArea(QtWidgets.QFrame):
     clicked = QtCore.Signal()
 
-    def __init__(self, name: str, updated_at: str, parent=None):
+    def __init__(self, title: str, subtitle: str, tooltip: str = "", parent=None):
         super().__init__(parent)
-        self.setObjectName("workspace_preset_text_area")
+        self.setObjectName("workspace_text_area")
         self.setCursor(QtCore.Qt.PointingHandCursor)
         self.setMinimumWidth(0)
         self.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred)
         self.setAttribute(QtCore.Qt.WA_Hover, True)
-        self._build_ui(name, updated_at)
+        self.setToolTip(tooltip)
+        self._build_ui(title, subtitle)
 
-    def _build_ui(self, name: str, updated_at: str):
+    def _build_ui(self, title: str, subtitle: str):
         p = ThemeManager.instance().palette
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(dpix(_ROW_PADDING_H), dpix(_ROW_PADDING_V), dpix(_ROW_PADDING_H), dpix(_ROW_PADDING_V))
         layout.setSpacing(0)
 
-        self.name_label = ElidingLabel(name)
-        self.name_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
-        self.name_label.setStyleSheet(f"color: {p.text_primary}; font-size: {dpix(12)}px;")
-        layout.addWidget(self.name_label)
+        self.title_label = ElidingLabel(title)
+        self.title_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        self.title_label.setStyleSheet(f"color: {p.text_primary}; font-size: {dpix(12)}px;")
+        layout.addWidget(self.title_label)
 
-        updated = _format_iso(updated_at)
-        self.updated_label = QtWidgets.QLabel(updated)
-        self.updated_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
-        self.updated_label.setStyleSheet(f"color: {p.text_muted}; font-size: {dpix(10)}px;")
-        if updated:
-            self.updated_label.setToolTip(f"{t('Last updated')}: {updated}")
-        layout.addWidget(self.updated_label)
+        self.subtitle_label = ElidingLabel(subtitle)
+        self.subtitle_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        self.subtitle_label.setStyleSheet(f"color: {p.text_muted}; font-size: {dpix(10)}px;")
+        layout.addWidget(self.subtitle_label)
 
-        self.setStyleSheet(f"QFrame#workspace_preset_text_area {{ background: transparent; border-radius: {dpix(3)}px; }}QFrame#workspace_preset_text_area:hover {{ background: {p.bg_hover}; }}")
+        self.setStyleSheet(f"QFrame#workspace_text_area {{ background: transparent; border-radius: {dpix(3)}px; }}QFrame#workspace_text_area:hover {{ background: {p.bg_hover}; }}")
 
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton and self.rect().contains(event.position().toPoint()):
@@ -239,10 +203,12 @@ class _PresetItem(QtWidgets.QWidget):
         layout.setContentsMargins(dpix(_ROW_PADDING_H), dpix(_ROW_PADDING_V), dpix(_ROW_PADDING_H), dpix(_ROW_PADDING_V))
         layout.setSpacing(dpix(_COMPACT_SPACING))
 
-        self._text_area = _PresetTextArea(self.name, self.updated_at, parent=self)
+        updated = format_iso(self.updated_at)
+        tooltip = f"{t('Last updated')}: {updated}" if updated else ""
+        self._text_area = _ClickableTextArea(self.name, updated, tooltip, parent=self)
         self._text_area.clicked.connect(self._on_apply_click)
-        self._label = self._text_area.name_label
-        self._updated_label = self._text_area.updated_label
+        self._label = self._text_area.title_label
+        self._updated_label = self._text_area.subtitle_label
         layout.addWidget(self._text_area, 1)
 
         ow = self._icon_button("save", t("Overwrite"))
@@ -279,19 +245,11 @@ class _Column(QtWidgets.QWidget):
         self._build_ui()
 
     def _build_ui(self):
-        p = ThemeManager.instance().palette
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(dpix(_CONTENT_PADDING), dpix(_CONTENT_PADDING), dpix(_CONTENT_PADDING), dpix(_CONTENT_PADDING))
         outer.setSpacing(dpix(_COMPACT_SPACING))
 
-        self._save_btn = QtWidgets.QPushButton(t("Save current"))
-        self._save_btn.setIcon(themed_icon("plus"))
-        self._save_btn.setCursor(QtCore.Qt.PointingHandCursor)
-        self._save_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.text_accent}; border: 1px dashed {p.border_default};"
-            f"  border-radius: {dpix(4)}px; padding: {dpix(3)}px; font-size: {dpix(12)}px; }}"
-            f"QPushButton:hover {{ background: {p.bg_hover}; }}"
-        )
+        self._save_btn = _dashed_button(t("Save current"))
         self._save_btn.clicked.connect(self._on_save)
         outer.addWidget(self._save_btn)
 
@@ -383,14 +341,15 @@ class _Column(QtWidgets.QWidget):
 
 
 class _RecentSlotItem(QtWidgets.QWidget):
-    restore_requested = QtCore.Signal(str)
+    open_requested = QtCore.Signal(str)
     rename_requested = QtCore.Signal(str)
     delete_requested = QtCore.Signal(str)
 
-    def __init__(self, slot: WindowSlot, parent=None, is_current: bool = False):
+    def __init__(self, slot: WindowSlot, parent=None, is_current: bool = False, is_open: bool = False):
         super().__init__(parent)
         self.slot = slot
         self.is_current = bool(is_current)
+        self.is_open = bool(is_open)
         self._build_ui()
 
     def _build_ui(self):
@@ -407,26 +366,26 @@ class _RecentSlotItem(QtWidgets.QWidget):
         self._current_marker = marker
         layout.addSpacing(dpix(1))
 
-        labels = QtWidgets.QVBoxLayout()
-        labels.setContentsMargins(0, 0, 0, 0)
-        labels.setSpacing(0)
-        tooltip = _slot_tooltip(self.slot)
-        title = ElidingLabel(_slot_title(self.slot))
-        title.setToolTip(tooltip)
-        title.setStyleSheet(f"color: {p.text_primary}; font-size: {dpix(12)}px;")
-        labels.addWidget(title)
-        subtitle = ElidingLabel(_slot_subtitle(self.slot))
-        subtitle.setToolTip(tooltip)
-        subtitle.setStyleSheet(f"color: {p.text_muted}; font-size: {dpix(10)}px;")
-        labels.addWidget(subtitle)
-        self._title_label = title
-        self._subtitle_label = subtitle
-        layout.addLayout(labels, 1)
+        self._text_area = _ClickableTextArea(slot_title(self.slot), slot_subtitle(self.slot), slot_tooltip(self.slot), parent=self)
+        self._text_area.clicked.connect(lambda: self.open_requested.emit(self.slot.slot_id))
+        self._title_label = self._text_area.title_label
+        self._subtitle_label = self._text_area.subtitle_label
+        layout.addWidget(self._text_area, 1)
 
-        btn = _icon_button("history", t("Restore"), self)
-        btn.clicked.connect(lambda: self.restore_requested.emit(self.slot.slot_id))
-        layout.addWidget(btn)
-        self._restore_button = btn
+        open_marker = QtWidgets.QLabel(t("Open"), self)
+        open_marker.setStyleSheet(
+            f"QLabel {{ color: {p.text_accent}; border: 1px solid {p.text_accent}; border-radius: {dpix(7)}px;"
+            f"  padding: 0px {dpix(5)}px; font-size: {dpix(10)}px; }}"
+        )
+        open_marker.setFixedHeight(dpix(15))
+        open_marker.setVisible(self.is_open)
+        layout.addWidget(open_marker, 0, QtCore.Qt.AlignVCenter)
+        self._open_marker = open_marker
+        if self.is_open:
+            for widget in (self._text_area, open_marker):
+                dim = QtWidgets.QGraphicsOpacityEffect(widget)
+                dim.setOpacity(DISABLED_OPACITY)
+                widget.setGraphicsEffect(dim)
 
         rename_btn = _icon_button("pencil", t("Rename"), self)
         rename_btn.clicked.connect(lambda: self.rename_requested.emit(self.slot.slot_id))
@@ -434,11 +393,14 @@ class _RecentSlotItem(QtWidgets.QWidget):
 
         delete_btn = _icon_button("trash", t("Delete"), self)
         delete_btn.clicked.connect(lambda: self.delete_requested.emit(self.slot.slot_id))
+        delete_btn.setEnabled(not (self.is_open or self.is_current))
         layout.addWidget(delete_btn)
+        self._delete_button = delete_btn
 
 
 class _RecentSectionContent(QtWidgets.QWidget):
-    restore_requested = QtCore.Signal(str)
+    new_requested = QtCore.Signal()
+    open_requested = QtCore.Signal(str)
     rename_requested = QtCore.Signal(str)
     delete_requested = QtCore.Signal(str)
 
@@ -449,20 +411,23 @@ class _RecentSectionContent(QtWidgets.QWidget):
     def _build_ui(self):
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(dpix(_CONTENT_PADDING), dpix(_CONTENT_PADDING), dpix(_CONTENT_PADDING), dpix(_CONTENT_PADDING))
-        outer.setSpacing(0)
+        outer.setSpacing(dpix(_COMPACT_SPACING))
+        self._new_button = _dashed_button(t("New workspace"))
+        self._new_button.clicked.connect(self.new_requested.emit)
+        outer.addWidget(self._new_button)
         self._recent_layout = QtWidgets.QVBoxLayout()
         self._recent_layout.setContentsMargins(0, 0, 0, 0)
         self._recent_layout.setSpacing(0)
         outer.addLayout(self._recent_layout)
 
-    def populate(self, slots: list[WindowSlot], current_slot_id: str = ""):
+    def populate(self, slots: list[WindowSlot], current_slot_id: str = "", open_slot_ids: set[str] | frozenset[str] = frozenset()):
         while self._recent_layout.count():
             it = self._recent_layout.takeAt(0)
             if it.widget():
                 it.widget().deleteLater()
         for slot in slots:
-            row = _RecentSlotItem(slot, parent=self, is_current=slot.slot_id == current_slot_id)
-            row.restore_requested.connect(self.restore_requested.emit)
+            row = _RecentSlotItem(slot, parent=self, is_current=slot.slot_id == current_slot_id, is_open=slot.slot_id in open_slot_ids)
+            row.open_requested.connect(self.open_requested.emit)
             row.rename_requested.connect(self.rename_requested.emit)
             row.delete_requested.connect(self.delete_requested.emit)
             self._recent_layout.addWidget(row)
@@ -504,7 +469,8 @@ class WorkspaceToolbarWidget(QtWidgets.QWidget):
             col.overwrite_requested.connect(self._on_overwrite)
             col.rename_requested.connect(self._on_rename)
             col.delete_requested.connect(self._on_delete)
-        self._recent_col.restore_requested.connect(self._on_restore_slot)
+        self._recent_col.new_requested.connect(self._on_new_workspace)
+        self._recent_col.open_requested.connect(self._on_open_slot)
         self._recent_col.rename_requested.connect(self._on_rename_slot)
         self._recent_col.delete_requested.connect(self._on_delete_slot)
 
@@ -533,17 +499,18 @@ class WorkspaceToolbarWidget(QtWidgets.QWidget):
 
         def load():
             ui, path, query = store.snapshot()
-            slots = store.list_recent_slots(limit=8, include_active=True)
-            self._dispatcher.invoke(lambda: self._apply_loaded(mtime, ui, path, query, slots, current_slot_id))
+            slots = store.list_recent_slots(limit=8)
+            open_ids = WorkspaceLock.open_slot_ids([slot.slot_id for slot in slots])
+            self._dispatcher.invoke(lambda: self._apply_loaded(mtime, ui, path, query, slots, current_slot_id, open_ids))
 
         self._dispatcher.post(load, priority=4)
 
-    def _apply_loaded(self, mtime, ui_presets, path_presets, query_presets, slots, current_slot_id):
+    def _apply_loaded(self, mtime, ui_presets, path_presets, query_presets, slots, current_slot_id, open_slot_ids):
         self._last_loaded_mtime = mtime
         self._ui_col.populate([(p.preset_id, p.name, p.updated_at) for p in ui_presets])
         self._path_col.populate([(p.preset_id, p.name, p.updated_at) for p in path_presets])
         self._query_col.populate([(p.preset_id, p.name, p.updated_at) for p in query_presets])
-        self._recent_col.populate(slots, current_slot_id=current_slot_id)
+        self._recent_col.populate(slots, current_slot_id=current_slot_id, open_slot_ids=open_slot_ids)
 
     def _current_slot_id(self) -> str:
         return str(getattr(self.window(), "slot_id", "") or "")
@@ -618,8 +585,11 @@ class WorkspaceToolbarWidget(QtWidgets.QWidget):
         Command.invoke(self._cmd(kind, "delete"), preset_id=preset_id)
         self.refresh(force=True)
 
-    def _on_restore_slot(self, slot_id: str):
-        Command.invoke("ws.restore_slot", slot_id=slot_id)
+    def _on_new_workspace(self):
+        Command.invoke("ws.new_workspace")
+
+    def _on_open_slot(self, slot_id: str):
+        Command.invoke("ws.open_slot", slot_id=slot_id)
         self.refresh(force=True)
 
     def _on_rename_slot(self, slot_id: str):
@@ -628,7 +598,7 @@ class WorkspaceToolbarWidget(QtWidgets.QWidget):
 
     def _on_delete_slot(self, slot_id: str):
         slot = WorkspaceStore.instance().get_slot(slot_id)
-        summary = _slot_summary(slot) if slot is not None else slot_id
+        summary = slot_summary(slot) if slot is not None else slot_id
         result = ConfirmDialog.ask(
             f"{t('Remove this recent workspace?')}\n\n{summary}",
             title=t("Delete Workspace Slot"),

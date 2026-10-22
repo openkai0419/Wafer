@@ -44,6 +44,15 @@ class ProgressAggregator:
         except Exception as e:
             AppLogger.warning(f"[notify {topic} failed] {e}")
 
+    def send_files_changed(self, modified=(), removed=()):
+        modified, removed = list(modified), list(removed)
+        if not modified and not removed:
+            return
+        try:
+            self._node.send("files.changed", {"modified": modified, "removed": removed}, dst="viewer", db=self.db_name)
+        except Exception as e:
+            AppLogger.warning(f"[notify files.changed failed] {e}")
+
     def _send_progress(self):
         try:
             self._node.send_coalesced("maximum", self.maximum, dst="viewer", db=self.db_name)

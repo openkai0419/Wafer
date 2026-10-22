@@ -272,6 +272,14 @@ class FileViewerController(QtCore.QObject):
             return
         self.model.set_path(path)
 
+    def reload_paths(self, paths) -> bool:
+        path = self.model.path()
+        targets = set(paths)
+        if not path or targets.isdisjoint((path, *self.current_paths(), *self.current_render_paths())):
+            return False
+        self._on_path_changed(path)
+        return True
+
     def _on_viewer_settings_changed(self, _plugin_name: str | None = None):
         paths = self.current_paths()
         path = paths[0] if paths else self.model.path()

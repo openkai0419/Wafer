@@ -240,15 +240,132 @@ class TestWorkspaceToolbarWidget:
         assert "pencil" in keys
         assert captured == ["s1"]
 
-    def test_recent_current_slot_has_marker_and_enabled_restore(self, qtbot):
+    def test_recent_text_area_click_emits_open(self, qtbot):
+        from wafer.app.viewer.widgets import workspace_toolbar
+        from wafer.core.store.workspace import WindowSlot
+
+        item = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s1", path={"database_name": "db"}))
+        qtbot.addWidget(item)
+        item.show()
+        captured = []
+        item.open_requested.connect(captured.append)
+        qtbot.mouseClick(item._text_area, QtCore.Qt.LeftButton, pos=item._text_area.rect().center())
+        assert captured == ["s1"]
+
+    def test_recent_row_has_no_open_button(self, qtbot):
+        from wafer.app.viewer.widgets import workspace_toolbar
+        from wafer.core.store.workspace import WindowSlot
+
+        item = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s1"))
+        qtbot.addWidget(item)
+        tooltips = [btn.toolTip() for btn in item.findChildren(QtWidgets.QToolButton)]
+        assert tooltips == ["Rename", "Delete"]
+
+    def test_recent_row_marks_open_workspaces(self, qtbot):
+        from wafer.app.viewer.widgets import workspace_toolbar
+        from wafer.core.lang.manager import t
+        from wafer.core.store.workspace import WindowSlot
+
+        closed = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s1"))
+        opened = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s2"), is_open=True)
+        for item in (closed, opened):
+            qtbot.addWidget(item)
+            item.show()
+        assert closed._open_marker.isVisibleTo(closed) is False
+        assert opened._open_marker.isVisibleTo(opened) is True
+        assert opened._open_marker.text() == t("Open")
+
+    def test_recent_row_greys_out_open_workspaces_like_the_picker(self, qtbot):
+        from wafer.app.viewer.widgets import workspace_toolbar
+        from wafer.app.viewer.widgets.workspace_picker import DISABLED_OPACITY
+        from wafer.core.store.workspace import WindowSlot
+
+        closed = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s1"))
+        opened = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s2"), is_open=True)
+        for item in (closed, opened):
+            qtbot.addWidget(item)
+        assert closed._text_area.graphicsEffect() is None
+        assert opened._text_area.graphicsEffect().opacity() == DISABLED_OPACITY
+        assert opened._open_marker.graphicsEffect().opacity() == DISABLED_OPACITY
+        assert opened._text_area.isEnabled() is True
+
+    def test_recent_row_disables_delete_for_open_slot(self, qtbot):
+        from wafer.app.viewer.widgets import workspace_toolbar
+        from wafer.core.store.workspace import WindowSlot
+
+        closed = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s1"))
+        opened = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s2"), is_open=True)
+        current = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s3"), is_current=True)
+        for item in (closed, opened, current):
+            qtbot.addWidget(item)
+        assert closed._delete_button.isEnabled() is True
+        assert opened._delete_button.isEnabled() is False
+        assert current._delete_button.isEnabled() is False
+
+    def test_recent_content_new_workspace_button_emits(self, qtbot):
+        from wafer.app.viewer.widgets.workspace_toolbar import _RecentSectionContent
+        from wafer.core.lang.manager import t
+
+        recent = _RecentSectionContent()
+        qtbot.addWidget(recent)
+        recent.populate([])
+        captured = []
+        recent.new_requested.connect(lambda: captured.append(True))
+        assert recent._new_button.text() == t("New workspace")
+        qtbot.mouseClick(recent._new_button, QtCore.Qt.LeftButton)
+        assert captured == [True]
+
+    def test_toolbar_new_workspace_invokes_command(self, qtbot):
+        from unittest.mock import patch
+
+        from wafer.app.viewer.widgets import workspace_toolbar as workspace_widget
+
+        panel = workspace_widget.WorkspaceToolbarWidget()
+        qtbot.addWidget(panel)
+        with patch.object(workspace_widget.Command, "invoke") as invoke:
+            panel._recent_col.new_requested.emit()
+        invoke.assert_called_once_with("ws.new_workspace")
+
+    def test_recent_content_marks_open_slots(self, qtbot):
+        from wafer.app.viewer.widgets.workspace_toolbar import _RecentSectionContent, _RecentSlotItem
+        from wafer.core.store.workspace import WindowSlot
+
+        recent = _RecentSectionContent()
+        qtbot.addWidget(recent)
+        recent.populate([WindowSlot(slot_id="s1"), WindowSlot(slot_id="s2")], open_slot_ids={"s2"})
+        items = {item.slot.slot_id: item for item in recent.findChildren(_RecentSlotItem)}
+        assert items["s1"].is_open is False
+        assert items["s2"].is_open is True
+
+    def test_refresh_reads_open_slot_ids_in_background(self, qtbot):
+        from unittest.mock import MagicMock, patch
+
+        from wafer.app.viewer.widgets import workspace_toolbar as workspace_widget
+        from wafer.core.store.workspace import WindowSlot
+
+        store = MagicMock()
+        store.snapshot.return_value = ([], [], [])
+        store.list_recent_slots.return_value = [WindowSlot(slot_id="s1"), WindowSlot(slot_id="s2")]
+        store.get_store_mtime.return_value = 1.0
+        with patch.object(workspace_widget.WorkspaceStore, "instance", return_value=store), patch.object(workspace_widget.WorkspaceLock, "open_slot_ids", return_value={"s2"}) as open_ids:
+            panel = workspace_widget.WorkspaceToolbarWidget()
+            qtbot.addWidget(panel)
+            qtbot.waitUntil(lambda: panel._last_loaded_mtime == 1.0, timeout=2000)
+        open_ids.assert_called_with(["s1", "s2"])
+        items = {item.slot.slot_id: item for item in panel.findChildren(workspace_widget._RecentSlotItem)}
+        assert items["s2"].is_open is True
+        assert items["s1"].is_open is False
+
+    def test_recent_current_slot_has_marker(self, qtbot):
         from wafer.app.viewer.widgets import workspace_toolbar
         from wafer.core.store.workspace import WindowSlot
 
         item = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s1", path={"database_name": "db"}), is_current=True)
+        other = workspace_toolbar._RecentSlotItem(WindowSlot(slot_id="s2", path={"database_name": "db"}))
         qtbot.addWidget(item)
+        qtbot.addWidget(other)
         assert item._current_marker.property("current") is True
-        assert item._restore_button.isEnabled() is True
-        assert item._restore_button.toolTip() == "Restore"
+        assert other._current_marker.property("current") is False
 
     def test_recent_slot_name_is_displayed_over_summary(self, qtbot):
         from wafer.app.viewer.widgets import workspace_toolbar

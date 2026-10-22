@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -105,31 +105,55 @@ class TestWorkspaceCommands:
         assert args[2] == "path"
         assert args[3] is False
 
-    def test_restore_slot_restores_window_slot(self):
+    def open_slot(self, slot_id, *, current="current", known=True, open_ids=frozenset(), activated=True):
         win = MagicMock()
-        win.slot_id = "current"
-        slot = WindowSlot(slot_id="slot1", ui={"u": 1}, path={"p": 1}, query={"q": 1})
+        win.slot_id = current
         store = MagicMock()
-        store.get_slot.return_value = slot
+        store.get_slot.return_value = WindowSlot(slot_id=slot_id) if known else None
+        with (
+            patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store),
+            patch.object(workspace_commands.WorkspaceLock, "open_slot_ids", return_value=set(open_ids)) as open_slot_ids,
+            patch.object(workspace_commands, "activate_workspace_window", return_value=activated) as activate,
+            patch.object(workspace_commands.AppProcess, "new_main") as new_main,
+            patch.object(workspace_commands.AppLogger, "info") as info,
+        ):
+            workspace_commands.open_slot(_Ctx(win), slot_id=slot_id)
+        return open_slot_ids, activate, new_main, info
 
-        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store):
-            workspace_commands.restore_slot(_Ctx(win), slot_id="slot1")
+    def test_open_slot_activates_open_workspace(self):
+        _, activate, new_main, _ = self.open_slot("s2", open_ids={"s2"})
+        activate.assert_called_once_with("s2")
+        new_main.assert_not_called()
 
-        win._save_slot.assert_called_once_with()
-        win._restore_from_slot.assert_called_once_with(slot)
+    def test_open_slot_spawns_closed_workspace(self):
+        open_ids, activate, new_main, _ = self.open_slot("s2")
+        open_ids.assert_called_once_with(["s2"])
+        new_main.assert_called_once_with("--viewer", "--slot", "s2")
+        activate.assert_not_called()
 
-    def test_restore_slot_current_restores_without_saving_first(self):
-        win = MagicMock()
-        win.slot_id = "slot1"
-        slot = WindowSlot(slot_id="slot1")
-        store = MagicMock()
-        store.get_slot.return_value = slot
+    def test_open_slot_ignores_current_window(self):
+        open_ids, activate, new_main, _ = self.open_slot("s2", current="s2")
+        open_ids.assert_not_called()
+        activate.assert_not_called()
+        new_main.assert_not_called()
 
-        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store):
-            workspace_commands.restore_slot(_Ctx(win), slot_id="slot1")
+    def test_open_slot_without_owner_window_logs_and_does_nothing(self):
+        _, activate, new_main, info = self.open_slot("s2", open_ids={"s2"}, activated=False)
+        activate.assert_called_once_with("s2")
+        new_main.assert_not_called()
+        info.assert_called_once()
 
-        win._save_slot.assert_not_called()
-        win._restore_from_slot.assert_called_once_with(slot)
+    def test_open_slot_ignores_an_unknown_workspace(self):
+        open_ids, activate, new_main, info = self.open_slot("ghost", known=False)
+        open_ids.assert_not_called()
+        activate.assert_not_called()
+        new_main.assert_not_called()
+        info.assert_called_once()
+
+    def test_workspace_menu_registers_open_slot_not_restore_slot(self):
+        paths = [item.path for item in workspace_commands.WorkspaceCommands.commands() if hasattr(item, "path")]
+        assert "ws.open_slot" in paths
+        assert "ws.restore_slot" not in paths
 
     def test_rename_slot_updates_store(self):
         win = MagicMock()
@@ -142,6 +166,34 @@ class TestWorkspaceCommands:
 
         store.rename_slot.assert_called_once_with("slot1", "New")
 
+    def test_rename_slot_broadcasts_rename(self):
+        win = MagicMock()
+        win.slot_id = "current"
+        store = MagicMock()
+        store.get_slot.return_value = WindowSlot(slot_id="s2", name="Old")
+        store.rename_slot.return_value = True
+
+        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store):
+            workspace_commands.rename_slot(_Ctx(win), slot_id="s2", name="New")
+
+        win._bridge.node.send.assert_called_once_with("slot.renamed", {"slot_id": "s2", "name": "New"}, dst="viewer")
+        win._update_title.assert_not_called()
+
+    def test_rename_current_slot_updates_own_title_without_broadcast(self):
+        win = MagicMock()
+        win.slot_id = "s2"
+        win._slot_entry = WindowSlot(slot_id="s2", name="Old")
+        store = MagicMock()
+        store.get_slot.return_value = WindowSlot(slot_id="s2", name="Old")
+        store.rename_slot.return_value = True
+
+        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store):
+            workspace_commands.rename_slot(_Ctx(win), slot_id="s2", name="New")
+
+        assert win._slot_entry.name == "New"
+        win._update_title.assert_called_once_with()
+        win._bridge.node.send.assert_not_called()
+
     def test_rename_slot_missing_does_not_mutate_store(self):
         win = MagicMock()
         store = MagicMock()
@@ -152,54 +204,85 @@ class TestWorkspaceCommands:
 
         store.rename_slot.assert_not_called()
 
-    def test_delete_slot_forgets_saved_snapshot(self):
+    def delete_slot(self, slot_id, *, known=True, open_ids=frozenset()):
         store = MagicMock()
-        store.get_slot.return_value = WindowSlot(slot_id="slot1")
+        store.get_slot.return_value = WindowSlot(slot_id=slot_id) if known else None
         store.forget_slot_snapshot.return_value = True
+        with (
+            patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store),
+            patch.object(workspace_commands.WorkspaceLock, "open_slot_ids", return_value=set(open_ids)),
+            patch.object(workspace_commands.WorkspaceLock, "delete_file_if_unused") as delete_file,
+            patch.object(workspace_commands.Notifier, "info") as notify,
+        ):
+            workspace_commands.delete_slot(_Ctx(MagicMock()), slot_id=slot_id)
+        return store, delete_file, notify
 
-        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store):
-            workspace_commands.delete_slot(_Ctx(MagicMock()), slot_id="slot1")
-
+    def test_delete_slot_forgets_saved_snapshot_and_its_lock_file(self):
+        store, delete_file, _ = self.delete_slot("slot1")
         store.forget_slot_snapshot.assert_called_once_with("slot1")
         store.get_active_slot_ids.assert_not_called()
+        delete_file.assert_called_once_with("slot1")
 
     def test_delete_slot_missing_does_not_mutate_store(self):
-        store = MagicMock()
-        store.get_slot.return_value = None
-
-        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store):
-            workspace_commands.delete_slot(_Ctx(MagicMock()), slot_id="missing")
-
+        store, delete_file, _ = self.delete_slot("missing", known=False)
         store.forget_slot_snapshot.assert_not_called()
+        delete_file.assert_not_called()
 
-    def test_new_window_reserves_slot_before_spawning_viewer(self):
+    def test_delete_slot_refuses_an_open_workspace(self):
+        store, delete_file, notify = self.delete_slot("slot1", open_ids={"slot1"})
+        store.forget_slot_snapshot.assert_not_called()
+        delete_file.assert_not_called()
+        notify.assert_called_once()
+
+    def test_open_viewer_saves_then_spawns_picker(self):
+        win = MagicMock()
+        win.slot_id = "s1"
+        order = MagicMock()
+        order.attach_mock(win._save_slot, "save")
+        with patch.object(workspace_commands.AppProcess, "new_main") as new_main:
+            order.attach_mock(new_main, "spawn")
+            workspace_commands.open_viewer(_Ctx(win))
+
+        assert order.mock_calls == [
+            call.save(),
+            call.spawn("--viewer", "--pick", "--seed-slot", "s1"),
+        ]
+
+    def test_open_viewer_without_a_window_spawns_picker_without_seed(self):
+        with patch.object(workspace_commands.AppProcess, "new_main") as new_main:
+            workspace_commands.open_viewer(_Ctx())
+
+        new_main.assert_called_once_with("--viewer", "--pick")
+
+    def test_process_menu_has_open_viewer(self):
+        from wafer.builtins.commands.window import WindowRestartCommands
+
+        commands = {item.path: item for item in WindowRestartCommands.commands() if hasattr(item, "path")}
+        assert commands["ws.open_viewer"].display == "Open Viewer"
+        assert "ws.open_workspace" not in commands
+        assert "win.new_window" not in commands
+
+    def test_new_workspace_saves_then_opens_a_copy_of_this_window(self):
+        win = MagicMock()
+        win.slot_id = "s1"
         store = MagicMock()
-        store.reserve_next_window_slot.return_value = ("slot1", WindowSlot(slot_id="slot1"), True)
-
+        store.create_slot_from.return_value = "new1"
+        order = MagicMock()
+        order.attach_mock(win._save_slot, "save")
+        order.attach_mock(store.create_slot_from, "create")
         with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store), patch.object(workspace_commands.AppProcess, "new_main") as new_main:
-            workspace_commands.new_window(_Ctx())
+            order.attach_mock(new_main, "spawn")
+            workspace_commands.new_workspace(_Ctx(win))
 
-        store.reserve_next_window_slot.assert_called_once_with()
-        new_main.assert_called_once_with("--viewer", "--slot", "slot1")
+        assert order.mock_calls == [
+            call.save(),
+            call.create("s1"),
+            call.spawn("--viewer", "--slot", "new1"),
+        ]
 
-    def test_new_window_falls_back_when_slot_reservation_fails(self):
-        store = MagicMock()
-        store.reserve_next_window_slot.side_effect = TimeoutError("locked")
-
-        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store), patch.object(workspace_commands.AppProcess, "new_main") as new_main:
-            workspace_commands.new_window(_Ctx())
-
-        new_main.assert_called_once_with("--viewer")
-
-    def test_new_window_releases_reserved_slot_when_spawn_fails(self):
-        store = MagicMock()
-        store.reserve_next_window_slot.return_value = ("slot1", WindowSlot(slot_id="slot1"), True)
-
-        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store), patch.object(workspace_commands.AppProcess, "new_main", side_effect=RuntimeError("spawn failed")):
-            with pytest.raises(RuntimeError, match="spawn failed"):
-                workspace_commands.new_window(_Ctx())
-
-        store.release_slot.assert_called_once_with("slot1")
+    def test_workspace_menu_registers_new_workspace_as_hidden(self):
+        commands = {item.path: item for item in workspace_commands.WorkspaceCommands.commands() if hasattr(item, "path")}
+        assert commands["ws.new_workspace"].hidden is True
 
     def test_workspace_menu_uses_popup_commands_instead_of_panel_toggle(self):
         from wafer.qt.layout.manager import LayoutManager

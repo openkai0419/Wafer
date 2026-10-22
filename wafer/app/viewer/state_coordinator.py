@@ -62,7 +62,10 @@ class PathStateCoordinator:
         selected = path.get("selected") or []
 
         def apply_folders():
-            if expanded or selected:
+            switched = bool(db_name) and self._w.database_name != db_name
+            if switched:
+                AppLogger.info(f"PathStateCoordinator: database switched to {self._w.database_name} during restore, keeping its folder selection")
+            if (expanded or selected) and not switched:
                 self._w.folder_view.set_state_async(
                     (expanded, selected),
                     on_complete=on_complete,

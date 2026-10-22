@@ -8,6 +8,7 @@ from array import array
 from aiohttp import web
 
 from wafer.core.db.db_utils import open_readonly
+from wafer.core.db.path_scope import is_under
 from wafer.plugin.query.handler import filter_registry, sort_registry
 from wafer.core.logs import AppLogger
 from wafer.core.common.formatting import format_file_entries, format_source_entries
@@ -168,13 +169,7 @@ def scan_folder_entries(parent: str, ignored: set[str]) -> list[dict]:
 
 
 def is_under_roots(path: str, roots: list[str]) -> bool:
-    p = path.casefold() if os.name == "nt" else path
-    for root in roots:
-        r = normalize_path(root)
-        r = r.casefold() if os.name == "nt" else r
-        if p == r or p.startswith(r + "/"):
-            return True
-    return False
+    return any(is_under(path, root) for root in roots)
 
 
 @routes.get("/api/folders")

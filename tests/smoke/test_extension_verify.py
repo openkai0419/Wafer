@@ -127,9 +127,9 @@ class TestSmokeGPUVerify:
             gpu_providers = ("CUDAExecutionProvider", "ROCmExecutionProvider", "CoreMLExecutionProvider")
             assert any(p in available for p in gpu_providers), f"No GPU provider found in onnxruntime. Available: {available}. Ensure CUDA and cuDNN are properly installed."
 
-            from extensions.wd14._downloader import ensure_model
+            from extensions.wd14._downloader import ensure_default_model
 
-            model_dir = ensure_model()
+            model_dir = ensure_default_model()
             providers = [p for p in available if p != "TensorrtExecutionProvider"]
             opts = ort.SessionOptions()
             opts.log_severity_level = 3
@@ -165,18 +165,18 @@ class TestSmokeInferenceVerify:
         added = _add_packages_to_path()
         try:
             from PIL import Image
-            from extensions.wd14._downloader import ensure_model
-            from extensions.wd14._inference import WD14Inference
+            from extensions.wd14._downloader import DEFAULT_MODEL, ensure_default_model
+            from extensions.wd14._inference import TaggerInference
+            from extensions.wd14._models import CATEGORIES, load_spec
 
-            model_dir = ensure_model()
-            engine = WD14Inference(model_dir)
+            ensure_default_model()
+            engine = TaggerInference(load_spec(DEFAULT_MODEL))
 
             test_image = Image.new("RGB", (256, 256), color="red")
-            result = engine.predict(test_image)
+            result = engine.predict(test_image, general_threshold=0.35, character_threshold=0.85)
 
-            assert "ratings" in result, f"Missing 'ratings' key in result: {list(result.keys())}"
-            assert "general" in result, f"Missing 'general' key in result: {list(result.keys())}"
-            assert "character" in result, f"Missing 'character' key in result: {list(result.keys())}"
+            assert set(result) == set(CATEGORIES), f"Unexpected categories in result: {list(result.keys())}"
+            assert len(result["rating"]) == 4, f"Expected 4 ratings: {result['rating']}"
 
             del engine
         finally:

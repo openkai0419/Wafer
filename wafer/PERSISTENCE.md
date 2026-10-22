@@ -50,6 +50,8 @@ wafer の永続化クラスは「**スコープ**」と「**用途**」の 2 軸
 ## よくある間違い
 
 - **「最後に開いた DB」を `app_settings` に書かない。** WindowSlot ごとに違うため、`WorkspaceStore.get_last_used_database_name()` から取る。
+- **右クリックメニュー（Open with Wafer）のオン・オフを `app_settings` に書かない。** レジストリのキー（`HKCU\Software\Classes\*\shell\Wafer`）そのものが記録（`core/platform/explorer_menu.py`）。
+- **「どの Workspace が開いているか」を `workspace.json`（`active_slot_ids`）に書いて判定しない。** 真実は `.temp/workspaces/<slot_id>.lock` の OS ファイルロック（`core/platform/workspace_lock.py`）。プロセスが落ちれば OS がロックを外すので古い記録が残らない。
 - **プラグイン設定を `app_settings` に書かない。** プラグインごとに `PluginConfig` を用意する（wd14 / florence / exiftool が参考実装）。
 - **`StateStore` は永続化しない。** 自分で JSON を書こうとしないこと。`WindowSlot` に渡すだけのインメモリレジストリ。
 - **`ActionGroupStateManager` で「現在チェックされている項目」を保持しない。** 状態は UI/データ側が真実で、コマンドの `checked` リゾルバ経由で都度問い合わせる。

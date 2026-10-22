@@ -898,6 +898,15 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self.widgets[i].setGeometry(rect)
 
     @profiler.profile
+    def reload_paths(self, paths) -> int:
+        targets = set(paths)
+        indices = [i for i in (*self.widgets, *self._additional_widgets) if self.items.path_at(i) in targets]
+        for i in dict.fromkeys(indices):
+            self._recycle_widget(i)
+            self._setup_cell(i)
+        return len(indices)
+
+    @profiler.profile
     def _recycle_widget(self, i):
         if i in self._additional_widgets:
             widget = self._additional_widgets.pop(i)

@@ -1,12 +1,26 @@
 from collections import OrderedDict
+import re
 import threading
 
+from ...constants import VIRTUAL_PATH_SEPARATOR
 from ..common.decorators import singleton
 from ..profiling import profiler
+
+_PATH_BOUNDARY = re.compile("/|" + re.escape(VIRTUAL_PATH_SEPARATOR))
 
 
 def fullsize_key(path: str):
     return ("orig", path)
+
+
+def _key_path(key) -> str | None:
+    if isinstance(key, tuple) and len(key) == 2 and key[0] == "orig":
+        key = key[1]
+    return key if isinstance(key, str) else None
+
+
+def _is_within(path: str, targets: set[str]) -> bool:
+    return path in targets or any(path[: m.start()] in targets for m in _PATH_BOUNDARY.finditer(path))
 
 
 @singleton
@@ -60,6 +74,21 @@ class MemoryLimitedImageCache:
         with self._lock:
             self.cache.clear()
             self.current_bytes = 0
+
+    @profiler.profile
+    def discard_paths(self, paths) -> int:
+        targets = {p for p in paths if p}
+        if not targets:
+            return 0
+        with self._lock:
+            stale = []
+            for key in self.cache:
+                path = _key_path(key)
+                if path is not None and _is_within(path, targets):
+                    stale.append(key)
+            for key in stale:
+                self.current_bytes -= self._estimate_image_size(self.cache.pop(key))
+        return len(stale)
 
     def get(self, key, default=None):
         with self._lock:

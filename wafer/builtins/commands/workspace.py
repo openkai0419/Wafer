@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from ...app.viewer.workspace_launch import activate_workspace_window
 from ...qt.commands.bridge import ActionKit
 from ...qt.commands.command.require import require
+from ...core.lang.manager import t
 from ...core.platform.process import AppProcess
+from ...core.platform.workspace_lock import WorkspaceLock
 from ...core.store.workspace import (
     BarSpec,
     PathPreset,
@@ -245,15 +248,17 @@ def query_preset_overwrite(ctx, w, preset_id: str = ""):
 
 
 @require(w="MainWindow")
-def restore_slot(ctx, w, slot_id: str = ""):
-    slot = _store().get_slot(slot_id)
-    if not slot:
-        Notifier.warning("Workspace slot not found")
+def open_slot(ctx, w, slot_id: str = ""):
+    if not slot_id or slot_id == w.slot_id:
         return
-    if slot_id != getattr(w, "slot_id", ""):
-        w._save_slot()
-    w._restore_from_slot(slot)
-    Notifier.info("Workspace restored")
+    if _store().get_slot(slot_id) is None:
+        AppLogger.info(f"open_slot: unknown workspace {slot_id}")
+        return
+    if WorkspaceLock.open_slot_ids([slot_id]):
+        if not activate_workspace_window(slot_id):
+            AppLogger.info(f"open_slot: workspace is open but its window is not ready yet ({slot_id})")
+        return
+    AppProcess.new_main("--viewer", "--slot", slot_id)
 
 
 @require(w="MainWindow")
@@ -269,6 +274,11 @@ def rename_slot(ctx, w, slot_id: str = "", name: str = ""):
     if not new_name or new_name == slot.name:
         return
     if store.rename_slot(slot_id, new_name):
+        if slot_id == w.slot_id:
+            w._slot_entry.name = new_name
+            w._update_title()
+        else:
+            w._bridge.node.send("slot.renamed", {"slot_id": slot_id, "name": new_name}, dst="viewer")
         Notifier.info(f"Workspace slot renamed: {new_name}")
         AppLogger.info(f"workspace slot renamed: {new_name} ({slot_id})")
 
@@ -279,7 +289,12 @@ def delete_slot(ctx, w, slot_id: str = ""):
     if not store.get_slot(slot_id):
         Notifier.warning("Workspace slot not found")
         return
+    if WorkspaceLock.open_slot_ids([slot_id]):
+        AppLogger.info(f"workspace slot not deleted, it is open in a window: {slot_id}")
+        Notifier.info(t("Close this workspace's window before deleting it"))
+        return
     if store.forget_slot_snapshot(slot_id):
+        WorkspaceLock.delete_file_if_unused(slot_id)
         Notifier.info("Workspace slot removed from Recent")
         AppLogger.info(f"workspace slot snapshot removed: {slot_id}")
 
@@ -304,21 +319,20 @@ def show_recent_popup(ctx, tb):
     tb.show_recent_popup()
 
 
-def new_window(ctx):
-    try:
-        slot_id, _, existed = _store().reserve_next_window_slot()
-    except Exception as e:
-        AppLogger.warning(f"new_window: slot reservation failed, spawning viewer without slot: {e}", exc=e)
-        AppProcess.new_main("--viewer")
+def open_viewer(ctx):
+    w = ctx.get_instance("MainWindow")
+    if w is None:
+        AppProcess.new_main("--viewer", "--pick")
         return
-    try:
-        AppProcess.new_main("--viewer", "--slot", slot_id)
-    except Exception as e:
-        _store().release_slot(slot_id)
-        AppLogger.warning(f"new_window: failed to spawn reserved slot ({slot_id}): {e}", exc=e)
-        raise
-    state = "reused" if existed else "new"
-    AppLogger.info(f"new_window: spawned viewer with {state} slot ({slot_id})")
+    w._save_slot()
+    AppProcess.new_main("--viewer", "--pick", "--seed-slot", w.slot_id)
+
+
+@require(w="MainWindow")
+def new_workspace(ctx, w):
+    w._save_slot()
+    slot_id = _store().create_slot_from(w.slot_id)
+    AppProcess.new_main("--viewer", "--slot", slot_id)
 
 
 class WorkspaceCommands(ActionKit.MenuBase):
@@ -350,11 +364,17 @@ class WorkspaceCommands(ActionKit.MenuBase):
                 func=show_recent_popup,
             ),
             ActionKit.Command(
-                path="ws.restore_slot",
-                display="Restore Workspace Slot",
-                func=restore_slot,
+                path="ws.open_slot",
+                display="Open Workspace Slot",
+                func=open_slot,
                 hidden=True,
                 params=[ActionKit.Param(name="slot_id", value="")],
+            ),
+            ActionKit.Command(
+                path="ws.new_workspace",
+                display="New Workspace",
+                func=new_workspace,
+                hidden=True,
             ),
             ActionKit.Command(
                 path="ws.rename_slot",

@@ -1,5 +1,7 @@
 import json
+import os
 
+import psutil
 import pytest
 
 
@@ -182,3 +184,33 @@ class TestReadOwnerPid:
         lock_path.write_text("not json {", encoding="utf-8")
         lock_cls = self._patch_path(monkeypatch, lock_path)
         assert lock_cls.read_owner_pid("waiter") is None
+
+
+class TestIsHeld:
+    def lock_class(self, monkeypatch, lock_path):
+        from wafer.core.platform import process_lock as process_lock_mod
+
+        monkeypatch.setattr(process_lock_mod, "resolve_data_path", lambda _: str(lock_path))
+        return process_lock_mod.SafeProcessLock
+
+    def write_owner(self, lock_path, create_time_offset=0.0):
+        create_time = psutil.Process(os.getpid()).create_time() + create_time_offset
+        lock_path.write_text(json.dumps({"pid": os.getpid(), "create_time": create_time}), encoding="utf-8")
+
+    def test_a_live_owner_holds_the_lock(self, tmp_path, monkeypatch):
+        lock_path = tmp_path / "tray.lock"
+        self.write_owner(lock_path)
+        assert self.lock_class(monkeypatch, lock_path).is_held("tray") is True
+
+    def test_a_reused_pid_does_not_hold_the_lock(self, tmp_path, monkeypatch):
+        lock_path = tmp_path / "tray.lock"
+        self.write_owner(lock_path, create_time_offset=-100.0)
+        assert self.lock_class(monkeypatch, lock_path).is_held("tray") is False
+
+    def test_a_missing_lock_file_is_not_held(self, tmp_path, monkeypatch):
+        assert self.lock_class(monkeypatch, tmp_path / "absent.lock").is_held("absent") is False
+
+    def test_a_corrupt_lock_file_is_not_held(self, tmp_path, monkeypatch):
+        lock_path = tmp_path / "tray.lock"
+        lock_path.write_text("not json {", encoding="utf-8")
+        assert self.lock_class(monkeypatch, lock_path).is_held("tray") is False

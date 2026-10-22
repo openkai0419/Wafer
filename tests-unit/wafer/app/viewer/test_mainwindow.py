@@ -1,13 +1,17 @@
 from unittest.mock import ANY, MagicMock, call, patch
 
+from wafer.qt.common.dispatcher import CancelToken
+
 
 class TestUpdateTitle:
-    def _make_win(self, db_name="default", selected_paths=None):
+    def _make_win(self, db_name="default", selected_paths=None, slot_name=None):
         with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
             from wafer.app.viewer.mainwindow import MainWindow
+            from wafer.core.store.workspace import WindowSlot
 
             win = MainWindow.__new__(MainWindow)
             win.database_name = db_name
+            win._slot_entry = WindowSlot(slot_id="s1", name=slot_name) if slot_name is not None else None
             win.folder_view = MagicMock()
             win.folder_view.get_selected_paths.return_value = selected_paths or []
             win.setWindowTitle = MagicMock()
@@ -29,6 +33,43 @@ class TestUpdateTitle:
         win = self._make_win(db_name="", selected_paths=[])
         win._update_title()
         win.setWindowTitle.assert_called_once_with(APP_NAME)
+
+
+    def test_named_workspace_shows_name_only(self):
+        win = self._make_win(selected_paths=["/home/user/photos"], slot_name="Work")
+        win._update_title()
+        win.setWindowTitle.assert_called_once_with("Work")
+
+
+class TestSlotRenamed:
+    def _make_win(self, slot_id="s1", name="Old"):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+            from wafer.core.store.workspace import WindowSlot
+
+            win = MainWindow.__new__(MainWindow)
+            win.slot_id = slot_id
+            win._slot_entry = WindowSlot(slot_id=slot_id, name=name)
+            win._update_title = MagicMock()
+            return win
+
+    def test_slot_renamed_updates_own_title(self):
+        win = self._make_win()
+        win._on_slot_renamed("s1", "New")
+        assert win._slot_entry.name == "New"
+        win._update_title.assert_called_once_with()
+
+    def test_slot_renamed_ignores_other_slots(self):
+        win = self._make_win()
+        win._on_slot_renamed("s2", "New")
+        assert win._slot_entry.name == "Old"
+        win._update_title.assert_not_called()
+
+    def test_slot_renamed_before_slot_is_acquired_is_ignored(self):
+        win = self._make_win()
+        win._slot_entry = None
+        win._on_slot_renamed("s1", "New")
+        win._update_title.assert_not_called()
 
 
 class TestSearchResultDiffCheck:
@@ -58,6 +99,7 @@ class TestSearchResultDiffCheck:
         win = self._make_win(last_paths=paths)
         win._on_search_finished(paths, ["a.png", "b.png"], [1.0, 1.5])
         win.grid_view.set_paths.assert_not_called()
+        win.grid_view.layout_ready.emit.assert_called_once_with()
         win.search_row_widget.run_folder_worker.assert_called_once()
 
     def test_update_when_paths_changed(self):
@@ -120,21 +162,90 @@ class TestOnDbReloadFailed:
 
             win = MainWindow.__new__(MainWindow)
             win._db_reload_cancel = MagicMock()
+            win._db_reload_callbacks = []
             win._hide_loading = MagicMock()
             return win
 
     def test_runs_on_complete_after_failure(self):
         win = self._make_win()
         prompt = MagicMock()
+        win._db_reload_callbacks = [prompt]
         with patch("wafer.app.viewer.mainwindow.Notifier"):
-            win._on_db_reload_failed("db", RuntimeError("boom"), prompt)
+            win._on_db_reload_failed("db", RuntimeError("boom"), CancelToken())
         prompt.assert_called_once_with()
+        assert win._db_reload_callbacks == []
 
     def test_no_on_complete_is_safe(self):
         win = self._make_win()
         with patch("wafer.app.viewer.mainwindow.Notifier"):
-            win._on_db_reload_failed("db", RuntimeError("boom"))
+            win._on_db_reload_failed("db", RuntimeError("boom"), CancelToken())
         assert win._db_reload_cancel is None
+
+    def test_failure_of_a_superseded_reload_leaves_its_callbacks_to_the_newer_one(self):
+        win = self._make_win()
+        prompt = MagicMock()
+        win._db_reload_callbacks = [prompt]
+        cancel = CancelToken()
+        cancel.cancel()
+        with patch("wafer.app.viewer.mainwindow.Notifier") as notifier:
+            win._on_db_reload_failed("db", RuntimeError("boom"), cancel)
+        prompt.assert_not_called()
+        notifier.error.assert_not_called()
+        assert win._db_reload_callbacks == [prompt]
+
+
+class TestSupersededDbReload:
+    def _make_win(self):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            win._db_reload_cancel = None
+            win._db_reload_callbacks = []
+            win._dispatcher = MagicMock()
+            win.folder_view = MagicMock()
+            win.grid_overlay_host = MagicMock()
+            win.refresh_search = MagicMock()
+            win._check_folder_callout = MagicMock()
+            return win
+
+    def apply(self, win, call_index):
+        task = win._dispatcher.post.call_args_list[call_index].args[0]
+        with patch("wafer.app.viewer.mainwindow.SettingDB"):
+            task()
+        win._dispatcher.invoke.call_args_list[-1].args[0]()
+
+    def test_the_newer_reload_runs_the_callback_of_the_one_it_replaced(self):
+        win = self._make_win()
+        restore_done = MagicMock()
+        win._reload_db_async("a", on_complete=restore_done)
+        win._reload_db_async("b")
+        self.apply(win, 1)
+        restore_done.assert_called_once_with()
+        win.refresh_search.assert_called_once_with()
+        assert win._db_reload_callbacks == []
+
+    def test_a_reload_with_its_own_callback_does_not_search_by_itself(self):
+        win = self._make_win()
+        first, second = MagicMock(), MagicMock()
+        win._reload_db_async("a", on_complete=first)
+        win._reload_db_async("b", on_complete=second)
+        self.apply(win, 1)
+        first.assert_called_once_with()
+        second.assert_called_once_with()
+        win.refresh_search.assert_not_called()
+
+    def test_the_replaced_reload_finishing_late_does_nothing(self):
+        win = self._make_win()
+        restore_done = MagicMock()
+        win._reload_db_async("a", on_complete=restore_done)
+        with patch("wafer.app.viewer.mainwindow.SettingDB"):
+            win._dispatcher.post.call_args.args[0]()
+        win._reload_db_async("b")
+        win._dispatcher.invoke.call_args.args[0]()
+        restore_done.assert_not_called()
+        win.folder_view.set_folders.assert_not_called()
+        assert win._db_reload_callbacks == [restore_done]
 
 
 class TestReloadFolderList:
@@ -223,6 +334,31 @@ class TestPanelLayoutReset:
         assert result == 0
         win._layout_manager.reset_floating_positions.assert_called_once_with()
         win._save_slot.assert_not_called()
+
+
+class TestFilesChanged:
+    def _make_win(self):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            win.database_name = "mine"
+            win.grid_view = MagicMock()
+            win.file_viewer = MagicMock()
+            return win
+
+    def test_changes_of_this_database_reload_the_shown_files(self):
+        win = self._make_win()
+        win._on_files_changed("mine", {"modified": ["C:/a.png"], "removed": ["C:/b.png"]})
+        win.grid_view.image_cache.discard_paths.assert_called_once_with(["C:/a.png", "C:/b.png"])
+        win.grid_view.reload_paths.assert_called_once_with(["C:/a.png"])
+        win.file_viewer.reload_paths.assert_called_once_with(["C:/a.png"])
+
+    def test_changes_of_another_database_are_ignored(self):
+        win = self._make_win()
+        win._on_files_changed("other", {"modified": ["C:/a.png"], "removed": []})
+        win.grid_view.image_cache.discard_paths.assert_not_called()
+        win.grid_view.reload_paths.assert_not_called()
 
 
 class TestToggleShow:
@@ -371,3 +507,198 @@ class TestPanelPluginStartup:
 
         assert healthy_plugin.calls == 1
         warning.assert_called_once()
+
+
+class TestWorkspaceLock:
+    def _make_win(self):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            win._workspace_lock = MagicMock()
+            return win
+
+    def test_close_by_restart_releases_lock_before_spawning(self):
+        from wafer.app.lifecycle import CloseReason
+
+        win = self._make_win()
+        order = MagicMock()
+        win.slot_id = "s1"
+        win._save_slot = order._save_slot
+        win._workspace_lock = order.workspace_lock
+        win.close = MagicMock()
+
+        with patch("wafer.core.platform.process.AppProcess.new_main", order.new_main):
+            win.close_by_restart()
+
+        assert order.mock_calls == [
+            call._save_slot(),
+            call.workspace_lock.release(),
+            call.new_main("--viewer", "--slot", "s1"),
+        ]
+        assert win._close_reason == CloseReason.RESTART
+        win.close.assert_called_once_with()
+
+    def test_release_workspace_releases_the_lock(self):
+        win = self._make_win()
+        win.release_workspace()
+        win._workspace_lock.release.assert_called_once_with()
+
+    def test_a_window_needs_its_workspace_lock(self):
+        import inspect
+
+        from wafer.app.viewer.mainwindow import MainWindow
+
+        parameter = inspect.signature(MainWindow.__init__).parameters["workspace_lock"]
+        assert parameter.default is inspect.Parameter.empty
+        assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+
+    def test_slot_is_acquired_for_the_locked_workspace(self):
+        from wafer.core.store.workspace import WindowSlot
+
+        win = self._make_win()
+        entry = WindowSlot(slot_id="s1")
+        win._workspace_store = MagicMock()
+        win._workspace_store.acquire_slot.return_value = ("s1", entry)
+        win._dispatcher = MagicMock()
+        win._dispatcher.post.side_effect = lambda task, priority: task()
+        win._dispatcher.invoke.side_effect = lambda callback: callback()
+        win._on_slot_acquired = MagicMock()
+
+        win._acquire_slot_async("s1")
+
+        win._workspace_store.acquire_slot.assert_called_once_with("s1")
+        win._on_slot_acquired.assert_called_once_with("s1", entry)
+
+    def test_on_close_releases_lock_after_stopping_ipc(self):
+        from wafer.app.lifecycle import CloseReason
+
+        win = self._make_win()
+        order = MagicMock()
+        win._closed = False
+        win._folder_callout = None
+        win._close_reason = CloseReason.SHUTDOWN
+        win._save_slot = MagicMock()
+        win._layout_manager = MagicMock()
+        win._bridge = order.bridge
+        win._workspace_lock = order.workspace_lock
+
+        with patch("wafer.app.viewer.mainwindow.app_settings"), patch("wafer.app.viewer.mainwindow.t"):
+            win.on_close()
+
+        assert order.mock_calls == [call.bridge.stop(), call.workspace_lock.release()]
+
+    def test_window_handle_change_rewrites_the_lock_owner(self):
+        from PySide6 import QtCore, QtWidgets
+
+        win = self._make_win()
+        win.winId = MagicMock(return_value=77)
+
+        with patch.object(QtWidgets.QMainWindow, "event", return_value=True):
+            assert win.event(QtCore.QEvent(QtCore.QEvent.WinIdChange)) is True
+            win.event(QtCore.QEvent(QtCore.QEvent.LayoutRequest))
+
+        win._workspace_lock.set_window.assert_called_once_with(77)
+
+    def test_slot_acquired_always_restores_from_the_slot(self):
+        from wafer.core.store.workspace import WindowSlot
+
+        win = self._make_win()
+        win.start_ipc_listener = MagicMock()
+        win._update_title = MagicMock()
+        win.workspace_toolbar_widget = MagicMock()
+        win._restore_from_slot = MagicMock()
+        win.reload_database = MagicMock()
+        win._run_panel_plugin_startups = MagicMock()
+        entry = WindowSlot(slot_id="s1")
+        prompt = MagicMock()
+
+        with patch("wafer.app.startup.StartupTasks") as tasks:
+            tasks.return_value.run.side_effect = lambda on_ready: on_ready(prompt)
+            win._on_slot_acquired("s1", entry)
+
+        assert win.slot_id == "s1"
+        win._restore_from_slot.assert_called_once_with(entry, on_complete=ANY)
+        win.reload_database.assert_not_called()
+
+
+class TestOpenRequest:
+    def _make_win(self, database_name="a", open_request=None, slot_restored=True):
+        with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
+            from wafer.app.viewer.mainwindow import MainWindow
+
+            win = MainWindow.__new__(MainWindow)
+            win.database_name = database_name
+            win._open_request = open_request
+            win._slot_restored = slot_restored
+            win.reload_database = MagicMock()
+            win.refresh_search = MagicMock()
+            return win
+
+    def _acquire_slot(self, win, prompt):
+        from wafer.core.store.workspace import WindowSlot
+
+        win._workspace_lock = MagicMock()
+        win.start_ipc_listener = MagicMock()
+        win._update_title = MagicMock()
+        win.workspace_toolbar_widget = MagicMock()
+        win._run_panel_plugin_startups = MagicMock()
+        restored = []
+        win._restore_from_slot = lambda entry, on_complete: restored.append(on_complete)
+        with patch("wafer.app.startup.StartupTasks") as tasks:
+            tasks.return_value.run.side_effect = lambda on_ready: on_ready(prompt)
+            win._on_slot_acquired("s1", WindowSlot(slot_id="s1"))
+        return restored
+
+    def test_open_path_request_switches_database_first(self):
+        win = self._make_win(database_name="a")
+        with patch("wafer.app.viewer.mainwindow.Command") as command:
+            win.open_path_request("C:/x.png", "b")
+            win.reload_database.assert_called_once_with("b", on_complete=ANY)
+            command.invoke.assert_not_called()
+            win.reload_database.call_args.kwargs["on_complete"]()
+        win.refresh_search.assert_called_once_with()
+        command.invoke.assert_called_once_with("file.open_path", path="C:/x.png")
+
+    def test_open_path_request_in_current_database_opens_now(self):
+        for database_name in ("a", ""):
+            win = self._make_win(database_name="a")
+            with patch("wafer.app.viewer.mainwindow.Command") as command:
+                win.open_path_request("C:/x.png", database_name)
+            win.reload_database.assert_not_called()
+            command.invoke.assert_called_once_with("file.open_path", path="C:/x.png")
+
+    def test_open_path_request_waits_for_the_slot_restore(self):
+        from wafer.app.viewer.workspace_launch import OpenRequest
+
+        win = self._make_win(slot_restored=False, open_request=OpenRequest("C:/old.png", ""))
+        with patch("wafer.app.viewer.mainwindow.Command") as command:
+            win.open_path_request("C:/x.png", "b")
+        command.invoke.assert_not_called()
+        win.reload_database.assert_not_called()
+        assert win._open_request == OpenRequest("C:/x.png", "b")
+
+    def test_open_request_runs_once_after_the_slot_restore(self):
+        from wafer.app.viewer.workspace_launch import OpenRequest
+
+        win = self._make_win(slot_restored=False, open_request=OpenRequest("C:/x.png", "b"))
+        order = MagicMock()
+        win.open_path_request = order.open_path_request
+        restored = self._acquire_slot(win, order.prompt)
+        order.open_path_request.assert_not_called()
+
+        restored[0]()
+        restored[0]()
+
+        assert order.mock_calls == [call.open_path_request("C:/x.png", "b"), call.prompt(), call.prompt()]
+        assert win._open_request is None
+        assert win._slot_restored is True
+
+    def test_slot_restore_without_open_request_only_prompts(self):
+        win = self._make_win(slot_restored=False)
+        win.open_path_request = MagicMock()
+        prompt = MagicMock()
+        restored = self._acquire_slot(win, prompt)
+        restored[0]()
+        win.open_path_request.assert_not_called()
+        prompt.assert_called_once_with()

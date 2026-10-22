@@ -17,11 +17,14 @@ class ViewerIpcBridge(QtCore.QObject):
     slot_closed = QtCore.Signal(str)
     slot_restarted = QtCore.Signal(str)
     slot_shutdown = QtCore.Signal(str)
+    slot_renamed = QtCore.Signal(str, str)
+    open_path_requested = QtCore.Signal(str, str)
     app_shutdown = QtCore.Signal()
     db_created = QtCore.Signal(str)
     db_deleted = QtCore.Signal(str)
     remote_log_received = QtCore.Signal(str, str, str, str)
     tags_updated = QtCore.Signal(dict)
+    files_changed = QtCore.Signal(str, dict)
     settings_received = QtCore.Signal(dict)
 
     def __init__(self, node: Node, parent: QtCore.QObject | None = None):
@@ -57,11 +60,14 @@ class ViewerIpcBridge(QtCore.QObject):
         n.subscribe("slot.close", self._on_slot_close)
         n.subscribe("slot.restart", self._on_slot_restart)
         n.subscribe("slot.shutdown", self._on_slot_shutdown)
+        n.subscribe("slot.renamed", self._on_slot_renamed)
+        n.subscribe("slot.open_path", self._on_slot_open_path)
         n.subscribe("app.shutdown", self._on_app_shutdown)
         n.subscribe("db.created", self._on_db_created)
         n.subscribe("db.deleted", self._on_db_deleted)
         n.subscribe("dev.log", self._on_dev_log)
         n.subscribe("tags.updated", self._on_tags_updated)
+        n.subscribe("files.changed", self._on_files_changed)
         n.subscribe("settings.changed", self._on_settings_changed)
 
     def _invoke(self, slot: str, *args):
@@ -115,6 +121,24 @@ class ViewerIpcBridge(QtCore.QObject):
     def _on_slot_shutdown(self, msg):
         return self._invoke("_emit_slot_shutdown", QtCore.Q_ARG(str, str(msg.payload)))
 
+    def _on_slot_renamed(self, msg):
+        p = msg.payload if isinstance(msg.payload, dict) else {}
+        slot_id = p.get("slot_id")
+        if not isinstance(slot_id, str) or not slot_id:
+            return True
+        return self._invoke("_emit_slot_renamed", QtCore.Q_ARG(str, slot_id), QtCore.Q_ARG(str, str(p.get("name") or "")))
+
+    def _on_slot_open_path(self, msg):
+        p = msg.payload if isinstance(msg.payload, dict) else {}
+        if not self._node.session_id or p.get("slot_id") != self._node.session_id:
+            return True
+        path = p.get("path")
+        if not isinstance(path, str) or not path:
+            AppLogger.warning(f"[IPC] slot.open_path without a path: {msg.payload!r}")
+            return True
+        self._node.enqueue(msg.reply({"ok": True}))
+        return self._invoke("_emit_open_path_requested", QtCore.Q_ARG(str, path), QtCore.Q_ARG(str, str(p.get("database_name") or "")))
+
     def _on_app_shutdown(self, msg):
         return self._invoke("_emit_app_shutdown")
 
@@ -127,6 +151,11 @@ class ViewerIpcBridge(QtCore.QObject):
     def _on_tags_updated(self, msg):
         p = msg.payload if isinstance(msg.payload, dict) else {}
         self.tags_updated.emit(p)
+        return True
+
+    def _on_files_changed(self, msg):
+        p = msg.payload if isinstance(msg.payload, dict) else {}
+        self.files_changed.emit(msg.db or "", {"modified": list(p.get("modified") or ()), "removed": list(p.get("removed") or ())})
         return True
 
     def _on_settings_changed(self, msg):
@@ -183,6 +212,14 @@ class ViewerIpcBridge(QtCore.QObject):
     @QtCore.Slot(str)
     def _emit_slot_shutdown(self, slot_id: str):
         self.slot_shutdown.emit(slot_id)
+
+    @QtCore.Slot(str, str)
+    def _emit_slot_renamed(self, slot_id: str, name: str):
+        self.slot_renamed.emit(slot_id, name)
+
+    @QtCore.Slot(str, str)
+    def _emit_open_path_requested(self, path: str, database_name: str):
+        self.open_path_requested.emit(path, database_name)
 
     @QtCore.Slot()
     def _emit_app_shutdown(self):

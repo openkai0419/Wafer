@@ -15,6 +15,14 @@ from wafer.app.indexer.receivers.collector_receiver import _parse_batch
 from test_support.scan_harness import ScanHarness
 
 
+def _claim_workspace(store, tmp_path):
+    from wafer.core.platform.workspace_lock import WorkspaceLock
+    from wafer.core.store.workspace import WindowSlot
+
+    store.save_slot(WindowSlot(slot_id=tmp_path.name))
+    return WorkspaceLock.acquire(tmp_path.name)
+
+
 def _create_test_image(path, width=200, height=150, fmt="JPEG"):
     Image.new("RGB", (width, height), color=(100, 150, 200)).save(str(path), format=fmt)
 
@@ -149,7 +157,7 @@ class TestSmokeViewer:
                 with patch("wafer.core.logs.AppLogger.set_node"):
                     from wafer.app.viewer.mainwindow import MainWindow
 
-                    win = MainWindow(icon=None, slot_id=None)
+                    win = MainWindow(icon=None, workspace_lock=_claim_workspace(store, tmp_path))
                     qtbot.addWidget(win)
                     win.show()
 
@@ -216,7 +224,7 @@ class TestSmokeViewer:
                 with patch("wafer.core.logs.AppLogger.set_node"):
                     from wafer.app.viewer.mainwindow import MainWindow
 
-                    win = MainWindow(icon=None, slot_id=None)
+                    win = MainWindow(icon=None, workspace_lock=_claim_workspace(store, tmp_path))
                     qtbot.addWidget(win)
 
                     win.database_path = db_path

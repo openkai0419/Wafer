@@ -239,7 +239,7 @@ def test_map_reads_only_the_space_and_feature_keys(qtbot, space_data):
     w.close()
 
 
-def test_fetch_failure_shows_error(qtbot, monkeypatch):
+def test_fetch_failure_shows_error(qtbot, space_data, monkeypatch):
     def fail(db, ps, keys=None):
         raise OSError("boom")
 

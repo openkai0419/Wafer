@@ -1,8 +1,11 @@
+import sys
+
 from PySide6 import QtWidgets
 
 from ...qt.commands.bridge import ActionKit, UI
 from ...plugin.grid.handler import grid_resolver, VIEWER_THUMBNAIL_DEFAULT_SIZE
 from ...core.common.paths import resolve_data_path
+from ...core.platform import explorer_menu
 from ...core.platform.folders import show_in_explorer
 from ...core.store.settings import app_settings
 from ...qt.common.notifier import Notifier
@@ -52,6 +55,15 @@ def toggle_language(ctx):
     Notifier.info(f"Language set to '{new_locale}'. Restart to apply.")
 
 
+def toggle_explorer_menu(ctx):
+    if sys.platform != "win32":
+        return
+    if explorer_menu.is_enabled():
+        explorer_menu.disable()
+    else:
+        explorer_menu.enable(explorer_menu.launch_command())
+
+
 class SettingCommands(ActionKit.MenuBase):
     NAME = ActionKit.MenuPath.SETTING
     PRIORITY = 90
@@ -66,6 +78,13 @@ class SettingCommands(ActionKit.MenuBase):
                 func=set_viewer_thumbnail_default_size,
             ),
             ActionKit.Command(path="setting.toggle_language", display="Toggle Language", func=toggle_language),
+            ActionKit.Command(
+                path="setting.explorer_menu",
+                display="Explorer Menu",
+                func=toggle_explorer_menu,
+                checked=explorer_menu.is_enabled,
+                hidden=sys.platform != "win32",
+            ),
             "-",
             ":Binding",
             ActionKit.Command(

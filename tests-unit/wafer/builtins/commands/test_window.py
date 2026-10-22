@@ -98,6 +98,23 @@ class TestRestartAllPendingInstall:
         win.close.assert_called_once_with()
         win.close_by_restart.assert_not_called()
 
+    def test_force_path_releases_the_workspace_before_spawning_the_root(self, monkeypatch):
+        store = MagicMock()
+        store.get_active_slot_ids.return_value = ["s1"]
+        self._patch_common(monkeypatch, store, pending=True)
+        monkeypatch.setattr(window_commands.AppProcess, "get_by_args_subset", staticmethod(lambda *a: []))
+
+        calls = []
+        monkeypatch.setattr(window_commands.AppProcess, "force_close_all", staticmethod(lambda: calls.append("force")))
+        monkeypatch.setattr(window_commands.AppProcess, "new_main", staticmethod(lambda *a: calls.append(("new_main", a))))
+
+        win = MagicMock()
+        win.release_workspace.side_effect = lambda: calls.append("release")
+        win.close.side_effect = lambda: calls.append("close")
+        window_commands.restart_all(_Ctx(MainWindow=win))
+
+        assert calls == ["force", "release", ("new_main", ()), "close"]
+
     def test_no_pending_uses_system_restart(self, monkeypatch):
         store = MagicMock()
         monkeypatch.setattr(window_commands, "WorkspaceStore", MagicMock(instance=staticmethod(lambda: store)))

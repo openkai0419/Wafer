@@ -3,7 +3,8 @@ import sys
 
 import pytest
 
-from wafer.plugin.loader import _import_extension, _discover_plugins, get_plugin_dir, qualify_plugin_name
+from wafer.core.common.paths import get_plugin_dir
+from wafer.plugin.loader import _import_extension, _discover_plugins, qualify_plugin_name
 from wafer.plugin.registry import PluginBase
 
 

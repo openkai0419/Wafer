@@ -12,10 +12,11 @@ from ...qt.transfer.copy import ClipboardFileTransfer
 from ...qt.transfer.paste import paste_clipboard_files, execute_paste_plans_with_ui
 from ...core.platform.path_utils import unique_path, get_os_new_folder_name, validate_filename
 from ...core.platform.file_operations import PastePlanItem, delete_to_trash
-from ...core.platform.folders import show_in_explorer as reveal_in_explorer, open_file as platform_open_file, make_directory
+from ...core.platform.folders import show_in_explorer as reveal_in_explorer, open_file as platform_open_file, open_with as platform_open_with, make_directory
 from ...core.logs import AppLogger
 from ...qt.common.notifier import Notifier
-from ...core.common.paths import containing_dir
+from ...core.common.paths import containing_dir, normalize_path
+from ...app.viewer.path_reveal import scroll_grid_to_path
 from ...core.common.virtual_paths import is_virtual_path
 from ...qt.common.dispatcher import Dispatcher
 from ...qt.common.thread import SimpleThreadPool
@@ -76,6 +77,14 @@ def open_file(ctx):
     if not path:
         return
     platform_open_file(path)
+
+
+def open_with(ctx, program: str = ""):
+    paths = _ctx_sources(ctx)
+    if not paths:
+        return
+    if not platform_open_with(program, paths):
+        Notifier.warning(f"Could not open with {os.path.basename(program) or 'the program'}")
 
 
 def show_in_explorer(ctx, show_first_if_folder: bool = False):
@@ -206,14 +215,7 @@ def scroll_to_file(ctx, items, view):
     path = _ctx_path(ctx)
     if not path:
         return
-    idx = items.index_of_path(path)
-    if idx is None:
-        Notifier.info("File not found in view")
-        return
-    if idx >= len(view.rects):
-        Notifier.info("File out of visible area")
-        return
-    view.scroll_to_index(idx, animated=True)
+    scroll_grid_to_path(items, view, path)
 
 
 @require(provider="FileListProvider")
@@ -222,6 +224,15 @@ def show_file(ctx, provider):
     if not path:
         return
     provider.on_file_set(path)
+
+
+@require(w="MainWindow")
+def open_path(ctx, w, path: str = "", select_folder: bool = False, scroll_grid: bool = False, show_viewer: bool = True):
+    path = path.strip().strip("\"'").strip()
+    if not path:
+        Notifier.warning("No path to open")
+        return
+    w.path_revealer.reveal(normalize_path(path), select_folder=bool(select_folder), scroll_grid=bool(scroll_grid), show_viewer=bool(show_viewer))
 
 
 def make_new_folder_here(ctx, folder_name: str | None = None) -> str | None:
@@ -381,6 +392,12 @@ class FileCommands(ActionKit.MenuBase):
             ":File",
             ActionKit.Command(path="file.open", display="Open File", func=open_file),
             ActionKit.Command(
+                path="file.open_with",
+                display="Open File With",
+                params=[ActionKit.Param(name="program", value="", description="Program", required=True, widget_type="file")],
+                func=open_with,
+            ),
+            ActionKit.Command(
                 path="file.show_explorer",
                 display="Reveal in Explorer",
                 params=[
@@ -393,6 +410,18 @@ class FileCommands(ActionKit.MenuBase):
                 func=show_in_explorer,
             ),
             ActionKit.Command(path="file.shell_context_menu", display="Shell Context Menu", func=shell_context_menu),
+            "-",
+            ActionKit.Command(
+                path="file.open_path",
+                display="Show From Path",
+                params=[
+                    ActionKit.Param(name="path", value="", description="File path", required=True, persist=False),
+                    ActionKit.Param(name="select_folder", value=False, description="Select its folder"),
+                    ActionKit.Param(name="scroll_grid", value=False, description="Scroll the grid to it"),
+                    ActionKit.Param(name="show_viewer", value=True, description="Show in the viewer"),
+                ],
+                func=open_path,
+            ),
             "-",
             ActionKit.Command(path="file.copy_path", display="Copy Path(s)", func=copy_path),
             ActionKit.Command(path="file.copy_filename", display="Copy FileName(s)", func=copy_filename),

@@ -7,10 +7,15 @@ import pytest
 from wafer.constants import APP_DATA_DIR_NAME
 from wafer.core.common.paths import (
     containing_dir,
+    data_db_path,
+    get_app_root_dir,
+    get_plugin_dir,
     list_files,
     normalize_path,
     resolve_cache_path,
+    resolve_config_path,
     resolve_temp_path,
+    setting_db_path,
     safe_exists,
     safe_getsize,
     safe_is_dir,
@@ -136,6 +141,13 @@ def test_resolve_temp_path_uses_app_temp_dir(monkeypatch):
     assert result.endswith(f"/wafer-data/{APP_DATA_DIR_NAME}/.temp/comfyui_workflows/abc.json")
 
 
+def test_tests_never_touch_the_real_app_data():
+    from test_support.app_data import REAL_APP_DATA_DIR
+
+    for path in (setting_db_path("db"), data_db_path("db"), resolve_config_path("x.ini"), resolve_temp_path("x")):
+        assert not Path(path).is_relative_to(REAL_APP_DATA_DIR)
+
+
 def test_get_name_without_ext():
     assert stem("/path/to/file.txt") == "file"
     assert stem("image.png") == "image"
@@ -171,3 +183,9 @@ def test_list_files_no_match(tmp_path):
 def test_list_files_extension_is_case_insensitive(tmp_path):
     (tmp_path / "upper.TXT").write_text("x")
     assert len(list_files(str(tmp_path), ".txt")) == 1
+
+
+def test_plugin_dir_is_the_extensions_folder_next_to_wafer():
+    plugin_dir = get_plugin_dir()
+    assert os.path.normcase(plugin_dir) == os.path.normcase(str(get_app_root_dir() / "extensions"))
+    assert os.path.isfile(os.path.join(plugin_dir, "image", "__init__.py"))

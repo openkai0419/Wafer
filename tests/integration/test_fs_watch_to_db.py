@@ -206,6 +206,70 @@ class TestFsWatchToDb:
             scheduler.stop()
             writer.close()
 
+    @pytest.mark.skipif(os.name != "nt", reason="ReplaceFileW is Windows only")
+    def test_safe_save_with_replacefile_keeps_file_and_mark(self, tmp_path):
+        import ctypes
+
+        img_dir = tmp_path / "watched"
+        img_dir.mkdir()
+        target = img_dir / "edited.png"
+        temp = img_dir / "edited.tmp"
+        _create_test_image(target, 100, 80, fmt="PNG")
+
+        db_path, writer, scheduler, scanner, watcher = _build_watcher_stack(tmp_path)
+        scheduler.start()
+        scanner.start()
+        try:
+            watcher.start([str(img_dir)])
+            norm = normalize_path(str(target))
+            size_of = lambda: writer.db.read_conn.execute("SELECT size FROM sources WHERE source=?", (norm,)).fetchone()
+            assert _wait_for_condition(lambda: size_of() is not None)
+            writer.db.apply_user_meta_info([norm], [("mark.1", "1", None, 1)], [])
+
+            _create_test_image(temp, 300, 200, fmt="PNG")
+            assert ctypes.windll.kernel32.ReplaceFileW(str(target), str(temp), None, 0, None, None)
+            new_size = os.path.getsize(target)
+
+            assert _wait_for_condition(lambda: size_of() == (new_size,), timeout=20.0)
+            assert _wait_for_condition(lambda: scheduler_drained(scheduler))
+            assert _sources(writer.db) == [norm]
+            row = writer.db.read_conn.execute("SELECT value FROM meta_info WHERE path=? AND key='mark.1'", (norm,)).fetchone()
+            assert row == ("1",)
+        finally:
+            watcher.stop()
+            scanner.stop()
+            scheduler.stop()
+            writer.close()
+
+    def test_renumbering_files_keeps_rows_and_marks_with_them(self, tmp_path):
+        img_dir = tmp_path / "watched"
+        img_dir.mkdir()
+        for i, width in ((1, 100), (2, 200), (3, 300)):
+            _create_test_image(img_dir / f"{i}.png", width, 80, fmt="PNG")
+
+        db_path, writer, scheduler, scanner, watcher = _build_watcher_stack(tmp_path)
+        scheduler.start()
+        scanner.start()
+        try:
+            watcher.start([str(img_dir)])
+            assert _wait_for_condition(lambda: len(_sources(writer.db)) == 3)
+            first = normalize_path(str(img_dir / "1.png"))
+            writer.db.apply_user_meta_info([first], [("mark.1", "1", None, 1)], [])
+
+            for i in (3, 2, 1):
+                os.rename(img_dir / f"{i}.png", img_dir / f"{i + 1}.png")
+
+            expected = [normalize_path(str(img_dir / f"{i}.png")) for i in (2, 3, 4)]
+            assert _wait_for_condition(lambda: _sources(writer.db) == expected, timeout=20.0)
+            assert _wait_for_condition(lambda: scheduler_drained(scheduler))
+            marked = writer.db.read_conn.execute("SELECT path FROM meta_info WHERE key='mark.1'").fetchall()
+            assert marked == [(expected[0],)]
+        finally:
+            watcher.stop()
+            scanner.stop()
+            scheduler.stop()
+            writer.close()
+
     def test_directory_rename_inside_watched_root_tracked(self, tmp_path):
         img_dir = tmp_path / "watched"
         img_dir.mkdir()
@@ -313,6 +377,46 @@ class TestFsWatchToDb:
                 return row[0] != old_mtime or row[1] != old_size
 
             assert _wait_for_condition(modification_detected, timeout=20.0)
+        finally:
+            watcher.stop()
+            scanner.stop()
+            scheduler.stop()
+            writer.close()
+
+    def test_viewers_are_told_which_files_changed(self, tmp_path):
+        img_dir = tmp_path / "watched"
+        img_dir.mkdir()
+        edited, deleted, renamed = img_dir / "edited.png", img_dir / "deleted.png", img_dir / "old.png"
+        for path in (edited, deleted, renamed):
+            _create_test_image(path, 100, 80, fmt="PNG")
+
+        db_path, writer, scheduler, scanner, watcher = _build_watcher_stack(tmp_path)
+        node = scanner._progress._node
+        scheduler.start()
+        scanner.start()
+
+        def changes():
+            merged = {"modified": set(), "removed": set()}
+            for method, args, _kw in node.sent:
+                if method == "send" and args[0] == "files.changed":
+                    for kind in merged:
+                        merged[kind].update(args[1][kind])
+            return merged
+
+        try:
+            watcher.start([str(img_dir)])
+            assert _wait_for_condition(lambda: _source_count(writer.db) == 3)
+            assert _wait_for_condition(lambda: scheduler_drained(scheduler))
+
+            _create_test_image(edited, 300, 200, fmt="PNG")
+            deleted.unlink()
+            renamed.rename(img_dir / "new.png")
+
+            expected = {
+                "modified": {normalize_path(str(edited)), normalize_path(str(img_dir / "new.png"))},
+                "removed": {normalize_path(str(deleted)), normalize_path(str(renamed))},
+            }
+            assert _wait_for_condition(lambda: all(expected[k] <= changes()[k] for k in expected), timeout=20.0), changes()
         finally:
             watcher.stop()
             scanner.stop()

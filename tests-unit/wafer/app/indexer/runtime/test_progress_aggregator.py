@@ -87,3 +87,13 @@ def test_send_event_uses_coalesced():
     assert args == ("update", "")
     assert kwargs["dst"] == "viewer"
     assert kwargs["db"] == "testdb"
+
+
+def test_send_files_changed_sends_paths_without_coalescing():
+    node = _StubNode()
+    p = ProgressAggregator("testdb", node)
+
+    p.send_files_changed(modified=["C:/a.png"], removed=("C:/b.png",))
+    p.send_files_changed()
+
+    assert node.sent == [("send", ("files.changed", {"modified": ["C:/a.png"], "removed": ["C:/b.png"]}), {"dst": "viewer", "db": "testdb"})]

@@ -10,7 +10,7 @@ COMMAND_MENU_MARKER = "__CommandMenuBuilder_Menu__"
 
 
 class CommandParam:
-    __slots__ = ("choices", "choices_fn", "default", "description", "max_value", "min_value", "name", "required", "type", "widget_type")
+    __slots__ = ("choices", "choices_fn", "default", "description", "max_value", "min_value", "name", "persist", "required", "type", "widget_type")
 
     def __init__(
         self,
@@ -20,6 +20,7 @@ class CommandParam:
         description: str = "",
         default: Any = inspect._empty,
         required: bool = False,
+        persist: bool = True,
         min_value: Any | None = None,
         max_value: Any | None = None,
         widget_type: str = "auto",
@@ -47,6 +48,7 @@ class CommandParam:
         self.name = name
         self.description = description
         self.required = required
+        self.persist = persist
         self.min_value = min_value
         self.max_value = max_value
         self.widget_type = widget_type
@@ -260,6 +262,11 @@ def validate_command_args(meta: CommandMeta, args: dict[str, Any], *, require_al
             raise ValueError(f"Arg '{name}' for '{meta.id}': {value} < min {p.min_value}")
         if p.max_value is not None and value > p.max_value:
             raise ValueError(f"Arg '{name}' for '{meta.id}': {value} > max {p.max_value}")
+
+
+def persistent_args(meta: CommandMeta, args: Mapping[str, Any]) -> dict[str, Any]:
+    persisted = {p.name for p in (meta.params or []) if p.persist}
+    return {k: v for k, v in args.items() if k in persisted}
 
 
 def _build_args(meta: CommandMeta, kwargs: dict[str, Any]) -> dict[str, Any]:

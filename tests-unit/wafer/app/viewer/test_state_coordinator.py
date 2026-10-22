@@ -99,6 +99,16 @@ class TestPathStateCoordinator:
         PathStateCoordinator(w).restore("bad", on_complete=cb)  # type: ignore[arg-type]
         cb.assert_called_once()
 
+    def test_restore_keeps_folders_of_a_database_switched_to_meanwhile(self):
+        w = _make_window()
+        cb = MagicMock()
+        PathStateCoordinator(w).restore({"database_name": "other", "expanded": ["/x"], "selected": ["/x/y"]}, on_complete=cb)
+        apply_folders = w.reload_database.call_args.kwargs["on_complete"]
+        w.database_name = "third"
+        apply_folders()
+        w.folder_view.set_state_async.assert_not_called()
+        cb.assert_called_once_with()
+
 
 class TestQueryStateCoordinator:
     def test_capture_persists_query_options(self):

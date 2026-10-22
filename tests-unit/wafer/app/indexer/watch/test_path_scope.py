@@ -1,4 +1,5 @@
-from wafer.app.indexer.watch.path_scope import compile_ignore_patterns, contains_path_prefix, normalize_prefixes
+from wafer.app.indexer.watch.path_scope import contains_path_prefix, normalize_prefixes
+from wafer.core.db.path_scope import compile_ignore_patterns
 from wafer.core.common.paths import normalize_path
 
 

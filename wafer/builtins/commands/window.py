@@ -5,10 +5,10 @@ from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...core.platform.process import AppProcess
 from ...core.store.workspace import WorkspaceStore
 from ...plugin import installer_queue
-from ...plugin.loader import get_plugin_dir
+from ...core.common.paths import get_plugin_dir
 from ...core.logs import AppLogger
 from ...qt.common.notifier import Notifier
-from .workspace import new_window
+from .workspace import open_viewer
 
 
 def _win(ctx):
@@ -108,6 +108,8 @@ def _shutdown_all(ctx, *, then_restart):
     AppLogger.info(f"shutdown_all(restart={then_restart}): tray unreachable, force-terminating all app processes")
     webui_running = bool(AppProcess.get_by_args_subset("--webui"))
     AppProcess.force_close_all()
+    if hasattr(w, "release_workspace"):
+        w.release_workspace()
     if then_restart:
         if webui_running:
             WorkspaceStore.instance().set_restore_webui(True)
@@ -153,7 +155,7 @@ class WindowRestartCommands(ActionKit.MenuBase):
     def commands(cls):
         return [
             ":Process",
-            ActionKit.Command(path="win.new_window", display="New Window", func=new_window),
+            ActionKit.Command(path="ws.open_viewer", display="Open Viewer", func=open_viewer),
             ActionKit.Command(path="webui.open", display="Open WebUI", func=open_webui),
             "-",
             ":Restart",

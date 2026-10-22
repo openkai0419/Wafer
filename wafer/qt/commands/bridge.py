@@ -284,18 +284,16 @@ class Command:
 
     @staticmethod
     def set_args(command_id: str, args: dict, *, commit: bool = True) -> None:
-        from .command.core import validate_command_args
+        from .command.core import persistent_args, validate_command_args
 
         reg = Command._registry()
         cmd_class = reg.get_command(str(command_id))
         if cmd_class is None:
             raise ValueError(f"Command not found: {command_id}")
         validate_command_args(cmd_class.meta, args)
-        param_names = {p.name for p in (cmd_class.meta.params or [])}
         store = CommandOptionStore.instance()
         current = store.get(str(command_id))
-        merged = {k: v for k, v in (current.args or {}).items() if k in param_names}
-        merged.update(args)
+        merged = persistent_args(cmd_class.meta, {**(current.args or {}), **args})
         store.set(str(command_id), merged)
         if commit:
             store.commit()

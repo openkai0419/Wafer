@@ -156,7 +156,7 @@ def open_with(program: str, paths: list[str]) -> bool:
     if not targets:
         return False
     if not program or not os.path.isfile(program):
-        AppLogger.warning(f"[open_with] program not found: {program!r}. Set the program in the Open With options.")
+        AppLogger.warning(f"[open_with] program not found: {program!r}. Set the program in the Open File With options.")
         return False
     command = [program, *targets]
     if program.lower().endswith(_BATCH_SUFFIXES):

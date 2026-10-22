@@ -388,6 +388,12 @@ class FileCommands(ActionKit.MenuBase):
             ":File",
             ActionKit.Command(path="file.open", display="Open File", func=open_file),
             ActionKit.Command(
+                path="file.open_with",
+                display="Open File With",
+                params=[ActionKit.Param(name="program", value="", description="Program", required=True, widget_type="file")],
+                func=open_with,
+            ),
+            ActionKit.Command(
                 path="file.show_explorer",
                 display="Reveal in Explorer",
                 params=[
@@ -403,7 +409,7 @@ class FileCommands(ActionKit.MenuBase):
             "-",
             ActionKit.Command(
                 path="file.open_path",
-                display="Open Path",
+                display="Show From Path",
                 params=[
                     ActionKit.Param(name="path", value="", description="File path", required=True, persist=False),
                     ActionKit.Param(name="select_folder", value=False, description="Select its folder"),
@@ -411,12 +417,6 @@ class FileCommands(ActionKit.MenuBase):
                     ActionKit.Param(name="show_viewer", value=True, description="Show in the viewer"),
                 ],
                 func=open_path,
-            ),
-            ActionKit.Command(
-                path="file.open_with",
-                display="Open With",
-                params=[ActionKit.Param(name="program", value="", description="Program", required=True, widget_type="file")],
-                func=open_with,
             ),
             "-",
             ActionKit.Command(path="file.copy_path", display="Copy Path(s)", func=copy_path),

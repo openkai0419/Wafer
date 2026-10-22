@@ -228,6 +228,10 @@ def show_file(ctx, provider):
 
 @require(w="MainWindow")
 def open_path(ctx, w, path: str = "", select_folder: bool = False, scroll_grid: bool = False, show_viewer: bool = True):
+    path = path.strip().strip("\"'").strip()
+    if not path:
+        Notifier.warning("No path to open")
+        return
     w.path_revealer.reveal(normalize_path(path), select_folder=bool(select_folder), scroll_grid=bool(scroll_grid), show_viewer=bool(show_viewer))
 
 

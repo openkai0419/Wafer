@@ -327,6 +327,25 @@ def test_open_path_reveals_the_normalized_path():
     window.path_revealer.reveal.assert_called_once_with("F:/p/sub/a.png", select_folder=True, scroll_grid=True, show_viewer=False)
 
 
+def test_open_path_accepts_a_pasted_quoted_path():
+    window = MagicMock()
+
+    file_mod.open_path(_WindowCtx(window), path=' "f:\\p\\a b.png" \n', select_folder=False, scroll_grid=False, show_viewer=True)
+
+    window.path_revealer.reveal.assert_called_once_with("F:/p/a b.png", select_folder=False, scroll_grid=False, show_viewer=True)
+
+
+def test_open_path_with_only_quotes_or_spaces_reveals_nothing(monkeypatch):
+    window = MagicMock()
+    warnings = []
+    monkeypatch.setattr(file_mod.Notifier, "warning", staticmethod(lambda message: warnings.append(message)))
+
+    file_mod.open_path(_WindowCtx(window), path=' "" ')
+
+    window.path_revealer.reveal.assert_not_called()
+    assert warnings == ["No path to open"]
+
+
 def test_open_path_without_path_asks_for_it(option_store, monkeypatch):
     asked = []
     monkeypatch.setattr(Command, "_show_options_for_required", staticmethod(lambda command_id, *a, **k: asked.append(command_id)))

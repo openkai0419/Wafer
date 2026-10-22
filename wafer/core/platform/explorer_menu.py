@@ -1,3 +1,4 @@
+import re
 import sys
 from pathlib import Path
 
@@ -76,9 +77,17 @@ def disable(key: str = MENU_KEY) -> None:
         delete_key_tree(key)
 
 
+def command_files_exist(command: str) -> bool:
+    files = [arg for arg in re.findall(r'"([^"]*)"', command) if arg != "%1"]
+    return bool(files) and all(Path(f).is_file() for f in files)
+
+
 def sync(key: str = MENU_KEY) -> None:
     if not is_enabled(key):
         return
+    stored = stored_command(key)
+    if stored and command_files_exist(stored):
+        return
     command = launch_command()
-    if command and stored_command(key) != command:
+    if command and stored != command:
         enable(command, key)

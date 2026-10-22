@@ -86,14 +86,41 @@ def test_disable_removes_subkeys_added_by_others_and_nothing_else(test_key):
     assert explorer_menu.key_exists(sibling)
 
 
-def test_sync_rewrites_moved_command(test_key, monkeypatch):
+def test_sync_rewrites_a_command_whose_files_are_gone(test_key, monkeypatch, tmp_path):
     from wafer.core.platform import explorer_menu
 
-    explorer_menu.enable("old", test_key)
+    python = tmp_path / "pythonw.exe"
+    python.touch()
+    explorer_menu.enable(f'"{python}" "{tmp_path / "moved" / "main.py"}" "%1"', test_key)
     monkeypatch.setattr(explorer_menu, "launch_command", lambda: "new")
     explorer_menu.sync(test_key)
     assert read_value(test_key + r"\command") == "new"
     assert read_value(test_key, "MultiSelectModel") == "Single"
+
+
+def test_sync_keeps_a_command_that_still_works(test_key, monkeypatch, tmp_path):
+    from wafer.core.platform import explorer_menu
+
+    python = tmp_path / "pythonw.exe"
+    script = tmp_path / "main.py"
+    python.touch()
+    script.touch()
+    registered = f'"{python}" "{script}" "%1"'
+    explorer_menu.enable(registered, test_key)
+    monkeypatch.setattr(explorer_menu, "launch_command", lambda: "other checkout")
+    explorer_menu.sync(test_key)
+    assert read_value(test_key + r"\command") == registered
+
+
+def test_sync_rewrites_a_key_without_command(test_key, monkeypatch):
+    import winreg
+
+    from wafer.core.platform import explorer_menu
+
+    winreg.CloseKey(winreg.CreateKey(winreg.HKEY_CURRENT_USER, test_key))
+    monkeypatch.setattr(explorer_menu, "launch_command", lambda: "new")
+    explorer_menu.sync(test_key)
+    assert read_value(test_key + r"\command") == "new"
 
 
 def test_sync_leaves_disabled_alone(test_key, monkeypatch):

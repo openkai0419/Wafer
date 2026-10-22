@@ -1,4 +1,5 @@
 import atexit
+import gc
 import json
 import os
 import sys
@@ -52,6 +53,14 @@ if _vendored_in_path:
     for _p in _vendored_in_path:
         sys.path.insert(0, _p)
 
+# Automatic GC can run on a worker thread and destroy a Qt object left over from an earlier
+# test there, deadlocking on the GIL and Qt's signal lock. Collect on the main thread instead,
+# between tests and with the same thresholds as automatic GC; freezing what is loaded and
+# collected keeps full collections cheap.
+gc.freeze()
+gc.disable()
+
+
 def _drain_pool(pool, timeout_ms=1000):
     pool.clear()
     pool.waitForDone(timeout_ms)
@@ -86,6 +95,16 @@ def _close_qt_widgets_after_test():
     except Exception as e:
         _record_cleanup_error("process qt events after test", e)
     try:
+        from wafer.qt.common.rate_limit import _qt_throttle_manager, qt_debounce_manager
+
+        for key in list(qt_debounce_manager._timers):
+            qt_debounce_manager.cancel(key)
+        for _last_call, idle_timer, _pending in _qt_throttle_manager._states.values():
+            idle_timer.stop()
+        _qt_throttle_manager._states.clear()
+    except Exception as e:
+        _record_cleanup_error("cancel pending debounced calls after test", e)
+    try:
         from extensions.animated._common import _driver, _viewer_driver
 
         if _driver is not None:
@@ -104,6 +123,19 @@ def _close_qt_widgets_after_test():
             app.processEvents()
     except Exception as e:
         _record_cleanup_error("process qt events after driver reset", e)
+
+
+def pytest_collection_finish(session):
+    gc.collect()
+    gc.freeze()
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    yield
+    (threshold0, threshold1, threshold2), (count0, count1, count2) = gc.get_threshold(), gc.get_count()
+    if count0 > threshold0:
+        gc.collect(2 if count2 > threshold2 else 1 if count1 > threshold1 else 0)
 
 
 @pytest.fixture(autouse=True, scope="session")

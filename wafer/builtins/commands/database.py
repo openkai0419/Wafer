@@ -1,7 +1,8 @@
 from ...qt.commands.bridge import ActionKit
 from ...qt.commands.command.require import require
 from ...core.lang.manager import t
-from ...core.common.paths import list_setting_db_names
+from ...core.common.paths import list_setting_db_names, setting_db_path
+from ...core.db.setting_db import SettingDB
 from ...core.logs import AppLogger
 from ...core.platform.process import AppProcess
 from ...qt.widgets.dialogs import ConfirmDialog, InputDialog
@@ -39,6 +40,13 @@ def set_database(ctx, w, name: str = ""):
     w.reload_database(name)
 
 
+def create_database(name: str) -> None:
+    from ...plugin.settings import PluginSettings
+
+    SettingDB(setting_db_path(name)).set_enabled_collectors(PluginSettings().resolve_default_collectors())
+    AppProcess.start_indexer(name)
+
+
 @require(w="MainWindow")
 def add_database(ctx, w):
     text = InputDialog.get_text(
@@ -53,7 +61,7 @@ def add_database(ctx, w):
     AppLogger.info(f"[add_database] {text}")
     if not text or text in list_setting_db_names():
         return
-    AppProcess.new_main("--indexer", text)
+    create_database(text)
     w.database_combo.addItem(text)
     w.database_combo.setCurrentText(text)
     w.reload_database(text)

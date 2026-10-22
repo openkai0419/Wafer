@@ -345,6 +345,28 @@ class TestEnsureTray:
         assert TRAY_LOCK_NAME == f"{APP_DATA_DIR_NAME}_tray"
 
 
+class TestStartIndexer:
+    @pytest.fixture
+    def spawned(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(AppProcess, "new_main", staticmethod(lambda *args: calls.append(args) or "proc"))
+        return calls
+
+    def test_the_tray_that_holds_the_lock_becomes_the_parent(self, spawned):
+        from wafer.constants import TRAY_LOCK_NAME
+        from wafer.core.platform.process_lock import SafeProcessLock
+
+        with SafeProcessLock(TRAY_LOCK_NAME):
+            assert AppProcess.tray_pid() == os.getpid()
+            assert AppProcess.start_indexer("lib") == "proc"
+        assert spawned == [("--indexer", "lib", "--parent-pid", str(os.getpid()))]
+
+    def test_without_a_tray_nothing_is_spawned(self, spawned):
+        assert AppProcess.tray_pid() is None
+        assert AppProcess.start_indexer("lib") is None
+        assert spawned == []
+
+
 class TestKillWithParent:
     @staticmethod
     def _is_in_job(pid):

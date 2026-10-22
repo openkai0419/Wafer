@@ -12,7 +12,7 @@ from ...core.common.paths import (
 from ...qt.theme import ThemeManager
 from ...core.lang.manager import t
 from ...core.db.setting_db import SettingDB
-from ...core.platform.process import AppProcess
+from ..commands.database import create_database
 from ...qt.widgets.dialogs import ConfirmDialog, InputDialog
 from ...qt.common.dispatcher import Dispatcher
 from ...qt.common.icon_engine import themed_icon
@@ -277,12 +277,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
             return
 
         def _seed_and_start():
-            from ...plugin.settings import PluginSettings
-
-            defaults = PluginSettings().resolve_default_collectors()
-            sdb = SettingDB(setting_db_path(text))
-            sdb.set_enabled_collectors(defaults)
-            AppProcess.new_main("--indexer", text)
+            create_database(text)
 
             def _on_done():
                 self._refresh_db_list()

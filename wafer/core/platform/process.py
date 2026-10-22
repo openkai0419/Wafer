@@ -308,6 +308,20 @@ class AppProcess:
         return True
 
     @staticmethod
+    def tray_pid() -> int | None:
+        if not SafeProcessLock.is_held(TRAY_LOCK_NAME):
+            return None
+        return SafeProcessLock.read_owner_pid(TRAY_LOCK_NAME)
+
+    @classmethod
+    def start_indexer(cls, db_name: str):
+        tray_pid = cls.tray_pid()
+        if tray_pid is None:
+            AppLogger.info(f"start_indexer: tray is not running; it starts the indexer for '{db_name}' when it starts")
+            return None
+        return cls.new_main("--indexer", db_name, "--parent-pid", str(tray_pid))
+
+    @staticmethod
     def _in_venv():
         return sys.prefix != getattr(sys, "base_prefix", sys.prefix)
 

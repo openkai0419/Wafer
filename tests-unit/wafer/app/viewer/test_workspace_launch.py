@@ -326,6 +326,7 @@ def open_flow(tmp_path, monkeypatch, lock_dir, activated):
     def run_viewer(app, lock, **kwargs):
         raise Viewed(kwargs)
 
+    monkeypatch.setattr(workspace_launch, "VIEWER_REJOIN_SECONDS", 0)
     monkeypatch.setattr(workspace_launch.WorkspacePickerDialog, "ask", staticmethod(ask))
     monkeypatch.setattr(workspace_launch, "claim_workspace", flow["claimed"].append)
     monkeypatch.setattr(workspace_launch, "run_viewer", run_viewer)
@@ -369,11 +370,23 @@ def test_running_and_open_choice_sends_request_and_activates(open_flow, lock_dir
     node = open_flow["nodes"][0]
     assert node.role == "launcher"
     payload = {"slot_id": "s2", "path": normalize_path(open_flow["path"]), "database_name": ""}
-    assert node.events == ["start", ("wait_registered", 5), ("request", "slot.open_path", payload, "viewer", 5), "stop"]
+    request = ("request", "slot.open_path", payload, "viewer", workspace_launch.OPEN_PATH_ATTEMPT_TIMEOUT)
+    assert node.events == ["start", ("wait_registered", 5), request, "stop"]
     assert open_flow["activated"] == [77]
     assert open_flow["spawned"] == []
     assert open_flow["allowed"] == []
     assert open_flow["restored"] == []
+    assert open_flow["dialogs"] == []
+
+
+def test_open_request_is_resent_until_the_workspace_rejoins(open_flow, lock_dir, monkeypatch):
+    replies = iter([None, None, object()])
+    monkeypatch.setattr(FakeNode, "request", lambda self, *a, **k: self.events.append("request") or next(replies))
+    monkeypatch.setattr(workspace_launch, "VIEWER_REJOIN_SECONDS", 60)
+    open_flow["answer"] = PickResult("s2", "")
+    assert run_open_path(open_flow, "s2") == 0
+    assert open_flow["nodes"][0].events.count("request") == 3
+    assert open_flow["activated"] == [77]
     assert open_flow["dialogs"] == []
 
 

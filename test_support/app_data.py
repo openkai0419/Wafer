@@ -1,4 +1,5 @@
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 from platformdirs import PlatformDirs
@@ -19,3 +20,13 @@ class IsolatedPlatformDirs:
 
 def isolate_app_data():
     paths.PlatformDirs = IsolatedPlatformDirs
+
+
+@contextmanager
+def real_app_data():
+    isolated = paths.PlatformDirs
+    paths.PlatformDirs = PlatformDirs
+    try:
+        yield
+    finally:
+        paths.PlatformDirs = isolated

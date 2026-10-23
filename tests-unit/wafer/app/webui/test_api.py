@@ -387,7 +387,8 @@ def test_keys_retry_after_a_failed_refresh(client, app, monkeypatch):
     assert resp.status == 200
     assert jbody(stale) == jbody(first)
 
-    _wait_until(client.loop, lambda: DB in service._key_stale)
+    _wait_until(client.loop, lambda: DB in service._key_retry_after)
+    assert DB in service._key_stale
     resp, still_stale = client.get("/api/keys", params={"db": DB})
     assert resp.status == 200
     assert jbody(still_stale) == jbody(first)

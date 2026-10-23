@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.8.0]
+### Added
+- Workspaces open one window each; opening a workspace that is already open brings its window to the front.
+- Workspace picker: Open Viewer chooses a workspace or starts a new one, and Recent greys out open workspaces and opens a row on click.
+- Explorer "Open with Wafer" menu (Setting → Explorer Menu): opens a file in a chosen workspace and database. The uninstaller removes it.
+- File → Open File With sends the selected files to a program set in its options.
+- File → Show From Path shows a pasted path in the viewer, optionally selecting its folder and scrolling the grid to it.
+- WD14: select a tagger model from `lib/models/` (configured by `tagger.json`), with copyright, artist and meta output; the preview highlights searched tags.
+
+### Changed
+- Menus are reorganized into File / Selection / Query / Widgets / Panel / Workspace / Process / Setting.
+- Edited, moved or deleted files drop their cached images and reload in the grid and viewer.
+- Mapping repaints only what changed on pan and keeps the image nearest the center in front; the toolbar is regrouped and Map's "Group size" is now "Subgroup size".
+- Renaming a workspace updates its window title; tray "Quit" is now "Quit Tray".
+- Tests isolate AppData so they never touch the real databases.
+
+### Fixed
+- A safe save that moves the original aside and recreates it no longer drops the file, and chained renames no longer leave ghost rows.
+- A database switch during workspace restore no longer drops the restore and queued opens.
+- A new database's indexer is tied to the tray like the others.
+- Headless WebUI waits for pending extension installs before loading plugins.
+
+### Removed
+- New Window and Restore Workspace Slot commands (replaced by Open Viewer and the workspace picker).
+
 ## [v0.7.10]
 ### Added
 - Mapping extension: a panel that places files on a database-wide 2D map by similar tags, metadata, numbers, colors or folders, and groups them; a per-database background parser keeps new files placed.

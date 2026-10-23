@@ -373,10 +373,7 @@ class _RecentSlotItem(QtWidgets.QWidget):
         layout.addWidget(self._text_area, 1)
 
         open_marker = QtWidgets.QLabel(t("Open"), self)
-        open_marker.setStyleSheet(
-            f"QLabel {{ color: {p.text_accent}; border: 1px solid {p.text_accent}; border-radius: {dpix(7)}px;"
-            f"  padding: 0px {dpix(5)}px; font-size: {dpix(10)}px; }}"
-        )
+        open_marker.setStyleSheet(f"QLabel {{ color: {p.text_accent}; border: 1px solid {p.text_accent}; border-radius: {dpix(7)}px;  padding: 0px {dpix(5)}px; font-size: {dpix(10)}px; }}")
         open_marker.setFixedHeight(dpix(15))
         open_marker.setVisible(self.is_open)
         layout.addWidget(open_marker, 0, QtCore.Qt.AlignVCenter)

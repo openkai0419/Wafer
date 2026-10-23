@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 VERSION_FILE = ROOT / "wafer" / "_version.py"
 LAUNCHER_DIR = ROOT / "scripts" / "launcher"
 DIST_NAME = "Wafer"
+EXTENSION_RUNTIME_DIRS = frozenset({".packages", ".pip_staging", ".pending", "lib"})
 ICON_FILE = ROOT / "_resources" / "icon.ico"
 REQUIREMENTS_FILE = ROOT / "requirements.txt"
 
@@ -255,7 +256,7 @@ def copy_sources(dist_dir: Path):
     copy_tree(
         ROOT / "extensions",
         dist_dir / "extensions",
-        exclude_dirs={".packages", ".pip_staging", ".pending", "lib"},
+        exclude_dirs=EXTENSION_RUNTIME_DIRS,
     )
 
     for item in RESOURCE_ITEMS:

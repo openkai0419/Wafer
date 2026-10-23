@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[4]
 CHECK_CODE = (
     "import sys;"
     "import wafer.app.webui.backend.server, wafer.app.webui.backend.api, wafer.app.webui.backend.media, wafer.app.webui.backend.session;"
-    "import wafer.app.webui.entry, wafer.app.webui.state;"
+    "import wafer.app.webui.entry, wafer.app.webui.state, wafer.plugin.install_wait;"
     "qt = [m for m in sys.modules if m.startswith(('PySide6', 'shiboken6'))];"
     "sys.exit(1 if qt else 0)"
 )

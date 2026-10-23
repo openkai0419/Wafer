@@ -2,6 +2,20 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.8.0]
+
+### Highlights
+- Each workspace opens in its own window; Open Viewer lets you pick one or start a new one.
+- Optional Explorer "Open with Wafer" menu opens a file in the workspace you choose.
+
+### Improvements
+- File menu adds Open File With (send files to a program) and Show From Path.
+- WD14 can use other tagger models and outputs copyright, artist and meta tags.
+- Menus are reorganized, and the Mapping panel pans more smoothly.
+
+### Fixes
+- Edited, moved or deleted files refresh in the grid and viewer, and safe saves or chained renames no longer lose files.
+
 ## [v0.7.10]
 
 ### Highlights

@@ -4,6 +4,7 @@ import sys
 import pytest
 
 from wafer.core.common.paths import get_plugin_dir
+from wafer.plugin.kinds import PLUGIN_KINDS
 from wafer.plugin.loader import _import_extension, _discover_plugins, qualify_plugin_name
 from wafer.plugin.registry import PluginBase
 
@@ -42,7 +43,7 @@ class TestExtensionDiscovery:
 
     @pytest.mark.parametrize("ext_name", EXTENSION_FOLDERS)
     def test_discovered_plugins_have_valid_registry_key(self, ext_name):
-        valid_keys = {"viewer", "grid", "collector", "parser", "filter", "sort", "layout", "panel", "key_value_panel", "rename_source", "imageloader", "command"}
+        valid_keys = set(PLUGIN_KINDS)
         folder = os.path.join(EXTENSIONS_DIR, ext_name)
         found = _import_extension(ext_name, folder)
         for registry_key, cls in found:

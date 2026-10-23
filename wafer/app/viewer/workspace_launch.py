@@ -1,7 +1,7 @@
 import os
 import sys
 from dataclasses import dataclass
-from time import sleep
+from time import monotonic, sleep
 from typing import NoReturn
 
 from PySide6 import QtWidgets
@@ -10,6 +10,7 @@ from ...core.common.paths import normalize_path
 from ...core.lang.manager import t
 from ...core.db.path_scope import databases_containing
 from ...core.ipc.node import Node
+from ...core.ipc.transport import NODE_TIMEOUT, RECONNECT_FORCE_INTERVAL
 from ...core.logs import AppLogger
 from ...core.platform.foreground import activate_window, allow_foreground
 from ...core.platform.process import AppProcess
@@ -20,6 +21,8 @@ from .widgets.workspace_labels import slot_title
 from .widgets.workspace_picker import PickResult, WorkspacePickerDialog
 
 OPEN_PATH_TIMEOUT = 5
+OPEN_PATH_ATTEMPT_TIMEOUT = 1.0
+VIEWER_REJOIN_SECONDS = NODE_TIMEOUT + RECONNECT_FORCE_INTERVAL
 CLAIM_RETRIES = 5
 CLAIM_RETRY_INTERVAL = 0.05
 
@@ -125,7 +128,12 @@ def deliver_open_request(slot: WindowSlot, request: OpenRequest) -> bool:
         if not node.wait_registered(OPEN_PATH_TIMEOUT):
             return False
         payload = {"slot_id": slot.slot_id, "path": request.path, "database_name": request.database_name}
-        return node.request("slot.open_path", payload, dst="viewer", timeout=OPEN_PATH_TIMEOUT) is not None
+        deadline = monotonic() + VIEWER_REJOIN_SECONDS
+        while node.request("slot.open_path", payload, dst="viewer", timeout=OPEN_PATH_ATTEMPT_TIMEOUT) is None:
+            if monotonic() >= deadline:
+                return False
+            AppLogger.info(f"slot.open_path: workspace {slot.slot_id} has not answered yet; it may still be reconnecting to a restarted tray, retrying")
+        return True
     finally:
         node.stop()
 

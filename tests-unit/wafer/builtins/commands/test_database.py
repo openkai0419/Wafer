@@ -18,6 +18,20 @@ class _Combo:
         return self.names[0]
 
 
+def test_create_database_seeds_the_setting_db_then_starts_its_indexer(monkeypatch, tmp_path):
+    from wafer.core.db.setting_db import SettingDB
+
+    started = []
+    monkeypatch.setattr(database_mod, "setting_db_path", lambda name: str(tmp_path / f"{name}.db"))
+    monkeypatch.setattr("wafer.plugin.settings.PluginSettings.resolve_default_collectors", lambda self: ["image", "color"])
+    monkeypatch.setattr(database_mod.AppProcess, "start_indexer", classmethod(lambda cls, name: started.append(name)))
+
+    database_mod.create_database("new_db")
+
+    assert sorted(SettingDB(str(tmp_path / "new_db.db")).get_enabled_collectors()) == ["color", "image"]
+    assert started == ["new_db"]
+
+
 def test_remove_database_delegates_deletion_to_indexer_over_ipc(monkeypatch):
     sent = []
     reloaded = []

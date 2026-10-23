@@ -239,6 +239,9 @@ def _entry_webui(args):
                 _ensure_tray_unless_pending()
             from wafer.app.webui.entry import run_headless, run_ui
             if args.no_ui:
+                from wafer.plugin.install_wait import wait_for_install_headless
+
+                wait_for_install_headless()
                 _load_plugins()
                 run_headless(host, port, open_browser=not args.no_browser)
             else:

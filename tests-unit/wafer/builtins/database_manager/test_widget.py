@@ -69,10 +69,10 @@ class TestDatabaseManagerWidget:
             "wafer.builtins.database_manager.widget.InputDialog.get_text",
             staticmethod(lambda *a, **kw: "new_db"),
         )
-        mock_new_main = MagicMock()
+        mock_create = MagicMock()
         monkeypatch.setattr(
-            "wafer.builtins.database_manager.widget.AppProcess.new_main",
-            mock_new_main,
+            "wafer.builtins.database_manager.widget.create_database",
+            mock_create,
         )
         monkeypatch.setattr(
             "wafer.qt.common.dispatcher.Dispatcher.post",
@@ -85,7 +85,7 @@ class TestDatabaseManagerWidget:
 
         dlg._add_database()
 
-        mock_new_main.assert_called_once_with("--indexer", "new_db")
+        mock_create.assert_called_once_with("new_db")
 
     def test_delete_database_with_node(self, qtbot, tmp_path, monkeypatch):
         monkeypatch.setattr(

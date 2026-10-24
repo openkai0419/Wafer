@@ -15,6 +15,8 @@ from wafer.qt.theme import ThemeManager
 from wafer.qt.common.icon_engine import icon_draw
 from wafer.plugin import viewer_context_values
 
+from .widget import MPV_LOCAL_ONLY_OPTIONS
+
 DEFAULT_VOLUME = 50
 _CONTROL_BAR_HEIGHT = 32
 _HIDE_DELAY_MS = 3000
@@ -340,6 +342,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
                 osd_level=0,
                 input_default_bindings="no",
                 input_vo_keyboard="no",
+                **MPV_LOCAL_ONLY_OPTIONS,
             )
             self._player.volume = self._volume
             self._player.mute = self.muted

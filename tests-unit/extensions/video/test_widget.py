@@ -846,3 +846,30 @@ class TestPlaybackSlotManager:
         manager._check_idle()
         assert manager._cooled_down is False
         assert manager._pool == pool_before
+
+
+def test_players_only_open_local_media():
+    from extensions.video.widget import MPV_LOCAL_ONLY_OPTIONS, MpvGLOverlay
+
+    assert MPV_LOCAL_ONLY_OPTIONS.items() <= MpvGLOverlay._MPV_OPTIONS.items()
+    assert MPV_LOCAL_ONLY_OPTIONS["access_references"] == "no"
+    assert "protocol_whitelist=[file," in MPV_LOCAL_ONLY_OPTIONS["demuxer_lavf_o"]
+
+
+def test_libmpv_accepts_the_local_only_options(monkeypatch):
+    import importlib
+    import sys
+
+    monkeypatch.delitem(sys.modules, "mpv")
+    try:
+        mpv = importlib.import_module("mpv")
+    except (ImportError, OSError) as e:
+        pytest.skip(f"libmpv is not installed: {e}")
+    from extensions.video.widget import MPV_LOCAL_ONLY_OPTIONS, MpvGLOverlay
+
+    for options in (MpvGLOverlay._MPV_OPTIONS, dict(vo="null", **MPV_LOCAL_ONLY_OPTIONS)):
+        player = mpv.MPV(**options)
+        try:
+            assert player["access-references"] is False
+        finally:
+            player.terminate()

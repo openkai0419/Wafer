@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 from aiohttp import web
 
@@ -22,6 +23,7 @@ WITH_EVENTS = web.AppKey("with_events", bool)
 ALLOWED_HOSTS = web.AppKey("allowed_hosts", frozenset)
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
+PRIVATE_NAME_SUFFIXES = (".ts.net", ".local", ".lan", ".home", ".home.arpa", ".internal", ".localdomain")
 
 
 def allowed_hosts_for(host: str, port: int) -> frozenset[str] | None:
@@ -31,15 +33,30 @@ def allowed_hosts_for(host: str, port: int) -> frozenset[str] | None:
     return frozenset({f"{n}:{port}" for n in names} | names)
 
 
+def is_rebinding_safe_host(host_header: str) -> bool:
+    try:
+        name = urlsplit(f"//{host_header}").hostname
+    except ValueError:
+        return False
+    if not name:
+        return False
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        return "." not in name or name.endswith(PRIVATE_NAME_SUFFIXES)
+
+
 @web.middleware
 async def same_origin_middleware(request: web.Request, handler):
     allowed = request.app.get(ALLOWED_HOSTS)
-    if allowed is not None and request.host not in allowed:
+    host_ok = request.host in allowed if allowed is not None else is_rebinding_safe_host(request.host)
+    if not host_ok:
         raise web.HTTPForbidden(reason="host is not allowed")
     if request.headers.get("Sec-Fetch-Site") in ("cross-site", "same-site"):
         raise web.HTTPForbidden(reason="cross-origin requests are not allowed")
     origin = request.headers.get("Origin")
-    if origin and urlparse(origin).netloc not in ("", request.host):
+    if origin and urlparse(origin).netloc != request.host:
         raise web.HTTPForbidden(reason="cross-origin requests are not allowed")
     return await handler(request)
 

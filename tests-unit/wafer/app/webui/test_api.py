@@ -234,34 +234,59 @@ def test_allowed_hosts_for_loopback_and_lan():
     assert allowed_hosts_for("0.0.0.0", 8787) is None
 
 
-def test_disallowed_host_rejected():
+def run_middleware(host, headers=None, allowed_hosts=None):
     import asyncio
 
     from aiohttp import web
 
     from wafer.app.webui.backend.server import ALLOWED_HOSTS, same_origin_middleware
 
-    class FakeApp(dict):
-        pass
-
-    app = FakeApp()
-    app[ALLOWED_HOSTS] = frozenset({"127.0.0.1:1"})
+    app = {} if allowed_hosts is None else {ALLOWED_HOSTS: allowed_hosts}
 
     class FakeRequest:
-        host = "rebind.evil:80"
-        headers: dict = {}
-
         def __init__(self):
             self.app = app
+            self.host = host
+            self.headers = headers or {}
 
     async def handler(_req):
         return web.Response()
 
-    async def run():
-        return await same_origin_middleware(FakeRequest(), handler)
+    return asyncio.new_event_loop().run_until_complete(same_origin_middleware(FakeRequest(), handler))
+
+
+def test_disallowed_host_rejected():
+    from aiohttp import web
 
     with pytest.raises(web.HTTPForbidden):
-        asyncio.new_event_loop().run_until_complete(run())
+        run_middleware("rebind.evil:80", allowed_hosts=frozenset({"127.0.0.1:1"}))
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["100.101.102.103:8787", "192.168.1.10:8787", "[fd7a:115c:a1e0::1]:8787", "mypc:8787", "MyPC", "mypc.tail1234.ts.net:8787", "mypc.ts.net", "nas.local:8787", "nas.home.arpa"],
+)
+def test_network_bind_accepts_ip_and_private_names(host):
+    assert run_middleware(host).status == 200
+
+
+@pytest.mark.parametrize("host", ["evil.example:8787", "rebind.attacker.com", "100.64.0.1.nip.io:8787", "ts.net.evil.com", "", "[bad:8787"])
+def test_network_bind_rejects_public_domain_names(host):
+    from aiohttp import web
+
+    with pytest.raises(web.HTTPForbidden):
+        run_middleware(host)
+
+
+def test_null_origin_rejected():
+    from aiohttp import web
+
+    with pytest.raises(web.HTTPForbidden):
+        run_middleware("127.0.0.1:8787", headers={"Origin": "null"})
+
+
+def test_matching_origin_allowed():
+    assert run_middleware("127.0.0.1:8787", headers={"Origin": "http://127.0.0.1:8787"}).status == 200
 
 
 def test_query_body_not_object_rejected(client):

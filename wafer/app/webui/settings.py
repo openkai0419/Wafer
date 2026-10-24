@@ -17,6 +17,9 @@ DEFAULT_PORT = 8787
 HOST_LOCAL = "127.0.0.1"
 HOST_ALL = "0.0.0.0"
 
+LOOPBACK_HOST_NAMES = ("127.0.0.1", "localhost", "[::1]")
+PRIVATE_NAME_SUFFIXES = (".ts.net", ".local", ".lan", ".home", ".home.arpa", ".internal", ".localdomain")
+
 _HOST_PATTERN = re.compile(r"^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$")
 
 _lock = threading.Lock()

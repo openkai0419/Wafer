@@ -16,6 +16,7 @@ from . import api, events, media
 from .events import EVENT_HUB, EventHub
 from .media import MEDIA_EXECUTOR
 from .session import QUERY_SERVICE, QueryService
+from ..settings import LOOPBACK_HOST_NAMES, PRIVATE_NAME_SUFFIXES, browse_url
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -24,14 +25,12 @@ LOOPBACK_HOST_HEADERS = web.AppKey("loopback_host_headers", frozenset)
 ALLOWED_HOSTS = web.AppKey("allowed_hosts", tuple)
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
-PRIVATE_NAME_SUFFIXES = (".ts.net", ".local", ".lan", ".home", ".home.arpa", ".internal", ".localdomain")
 
 
 def loopback_host_headers(host: str, port: int) -> frozenset[str] | None:
     if host not in LOOPBACK_HOSTS:
         return None
-    names = {"127.0.0.1", "localhost", "[::1]"}
-    return frozenset({f"{n}:{port}" for n in names} | names)
+    return frozenset({f"{n}:{port}" for n in LOOPBACK_HOST_NAMES} | set(LOOPBACK_HOST_NAMES))
 
 
 def host_name(host_header: str) -> str | None:
@@ -161,8 +160,6 @@ class WebServer:
 
     @property
     def browse_url(self) -> str:
-        from ..settings import browse_url
-
         return browse_url(self.host, self.port)
 
     @property

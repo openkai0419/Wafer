@@ -28,8 +28,6 @@ class ImageFileLoader(BaseImageLoader):
                 with open(path, "rb") as f:
                     data = np.frombuffer(f.read(), dtype=np.uint8)
             flags = _imread_flags_for_size(ext, size, data)
-            if _exceeds_decode_limit(path, ext, data, flags):
-                return None
             arr = cv2.imdecode(data, flags)
 
             if arr is None or _classify_opencv_array(arr, ext) != "opencv":
@@ -116,8 +114,6 @@ def load_image(path: str, size: int | QtCore.QSize | None = None) -> QtGui.QImag
             with open(path, "rb") as f:
                 data = np.frombuffer(f.read(), dtype=np.uint8)
         flags = _imread_flags_for_size(ext, size, data)
-        if _exceeds_decode_limit(path, ext, data, flags):
-            return None
         arr = cv2.imdecode(data, flags)
 
         if _classify_opencv_array(arr, ext) != "opencv":
@@ -236,45 +232,6 @@ def _jpeg_dimensions(data):
                 return w, h
         i += seg_len
     return None
-
-
-_REDUCED_DECODE_SCALE = {cv2.IMREAD_REDUCED_COLOR_2: 2, cv2.IMREAD_REDUCED_COLOR_4: 4, cv2.IMREAD_REDUCED_COLOR_8: 8}
-
-
-def max_decoded_pixels() -> int | None:
-    return Image.MAX_IMAGE_PIXELS * 2 if Image.MAX_IMAGE_PIXELS else None
-
-
-def _encoded_dimensions(path, ext, data):
-    if ext in (".jpg", ".jpeg"):
-        return _jpeg_dimensions(data)
-    if len(data) >= 24 and bytes(data[12:16]) == b"IHDR":
-        return struct.unpack_from(">II", data, 16)
-    try:
-        with Image.open(path) as img:
-            return img.size
-    except Image.DecompressionBombError:
-        raise
-    except Exception:
-        return None
-
-
-def _exceeds_decode_limit(path, ext, data, flags) -> bool:
-    limit = max_decoded_pixels()
-    if not limit:
-        return False
-    try:
-        dims = _encoded_dimensions(path, ext, data)
-    except Image.DecompressionBombError as e:
-        AppLogger.warning(f"[image/loader] Skipped an image too large to decode safely ({e}): {path}")
-        return True
-    if dims is None:
-        return False
-    scale = _REDUCED_DECODE_SCALE.get(flags, 1)
-    if dims[0] * dims[1] // (scale * scale) <= limit:
-        return False
-    AppLogger.warning(f"[image/loader] Skipped an image too large to decode safely ({dims[0]}x{dims[1]} px, limit {limit} px): {path}")
-    return True
 
 
 def _imread_flags_for_size(ext, size, data=None):

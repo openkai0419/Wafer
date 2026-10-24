@@ -268,7 +268,7 @@ ALLOWED = ("nas.example.com", "*.home.example.net")
 
 
 @pytest.mark.parametrize("loopback_hosts", [None, frozenset({"127.0.0.1:8787"})])
-@pytest.mark.parametrize("host", ["nas.example.com", "NAS.example.com:8443", "pc.home.example.net", "a.b.home.example.net:80"])
+@pytest.mark.parametrize("host", ["nas.example.com", "NAS.example.com:8443", "nas.example.com.:8443", "pc.home.example.net", "a.b.home.example.net:80"])
 def test_allowed_hosts_are_accepted_on_any_bind(host, loopback_hosts):
     assert run_middleware(host, loopback_hosts=loopback_hosts, allowed_hosts=ALLOWED).status == 200
 
@@ -298,13 +298,13 @@ def test_rejected_host_is_logged_once(monkeypatch):
 
 @pytest.mark.parametrize(
     "host",
-    ["100.101.102.103:8787", "192.168.1.10:8787", "[fd7a:115c:a1e0::1]:8787", "mypc:8787", "MyPC", "mypc.tail1234.ts.net:8787", "mypc.ts.net", "nas.local:8787", "nas.home.arpa"],
+    ["100.101.102.103:8787", "192.168.1.10:8787", "[fd7a:115c:a1e0::1]:8787", "mypc:8787", "MyPC", "mypc.tail1234.ts.net:8787", "mypc.ts.net", "nas.local:8787", "nas.local.:8787", "nas.home.arpa"],
 )
 def test_network_bind_accepts_ip_and_private_names(host):
     assert run_middleware(host).status == 200
 
 
-@pytest.mark.parametrize("host", ["evil.example:8787", "rebind.attacker.com", "100.64.0.1.nip.io:8787", "ts.net.evil.com", "", "[bad:8787"])
+@pytest.mark.parametrize("host", ["evil.example:8787", "rebind.attacker.com", "100.64.0.1.nip.io:8787", "ts.net.evil.com", "rebind.attacker.com.:8787", "", ".", "[bad:8787"])
 def test_network_bind_rejects_public_domain_names(host):
     from aiohttp import web
 

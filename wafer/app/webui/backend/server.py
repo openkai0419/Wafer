@@ -35,9 +35,10 @@ def loopback_host_headers(host: str, port: int) -> frozenset[str] | None:
 
 def host_name(host_header: str) -> str | None:
     try:
-        return urlsplit(f"//{host_header}").hostname
+        name = urlsplit(f"//{host_header}").hostname
     except ValueError:
         return None
+    return name.rstrip(".") if name else None
 
 
 def is_rebinding_safe_host(host_header: str) -> bool:

@@ -6,6 +6,7 @@ from wafer.app.webui.settings import (
     HOST_ALL,
     HOST_LOCAL,
     WebUISettings,
+    classify_allowed_hosts,
     parse_allowed_hosts,
 )
 
@@ -65,3 +66,17 @@ def test_parse_allowed_hosts_normalizes_entries():
 @pytest.mark.parametrize("entry", ["*", "*.com", "bad_host!", "a..b", "-x.example.com"])
 def test_parse_allowed_hosts_drops_invalid_or_too_broad_entries(entry):
     assert parse_allowed_hosts(entry) == ()
+
+
+def test_classify_allowed_hosts_returns_rejected_entries_without_logging(monkeypatch):
+    logged = []
+    monkeypatch.setattr("wafer.app.webui.settings.AppLogger.warning", lambda message, **kwargs: logged.append(message))
+    assert classify_allowed_hosts("nas.example.com bad_host! *.com") == (("nas.example.com",), ("bad_host!", "*.com"))
+    assert logged == []
+
+
+def test_parse_allowed_hosts_logs_each_rejected_entry(monkeypatch):
+    logged = []
+    monkeypatch.setattr("wafer.app.webui.settings.AppLogger.warning", lambda message, **kwargs: logged.append(message))
+    assert parse_allowed_hosts("nas.example.com bad_host!") == ("nas.example.com",)
+    assert len(logged) == 1 and "bad_host!" in logged[0]

@@ -30,8 +30,9 @@ def browse_url(host: str, port: int) -> str:
     return f"http://{reachable}:{port}"
 
 
-def parse_allowed_hosts(text: str) -> tuple[str, ...]:
+def classify_allowed_hosts(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
     hosts: list[str] = []
+    invalid: list[str] = []
     for raw in re.split(r"[,\s]+", text or ""):
         entry = raw.strip().lower().split("://", 1)[-1].split("/", 1)[0].rstrip(".")
         if entry.count(":") == 1:
@@ -39,11 +40,17 @@ def parse_allowed_hosts(text: str) -> tuple[str, ...]:
         if not entry:
             continue
         if not _HOST_PATTERN.match(entry) or (entry.startswith("*.") and "." not in entry[2:]):
-            AppLogger.warning(f"WebUI allowed host ignored (use a name like example.com or *.example.com): {raw}")
-            continue
-        if entry not in hosts:
+            invalid.append(raw)
+        elif entry not in hosts:
             hosts.append(entry)
-    return tuple(hosts)
+    return tuple(hosts), tuple(invalid)
+
+
+def parse_allowed_hosts(text: str) -> tuple[str, ...]:
+    hosts, invalid = classify_allowed_hosts(text)
+    for raw in invalid:
+        AppLogger.warning(f"WebUI allowed host ignored (use a name like example.com or *.example.com): {raw}")
+    return hosts
 
 
 def _path() -> str:

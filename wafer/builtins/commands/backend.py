@@ -3,7 +3,7 @@ import webbrowser
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ...app.webui.settings import HOST_ALL, HOST_LOCAL, LOOPBACK_HOST_NAMES, PRIVATE_NAME_SUFFIXES, WebUISettings, parse_allowed_hosts
+from ...app.webui.settings import HOST_ALL, HOST_LOCAL, LOOPBACK_HOST_NAMES, PRIVATE_NAME_SUFFIXES, WebUISettings, classify_allowed_hosts
 from ...qt.commands.bridge import ActionKit, Command
 from ...core.platform.process import AppProcess
 from ...qt.common.dpi import dpix
@@ -93,7 +93,7 @@ class AllowedHostsEditor(QtWidgets.QWidget):
             if not text:
                 self.list.takeItem(row)
                 continue
-            parsed = parse_allowed_hosts(text)
+            parsed = classify_allowed_hosts(text)[0]
             if not parsed:
                 item.setForeground(error)
                 item.setToolTip("Not a host name. Use a name like example.com or *.example.com. It is not saved.")
@@ -111,7 +111,7 @@ class AllowedHostsEditor(QtWidgets.QWidget):
 
     def hosts(self) -> tuple[str, ...]:
         texts = [self.list.item(row).text() for row in range(self.list.count()) if not self.list.item(row).data(BUILTIN_ROLE)]
-        return parse_allowed_hosts(",".join(texts))
+        return classify_allowed_hosts(",".join(texts))[0]
 
 
 def _window(ctx):

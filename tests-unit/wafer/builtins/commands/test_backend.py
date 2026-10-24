@@ -122,3 +122,15 @@ def test_list_shows_every_row_without_scrolling(qtbot):
     type_into_new_row(editor, "a.example.org")
     qtbot.waitUntil(lambda: editor.list.verticalScrollBar().maximum() == 0)
     editor.close()
+
+
+def test_editing_rows_does_not_log_invalid_rows_again(qtbot, monkeypatch):
+    logged = []
+    monkeypatch.setattr("wafer.app.webui.settings.AppLogger.warning", lambda message, **kwargs: logged.append(message))
+    editor = AllowedHostsEditor(())
+    qtbot.addWidget(editor)
+    type_into_new_row(editor, "bad_host!")
+    type_into_new_row(editor, "a.example.org")
+    type_into_new_row(editor, "b.example.org")
+    assert editor.hosts() == ("a.example.org", "b.example.org")
+    assert logged == []

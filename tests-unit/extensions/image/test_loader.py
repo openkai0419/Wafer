@@ -336,3 +336,35 @@ class TestQtRead:
     def test_nonexistent(self):
         img = _qt_read("/no/such/file.png", None, False)
         assert img is None
+
+
+class TestDecodeLimit:
+    @pytest.fixture(autouse=True)
+    def small_limit(self, monkeypatch):
+        monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 5000)
+
+    @pytest.fixture()
+    def images(self, tmp_path):
+        paths = {}
+        for name, size in (("small.png", (90, 90)), ("large.png", (120, 120)), ("large.webp", (120, 120)), ("large.jpg", (400, 400))):
+            path = tmp_path / name
+            Image.new("RGB", size, (10, 200, 30)).save(str(path))
+            paths[name] = str(path)
+        return paths
+
+    @pytest.mark.parametrize("name", ["large.png", "large.webp", "large.jpg"])
+    def test_images_over_the_pillow_limit_are_not_decoded(self, images, name, monkeypatch):
+        decoded = []
+        real_imdecode = cv2.imdecode
+        monkeypatch.setattr(cv2, "imdecode", lambda data, flags: decoded.append(flags) or real_imdecode(data, flags))
+        assert ImageFileLoader().load(images[name]) is None
+        assert load_image(images[name]) is None
+        assert decoded == []
+
+    def test_images_under_the_limit_still_load(self, images):
+        assert ImageFileLoader().load(images["small.png"]).shape == (90, 90, 3)
+        assert load_image(images["small.png"]).size() == QtCore.QSize(90, 90)
+
+    def test_jpeg_thumbnails_count_the_reduced_decode(self, images):
+        assert ImageFileLoader().load(images["large.jpg"], 40).shape[:2] == (40, 40)
+        assert load_image(images["large.jpg"], 40).size() == QtCore.QSize(40, 40)

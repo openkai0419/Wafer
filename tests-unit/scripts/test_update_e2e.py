@@ -110,3 +110,12 @@ def test_write_update_source_produces_what_the_dev_updater_reads(tmp_path):
 def test_run_refuses_without_a_build(tmp_path, capsys):
     assert update_e2e.run(tmp_path / "missing", keep=False) == 1
     assert "Run scripts/build.py first" in capsys.readouterr().err
+
+
+def test_a_driver_that_hangs_is_reported_as_an_e2e_failure(tmp_path, monkeypatch):
+    def hang(cmd, **kwargs):
+        raise update_e2e.subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+
+    monkeypatch.setattr(update_e2e.subprocess, "run", hang)
+    with pytest.raises(update_e2e.E2EFailure, match="staging did not finish"):
+        update_e2e.run_driver(tmp_path, {}, "pass", "staging")

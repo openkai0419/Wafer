@@ -182,7 +182,10 @@ def wait_until(condition: Callable[[], bool], timeout: float, what: str) -> None
 
 def run_driver(app_root: Path, env: dict[str, str], code: str, what: str) -> None:
     pythonw = app_root / "python" / "wafer-pythonw.exe"
-    proc = subprocess.run([str(pythonw), "-c", code], cwd=app_root, env=env, timeout=DRIVER_TIMEOUT)
+    try:
+        proc = subprocess.run([str(pythonw), "-c", code], cwd=app_root, env=env, timeout=DRIVER_TIMEOUT)
+    except subprocess.TimeoutExpired as exc:
+        raise E2EFailure(f"{what} did not finish within {DRIVER_TIMEOUT}s") from exc
     if proc.returncode != 0:
         raise E2EFailure(f"{what} failed (exit {proc.returncode})")
 

@@ -1,11 +1,11 @@
-aiohttp>=3.10,<4
+aiohttp>=3.14.4,<4
 blake3==1.0.8
 comtypes==1.4.16
 markdown>=3.7
 msgpack==1.2.1
 natsort==8.4.0
 numpy==2.2.6
-pillow==12.2.0
+pillow==13.0.0
 platformdirs==4.9.6
 psutil==7.2.2
 py7zr==1.1.3

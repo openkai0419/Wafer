@@ -18,6 +18,16 @@ class TestFadePixmapItemRendering:
         yield
         scene.clear()
 
+    def test_tooltip_shows_the_path_as_plain_text(self):
+        from PySide6 import QtGui
+
+        path = 'C:/a b/x.zip::<img src="//host/share/p.png"> & <b>y</b>.png'
+        img = QtGui.QImage(10, 10, QtGui.QImage.Format_ARGB32)
+        self.item.set_image(img, path)
+        doc = QtGui.QTextDocument()
+        doc.setHtml(self.item.toolTip())
+        assert doc.toPlainText().replace("\xa0", " ") == path
+
     def test_landscape_in_square_cell(self):
         from PySide6 import QtGui, QtCore
 

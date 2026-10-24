@@ -96,3 +96,20 @@ def test_build_like_condition_glob_wraps_wildcard():
 
 def test_build_like_condition_empty():
     assert build_like_condition("v", [], "OR") == ("", [])
+
+
+def test_delete_database_files_treats_glob_metacharacters_literally(tmp_path):
+    db = tmp_path / "[ab].db"
+    neighbours = [tmp_path / "a.db", tmp_path / "b.db"]
+    db.write_bytes(b"")
+    for path in neighbours:
+        path.write_bytes(b"")
+    assert delete_database_files(str(tmp_path / "[ab]"), retries=1, delay=0) is True
+    assert not db.exists()
+    assert all(path.exists() for path in neighbours)
+
+
+@pytest.mark.parametrize("op, joined", [("AND", " AND "), ("and", " AND "), ("OR", " OR "), ("1) OR (1", " OR ")])
+def test_build_like_condition_only_joins_with_and_or_or(op, joined):
+    clause, _ = build_like_condition("v", ["a", "b"], op)
+    assert clause == joined.join([r"v LIKE ? ESCAPE '\'"] * 2)

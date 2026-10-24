@@ -56,7 +56,7 @@ def open_readonly(db_path: str | Path) -> sqlite3.Connection:
 def delete_database_files(dbname, retries=10, delay=1.0, force=False):
     base = os.path.abspath(dbname)
     AppLogger.info(f"Deleting database files: {base}")
-    patterns = [base, f"{base}-journal", f"{base}-wal", f"{base}-shm"] + glob.glob(f"{base}*")
+    patterns = [base, f"{base}-journal", f"{base}-wal", f"{base}-shm"] + glob.glob(f"{glob.escape(base)}*")
     targets = {p for p in patterns if os.path.isfile(p)}
     if not targets:
         AppLogger.info("No database files found to delete.")
@@ -102,6 +102,7 @@ def escape_like(s: str) -> str:
 def build_like_condition(field: str, keywords: list[str] | tuple[str, ...], op: str, query_mode: str = "LIKE") -> tuple[str, list[str]]:
     if not keywords:
         return "", []
+    op = "AND" if str(op).upper() == "AND" else "OR"
     if query_mode.upper() == "GLOB":
         clauses = [f"{field} GLOB ?" for _ in keywords]
         values = [f"*{kw}*" for kw in keywords]

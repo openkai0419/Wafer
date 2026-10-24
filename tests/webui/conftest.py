@@ -40,7 +40,7 @@ def webui_base_url(tmp_path_factory):
     from extensions.zip.resolver import ZipImageLoader
     from wafer.app.webui.backend import api as backend_api
     from wafer.app.webui.backend import session
-    from wafer.app.webui.backend.server import allowed_hosts_for, create_app
+    from wafer.app.webui.backend.server import create_app, loopback_host_headers
     from wafer.plugin.imageloader.handler import image_loader_resolver
     from wafer.web import media
 
@@ -68,7 +68,7 @@ def webui_base_url(tmp_path_factory):
         state["loop"] = loop
 
         async def serve():
-            app = create_app(with_events=False, allowed_hosts=allowed_hosts_for(host, port))
+            app = create_app(with_events=False, loopback_hosts=loopback_host_headers(host, port))
             _webui_state["query_service"] = app[QUERY_SERVICE]
             runner = web.AppRunner(app)
             await runner.setup()

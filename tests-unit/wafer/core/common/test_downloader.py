@@ -190,22 +190,42 @@ class TestFindSystem7z:
 
 
 class TestEnsure7zr:
-    def test_existing_returns(self, tmp_path):
-        path = tmp_path / "7zr.exe"
-        path.write_bytes(b"x")
-        assert dl.ensure_7zr(str(tmp_path)) == str(path)
-
-    def test_downloads_7zr(self, tmp_path, monkeypatch):
-        calls = {}
+    @pytest.fixture
+    def served(self, monkeypatch):
+        calls = []
 
         def fake(req, timeout=None):
-            calls["url"] = req.full_url
-            return _FakeResp(b"fake")
+            calls.append(req.full_url)
+            return _FakeResp(HELLO)
 
         monkeypatch.setattr(dl.urllib.request, "urlopen", fake)
+        return calls
+
+    def test_existing_verified_file_is_reused(self, tmp_path, monkeypatch, served):
+        monkeypatch.setattr(dl, "_SEVEN_ZR_SHA256", HELLO_SHA)
+        path = tmp_path / "7zr.exe"
+        path.write_bytes(HELLO)
+        assert dl.ensure_7zr(str(tmp_path)) == str(path)
+        assert served == []
+
+    def test_downloads_the_pinned_version(self, tmp_path, monkeypatch, served):
+        monkeypatch.setattr(dl, "_SEVEN_ZR_SHA256", HELLO_SHA)
         out = dl.ensure_7zr(str(tmp_path))
         assert out == str(tmp_path / "7zr.exe")
-        assert calls["url"] == dl._SEVEN_ZR_URL
+        assert served == [dl._SEVEN_ZR_URL]
+        assert dl._SEVEN_ZR_VERSION in dl._SEVEN_ZR_URL
+
+    def test_existing_unverified_file_is_replaced(self, tmp_path, monkeypatch, served):
+        monkeypatch.setattr(dl, "_SEVEN_ZR_SHA256", HELLO_SHA)
+        path = tmp_path / "7zr.exe"
+        path.write_bytes(b"old build")
+        dl.ensure_7zr(str(tmp_path))
+        assert path.read_bytes() == HELLO
+
+    def test_tampered_download_is_rejected(self, tmp_path, served):
+        with pytest.raises(RuntimeError, match="SHA256 mismatch"):
+            dl.ensure_7zr(str(tmp_path))
+        assert not (tmp_path / "7zr.exe").exists()
 
 
 def _make_fake_py7zr_module(archive_contents: dict):

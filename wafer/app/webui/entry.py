@@ -4,7 +4,7 @@ import sys
 import webbrowser
 
 from ...core.logs import AppLogger
-from .settings import browse_url
+from .settings import WebUISettings, browse_url
 from .state import write_state
 
 
@@ -23,7 +23,7 @@ def run_headless(host: str, port: int, *, open_browser: bool):
 
     threading.Thread(target=StartupTasks(headless=True).run, name="webui-update-check", daemon=True).start()
     url = browse_url(host, port)
-    run_server(host, port, on_started=lambda: _on_started(url, open_browser))
+    run_server(host, port, allowed_hosts=WebUISettings().allowed_hosts(), on_started=lambda: _on_started(url, open_browser))
 
 
 def run_ui(app, host: str, port: int, *, open_browser: bool):
@@ -31,7 +31,7 @@ def run_ui(app, host: str, port: int, *, open_browser: bool):
     from .backend.server import WebServer
     from .window import WebUIWindow
 
-    server = WebServer(host, port)
+    server = WebServer(host, port, allowed_hosts=WebUISettings().allowed_hosts())
     window = WebUIWindow(server)
     window.bind_remote_logs()
     server.on_started = lambda: _on_started(server.browse_url, open_browser)

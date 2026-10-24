@@ -11,7 +11,9 @@ from wafer.core.logs import AppLogger
 from wafer.core.platform.process import run_external
 
 
-_SEVEN_ZR_URL = "https://www.7-zip.org/a/7zr.exe"
+_SEVEN_ZR_VERSION = "26.05"
+_SEVEN_ZR_URL = f"https://github.com/ip7z/7zip/releases/download/{_SEVEN_ZR_VERSION}/7zr.exe"
+_SEVEN_ZR_SHA256 = "9bf582b894dfa665f852d7e9112b02290a1c303c2d95a21fcdc41ffcb03143b7"
 _LIB_VERSION_FILE = ".version"
 
 
@@ -119,11 +121,11 @@ def find_system_7z() -> str | None:
 
 def ensure_7zr(install_dir: str) -> str:
     path = os.path.join(install_dir, "7zr.exe")
-    if os.path.isfile(path):
+    if os.path.isfile(path) and verify_sha256(path, _SEVEN_ZR_SHA256):
         return path
     os.makedirs(install_dir, exist_ok=True)
-    AppLogger.info(f"[downloader] Downloading 7zr.exe from {_SEVEN_ZR_URL}")
-    safe_download(_SEVEN_ZR_URL, path)
+    AppLogger.info(f"[downloader] Downloading 7zr.exe {_SEVEN_ZR_VERSION} from {_SEVEN_ZR_URL}")
+    safe_download(_SEVEN_ZR_URL, path, allowed_hosts=("github.com",), expected_sha256=_SEVEN_ZR_SHA256)
     AppLogger.info("[downloader] 7zr.exe downloaded")
     return path
 

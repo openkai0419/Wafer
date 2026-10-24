@@ -46,6 +46,7 @@ wafer の永続化クラスは「**スコープ**」と「**用途**」の 2 軸
 | `CommandOptionStore` | JSON | App 全体 | コマンドシステム |
 | `DialogLayoutStore` | INI | Dialog ごと | 個別ダイアログ |
 | `ActionGroupStateManager` | (in-memory) | App 全体 | コマンドシステム |
+| `WebUISettings` | INI（`webui_settings.ini`） | App 全体 | WebUI サーバー（host / port / allowed_hosts。Qt 非依存で headless からも読む） |
 
 ## よくある間違い
 

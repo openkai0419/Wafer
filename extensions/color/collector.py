@@ -47,7 +47,8 @@ class ColorCollector(BaseCollectorPlugin):
 
 def extract_palette(image: Image.Image, max_colors: int = PALETTE_SLOTS, sample_size: int = _SAMPLE_SIZE) -> list[int]:
     work = image.copy()
-    work.thumbnail((sample_size, sample_size), Image.Resampling.LANCZOS)
+    reducing_gap = None if work.mode in ("RGBA", "LA") else 2.0
+    work.thumbnail((sample_size, sample_size), Image.Resampling.LANCZOS, reducing_gap=reducing_gap)
     rgba = work.convert("RGBA")
     pixels = [(r, g, b) for r, g, b, a in rgba.get_flattened_data() if a >= _ALPHA_MIN]
     if not pixels:

@@ -13,6 +13,12 @@ from wafer.core.profiling import profiler
 DEFAULT_VOLUME = 20
 GL_COLOR_BUFFER_BIT = 0x00004000
 _MPV_EVENT_PLAYBACK_RESTART = 21
+MPV_LOCAL_ONLY_OPTIONS = dict(
+    access_references="no",
+    ytdl="no",
+    load_scripts="no",
+    demuxer_lavf_o="protocol_whitelist=[file,crypto,data]",
+)
 
 
 def _get_proc_address(_, name):
@@ -47,6 +53,7 @@ class MpvGLOverlay(QOpenGLWidget):
         demuxer_lavf_probesize=32768,
         video_latency_hacks="yes",
         hr_seek="no",
+        **MPV_LOCAL_ONLY_OPTIONS,
     )
 
     _on_update = Signal()

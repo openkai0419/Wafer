@@ -57,7 +57,7 @@ class FadePixmapItem(QtWidgets.QGraphicsObject):
             self._fade_anim.setStartValue(0.0)
             self._fade_anim.setEndValue(1.0)
             self._fade_anim.start()
-            self.setToolTip(curpath or "")
+            self.setToolTip(QtGui.Qt.convertFromPlainText(curpath, QtCore.Qt.WhiteSpaceMode.WhiteSpacePre) if curpath else "")
             self.update()
         else:
             self._pixmap = pixmap

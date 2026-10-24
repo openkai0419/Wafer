@@ -49,18 +49,9 @@ def make_latest_json(version: str, zip_name: str) -> dict:
     }
 
 
-def main(argv: list[str]) -> int:
-    dev = load_dev()
-    build_mod = load_script_module("wafer_build", "build.py")
+def write_update_source(dist_dir: Path, out_dir: Path, version: str) -> Path:
     manifest_mod = load_script_module("wafer_make_update_manifest", "make_update_manifest.py")
-    out_dir = dev.source_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    version = build_mod.get_git_version() or build_mod.read_fallback_version()
-    print(f"[local-update] Building portable package v{version}")
-    build_mod.build()
-
-    dist_dir = ROOT / "dist" / build_mod.DIST_NAME
     zip_name = f"Wafer-v{version}.zip"
     zip_path = out_dir / zip_name
     print(f"[local-update] Zipping {dist_dir} -> {zip_path}")
@@ -69,8 +60,19 @@ def main(argv: list[str]) -> int:
     manifest = manifest_mod.make_manifest(zip_path, version)
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     (out_dir / "latest.json").write_text(json.dumps(make_latest_json(version, zip_name), indent=2) + "\n", encoding="utf-8")
-
     print(f"[local-update] Update source ready: {out_dir}")
+    return zip_path
+
+
+def main(argv: list[str]) -> int:
+    dev = load_dev()
+    build_mod = load_script_module("wafer_build", "build.py")
+
+    version = build_mod.get_git_version() or build_mod.read_fallback_version()
+    print(f"[local-update] Building portable package v{version}")
+    build_mod.build()
+
+    write_update_source(ROOT / "dist" / build_mod.DIST_NAME, dev.source_dir(), version)
     print("[local-update] Set wafer/_dev.py FORCE_UPDATE_ENABLED = True, then run dist/Wafer/Wafer.exe")
     return 0
 

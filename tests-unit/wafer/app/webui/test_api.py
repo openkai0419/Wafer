@@ -225,43 +225,102 @@ def test_same_origin_allowed(client, app):
     assert resp.status == 200
 
 
-def test_allowed_hosts_for_loopback_and_lan():
-    from wafer.app.webui.backend.server import allowed_hosts_for
+def test_loopback_host_headers_for_loopback_and_lan():
+    from wafer.app.webui.backend.server import loopback_host_headers
 
-    hosts = allowed_hosts_for("127.0.0.1", 8787)
+    hosts = loopback_host_headers("127.0.0.1", 8787)
     assert hosts is not None
     assert "127.0.0.1:8787" in hosts and "localhost:8787" in hosts
-    assert allowed_hosts_for("0.0.0.0", 8787) is None
+    assert loopback_host_headers("0.0.0.0", 8787) is None
 
 
-def test_disallowed_host_rejected():
+def run_middleware(host, headers=None, loopback_hosts=None, allowed_hosts=()):
     import asyncio
 
     from aiohttp import web
 
-    from wafer.app.webui.backend.server import ALLOWED_HOSTS, same_origin_middleware
+    from wafer.app.webui.backend.server import ALLOWED_HOSTS, LOOPBACK_HOST_HEADERS, same_origin_middleware
 
-    class FakeApp(dict):
-        pass
-
-    app = FakeApp()
-    app[ALLOWED_HOSTS] = frozenset({"127.0.0.1:1"})
+    app = {ALLOWED_HOSTS: allowed_hosts}
+    if loopback_hosts is not None:
+        app[LOOPBACK_HOST_HEADERS] = loopback_hosts
 
     class FakeRequest:
-        host = "rebind.evil:80"
-        headers: dict = {}
-
         def __init__(self):
             self.app = app
+            self.host = host
+            self.headers = headers or {}
 
     async def handler(_req):
         return web.Response()
 
-    async def run():
-        return await same_origin_middleware(FakeRequest(), handler)
+    return asyncio.new_event_loop().run_until_complete(same_origin_middleware(FakeRequest(), handler))
+
+
+def test_disallowed_host_rejected():
+    from aiohttp import web
 
     with pytest.raises(web.HTTPForbidden):
-        asyncio.new_event_loop().run_until_complete(run())
+        run_middleware("rebind.evil:80", loopback_hosts=frozenset({"127.0.0.1:1"}))
+
+
+ALLOWED = ("nas.example.com", "*.home.example.net")
+
+
+@pytest.mark.parametrize("loopback_hosts", [None, frozenset({"127.0.0.1:8787"})])
+@pytest.mark.parametrize("host", ["nas.example.com", "NAS.example.com:8443", "nas.example.com.:8443", "pc.home.example.net", "a.b.home.example.net:80"])
+def test_allowed_hosts_are_accepted_on_any_bind(host, loopback_hosts):
+    assert run_middleware(host, loopback_hosts=loopback_hosts, allowed_hosts=ALLOWED).status == 200
+
+
+@pytest.mark.parametrize("loopback_hosts", [None, frozenset({"127.0.0.1:8787"})])
+@pytest.mark.parametrize("host", ["home.example.net", "evilhome.example.net", "nas.example.com.evil.org", "example.com", "other.example.org"])
+def test_names_outside_allowed_hosts_are_still_rejected(host, loopback_hosts):
+    from aiohttp import web
+
+    with pytest.raises(web.HTTPForbidden):
+        run_middleware(host, loopback_hosts=loopback_hosts, allowed_hosts=ALLOWED)
+
+
+def test_rejected_host_is_logged_once(monkeypatch):
+    from aiohttp import web
+
+    from wafer.app.webui.backend import server
+
+    logged = []
+    monkeypatch.setattr(server, "_warned_hosts", set())
+    monkeypatch.setattr(server.AppLogger, "warning", lambda message, **kwargs: logged.append(message))
+    for _ in range(3):
+        with pytest.raises(web.HTTPForbidden):
+            run_middleware("unknown.example.org")
+    assert len(logged) == 1 and "unknown.example.org" in logged[0] and "Allowed hosts" in logged[0]
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["100.101.102.103:8787", "192.168.1.10:8787", "[fd7a:115c:a1e0::1]:8787", "mypc:8787", "MyPC", "mypc.tail1234.ts.net:8787", "mypc.ts.net", "nas.local:8787", "nas.local.:8787", "nas.home.arpa"],
+)
+def test_network_bind_accepts_ip_and_private_names(host):
+    assert run_middleware(host).status == 200
+
+
+@pytest.mark.parametrize("host", ["evil.example:8787", "rebind.attacker.com", "100.64.0.1.nip.io:8787", "ts.net.evil.com", "rebind.attacker.com.:8787", "", ".", "[bad:8787"])
+def test_network_bind_rejects_public_domain_names(host):
+    from aiohttp import web
+
+    with pytest.raises(web.HTTPForbidden):
+        run_middleware(host)
+
+
+def test_null_origin_rejected():
+    from aiohttp import web
+
+    with pytest.raises(web.HTTPForbidden):
+        run_middleware("127.0.0.1:8787", headers={"Origin": "null"})
+
+
+def test_matching_origin_allowed():
+    assert run_middleware("127.0.0.1:8787", headers={"Origin": "http://127.0.0.1:8787"}).status == 200
 
 
 def test_query_body_not_object_rejected(client):

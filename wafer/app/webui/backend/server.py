@@ -20,24 +20,29 @@ from .session import QUERY_SERVICE, QueryService
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 WITH_EVENTS = web.AppKey("with_events", bool)
-ALLOWED_HOSTS = web.AppKey("allowed_hosts", frozenset)
+LOOPBACK_HOST_HEADERS = web.AppKey("loopback_host_headers", frozenset)
+ALLOWED_HOSTS = web.AppKey("allowed_hosts", tuple)
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
 PRIVATE_NAME_SUFFIXES = (".ts.net", ".local", ".lan", ".home", ".home.arpa", ".internal", ".localdomain")
 
 
-def allowed_hosts_for(host: str, port: int) -> frozenset[str] | None:
+def loopback_host_headers(host: str, port: int) -> frozenset[str] | None:
     if host not in LOOPBACK_HOSTS:
         return None
     names = {"127.0.0.1", "localhost", "[::1]"}
     return frozenset({f"{n}:{port}" for n in names} | names)
 
 
-def is_rebinding_safe_host(host_header: str) -> bool:
+def host_name(host_header: str) -> str | None:
     try:
-        name = urlsplit(f"//{host_header}").hostname
+        return urlsplit(f"//{host_header}").hostname
     except ValueError:
-        return False
+        return None
+
+
+def is_rebinding_safe_host(host_header: str) -> bool:
+    name = host_name(host_header)
     if not name:
         return False
     try:
@@ -47,11 +52,30 @@ def is_rebinding_safe_host(host_header: str) -> bool:
         return "." not in name or name.endswith(PRIVATE_NAME_SUFFIXES)
 
 
+def matches_allowed_host(host_header: str, allowed_hosts: tuple[str, ...]) -> bool:
+    name = host_name(host_header)
+    if not name:
+        return False
+    return any(name == pattern or (pattern.startswith("*.") and name.endswith(pattern[1:])) for pattern in allowed_hosts)
+
+
+_warned_hosts: set[str] = set()
+_WARNED_HOSTS_MAX = 64
+
+
+def warn_rejected_host(host_header: str) -> None:
+    if host_header in _warned_hosts or len(_warned_hosts) >= _WARNED_HOSTS_MAX:
+        return
+    _warned_hosts.add(host_header)
+    AppLogger.warning(f"WebUI rejected a request for host '{host_header}'. If you reach the WebUI by this name, add it to Allowed hosts in WebUI Settings.")
+
+
 @web.middleware
 async def same_origin_middleware(request: web.Request, handler):
-    allowed = request.app.get(ALLOWED_HOSTS)
-    host_ok = request.host in allowed if allowed is not None else is_rebinding_safe_host(request.host)
-    if not host_ok:
+    loopback = request.app.get(LOOPBACK_HOST_HEADERS)
+    host_ok = request.host in loopback if loopback is not None else is_rebinding_safe_host(request.host)
+    if not host_ok and not matches_allowed_host(request.host, request.app.get(ALLOWED_HOSTS, ())):
+        warn_rejected_host(request.host)
         raise web.HTTPForbidden(reason="host is not allowed")
     if request.headers.get("Sec-Fetch-Site") in ("cross-site", "same-site"):
         raise web.HTTPForbidden(reason="cross-origin requests are not allowed")
@@ -89,11 +113,12 @@ async def on_shutdown(app: web.Application):
     app[MEDIA_EXECUTOR].shutdown(wait=True, cancel_futures=True)
 
 
-def create_app(with_events: bool = True, on_app_shutdown=None, on_dev_log=None, allowed_hosts=None) -> web.Application:
+def create_app(with_events: bool = True, on_app_shutdown=None, on_dev_log=None, loopback_hosts=None, allowed_hosts: tuple[str, ...] = ()) -> web.Application:
     app = web.Application(middlewares=[same_origin_middleware, no_cache_middleware])
     app[WITH_EVENTS] = with_events
-    if allowed_hosts is not None:
-        app[ALLOWED_HOSTS] = allowed_hosts
+    if loopback_hosts is not None:
+        app[LOOPBACK_HOST_HEADERS] = loopback_hosts
+    app[ALLOWED_HOSTS] = tuple(allowed_hosts)
     app[QUERY_SERVICE] = QueryService()
     app[MEDIA_EXECUTOR] = ThreadPoolExecutor(max_workers=4, thread_name_prefix="webmedia")
     app[EVENT_HUB] = EventHub(on_app_shutdown=on_app_shutdown, on_dev_log=on_dev_log, on_db_changed=app[QUERY_SERVICE].invalidate_keys)
@@ -116,9 +141,10 @@ def quiet_connection_reset_handler(loop, context):
 
 
 class WebServer:
-    def __init__(self, host: str, port: int, *, on_started=None, on_app_shutdown=None, on_dev_log=None):
+    def __init__(self, host: str, port: int, *, allowed_hosts: tuple[str, ...] = (), on_started=None, on_app_shutdown=None, on_dev_log=None):
         self.host = host
         self.port = port
+        self.allowed_hosts = tuple(allowed_hosts)
         self.on_started = on_started
         self.on_app_shutdown = on_app_shutdown
         self.on_dev_log = on_dev_log
@@ -171,13 +197,16 @@ class WebServer:
         self.app = create_app(
             on_app_shutdown=self.on_app_shutdown,
             on_dev_log=self.on_dev_log,
-            allowed_hosts=allowed_hosts_for(self.host, self.port),
+            loopback_hosts=loopback_host_headers(self.host, self.port),
+            allowed_hosts=self.allowed_hosts,
         )
         runner = web.AppRunner(self.app)
         await runner.setup()
         site = web.TCPSite(runner, self.host, self.port)
         await site.start()
         AppLogger.info(f"WebUI serving at {self.url}")
+        if self.allowed_hosts:
+            AppLogger.info(f"WebUI also accepts these host names: {', '.join(self.allowed_hosts)}")
         if self.host not in LOOPBACK_HOSTS:
             AppLogger.warning(f"WebUI is exposed to the network on {self.host}. Access control is your responsibility (firewall/VPN/reverse proxy).")
         if self.on_started is not None:
@@ -198,9 +227,9 @@ class WebServer:
                 AppLogger.error(f"WebUI server thread did not stop within {timeout}s.")
 
 
-def run_server(host: str, port: int, on_started=None):
+def run_server(host: str, port: int, *, allowed_hosts: tuple[str, ...] = (), on_started=None):
     stop = threading.Event()
-    server = WebServer(host, port, on_started=on_started, on_app_shutdown=stop.set)
+    server = WebServer(host, port, allowed_hosts=allowed_hosts, on_started=on_started, on_app_shutdown=stop.set)
     server.start()
     try:
         while not stop.wait(0.5):

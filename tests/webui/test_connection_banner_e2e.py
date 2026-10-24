@@ -11,7 +11,7 @@ pytest.importorskip("playwright.sync_api")
 from aiohttp import web
 
 from wafer.app.webui.backend import session
-from wafer.app.webui.backend.server import allowed_hosts_for, create_app
+from wafer.app.webui.backend.server import create_app, loopback_host_headers
 
 
 def _free_port() -> int:
@@ -39,7 +39,7 @@ def restartable_webui_server():
 
     def start():
         async def _start():
-            app = create_app(with_events=False, allowed_hosts=allowed_hosts_for(host, port))
+            app = create_app(with_events=False, loopback_hosts=loopback_host_headers(host, port))
             runner = web.AppRunner(app)
             await runner.setup()
             await web.TCPSite(runner, host, port).start()

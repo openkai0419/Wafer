@@ -2,9 +2,10 @@ import webbrowser
 
 from PySide6 import QtWidgets
 
-from ...app.webui.settings import HOST_ALL, HOST_LOCAL, WebUISettings
+from ...app.webui.settings import HOST_ALL, HOST_LOCAL, WebUISettings, parse_allowed_hosts
 from ...qt.commands.bridge import ActionKit, Command
 from ...core.platform.process import AppProcess
+from ...qt.common.dpi import dpix
 from ...qt.common.notifier import Notifier
 
 
@@ -41,6 +42,11 @@ def open_settings(ctx=None):
     port_spin.setRange(1, 65535)
     port_spin.setValue(settings.port())
 
+    hosts_edit = QtWidgets.QLineEdit(", ".join(settings.allowed_hosts()))
+    hosts_edit.setPlaceholderText("example.com, *.example.net")
+    hosts_edit.setMinimumWidth(dpix(300))
+    hosts_edit.setToolTip("Domain names you open the WebUI by. IP addresses, this PC's name and Tailscale names always work.")
+
     note = QtWidgets.QLabel('"All interfaces" exposes the WebUI to your network. Securing access is your responsibility.\nChanges apply after restarting the WebUI.')
     note.setWordWrap(True)
 
@@ -50,13 +56,14 @@ def open_settings(ctx=None):
 
     form.addRow("Host", host_combo)
     form.addRow("Port", port_spin)
+    form.addRow("Allowed hosts", hosts_edit)
     form.addRow(note)
     form.addRow(buttons)
 
     result = {"restart": False}
 
     def save():
-        settings.set_bind(host_combo.currentData(), port_spin.value())
+        settings.save(host_combo.currentData(), port_spin.value(), parse_allowed_hosts(hosts_edit.text()))
         dialog.accept()
 
     save_btn.clicked.connect(save)

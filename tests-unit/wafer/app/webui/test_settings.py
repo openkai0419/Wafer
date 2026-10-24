@@ -6,6 +6,7 @@ from wafer.app.webui.settings import (
     HOST_ALL,
     HOST_LOCAL,
     WebUISettings,
+    parse_allowed_hosts,
 )
 
 
@@ -22,18 +23,18 @@ def test_defaults_without_file(settings):
 
 
 def test_set_and_read_bind(settings):
-    settings.set_bind(HOST_ALL, 9000)
+    settings.save(HOST_ALL, 9000)
     assert settings.host() == HOST_ALL
     assert settings.port() == 9000
 
 
 def test_resolve_bind_prefers_cli(settings):
-    settings.set_bind(HOST_ALL, 9000)
+    settings.save(HOST_ALL, 9000)
     assert settings.resolve_bind(HOST_LOCAL, 8000) == (HOST_LOCAL, 8000)
 
 
 def test_resolve_bind_falls_back_to_settings(settings):
-    settings.set_bind(HOST_ALL, 9000)
+    settings.save(HOST_ALL, 9000)
     assert settings.resolve_bind(None, None) == (HOST_ALL, 9000)
 
 
@@ -47,3 +48,20 @@ def test_invalid_port_falls_back(settings):
     with open(mod._path(), "w", encoding="utf-8") as f:
         f.write("[webui]\nport = notanumber\n")
     assert settings.port() == DEFAULT_PORT
+
+
+def test_allowed_hosts_round_trip(settings):
+    assert settings.allowed_hosts() == ()
+    settings.save(HOST_ALL, 9000, ("nas.example.com", "*.home.example.net"))
+    assert settings.allowed_hosts() == ("nas.example.com", "*.home.example.net")
+    assert settings.resolve_bind(None, None) == (HOST_ALL, 9000)
+
+
+def test_parse_allowed_hosts_normalizes_entries():
+    text = "NAS.Example.com, *.home.example.net\nhttps://wafer.example.org:8443/path  example.com. nas.example.com"
+    assert parse_allowed_hosts(text) == ("nas.example.com", "*.home.example.net", "wafer.example.org", "example.com")
+
+
+@pytest.mark.parametrize("entry", ["*", "*.com", "bad_host!", "a..b", "-x.example.com"])
+def test_parse_allowed_hosts_drops_invalid_or_too_broad_entries(entry):
+    assert parse_allowed_hosts(entry) == ()

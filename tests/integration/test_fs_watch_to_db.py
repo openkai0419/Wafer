@@ -20,6 +20,7 @@ from wafer.app.indexer.runtime.scheduler import TaskScheduler
 from wafer.app.indexer.watch.folder_watcher import FolderWatcher
 from wafer.app.indexer.runtime.progress_aggregator import ProgressAggregator
 from test_support.scan_harness import scheduler_drained, track_full_scans
+from wafer.plugin.query.base import PathScope
 
 
 @pytest.fixture(autouse=True)
@@ -193,7 +194,7 @@ class TestFsWatchToDb:
             try:
                 overlay = engine.get_kv_keys_by_prefix("*", "mark.")
                 assert overlay == {new_norm: ["1"]}
-                sql, params = MarkFilter.build_path_query({"mark_ids": ["1"], "mode": "OR"}, lambda p: p)
+                sql, params = MarkFilter.build_path_query({"mark_ids": ["1"], "mode": "OR"}, lambda p: p, PathScope())
                 assert sql is not None
                 engine._connect_if_needed()
                 paths = [row[0] for row in engine.conn.execute(sql, params).fetchall()]

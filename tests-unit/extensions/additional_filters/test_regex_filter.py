@@ -12,6 +12,7 @@ from extensions.additional_filters.regex_filter import (
     RegexFilter,
     _extract_literal_hints,
 )
+from wafer.plugin.query.base import PathScope
 
 
 def _setup_db(tmp_path, files=None, meta=None, tags=None, source_num=None):
@@ -66,7 +67,7 @@ def _setup_db(tmp_path, files=None, meta=None, tags=None, source_num=None):
 
 
 def _query(db_path, params):
-    sql, bind = RegexFilter.build_path_query(params, lambda p: p)
+    sql, bind = RegexFilter.build_path_query(params, lambda p: p, PathScope())
     if sql is None:
         return set()
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
@@ -182,24 +183,24 @@ class TestInheritableParams:
 
 class TestBuildPathQuery:
     def test_empty_pattern_returns_none(self, tmp_path):
-        sql, bind = RegexFilter.build_path_query({"pattern": "", "keys": ["path"]}, lambda p: p)
+        sql, bind = RegexFilter.build_path_query({"pattern": "", "keys": ["path"]}, lambda p: p, PathScope())
         assert sql is None
 
     def test_invalid_regex_returns_none(self, tmp_path):
-        sql, bind = RegexFilter.build_path_query({"pattern": "[invalid", "keys": ["path"]}, lambda p: p)
+        sql, bind = RegexFilter.build_path_query({"pattern": "[invalid", "keys": ["path"]}, lambda p: p, PathScope())
         assert sql is None
 
     def test_no_keys_with_require_keys(self, tmp_path):
-        sql, bind = RegexFilter.build_path_query({"pattern": "test", "keys": [], "require_keys": True}, lambda p: p)
+        sql, bind = RegexFilter.build_path_query({"pattern": "test", "keys": [], "require_keys": True}, lambda p: p, PathScope())
         assert "WHERE 0" in sql
 
     def test_filepath_key_produces_sql(self, tmp_path):
-        sql, bind = RegexFilter.build_path_query({"pattern": "test", "keys": ["path"]}, lambda p: p)
+        sql, bind = RegexFilter.build_path_query({"pattern": "test", "keys": ["path"]}, lambda p: p, PathScope())
         assert sql is not None
         assert "files" in sql
 
     def test_meta_key_produces_sql(self, tmp_path):
-        sql, bind = RegexFilter.build_path_query({"pattern": "test", "keys": ["description"]}, lambda p: p)
+        sql, bind = RegexFilter.build_path_query({"pattern": "test", "keys": ["description"]}, lambda p: p, PathScope())
         assert sql is not None
         assert "meta_info" in sql
         assert "tags" in sql

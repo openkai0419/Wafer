@@ -22,8 +22,8 @@ def _normalize_text_inputs(params):
     return keys, include, exclude
 
 
-def _kv_part(from_clause, key_col, val_col, path_expr, other_keys, include_kw, keyword_mode, query_mode, exclude_keys=()):
-    conds, params = [], []
+def _kv_part(from_clause, key_col, val_col, path_expr, other_keys, include_kw, keyword_mode, query_mode, scope, exclude_keys=()):
+    conds, params = [scope.condition(path_expr)], []
     if other_keys:
         conds.append(f"{key_col} IN ({','.join('?' for _ in other_keys)})")
         params.extend(other_keys)
@@ -34,32 +34,29 @@ def _kv_part(from_clause, key_col, val_col, path_expr, other_keys, include_kw, k
         c, v = build_like_condition(val_col, include_kw, keyword_mode, query_mode)
         conds.append(f"({c})")
         params.extend(v)
-    w = f"WHERE {' AND '.join(conds)}" if conds else ""
-    return f"SELECT {path_expr} FROM {from_clause} {w}", params
+    return f"SELECT {path_expr} FROM {from_clause} WHERE {' AND '.join(conds)}", params
 
 
-def _file_hash_part(include_kw, keyword_mode, query_mode):
-    conds, params = [], []
+def _file_hash_part(include_kw, keyword_mode, query_mode, scope):
+    conds, params = [scope.condition("i.path")], []
     if include_kw:
         c, v = build_like_condition("s.file_hash", include_kw, keyword_mode, query_mode)
         conds.append(f"({c})")
         params.extend(v)
-    w = f"WHERE {' AND '.join(conds)}" if conds else ""
-    return f"SELECT i.path FROM sources AS s JOIN files AS i ON i.source = s.source {w}", params
+    return f"SELECT i.path FROM sources AS s JOIN files AS i ON i.source = s.source WHERE {' AND '.join(conds)}", params
 
 
-def _standard_part(key, include_kw, keyword_mode, query_mode):
+def _standard_part(key, include_kw, keyword_mode, query_mode, scope):
     cols = standard_key_columns(key)
     if cols is None:
         return None, []
     from_clause, path_col, val_col = cols
-    conds, params = [], []
+    conds, params = [scope.condition(path_col)], []
     if include_kw:
         c, v = build_like_condition(val_col, include_kw, keyword_mode, query_mode)
         conds.append(f"({c})")
         params.extend(v)
-    w = f"WHERE {' AND '.join(conds)}" if conds else ""
-    return f"SELECT {path_col} AS path FROM {from_clause} {w}", params
+    return f"SELECT {path_col} AS path FROM {from_clause} WHERE {' AND '.join(conds)}", params
 
 
 class TextFilter(BaseFilterPlugin):
@@ -87,7 +84,7 @@ class TextFilter(BaseFilterPlugin):
 
     @classmethod
     @profiler.profile
-    def build_path_query(cls, params, normalize_path):
+    def build_path_query(cls, params, normalize_path, scope):
         keys, include_kw, exclude_kw = _normalize_text_inputs(params)
         query_mode = params.get("query_mode", "LIKE")
         keyword_mode = params.get("keyword_mode", "OR")
@@ -111,6 +108,7 @@ class TextFilter(BaseFilterPlugin):
                 include_kw,
                 keyword_mode,
                 query_mode,
+                scope,
                 (SYSTEM_FILE_HASH_KEY,) if query_all else (),
             )
             parts.append(sql)
@@ -125,18 +123,19 @@ class TextFilter(BaseFilterPlugin):
                 include_kw,
                 keyword_mode,
                 query_mode,
+                scope,
             )
             parts.append(sql)
             all_params.extend(p)
 
         for k in std_keys:
-            sql, p = _standard_part(k, include_kw, keyword_mode, query_mode)
+            sql, p = _standard_part(k, include_kw, keyword_mode, query_mode, scope)
             if sql is not None:
                 parts.append(sql)
                 all_params.extend(p)
 
         if query_all or SYSTEM_FILE_HASH_KEY in keys:
-            sql, p = _file_hash_part(include_kw, keyword_mode, query_mode)
+            sql, p = _file_hash_part(include_kw, keyword_mode, query_mode, scope)
             parts.append(sql)
             all_params.extend(p)
 
@@ -146,7 +145,7 @@ class TextFilter(BaseFilterPlugin):
         subquery = " UNION ALL ".join(parts)
 
         if exclude_kw:
-            exc_sql, exc_params = cls._build_exclude(keys if not query_all else [], query_all, exclude_kw, query_mode)
+            exc_sql, exc_params = cls._build_exclude(keys if not query_all else [], query_all, exclude_kw, query_mode, scope)
             if exc_sql:
                 subquery = f"SELECT sq.path FROM ({subquery}) AS sq WHERE sq.path NOT IN ({exc_sql})"
                 all_params.extend(exc_params)
@@ -154,12 +153,12 @@ class TextFilter(BaseFilterPlugin):
         return f"SELECT DISTINCT path FROM ({subquery})", all_params
 
     @classmethod
-    def _build_exclude(cls, keys, query_all, exclude_kw, query_mode):
+    def _build_exclude(cls, keys, query_all, exclude_kw, query_mode, scope):
         parts, params = [], []
         non_std_keys = [k for k in keys if k != SYSTEM_FILE_HASH_KEY and k not in STANDARD_KEYS]
         std_keys = [k for k in keys if k in STANDARD_KEYS] if not query_all else list(STANDARD_KEYS)
         if query_all or non_std_keys:
-            conds, p = [], []
+            conds, p = [scope.condition("em.path")], []
             if non_std_keys:
                 conds.append(f'em."key" IN ({",".join("?" for _ in non_std_keys)})')
                 p.extend(non_std_keys)
@@ -172,7 +171,7 @@ class TextFilter(BaseFilterPlugin):
             parts.append(f"SELECT em.path FROM meta_info AS em WHERE {' AND '.join(conds)}")
             params.extend(p)
 
-            conds2, p2 = [], []
+            conds2, p2 = [scope.condition("ei.path")], []
             if non_std_keys:
                 conds2.append(f'et."key" IN ({",".join("?" for _ in non_std_keys)})')
                 p2.extend(non_std_keys)
@@ -188,12 +187,12 @@ class TextFilter(BaseFilterPlugin):
                 continue
             from_clause, path_col, val_col = cols
             c, v = build_like_condition(val_col, exclude_kw, "OR", query_mode)
-            parts.append(f"SELECT {path_col} AS path FROM {from_clause} WHERE ({c})")
+            parts.append(f"SELECT {path_col} AS path FROM {from_clause} WHERE {scope.condition(path_col)} AND ({c})")
             params.extend(v)
 
         if query_all or SYSTEM_FILE_HASH_KEY in keys:
             c3, p3 = build_like_condition("es.file_hash", exclude_kw, "OR", query_mode)
-            parts.append(f"SELECT ei.path FROM sources AS es JOIN files AS ei ON ei.source = es.source WHERE ({c3})")
+            parts.append(f"SELECT ei.path FROM sources AS es JOIN files AS ei ON ei.source = es.source WHERE {scope.condition('ei.path')} AND ({c3})")
             params.extend(p3)
         if not parts:
             return "", []
@@ -207,7 +206,7 @@ class DirectoryFilter(BaseFilterPlugin):
 
     @classmethod
     @profiler.profile
-    def build_path_query(cls, params, normalize_path):
+    def build_path_query(cls, params, normalize_path, scope):
         directories = params.get("directories")
         if not directories:
             return None, []
@@ -240,7 +239,7 @@ class ContainedFilesFilter(BaseFilterPlugin):
 
     @classmethod
     @profiler.profile
-    def build_path_query(cls, params, normalize_path):
+    def build_path_query(cls, params, normalize_path, scope):
         if params.get("include", True):
             return None, []
         return "SELECT path FROM files WHERE source_extension IS NULL", []
@@ -253,10 +252,10 @@ class SourceChildrenFilter(BaseFilterPlugin):
 
     @classmethod
     @profiler.profile
-    def build_path_query(cls, params, normalize_path):
+    def build_path_query(cls, params, normalize_path, scope):
         source = params.get("source")
         if not isinstance(source, str) or not source:
             return None, []
         normalized = normalize_path(source)
         prefix = f"{normalized}{VIRTUAL_PATH_SEPARATOR}"
-        return "SELECT path FROM files WHERE source = ? AND path LIKE ? ESCAPE '\\'", [normalized, f"{escape_like(prefix)}%"]
+        return f"SELECT path FROM files WHERE source = ? AND path LIKE ? ESCAPE '\\' AND {scope.condition('path')}", [normalized, f"{escape_like(prefix)}%"]

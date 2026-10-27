@@ -5,6 +5,7 @@ import sqlite3
 
 from extensions.color._color import rgb_to_packed
 from extensions.color.filter import ColorFilter
+from wafer.plugin.query.base import PathScope
 
 
 def test_color_filter_sql_matches_tolerance():
@@ -26,9 +27,14 @@ def test_color_filter_sql_matches_tolerance():
             conn.execute("INSERT INTO sources VALUES (?, ?)", (path, file_hash))
             conn.execute("INSERT INTO files VALUES (?, ?)", (path, path))
             conn.execute("INSERT INTO tags VALUES (?, ?, ?, ?)", (file_hash, "color.palette.1", str(packed), packed))
-        sql, params = ColorFilter.build_path_query({"colors": [{"hex": "#ff0000", "tolerance": 0.1}], "mode": "OR"}, lambda p: p)
+        sql, params = ColorFilter.build_path_query({"colors": [{"hex": "#ff0000", "tolerance": 0.1}], "mode": "OR"}, lambda p: p, PathScope())
         result = {row[0] for row in conn.execute(sql, params).fetchall()}
         assert result == {"red.jpg", "mixed.jpg"}
+
+        scope = PathScope("SELECT path FROM files WHERE path <> ?", ["red.jpg"])
+        sql, params = ColorFilter.build_path_query({"colors": [{"hex": "#ff0000", "tolerance": 0.1}], "mode": "OR"}, lambda p: p, scope)
+        scoped = conn.execute(f"WITH {PathScope.CTE_NAME} AS ({scope.sql}) {sql}", [*scope.params, *params]).fetchall()
+        assert {row[0] for row in scoped} == {"mixed.jpg"}
     finally:
         conn.close()
 
@@ -53,6 +59,7 @@ def test_color_filter_and_mode_requires_both_colors():
         sql, params = ColorFilter.build_path_query(
             {"colors": [{"hex": "#ff0000", "tolerance": 0.01}, {"hex": "#0000ff", "tolerance": 0.01}], "mode": "AND"},
             lambda p: p,
+            PathScope(),
         )
         result = {row[0] for row in conn.execute(sql, params).fetchall()}
         assert result == {"both.jpg"}
@@ -62,6 +69,6 @@ def test_color_filter_and_mode_requires_both_colors():
 
 def test_color_filter_uses_dynamic_palette_keys(monkeypatch):
     monkeypatch.setattr("extensions.color.filter.palette_keys", lambda: ("palette.1", "palette.2", "palette.3"))
-    sql, params = ColorFilter.build_path_query({"colors": [{"hex": "#ff0000", "tolerance": 0.1}], "mode": "OR"}, lambda p: p)
+    sql, params = ColorFilter.build_path_query({"colors": [{"hex": "#ff0000", "tolerance": 0.1}], "mode": "OR"}, lambda p: p, PathScope())
     assert "?,?,?" in sql
     assert params[:3] == ["color.palette.1", "color.palette.2", "color.palette.3"]

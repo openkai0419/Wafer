@@ -184,7 +184,7 @@ class RegexFilter(BaseFilterPlugin):
 
     @classmethod
     @profiler.profile
-    def build_path_query(cls, params, normalize_path):
+    def build_path_query(cls, params, normalize_path, scope):
         pattern = params.get("pattern", "")
         if not pattern:
             return None, []
@@ -217,6 +217,7 @@ class RegexFilter(BaseFilterPlugin):
                 "mi.path",
                 non_std_keys if not query_all else [],
                 hints,
+                scope,
             )
             parts.append(sql)
             all_params.extend(p)
@@ -228,12 +229,13 @@ class RegexFilter(BaseFilterPlugin):
                 "i.path",
                 non_std_keys if not query_all else [],
                 hints,
+                scope,
             )
             parts.append(sql)
             all_params.extend(p)
 
         for key in std_keys:
-            sql, p = cls._standard_part(key, hints)
+            sql, p = cls._standard_part(key, hints, scope)
             if sql is not None:
                 parts.append(sql)
                 all_params.extend(p)
@@ -255,26 +257,24 @@ class RegexFilter(BaseFilterPlugin):
         return keys, ignore_case
 
     @classmethod
-    def _kv_part(cls, from_clause, key_col, val_col, path_expr, other_keys, hints):
-        conds, params = [], []
+    def _kv_part(cls, from_clause, key_col, val_col, path_expr, other_keys, hints, scope):
+        conds, params = [scope.condition(path_expr)], []
         if other_keys:
             conds.append(f"{key_col} IN ({','.join('?' for _ in other_keys)})")
             params.extend(other_keys)
         val_conds, val_bind = _build_like_conditions(val_col, hints)
         conds.extend(val_conds)
         params.extend(val_bind)
-        w = f"WHERE {' AND '.join(conds)}" if conds else ""
-        return f"SELECT {path_expr} FROM {from_clause} {w}", params
+        return f"SELECT {path_expr} FROM {from_clause} WHERE {' AND '.join(conds)}", params
 
     @classmethod
-    def _standard_part(cls, key, hints):
+    def _standard_part(cls, key, hints, scope):
         cols = standard_key_columns(key)
         if cols is None:
             return None, []
         from_clause, path_col, val_col = cols
         conds, params = _build_like_conditions(val_col, hints)
-        w = f"WHERE {' AND '.join(conds)}" if conds else ""
-        return f"SELECT {path_col} AS path FROM {from_clause} {w}", params
+        return f"SELECT {path_col} AS path FROM {from_clause} WHERE {' AND '.join([scope.condition(path_col), *conds])}", params
 
     @classmethod
     def post_filter(cls, params, rows):

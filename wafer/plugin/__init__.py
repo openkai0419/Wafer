@@ -22,6 +22,7 @@ _EXPORTS = {
     "ParserResult": (".parser.base", None),
     "BaseFilterPlugin": (".query.base", None),
     "BaseSortPlugin": (".query.base", None),
+    "PathScope": (".query.base", None),
     "BaseLayoutPlugin": (".layout.base", None),
     "BasePanelPlugin": (".panel.base", None),
     "PluginConfig": (".config", None),

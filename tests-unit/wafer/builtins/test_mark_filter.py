@@ -1,4 +1,5 @@
 from wafer.builtins.mark.filter import MarkFilter
+from wafer.plugin.query.base import PathScope
 
 
 def _norm(p):
@@ -6,13 +7,13 @@ def _norm(p):
 
 
 def test_mark_filter_empty_returns_none():
-    sql, params = MarkFilter.build_path_query({"mark_ids": []}, _norm)
+    sql, params = MarkFilter.build_path_query({"mark_ids": []}, _norm, PathScope())
     assert sql is None
     assert params == []
 
 
 def test_mark_filter_or_single_id():
-    sql, params = MarkFilter.build_path_query({"mark_ids": ["1"], "mode": "OR"}, _norm)
+    sql, params = MarkFilter.build_path_query({"mark_ids": ["1"], "mode": "OR"}, _norm, PathScope())
     assert sql is not None
     assert "meta_info" in sql.lower()
     assert "tags" in sql.lower()
@@ -21,14 +22,14 @@ def test_mark_filter_or_single_id():
 
 
 def test_mark_filter_or_multi():
-    sql, params = MarkFilter.build_path_query({"mark_ids": ["1", "2"], "mode": "OR"}, _norm)
+    sql, params = MarkFilter.build_path_query({"mark_ids": ["1", "2"], "mode": "OR"}, _norm, PathScope())
     assert sql is not None
     assert "mark.1" in params and "mark.2" in params
     assert params.count("mark.1") == 2
 
 
 def test_mark_filter_and_multi():
-    sql, params = MarkFilter.build_path_query({"mark_ids": ["1", "2", "3"], "mode": "AND"}, _norm)
+    sql, params = MarkFilter.build_path_query({"mark_ids": ["1", "2", "3"], "mode": "AND"}, _norm, PathScope())
     assert sql is not None
     assert "GROUP BY" in sql
     assert "HAVING" in sql
@@ -38,6 +39,6 @@ def test_mark_filter_and_multi():
 
 
 def test_mark_filter_and_single_falls_back():
-    sql, params = MarkFilter.build_path_query({"mark_ids": ["1"], "mode": "AND"}, _norm)
+    sql, params = MarkFilter.build_path_query({"mark_ids": ["1"], "mode": "AND"}, _norm, PathScope())
     assert sql is not None
     assert "GROUP BY" not in sql

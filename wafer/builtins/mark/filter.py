@@ -31,7 +31,7 @@ class MarkFilter(BaseFilterPlugin):
 
     @classmethod
     @profiler.profile
-    def build_path_query(cls, params, normalize_path):
+    def build_path_query(cls, params, normalize_path, scope):
         ids = params.get("mark_ids") or []
         if not ids:
             return None, []
@@ -39,12 +39,12 @@ class MarkFilter(BaseFilterPlugin):
         keys = [MarkRegistry.key(str(mark_id)) for mark_id in ids]
         placeholders = ",".join(["?"] * len(keys))
         base = (
-            f"SELECT mi.path, mi.key AS k FROM meta_info AS mi WHERE mi.key IN ({placeholders}) "
+            f"SELECT mi.path, mi.key AS k FROM meta_info AS mi WHERE mi.key IN ({placeholders}) AND {scope.condition('mi.path')} "
             f"UNION ALL "
             f"SELECT i.path, t.key AS k FROM tags AS t "
             f"JOIN sources AS s ON s.file_hash = t.file_hash "
             f"JOIN files AS i ON i.source = s.source "
-            f"WHERE t.key IN ({placeholders})"
+            f"WHERE t.key IN ({placeholders}) AND {scope.condition('i.path')}"
         )
         base_params = list(keys) + list(keys)
         if mode == "AND" and len(keys) > 1:

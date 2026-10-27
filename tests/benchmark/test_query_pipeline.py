@@ -168,18 +168,7 @@ def _composer_or_entries():
 
 
 def _compose_path_query(engine, entries):
-    row_queries = []
-    global_queries = []
-    for filter_cls, params, op in entries:
-        sql, bind = filter_cls.build_path_query(params, engine._normalize_path)
-        if sql is None:
-            continue
-        if filter_cls.QUERY_SCOPE == "global":
-            global_queries.append((sql, bind))
-        else:
-            row_queries.append((sql, bind, op))
-    combined_sql, combined_params = SearchComposer._combine(row_queries)
-    return SearchComposer._apply_global(combined_sql, combined_params, global_queries)
+    return SearchComposer()._build_path_query(engine, entries)
 
 
 def _fmt(avg, mn, mx, rows=None, label=""):

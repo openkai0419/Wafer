@@ -16,6 +16,7 @@ from extensions.additional_filters.filter import (
     _resolve_date_value,
     _resolve_preset_ref,
 )
+from wafer.plugin.query.base import PathScope
 
 
 def _setup_db(tmp_path, files=None, meta_num=None, source_num=None):
@@ -65,7 +66,7 @@ def _setup_db(tmp_path, files=None, meta_num=None, source_num=None):
 
 
 def _query(db_path, params):
-    sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
+    sql, bind = DateRangeFilter.build_path_query(params, lambda p: p, PathScope())
     if sql is None:
         return set()
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
@@ -183,7 +184,7 @@ class TestResolvePresetRef:
 class TestBuildPathQuery:
     def test_preset_returns_between(self):
         params = {"target_key": "modified", "mode": "preset", "preset_value": 7, "preset_unit": "days"}
-        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
+        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p, PathScope())
         assert sql is not None
         assert "BETWEEN" in sql
         assert len(bind) == 2
@@ -197,7 +198,7 @@ class TestBuildPathQuery:
             "preset_unit": "days",
             "preset_ref": "2024/06/15",
         }
-        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
+        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p, PathScope())
         assert sql is not None
         assert "BETWEEN" in sql
         ref_epoch = _date_str_to_epoch("2024/06/15", end_of_day=True)
@@ -205,38 +206,38 @@ class TestBuildPathQuery:
 
     def test_range_both(self):
         params = {"target_key": "modified", "mode": "range", "range_from": "2024/01/01", "range_to": "2024/12/31"}
-        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
+        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p, PathScope())
         assert sql is not None
         assert "BETWEEN" in sql
         assert len(bind) == 2
 
     def test_range_from_only(self):
         params = {"target_key": "modified", "mode": "range", "range_from": "2024/01/01", "range_to": ""}
-        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
+        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p, PathScope())
         assert sql is not None
         assert "<=" in sql
         assert len(bind) == 1
 
     def test_range_to_only(self):
         params = {"target_key": "modified", "mode": "range", "range_from": "", "range_to": "2024/12/31"}
-        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
+        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p, PathScope())
         assert sql is not None
         assert ">=" in sql
         assert len(bind) == 1
 
     def test_range_both_empty(self):
         params = {"target_key": "modified", "mode": "range", "range_from": "", "range_to": ""}
-        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
+        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p, PathScope())
         assert sql is None
 
     def test_preset_zero_value(self):
         params = {"target_key": "modified", "mode": "preset", "preset_value": 0, "preset_unit": "days"}
-        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
+        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p, PathScope())
         assert sql is None
 
     def test_invalid_mode(self):
         params = {"target_key": "modified", "mode": "invalid"}
-        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
+        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p, PathScope())
         assert sql is None
 
     def test_range_swaps_min_max(self):
@@ -246,7 +247,7 @@ class TestBuildPathQuery:
             "range_from": "2024/12/31",
             "range_to": "2024/01/01",
         }
-        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
+        sql, bind = DateRangeFilter.build_path_query(params, lambda p: p, PathScope())
         assert "BETWEEN" in sql
         assert bind[0] < bind[1]
 

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import re
+from functools import partial
 
 from wafer.core.db.db_utils import escape_like
-from wafer.core.db.query import STANDARD_KEYS, standard_key_columns
+from wafer.core.db.query import STANDARD_KEYS, key_value_path_query, standard_key_path_query
 from wafer.plugin import BaseFilterPlugin
 from wafer.core.profiling import profiler
 
@@ -207,35 +208,17 @@ class RegexFilter(BaseFilterPlugin):
         non_std_keys = [k for k in keys if k not in STANDARD_KEYS]
         std_keys = [k for k in keys if k in STANDARD_KEYS] if not query_all else list(STANDARD_KEYS)
 
+        value_conditions = partial(_build_like_conditions, hints=hints)
         parts, all_params = [], []
 
         if query_all or non_std_keys:
-            sql, p = cls._kv_part(
-                "meta_info AS mi",
-                'mi."key"',
-                'mi."value"',
-                "mi.path",
-                non_std_keys if not query_all else [],
-                hints,
-                scope,
-            )
-            parts.append(sql)
-            all_params.extend(p)
-
-            sql, p = cls._kv_part(
-                "tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source",
-                't."key"',
-                't."value"',
-                "i.path",
-                non_std_keys if not query_all else [],
-                hints,
-                scope,
-            )
-            parts.append(sql)
-            all_params.extend(p)
+            for table in ("meta_info", "tags"):
+                sql, p = key_value_path_query(table, value_conditions, scope, keys=non_std_keys)
+                parts.append(sql)
+                all_params.extend(p)
 
         for key in std_keys:
-            sql, p = cls._standard_part(key, hints, scope)
+            sql, p = standard_key_path_query(key, value_conditions, scope)
             if sql is not None:
                 parts.append(sql)
                 all_params.extend(p)
@@ -255,26 +238,6 @@ class RegexFilter(BaseFilterPlugin):
             keys = list(keys)
         ignore_case = params.get("ignore_case", False)
         return keys, ignore_case
-
-    @classmethod
-    def _kv_part(cls, from_clause, key_col, val_col, path_expr, other_keys, hints, scope):
-        conds, params = [scope.condition(path_expr)], []
-        if other_keys:
-            conds.append(f"{key_col} IN ({','.join('?' for _ in other_keys)})")
-            params.extend(other_keys)
-        val_conds, val_bind = _build_like_conditions(val_col, hints)
-        conds.extend(val_conds)
-        params.extend(val_bind)
-        return f"SELECT {path_expr} FROM {from_clause} WHERE {' AND '.join(conds)}", params
-
-    @classmethod
-    def _standard_part(cls, key, hints, scope):
-        cols = standard_key_columns(key)
-        if cols is None:
-            return None, []
-        from_clause, path_col, val_col = cols
-        conds, params = _build_like_conditions(val_col, hints)
-        return f"SELECT {path_col} AS path FROM {from_clause} WHERE {' AND '.join([scope.condition(path_col), *conds])}", params
 
     @classmethod
     def post_filter(cls, params, rows):

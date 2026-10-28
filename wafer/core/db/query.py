@@ -33,6 +33,34 @@ def standard_key_columns(key: str) -> tuple[str, str, str] | None:
     return None
 
 
+KEY_VALUE_TABLES = {
+    "meta_info": ("meta_info AS mi", 'mi."key"', 'mi."value"', "mi.path"),
+    "tags": ("tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source", 't."key"', 't."value"', "i.path"),
+}
+
+
+def key_value_path_query(table: str, value_conditions, scope, keys=(), exclude_keys=()) -> tuple[str, list]:
+    from_clause, key_col, val_col, path_col = KEY_VALUE_TABLES[table]
+    conds, params = [scope.condition(path_col)], []
+    if keys:
+        conds.append(f"{key_col} IN ({','.join('?' for _ in keys)})")
+        params.extend(keys)
+    if exclude_keys:
+        conds.append(f"{key_col} NOT IN ({','.join('?' for _ in exclude_keys)})")
+        params.extend(exclude_keys)
+    value_conds, value_params = value_conditions(val_col)
+    return f"SELECT {path_col} AS path FROM {from_clause} WHERE {' AND '.join([*conds, *value_conds])}", [*params, *value_params]
+
+
+def standard_key_path_query(key: str, value_conditions, scope) -> tuple[str | None, list]:
+    cols = standard_key_columns(key)
+    if cols is None:
+        return None, []
+    from_clause, path_col, val_col = cols
+    value_conds, value_params = value_conditions(val_col)
+    return f"SELECT {path_col} AS path FROM {from_clause} WHERE {' AND '.join([scope.condition(path_col), *value_conds])}", value_params
+
+
 def parse_keywords(keywords, separator: str | None = None, trim: bool = True) -> tuple[list[str], list[str]]:
     if isinstance(keywords, str):
         words = keywords.split(separator) if separator else [keywords]

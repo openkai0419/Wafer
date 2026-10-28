@@ -11,23 +11,6 @@ if TYPE_CHECKING:
     from .widgets import KeyStore
 
 
-class PathScope:
-    CTE_NAME = "_scope"
-
-    def __init__(self, sql: str | None = None, params: list | None = None):
-        self.sql = sql
-        self.params = list(params or [])
-
-    @property
-    def restricted(self) -> bool:
-        return self.sql is not None
-
-    def condition(self, path_expr: str) -> str:
-        if not self.restricted:
-            return "1"
-        return f"{path_expr} IN (SELECT path FROM {self.CTE_NAME})"
-
-
 class BaseFilterPlugin(PluginBase, ABC):
     DISPLAY_NAME: str = ""
     QUERY_SCOPE: str = "row"
@@ -35,7 +18,7 @@ class BaseFilterPlugin(PluginBase, ABC):
 
     @classmethod
     @abstractmethod
-    def build_path_query(cls, params: dict, normalize_path, scope: PathScope) -> tuple[str | None, list]: ...
+    def build_path_query(cls, params: dict, normalize_path) -> tuple[str | None, list]: ...
 
     @classmethod
     def post_filter(cls, params: dict, rows: list) -> list:

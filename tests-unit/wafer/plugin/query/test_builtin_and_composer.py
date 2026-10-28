@@ -16,7 +16,6 @@ from wafer.builtins.sorts import (
 )
 from wafer.core.common.paths import normalize_path
 from wafer.core.common.virtual_paths import build_virtual_path
-from wafer.plugin.query.base import PathScope
 
 
 def np(p):
@@ -128,7 +127,7 @@ def composer():
 class TestTextFilterBuildPathQuery:
     def test_no_keys_require_false(self, engine):
         params = {"keys": [], "require_keys": False, "keywords": "photo"}
-        sql, bind = TextFilter.build_path_query(params, np, PathScope())
+        sql, bind = TextFilter.build_path_query(params, np)
         assert sql is not None
         assert "files" in sql
         assert "meta_info" in sql
@@ -136,12 +135,12 @@ class TestTextFilterBuildPathQuery:
 
     def test_glob_mode(self, engine):
         params = {"keys": ["path"], "keywords": "vacation", "query_mode": "GLOB"}
-        sql, bind = TextFilter.build_path_query(params, np, PathScope())
+        sql, bind = TextFilter.build_path_query(params, np)
         assert "GLOB" in sql
 
     def test_and_keyword_mode(self, engine):
         params = {"keys": ["Comment"], "keywords": "photo,number", "keyword_separator": ",", "keyword_mode": "AND"}
-        sql, bind = TextFilter.build_path_query(params, np, PathScope())
+        sql, bind = TextFilter.build_path_query(params, np)
         assert " AND " in sql
 
 
@@ -194,25 +193,25 @@ class TestTextFilterExecution:
 
 class TestContainedFilesFilterBuildPathQuery:
     def test_include_true_noops(self):
-        sql, bind = ContainedFilesFilter.build_path_query({"include": True}, np, PathScope())
+        sql, bind = ContainedFilesFilter.build_path_query({"include": True}, np)
         assert sql is None
         assert bind == []
 
     def test_include_false_uses_source_extension_index(self):
-        sql, bind = ContainedFilesFilter.build_path_query({"include": False}, np, PathScope())
+        sql, bind = ContainedFilesFilter.build_path_query({"include": False}, np)
         assert sql == "SELECT path FROM files WHERE source_extension IS NULL"
         assert bind == []
 
 
 class TestSourceChildrenFilterBuildPathQuery:
     def test_source_children_query_uses_source_and_prefix(self):
-        sql, bind = SourceChildrenFilter.build_path_query({"source": "C:/archives/temp.zip"}, np, PathScope())
+        sql, bind = SourceChildrenFilter.build_path_query({"source": "C:/archives/temp.zip"}, np)
         assert "source = ?" in sql
         assert "path LIKE ?" in sql
         assert bind == ["C:/archives/temp.zip", "C:/archives/temp.zip::%"]
 
     def test_source_children_empty_source_noops(self):
-        sql, bind = SourceChildrenFilter.build_path_query({"source": ""}, np, PathScope())
+        sql, bind = SourceChildrenFilter.build_path_query({"source": ""}, np)
         assert sql is None
         assert bind == []
 
@@ -450,7 +449,7 @@ class TestPostFilter:
             NAME = "even_idx"
 
             @classmethod
-            def build_path_query(cls, params, normalize_path, scope):
+            def build_path_query(cls, params, normalize_path):
                 return None, []
 
             @classmethod
@@ -621,12 +620,12 @@ class PathListFilter(BaseFilterPlugin):
     NAME = "path_list"
 
     @classmethod
-    def build_path_query(cls, params, normalize_path, scope):
+    def build_path_query(cls, params, normalize_path):
         paths = params["paths"]
         return f"SELECT path FROM files WHERE path IN ({','.join('?' for _ in paths)})", list(paths)
 
 
-class TestComposerFolderScope:
+class TestComposerFolderIntersection:
     ROW_FILTERS = {
         "has_key_sparse": [(TextFilter, {"keys": ["Artist"]}, None)],
         "has_key_tag": [(TextFilter, {"keys": ["category"]}, None)],
@@ -650,10 +649,10 @@ class TestComposerFolderScope:
     @pytest.mark.parametrize("rows", ROW_FILTERS)
     def test_result_equals_row_filters_intersected_with_folder(self, engine, composer, rows, folder):
         row_entries, folder_entries = self.ROW_FILTERS[rows], self.FOLDERS[folder]
-        unscoped, _, _ = composer.execute(engine, row_entries, NaturalPathSort, True)
+        matched, _, _ = composer.execute(engine, row_entries, NaturalPathSort, True)
         in_folder, _, _ = composer.execute(engine, folder_entries, NaturalPathSort, True)
-        scoped, _, _ = composer.execute(engine, row_entries + folder_entries, NaturalPathSort, True)
-        assert scoped == [p for p in unscoped if p in set(in_folder)]
+        combined, _, _ = composer.execute(engine, row_entries + folder_entries, NaturalPathSort, True)
+        assert combined == [p for p in matched if p in set(in_folder)]
 
     @pytest.mark.parametrize("rows", ["has_key_sparse", "exclude", "or"])
     def test_list_all_keys_equals_keys_of_matching_files(self, engine, composer, rows):
@@ -662,26 +661,7 @@ class TestComposerFolderScope:
         expected = composer.list_all_keys(engine, [(PathListFilter, {"paths": matched}, None)], sort_by_freq=True)
         assert composer.list_all_keys(engine, entries, sort_by_freq=True) == expected
 
-    def test_row_filters_get_folder_scope_and_globals_do_not(self, engine, composer):
-        received = []
-
-        class ScopeProbe(BaseFilterPlugin):
-            NAME = "scope_probe"
-
-            @classmethod
-            def build_path_query(cls, params, normalize_path, scope):
-                received.append((params["role"], scope.restricted))
-                return None, []
-
-        class GlobalProbe(ScopeProbe):
-            NAME = "global_probe"
-            QUERY_SCOPE = "global"
-
-        composer.execute(engine, [(ScopeProbe, {"role": "row"}, None), (GlobalProbe, {"role": "global"}, None), *self.FOLDERS["one"]], NaturalPathSort, True)
-        composer.execute(engine, [(ScopeProbe, {"role": "row_without_folder"}, None)], NaturalPathSort, True)
-        assert received == [("global", False), ("row", True), ("row_without_folder", False)]
-
-    def test_filter_ignoring_scope_is_still_limited_to_folder(self, engine, composer):
+    def test_row_filter_result_is_limited_to_folder(self, engine, composer):
         paths, _, _ = composer.execute(engine, [(PathListFilter, {"paths": ["C:/photos/vacation/img_0001.jpg", "C:/photos/work/img_0101.jpg"]}, None), *self.FOLDERS["one"]], NaturalPathSort, True)
         assert paths == ["C:/photos/vacation/img_0001.jpg"]
 

@@ -125,7 +125,7 @@ class DateRangeFilter(BaseFilterPlugin):
 
     @classmethod
     @profiler.profile
-    def build_path_query(cls, params, normalize_path, scope):
+    def build_path_query(cls, params, normalize_path):
         target_key = params.get("target_key", "modified")
         mode = params.get("mode", "preset")
         bounds = cls._compute_bounds(params, mode)
@@ -136,9 +136,9 @@ class DateRangeFilter(BaseFilterPlugin):
         std = _date_select_for_key(target_key)
         if std is not None:
             base_sql, _col = std
-            return cls._build_range_sql(base_sql, lo, hi, [], scope.condition("i.path"))
+            return cls._build_range_sql(base_sql, lo, hi, [])
         base_sql = 'SELECT path FROM meta_info WHERE "key" = ? AND value_num'
-        return cls._build_range_sql(base_sql, lo, hi, [target_key], scope.condition("path"))
+        return cls._build_range_sql(base_sql, lo, hi, [target_key])
 
     @staticmethod
     def _compute_bounds(params, mode):
@@ -166,7 +166,7 @@ class DateRangeFilter(BaseFilterPlugin):
         return None
 
     @staticmethod
-    def _build_range_sql(base_sql, lo, hi, leading_params, scope_condition):
+    def _build_range_sql(base_sql, lo, hi, leading_params):
         if lo is not None and hi is not None:
             range_sql, bounds = "BETWEEN ? AND ?", [lo, hi]
         elif hi is not None:
@@ -175,4 +175,4 @@ class DateRangeFilter(BaseFilterPlugin):
             range_sql, bounds = ">= ?", [lo]
         else:
             return None, []
-        return f"{base_sql} {range_sql} AND {scope_condition}", [*leading_params, *bounds]
+        return f"{base_sql} {range_sql}", [*leading_params, *bounds]

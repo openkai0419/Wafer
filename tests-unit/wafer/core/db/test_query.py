@@ -8,7 +8,6 @@ from wafer.core.db.query import FileSearchEngine, _kv_sort_join, key_value_path_
 from wafer.core.db.file_db import FileDB
 from wafer.core.common.paths import normalize_path
 from wafer.core.common.virtual_paths import build_virtual_path
-from wafer.plugin.query.base import PathScope
 
 
 @pytest.fixture
@@ -346,51 +345,32 @@ def _value_equals(value):
     return lambda column: ([f"{column} = ?"], [value])
 
 
-def _in_folder(folder):
-    return PathScope(f"SELECT path FROM files WHERE path LIKE '{folder}/%'")
-
-
-def _run_scoped(engine, scope, sql, params):
+def _paths(engine, sql, params):
     assert engine._connect_if_needed()
-    if scope.restricted:
-        sql = f"WITH {PathScope.CTE_NAME} AS ({scope.sql}) {sql}"
     return sorted(row[0] for row in engine.fetch(sql, params))
 
 
 class TestKeyValuePathQuery:
     def test_keys_exclude_keys_and_value_conditions_are_anded(self):
-        sql, params = key_value_path_query("meta_info", _value_equals("v"), PathScope(), keys=["a", "b"], exclude_keys=["c"])
-        assert sql == 'SELECT mi.path AS path FROM meta_info AS mi WHERE 1 AND mi."key" IN (?,?) AND mi."key" NOT IN (?) AND mi."value" = ?'
+        sql, params = key_value_path_query("meta_info", _value_equals("v"), keys=["a", "b"], exclude_keys=["c"])
+        assert sql == 'SELECT mi.path AS path FROM meta_info AS mi WHERE mi."key" IN (?,?) AND mi."key" NOT IN (?) AND mi."value" = ?'
         assert params == ["a", "b", "c", "v"]
 
+    def test_no_conditions_has_no_where(self):
+        assert key_value_path_query("meta_info", lambda column: ([], [])) == ("SELECT mi.path AS path FROM meta_info AS mi", [])
+
     def test_tags_are_matched_through_sources(self, populated_db):
-        engine = FileSearchEngine(populated_db)
-        sql, params = key_value_path_query("tags", _value_equals("landscape"), PathScope(), keys=["category"])
-        paths = _run_scoped(engine, PathScope(), sql, params)
+        sql, params = key_value_path_query("tags", _value_equals("landscape"), keys=["category"])
+        paths = _paths(FileSearchEngine(populated_db), sql, params)
         assert len(paths) == 50
         assert all("/vacation/" in p for p in paths)
-
-    def test_scope_limits_rows_to_folder(self, populated_db):
-        engine = FileSearchEngine(populated_db)
-        scope = _in_folder("C:/photos/work")
-        sql, params = key_value_path_query("meta_info", _value_equals("72"), scope, keys=["dpi"])
-        paths = _run_scoped(engine, scope, sql, params)
-        assert len(paths) == 25
-        assert all("/work/" in p for p in paths)
 
 
 class TestStandardKeyPathQuery:
     def test_unknown_key_has_no_query(self):
-        assert standard_key_path_query("Comment", _value_equals("x"), PathScope()) == (None, [])
+        assert standard_key_path_query("Comment", _value_equals("x")) == (None, [])
 
     @pytest.mark.parametrize(("key", "value", "expected"), [("path", SAMPLE_PATH, [SAMPLE_PATH]), ("size", "1100", ["C:/photos/work/img_0100.jpg"])])
     def test_files_and_sources_columns(self, populated_db, key, value, expected):
-        engine = FileSearchEngine(populated_db)
-        sql, params = standard_key_path_query(key, _value_equals(value), PathScope())
-        assert _run_scoped(engine, PathScope(), sql, params) == expected
-
-    def test_scope_limits_rows_to_folder(self, populated_db):
-        engine = FileSearchEngine(populated_db)
-        scope = _in_folder("C:/photos/vacation")
-        sql, params = standard_key_path_query("size", lambda column: ([f"{column} >= ?"], ["1099"]), scope)
-        assert _run_scoped(engine, scope, sql, params) == ["C:/photos/vacation/img_0099.jpg"]
+        sql, params = standard_key_path_query(key, _value_equals(value))
+        assert _paths(FileSearchEngine(populated_db), sql, params) == expected

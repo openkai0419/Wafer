@@ -185,7 +185,7 @@ class RegexFilter(BaseFilterPlugin):
 
     @classmethod
     @profiler.profile
-    def build_path_query(cls, params, normalize_path, scope):
+    def build_path_query(cls, params, normalize_path):
         pattern = params.get("pattern", "")
         if not pattern:
             return None, []
@@ -213,12 +213,12 @@ class RegexFilter(BaseFilterPlugin):
 
         if query_all or non_std_keys:
             for table in ("meta_info", "tags"):
-                sql, p = key_value_path_query(table, value_conditions, scope, keys=non_std_keys)
+                sql, p = key_value_path_query(table, value_conditions, keys=non_std_keys)
                 parts.append(sql)
                 all_params.extend(p)
 
         for key in std_keys:
-            sql, p = standard_key_path_query(key, value_conditions, scope)
+            sql, p = standard_key_path_query(key, value_conditions)
             if sql is not None:
                 parts.append(sql)
                 all_params.extend(p)

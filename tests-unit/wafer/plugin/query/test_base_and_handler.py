@@ -2,7 +2,7 @@ import pytest
 
 from PySide6 import QtWidgets
 
-from wafer.plugin.query.base import BaseFilterPlugin, BaseSortPlugin, PathScope
+from wafer.plugin.query.base import BaseFilterPlugin, BaseSortPlugin
 from wafer.plugin.query.widgets import KeyStore
 from wafer.plugin.query.handler import SortRegistry
 from wafer.plugin.query.widgets import _KeySelectorPopup
@@ -13,19 +13,6 @@ class TestBaseFilterPlugin:
     def test_abstract_build_path_query(self):
         with pytest.raises(TypeError):
             BaseFilterPlugin()
-
-
-class TestPathScope:
-    def test_unrestricted_condition_is_always_true(self):
-        scope = PathScope()
-        assert not scope.restricted
-        assert scope.condition("mi.path") == "1"
-
-    def test_restricted_condition_reads_scope_cte(self):
-        scope = PathScope("SELECT path FROM files WHERE path LIKE ?", ["C:/a/%"])
-        assert scope.restricted
-        assert scope.condition("i.path") == f"i.path IN (SELECT path FROM {PathScope.CTE_NAME})"
-        assert scope.params == ["C:/a/%"]
 
 
 @pytest.fixture()

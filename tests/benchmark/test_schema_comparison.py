@@ -29,7 +29,6 @@ from pathlib import Path
 import pytest
 
 from wafer.core.db.db_utils import apply_read_pragmas
-from wafer.plugin.query.base import PathScope
 
 pytestmark = [pytest.mark.benchmark, pytest.mark.timeout(600)]
 
@@ -702,7 +701,7 @@ class TestPluginResolution:
         print("\n=== build_path_query smoke ===")
         for cls, params in cases:
             try:
-                sql, p = cls.build_path_query(params, lambda x: x, PathScope())
+                sql, p = cls.build_path_query(params, lambda x: x)
                 print(f"  {cls.__name__:20s} OK  sql_len={len(sql or '')}  params={len(p)}")
             except Exception as e:
                 print(f"  {cls.__name__:20s} FAIL {type(e).__name__}: {e}")
@@ -720,7 +719,7 @@ class TestPluginResolution:
             "preset_unit": "days",
             "preset_ref": "today",
         }
-        sql, p = DateRangeFilter.build_path_query(params, lambda x: x, PathScope())
+        sql, p = DateRangeFilter.build_path_query(params, lambda x: x)
         print(f"\n=== DateRangeFilter ===\n  sql={sql}\n  params={p}")
         assert sql and "sources AS s JOIN files AS i" in sql
         assert "s.modified" in sql
@@ -729,6 +728,5 @@ class TestPluginResolution:
         fallback_sql, _ = DateRangeFilter.build_path_query(
             {"target_key": "custom.date", "mode": "range", "range_from": "2024/01/01", "range_to": "2024/01/02"},
             lambda x: x,
-            PathScope(),
         )
         assert fallback_sql and "meta_info" in fallback_sql

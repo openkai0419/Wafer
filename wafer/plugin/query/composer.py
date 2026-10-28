@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from ...core.profiling import profiler
 from ...core.db.query import _kv_sort_join, SYSTEM_FILE_HASH_KEY, STANDARD_KEYS_FILES, STANDARD_KEYS_SOURCES
-from .base import BaseFilterPlugin, PathScope
+from .base import BaseFilterPlugin
 
 
 class SearchComposer:
@@ -131,34 +131,21 @@ class SearchComposer:
         return sql, [*left_params, *right_params]
 
     def _build_path_query(self, engine, filter_entries):
-        scope = self._build_scope(engine, filter_entries)
         row_queries = []
+        global_queries = []
         for filter_cls, params, op in filter_entries:
-            if filter_cls.QUERY_SCOPE == "global":
+            sql, bind = filter_cls.build_path_query(params, engine._normalize_path)
+            if sql is None:
                 continue
-            sql, bind = filter_cls.build_path_query(params, engine._normalize_path, scope)
-            if sql is not None:
+            if filter_cls.QUERY_SCOPE == "global":
+                global_queries.append((sql, bind))
+            else:
                 row_queries.append((sql, bind, op))
         combined_sql, combined_params = self._combine(row_queries)
-        if not scope.restricted:
+        if not global_queries:
             return combined_sql, combined_params
-        cte = PathScope.CTE_NAME
-        sql = f"WITH {cte} AS MATERIALIZED ({scope.sql}) SELECT path FROM ({combined_sql}) AS _rw INTERSECT SELECT path FROM {cte}"
-        return sql, [*scope.params, *combined_params]
-
-    @staticmethod
-    def _build_scope(engine, filter_entries):
-        unrestricted = PathScope()
-        queries = []
-        for filter_cls, params, _op in filter_entries:
-            if filter_cls.QUERY_SCOPE != "global":
-                continue
-            sql, bind = filter_cls.build_path_query(params, engine._normalize_path, unrestricted)
-            if sql is not None:
-                queries.append((sql, bind))
-        if not queries:
-            return unrestricted
-        return PathScope(" INTERSECT ".join(sql for sql, _ in queries), [b for _, bind in queries for b in bind])
+        parts = [f"SELECT path FROM ({combined_sql}) AS _rw", *(sql for sql, _ in global_queries)]
+        return " INTERSECT ".join(parts), [*combined_params, *(b for _, bind in global_queries for b in bind)]
 
     @profiler.profile
     def _fetch(self, engine, columns, path_sql, params, sort_plugin, ascending):

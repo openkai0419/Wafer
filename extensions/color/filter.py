@@ -33,14 +33,14 @@ class ColorFilter(BaseFilterPlugin):
 
     @classmethod
     @profiler.profile
-    def build_path_query(cls, params, normalize_path, scope):
+    def build_path_query(cls, params, normalize_path):
         colors = [c for c in (color_param(item) for item in params.get("colors") or []) if c is not None]
         if not colors:
             return None, []
         parts = []
         bind = []
         for color in colors:
-            sql, sql_params = _single_color_query(color, scope)
+            sql, sql_params = _single_color_query(color)
             parts.append(sql)
             bind.extend(sql_params)
         mode = str(params.get("mode") or "OR").upper()
@@ -48,7 +48,7 @@ class ColorFilter(BaseFilterPlugin):
         return f"SELECT DISTINCT path FROM ({op.join(parts)})", bind
 
 
-def _single_color_query(color: dict, scope) -> tuple[str, list]:
+def _single_color_query(color: dict) -> tuple[str, list]:
     r, g, b = color["rgb"]
     keys = palette_keys()
     slot_sql = ",".join("?" for _ in keys)
@@ -61,6 +61,6 @@ def _single_color_query(color: dict, scope) -> tuple[str, list]:
         "SELECT DISTINCT i.path FROM tags AS t "
         "JOIN sources AS s ON s.file_hash = t.file_hash "
         "JOIN files AS i ON i.source = s.source "
-        f"WHERE t.key IN ({slot_sql}) AND t.value_num IS NOT NULL AND {distance} <= ? AND {scope.condition('i.path')}"
+        f"WHERE t.key IN ({slot_sql}) AND t.value_num IS NOT NULL AND {distance} <= ?"
     )
     return sql, [*tuple(f"color.{key}" for key in keys), r, r, g, g, b, b, color["radius_sq"]]

@@ -475,6 +475,11 @@ class TestMetaFiltering:
         assert "c:/sunset.jpg" in result
         assert "c:/mountain.jpg" in result
 
+    def test_file_hash_key_matches_source_hash(self, tmp_path):
+        db = _setup_db(tmp_path, files=["c:/a.jpg", "c:/b.jpg"])
+        target = hashlib.md5(b"c:/b.jpg").hexdigest()
+        assert _query(db, {"pattern": target[:12], "keys": ["file_hash"]}) == {"c:/b.jpg"}
+
 
 class TestPostFilter:
     def test_mixed_keys_no_path_stripping(self, tmp_path):

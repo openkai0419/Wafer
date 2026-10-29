@@ -11,24 +11,7 @@ class SearchComposer:
         if not engine._connect_if_needed():
             return [], [], []
 
-        row_queries = []
-        global_queries = []
-        post_filters = []
-
-        for filter_cls, params, op in filter_entries:
-            sql, bind = filter_cls.build_path_query(params, engine._normalize_path)
-            if sql is not None:
-                if filter_cls.QUERY_SCOPE == "global":
-                    global_queries.append((sql, bind))
-                else:
-                    row_queries.append((sql, bind, op))
-            if filter_cls.post_filter is not BaseFilterPlugin.post_filter:
-                post_filters.append((filter_cls, params))
-
-        combined_sql, combined_params = self._combine(row_queries)
-        combined_sql, combined_params = self._apply_global(combined_sql, combined_params, global_queries)
-        if combined_sql is None:
-            return [], [], []
+        path_sql, path_params = self.compose_path_query(engine, filter_entries)
 
         columns = ["path", "source", "aspect_ratio"]
         for filter_cls, _params, _ in filter_entries:
@@ -36,10 +19,11 @@ class SearchComposer:
                 if col not in columns:
                     columns.append(col)
 
-        rows = self._fetch(engine, columns, combined_sql, combined_params, sort_plugin, ascending)
+        rows = self._fetch(engine, columns, path_sql, path_params, sort_plugin, ascending)
 
-        for filter_cls, params in post_filters:
-            rows = filter_cls.post_filter(params, rows)
+        for filter_cls, params, _ in filter_entries:
+            if filter_cls.post_filter is not BaseFilterPlugin.post_filter:
+                rows = filter_cls.post_filter(params, rows)
 
         return (
             [r["path"] for r in rows],
@@ -52,20 +36,7 @@ class SearchComposer:
         if not engine._connect_if_needed():
             return []
 
-        row_queries = []
-        global_queries = []
-        for filter_cls, params, op in filter_entries:
-            sql, bind = filter_cls.build_path_query(params, engine._normalize_path)
-            if sql is not None:
-                if filter_cls.QUERY_SCOPE == "global":
-                    global_queries.append((sql, bind))
-                else:
-                    row_queries.append((sql, bind, op))
-
-        combined_sql, combined_params = self._combine(row_queries)
-        combined_sql, combined_params = self._apply_global(combined_sql, combined_params, global_queries)
-        if combined_sql is None:
-            return []
+        path_sql, path_params = self.compose_path_query(engine, filter_entries)
 
         order = "ORDER BY freq DESC" if sort_by_freq else 'ORDER BY "key"'
         std_branch_sqls = []
@@ -81,7 +52,7 @@ class SearchComposer:
             std_branch_params.append(k)
         std_branches = " UNION ALL ".join(std_branch_sqls)
         sql = (
-            f"WITH matched_paths AS ({combined_sql}) "
+            f"WITH matched_paths AS ({path_sql}) "
             f'SELECT "key", COUNT(DISTINCT path) AS freq FROM ('
             f'  SELECT DISTINCT mp.path, kv."key"'
             f"  FROM matched_paths AS mp"
@@ -103,7 +74,7 @@ class SearchComposer:
             f") AS items "
             f'GROUP BY "key" {order}'
         )
-        rows = engine.fetch(sql, [*combined_params, SYSTEM_FILE_HASH_KEY, SYSTEM_FILE_HASH_KEY, *std_branch_params])
+        rows = engine.fetch(sql, [*path_params, SYSTEM_FILE_HASH_KEY, SYSTEM_FILE_HASH_KEY, *std_branch_params])
         return [(row["key"], row["freq"]) for row in rows]
 
     @staticmethod
@@ -160,15 +131,22 @@ class SearchComposer:
         return sql, [*left_params, *right_params]
 
     @staticmethod
-    def _apply_global(combined_sql, combined_params, global_queries):
+    def compose_path_query(engine, filter_entries):
+        row_queries = []
+        global_queries = []
+        for filter_cls, params, op in filter_entries:
+            sql, bind = filter_cls.build_path_query(params, engine._normalize_path)
+            if sql is None:
+                continue
+            if filter_cls.QUERY_SCOPE == "global":
+                global_queries.append((sql, bind))
+            else:
+                row_queries.append((sql, bind, op))
+        combined_sql, combined_params = SearchComposer._combine(row_queries)
         if not global_queries:
             return combined_sql, combined_params
-        all_params = list(combined_params)
-        parts = [f"SELECT path FROM ({combined_sql}) AS _rw"]
-        for gsql, gbind in global_queries:
-            parts.append(gsql)
-            all_params.extend(gbind)
-        return " INTERSECT ".join(parts), all_params
+        parts = [f"SELECT path FROM ({combined_sql}) AS _rw", *(sql for sql, _ in global_queries)]
+        return " INTERSECT ".join(parts), [*combined_params, *(b for _, bind in global_queries for b in bind)]
 
     @profiler.profile
     def _fetch(self, engine, columns, path_sql, params, sort_plugin, ascending):
@@ -185,7 +163,7 @@ class SearchComposer:
                 rows = list(engine.fetch(sql, params))
                 return sort_plugin.sort_rows(rows, ascending)
             order = "ASC" if ascending else "DESC"
-            sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_sql}) AS s USING(path) ORDER BY m.{sort_column} {order}"
+            sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_sql}) AS s USING(path) ORDER BY m.{sort_column} {order}, m.path {order}"
             return engine.fetch(sql, params)
         if has_custom_sort:
             if meta_key:
@@ -199,7 +177,7 @@ class SearchComposer:
         if meta_key:
             order = "ASC" if ascending else "DESC"
             kv_join, _, kv_order, kv_params = _kv_sort_join(meta_key, engine.conn)
-            sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_sql}) AS s USING(path){kv_join} ORDER BY {kv_order} {order}"
+            sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_sql}) AS s USING(path){kv_join} ORDER BY {kv_order} {order}, m.path {order}"
             return engine.fetch(sql, [*params, *kv_params])
         sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_sql}) AS s USING(path)"
         return engine.fetch(sql, params)

@@ -168,9 +168,11 @@ class DateRangeFilter(BaseFilterPlugin):
     @staticmethod
     def _build_range_sql(base_sql, lo, hi, leading_params):
         if lo is not None and hi is not None:
-            return f"{base_sql} BETWEEN ? AND ?", [*leading_params, lo, hi]
-        if hi is not None:
-            return f"{base_sql} <= ?", [*leading_params, hi]
-        if lo is not None:
-            return f"{base_sql} >= ?", [*leading_params, lo]
-        return None, []
+            range_sql, bounds = "BETWEEN ? AND ?", [lo, hi]
+        elif hi is not None:
+            range_sql, bounds = "<= ?", [hi]
+        elif lo is not None:
+            range_sql, bounds = ">= ?", [lo]
+        else:
+            return None, []
+        return f"{base_sql} {range_sql}", [*leading_params, *bounds]

@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from wafer.core.db.query import FileSearchEngine, _kv_sort_join, parse_keywords
+from wafer.core.db.query import FileSearchEngine, _kv_sort_join, key_path_queries, key_value_path_query, parse_keywords, standard_key_path_query
 from wafer.core.db.file_db import FileDB
 from wafer.core.common.paths import normalize_path
 from wafer.core.common.virtual_paths import build_virtual_path
@@ -339,3 +339,64 @@ class TestKvSortJoinValidation:
             assert params == ["rating", "rating"]
         finally:
             conn.close()
+
+
+def _value_equals(value):
+    return lambda column: ([f"{column} = ?"], [value])
+
+
+def _paths(engine, sql, params):
+    assert engine._connect_if_needed()
+    return sorted(row[0] for row in engine.fetch(sql, params))
+
+
+class TestKeyValuePathQuery:
+    def test_keys_exclude_keys_and_value_conditions_are_anded(self):
+        sql, params = key_value_path_query("meta_info", _value_equals("v"), keys=["a", "b"], exclude_keys=["c"])
+        assert sql == 'SELECT mi.path AS path FROM meta_info AS mi WHERE mi."key" IN (?,?) AND mi."key" NOT IN (?) AND mi."value" = ?'
+        assert params == ["a", "b", "c", "v"]
+
+    def test_no_conditions_has_no_where(self):
+        assert key_value_path_query("meta_info", lambda column: ([], [])) == ("SELECT mi.path AS path FROM meta_info AS mi", [])
+
+    def test_tags_are_matched_through_sources(self, populated_db):
+        sql, params = key_value_path_query("tags", _value_equals("landscape"), keys=["category"])
+        paths = _paths(FileSearchEngine(populated_db), sql, params)
+        assert len(paths) == 50
+        assert all("/vacation/" in p for p in paths)
+
+
+class TestStandardKeyPathQuery:
+    def test_unknown_key_has_no_query(self):
+        assert standard_key_path_query("Comment", _value_equals("x")) == (None, [])
+
+    @pytest.mark.parametrize(("key", "value", "expected"), [("path", SAMPLE_PATH, [SAMPLE_PATH]), ("size", "1100", ["C:/photos/work/img_0100.jpg"])])
+    def test_files_and_sources_columns(self, populated_db, key, value, expected):
+        sql, params = standard_key_path_query(key, _value_equals(value))
+        assert _paths(FileSearchEngine(populated_db), sql, params) == expected
+
+
+def _union_paths(engine, keys, value):
+    sqls, params = key_path_queries(keys, _value_equals(value))
+    return _paths(engine, " UNION ".join(sqls), params)
+
+
+class TestKeyPathQueries:
+    @pytest.mark.parametrize(
+        ("keys", "value", "expected"),
+        [
+            (["file_hash"], "hash_0003", ["C:/photos/vacation/img_0003.jpg"]),
+            (["Comment"], "photo number 5", ["C:/photos/vacation/img_0005.jpg"]),
+            (["rating", "name"], "img_0007.jpg", ["C:/photos/vacation/img_0007.jpg"]),
+            ([], "hash_0004", ["C:/photos/vacation/img_0004.jpg"]),
+            ([], "office", ["C:/photos/work/img_0100.jpg"]),
+        ],
+    )
+    def test_each_key_kind_is_searched(self, populated_db, keys, value, expected):
+        paths = _union_paths(FileSearchEngine(populated_db), keys, value)
+        assert paths[: len(expected)] == expected
+
+    def test_file_hash_key_is_not_looked_up_as_metadata(self):
+        sqls, params = key_path_queries(["file_hash"], lambda column: ([], []))
+        assert sqls == ["SELECT i.path AS path FROM sources AS s JOIN files AS i ON i.source = s.source"]
+        assert params == []

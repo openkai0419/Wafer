@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import re
+from functools import partial
 
 from wafer.core.db.db_utils import escape_like
-from wafer.core.db.query import STANDARD_KEYS, standard_key_columns
+from wafer.core.db.query import key_path_queries
 from wafer.plugin import BaseFilterPlugin
 from wafer.core.profiling import profiler
 
@@ -202,42 +203,8 @@ class RegexFilter(BaseFilterPlugin):
         if require_keys and not keys:
             return "SELECT path FROM files WHERE 0", []
 
-        query_all = not keys
         hints = _extract_literal_hints(pattern)
-        non_std_keys = [k for k in keys if k not in STANDARD_KEYS]
-        std_keys = [k for k in keys if k in STANDARD_KEYS] if not query_all else list(STANDARD_KEYS)
-
-        parts, all_params = [], []
-
-        if query_all or non_std_keys:
-            sql, p = cls._kv_part(
-                "meta_info AS mi",
-                'mi."key"',
-                'mi."value"',
-                "mi.path",
-                non_std_keys if not query_all else [],
-                hints,
-            )
-            parts.append(sql)
-            all_params.extend(p)
-
-            sql, p = cls._kv_part(
-                "tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source",
-                't."key"',
-                't."value"',
-                "i.path",
-                non_std_keys if not query_all else [],
-                hints,
-            )
-            parts.append(sql)
-            all_params.extend(p)
-
-        for key in std_keys:
-            sql, p = cls._standard_part(key, hints)
-            if sql is not None:
-                parts.append(sql)
-                all_params.extend(p)
-
+        parts, all_params = key_path_queries(keys, partial(_build_like_conditions, hints=hints))
         if not parts:
             return None, []
 
@@ -253,28 +220,6 @@ class RegexFilter(BaseFilterPlugin):
             keys = list(keys)
         ignore_case = params.get("ignore_case", False)
         return keys, ignore_case
-
-    @classmethod
-    def _kv_part(cls, from_clause, key_col, val_col, path_expr, other_keys, hints):
-        conds, params = [], []
-        if other_keys:
-            conds.append(f"{key_col} IN ({','.join('?' for _ in other_keys)})")
-            params.extend(other_keys)
-        val_conds, val_bind = _build_like_conditions(val_col, hints)
-        conds.extend(val_conds)
-        params.extend(val_bind)
-        w = f"WHERE {' AND '.join(conds)}" if conds else ""
-        return f"SELECT {path_expr} FROM {from_clause} {w}", params
-
-    @classmethod
-    def _standard_part(cls, key, hints):
-        cols = standard_key_columns(key)
-        if cols is None:
-            return None, []
-        from_clause, path_col, val_col = cols
-        conds, params = _build_like_conditions(val_col, hints)
-        w = f"WHERE {' AND '.join(conds)}" if conds else ""
-        return f"SELECT {path_col} AS path FROM {from_clause} {w}", params
 
     @classmethod
     def post_filter(cls, params, rows):

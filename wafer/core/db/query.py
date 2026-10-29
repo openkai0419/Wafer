@@ -33,6 +33,58 @@ def standard_key_columns(key: str) -> tuple[str, str, str] | None:
     return None
 
 
+KEY_VALUE_TABLES = {
+    "meta_info": ("meta_info AS mi", 'mi."key"', 'mi."value"', "mi.path"),
+    "tags": ("tags AS t JOIN sources AS s ON s.file_hash = t.file_hash JOIN files AS i ON i.source = s.source", 't."key"', 't."value"', "i.path"),
+}
+
+
+def key_value_path_query(table: str, value_conditions, keys=(), exclude_keys=()) -> tuple[str, list]:
+    from_clause, key_col, val_col, path_col = KEY_VALUE_TABLES[table]
+    conds, params = [], []
+    if keys:
+        conds.append(f"{key_col} IN ({','.join('?' for _ in keys)})")
+        params.extend(keys)
+    if exclude_keys:
+        conds.append(f"{key_col} NOT IN ({','.join('?' for _ in exclude_keys)})")
+        params.extend(exclude_keys)
+    value_conds, value_params = value_conditions(val_col)
+    return f"SELECT {path_col} AS path FROM {from_clause}{where_clause([*conds, *value_conds])}", [*params, *value_params]
+
+
+def standard_key_path_query(key: str, value_conditions) -> tuple[str | None, list]:
+    cols = standard_key_columns(key)
+    if cols is None:
+        return None, []
+    from_clause, path_col, val_col = cols
+    value_conds, value_params = value_conditions(val_col)
+    return f"SELECT {path_col} AS path FROM {from_clause}{where_clause(value_conds)}", value_params
+
+
+def file_hash_path_query(value_conditions) -> tuple[str, list]:
+    value_conds, value_params = value_conditions("s.file_hash")
+    return f"SELECT i.path AS path FROM sources AS s JOIN files AS i ON i.source = s.source{where_clause(value_conds)}", value_params
+
+
+def key_path_queries(keys, value_conditions) -> tuple[list[str], list]:
+    query_all = not keys
+    non_std_keys = [k for k in keys if k != SYSTEM_FILE_HASH_KEY and k not in STANDARD_KEYS]
+    std_keys = list(STANDARD_KEYS) if query_all else [k for k in keys if k in STANDARD_KEYS]
+    queries = []
+    if query_all or non_std_keys:
+        queries.append(key_value_path_query("meta_info", value_conditions, keys=non_std_keys, exclude_keys=(SYSTEM_FILE_HASH_KEY,) if query_all else ()))
+        queries.append(key_value_path_query("tags", value_conditions, keys=non_std_keys))
+    queries.extend(standard_key_path_query(k, value_conditions) for k in std_keys)
+    if query_all or SYSTEM_FILE_HASH_KEY in keys:
+        queries.append(file_hash_path_query(value_conditions))
+    queries = [(sql, params) for sql, params in queries if sql is not None]
+    return [sql for sql, _ in queries], [p for _, params in queries for p in params]
+
+
+def where_clause(conditions) -> str:
+    return f" WHERE {' AND '.join(conditions)}" if conditions else ""
+
+
 def parse_keywords(keywords, separator: str | None = None, trim: bool = True) -> tuple[list[str], list[str]]:
     if isinstance(keywords, str):
         words = keywords.split(separator) if separator else [keywords]

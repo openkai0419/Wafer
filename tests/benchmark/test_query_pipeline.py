@@ -167,21 +167,6 @@ def _composer_or_entries():
     ]
 
 
-def _compose_path_query(engine, entries):
-    row_queries = []
-    global_queries = []
-    for filter_cls, params, op in entries:
-        sql, bind = filter_cls.build_path_query(params, engine._normalize_path)
-        if sql is None:
-            continue
-        if filter_cls.QUERY_SCOPE == "global":
-            global_queries.append((sql, bind))
-        else:
-            row_queries.append((sql, bind, op))
-    combined_sql, combined_params = SearchComposer._combine(row_queries)
-    return SearchComposer._apply_global(combined_sql, combined_params, global_queries)
-
-
 def _fmt(avg, mn, mx, rows=None, label=""):
     row_str = f"  rows={rows}" if rows is not None else ""
     return f"{label}avg={avg * 1000:.2f}ms  min={mn * 1000:.2f}  max={mx * 1000:.2f}{row_str}"
@@ -621,7 +606,7 @@ class TestGeneratedDB:
         engine = FileSearchEngine(db_path)
         assert engine._connect_if_needed()
         try:
-            path_sql, params = _compose_path_query(engine, _composer_not_entries())
+            path_sql, params = SearchComposer.compose_path_query(engine, _composer_not_entries())
             queries = {
                 "composer_not_path_count": (SQL_COUNT_ONLY.format(path_query=path_sql), tuple(params)),
                 "composer_not_fetch": (SQL_FETCH_BASIC.format(path_query=path_sql), tuple(params)),

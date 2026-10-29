@@ -4,7 +4,7 @@ import re
 from functools import partial
 
 from wafer.core.db.db_utils import escape_like
-from wafer.core.db.query import STANDARD_KEYS, key_value_path_query, standard_key_path_query
+from wafer.core.db.query import key_path_queries
 from wafer.plugin import BaseFilterPlugin
 from wafer.core.profiling import profiler
 
@@ -203,26 +203,8 @@ class RegexFilter(BaseFilterPlugin):
         if require_keys and not keys:
             return "SELECT path FROM files WHERE 0", []
 
-        query_all = not keys
         hints = _extract_literal_hints(pattern)
-        non_std_keys = [k for k in keys if k not in STANDARD_KEYS]
-        std_keys = [k for k in keys if k in STANDARD_KEYS] if not query_all else list(STANDARD_KEYS)
-
-        value_conditions = partial(_build_like_conditions, hints=hints)
-        parts, all_params = [], []
-
-        if query_all or non_std_keys:
-            for table in ("meta_info", "tags"):
-                sql, p = key_value_path_query(table, value_conditions, keys=non_std_keys)
-                parts.append(sql)
-                all_params.extend(p)
-
-        for key in std_keys:
-            sql, p = standard_key_path_query(key, value_conditions)
-            if sql is not None:
-                parts.append(sql)
-                all_params.extend(p)
-
+        parts, all_params = key_path_queries(keys, partial(_build_like_conditions, hints=hints))
         if not parts:
             return None, []
 

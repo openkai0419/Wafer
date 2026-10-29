@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from wafer.core.db.query import FileSearchEngine, _kv_sort_join, key_value_path_query, parse_keywords, standard_key_path_query
+from wafer.core.db.query import FileSearchEngine, _kv_sort_join, key_path_queries, key_value_path_query, parse_keywords, standard_key_path_query
 from wafer.core.db.file_db import FileDB
 from wafer.core.common.paths import normalize_path
 from wafer.core.common.virtual_paths import build_virtual_path
@@ -374,3 +374,29 @@ class TestStandardKeyPathQuery:
     def test_files_and_sources_columns(self, populated_db, key, value, expected):
         sql, params = standard_key_path_query(key, _value_equals(value))
         assert _paths(FileSearchEngine(populated_db), sql, params) == expected
+
+
+def _union_paths(engine, keys, value):
+    sqls, params = key_path_queries(keys, _value_equals(value))
+    return _paths(engine, " UNION ".join(sqls), params)
+
+
+class TestKeyPathQueries:
+    @pytest.mark.parametrize(
+        ("keys", "value", "expected"),
+        [
+            (["file_hash"], "hash_0003", ["C:/photos/vacation/img_0003.jpg"]),
+            (["Comment"], "photo number 5", ["C:/photos/vacation/img_0005.jpg"]),
+            (["rating", "name"], "img_0007.jpg", ["C:/photos/vacation/img_0007.jpg"]),
+            ([], "hash_0004", ["C:/photos/vacation/img_0004.jpg"]),
+            ([], "office", ["C:/photos/work/img_0100.jpg"]),
+        ],
+    )
+    def test_each_key_kind_is_searched(self, populated_db, keys, value, expected):
+        paths = _union_paths(FileSearchEngine(populated_db), keys, value)
+        assert paths[: len(expected)] == expected
+
+    def test_file_hash_key_is_not_looked_up_as_metadata(self):
+        sqls, params = key_path_queries(["file_hash"], lambda column: ([], []))
+        assert sqls == ["SELECT i.path AS path FROM sources AS s JOIN files AS i ON i.source = s.source"]
+        assert params == []

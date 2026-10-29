@@ -167,10 +167,6 @@ def _composer_or_entries():
     ]
 
 
-def _compose_path_query(engine, entries):
-    return SearchComposer()._build_path_query(engine, entries)
-
-
 def _fmt(avg, mn, mx, rows=None, label=""):
     row_str = f"  rows={rows}" if rows is not None else ""
     return f"{label}avg={avg * 1000:.2f}ms  min={mn * 1000:.2f}  max={mx * 1000:.2f}{row_str}"
@@ -610,7 +606,7 @@ class TestGeneratedDB:
         engine = FileSearchEngine(db_path)
         assert engine._connect_if_needed()
         try:
-            path_sql, params = _compose_path_query(engine, _composer_not_entries())
+            path_sql, params = SearchComposer.compose_path_query(engine, _composer_not_entries())
             queries = {
                 "composer_not_path_count": (SQL_COUNT_ONLY.format(path_query=path_sql), tuple(params)),
                 "composer_not_fetch": (SQL_FETCH_BASIC.format(path_query=path_sql), tuple(params)),

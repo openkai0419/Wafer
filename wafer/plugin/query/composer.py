@@ -11,7 +11,7 @@ class SearchComposer:
         if not engine._connect_if_needed():
             return [], [], []
 
-        path_sql, path_params = self._build_path_query(engine, filter_entries)
+        path_sql, path_params = self.compose_path_query(engine, filter_entries)
 
         columns = ["path", "source", "aspect_ratio"]
         for filter_cls, _params, _ in filter_entries:
@@ -36,7 +36,7 @@ class SearchComposer:
         if not engine._connect_if_needed():
             return []
 
-        path_sql, path_params = self._build_path_query(engine, filter_entries)
+        path_sql, path_params = self.compose_path_query(engine, filter_entries)
 
         order = "ORDER BY freq DESC" if sort_by_freq else 'ORDER BY "key"'
         std_branch_sqls = []
@@ -130,7 +130,8 @@ class SearchComposer:
         sql = f"SELECT path FROM ({left_sql}) AS _left {operator} SELECT path FROM ({right_sql}) AS _right"
         return sql, [*left_params, *right_params]
 
-    def _build_path_query(self, engine, filter_entries):
+    @staticmethod
+    def compose_path_query(engine, filter_entries):
         row_queries = []
         global_queries = []
         for filter_cls, params, op in filter_entries:
@@ -141,7 +142,7 @@ class SearchComposer:
                 global_queries.append((sql, bind))
             else:
                 row_queries.append((sql, bind, op))
-        combined_sql, combined_params = self._combine(row_queries)
+        combined_sql, combined_params = SearchComposer._combine(row_queries)
         if not global_queries:
             return combined_sql, combined_params
         parts = [f"SELECT path FROM ({combined_sql}) AS _rw", *(sql for sql, _ in global_queries)]

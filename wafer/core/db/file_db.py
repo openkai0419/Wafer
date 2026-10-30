@@ -92,15 +92,15 @@ _VIEWS = (
 )
 
 _INDEXES_SQL = """
+    DROP INDEX IF EXISTS idx_meta_info_key_value;
+    DROP INDEX IF EXISTS idx_tags_key_value;
     CREATE INDEX IF NOT EXISTS idx_sources_file_hash ON sources(file_hash);
     CREATE INDEX IF NOT EXISTS idx_files_source ON files(source);
     CREATE INDEX IF NOT EXISTS idx_files_source_extension ON files(source_extension, source);
     CREATE INDEX IF NOT EXISTS idx_files_name ON files(name);
     CREATE INDEX IF NOT EXISTS idx_meta_info_key_fid ON meta_info(key, path);
-    CREATE INDEX IF NOT EXISTS idx_meta_info_key_value ON meta_info(key, value);
     CREATE INDEX IF NOT EXISTS idx_meta_info_key_num ON meta_info(key, value_num);
     CREATE INDEX IF NOT EXISTS idx_tags_key_fid ON tags(key, file_hash);
-    CREATE INDEX IF NOT EXISTS idx_tags_key_value ON tags(key, value);
     CREATE INDEX IF NOT EXISTS idx_tags_key_num ON tags(key, value_num);
     CREATE INDEX IF NOT EXISTS idx_sources_modified ON sources(modified);
     CREATE INDEX IF NOT EXISTS idx_sources_created ON sources(created);

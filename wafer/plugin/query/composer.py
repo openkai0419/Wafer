@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from ...constants import VIRTUAL_PATH_SEPARATOR
 from ...core.profiling import profiler
-from ...core.db.query import _kv_sort_join, SYSTEM_FILE_HASH_KEY, STANDARD_KEYS_FILES, STANDARD_KEYS_SOURCES
-from .base import BaseFilterPlugin
+from ...core.db.query import _kv_sort_join, ALL_PATHS_SQL, SYSTEM_FILE_HASH_KEY, STANDARD_KEYS_FILES, STANDARD_KEYS_SOURCES, where_clause
+
+FILE_COLUMNS = ("path", "name", "source", "aspect_ratio", "source_extension")
 
 
 class SearchComposer:
@@ -12,6 +14,9 @@ class SearchComposer:
             return [], [], []
 
         path_sql, path_params = self.compose_path_query(engine, filter_entries)
+        post_filters = [(filter_cls, params) for filter_cls, params, _ in filter_entries if filter_cls.has_post_filter()]
+        if not post_filters and "sort_rows" not in vars(sort_plugin) and not getattr(sort_plugin, "META_KEY", None):
+            return self._fetch_paths(engine, path_sql, path_params, getattr(sort_plugin, "SORT_COLUMN", None), ascending)
 
         columns = ["path", "source", "aspect_ratio"]
         for filter_cls, _params, _ in filter_entries:
@@ -21,9 +26,8 @@ class SearchComposer:
 
         rows = self._fetch(engine, columns, path_sql, path_params, sort_plugin, ascending)
 
-        for filter_cls, params, _ in filter_entries:
-            if filter_cls.post_filter is not BaseFilterPlugin.post_filter:
-                rows = filter_cls.post_filter(params, rows)
+        for filter_cls, params in post_filters:
+            rows = filter_cls.post_filter(params, rows)
 
         return (
             [r["path"] for r in rows],
@@ -36,51 +40,40 @@ class SearchComposer:
         if not engine._connect_if_needed():
             return []
 
-        path_sql, path_params = self.compose_path_query(engine, filter_entries)
+        meta_where, meta_params = self.compose_path_scope(engine, filter_entries, "mi.path")
+        file_where, file_params = self.compose_path_scope(engine, filter_entries, "i.path")
+        tag_from = "files AS i JOIN sources AS s ON s.source = i.source JOIN tags AS t ON t.file_hash = s.file_hash"
 
-        order = "ORDER BY freq DESC" if sort_by_freq else 'ORDER BY "key"'
-        std_branch_sqls = []
-        std_branch_params = []
-        for k in STANDARD_KEYS_FILES:
-            if k == "path":
-                std_branch_sqls.append('  SELECT mp.path, ? AS "key" FROM matched_paths AS mp')
-            else:
-                std_branch_sqls.append(f'  SELECT mp.path, ? AS "key" FROM matched_paths AS mp JOIN files AS f ON f.path = mp.path WHERE f."{k}" IS NOT NULL')
-            std_branch_params.append(k)
-        for k in STANDARD_KEYS_SOURCES:
-            std_branch_sqls.append(f'  SELECT mp.path, ? AS "key" FROM matched_paths AS mp JOIN files AS f ON f.path = mp.path JOIN sources AS s ON s.source = f.source WHERE s."{k}" IS NOT NULL')
-            std_branch_params.append(k)
-        std_branches = " UNION ALL ".join(std_branch_sqls)
-        sql = (
-            f"WITH matched_paths AS ({path_sql}) "
-            f'SELECT "key", COUNT(DISTINCT path) AS freq FROM ('
-            f'  SELECT DISTINCT mp.path, kv."key"'
-            f"  FROM matched_paths AS mp"
-            f"  JOIN meta_info AS kv ON kv.path = mp.path"
-            f'  WHERE kv."key" <> ?'
-            f"  UNION ALL"
-            f'  SELECT DISTINCT mp.path, t."key"'
-            f"  FROM matched_paths AS mp"
-            f"  JOIN files AS f ON f.path = mp.path"
-            f"  JOIN sources AS s ON s.source = f.source"
-            f"  JOIN tags AS t ON t.file_hash = s.file_hash"
-            f"  UNION ALL"
-            f'  SELECT DISTINCT mp.path, ? AS "key"'
-            f"  FROM matched_paths AS mp"
-            f"  JOIN files AS f ON f.path = mp.path"
-            f"  JOIN sources AS s ON s.source = f.source"
-            f"  UNION ALL "
-            f"{std_branches}"
-            f") AS items "
-            f'GROUP BY "key" {order}'
-        )
-        rows = engine.fetch(sql, [*path_params, SYSTEM_FILE_HASH_KEY, SYSTEM_FILE_HASH_KEY, *std_branch_params])
-        return [(row["key"], row["freq"]) for row in rows]
+        meta_key_filter = where_clause([*meta_where, 'mi."key" <> ?'])
+        meta_sql = f'SELECT mi."key", COUNT(*) FROM meta_info AS mi{meta_key_filter} GROUP BY mi."key"'
+        meta_counts = dict(tuple(r) for r in engine.fetch(meta_sql, [*meta_params, SYSTEM_FILE_HASH_KEY]))
+        hash_counts = f"SELECT s.file_hash, COUNT(*) AS n FROM files AS i JOIN sources AS s ON s.source = i.source{where_clause(file_where)} GROUP BY s.file_hash"
+        tag_sql = f'SELECT t."key", SUM(c.n) FROM ({hash_counts}) AS c JOIN tags AS t ON t.file_hash = c.file_hash GROUP BY t."key"'
+        tag_counts = dict(tuple(r) for r in engine.fetch(tag_sql, file_params))
+
+        counts = {**meta_counts, **tag_counts}
+        meta_key_where = where_clause([*meta_where, 'mi."key" = ?'])
+        tag_key_where = where_clause([*file_where, 't."key" = ?'])
+        for key in meta_counts.keys() & tag_counts.keys():
+            sql = f"SELECT COUNT(*) FROM (SELECT mi.path FROM meta_info AS mi{meta_key_where} UNION SELECT i.path FROM {tag_from}{tag_key_where})"
+            counts[key] = engine.fetch(sql, [*meta_params, key, *file_params, key])[0][0]
+
+        std_keys = [k for k in STANDARD_KEYS_FILES if k != "path"]
+        std_columns = ["COUNT(*)", *(f'COUNT(i."{k}")' for k in std_keys), *(f'COUNT(s."{k}")' for k in STANDARD_KEYS_SOURCES), "COUNT(s.source)"]
+        std_sql = f"SELECT {', '.join(std_columns)} FROM files AS i LEFT JOIN sources AS s ON s.source = i.source{where_clause(file_where)}"
+        std_counts = engine.fetch(std_sql, file_params)[0]
+        for key, n in zip(["path", *std_keys, *STANDARD_KEYS_SOURCES, SYSTEM_FILE_HASH_KEY], std_counts):
+            if n:
+                counts[key] = n
+
+        if sort_by_freq:
+            return sorted(counts.items(), key=lambda kv: -kv[1])
+        return sorted(counts.items())
 
     @staticmethod
     def _combine(valid_queries):
         if not valid_queries:
-            return "SELECT path FROM files", []
+            return ALL_PATHS_SQL, []
         if len(valid_queries) == 1:
             sql, bind, _op = valid_queries[0]
             return sql, list(bind)
@@ -127,29 +120,80 @@ class SearchComposer:
     def _join_path_sets(left, operator, right):
         left_sql, left_params = left
         right_sql, right_params = right
+        if operator == "INTERSECT" and left_sql == ALL_PATHS_SQL:
+            return right
+        if operator == "INTERSECT" and right_sql == ALL_PATHS_SQL:
+            return left
+        if operator == "UNION" and ALL_PATHS_SQL in (left_sql, right_sql):
+            return ALL_PATHS_SQL, []
         sql = f"SELECT path FROM ({left_sql}) AS _left {operator} SELECT path FROM ({right_sql}) AS _right"
         return sql, [*left_params, *right_params]
 
     @staticmethod
-    def compose_path_query(engine, filter_entries):
+    def _compose_parts(engine, filter_entries, column):
         row_queries = []
-        global_queries = []
+        conditions = []
+        condition_params = []
         for filter_cls, params, op in filter_entries:
-            sql, bind = filter_cls.build_path_query(params, engine._normalize_path)
-            if sql is None:
-                continue
             if filter_cls.QUERY_SCOPE == "global":
-                global_queries.append((sql, bind))
-            else:
+                condition, bind = filter_cls.build_path_condition(params, engine._normalize_path, column)
+                if condition is not None:
+                    conditions.append(condition)
+                    condition_params.extend(bind)
+                continue
+            sql, bind = filter_cls.build_path_query(params, engine._normalize_path)
+            if sql is not None:
                 row_queries.append((sql, bind, op))
-        combined_sql, combined_params = SearchComposer._combine(row_queries)
-        if not global_queries:
-            return combined_sql, combined_params
-        parts = [f"SELECT path FROM ({combined_sql}) AS _rw", *(sql for sql, _ in global_queries)]
-        return " INTERSECT ".join(parts), [*combined_params, *(b for _, bind in global_queries for b in bind)]
+        row_sql, row_params = SearchComposer._combine(row_queries)
+        return row_sql, row_params, conditions, condition_params
+
+    @staticmethod
+    def compose_path_scope(engine, filter_entries, column):
+        row_sql, row_params, conditions, condition_params = SearchComposer._compose_parts(engine, filter_entries, column)
+        if row_sql == ALL_PATHS_SQL:
+            return conditions, condition_params
+        return [f"{column} IN ({row_sql})", *conditions], [*row_params, *condition_params]
+
+    @staticmethod
+    def compose_path_query(engine, filter_entries):
+        row_sql, row_params, conditions, condition_params = SearchComposer._compose_parts(engine, filter_entries, "path")
+        if not conditions:
+            return row_sql, row_params
+        if row_sql == ALL_PATHS_SQL:
+            return f"SELECT path FROM files{where_clause(conditions)}", condition_params
+        return f"SELECT path FROM ({row_sql}){where_clause(conditions)}", [*row_params, *condition_params]
+
+    @staticmethod
+    @profiler.profile
+    def _fetch_paths(engine, path_sql, params, sort_column, ascending):
+        tables = "files AS i"
+        if sort_column and sort_column not in FILE_COLUMNS:
+            tables += " JOIN sources AS s ON s.source = i.source"
+        if path_sql == ALL_PATHS_SQL:
+            sql, params = f"SELECT i.path, i.aspect_ratio FROM {tables}", []
+        else:
+            sql = f"SELECT i.path, i.aspect_ratio FROM {tables} JOIN ({path_sql}) AS f ON f.path = i.path"
+        if sort_column:
+            order = "ASC" if ascending else "DESC"
+            table = "i" if sort_column in FILE_COLUMNS else "s"
+            sql += f" ORDER BY {table}.{sort_column} {order}, i.path {order}"
+        cursor = engine.conn.cursor()
+        cursor.row_factory = None
+        rows = cursor.execute(sql, params).fetchall()
+        paths = [r[0] for r in rows]
+        separator = VIRTUAL_PATH_SEPARATOR
+        sources = [p.partition(separator)[0] if separator in p else p for p in paths]
+        return paths, sources, [r[1] or 1.0 for r in rows]
+
+    @staticmethod
+    def _source_rows(path_sql):
+        if path_sql == ALL_PATHS_SQL:
+            return "files_full AS m"
+        return f"files_full AS m JOIN ({path_sql}) AS s USING(path)"
 
     @profiler.profile
     def _fetch(self, engine, columns, path_sql, params, sort_plugin, ascending):
+        rows_from = self._source_rows(path_sql)
         sort_column = getattr(sort_plugin, "SORT_COLUMN", None)
         meta_key = getattr(sort_plugin, "META_KEY", None)
         has_custom_sort = "sort_rows" in vars(sort_plugin)
@@ -159,25 +203,19 @@ class SearchComposer:
         col_str = ", ".join(f"m.{c}" for c in cols)
         if sort_column:
             if has_custom_sort:
-                sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_sql}) AS s USING(path)"
-                rows = list(engine.fetch(sql, params))
+                rows = list(engine.fetch(f"SELECT {col_str} FROM {rows_from}", params))
                 return sort_plugin.sort_rows(rows, ascending)
             order = "ASC" if ascending else "DESC"
-            sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_sql}) AS s USING(path) ORDER BY m.{sort_column} {order}, m.path {order}"
-            return engine.fetch(sql, params)
+            return engine.fetch(f"SELECT {col_str} FROM {rows_from} ORDER BY m.{sort_column} {order}, m.path {order}", params)
         if has_custom_sort:
             if meta_key:
                 kv_join, kv_select, _, kv_params = _kv_sort_join(meta_key, engine.conn)
-                sql = f"SELECT {col_str}{kv_select} FROM files_full AS m JOIN ({path_sql}) AS s USING(path){kv_join}"
-                rows = list(engine.fetch(sql, [*params, *kv_params]))
+                rows = list(engine.fetch(f"SELECT {col_str}{kv_select} FROM {rows_from}{kv_join}", [*params, *kv_params]))
             else:
-                sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_sql}) AS s USING(path)"
-                rows = list(engine.fetch(sql, params))
+                rows = list(engine.fetch(f"SELECT {col_str} FROM {rows_from}", params))
             return sort_plugin.sort_rows(rows, ascending)
         if meta_key:
             order = "ASC" if ascending else "DESC"
             kv_join, _, kv_order, kv_params = _kv_sort_join(meta_key, engine.conn)
-            sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_sql}) AS s USING(path){kv_join} ORDER BY {kv_order} {order}, m.path {order}"
-            return engine.fetch(sql, [*params, *kv_params])
-        sql = f"SELECT {col_str} FROM files_full AS m JOIN ({path_sql}) AS s USING(path)"
-        return engine.fetch(sql, params)
+            return engine.fetch(f"SELECT {col_str} FROM {rows_from}{kv_join} ORDER BY {kv_order} {order}, m.path {order}", [*params, *kv_params])
+        return engine.fetch(f"SELECT {col_str} FROM {rows_from}", params)

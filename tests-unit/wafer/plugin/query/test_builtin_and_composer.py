@@ -1,7 +1,7 @@
 import pytest
 
 from wafer.core.db.file_db import FileDB
-from wafer.core.db.query import FileSearchEngine
+from wafer.core.db.query import ALL_PATHS_SQL, FileSearchEngine
 from wafer.plugin.query.composer import SearchComposer
 from wafer.plugin.query.base import BaseFilterPlugin
 from wafer.builtins.filters import TextFilter, DirectoryFilter, ContainedFilesFilter, SourceChildrenFilter
@@ -206,9 +206,8 @@ class TestContainedFilesFilterBuildPathQuery:
 class TestSourceChildrenFilterBuildPathQuery:
     def test_source_children_query_uses_source_and_prefix(self):
         sql, bind = SourceChildrenFilter.build_path_query({"source": "C:/archives/temp.zip"}, np)
-        assert "source = ?" in sql
-        assert "path LIKE ?" in sql
-        assert bind == ["C:/archives/temp.zip", "C:/archives/temp.zip::%"]
+        assert sql == "SELECT path FROM files WHERE source = ? AND (path >= ? AND path < ?)"
+        assert bind == ["C:/archives/temp.zip", "C:/archives/temp.zip::", "C:/archives/temp.zip:;"]
 
     def test_source_children_empty_source_noops(self):
         sql, bind = SourceChildrenFilter.build_path_query({"source": ""}, np)
@@ -678,3 +677,132 @@ class TestComposerTieOrder:
         assert ascending == self.ASC
         assert descending == self.ASC[::-1]
         assert by_size == sorted(self.ASC)
+
+
+class TestAllPathsFolding:
+    def test_empty_path_text_row_is_all_paths(self):
+        assert TextFilter.build_path_query({"keys": ["path"], "keywords": ""}, np) == (ALL_PATHS_SQL, [])
+        assert TextFilter.build_path_query({"keys": ["path", "Artist"], "keywords": " , ", "keyword_separator": ","}, np) == (ALL_PATHS_SQL, [])
+
+    def test_keys_without_path_are_not_all_paths(self):
+        sql, _ = TextFilter.build_path_query({"keys": ["Artist"], "keywords": ""}, np)
+        assert sql != ALL_PATHS_SQL
+
+    def test_and_with_all_paths_keeps_the_other_side(self):
+        other = ("SELECT path FROM a", ["p"])
+        assert SearchComposer._combine([(ALL_PATHS_SQL, [], None), (*other, "AND")]) == other
+        assert SearchComposer._combine([(*other, None), (ALL_PATHS_SQL, [], "AND")]) == other
+
+    def test_or_with_all_paths_is_all_paths(self):
+        assert SearchComposer._combine([("SELECT path FROM a", ["p"], None), (ALL_PATHS_SQL, [], "OR")]) == (ALL_PATHS_SQL, [])
+
+    def test_no_constraint_reads_files_directly(self, engine):
+        assert SearchComposer.compose_path_query(engine, [(TextFilter, {"keys": ["path"]}, None)]) == (ALL_PATHS_SQL, [])
+
+    def test_and_all_paths_matches_filter_alone(self, engine, composer):
+        tagged = (TextFilter, {"keys": ["category"], "keywords": "office"})
+        alone, _, _ = composer.execute(engine, [(*tagged, None)], ModifiedSort, True)
+        with_all, _, _ = composer.execute(engine, [(TextFilter, {"keys": ["path"]}, None), (*tagged, "AND")], ModifiedSort, True)
+        assert with_all == alone
+        assert len(alone) == 50
+
+
+class TestDirectoryFilterCondition:
+    def test_condition_is_a_path_range_on_the_given_column(self):
+        condition, bind = DirectoryFilter.build_path_condition({"directories": ["C:/photos/work"]}, np, "mi.path")
+        assert condition == "((mi.path >= ? AND mi.path < ?))"
+        assert bind == ["C:/photos/work/", "C:/photos/work0"]
+
+    def test_no_subfolders_adds_a_slash_check(self):
+        condition, bind = DirectoryFilter.build_path_condition({"directories": ["C:/data"], "include_subfolders": False}, np)
+        assert "instr(substr(path, ?), '/') = 0" in condition
+        assert bind == ["C:/data/", "C:/data0", len("C:/data/") + 1]
+
+    def test_sibling_folders_with_longer_names_are_excluded(self, tmp_path, composer):
+        db_path = str(tmp_path / "siblings.db")
+        db = FileDB(db_path)
+        db.start()
+        db.initialize_database()
+        files = ["C:/p/a/1.jpg", "C:/p/a b/2.jpg", "C:/p/a0/3.jpg", "C:/p/a-/4.jpg", "C:/p/ab/5.jpg", "C:/p/a/sub/6.jpg"]
+        db.upsert_basic_sources([(p, f"h{i}", 1, 1.0) for i, p in enumerate(files)], [(p, p, 1.0) for p in files])
+        db.conn.commit()
+        db.close()
+        engine = FileSearchEngine(db_path)
+        try:
+            paths, _, _ = composer.execute(engine, [(DirectoryFilter, {"directories": ["C:/p/a"]}, None)], ModifiedSort, True)
+            direct, _, _ = composer.execute(engine, [(DirectoryFilter, {"directories": ["C:/p/a"], "include_subfolders": False}, None)], ModifiedSort, True)
+        finally:
+            engine.close()
+        assert sorted(paths) == ["C:/p/a/1.jpg", "C:/p/a/sub/6.jpg"]
+        assert direct == ["C:/p/a/1.jpg"]
+
+    def test_default_condition_wraps_the_path_query(self):
+        assert ContainedFilesFilter.build_path_condition({"include": False}, np, "i.path") == ("i.path IN (SELECT path FROM files WHERE source_extension IS NULL)", [])
+        assert ContainedFilesFilter.build_path_condition({"include": True}, np) == (None, [])
+
+
+class TestComposerFastFetch:
+    @pytest.mark.parametrize("folder", TestComposerFolderIntersection.FOLDERS)
+    @pytest.mark.parametrize("rows", TestComposerFolderIntersection.ROW_FILTERS)
+    def test_fast_fetch_matches_row_fetch(self, engine, composer, rows, folder):
+        entries = TestComposerFolderIntersection.ROW_FILTERS[rows] + TestComposerFolderIntersection.FOLDERS[folder]
+        fast = composer.execute(engine, entries, ModifiedSort, True)
+        by_rows = composer.execute(engine, entries, NaturalPathSort, True)
+        assert sorted(zip(*fast)) == sorted(zip(*by_rows))
+
+    def test_sources_of_archive_members_are_the_archive(self, contained_db, composer):
+        db_path, archive, child_a, child_b, plain = contained_db
+        engine = FileSearchEngine(db_path)
+        try:
+            paths, sources, aspects = composer.execute(engine, [], ModifiedSort, True)
+        finally:
+            engine.close()
+        assert dict(zip(paths, sources)) == {archive: archive, child_a: archive, child_b: archive, plain: plain}
+        assert aspects == [1.0] * 4
+
+    def test_post_filter_is_detected_by_override_only(self):
+        class Plain(BaseFilterPlugin):
+            NAME = "plain_filter"
+
+            @classmethod
+            def build_path_query(cls, params, normalize_path):
+                return None, []
+
+        class Posting(Plain):
+            NAME = "posting_filter"
+
+            @classmethod
+            def post_filter(cls, params, rows):
+                return rows
+
+        assert not TextFilter.has_post_filter()
+        assert not Plain.has_post_filter()
+        assert Posting.has_post_filter()
+
+
+@pytest.fixture
+def shared_key_engine(tmp_path):
+    db_path = str(tmp_path / "shared_key.db")
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+    files = ["C:/s/a.jpg", "C:/s/b.jpg", "C:/s/c.jpg", "C:/t/d.jpg"]
+    db.upsert_basic_sources([(p, f"h{i}", 1, 1.0) for i, p in enumerate(files)], [(p, p, 1.0) for p in files])
+    db.upsert_collection_results(
+        [],
+        [("C:/s/a.jpg", "shared", "m", None), ("C:/s/b.jpg", "shared", "m", None), ("C:/t/d.jpg", "shared", "m", None)],
+        [("C:/s/b.jpg", "shared", "t", None), ("C:/s/c.jpg", "shared", "t", None)],
+        [],
+    )
+    db.conn.commit()
+    db.close()
+    engine = FileSearchEngine(db_path)
+    yield engine
+    engine.close()
+
+
+class TestListAllKeysSharedKey:
+    def test_key_in_meta_and_tags_counts_each_file_once(self, shared_key_engine, composer):
+        assert dict(composer.list_all_keys(shared_key_engine, []))["shared"] == 4
+        folder = [(DirectoryFilter, {"directories": ["C:/s"]}, None)]
+        assert dict(composer.list_all_keys(shared_key_engine, folder))["shared"] == 3

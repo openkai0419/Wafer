@@ -4,7 +4,7 @@ import re
 from functools import partial
 
 from wafer.core.db.db_utils import escape_like
-from wafer.core.db.query import key_path_queries
+from wafer.core.db.query import ALL_PATHS_SQL, key_path_queries
 from wafer.plugin import BaseFilterPlugin
 from wafer.core.profiling import profiler
 
@@ -207,6 +207,8 @@ class RegexFilter(BaseFilterPlugin):
         parts, all_params = key_path_queries(keys, partial(_build_like_conditions, hints=hints))
         if not parts:
             return None, []
+        if parts == [ALL_PATHS_SQL]:
+            return ALL_PATHS_SQL, []
 
         subquery = " UNION ALL ".join(parts)
         return f"SELECT DISTINCT path FROM ({subquery})", all_params

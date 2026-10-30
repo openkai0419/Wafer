@@ -20,6 +20,13 @@ STANDARD_KEYS_FILES = ("name", "path")
 STANDARD_KEYS_SOURCES = ("size", "modified", "created", "collected")
 STANDARD_KEYS = STANDARD_KEYS_FILES + STANDARD_KEYS_SOURCES
 
+ALL_PATHS_SQL = "SELECT path FROM files"
+
+
+def path_prefix_condition(column: str, prefix: str) -> tuple[str, list]:
+    upper = prefix[:-1] + chr(ord(prefix[-1]) + 1)
+    return f"({column} >= ? AND {column} < ?)", [prefix, upper]
+
 
 def standard_key_columns(key: str) -> tuple[str, str, str] | None:
     if key in STANDARD_KEYS_FILES:
@@ -68,6 +75,8 @@ def file_hash_path_query(value_conditions) -> tuple[str, list]:
 
 def key_path_queries(keys, value_conditions) -> tuple[list[str], list]:
     query_all = not keys
+    if (query_all or "path" in keys) and not value_conditions("path")[0]:
+        return [ALL_PATHS_SQL], []
     non_std_keys = [k for k in keys if k != SYSTEM_FILE_HASH_KEY and k not in STANDARD_KEYS]
     std_keys = list(STANDARD_KEYS) if query_all else [k for k in keys if k in STANDARD_KEYS]
     queries = []

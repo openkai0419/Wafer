@@ -11,6 +11,10 @@ def normalize_path(p):
     return path
 
 
+def child_prefix(folder: str) -> str:
+    return folder if folder.endswith("/") else f"{folder}/"
+
+
 def safe_exists(p) -> bool:
     try:
         return os.path.exists(p)

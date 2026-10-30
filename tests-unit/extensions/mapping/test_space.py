@@ -477,3 +477,23 @@ def test_relayout_uses_the_given_spacing_for_the_display_layout_only(monkeypatch
     calls.clear()
     model.relayout([{"tags": PathValue("cat, sky")}] * 4, start)
     assert calls[0] == (2, model.preset.params.min_dist)
+
+
+def test_count_placed_counts_files_mapped_by_the_preset_version(tmp_path):
+    from extensions.mapping.session import KEY_MODEL
+    from wafer.app.indexer.receivers._batch_utils import try_float
+    from wafer.core.db.file_db import FileDB
+
+    db_path = str(tmp_path / "map.db")
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+    paths = [f"c:/{i}.png" for i in range(5)]
+    db.upsert_basic_sources([(p, f"h{i}", 1, 1.0) for i, p in enumerate(paths)], [(p, p, 1.0) for p in paths])
+    versions = ["3", "3", "3", "2", "30"]
+    db.upsert_collection_results([], [(p, KEY_MODEL, v, try_float(v)) for p, v in zip(paths, versions)], [], [])
+    db.conn.commit()
+    db.close()
+    assert space.count_placed(db_path, preset(3)) == 3
+    assert space.count_placed(db_path, preset(2)) == 1
+    assert space.count_placed(db_path, preset(4)) == 0

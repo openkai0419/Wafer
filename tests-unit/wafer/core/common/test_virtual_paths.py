@@ -38,6 +38,15 @@ def test_is_virtual_path_accepts_separator_syntax_without_owner_registration():
     assert is_virtual_path("/tmp/foo::bar") is True
 
 
+def test_source_path_keeps_paths_that_are_not_virtual():
+    assert source_path("C:/data/a.png") == "C:/data/a.png"
+    assert source_path("C:/data/a.zip::") == "C:/data/a.zip::"
+    assert source_path("::member.png") == "::member.png"
+    assert source_path("") == ""
+    assert source_path(None) is None
+    assert source_path("C:/data/a.zip::x%3A%3Ay.png") == "C:/data/a.zip"
+
+
 def test_split_virtual_path_returns_source_and_member_without_owner_registration():
     from wafer.core.common.virtual_paths import split_virtual_path
 

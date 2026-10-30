@@ -3,8 +3,9 @@ from __future__ import annotations
 from functools import partial
 
 from ..constants import VIRTUAL_PATH_SEPARATOR
-from ..core.db.db_utils import build_like_condition, escape_like
-from ..core.db.query import key_path_queries, parse_keywords
+from ..core.common.paths import child_prefix
+from ..core.db.db_utils import build_like_condition
+from ..core.db.query import ALL_PATHS_SQL, key_path_queries, parse_keywords, path_prefix_condition
 from ..plugin.query.base import BaseFilterPlugin
 from ..core.profiling import profiler
 
@@ -67,6 +68,8 @@ class TextFilter(BaseFilterPlugin):
         parts, all_params = key_path_queries(keys, partial(_keyword_conditions, keywords=include_kw, keyword_mode=keyword_mode, query_mode=query_mode))
         if not parts:
             return None, []
+        if parts == [ALL_PATHS_SQL] and not exclude_kw:
+            return ALL_PATHS_SQL, []
 
         subquery = " UNION ALL ".join(parts)
 
@@ -86,6 +89,14 @@ class DirectoryFilter(BaseFilterPlugin):
     @classmethod
     @profiler.profile
     def build_path_query(cls, params, normalize_path):
+        condition, bind = cls.build_path_condition(params, normalize_path)
+        if condition is None:
+            return None, []
+        return f"SELECT path FROM files WHERE {condition}", bind
+
+    @classmethod
+    @profiler.profile
+    def build_path_condition(cls, params, normalize_path, column="path"):
         directories = params.get("directories")
         if not directories:
             return None, []
@@ -94,19 +105,16 @@ class DirectoryFilter(BaseFilterPlugin):
         for d in directories:
             if not isinstance(d, str) or not d:
                 continue
-            nd = normalize_path(d)
-            prefix = (nd + "/") if nd else ""
-            esc_p = escape_like(prefix)
+            prefix = child_prefix(normalize_path(d))
+            clause, clause_bind = path_prefix_condition(column, prefix)
             if not include_subfolders:
-                clauses.append("(path LIKE ? ESCAPE '\\' AND path NOT LIKE ? ESCAPE '\\')")
-                bind.extend([f"{esc_p}%", f"{esc_p}%/%"])
-            else:
-                clauses.append("path LIKE ? ESCAPE '\\'")
-                bind.append(f"{esc_p}%")
+                clause = f"({clause} AND instr(substr({column}, ?), '/') = 0)"
+                clause_bind.append(len(prefix) + 1)
+            clauses.append(clause)
+            bind.extend(clause_bind)
         if not clauses:
             return None, []
-        where = " OR ".join(clauses)
-        return f"SELECT DISTINCT path FROM files WHERE {where}", bind
+        return f"({' OR '.join(clauses)})", bind
 
 
 class ContainedFilesFilter(BaseFilterPlugin):
@@ -136,5 +144,5 @@ class SourceChildrenFilter(BaseFilterPlugin):
         if not isinstance(source, str) or not source:
             return None, []
         normalized = normalize_path(source)
-        prefix = f"{normalized}{VIRTUAL_PATH_SEPARATOR}"
-        return "SELECT path FROM files WHERE source = ? AND path LIKE ? ESCAPE '\\'", [normalized, f"{escape_like(prefix)}%"]
+        condition, bind = path_prefix_condition("path", f"{normalized}{VIRTUAL_PATH_SEPARATOR}")
+        return f"SELECT path FROM files WHERE source = ? AND {condition}", [normalized, *bind]

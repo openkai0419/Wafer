@@ -6,6 +6,7 @@ import pytest
 
 from wafer.constants import APP_DATA_DIR_NAME
 from wafer.core.common.paths import (
+    child_prefix,
     containing_dir,
     data_db_path,
     get_app_root_dir,
@@ -189,3 +190,9 @@ def test_plugin_dir_is_the_extensions_folder_next_to_wafer():
     plugin_dir = get_plugin_dir()
     assert os.path.normcase(plugin_dir) == os.path.normcase(str(get_app_root_dir() / "extensions"))
     assert os.path.isfile(os.path.join(plugin_dir, "image", "__init__.py"))
+
+
+def test_child_prefix_adds_one_slash():
+    assert child_prefix("C:/photos") == "C:/photos/"
+    assert child_prefix("D:/") == "D:/"
+    assert child_prefix("//srv/share/") == "//srv/share/"

@@ -2,6 +2,18 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.8.1]
+
+### Improvements
+- Searching inside a folder and listing keys are much faster on large databases.
+- Databases are smaller and save collected data faster.
+- WebUI Settings adds Allowed hosts, so you can reach the WebUI by your own domain names.
+
+### Fixes
+- Folder searches on a drive or network share root now find its files.
+- Regex search on the file hash key now matches file hashes.
+- Security: the network WebUI blocks DNS rebinding, videos open only local files, and 7zr.exe is verified before use.
+
 ## [v0.8.0]
 
 ### Highlights

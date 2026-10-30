@@ -8,6 +8,7 @@ from wafer.core.db.file_db import (
     _table_signature,
     _expected_table_signature,
     _TABLES,
+    schema_columns,
 )
 from wafer.core.common.virtual_paths import build_virtual_path
 
@@ -21,6 +22,41 @@ def test_filedb_start_exit(tmp_path):
     db.close()
     assert db.conn is None
     assert db.read_conn is None
+
+
+def _index_names(db_path):
+    with sqlite3.connect(db_path) as conn:
+        return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
+
+
+def test_value_indexes_are_not_created_and_old_ones_are_dropped(tmp_path):
+    db_path = tmp_path / "test.db"
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+    db.close()
+    assert {"idx_meta_info_key_value", "idx_tags_key_value"}.isdisjoint(_index_names(db_path))
+    assert {"idx_meta_info_key_fid", "idx_meta_info_key_num", "idx_tags_key_fid", "idx_tags_key_num"} <= _index_names(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE INDEX idx_meta_info_key_value ON meta_info(key, value)")
+        conn.execute("CREATE INDEX idx_tags_key_value ON tags(key, value)")
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+    db.close()
+    assert {"idx_meta_info_key_value", "idx_tags_key_value"}.isdisjoint(_index_names(db_path))
+
+
+def test_schema_columns_match_the_created_tables(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    try:
+        for name in ("files", "sources", "meta_info"):
+            assert schema_columns(name) == {row[1] for row in db.conn.execute(f"PRAGMA table_info('{name}')")}
+    finally:
+        db.close()
 
 
 def test_filedb_double_close_no_error(tmp_path):

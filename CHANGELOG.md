@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.8.1]
+### Added
+- WebUI Settings: Allowed hosts list (+/-) accepts extra domain names (e.g. `*.example.com`) on any bind and shows the names always allowed for the chosen bind; rejected hosts are logged once.
+- Filter plugins can return a path condition (`build_path_condition`) so global filters such as folders narrow every other filter.
+
+### Changed
+- Folder searches use a path range pushed into every filter: small folders and folder + keyword searches are tens to hundreds of times faster.
+- Plain searches read only paths and aspect ratios, and the key list counts per key (about 10x faster).
+- The (key, value) indexes on meta_info and tags are dropped on open: databases are about 21% smaller and writes faster.
+- Results with equal sort values are ordered by path.
+- Pillow 13.0.0 and aiohttp >= 3.14.4 for known vulnerabilities; color palettes sample transparent images as before.
+- Release checks run an E2E that updates a copy of the portable build through the real updater, launcher and app.
+
+### Fixed
+- Folder searches on a drive or network share root (e.g. `D:/`) found no files.
+- Regex search on the file hash key now matches file hashes.
+- Network-bound WebUI rejects domain-name Host headers (DNS rebinding) except IPs, dotless names and LAN/Tailscale names, and rejects `Origin: null`.
+- Video playback opens only local media (no references, ytdl, scripts or network protocols).
+- 7zr.exe comes from a pinned release verified by SHA256, and an unverified copy is replaced.
+- Keyword mode accepts only AND/OR, database deletion no longer matches glob characters in its path, and grid tooltips show paths as plain text.
+
 ## [v0.8.0]
 ### Added
 - Workspaces open one window each; opening a workspace that is already open brings its window to the front.

@@ -5,7 +5,7 @@ import os
 import re
 from collections.abc import Iterable, Sequence
 
-from ..common.paths import list_setting_db_names, normalize_path, setting_db_path
+from ..common.paths import child_prefix, list_setting_db_names, normalize_path, setting_db_path
 from .setting_db import SettingDB
 
 
@@ -25,7 +25,7 @@ def is_under(path: str, root: str) -> bool:
     base = comparable_path(root)
     if target == base:
         return True
-    return target.startswith(base if base.endswith("/") else f"{base}/")
+    return target.startswith(child_prefix(base))
 
 
 def path_in_scope(path: str, roots: Iterable[str], ignore_folders: Iterable[str], ignore_pattern_re: re.Pattern[str] | None) -> bool:

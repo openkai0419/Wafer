@@ -21,8 +21,20 @@ class BaseFilterPlugin(PluginBase, ABC):
     def build_path_query(cls, params: dict, normalize_path) -> tuple[str | None, list]: ...
 
     @classmethod
+    def build_path_condition(cls, params: dict, normalize_path, column: str = "path") -> tuple[str | None, list]:
+        sql, bind = cls.build_path_query(params, normalize_path)
+        if sql is None:
+            return None, []
+        return f"{column} IN ({sql})", list(bind)
+
+    @classmethod
     def post_filter(cls, params: dict, rows: list) -> list:
         return rows
+
+    @classmethod
+    def has_post_filter(cls) -> bool:
+        own = cls.post_filter
+        return getattr(own, "__func__", own) is not BaseFilterPlugin.post_filter.__func__
 
     @classmethod
     def required_columns(cls) -> tuple[str, ...]:

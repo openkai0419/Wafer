@@ -41,8 +41,10 @@ def split_virtual_path(path: str) -> tuple[str, str] | None:
 
 
 def source_path(path: str) -> str:
-    parts = split_virtual_path(path) if is_virtual_path(path) else None
-    return parts[0] if parts else path
+    if not path:
+        return path
+    source, separator, member = str(path).partition(VIRTUAL_PATH_SEPARATOR)
+    return source if separator and source and member else path
 
 
 def child_path(path: str) -> str | None:

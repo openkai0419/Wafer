@@ -195,6 +195,11 @@ def _expected_table_signature(name, create_sql):
     return _EXPECTED_SIGNATURES[name]
 
 
+def schema_columns(name: str) -> frozenset[str]:
+    create_sql = next(sql for table, _, sql in _TABLES if table == name)
+    return frozenset(column for column, *_ in _expected_table_signature(name, create_sql))
+
+
 def _table_columns(conn, name):
     return [row[1] for row in conn.execute(f"PRAGMA table_info('{name}')").fetchall()]
 

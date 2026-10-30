@@ -8,6 +8,7 @@ from wafer.core.db.file_db import (
     _table_signature,
     _expected_table_signature,
     _TABLES,
+    schema_columns,
 )
 from wafer.core.common.virtual_paths import build_virtual_path
 
@@ -45,6 +46,17 @@ def test_value_indexes_are_not_created_and_old_ones_are_dropped(tmp_path):
     db.initialize_database()
     db.close()
     assert {"idx_meta_info_key_value", "idx_tags_key_value"}.isdisjoint(_index_names(db_path))
+
+
+def test_schema_columns_match_the_created_tables(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    try:
+        for name in ("files", "sources", "meta_info"):
+            assert schema_columns(name) == {row[1] for row in db.conn.execute(f"PRAGMA table_info('{name}')")}
+    finally:
+        db.close()
 
 
 def test_filedb_double_close_no_error(tmp_path):

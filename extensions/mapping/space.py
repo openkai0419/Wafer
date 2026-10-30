@@ -134,7 +134,7 @@ def decode_paths(blob: np.ndarray) -> list[str]:
 
 def count_placed(db_path: str, preset: Preset) -> int:
     with closing(open_readonly(db_path)) as conn:
-        return conn.execute("SELECT COUNT(*) FROM meta_info WHERE key = ? AND value = ?", (KEY_MODEL, str(preset.version))).fetchone()[0]
+        return conn.execute("SELECT COUNT(*) FROM meta_info WHERE key = ? AND value_num = ?", (KEY_MODEL, preset.version)).fetchone()[0]
 
 
 _model_lock = threading.Lock()

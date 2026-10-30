@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import partial
 
 from ..constants import VIRTUAL_PATH_SEPARATOR
+from ..core.common.paths import child_prefix
 from ..core.db.db_utils import build_like_condition
 from ..core.db.query import ALL_PATHS_SQL, key_path_queries, parse_keywords, path_prefix_condition
 from ..plugin.query.base import BaseFilterPlugin
@@ -104,7 +105,7 @@ class DirectoryFilter(BaseFilterPlugin):
         for d in directories:
             if not isinstance(d, str) or not d:
                 continue
-            prefix = normalize_path(d) + "/"
+            prefix = child_prefix(normalize_path(d))
             clause, clause_bind = path_prefix_condition(column, prefix)
             if not include_subfolders:
                 clause = f"({clause} AND instr(substr({column}, ?), '/') = 0)"

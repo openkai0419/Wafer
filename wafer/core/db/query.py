@@ -6,7 +6,7 @@ import sqlite3
 import threading
 
 from ...constants import VIRTUAL_PATH_SEPARATOR
-from .db_utils import apply_read_pragmas, escape_like
+from .db_utils import apply_read_pragmas
 from .key_value import SCOPE_ALL, SCOPE_META_INFO, SCOPE_TAG, iter_data_scopes, key_prefix_lookup_sql
 from ..common.paths import normalize_path
 from ..common.virtual_paths import build_virtual_path, is_virtual_path, split_virtual_path
@@ -243,17 +243,8 @@ class FileSearchEngine:
             return False
         cur = self.conn.cursor()
         norm_source = self._normalize_path(source)
-        prefix = f"{norm_source}{VIRTUAL_PATH_SEPARATOR}"
-        row = cur.execute(
-            """
-            SELECT 1
-            FROM files
-            WHERE source = ?
-              AND path LIKE ? ESCAPE '\\'
-            LIMIT 1
-            """,
-            (norm_source, f"{escape_like(prefix)}%"),
-        ).fetchone()
+        condition, bind = path_prefix_condition("path", f"{norm_source}{VIRTUAL_PATH_SEPARATOR}")
+        row = cur.execute(f"SELECT 1 FROM files WHERE source = ? AND {condition} LIMIT 1", (norm_source, *bind)).fetchone()
         return row is not None
 
     def get_all_metadata_with_locks(self, path):

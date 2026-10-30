@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from ...constants import VIRTUAL_PATH_SEPARATOR
+from ...core.common.virtual_paths import source_path
 from ...core.profiling import profiler
+from ...core.db.file_db import schema_columns
 from ...core.db.query import _kv_sort_join, ALL_PATHS_SQL, SYSTEM_FILE_HASH_KEY, STANDARD_KEYS_FILES, STANDARD_KEYS_SOURCES, where_clause
-
-FILE_COLUMNS = ("path", "name", "source", "aspect_ratio", "source_extension")
 
 
 class SearchComposer:
@@ -40,28 +39,31 @@ class SearchComposer:
         if not engine._connect_if_needed():
             return []
 
-        meta_where, meta_params = self.compose_path_scope(engine, filter_entries, "mi.path")
-        file_where, file_params = self.compose_path_scope(engine, filter_entries, "i.path")
-        tag_from = "files AS i JOIN sources AS s ON s.source = i.source JOIN tags AS t ON t.file_hash = s.file_hash"
+        scope_where, scope_params = self.compose_path_scope(engine, filter_entries, "path")
+        file_from = "files AS i JOIN sources AS s ON s.source = i.source"
 
-        meta_key_filter = where_clause([*meta_where, 'mi."key" <> ?'])
-        meta_sql = f'SELECT mi."key", COUNT(*) FROM meta_info AS mi{meta_key_filter} GROUP BY mi."key"'
-        meta_counts = dict(tuple(r) for r in engine.fetch(meta_sql, [*meta_params, SYSTEM_FILE_HASH_KEY]))
-        hash_counts = f"SELECT s.file_hash, COUNT(*) AS n FROM files AS i JOIN sources AS s ON s.source = i.source{where_clause(file_where)} GROUP BY s.file_hash"
+        meta_where = where_clause([*scope_where, 'mi."key" <> ?'])
+        meta_sql = f'SELECT mi."key", COUNT(*) FROM meta_info AS mi{meta_where} GROUP BY mi."key"'
+        meta_counts = dict(tuple(r) for r in engine.fetch(meta_sql, [*scope_params, SYSTEM_FILE_HASH_KEY]))
+        hash_counts = f"SELECT s.file_hash, COUNT(*) AS n FROM {file_from}{where_clause(scope_where)} GROUP BY s.file_hash"
         tag_sql = f'SELECT t."key", SUM(c.n) FROM ({hash_counts}) AS c JOIN tags AS t ON t.file_hash = c.file_hash GROUP BY t."key"'
-        tag_counts = dict(tuple(r) for r in engine.fetch(tag_sql, file_params))
+        tag_counts = dict(tuple(r) for r in engine.fetch(tag_sql, scope_params))
 
         counts = {**meta_counts, **tag_counts}
-        meta_key_where = where_clause([*meta_where, 'mi."key" = ?'])
-        tag_key_where = where_clause([*file_where, 't."key" = ?'])
-        for key in meta_counts.keys() & tag_counts.keys():
-            sql = f"SELECT COUNT(*) FROM (SELECT mi.path FROM meta_info AS mi{meta_key_where} UNION SELECT i.path FROM {tag_from}{tag_key_where})"
-            counts[key] = engine.fetch(sql, [*meta_params, key, *file_params, key])[0][0]
+        shared_keys = sorted(meta_counts.keys() & tag_counts.keys())
+        if shared_keys:
+            key_list = f"IN ({', '.join('?' * len(shared_keys))})"
+            meta_key_where = where_clause([*scope_where, f'mi."key" {key_list}'])
+            tag_key_where = where_clause([*scope_where, f't."key" {key_list}'])
+            meta_paths = f'SELECT mi."key", mi.path FROM meta_info AS mi{meta_key_where}'
+            tag_paths = f'SELECT t."key", i.path FROM {file_from} JOIN tags AS t ON t.file_hash = s.file_hash{tag_key_where}'
+            shared_sql = f'SELECT "key", COUNT(*) FROM ({meta_paths} UNION {tag_paths}) GROUP BY "key"'
+            counts.update(tuple(r) for r in engine.fetch(shared_sql, [*scope_params, *shared_keys, *scope_params, *shared_keys]))
 
         std_keys = [k for k in STANDARD_KEYS_FILES if k != "path"]
         std_columns = ["COUNT(*)", *(f'COUNT(i."{k}")' for k in std_keys), *(f'COUNT(s."{k}")' for k in STANDARD_KEYS_SOURCES), "COUNT(s.source)"]
-        std_sql = f"SELECT {', '.join(std_columns)} FROM files AS i LEFT JOIN sources AS s ON s.source = i.source{where_clause(file_where)}"
-        std_counts = engine.fetch(std_sql, file_params)[0]
+        std_sql = f"SELECT {', '.join(std_columns)} FROM files AS i LEFT JOIN sources AS s ON s.source = i.source{where_clause(scope_where)}"
+        std_counts = engine.fetch(std_sql, scope_params)[0]
         for key, n in zip(["path", *std_keys, *STANDARD_KEYS_SOURCES, SYSTEM_FILE_HASH_KEY], std_counts):
             if n:
                 counts[key] = n
@@ -167,7 +169,8 @@ class SearchComposer:
     @profiler.profile
     def _fetch_paths(engine, path_sql, params, sort_column, ascending):
         tables = "files AS i"
-        if sort_column and sort_column not in FILE_COLUMNS:
+        sort_table = "i" if sort_column in schema_columns("files") else "s"
+        if sort_column and sort_table == "s":
             tables += " JOIN sources AS s ON s.source = i.source"
         if path_sql == ALL_PATHS_SQL:
             sql, params = f"SELECT i.path, i.aspect_ratio FROM {tables}", []
@@ -175,15 +178,12 @@ class SearchComposer:
             sql = f"SELECT i.path, i.aspect_ratio FROM {tables} JOIN ({path_sql}) AS f ON f.path = i.path"
         if sort_column:
             order = "ASC" if ascending else "DESC"
-            table = "i" if sort_column in FILE_COLUMNS else "s"
-            sql += f" ORDER BY {table}.{sort_column} {order}, i.path {order}"
+            sql += f" ORDER BY {sort_table}.{sort_column} {order}, i.path {order}"
         cursor = engine.conn.cursor()
         cursor.row_factory = None
         rows = cursor.execute(sql, params).fetchall()
         paths = [r[0] for r in rows]
-        separator = VIRTUAL_PATH_SEPARATOR
-        sources = [p.partition(separator)[0] if separator in p else p for p in paths]
-        return paths, sources, [r[1] or 1.0 for r in rows]
+        return paths, [source_path(p) for p in paths], [r[1] or 1.0 for r in rows]
 
     @staticmethod
     def _source_rows(path_sql):

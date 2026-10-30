@@ -736,6 +736,25 @@ class TestDirectoryFilterCondition:
         assert sorted(paths) == ["C:/p/a/1.jpg", "C:/p/a/sub/6.jpg"]
         assert direct == ["C:/p/a/1.jpg"]
 
+    @pytest.mark.parametrize("root", ["D:\\", "D:", "D:/"])
+    def test_drive_root_matches_the_whole_drive(self, tmp_path, composer, root):
+        db_path = str(tmp_path / "drive.db")
+        db = FileDB(db_path)
+        db.start()
+        db.initialize_database()
+        files = ["D:/a.jpg", "D:/x/b.jpg", "E:/c.jpg"]
+        db.upsert_basic_sources([(p, f"h{i}", 1, 1.0) for i, p in enumerate(files)], [(p, p, 1.0) for p in files])
+        db.conn.commit()
+        db.close()
+        engine = FileSearchEngine(db_path)
+        try:
+            paths, _, _ = composer.execute(engine, [(DirectoryFilter, {"directories": [root]}, None)], ModifiedSort, True)
+            direct, _, _ = composer.execute(engine, [(DirectoryFilter, {"directories": [root], "include_subfolders": False}, None)], ModifiedSort, True)
+        finally:
+            engine.close()
+        assert sorted(paths) == ["D:/a.jpg", "D:/x/b.jpg"]
+        assert direct == ["D:/a.jpg"]
+
     def test_default_condition_wraps_the_path_query(self):
         assert ContainedFilesFilter.build_path_condition({"include": False}, np, "i.path") == ("i.path IN (SELECT path FROM files WHERE source_extension IS NULL)", [])
         assert ContainedFilesFilter.build_path_condition({"include": True}, np) == (None, [])
@@ -775,9 +794,17 @@ class TestComposerFastFetch:
             def post_filter(cls, params, rows):
                 return rows
 
+        class StaticPosting(Plain):
+            NAME = "static_posting_filter"
+
+            @staticmethod
+            def post_filter(params, rows):
+                return rows
+
         assert not TextFilter.has_post_filter()
         assert not Plain.has_post_filter()
         assert Posting.has_post_filter()
+        assert StaticPosting.has_post_filter()
 
 
 @pytest.fixture
@@ -790,8 +817,8 @@ def shared_key_engine(tmp_path):
     db.upsert_basic_sources([(p, f"h{i}", 1, 1.0) for i, p in enumerate(files)], [(p, p, 1.0) for p in files])
     db.upsert_collection_results(
         [],
-        [("C:/s/a.jpg", "shared", "m", None), ("C:/s/b.jpg", "shared", "m", None), ("C:/t/d.jpg", "shared", "m", None)],
-        [("C:/s/b.jpg", "shared", "t", None), ("C:/s/c.jpg", "shared", "t", None)],
+        [("C:/s/a.jpg", "shared", "m", None), ("C:/s/b.jpg", "shared", "m", None), ("C:/t/d.jpg", "shared", "m", None), ("C:/t/d.jpg", "also", "m", None), ("C:/s/a.jpg", "meta_only", "m", None)],
+        [("C:/s/b.jpg", "shared", "t", None), ("C:/s/c.jpg", "shared", "t", None), ("C:/t/d.jpg", "also", "t", None), ("C:/s/c.jpg", "also", "t", None)],
         [],
     )
     db.conn.commit()
@@ -803,6 +830,10 @@ def shared_key_engine(tmp_path):
 
 class TestListAllKeysSharedKey:
     def test_key_in_meta_and_tags_counts_each_file_once(self, shared_key_engine, composer):
-        assert dict(composer.list_all_keys(shared_key_engine, []))["shared"] == 4
+        counts = dict(composer.list_all_keys(shared_key_engine, []))
+        assert (counts["shared"], counts["also"], counts["meta_only"]) == (4, 2, 1)
         folder = [(DirectoryFilter, {"directories": ["C:/s"]}, None)]
-        assert dict(composer.list_all_keys(shared_key_engine, folder))["shared"] == 3
+        in_folder = dict(composer.list_all_keys(shared_key_engine, folder))
+        assert (in_folder["shared"], in_folder["also"], in_folder["meta_only"]) == (3, 1, 1)
+        tagged = [(TextFilter, {"keys": ["also"], "keywords": "t"}, None)]
+        assert dict(composer.list_all_keys(shared_key_engine, tagged))["shared"] == 2

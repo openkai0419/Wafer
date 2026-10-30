@@ -33,7 +33,8 @@ class BaseFilterPlugin(PluginBase, ABC):
 
     @classmethod
     def has_post_filter(cls) -> bool:
-        return cls.post_filter.__func__ is not BaseFilterPlugin.post_filter.__func__
+        own = cls.post_filter
+        return getattr(own, "__func__", own) is not BaseFilterPlugin.post_filter.__func__
 
     @classmethod
     def required_columns(cls) -> tuple[str, ...]:

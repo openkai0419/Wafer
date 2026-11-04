@@ -8,6 +8,7 @@ import { MetaPanel } from './meta.js';
 import { Viewer } from './viewer.js';
 import { connectEvents } from './ws.js';
 import { debounce } from './ratelimit.js';
+import { PullRefresh } from './pullrefresh.js';
 import { AutoScroll, SPEED_STEPS, SPEED_DEFAULT, nearestSpeedIndex } from './autoscroll.js';
 import { load, save } from './store.js';
 import { setIcon, setTip } from './icons.js';
@@ -55,6 +56,7 @@ const autoScroll = new AutoScroll(document.getElementById('grid-scroll'), docume
   toggle.classList.toggle('active', running);
   toggle.textContent = running ? 'on' : 'off';
 });
+new PullRefresh(document.getElementById('grid-scroll'), () => runQuery(true));
 const tree = new FolderTree(document.getElementById('folder-tree'), (path) => {
   state.folder = path;
   save('folder', path);

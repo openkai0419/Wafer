@@ -404,6 +404,34 @@ input.switch:disabled { opacity: 0.4; cursor: default; }
 }
 #conn-banner.hidden { display: none; }
 
+#grid-scroll { overscroll-behavior-y: contain; }
+#pull-indicator {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 2;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  pointer-events: none;
+  transform: translate(-50%, calc(var(--pull, 0) * 1px - 44px));
+}
+#pull-indicator.hidden { display: none; }
+#pull-indicator .icon { width: 20px; height: 20px; transform: rotate(calc(var(--pull, 0) * 3deg)); }
+#pull-indicator.armed { color: var(--accent); }
+#pull-indicator.refreshing { color: var(--accent); }
+#pull-indicator.refreshing .icon { animation: pull-spin 0.8s linear infinite; }
+@keyframes pull-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  #pull-indicator.refreshing .icon { animation: none; }
+}
+
 @container viewer (max-width: 400px) {
   #viewer-menu-popup { right: 12px; }
 }

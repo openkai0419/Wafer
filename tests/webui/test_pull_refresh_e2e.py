@@ -107,3 +107,18 @@ def test_a_mouse_drag_does_nothing(ready_page):
     page.mouse.up()
     page.wait_for_timeout(500)
     assert len(seen) == 0
+
+
+def test_a_second_finger_hides_the_indicator(ready_page):
+    page = ready_page
+    seen = aspects_requests(page)
+    x, y = grid_origin(page)
+    touch = Touch(page)
+    touch.start(x, y)
+    touch.move(x, y + PULL_DISTANCE)
+    assert page.locator("#pull-indicator.armed").count() == 1
+    touch.dispatch("touchStart", [{"x": x, "y": y + PULL_DISTANCE, "id": 0}, {"x": x + 50, "y": y + PULL_DISTANCE, "id": 1}])
+    touch.end()
+    assert page.locator("#pull-indicator.hidden").count() == 1
+    page.wait_for_timeout(500)
+    assert len(seen) == 0

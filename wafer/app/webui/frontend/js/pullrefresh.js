@@ -26,7 +26,11 @@ export class PullRefresh {
 
   onStart(e) {
     const tracking = e.touches.length === 1 && this.scroll.scrollTop === 0 && !this.refreshing;
-    this.startY = tracking ? e.touches[0].clientY : null;
+    if (!tracking) {
+      if (!this.refreshing) this.reset();
+      return;
+    }
+    this.startY = e.touches[0].clientY;
   }
 
   onMove(e) {

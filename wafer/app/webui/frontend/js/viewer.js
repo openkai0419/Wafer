@@ -2,6 +2,7 @@ import { fileUrl } from './api.js';
 import { load, save } from './store.js';
 import { setIcon } from './icons.js';
 import { Swipe } from './swipe.js';
+import { ViewerControls, isInsideDrawnImage } from './viewercontrols.js';
 
 const MIN_SLIDESHOW_INTERVAL = 0.5;
 
@@ -46,6 +47,7 @@ export class Viewer {
     this.token = 0;
     this.knownItem = () => undefined;
     this.peeked = null;
+    this.controls = new ViewerControls(this.el);
     this.swipe = new Swipe(this.stage, {
       canStart: (target) => !(target instanceof HTMLVideoElement),
       hasNeighbor: (delta) => this.index + delta >= 0 && this.index + delta < this.total,
@@ -76,6 +78,10 @@ export class Viewer {
     this.setupMenu();
     this.el.addEventListener('click', (e) => {
       if (e.target === this.el || e.target === this.stage) this.close();
+      else if (e.target instanceof HTMLImageElement && this.stage.contains(e.target)) {
+        if (isInsideDrawnImage(e.target, e.clientX, e.clientY)) this.controls.toggle();
+        else this.close();
+      }
     });
     document.addEventListener('keydown', (e) => {
       if (this.el.classList.contains('hidden')) return;
@@ -211,11 +217,15 @@ export class Viewer {
     this.item = null;
     if (!shown) this.stage.replaceChildren();
     this.caption.textContent = `${index + 1}/${this.total}`;
+    if (!this.isOpen) this.controls.start();
     this.el.classList.remove('hidden');
     this.el.classList.add('loading');
     const settle = (message) => {
       this.el.classList.remove('loading');
-      if (message !== undefined) this.caption.textContent = message;
+      if (message !== undefined) {
+        this.caption.textContent = message;
+        this.controls.setHideable(false);
+      }
     };
     if (!item) {
       try {
@@ -235,6 +245,7 @@ export class Viewer {
     const media = shown ?? this.render(item, url);
     this.caption.textContent = `${index + 1}/${this.total}  ${item.name}`;
     this.item = item;
+    this.controls.setHideable(item.kind === 'image');
     this.stage.replaceChildren(media);
     this.onIndexChange(index, item);
     this.armSlideshow();
@@ -277,6 +288,7 @@ export class Viewer {
     this.clearTimer();
     if (this.slideshowToggle) this.updateMenu();
     if (this.menu) this.menu.classList.add('hidden');
+    this.controls.stop();
     this.el.classList.add('hidden');
     this.el.classList.remove('loading');
     this.stage.replaceChildren();

@@ -333,6 +333,12 @@ input.switch:disabled { opacity: 0.4; cursor: default; }
 #viewer-close { top: 12px; right: 12px; }
 #viewer-info { top: 12px; right: 64px; }
 #viewer-menu { top: 12px; right: 116px; }
+#viewer-main > button, #viewer-caption { transition: opacity 150ms; }
+#viewer.controls-hidden #viewer-main > button, #viewer.controls-hidden #viewer-caption { opacity: 0; pointer-events: none; transition: opacity 1s; }
+@media (prefers-reduced-motion: reduce) {
+  #viewer-main > button, #viewer-caption,
+  #viewer.controls-hidden #viewer-main > button, #viewer.controls-hidden #viewer-caption { transition: none; }
+}
 #viewer-prev { left: 12px; top: 50%; transform: translateY(-50%); width: 28px; border-radius: 20px; }
 #viewer-next { right: 12px; top: 50%; transform: translateY(-50%); width: 28px; border-radius: 20px; }
 

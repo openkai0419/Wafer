@@ -240,3 +240,34 @@ def test_a_video_neighbor_waits_for_the_commit(page, webui_base_url):
     assert page.locator("video").count() == 0
     touch.end()
     page.wait_for_selector("#viewer-stage video", state="attached")
+
+
+def test_a_background_tap_during_settling_does_not_close(viewer_page):
+    page = viewer_page
+    touch = Touch(page)
+    touch.drag(START, (START[0] - 150, START[1]), steps=10, pause_ms=20)
+    page.touchscreen.tap(20, 200)
+    page.wait_for_timeout(500)
+    assert page.locator("#viewer:not(.hidden)").count() == 1
+    assert caption(page).startswith("2/")
+
+
+def test_stopping_before_release_does_not_flick(viewer_page):
+    page = viewer_page
+    touch = Touch(page)
+    hold_drag(touch, 60)
+    page.wait_for_timeout(300)
+    touch.end()
+    page.wait_for_timeout(500)
+    assert caption(page).startswith("1/")
+
+
+def test_a_zoomed_page_can_still_pan_sideways(viewer_page):
+    page = viewer_page
+    touch = Touch(page)
+    touch.pinch((187, 400), 80)
+    page.wait_for_function("window.visualViewport.scale > 1.01")
+    before = page.evaluate("window.visualViewport.offsetLeft")
+    touch.drag((300, 400), (100, 400), steps=10, pause_ms=20)
+    page.wait_for_timeout(300)
+    assert page.evaluate("window.visualViewport.offsetLeft") != before

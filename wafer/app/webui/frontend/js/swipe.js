@@ -18,6 +18,9 @@ export class Swipe {
     this.drag = null;
     this.settling = null;
     this.swallowClick = false;
+    window.visualViewport?.addEventListener('resize', () => {
+      stage.style.touchAction = this.zoomed ? 'auto' : '';
+    });
     stage.addEventListener('pointerdown', (e) => this.onDown(e));
     stage.addEventListener('pointermove', (e) => this.onMove(e));
     stage.addEventListener('pointerup', (e) => this.onUp(e));
@@ -31,6 +34,10 @@ export class Swipe {
       },
       true,
     );
+  }
+
+  get zoomed() {
+    return (window.visualViewport?.scale ?? 1) > MAX_PAGE_SCALE;
   }
 
   abort() {
@@ -52,15 +59,14 @@ export class Swipe {
   }
 
   onDown(e) {
-    this.swallowClick = false;
     const interrupted = this.settling !== null;
+    this.swallowClick = interrupted;
     if (interrupted) this.finishSettling();
     if (this.drag) {
       if (e.pointerId !== this.drag.id) this.interrupt();
       return;
     }
-    const zoomed = (window.visualViewport?.scale ?? 1) > MAX_PAGE_SCALE;
-    if (e.pointerType !== 'touch' || !e.isPrimary || zoomed || !this.canStart(e.target)) return;
+    if (e.pointerType !== 'touch' || !e.isPrimary || this.zoomed || !this.canStart(e.target)) return;
     if (interrupted) this.stage.setPointerCapture(e.pointerId);
     this.drag = {
       id: e.pointerId,
@@ -85,12 +91,17 @@ export class Swipe {
       else if (Math.abs(dx) > SWIPE_START_PX && Math.abs(dx) > Math.abs(dy)) this.begin(e, dx);
       if (!this.drag?.swiping) return;
     }
-    drag.samples.push({ x: e.clientX, t: e.timeStamp });
-    const limit = e.timeStamp - VELOCITY_WINDOW_MS;
-    while (drag.samples.length > 2 && drag.samples[1].t < limit) drag.samples.shift();
+    this.sample(e);
     const inward = drag.delta > 0 ? Math.min(0, dx) : Math.max(0, dx);
     drag.x = drag.neighbor ? inward : inward * EDGE_RESISTANCE;
     this.setX(drag.x);
+  }
+
+  sample(e) {
+    const { samples } = this.drag;
+    samples.push({ x: e.clientX, t: e.timeStamp });
+    const limit = e.timeStamp - VELOCITY_WINDOW_MS;
+    while (samples.length > 2 && samples[1].t < limit) samples.shift();
   }
 
   begin(e, dx) {
@@ -115,6 +126,7 @@ export class Swipe {
       this.drag = null;
       return;
     }
+    this.sample(e);
     const first = drag.samples[0];
     const last = drag.samples[drag.samples.length - 1];
     const elapsed = last.t - first.t;

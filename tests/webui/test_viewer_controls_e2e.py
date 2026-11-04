@@ -253,11 +253,14 @@ def test_arrow_keys_do_not_reveal(viewer_page):
     assert hidden(page)
 
 
-def test_reopening_starts_visible(viewer_page):
+@pytest.mark.parametrize("hide_first", [False, True])
+def test_reopening_starts_visible(viewer_page, hide_first):
     page = viewer_page
-    wait_until_hidden(page)
+    if hide_first:
+        wait_until_hidden(page)
     page.keyboard.press("Escape")
     page.wait_for_selector("#viewer", state="hidden")
+    page.clock.fast_forward(3100)
     open_first(page)
     assert not hidden(page)
 
@@ -311,6 +314,7 @@ def test_a_video_is_never_hidden(page, webui_base_url):
     page.wait_for_selector("#grid-canvas .cell")
     open_first(page)
     wait_until_hidden(page)
+    page.route("**/api/file*", lambda route: None)
     page.keyboard.press("ArrowRight")
     page.wait_for_selector("#viewer-stage video", state="attached")
     assert not hidden(page)
@@ -334,6 +338,22 @@ def test_a_failed_image_reveals_and_stays(viewer_page):
     page.mouse.click(*image_center(page))
     assert not hidden(page)
     assert not closed(page)
+
+
+def test_after_a_failure_the_next_image_hides_again(viewer_page):
+    page = viewer_page
+    start_slideshow(page, 4)
+    wait_until_hidden(page)
+    page.route("**/api/file*", lambda route: route.fulfill(status=404))
+    page.clock.fast_forward(1000)
+    wait_for(page, "error")
+    assert not hidden(page)
+    page.unroute("**/api/file*")
+    page.clock.fast_forward(4100)
+    wait_for(page, "3/")
+    page.wait_for_selector("#viewer:not(.loading)")
+    page.clock.fast_forward(3100)
+    assert hidden(page)
 
 
 def test_a_click_outside_the_drawn_image_is_the_margin(viewer_page):

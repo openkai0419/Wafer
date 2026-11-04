@@ -56,7 +56,7 @@ export class ViewerControls {
 
   setHideable(value) {
     this.hideable = value;
-    if (!value) this.el.classList.remove(HIDDEN_CLASS);
+    if (!value && this.hidden) this.show();
   }
 
   show() {

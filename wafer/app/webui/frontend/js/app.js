@@ -51,6 +51,7 @@ const grid = new Grid(
   document.getElementById('grid-canvas'),
   (index) => viewer.open(index, grid.item(index)),
 );
+viewer.knownItem = (i) => grid.item(i);
 const autoScroll = new AutoScroll(document.getElementById('grid-scroll'), document.getElementById('grid-canvas'), (running) => {
   const toggle = document.getElementById('auto-scroll-toggle');
   toggle.classList.toggle('active', running);

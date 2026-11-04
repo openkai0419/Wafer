@@ -1,6 +1,7 @@
 import { fileUrl } from './api.js';
 import { load, save } from './store.js';
 import { setIcon } from './icons.js';
+import { Swipe } from './swipe.js';
 
 const MIN_SLIDESHOW_INTERVAL = 0.5;
 
@@ -18,6 +19,9 @@ export const DEFAULT_LABELS = {
 function loaded(element) {
   const done = element instanceof HTMLVideoElement ? 'loadeddata' : 'load';
   if (!(element instanceof HTMLImageElement || element instanceof HTMLVideoElement)) return Promise.resolve();
+  if (element instanceof HTMLImageElement && element.complete) {
+    return element.naturalWidth > 0 ? Promise.resolve() : Promise.reject(new Error('image failed to load'));
+  }
   return new Promise((resolve, reject) => {
     element.addEventListener(done, resolve, { once: true });
     element.addEventListener('error', reject, { once: true });
@@ -40,6 +44,23 @@ export class Viewer {
     this.interval = load('slideshowInterval', 3);
     this.timer = null;
     this.token = 0;
+    this.knownItem = () => undefined;
+    this.peeked = null;
+    this.swipe = new Swipe(this.stage, {
+      canStart: (target) => !(target instanceof HTMLVideoElement),
+      hasNeighbor: (delta) => this.index + delta >= 0 && this.index + delta < this.total,
+      fillPane: (delta, pane) => this.fillPane(this.index + delta, pane),
+      onDragStart: () => {
+        this.clearTimer();
+        this.menu.classList.add('hidden');
+      },
+      onCancel: () => this.armSlideshow(),
+      onCommit: (delta, pane) => {
+        const index = this.index + delta;
+        const item = this.peeked?.index === index ? this.peeked.item : this.knownItem(index);
+        this.open(index, item || undefined, item ? pane.firstElementChild : null);
+      },
+    });
     const close = document.getElementById('viewer-close');
     const prev = document.getElementById('viewer-prev');
     const next = document.getElementById('viewer-next');
@@ -165,13 +186,30 @@ export class Viewer {
     this.close();
   }
 
-  async open(index, item) {
+  fillPane(index, pane) {
+    const show = (item) => {
+      this.peeked = { index, item };
+      if (pane.isConnected && item.kind === 'image') pane.append(this.render(item, fileUrl(this.client.db, item.path)));
+    };
+    const known = this.knownItem(index);
+    if (known) {
+      show(known);
+      return;
+    }
+    this.client.items(index, 1).then(
+      (data) => data.items[0] && show(data.items[0]),
+      (e) => console.warn(`failed to preload item ${index}: ${e.message}`),
+    );
+  }
+
+  async open(index, item, shown = null) {
+    this.swipe.abort();
     if (index < 0 || index >= this.total) return;
     this.clearTimer();
     const token = ++this.token;
     this.index = index;
     this.item = null;
-    this.stage.replaceChildren();
+    if (!shown) this.stage.replaceChildren();
     this.caption.textContent = `${index + 1}/${this.total}`;
     this.el.classList.remove('hidden');
     this.el.classList.add('loading');
@@ -194,7 +232,7 @@ export class Viewer {
     }
     if (token !== this.token) return;
     const url = fileUrl(this.client.db, item.path);
-    const media = this.render(item, url);
+    const media = shown ?? this.render(item, url);
     this.caption.textContent = `${index + 1}/${this.total}  ${item.name}`;
     this.item = item;
     this.stage.replaceChildren(media);
@@ -233,6 +271,7 @@ export class Viewer {
   }
 
   close() {
+    this.swipe.abort();
     this.slideshow = false;
     this.token++;
     this.clearTimer();

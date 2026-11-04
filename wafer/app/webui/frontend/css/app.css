@@ -294,6 +294,15 @@ input.switch:disabled { opacity: 0.4; cursor: default; }
   align-items: center;
   justify-content: center;
 }
+#viewer-stage { overflow: hidden; touch-action: pan-y pinch-zoom; }
+#viewer-stage > * { transform: translateX(var(--swipe-x, 0)); }
+.swipe-pane { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.swipe-pane.next { left: 100%; right: -100%; }
+.swipe-pane.prev { left: -100%; right: 100%; }
+#viewer-stage.swipe-settling > * { transition: transform 180ms; }
+@media (prefers-reduced-motion: reduce) {
+  #viewer-stage.swipe-settling > * { transition: none; }
+}
 #viewer-stage img, #viewer-stage video { max-width: 100%; max-height: 92vh; max-height: 92dvh; object-fit: contain; }
 #viewer-stage a { color: var(--accent); font-size: 16px; }
 #viewer-caption {

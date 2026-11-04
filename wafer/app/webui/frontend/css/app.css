@@ -334,7 +334,7 @@ input.switch:disabled { opacity: 0.4; cursor: default; }
 #viewer-info { top: 12px; right: 64px; }
 #viewer-menu { top: 12px; right: 116px; }
 #viewer-main > button, #viewer-caption { transition: opacity 150ms; }
-#viewer.controls-hidden #viewer-main > button, #viewer.controls-hidden #viewer-caption { opacity: 0; pointer-events: none; transition: opacity 1s; }
+#viewer.controls-hidden #viewer-main > button, #viewer.controls-hidden #viewer-caption { opacity: 0; pointer-events: none; transition: opacity 500ms; }
 @media (prefers-reduced-motion: reduce) {
   #viewer-main > button, #viewer-caption,
   #viewer.controls-hidden #viewer-main > button, #viewer.controls-hidden #viewer-caption { transition: none; }

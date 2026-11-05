@@ -1,3 +1,5 @@
+from urllib.parse import parse_qs, urlparse
+
 import pytest
 
 from test_support.touch import Touch
@@ -271,3 +273,74 @@ def test_a_zoomed_page_can_still_pan_sideways(viewer_page):
     touch.drag((300, 400), (100, 400), steps=10, pause_ms=20)
     page.wait_for_timeout(300)
     assert page.evaluate("window.visualViewport.offsetLeft") != before
+
+
+class SingleItemFetches:
+    def __init__(self, page):
+        self.holding = False
+        self.held = []
+        page.route("**/api/query/*/items*", self.handle)
+
+    def handle(self, route):
+        limit = parse_qs(urlparse(route.request.url).query)["limit"][0]
+        if limit != "1":
+            response = route.fetch()
+            data = response.json()
+            data["items"] = data["items"][:1]
+            route.fulfill(response=response, json=data)
+        elif self.holding:
+            self.held.append(route)
+        else:
+            route.continue_()
+
+    def release(self):
+        for route in self.held:
+            route.continue_()
+        self.held.clear()
+
+
+def open_with_an_unknown_neighbor(page, webui_base_url):
+    fetches = SingleItemFetches(page)
+    page.goto(webui_base_url)
+    page.wait_for_selector("#grid-canvas .cell")
+    open_first(page)
+    return fetches
+
+
+def close_viewer(page):
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#viewer", state="hidden")
+
+
+def assert_the_next_swipe_waits_for_its_own_item(page, fetches):
+    fetches.holding = True
+    open_first(page)
+    Touch(page).drag(START, FAR)
+    wait_for(page, "2/")
+    page.wait_for_timeout(300)
+    assert page.locator("#viewer-stage img").count() == 0
+    fetches.release()
+    page.wait_for_selector("#viewer-stage img")
+
+
+def test_closing_forgets_the_neighbor_seen_before(page, webui_base_url):
+    fetches = open_with_an_unknown_neighbor(page, webui_base_url)
+    Touch(page).drag(START, FAR)
+    wait_for(page, "2/")
+    page.wait_for_selector("#viewer-stage img")
+    close_viewer(page)
+    assert_the_next_swipe_waits_for_its_own_item(page, fetches)
+
+
+def test_a_neighbor_arriving_after_closing_is_ignored(page, webui_base_url):
+    fetches = open_with_an_unknown_neighbor(page, webui_base_url)
+    fetches.holding = True
+    touch = Touch(page)
+    hold_drag(touch, 200)
+    page.wait_for_timeout(200)
+    assert fetches.held
+    close_viewer(page)
+    touch.end()
+    fetches.release()
+    page.wait_for_timeout(300)
+    assert_the_next_swipe_waits_for_its_own_item(page, fetches)

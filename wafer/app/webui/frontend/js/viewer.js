@@ -194,8 +194,9 @@ export class Viewer {
 
   fillPane(index, pane) {
     const show = (item) => {
+      if (!pane.isConnected) return;
       this.peeked = { index, item };
-      if (pane.isConnected && item.kind === 'image') pane.append(this.render(item, fileUrl(this.client.db, item.path)));
+      if (item.kind === 'image') pane.append(this.render(item, fileUrl(this.client.db, item.path)));
     };
     const known = this.knownItem(index);
     if (known) {
@@ -295,6 +296,7 @@ export class Viewer {
     this.caption.textContent = '';
     this.index = -1;
     this.item = null;
+    this.peeked = null;
   }
 
   get isOpen() {

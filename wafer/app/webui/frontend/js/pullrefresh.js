@@ -25,12 +25,9 @@ export class PullRefresh {
   }
 
   onStart(e) {
-    const tracking = e.touches.length === 1 && this.scroll.scrollTop === 0 && !this.refreshing;
-    if (!tracking) {
-      if (!this.refreshing) this.reset();
-      return;
-    }
-    this.startY = e.touches[0].clientY;
+    if (this.refreshing) return;
+    this.reset();
+    if (e.touches.length === 1 && this.scroll.scrollTop === 0) this.startY = e.touches[0].clientY;
   }
 
   onMove(e) {

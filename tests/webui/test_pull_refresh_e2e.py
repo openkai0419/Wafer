@@ -122,3 +122,22 @@ def test_a_second_finger_hides_the_indicator(ready_page):
     assert page.locator("#pull-indicator.hidden").count() == 1
     page.wait_for_timeout(500)
     assert len(seen) == 0
+
+
+def test_a_tap_after_a_lost_touch_end_does_not_requery(ready_page):
+    page = ready_page
+    seen = aspects_requests(page)
+    box = page.locator("#grid-canvas .cell").first.bounding_box()
+    x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    touch = Touch(page)
+    touch.start(x, y)
+    touch.move(x, y + PULL_DISTANCE)
+    assert page.locator("#pull-indicator.armed").count() == 1
+    page.evaluate("document.querySelector('#grid-canvas .cell').remove()")
+    touch.end()
+    assert page.locator("#pull-indicator.armed").count() == 1
+    touch.start(*grid_origin(page))
+    touch.end()
+    assert page.locator("#pull-indicator.hidden").count() == 1
+    page.wait_for_timeout(500)
+    assert len(seen) == 0

@@ -189,12 +189,10 @@ def test_a_swipe_does_not_toggle(viewer_page):
     touch = Touch(page)
     touch.drag(START, FAR)
     wait_for(page, "2/")
-    page.wait_for_timeout(300)
     assert not hidden(page)
     wait_until_hidden(page)
     touch.drag(FAR, START)
     wait_for(page, "1/")
-    page.wait_for_timeout(300)
     assert hidden(page)
 
 

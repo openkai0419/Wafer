@@ -17,7 +17,9 @@ export class PullRefresh {
     scrollEl.addEventListener('touchstart', (e) => this.onStart(e), { passive: true });
     scrollEl.addEventListener('touchmove', (e) => this.onMove(e), { passive: false });
     scrollEl.addEventListener('touchend', () => this.onEnd());
-    scrollEl.addEventListener('touchcancel', () => this.reset());
+    scrollEl.addEventListener('touchcancel', () => {
+      if (!this.refreshing) this.reset();
+    });
   }
 
   get armed() {

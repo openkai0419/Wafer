@@ -21,13 +21,21 @@ def grid_origin(page):
     return box["x"] + box["width"] / 2, box["y"] + 10
 
 
+def assert_no_requery(page, seen):
+    assert page.locator("#pull-indicator.hidden").count() == 1
+    assert len(seen) == 0
+
+
+def wait_for_the_requery(page):
+    page.wait_for_selector("#pull-indicator.hidden", state="attached")
+
+
 def test_a_long_pull_requeries_once(ready_page):
     page = ready_page
     seen = aspects_requests(page)
     x, y = grid_origin(page)
     Touch(page).drag((x, y), (x, y + PULL_DISTANCE))
-    page.wait_for_function("document.querySelector('#status').textContent.includes('files')")
-    page.wait_for_timeout(300)
+    wait_for_the_requery(page)
     assert len(seen) == 1
 
 
@@ -36,8 +44,7 @@ def test_a_short_pull_does_nothing(ready_page):
     seen = aspects_requests(page)
     x, y = grid_origin(page)
     Touch(page).drag((x, y), (x, y + 40))
-    page.wait_for_timeout(500)
-    assert len(seen) == 0
+    assert_no_requery(page, seen)
 
 
 def test_pulling_back_below_the_threshold_cancels(ready_page):
@@ -51,8 +58,7 @@ def test_pulling_back_below_the_threshold_cancels(ready_page):
     touch.move(x, y + 20)
     assert page.locator("#pull-indicator.armed").count() == 0
     touch.end()
-    page.wait_for_timeout(500)
-    assert len(seen) == 0
+    assert_no_requery(page, seen)
 
 
 def test_a_pull_from_a_scrolled_grid_does_nothing(ready_page):
@@ -63,8 +69,7 @@ def test_a_pull_from_a_scrolled_grid_does_nothing(ready_page):
     seen = aspects_requests(page)
     x, y = grid_origin(page)
     Touch(page).drag((x, y), (x, y + PULL_DISTANCE))
-    page.wait_for_timeout(500)
-    assert len(seen) == 0
+    assert_no_requery(page, seen)
 
 
 def test_a_short_list_can_still_be_pulled(ready_page):
@@ -75,8 +80,7 @@ def test_a_short_list_can_still_be_pulled(ready_page):
     seen = aspects_requests(page)
     x, y = grid_origin(page)
     Touch(page).drag((x, y), (x, y + PULL_DISTANCE))
-    page.wait_for_function("document.querySelector('#status').textContent.startsWith('1 ')")
-    page.wait_for_timeout(300)
+    wait_for_the_requery(page)
     assert len(seen) == 1
 
 
@@ -89,12 +93,34 @@ def test_a_pull_during_a_requery_is_ignored(ready_page):
     touch = Touch(page)
     touch.drag((x, y), (x, y + PULL_DISTANCE))
     page.wait_for_function("document.querySelector('#pull-indicator').classList.contains('refreshing')")
-    touch.drag((x, y), (x, y + PULL_DISTANCE))
-    page.wait_for_timeout(300)
+    touch.start(x, y)
+    touch.move(x, y + PULL_DISTANCE)
+    assert page.locator("#pull-indicator.refreshing").count() == 1
+    touch.end()
+    while not held:
+        page.wait_for_timeout(10)
     assert len(seen) == 1
     for route in held:
         route.continue_()
     page.wait_for_function("document.querySelector('#pull-indicator').classList.contains('hidden')")
+
+
+def test_a_cancelled_touch_keeps_the_spinner_during_a_requery(ready_page):
+    page = ready_page
+    held = []
+    page.route("**/aspects", lambda route: held.append(route))
+    x, y = grid_origin(page)
+    touch = Touch(page)
+    touch.drag((x, y), (x, y + PULL_DISTANCE))
+    page.wait_for_selector("#pull-indicator.refreshing")
+    touch.start(x, y)
+    touch.cancel()
+    assert page.locator("#pull-indicator.refreshing").count() == 1
+    while not held:
+        page.wait_for_timeout(10)
+    for route in held:
+        route.continue_()
+    page.wait_for_selector("#pull-indicator.hidden", state="attached")
 
 
 def test_a_mouse_drag_does_nothing(ready_page):
@@ -105,8 +131,7 @@ def test_a_mouse_drag_does_nothing(ready_page):
     page.mouse.down()
     page.mouse.move(x, y + PULL_DISTANCE, steps=12)
     page.mouse.up()
-    page.wait_for_timeout(500)
-    assert len(seen) == 0
+    assert_no_requery(page, seen)
 
 
 def test_a_second_finger_hides_the_indicator(ready_page):
@@ -120,8 +145,7 @@ def test_a_second_finger_hides_the_indicator(ready_page):
     touch.dispatch("touchStart", [{"x": x, "y": y + PULL_DISTANCE, "id": 0}, {"x": x + 50, "y": y + PULL_DISTANCE, "id": 1}])
     touch.end()
     assert page.locator("#pull-indicator.hidden").count() == 1
-    page.wait_for_timeout(500)
-    assert len(seen) == 0
+    assert_no_requery(page, seen)
 
 
 def test_a_tap_after_a_lost_touch_end_does_not_requery(ready_page):
@@ -139,5 +163,4 @@ def test_a_tap_after_a_lost_touch_end_does_not_requery(ready_page):
     touch.start(*grid_origin(page))
     touch.end()
     assert page.locator("#pull-indicator.hidden").count() == 1
-    page.wait_for_timeout(500)
-    assert len(seen) == 0
+    assert_no_requery(page, seen)

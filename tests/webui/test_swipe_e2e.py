@@ -28,6 +28,10 @@ def wait_for(page, prefix):
     page.wait_for_function(f"document.querySelector('#viewer-caption').textContent.startsWith('{prefix}')")
 
 
+def wait_settled(page):
+    page.wait_for_selector("#viewer-stage:not(.swipe-settling)", state="attached")
+
+
 def stage_children(page):
     return page.evaluate("document.querySelector('#viewer-stage').children.length")
 
@@ -42,6 +46,13 @@ def requests_to(page, fragment):
     return seen
 
 
+def start_slideshow(page, seconds):
+    page.click("#viewer-menu")
+    page.fill("#viewer-menu-popup input", str(seconds))
+    page.press("#viewer-menu-popup input", "Tab")
+    page.click("#viewer-menu-popup .menu-item:nth-child(2)")
+
+
 def hold_drag(touch, distance=60):
     touch.start(*START)
     touch.move(START[0] - distance // 2, START[1])
@@ -54,6 +65,15 @@ def viewer_page(ready_page):
     return ready_page
 
 
+@pytest.fixture
+def clock_viewer_page(page, webui_base_url):
+    page.clock.install()
+    page.goto(webui_base_url)
+    page.wait_for_selector("#grid-canvas .cell")
+    open_first(page)
+    return page
+
+
 def test_a_swipe_left_moves_to_the_next_image(viewer_page):
     Touch(viewer_page).drag(START, FAR)
     wait_for(viewer_page, "2/")
@@ -63,14 +83,13 @@ def test_a_swipe_right_moves_back(viewer_page):
     touch = Touch(viewer_page)
     touch.drag(START, FAR)
     wait_for(viewer_page, "2/")
-    viewer_page.wait_for_timeout(400)
     touch.drag(FAR, START)
     wait_for(viewer_page, "1/")
 
 
 def test_a_short_slow_swipe_returns(viewer_page):
     Touch(viewer_page).drag(START, (START[0] - 40, START[1]), steps=8, pause_ms=30)
-    viewer_page.wait_for_timeout(500)
+    wait_settled(viewer_page)
     assert caption(viewer_page).startswith("1/")
     assert stage_children(viewer_page) == 1
 
@@ -86,8 +105,7 @@ def test_the_preload_is_the_original_and_starts_before_release(viewer_page):
     thumbs = requests_to(page, "/api/thumb")
     touch = Touch(page)
     hold_drag(touch)
-    page.wait_for_function("document.querySelectorAll('.swipe-pane img').length === 1")
-    page.wait_for_timeout(300)
+    page.wait_for_function("document.querySelector('.swipe-pane img')?.complete")
     assert len(files) == 1
     assert thumbs == []
     touch.end()
@@ -103,14 +121,13 @@ def test_the_commit_does_not_reload_and_the_bar_clears(viewer_page):
     touch.end()
     wait_for(page, "2/")
     page.wait_for_selector("#viewer:not(.loading)")
-    page.wait_for_timeout(300)
     assert len(files) == before
     assert page.locator("#viewer.loading").count() == 0
 
 
 def test_the_first_image_does_not_move_back(viewer_page):
     Touch(viewer_page).drag(FAR, START)
-    viewer_page.wait_for_timeout(500)
+    wait_settled(viewer_page)
     assert caption(viewer_page).startswith("1/")
     assert stage_children(viewer_page) == 1
 
@@ -122,7 +139,7 @@ def test_the_last_image_does_not_loop(viewer_page):
         page.keyboard.press("ArrowRight")
     wait_for(page, f"{total}/")
     Touch(page).drag(START, FAR)
-    page.wait_for_timeout(500)
+    wait_settled(page)
     assert caption(page).startswith(f"{total}/")
     assert stage_children(page) == 1
 
@@ -137,7 +154,7 @@ def test_a_swipe_does_not_close(viewer_page):
     box = viewer_page.locator("#viewer-stage").bounding_box()
     y = box["y"] + 5
     Touch(viewer_page).drag((300, y), (60, y))
-    viewer_page.wait_for_timeout(500)
+    wait_for(viewer_page, "2/")
     assert viewer_page.locator("#viewer:not(.hidden)").count() == 1
 
 
@@ -147,7 +164,7 @@ def test_a_pinch_zoomed_page_does_not_swipe(viewer_page):
     touch.pinch((187, 400), 80)
     page.wait_for_function("window.visualViewport.scale > 1.01")
     touch.drag(START, FAR)
-    page.wait_for_timeout(500)
+    assert page.locator(".swipe-pane").count() == 0
     assert caption(page).startswith("1/")
 
 
@@ -157,7 +174,6 @@ def test_a_mouse_drag_does_not_move(viewer_page):
     page.mouse.down()
     page.mouse.move(FAR[0], FAR[1], steps=8)
     page.mouse.up()
-    page.wait_for_timeout(500)
     assert not caption(page).startswith("2/")
     assert page.locator(".swipe-pane").count() == 0
 
@@ -189,7 +205,7 @@ def test_a_cancelled_touch_returns_to_the_center(viewer_page):
     touch = Touch(page)
     hold_drag(touch)
     touch.cancel()
-    page.wait_for_timeout(500)
+    wait_settled(page)
     assert caption(page).startswith("1/")
     assert stage_children(page) == 1
     assert swipe_var(page) == ""
@@ -202,18 +218,134 @@ def test_a_swipe_during_settling_moves_again(viewer_page):
     wait_for(viewer_page, "3/")
 
 
-def test_the_slideshow_waits_during_a_drag(viewer_page):
-    page = viewer_page
-    page.click("#viewer-menu")
-    page.fill("#viewer-menu-popup input", "0.5")
-    page.press("#viewer-menu-popup input", "Tab")
-    page.click("#viewer-menu-popup .menu-item:nth-child(2)")
+def test_the_slideshow_waits_during_a_drag(clock_viewer_page):
+    page = clock_viewer_page
+    start_slideshow(page, 5)
     touch = Touch(page)
     hold_drag(touch, 50)
-    page.wait_for_timeout(1000)
+    page.clock.fast_forward(6000)
     assert caption(page).startswith("1/")
     touch.move(START[0], START[1])
     touch.end()
+    wait_settled(page)
+    page.clock.fast_forward(6000)
+    wait_for(page, "2/")
+
+
+def test_the_slideshow_waits_during_a_drag_when_the_image_loads_late(page, webui_base_url):
+    page.clock.install()
+    page.goto(webui_base_url)
+    page.wait_for_selector("#grid-canvas .cell")
+    open_first(page)
+    held_files = []
+    page.route("**/api/file*", lambda route: held_files.append(route))
+    start_slideshow(page, 0.5)
+    wait_for(page, "2/")
+    touch = Touch(page)
+    hold_drag(touch)
+    for route in held_files:
+        route.continue_()
+    page.unroute("**/api/file*")
+    page.wait_for_function("document.querySelector('#viewer-stage > img')?.complete")
+    page.clock.fast_forward(1000)
+    assert caption(page).startswith("2/")
+    assert page.locator(".swipe-pane").count() == 1
+    touch.cancel()
+    wait_for(page, "3/")
+
+
+def test_a_video_ending_during_a_drag_moves_on_after_it(page, webui_base_url):
+    def first_as_video(route):
+        response = route.fetch()
+        data = response.json()
+        for item in data["items"]:
+            if item["name"].startswith("a_"):
+                item["kind"] = "video"
+        route.fulfill(response=response, json=data)
+
+    page.route("**/api/query/*/items*", first_as_video)
+    page.goto(webui_base_url)
+    page.wait_for_selector("#grid-canvas .cell")
+    page.query_selector_all("#grid-canvas .cell")[0].click()
+    page.wait_for_selector("#viewer-stage video", state="attached")
+    start_slideshow(page, 0.5)
+    touch = Touch(page)
+    touch.start(START[0], 100)
+    touch.move(START[0] - 30, 100)
+    touch.move(START[0] - 60, 100)
+    page.wait_for_selector(".swipe-pane", state="attached")
+    page.evaluate(
+        "const video = document.querySelector('#viewer-stage video');"
+        "Object.defineProperty(video, 'ended', { value: true });"
+        "video.dispatchEvent(new Event('ended'));"
+    )
+    assert page.locator(".swipe-pane").count() == 1
+    touch.cancel()
+    wait_for(page, "2/")
+
+
+def test_a_late_item_keeps_the_neighbor_under_the_finger(viewer_page):
+    page = viewer_page
+    held_items = []
+    page.route("**/api/query/*/items*", lambda route: held_items.append(route))
+    page.keyboard.press("ArrowRight")
+    wait_for(page, "2/")
+    touch = Touch(page)
+    hold_drag(touch, 200)
+    assert page.locator(".swipe-pane img").count() == 1
+    while not held_items:
+        page.wait_for_timeout(10)
+    for route in held_items:
+        route.continue_()
+    page.unroute("**/api/query/*/items*")
+    page.wait_for_function("document.querySelector('#viewer-caption').textContent.includes('b_dog')")
+    assert page.locator(".swipe-pane img").count() == 1
+    assert page.locator("#viewer-stage > img").count() == 1
+    assert swipe_var(page) != ""
+    touch.end()
+    wait_for(page, "3/")
+
+
+def test_a_key_past_the_first_image_keeps_the_slideshow(clock_viewer_page):
+    page = clock_viewer_page
+    start_slideshow(page, 5)
+    touch = Touch(page)
+    touch.start(*FAR)
+    touch.move(FAR[0] + 30, FAR[1])
+    touch.move(FAR[0] + 90, FAR[1])
+    page.clock.fast_forward(6000)
+    page.keyboard.press("ArrowLeft")
+    assert swipe_var(page) != ""
+    touch.end()
+    wait_settled(page)
+    page.clock.fast_forward(6000)
+    wait_for(page, "2/")
+
+
+def test_a_cancelled_swipe_on_a_link_does_not_wait_for_the_neighbor_image(page, webui_base_url):
+    def first_as_link(route):
+        response = route.fetch()
+        data = response.json()
+        for item in data["items"]:
+            if item["name"].startswith("a_"):
+                item["kind"] = "other"
+        route.fulfill(response=response, json=data)
+
+    page.clock.install()
+    page.route("**/api/query/*/items*", first_as_link)
+    page.goto(webui_base_url)
+    page.wait_for_selector("#grid-canvas .cell")
+    page.query_selector_all("#grid-canvas .cell")[0].click()
+    page.wait_for_selector("#viewer-stage a")
+    held_files = []
+    page.route("**/api/file*", lambda route: held_files.append(route))
+    start_slideshow(page, 5)
+    touch = Touch(page)
+    hold_drag(touch)
+    page.wait_for_selector(".swipe-pane img", state="attached")
+    touch.cancel()
+    wait_settled(page)
+    page.clock.fast_forward(6000)
     wait_for(page, "2/")
 
 
@@ -238,7 +370,7 @@ def test_a_video_neighbor_waits_for_the_commit(page, webui_base_url):
     open_first(page)
     touch = Touch(page)
     hold_drag(touch, 200)
-    page.wait_for_timeout(300)
+    page.wait_for_selector(".swipe-pane", state="attached")
     assert page.locator("video").count() == 0
     touch.end()
     page.wait_for_selector("#viewer-stage video", state="attached")
@@ -249,7 +381,7 @@ def test_a_background_tap_during_settling_does_not_close(viewer_page):
     touch = Touch(page)
     touch.drag(START, (START[0] - 150, START[1]), steps=10, pause_ms=20)
     page.touchscreen.tap(20, 200)
-    page.wait_for_timeout(500)
+    page.evaluate("new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))")
     assert page.locator("#viewer:not(.hidden)").count() == 1
     assert caption(page).startswith("2/")
 
@@ -260,7 +392,7 @@ def test_stopping_before_release_does_not_flick(viewer_page):
     hold_drag(touch, 60)
     page.wait_for_timeout(300)
     touch.end()
-    page.wait_for_timeout(500)
+    wait_settled(page)
     assert caption(page).startswith("1/")
 
 
@@ -271,8 +403,7 @@ def test_a_zoomed_page_can_still_pan_sideways(viewer_page):
     page.wait_for_function("window.visualViewport.scale > 1.01")
     before = page.evaluate("window.visualViewport.offsetLeft")
     touch.drag((300, 400), (100, 400), steps=10, pause_ms=20)
-    page.wait_for_timeout(300)
-    assert page.evaluate("window.visualViewport.offsetLeft") != before
+    page.wait_for_function(f"window.visualViewport.offsetLeft !== {before}")
 
 
 class SingleItemFetches:
@@ -292,6 +423,10 @@ class SingleItemFetches:
             self.held.append(route)
         else:
             route.continue_()
+
+    def wait_until_held(self, page):
+        while not self.held:
+            page.wait_for_timeout(10)
 
     def release(self):
         for route in self.held:
@@ -317,7 +452,6 @@ def assert_the_next_swipe_waits_for_its_own_item(page, fetches):
     open_first(page)
     Touch(page).drag(START, FAR)
     wait_for(page, "2/")
-    page.wait_for_timeout(300)
     assert page.locator("#viewer-stage img").count() == 0
     fetches.release()
     page.wait_for_selector("#viewer-stage img")
@@ -337,10 +471,9 @@ def test_a_neighbor_arriving_after_closing_is_ignored(page, webui_base_url):
     fetches.holding = True
     touch = Touch(page)
     hold_drag(touch, 200)
-    page.wait_for_timeout(200)
-    assert fetches.held
+    fetches.wait_until_held(page)
     close_viewer(page)
     touch.end()
-    fetches.release()
-    page.wait_for_timeout(300)
+    with page.expect_response("**/api/query/*/items*"):
+        fetches.release()
     assert_the_next_swipe_waits_for_its_own_item(page, fetches)

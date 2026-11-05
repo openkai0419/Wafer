@@ -52,10 +52,7 @@ export class Viewer {
       canStart: (target) => !(target instanceof HTMLVideoElement),
       hasNeighbor: (delta) => this.index + delta >= 0 && this.index + delta < this.total,
       fillPane: (delta, pane) => this.fillPane(this.index + delta, pane),
-      onDragStart: () => {
-        this.clearTimer();
-        this.menu.classList.add('hidden');
-      },
+      onDragStart: () => this.menu.classList.add('hidden'),
       onCancel: () => this.armSlideshow(),
       onCommit: (delta, pane) => {
         const index = this.index + delta;
@@ -162,7 +159,7 @@ export class Viewer {
     if (!this.slideshow) return;
     const token = this.token;
     const video = this.stage.querySelector('video');
-    if (video) {
+    if (video && !video.ended) {
       video.loop = false;
       video.addEventListener('ended', () => this.advance(token), { once: true });
       return;
@@ -181,7 +178,7 @@ export class Viewer {
   }
 
   advance(token) {
-    if (!this.slideshow || token !== this.token) return;
+    if (!this.slideshow || token !== this.token || this.swipe.active) return;
     const next = this.index + 1 >= this.total ? 0 : this.index + 1;
     this.open(next);
   }
@@ -210,8 +207,8 @@ export class Viewer {
   }
 
   async open(index, item, shown = null) {
-    this.swipe.abort();
     if (index < 0 || index >= this.total) return;
+    this.swipe.abort();
     this.clearTimer();
     const token = ++this.token;
     this.index = index;
@@ -247,7 +244,8 @@ export class Viewer {
     this.caption.textContent = `${index + 1}/${this.total}  ${item.name}`;
     this.item = item;
     this.controls.setHideable(item.kind === 'image');
-    this.stage.replaceChildren(media);
+    this.stage.querySelectorAll(':scope > :not(.swipe-pane)').forEach((el) => el.remove());
+    this.stage.prepend(media);
     this.onIndexChange(index, item);
     this.armSlideshow();
     loaded(media).then(

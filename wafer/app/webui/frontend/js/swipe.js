@@ -40,6 +40,10 @@ export class Swipe {
     return (window.visualViewport?.scale ?? 1) > MAX_PAGE_SCALE;
   }
 
+  get active() {
+    return this.drag !== null || this.settling !== null;
+  }
+
   abort() {
     if (this.settling) clearTimeout(this.settling.timer);
     if (this.drag && this.stage.hasPointerCapture(this.drag.id)) this.stage.releasePointerCapture(this.drag.id);
@@ -75,7 +79,6 @@ export class Swipe {
       samples: [{ x: e.clientX, t: e.timeStamp }],
       swiping: false,
       delta: 0,
-      neighbor: false,
       pane: null,
       x: 0,
     };
@@ -93,7 +96,7 @@ export class Swipe {
     }
     this.sample(e);
     const inward = drag.delta > 0 ? Math.min(0, dx) : Math.max(0, dx);
-    drag.x = drag.neighbor ? inward : inward * EDGE_RESISTANCE;
+    drag.x = drag.pane ? inward : inward * EDGE_RESISTANCE;
     this.setX(drag.x);
   }
 
@@ -111,8 +114,7 @@ export class Swipe {
     this.swallowClick = true;
     this.stage.setPointerCapture(e.pointerId);
     this.onDragStart();
-    drag.neighbor = this.hasNeighbor(drag.delta);
-    if (!drag.neighbor) return;
+    if (!this.hasNeighbor(drag.delta)) return;
     drag.pane = document.createElement('div');
     drag.pane.className = `swipe-pane ${drag.delta > 0 ? 'next' : 'prev'}`;
     this.stage.append(drag.pane);
@@ -132,7 +134,7 @@ export class Swipe {
     const elapsed = last.t - first.t;
     const toward = elapsed > 0 ? (-drag.delta * (last.x - first.x)) / elapsed : 0;
     const far = Math.abs(drag.x) >= this.stage.clientWidth * COMMIT_RATIO;
-    this.settle(drag.neighbor && (far || toward >= FLICK_PX_PER_MS));
+    this.settle(drag.pane !== null && (far || toward >= FLICK_PX_PER_MS));
   }
 
   onPointerCancel(e) {
@@ -161,8 +163,8 @@ export class Swipe {
     clearTimeout(timer);
     this.settling = null;
     this.clearPosition();
+    pane?.remove();
     if (commit) this.onCommit(delta, pane);
     else this.onCancel();
-    pane?.remove();
   }
 }

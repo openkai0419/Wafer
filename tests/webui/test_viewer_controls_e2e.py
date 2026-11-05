@@ -88,12 +88,12 @@ def test_they_stay_for_three_seconds_then_hide(viewer_page):
     assert hidden(page)
 
 
-def test_the_fade_takes_half_a_second_and_returning_is_quick(viewer_page):
+def test_fading_and_returning_are_quick(viewer_page):
     page = viewer_page
     duration = f"getComputedStyle(document.querySelector('{CONTROLS}')).transitionDuration"
     assert page.evaluate(duration) == "0.15s"
     wait_until_hidden(page)
-    assert page.evaluate(duration) == "0.5s"
+    assert page.evaluate(duration) == "0.2s"
 
 
 def test_reduced_motion_switches_at_once(viewer_page):

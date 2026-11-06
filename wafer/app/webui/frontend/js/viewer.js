@@ -1,6 +1,8 @@
 import { fileUrl } from './api.js';
 import { load, save } from './store.js';
 import { setIcon } from './icons.js';
+import { Swipe } from './swipe.js';
+import { ViewerControls, isInsideDrawnImage } from './viewercontrols.js';
 
 const MIN_SLIDESHOW_INTERVAL = 0.5;
 
@@ -18,6 +20,9 @@ export const DEFAULT_LABELS = {
 function loaded(element) {
   const done = element instanceof HTMLVideoElement ? 'loadeddata' : 'load';
   if (!(element instanceof HTMLImageElement || element instanceof HTMLVideoElement)) return Promise.resolve();
+  if (element instanceof HTMLImageElement && element.complete) {
+    return element.naturalWidth > 0 ? Promise.resolve() : Promise.reject(new Error('image failed to load'));
+  }
   return new Promise((resolve, reject) => {
     element.addEventListener(done, resolve, { once: true });
     element.addEventListener('error', reject, { once: true });
@@ -40,6 +45,21 @@ export class Viewer {
     this.interval = load('slideshowInterval', 3);
     this.timer = null;
     this.token = 0;
+    this.knownItem = () => undefined;
+    this.peeked = null;
+    this.controls = new ViewerControls(this.el);
+    this.swipe = new Swipe(this.stage, {
+      canStart: (target) => !(target instanceof HTMLVideoElement),
+      hasNeighbor: (delta) => this.index + delta >= 0 && this.index + delta < this.total,
+      fillPane: (delta, pane) => this.fillPane(this.index + delta, pane),
+      onDragStart: () => this.menu.classList.add('hidden'),
+      onCancel: () => this.armSlideshow(),
+      onCommit: (delta, pane) => {
+        const index = this.index + delta;
+        const item = this.peeked?.index === index ? this.peeked.item : this.knownItem(index);
+        this.open(index, item || undefined, item ? pane.firstElementChild : null);
+      },
+    });
     const close = document.getElementById('viewer-close');
     const prev = document.getElementById('viewer-prev');
     const next = document.getElementById('viewer-next');
@@ -55,6 +75,10 @@ export class Viewer {
     this.setupMenu();
     this.el.addEventListener('click', (e) => {
       if (e.target === this.el || e.target === this.stage) this.close();
+      else if (e.target instanceof HTMLImageElement && this.stage.contains(e.target)) {
+        if (isInsideDrawnImage(e.target, e.clientX, e.clientY)) this.controls.toggle();
+        else this.close();
+      }
     });
     document.addEventListener('keydown', (e) => {
       if (this.el.classList.contains('hidden')) return;
@@ -135,7 +159,7 @@ export class Viewer {
     if (!this.slideshow) return;
     const token = this.token;
     const video = this.stage.querySelector('video');
-    if (video) {
+    if (video && !video.ended) {
       video.loop = false;
       video.addEventListener('ended', () => this.advance(token), { once: true });
       return;
@@ -154,7 +178,7 @@ export class Viewer {
   }
 
   advance(token) {
-    if (!this.slideshow || token !== this.token) return;
+    if (!this.slideshow || token !== this.token || this.swipe.active) return;
     const next = this.index + 1 >= this.total ? 0 : this.index + 1;
     this.open(next);
   }
@@ -165,19 +189,41 @@ export class Viewer {
     this.close();
   }
 
-  async open(index, item) {
+  fillPane(index, pane) {
+    const show = (item) => {
+      if (!pane.isConnected) return;
+      this.peeked = { index, item };
+      if (item.kind === 'image') pane.append(this.render(item, fileUrl(this.client.db, item.path)));
+    };
+    const known = this.knownItem(index);
+    if (known) {
+      show(known);
+      return;
+    }
+    this.client.items(index, 1).then(
+      (data) => data.items[0] && show(data.items[0]),
+      (e) => console.warn(`failed to preload item ${index}: ${e.message}`),
+    );
+  }
+
+  async open(index, item, shown = null) {
     if (index < 0 || index >= this.total) return;
+    this.swipe.abort();
     this.clearTimer();
     const token = ++this.token;
     this.index = index;
     this.item = null;
-    this.stage.replaceChildren();
+    if (!shown) this.stage.replaceChildren();
     this.caption.textContent = `${index + 1}/${this.total}`;
+    if (!this.isOpen) this.controls.start();
     this.el.classList.remove('hidden');
     this.el.classList.add('loading');
     const settle = (message) => {
       this.el.classList.remove('loading');
-      if (message !== undefined) this.caption.textContent = message;
+      if (message !== undefined) {
+        this.caption.textContent = message;
+        this.controls.setHideable(false);
+      }
     };
     if (!item) {
       try {
@@ -194,10 +240,12 @@ export class Viewer {
     }
     if (token !== this.token) return;
     const url = fileUrl(this.client.db, item.path);
-    const media = this.render(item, url);
+    const media = shown ?? this.render(item, url);
     this.caption.textContent = `${index + 1}/${this.total}  ${item.name}`;
     this.item = item;
-    this.stage.replaceChildren(media);
+    this.controls.setHideable(item.kind === 'image');
+    this.stage.querySelectorAll(':scope > :not(.swipe-pane)').forEach((el) => el.remove());
+    this.stage.prepend(media);
     this.onIndexChange(index, item);
     this.armSlideshow();
     loaded(media).then(
@@ -233,17 +281,20 @@ export class Viewer {
   }
 
   close() {
+    this.swipe.abort();
     this.slideshow = false;
     this.token++;
     this.clearTimer();
     if (this.slideshowToggle) this.updateMenu();
     if (this.menu) this.menu.classList.add('hidden');
+    this.controls.stop();
     this.el.classList.add('hidden');
     this.el.classList.remove('loading');
     this.stage.replaceChildren();
     this.caption.textContent = '';
     this.index = -1;
     this.item = null;
+    this.peeked = null;
   }
 
   get isOpen() {

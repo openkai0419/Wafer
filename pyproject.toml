@@ -16,6 +16,7 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "benchmark: performance benchmarks (deselect with '-m \"not benchmark\"')",
     "unstable: tests that may crash the process (e.g. native mpv). skipped unless --run-unstable is given",
+    "controls_fade: webui viewer control fade tests; the default always-visible CSS injection is skipped",
     "setup: extension install/setup smoke tests (deselect with '-m \"not setup\"'). requires --run-setup",
 ]
 

@@ -99,6 +99,22 @@ def webui_query_service(webui_base_url):
     return _webui_state["query_service"]
 
 
+KEEP_CONTROLS_VISIBLE = (
+    "document.addEventListener('DOMContentLoaded', () => {"
+    "const s = document.createElement('style');"
+    "s.textContent = '#viewer.controls-hidden #viewer-main > button, #viewer.controls-hidden #viewer-caption "
+    "{ opacity: 1 !important; pointer-events: auto !important; }';"
+    "document.head.append(s);});"
+)
+
+
+@pytest.fixture
+def context(context, request):
+    if not request.node.get_closest_marker("controls_fade"):
+        context.add_init_script(KEEP_CONTROLS_VISIBLE)
+    return context
+
+
 @pytest.fixture
 def ready_page(page, webui_base_url):
     page.goto(webui_base_url)

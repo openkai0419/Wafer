@@ -33,7 +33,7 @@ export class ViewerControls {
   }
 
   get popupOpen() {
-    return this.el.querySelector('#viewer-menu-popup:not(.hidden)') !== null;
+    return this.el.querySelector('[id$="-popup"]:not(.hidden)') !== null;
   }
 
   start() {

@@ -1,10 +1,24 @@
+import importlib
+import json
 import os
+import subprocess
 import sys
+from pathlib import Path
+
 import pytest
 
+from wafer.builtins import registration
+from wafer.plugin import loader as loader_module, plugin_index
+from wafer.plugin.collector.handler import collector_resolver
+from wafer.plugin.imageloader.handler import image_loader_resolver
+from wafer.plugin.parser.handler import parser_resolver
+from wafer.plugin.plugin_index import ExtensionRecord, PluginEntry
 from wafer.plugin.registry import BasePlugin, PluginRegistry, FilePluginRegistry
 from wafer.plugin.loader import PluginLoader
 from wafer.plugin.installer import _PACKAGES_DIR
+from wafer.plugin.settings import PluginSettings
+
+ROOT = Path(__file__).resolve().parents[3]
 
 
 @pytest.fixture
@@ -448,3 +462,657 @@ class TestDefaultEnabled:
         for key in list(sys.modules):
             if key.startswith("_plugins_disabled_ext2"):
                 del sys.modules[key]
+
+
+PLUGIN_BASES = {
+    "collector": ("wafer.plugin.collector.base", "BaseCollectorPlugin"),
+    "parser": ("wafer.plugin.parser.base", "BaseParserPlugin"),
+    "filter": ("wafer.plugin.query.base", "BaseFilterPlugin"),
+    "panel": ("wafer.plugin.panel.base", "BasePanelPlugin"),
+    "imageloader": ("wafer.plugin.imageloader.base", "BaseImageLoader"),
+}
+
+
+def _plugin(kind, cls_name, name, priority=10, enabled=True):
+    module, base = PLUGIN_BASES[kind]
+    return (
+        f"from {module} import {base}\n"
+        f"class {cls_name}({base}):\n"
+        f'    NAME = "{name}"\n'
+        f"    PRIORITY = {priority}\n"
+        f"    DEFAULT_ENABLED = {enabled}\n"
+    )
+
+
+def _write_extension(plugin_dir, extension, **modules):
+    folder = plugin_dir / extension
+    folder.mkdir(parents=True)
+    (folder / "__init__.py").write_text("")
+    for module, source in modules.items():
+        (folder / f"{module}.py").write_text(source)
+    return folder
+
+
+def _purge_index_extensions():
+    for key in list(sys.modules):
+        if key.startswith("_plugins_idx_"):
+            del sys.modules[key]
+    importlib.invalidate_caches()
+
+
+def _registries():
+    return {
+        "collector": FilePluginRegistry(),
+        "parser": PluginRegistry(),
+        "imageloader": FilePluginRegistry(),
+        "filter": PluginRegistry(),
+        "panel": PluginRegistry(),
+    }
+
+
+def _index_for(plugin_dir):
+    loader = PluginLoader(str(plugin_dir), _registries(), record_index=True)
+    loader.load_all()
+    _purge_index_extensions()
+    return loader.records
+
+
+def _select_all(kind, name):
+    return True
+
+
+def _select_collectors(kind, name):
+    return kind == "collector"
+
+
+def _capture_warnings(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(loader_module.AppLogger, "warning", lambda text, *, exc=None: warnings.append(text))
+    return warnings
+
+
+def _vanish(folder):
+    raise FileNotFoundError("file vanished")
+
+
+@pytest.fixture
+def plugin_dir(tmp_path):
+    folder = tmp_path / "plugins"
+    folder.mkdir()
+    yield folder
+    _purge_index_extensions()
+
+
+@pytest.fixture
+def scoped_env(plugin_dir, monkeypatch):
+    monkeypatch.setattr(loader_module, "get_plugin_dir", lambda: str(plugin_dir))
+    monkeypatch.setattr(collector_resolver, "registry", FilePluginRegistry())
+    monkeypatch.setattr(parser_resolver, "registry", PluginRegistry())
+    monkeypatch.setattr(image_loader_resolver, "registry", FilePluginRegistry())
+    monkeypatch.setattr(loader_module, "_command_registry_ref", loader_module._command_registry_ref)
+    return plugin_dir
+
+
+def _run_probe(code, tmp_path):
+    env = {**os.environ, "WIN_PD_OVERRIDE_LOCAL_APPDATA": str(tmp_path / "appdata")}
+    return subprocess.run([sys.executable, "-c", code], cwd=str(ROOT), env=env, capture_output=True, text=True, timeout=25)
+
+
+def test_loader_module_does_not_import_qt(tmp_path):
+    result = _run_probe("import sys;import wafer.plugin.loader;sys.exit(1 if 'PySide6' in sys.modules else 0)", tmp_path)
+    assert result.returncode == 0, result.stderr
+
+
+class TestRecordingTheIndex:
+    def test_load_all_records_every_extension(self, plugin_dir):
+        folder_a = _write_extension(plugin_dir, "idx_a", collector=_plugin("collector", "ACollector", "a"))
+        folder_b = _write_extension(plugin_dir, "idx_b", off=_plugin("parser", "BParser", "b", enabled=False))
+
+        loader = PluginLoader(str(plugin_dir), _registries(), record_index=True)
+        loader.load_all()
+
+        assert loader.records == {
+            "idx_a": ExtensionRecord(
+                plugin_index.extension_fingerprint(str(folder_a)),
+                (PluginEntry("collector", "collector", "ACollector", "a"),),
+            ),
+            "idx_b": ExtensionRecord(
+                plugin_index.extension_fingerprint(str(folder_b)),
+                (PluginEntry("parser", "off", "BParser", "b"),),
+            ),
+        }
+
+    def test_load_all_records_nothing_by_default(self, plugin_dir):
+        _write_extension(plugin_dir, "idx_a", collector=_plugin("collector", "ACollector", "a"))
+
+        loader = PluginLoader(str(plugin_dir), _registries())
+        loader.load_all()
+
+        assert loader.records == {}
+
+    def test_entries_use_the_defining_module(self, plugin_dir):
+        _write_extension(
+            plugin_dir,
+            "idx_a",
+            a_user="from .z_owner import OwnedCollector\nfrom ._common import SharedParser\n",
+            z_owner=_plugin("collector", "OwnedCollector", "owned"),
+            _common=_plugin("parser", "SharedParser", "shared"),
+        )
+
+        loader = PluginLoader(str(plugin_dir), _registries(), record_index=True)
+        loader.load_all()
+
+        assert loader.records["idx_a"].plugins == (
+            PluginEntry("collector", "z_owner", "OwnedCollector", "owned"),
+            PluginEntry("parser", "_common", "SharedParser", "shared"),
+        )
+
+    def test_class_from_outside_the_extension_is_not_recorded(self, plugin_dir):
+        _write_extension(
+            plugin_dir,
+            "idx_a",
+            borrowed="from wafer.builtins.imageloader import SystemImageLoader\n",
+            collector=_plugin("collector", "ACollector", "a"),
+        )
+
+        loader = PluginLoader(str(plugin_dir), _registries(), record_index=True)
+        loader.load_all()
+
+        assert loader.records == {}
+
+    def test_failed_import_is_not_recorded(self, plugin_dir):
+        _write_extension(
+            plugin_dir,
+            "idx_a",
+            broken="raise ImportError('missing dependency')\n",
+            collector=_plugin("collector", "ACollector", "a"),
+        )
+        _write_extension(plugin_dir, "idx_b", collector=_plugin("collector", "BCollector", "b"))
+
+        registries = _registries()
+        loader = PluginLoader(str(plugin_dir), registries, record_index=True)
+        loader.load_all()
+
+        assert list(loader.records) == ["idx_b"]
+        assert registries["collector"].get("a") is not None
+
+    def test_failed_import_from_an_earlier_scan_is_not_recorded(self, plugin_dir):
+        folder = _write_extension(
+            plugin_dir,
+            "idx_a",
+            broken=_plugin("collector", "HalfCollector", "half") + "raise ImportError('missing dependency')\n",
+        )
+        PluginLoader.discover_extension(str(folder))
+
+        loader = PluginLoader(str(plugin_dir), _registries(), record_index=True)
+        loader.load_all()
+
+        assert loader.records == {}
+
+    def test_needs_setup_extension_is_not_recorded(self, plugin_dir, monkeypatch):
+        _write_extension(plugin_dir, "idx_a", collector=_plugin("collector", "ACollector", "a"))
+        _write_extension(plugin_dir, "idx_b", collector=_plugin("collector", "BCollector", "b"))
+        monkeypatch.setattr(loader_module, "needs_setup", lambda folder: folder.endswith("idx_a"))
+
+        loader = PluginLoader(str(plugin_dir), _registries(), record_index=True)
+        loader.load_all()
+
+        assert list(loader.records) == ["idx_b"]
+
+    def test_fingerprint_failure_keeps_loading_and_skips_the_record(self, plugin_dir, monkeypatch):
+        _write_extension(plugin_dir, "idx_a", collector=_plugin("collector", "ACollector", "a"))
+        warnings = _capture_warnings(monkeypatch)
+        monkeypatch.setattr(plugin_index, "extension_fingerprint", _vanish)
+
+        registries = _registries()
+        loader = PluginLoader(str(plugin_dir), registries, record_index=True)
+        loaded = loader.load_all()
+
+        assert loaded == ["idx_a"]
+        assert registries["collector"].get("a") is not None
+        assert loader.records == {}
+        assert any("idx_a" in text for text in warnings)
+
+
+class TestPluginEntries:
+    def test_keeps_first_seen_order_and_removes_duplicates(self):
+        class Second:
+            NAME = "second"
+            __module__ = "_plugins_idx_a.b"
+
+        class First:
+            NAME = "first"
+            __module__ = "_plugins_idx_a.a"
+
+        found = [("parser", Second), ("collector", First), ("parser", Second)]
+
+        assert loader_module.plugin_entries("idx_a", found) == (
+            PluginEntry("parser", "b", "Second", "second"),
+            PluginEntry("collector", "a", "First", "first"),
+        )
+
+    @pytest.mark.parametrize("module", ["wafer.builtins.imageloader", "_plugins_idx_b.a", "_plugins_idx_a"])
+    def test_class_defined_outside_the_extension_modules_gives_none(self, module):
+        class Outside:
+            NAME = "outside"
+
+        Outside.__module__ = module
+
+        assert loader_module.plugin_entries("idx_a", [("collector", Outside)]) is None
+
+
+class TestSelectedLoad:
+    def test_cached_extension_imports_only_selected_modules(self, plugin_dir):
+        _write_extension(
+            plugin_dir,
+            "idx_a",
+            collector=_plugin("collector", "ACollector", "a"),
+            panel=_plugin("panel", "APanel", "a_panel"),
+        )
+        index = _index_for(plugin_dir)
+
+        registries = _registries()
+        loaded = PluginLoader(str(plugin_dir), registries).load_selected(_select_collectors, index)
+
+        assert loaded == ["idx_a"]
+        assert registries["collector"].get("a") is not None
+        assert "_plugins_idx_a.collector" in sys.modules
+        assert "_plugins_idx_a.panel" not in sys.modules
+
+    def test_cached_load_does_not_build_the_registry_map(self, plugin_dir, monkeypatch):
+        _write_extension(plugin_dir, "idx_a", collector=_plugin("collector", "ACollector", "a"))
+        index = _index_for(plugin_dir)
+
+        def fail():
+            raise AssertionError("registry map built")
+
+        monkeypatch.setattr(loader_module, "_get_registry_map", fail)
+        registries = _registries()
+        PluginLoader(str(plugin_dir), registries).load_selected(_select_collectors, index)
+
+        assert registries["collector"].get("a") is not None
+
+    def test_selected_load_without_index_scans_every_extension(self, plugin_dir):
+        _write_extension(
+            plugin_dir,
+            "idx_a",
+            collector=_plugin("collector", "ACollector", "a"),
+            panel=_plugin("panel", "APanel", "a_panel"),
+        )
+        _write_extension(plugin_dir, "idx_b", collector=_plugin("collector", "BCollector", "b"))
+
+        registries = _registries()
+        loaded = PluginLoader(str(plugin_dir), registries).load_selected(_select_collectors, {})
+
+        assert loaded == ["idx_a", "idx_b"]
+        assert registries["collector"].names() == ["a", "b"]
+        assert registries["panel"].get("a_panel") is None
+        assert "_plugins_idx_a.panel" in sys.modules
+
+    def test_changed_extension_is_scanned_and_others_stay_cached(self, plugin_dir):
+        folder_a = _write_extension(
+            plugin_dir,
+            "idx_a",
+            collector=_plugin("collector", "ACollector", "a"),
+            panel=_plugin("panel", "APanel", "a_panel"),
+        )
+        _write_extension(
+            plugin_dir,
+            "idx_b",
+            collector=_plugin("collector", "BCollector", "b"),
+            panel=_plugin("panel", "BPanel", "b_panel"),
+        )
+        index = _index_for(plugin_dir)
+        with open(folder_a / "collector.py", "a") as f:
+            f.write(_plugin("collector", "ANewCollector", "a_new"))
+
+        registries = _registries()
+        PluginLoader(str(plugin_dir), registries).load_selected(_select_collectors, index)
+
+        assert registries["collector"].get("a_new") is not None
+        assert registries["collector"].get("b") is not None
+        assert "_plugins_idx_a.panel" in sys.modules
+        assert "_plugins_idx_b.panel" not in sys.modules
+
+    def test_selected_load_skips_needs_setup_extensions(self, plugin_dir, monkeypatch):
+        _write_extension(plugin_dir, "idx_a", collector=_plugin("collector", "ACollector", "a"))
+        _write_extension(plugin_dir, "idx_b", collector=_plugin("collector", "BCollector", "b"))
+        index = _index_for(plugin_dir)
+        monkeypatch.setattr(loader_module, "needs_setup", lambda folder: folder.endswith("idx_a"))
+
+        registries = _registries()
+        loaded = PluginLoader(str(plugin_dir), registries).load_selected(_select_collectors, index)
+
+        assert loaded == ["idx_b"]
+        assert registries["collector"].get("a") is None
+        assert "_plugins_idx_a" not in sys.modules
+
+    def test_disabled_class_is_not_registered(self, plugin_dir):
+        _write_extension(
+            plugin_dir,
+            "idx_a",
+            collector=_plugin("collector", "ACollector", "a") + _plugin("collector", "BCollector", "b", enabled=False),
+        )
+        index = _index_for(plugin_dir)
+
+        registries = _registries()
+        loader = PluginLoader(
+            str(plugin_dir),
+            registries,
+            enabled={"collector:ACollector": False, "collector:BCollector": True},
+        )
+        loader.load_selected(_select_collectors, index)
+
+        assert registries["collector"].get("a") is None
+        assert registries["collector"].get("b") is not None
+
+    def test_cached_order_matches_full_load(self, plugin_dir):
+        _write_extension(
+            plugin_dir,
+            "idx_b",
+            a_user="from .z_owner import AAOwned\n" + _plugin("collector", "ZZLocal", "b_local"),
+            z_owner=_plugin("collector", "AAOwned", "b_owned"),
+        )
+        _write_extension(plugin_dir, "idx_a", later=_plugin("collector", "ACollector", "a"))
+        _write_extension(plugin_dir, "idx_c", mod=_plugin("collector", "CCollector", "c"))
+
+        full = _registries()
+        recording = PluginLoader(str(plugin_dir), full, record_index=True)
+        recording.load_all()
+        full_order = full["collector"].names()
+        _purge_index_extensions()
+
+        cached = _registries()
+        PluginLoader(str(plugin_dir), cached).load_selected(_select_all, recording.records)
+
+        assert full_order == ["a", "b_owned", "b_local", "c"]
+        assert cached["collector"].names() == full_order
+
+    @pytest.mark.parametrize(
+        "broken",
+        [
+            PluginEntry("collector", "collector", "Gone", "a"),
+            PluginEntry("collector", "gone", "ACollector", "a"),
+        ],
+        ids=["missing_class", "missing_module"],
+    )
+    def test_missing_class_in_cached_module_falls_back_to_scan(self, plugin_dir, monkeypatch, broken):
+        _write_extension(
+            plugin_dir,
+            "idx_a",
+            collector=_plugin("collector", "ACollector", "a"),
+            panel=_plugin("panel", "APanel", "a_panel"),
+        )
+        record = _index_for(plugin_dir)["idx_a"]
+        index = {"idx_a": ExtensionRecord(record.fingerprint, (broken,))}
+        warnings = _capture_warnings(monkeypatch)
+
+        registries = _registries()
+        loaded = PluginLoader(str(plugin_dir), registries).load_selected(_select_collectors, index)
+
+        assert loaded == ["idx_a"]
+        assert registries["collector"].get("a").__name__ == "ACollector"
+        assert "_plugins_idx_a.panel" in sys.modules
+        assert any("idx_a" in text for text in warnings)
+
+    def test_broken_package_init_stays_unloaded_after_the_fallback(self, plugin_dir, monkeypatch):
+        folder = _write_extension(plugin_dir, "idx_a", collector=_plugin("collector", "ACollector", "a"))
+        (folder / "__init__.py").write_text("raise RuntimeError('broken package')\n")
+        entry = PluginEntry("collector", "collector", "ACollector", "a")
+        index = {"idx_a": ExtensionRecord(plugin_index.extension_fingerprint(str(folder)), (entry,))}
+        _capture_warnings(monkeypatch)
+
+        registries = _registries()
+        loaded = PluginLoader(str(plugin_dir), registries).load_selected(_select_collectors, index)
+
+        assert loaded == []
+        assert registries["collector"].get("a") is None
+        assert "_plugins_idx_a" not in sys.modules
+
+    def test_fingerprint_failure_scans_the_extension(self, plugin_dir, monkeypatch):
+        _write_extension(
+            plugin_dir,
+            "idx_a",
+            collector=_plugin("collector", "ACollector", "a"),
+            panel=_plugin("panel", "APanel", "a_panel"),
+        )
+        index = _index_for(plugin_dir)
+        warnings = _capture_warnings(monkeypatch)
+        monkeypatch.setattr(plugin_index, "extension_fingerprint", _vanish)
+
+        registries = _registries()
+        loaded = PluginLoader(str(plugin_dir), registries).load_selected(_select_collectors, index)
+
+        assert loaded == ["idx_a"]
+        assert registries["collector"].get("a") is not None
+        assert "_plugins_idx_a.panel" in sys.modules
+        assert any("idx_a" in text for text in warnings)
+
+    def test_unselected_extension_still_gets_its_dll_directory(self, plugin_dir, monkeypatch):
+        folder = _write_extension(plugin_dir, "idx_a", panel=_plugin("panel", "APanel", "a_panel"))
+        index = _index_for(plugin_dir)
+        seen = []
+        monkeypatch.setattr(loader_module, "_setup_dll_directory", seen.append)
+
+        PluginLoader(str(plugin_dir), _registries()).load_selected(_select_collectors, index)
+
+        assert seen == [str(folder)]
+        assert "_plugins_idx_a" not in sys.modules
+
+    def test_cached_module_can_import_from_shared_packages(self, plugin_dir):
+        packages = plugin_dir / _PACKAGES_DIR
+        packages.mkdir()
+        (packages / "idx_shared_dep.py").write_text("VALUE = 1\n")
+        _write_extension(
+            plugin_dir,
+            "idx_a",
+            collector="import idx_shared_dep\n" + _plugin("collector", "ACollector", "a"),
+        )
+        try:
+            index = _index_for(plugin_dir)
+            sys.path.remove(str(packages))
+            sys.modules.pop("idx_shared_dep", None)
+
+            registries = _registries()
+            PluginLoader(str(plugin_dir), registries).load_selected(_select_collectors, index)
+
+            assert registries["collector"].get("a") is not None
+        finally:
+            if str(packages) in sys.path:
+                sys.path.remove(str(packages))
+            sys.modules.pop("idx_shared_dep", None)
+
+
+class TestImportExtensionFailures:
+    def test_reports_failed_modules(self, plugin_dir):
+        folder = _write_extension(
+            plugin_dir,
+            "idx_a",
+            broken="raise ImportError('missing dependency')\n",
+            collector=_plugin("collector", "ACollector", "a"),
+        )
+
+        failed = []
+        found = loader_module._import_extension("idx_a", str(folder), failed)
+
+        assert failed == ["_plugins_idx_a.broken"]
+        assert [cls.NAME for _, cls in found] == ["a"]
+
+    def test_failed_module_is_tried_again_by_the_next_import(self, plugin_dir):
+        folder = _write_extension(plugin_dir, "idx_a", broken="raise ImportError('missing dependency')\n")
+
+        loader_module._import_extension("idx_a", str(folder))
+        failed = []
+        loader_module._import_extension("idx_a", str(folder), failed)
+
+        assert failed == ["_plugins_idx_a.broken"]
+
+
+class TestRoleScopedLoad:
+    def test_worker_selects_by_kind_and_name(self, scoped_env, monkeypatch):
+        _write_extension(
+            scoped_env,
+            "idx_a",
+            collector=_plugin("collector", "ColorCollector", "color"),
+            other=_plugin("collector", "OtherCollector", "other"),
+            filter=_plugin("filter", "ColorFilter", "color"),
+            loader=_plugin("imageloader", "ALoader", "a_loader"),
+        )
+        _write_extension(scoped_env, "idx_b", parser=_plugin("parser", "ColorNamedParser", "color"))
+        index = _index_for(scoped_env)
+        monkeypatch.setattr(plugin_index, "read_index", lambda: index)
+
+        loaded = loader_module.load_worker_plugins("collector", "color")
+
+        assert loaded == ["idx_a"]
+        assert collector_resolver.registry.names() == ["color"]
+        assert parser_resolver.registry.names() == []
+        assert set(image_loader_resolver.registry.names()) == {"a_loader", "system_thumbnail"}
+        assert "_plugins_idx_a.filter" not in sys.modules
+        assert "_plugins_idx_a.other" not in sys.modules
+        assert "_plugins_idx_b.parser" not in sys.modules
+
+    def test_indexer_selects_collectors_and_parsers(self, scoped_env, monkeypatch):
+        _write_extension(
+            scoped_env,
+            "idx_a",
+            collector=_plugin("collector", "ACollector", "a"),
+            parser=_plugin("parser", "AParser", "a_parser"),
+            loader=_plugin("imageloader", "ALoader", "a_loader"),
+        )
+        index = _index_for(scoped_env)
+        monkeypatch.setattr(plugin_index, "read_index", lambda: index)
+
+        loaded = loader_module.load_indexer_plugins()
+
+        assert loaded == ["idx_a"]
+        assert collector_resolver.registry.names() == ["a"]
+        assert parser_resolver.registry.names() == ["a_parser"]
+        assert image_loader_resolver.registry.names() == []
+        assert "_plugins_idx_a.loader" not in sys.modules
+
+    def test_scoped_load_applies_the_saved_order(self, scoped_env, monkeypatch):
+        _write_extension(
+            scoped_env,
+            "idx_a",
+            collector=_plugin("collector", "ACollector", "a", priority=1) + _plugin("collector", "BCollector", "b", priority=2),
+        )
+        monkeypatch.setattr(plugin_index, "read_index", lambda: {})
+        monkeypatch.setattr(PluginSettings, "priority_order", lambda self, kind: ["a", "b"] if kind == "collector" else [])
+
+        loader_module.load_indexer_plugins()
+
+        assert collector_resolver.registry.names() == ["a", "b"]
+
+    @pytest.mark.parametrize(
+        ("call", "expected"),
+        [
+            (
+                'loader.load_worker_plugins("collector", "a")',
+                {"collector": ["a"], "parser": [], "imageloader": ["a_loader", "system_thumbnail"]},
+            ),
+            (
+                "loader.load_indexer_plugins()",
+                {"collector": ["a", "other"], "parser": ["a_parser"], "imageloader": []},
+            ),
+        ],
+        ids=["worker", "indexer"],
+    )
+    def test_cached_scoped_load_stays_free_of_qt(self, plugin_dir, tmp_path, call, expected):
+        _write_extension(
+            plugin_dir,
+            "idx_a",
+            collector=_plugin("collector", "ACollector", "a"),
+            other=_plugin("collector", "OtherCollector", "other"),
+            parser=_plugin("parser", "AParser", "a_parser"),
+            loader=_plugin("imageloader", "ALoader", "a_loader"),
+            filter=_plugin("filter", "AFilter", "a_filter"),
+            panel=_plugin("panel", "APanel", "a_panel"),
+        )
+        index_file = tmp_path / "plugin_index.json"
+        plugin_index.write_index(_index_for(plugin_dir), str(index_file))
+        code = (
+            "import json, sys\n"
+            "from wafer.plugin import loader, plugin_index\n"
+            "from wafer.plugin.collector.handler import collector_resolver\n"
+            "from wafer.plugin.parser.handler import parser_resolver\n"
+            "from wafer.plugin.imageloader.handler import image_loader_resolver\n"
+            f"loader.get_plugin_dir = lambda: {str(plugin_dir)!r}\n"
+            "reads = []\n"
+            "real_read = plugin_index.read_index\n"
+            f"plugin_index.read_index = lambda: reads.append(1) or real_read({str(index_file)!r})\n"
+            f"{call}\n"
+            "try:\n"
+            "    loader.get_command_registry()\n"
+            "    command_registry = True\n"
+            "except RuntimeError:\n"
+            "    command_registry = False\n"
+            "print(json.dumps({\n"
+            "    'qt': 'PySide6' in sys.modules,\n"
+            "    'reads': len(reads),\n"
+            "    'command_registry': command_registry,\n"
+            "    'panel': '_plugins_idx_a.panel' in sys.modules,\n"
+            "    'collector': sorted(collector_resolver.registry.names()),\n"
+            "    'parser': sorted(parser_resolver.registry.names()),\n"
+            "    'imageloader': sorted(image_loader_resolver.registry.names()),\n"
+            "}))\n"
+        )
+
+        result = _run_probe(code, tmp_path)
+
+        assert result.returncode == 0, result.stderr
+        report = json.loads(result.stdout.strip().splitlines()[-1])
+        assert report == {"qt": False, "reads": 1, "command_registry": False, "panel": False, **expected}
+
+
+class TestRegisterImageLoaders:
+    def test_registers_the_builtin_loader_without_the_registry_map(self, monkeypatch):
+        def fail():
+            raise AssertionError("registry map built")
+
+        monkeypatch.setattr(loader_module, "_get_registry_map", fail)
+        registries = _registries()
+
+        registration.register_image_loaders(registries)
+
+        assert registries["imageloader"].names() == ["system_thumbnail"]
+
+
+class TestLoadPluginsIndexWriting:
+    @pytest.fixture
+    def full_load_env(self, scoped_env, monkeypatch):
+        monkeypatch.setattr(registration, "register_all", lambda registries: None)
+        monkeypatch.setattr(PluginLoader, "_fire_configure", lambda self: None)
+        _write_extension(scoped_env, "idx_a", collector=_plugin("collector", "ACollector", "a"))
+        return scoped_env
+
+    def test_writes_the_records_when_asked(self, full_load_env, monkeypatch):
+        written = []
+        monkeypatch.setattr(plugin_index, "write_index", written.append)
+
+        loaded = loader_module.load_plugins(write_index=True)
+
+        assert loaded == ["idx_a"]
+        assert [list(records) for records in written] == [["idx_a"]]
+
+    def test_does_not_write_by_default(self, full_load_env, monkeypatch):
+        written = []
+        monkeypatch.setattr(plugin_index, "write_index", written.append)
+
+        loaded = loader_module.load_plugins()
+
+        assert loaded == ["idx_a"]
+        assert written == []
+        assert loader_module.get_command_registry() is not None
+
+    def test_write_failure_does_not_stop_the_load(self, full_load_env, monkeypatch):
+        def fail(records):
+            raise PermissionError("cannot create the cache folder")
+
+        monkeypatch.setattr(plugin_index, "write_index", fail)
+        warnings = _capture_warnings(monkeypatch)
+
+        loaded = loader_module.load_plugins(write_index=True)
+
+        assert loaded == ["idx_a"]
+        assert any("index" in text.lower() for text in warnings)

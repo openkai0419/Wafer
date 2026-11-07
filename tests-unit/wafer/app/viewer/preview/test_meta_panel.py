@@ -476,7 +476,7 @@ def test_key_value_plugin_card_pool_survives_rebuild_and_settings_change(qtbot):
     assert "tag:color" not in w._sections
     assert card.isHidden()
 
-    settings_mod = importlib.import_module(plugin.__class__.__module__.rsplit(".", 1)[0] + ".settings")
+    settings_mod = importlib.import_module(plugin.__class__.__module__.rsplit(".", 1)[0] + "._qt_settings")
     settings_mod.ColorSettings.instance().changed.emit()
 
     w.set_data(meta)

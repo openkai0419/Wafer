@@ -9,6 +9,7 @@ from wafer.core.ipc.transport import Priority
 from wafer.core.ipc.broker import Broker, _CoalescingQueue, _PeerInfo
 from wafer.core.ipc.message import Message
 from wafer.core.ipc.node import Node
+from wafer.core.store.workspace import WindowSlot, WorkspaceStore
 
 
 FAST_NODE_TIMEOUT = 1.0
@@ -557,7 +558,7 @@ class TestProfileTracking:
         )
         broker.start()
         try:
-            broker._on_viewer_disconnected()
+            broker._on_restorable_peer_disconnected()
             pending = broker._restore_debounce
             assert pending is not None
             broker.stop()
@@ -567,6 +568,125 @@ class TestProfileTracking:
         finally:
             if not broker._stop.is_set():
                 broker.stop()
+
+
+class TestRestoreWebUI:
+    def _make_broker(self, tmp_path, *, restore_webui=False):
+        store_path = str(tmp_path / "workspace.json")
+        store = WorkspaceStore(path=store_path)
+        store.set_restore_webui(restore_webui)
+        broker = Broker()
+        broker._restore_debounce_sec = 0.05
+        broker.set_workspace_store_factory(lambda: WorkspaceStore(path=store_path))
+        broker.start()
+        return broker, store
+
+    def _join(self, broker, role, session_id=""):
+        node = Node(role)
+        node.node_id = f"{role}-{session_id or 'plain'}"
+        node.session_id = session_id
+        node.start(broker.port)
+        assert node.wait_registered(timeout=3.0)
+        return node
+
+    def _leave(self, broker, node, role, remaining=0):
+        node.stop()
+        assert _wait_until(lambda: broker.peer_counts().get(role, 0) == remaining, timeout=6.0)
+        pending = broker._restore_debounce
+        if pending is not None:
+            pending.join(timeout=2.0)
+
+    def test_connecting_records_the_webui(self, tmp_path):
+        broker, store = self._make_broker(tmp_path)
+        node = self._join(broker, "webui", "webui")
+        try:
+            assert _wait_until(store.get_restore_webui)
+        finally:
+            node.stop()
+            broker.stop()
+
+    def test_a_headless_webui_is_never_recorded(self, tmp_path):
+        broker, store = self._make_broker(tmp_path)
+        viewer = self._join(broker, "viewer", "s1")
+        headless = self._join(broker, "webui")
+        try:
+            assert store.get_restore_webui() is False
+            assert broker.is_webui_connected() is False
+        finally:
+            viewer.stop()
+            headless.stop()
+            broker.stop()
+
+    def test_a_closing_headless_webui_keeps_the_record(self, tmp_path):
+        broker, store = self._make_broker(tmp_path, restore_webui=True)
+        viewer = self._join(broker, "viewer", "s1")
+        headless = self._join(broker, "webui")
+        try:
+            self._leave(broker, headless, "webui")
+            assert store.get_restore_webui() is True
+        finally:
+            viewer.stop()
+            broker.stop()
+
+    def test_closing_the_webui_before_the_viewer_forgets_it(self, tmp_path):
+        broker, store = self._make_broker(tmp_path)
+        viewer = self._join(broker, "viewer", "s1")
+        webui = self._join(broker, "webui", "webui")
+        try:
+            assert _wait_until(store.get_restore_webui)
+            self._leave(broker, webui, "webui")
+            assert store.get_restore_webui() is False
+            self._leave(broker, viewer, "viewer")
+            assert store.get_restore_webui() is False
+        finally:
+            broker.stop()
+
+    def test_closing_the_viewer_before_the_webui_remembers_both(self, tmp_path):
+        broker, store = self._make_broker(tmp_path)
+        store.save_slot(WindowSlot(slot_id="s1"))
+        viewer = self._join(broker, "viewer", "s1")
+        webui = self._join(broker, "webui", "webui")
+        try:
+            assert _wait_until(store.get_restore_webui)
+            self._leave(broker, viewer, "viewer")
+            assert store.get_restore_webui() is True
+            self._leave(broker, webui, "webui")
+            assert store.get_restore_webui() is True
+            assert store.get_restore_slot_ids() == ["s1"]
+        finally:
+            broker.stop()
+
+    def test_closing_a_lone_webui_remembers_it(self, tmp_path):
+        broker, store = self._make_broker(tmp_path)
+        webui = self._join(broker, "webui", "webui")
+        try:
+            assert _wait_until(store.get_restore_webui)
+            self._leave(broker, webui, "webui")
+            assert store.get_restore_webui() is True
+        finally:
+            broker.stop()
+
+    def test_closing_a_lone_viewer_leaves_a_forgotten_webui_forgotten(self, tmp_path):
+        broker, store = self._make_broker(tmp_path)
+        viewer = self._join(broker, "viewer", "s1")
+        try:
+            self._leave(broker, viewer, "viewer")
+            assert store.get_restore_webui() is False
+        finally:
+            broker.stop()
+
+    def test_shutting_everything_down_keeps_the_record_whatever_closes_first(self, tmp_path):
+        broker, store = self._make_broker(tmp_path)
+        viewer = self._join(broker, "viewer", "s1")
+        webui = self._join(broker, "webui", "webui")
+        try:
+            assert _wait_until(store.get_restore_webui)
+            broker.keep_restore_webui()
+            self._leave(broker, webui, "webui")
+            assert store.get_restore_webui() is True
+        finally:
+            viewer.stop()
+            broker.stop()
 
 
 @pytest.mark.usefixtures("fast_heartbeat")

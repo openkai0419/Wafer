@@ -113,7 +113,7 @@ async def on_shutdown(app: web.Application):
     app[MEDIA_EXECUTOR].shutdown(wait=True, cancel_futures=True)
 
 
-def create_app(with_events: bool = True, on_app_shutdown=None, on_dev_log=None, loopback_hosts=None, allowed_hosts: tuple[str, ...] = ()) -> web.Application:
+def create_app(with_events: bool = True, on_app_shutdown=None, on_dev_log=None, loopback_hosts=None, allowed_hosts: tuple[str, ...] = (), session_id: str = "") -> web.Application:
     app = web.Application(middlewares=[same_origin_middleware, no_cache_middleware])
     app[WITH_EVENTS] = with_events
     if loopback_hosts is not None:
@@ -121,7 +121,7 @@ def create_app(with_events: bool = True, on_app_shutdown=None, on_dev_log=None, 
     app[ALLOWED_HOSTS] = tuple(allowed_hosts)
     app[QUERY_SERVICE] = QueryService()
     app[MEDIA_EXECUTOR] = ThreadPoolExecutor(max_workers=4, thread_name_prefix="webmedia")
-    app[EVENT_HUB] = EventHub(on_app_shutdown=on_app_shutdown, on_dev_log=on_dev_log, on_db_changed=app[QUERY_SERVICE].invalidate_keys)
+    app[EVENT_HUB] = EventHub(on_app_shutdown=on_app_shutdown, on_dev_log=on_dev_log, on_db_changed=app[QUERY_SERVICE].invalidate_keys, session_id=session_id)
     app.router.add_get("/", index)
     app.router.add_get("/favicon.ico", favicon)
     app.add_routes(api.routes)
@@ -141,10 +141,11 @@ def quiet_connection_reset_handler(loop, context):
 
 
 class WebServer:
-    def __init__(self, host: str, port: int, *, allowed_hosts: tuple[str, ...] = (), on_started=None, on_app_shutdown=None, on_dev_log=None):
+    def __init__(self, host: str, port: int, *, allowed_hosts: tuple[str, ...] = (), on_started=None, on_app_shutdown=None, on_dev_log=None, session_id: str = ""):
         self.host = host
         self.port = port
         self.allowed_hosts = tuple(allowed_hosts)
+        self.session_id = session_id
         self.on_started = on_started
         self.on_app_shutdown = on_app_shutdown
         self.on_dev_log = on_dev_log
@@ -197,6 +198,7 @@ class WebServer:
             on_dev_log=self.on_dev_log,
             loopback_hosts=loopback_host_headers(self.host, self.port),
             allowed_hosts=self.allowed_hosts,
+            session_id=self.session_id,
         )
         runner = web.AppRunner(self.app)
         await runner.setup()

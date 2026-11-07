@@ -82,7 +82,6 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
     def _shutdown_all(self, *, then_restart):
         AppLogger.info(f"_shutdown_all: shutting down all viewers, then tray (restart={then_restart})")
         from ...plugin.settings import PluginSettings
-        from ...core.store.workspace import WorkspaceStore
 
         PluginSettings().clear_restart_scope()
         self.shutting_down = True
@@ -90,7 +89,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
             _disarm_child_reaper()
         viewers = AppProcess.list_viewers()
         webuis = AppProcess.get_by_args_subset("--webui")
-        WorkspaceStore.instance().set_restore_webui(then_restart and bool(webuis))
+        self.broker.keep_restore_webui()
         self._node.send("app.shutdown", dst="viewer")
         if webuis:
             self._node.send("app.shutdown", dst="webui")

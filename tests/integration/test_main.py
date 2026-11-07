@@ -256,6 +256,40 @@ class TestEntryViewer:
         pick.assert_called_once_with(app, "s1")
 
 
+class TestEntryWebUI:
+    def run_webui(self, *argv, lock):
+        order = MagicMock()
+        order.claim.return_value = lock
+        with (
+            patch("main._create_app") as create,
+            patch("main.setproctitle"),
+            patch("main.AppLogger"),
+            patch("main._ensure_tray_unless_pending", order.ensure_tray),
+            patch("main._wait_install_then_load_plugins", order.wait),
+            patch("wafer.plugin.loader.get_command_registry"),
+            patch("wafer.app.webui.instance.claim_webui", order.claim),
+            patch("wafer.app.webui.settings.WebUISettings.resolve_bind", return_value=("127.0.0.1", 1)),
+            patch("wafer.app.webui.entry.run_ui", order.run_ui),
+            patch("sys.argv", ["main.py", "--webui", *argv]),
+        ):
+            from main import main
+
+            main()
+        return create.return_value, order
+
+    def test_an_open_webui_exits_before_plugins_load(self):
+        _, order = self.run_webui(lock=None)
+        order.ensure_tray.assert_not_called()
+        order.wait.assert_not_called()
+        order.run_ui.assert_not_called()
+
+    def test_the_claimed_lock_reaches_the_window_and_is_released_at_the_end(self):
+        lock = MagicMock()
+        app, order = self.run_webui("--no-browser", lock=lock)
+        order.run_ui.assert_called_once_with(app, lock, "127.0.0.1", 1, open_browser=False)
+        lock.release.assert_called_once_with()
+
+
 class TestViewerArguments:
     def run_viewer_args(self, *argv, lock="lock", order=None):
         order = order or MagicMock()

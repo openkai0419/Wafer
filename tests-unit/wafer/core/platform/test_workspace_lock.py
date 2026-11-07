@@ -5,8 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from wafer.core.platform import workspace_lock
-from wafer.core.platform.workspace_lock import WorkspaceLock, WorkspaceOwner
+from wafer.core.platform import window_lock, workspace_lock
+from wafer.core.platform.window_lock import WindowOwner
+from wafer.core.platform.workspace_lock import WorkspaceLock
 
 
 @pytest.fixture(autouse=True)
@@ -57,7 +58,7 @@ def test_open_slot_ids_does_not_keep_probed_locks():
 def test_read_owner_returns_window_after_set_window():
     lock = WorkspaceLock.acquire("s1")
     lock.set_window(4242)
-    assert WorkspaceLock.read_owner("s1") == WorkspaceOwner(pid=os.getpid(), hwnd=4242)
+    assert WorkspaceLock.read_owner("s1") == WindowOwner(pid=os.getpid(), hwnd=4242)
     lock.release()
 
 
@@ -81,7 +82,7 @@ def test_read_owner_is_none_after_release():
 def test_acquire_clears_stale_owner_from_crashed_process(lock_dir):
     lock_dir.mkdir()
     (lock_dir / "s1.lock").write_text('{"pid": 99999, "hwnd": 1234}')
-    assert WorkspaceLock.read_owner("s1") == WorkspaceOwner(pid=99999, hwnd=1234)
+    assert WorkspaceLock.read_owner("s1") == WindowOwner(pid=99999, hwnd=1234)
     lock = WorkspaceLock.acquire("s1")
     assert lock is not None
     assert WorkspaceLock.read_owner("s1") is None
@@ -92,7 +93,7 @@ def test_failed_acquire_keeps_owner_of_holder():
     lock = WorkspaceLock.acquire("s1")
     lock.set_window(321)
     assert WorkspaceLock.acquire("s1") is None
-    assert WorkspaceLock.read_owner("s1") == WorkspaceOwner(pid=os.getpid(), hwnd=321)
+    assert WorkspaceLock.read_owner("s1") == WindowOwner(pid=os.getpid(), hwnd=321)
     lock.release()
 
 
@@ -106,7 +107,7 @@ def test_set_window_twice_keeps_latest():
     lock = WorkspaceLock.acquire("s1")
     lock.set_window(1234567)
     lock.set_window(9)
-    assert WorkspaceLock.read_owner("s1") == WorkspaceOwner(pid=os.getpid(), hwnd=9)
+    assert WorkspaceLock.read_owner("s1") == WindowOwner(pid=os.getpid(), hwnd=9)
     lock.release()
 
 
@@ -137,7 +138,7 @@ def test_other_process_holds_lock_and_owner_is_readable(tmp_path):
         child_pid = int(child.stdout.readline())
         assert WorkspaceLock.acquire("s1") is None
         assert WorkspaceLock.open_slot_ids(["s1"]) == {"s1"}
-        assert WorkspaceLock.read_owner("s1") == WorkspaceOwner(pid=child_pid, hwnd=555)
+        assert WorkspaceLock.read_owner("s1") == WindowOwner(pid=child_pid, hwnd=555)
     finally:
         child.communicate("\n", timeout=10)
     lock = WorkspaceLock.acquire("s1")
@@ -168,15 +169,15 @@ def test_delete_file_if_unused_without_a_file_creates_nothing(lock_dir):
 
 
 def test_probing_a_slot_this_process_holds_keeps_its_lock_and_owner(monkeypatch):
-    monkeypatch.setattr(workspace_lock, "lock_byte", lambda fd: None)
-    monkeypatch.setattr(workspace_lock, "unlock_byte", lambda fd: None)
+    monkeypatch.setattr(window_lock, "lock_byte", lambda fd: None)
+    monkeypatch.setattr(window_lock, "unlock_byte", lambda fd: None)
     held = WorkspaceLock.acquire("s1")
     held.set_window(77)
     try:
         assert WorkspaceLock.open_slot_ids(["s1"]) == {"s1"}
         assert WorkspaceLock.delete_file_if_unused("s1") is False
         assert WorkspaceLock.acquire("s1") is None
-        assert WorkspaceLock.read_owner("s1") == WorkspaceOwner(pid=os.getpid(), hwnd=77)
+        assert WorkspaceLock.read_owner("s1") == WindowOwner(pid=os.getpid(), hwnd=77)
     finally:
         held.release()
     assert WorkspaceLock.open_slot_ids(["s1"]) == set()

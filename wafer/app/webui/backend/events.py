@@ -15,7 +15,8 @@ routes = web.RouteTableDef()
 
 
 class EventHub:
-    def __init__(self, on_app_shutdown=None, on_dev_log=None, on_db_changed=None):
+    def __init__(self, on_app_shutdown=None, on_dev_log=None, on_db_changed=None, session_id: str = ""):
+        self.session_id = session_id
         self.clients: set[web.WebSocketResponse] = set()
         self.loop: asyncio.AbstractEventLoop | None = None
         self.node: Node | None = None
@@ -27,6 +28,7 @@ class EventHub:
     def start_node(self):
         self.loop = asyncio.get_running_loop()
         node = Node("webui")
+        node.session_id = self.session_id
         for topic in RELAY_TOPICS:
             node.subscribe(topic, self.make_relay(topic))
         if self.on_app_shutdown is not None:

@@ -3,9 +3,9 @@ import webbrowser
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from ...app.webui.instance import replace_webui
 from ...app.webui.settings import HOST_ALL, HOST_LOCAL, LOOPBACK_HOST_NAMES, PRIVATE_NAME_SUFFIXES, WebUISettings, classify_allowed_hosts
 from ...qt.commands.bridge import ActionKit, Command
-from ...core.platform.process import AppProcess
 from ...qt.common.dpi import dpix
 from ...qt.common.icon_engine import themed_icon
 from ...qt.common.notifier import Notifier
@@ -126,7 +126,7 @@ def open_browser(ctx=None):
 
 def restart_webui(ctx=None):
     Notifier.info("Restarting WebUI...")
-    AppProcess.new_main("--webui", "--no-browser", extra_env={"WAFER_REPLACE_WEBUI": "1"})
+    replace_webui()
 
 
 def open_settings(ctx=None):

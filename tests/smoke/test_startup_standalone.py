@@ -176,6 +176,10 @@ class TestRestartIntoLauncher:
                 return []
 
             @staticmethod
+            def list_app(*args):
+                return ["webui"] if args == ("--webui",) else []
+
+            @staticmethod
             def wait_procs_then_kill(procs):
                 FakeAppProcess.waited.append(list(procs))
 
@@ -196,7 +200,7 @@ class TestRestartIntoLauncher:
     def test_mainwindow_host_shuts_down_other_slots(self, qtbot, monkeypatch):
         from wafer.core.store.workspace import WorkspaceStore
 
-        popen_calls, _ = self._install_stubs(monkeypatch)
+        popen_calls, process = self._install_stubs(monkeypatch)
         monkeypatch.setattr(WorkspaceStore, "get_active_slot_ids", lambda self: ["s1", "s2"])
         monkeypatch.setattr(WorkspaceStore, "set_restore_slot_ids", lambda self, ids: None)
 
@@ -210,5 +214,5 @@ class TestRestartIntoLauncher:
 
         assert stage.restart_into_launcher(host) is True
         assert len(popen_calls) == 1
-        assert [a[0] for a, _ in sent] == ["slot.shutdown"]
-        assert [a[1] for a, _ in sent] == ["s2"]
+        assert sent == [(("slot.shutdown", "s2"), {"dst": "viewer"}), (("app.shutdown",), {"dst": "webui"})]
+        assert process.waited[-1] == ["webui"]

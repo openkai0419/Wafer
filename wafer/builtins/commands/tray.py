@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6 import QtWidgets
 
+from ...app.webui.instance import restore_webui
 from ...qt.commands.bridge import ActionKit
 from ...core.logs import AppLogger
 from ...constants import DEV_MODE
@@ -43,6 +44,7 @@ def show_window(ctx=None):
                 AppProcess.new_main("--viewer", "--slot", sid)
         else:
             AppProcess.new_main("--viewer")
+        restore_webui()
         return
     tray.show_state = not bool(getattr(tray, "show_state", False))
     send_show_toggle(ctx, tray.show_state)

@@ -8,9 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from wafer.constants import APP_DATA_DIR_NAME
 from test_support.app_data import real_app_data
-from wafer.core.platform.process_lock import SafeProcessLock
+from wafer.app.webui.instance import WebUILock
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -29,7 +28,7 @@ def http_get(url, timeout=5.0):
 @pytest.fixture
 def webui_server():
     with real_app_data():
-        webui_running = SafeProcessLock.is_held(f"{APP_DATA_DIR_NAME}_webui")
+        webui_running = WebUILock.is_open()
     if webui_running:
         pytest.skip("another WebUI instance is running")
     port = free_port()

@@ -227,31 +227,35 @@ def _entry_parser(name, plugin, parent_pid=None):
         AppLogger.info(f"Parser '{plugin}' for '{name}' is already running.")
 
 def _entry_webui(args):
-    try:
-        setproctitle.setproctitle(f'{APP_NAME}-webui')
-        AppLogger.set_role('webui')
-        if os.environ.pop('WAFER_REPLACE_WEBUI', None):
-            AppProcess.terminate_cmd('--webui', wait=True, exclude_self=True)
-        from wafer.app.webui.settings import WebUISettings
-        host, port = WebUISettings().resolve_bind(args.host, args.port)
-        with SafeProcessLock(f'{APP_DATA_DIR_NAME}_webui'):
-            if not args.no_tray:
-                _ensure_tray_unless_pending()
-            from wafer.app.webui.entry import run_headless, run_ui
-            if args.no_ui:
-                from wafer.plugin.install_wait import wait_for_install_headless
-
-                wait_for_install_headless()
-                _load_plugins()
-                run_headless(host, port, open_browser=not args.no_browser)
-            else:
-                app = _create_app()
-                _wait_install_then_load_plugins(app)
-                from wafer.plugin.loader import get_command_registry
-                get_command_registry().activate('webui')
-                run_ui(app, host, port, open_browser=not args.no_browser)
-    except FileExistsError:
+    setproctitle.setproctitle(f'{APP_NAME}-webui')
+    AppLogger.set_role('webui')
+    if os.environ.pop('WAFER_REPLACE_WEBUI', None):
+        AppProcess.terminate_cmd('--webui', wait=True, exclude_self=True)
+    from wafer.app.webui.instance import claim_webui
+    from wafer.app.webui.settings import WebUISettings
+    host, port = WebUISettings().resolve_bind(args.host, args.port)
+    lock = claim_webui()
+    if lock is None:
         AppLogger.info('WebUI is already running.')
+        return
+    try:
+        if not args.no_tray:
+            _ensure_tray_unless_pending()
+        from wafer.app.webui.entry import run_headless, run_ui
+        if args.no_ui:
+            from wafer.plugin.install_wait import wait_for_install_headless
+
+            wait_for_install_headless()
+            _load_plugins()
+            run_headless(host, port, open_browser=not args.no_browser)
+        else:
+            app = _create_app()
+            _wait_install_then_load_plugins(app)
+            from wafer.plugin.loader import get_command_registry
+            get_command_registry().activate('webui')
+            run_ui(app, lock, host, port, open_browser=not args.no_browser)
+    finally:
+        lock.release()
 
 def main():
     parser = argparse.ArgumentParser(description='Script with three run modes')

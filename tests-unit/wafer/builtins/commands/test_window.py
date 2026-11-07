@@ -230,6 +230,15 @@ class TestWindowRestartCommands:
                 },
             )(),
         )
-        window_commands.restart_tray(MagicMock())
+        window_commands.restart_tray(_Ctx())
         assert ("terminate", ("--tray",)) in calls
         assert ("new_main", ("--tray",)) in calls
+
+    def test_restart_tray_from_the_tray_does_not_terminate_itself(self, monkeypatch):
+        monkeypatch.setattr("wafer.builtins.commands.window.installer_queue.has_pending_queue", lambda _dir: False)
+        monkeypatch.setattr(window_commands.AppProcess, "terminate_cmd", staticmethod(lambda *a, **k: (_ for _ in ()).throw(AssertionError("the Tray must not terminate itself"))))
+
+        tray = MagicMock()
+        window_commands.restart_tray(_Ctx(Tray=tray))
+
+        tray.restart_self.assert_called_once_with()

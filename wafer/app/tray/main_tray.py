@@ -34,6 +34,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.setToolTip(f"{APP_NAME}")
         self.show_state = False
         self.shutting_down = False
+        self.restart_requested = False
         self.activated.connect(self.on_activated)
         self.broker = Broker()
         self.broker.start()
@@ -83,6 +84,11 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
     @QtCore.Slot()
     def restart_all(self):
         self._shutdown_all(then_restart=True)
+
+    def restart_self(self):
+        AppLogger.info("tray restarting itself after it exits")
+        self.restart_requested = True
+        QtWidgets.QApplication.quit()
 
     def _shutdown_all(self, *, then_restart):
         AppLogger.info(f"_shutdown_all: shutting down all viewers, then tray (restart={then_restart})")

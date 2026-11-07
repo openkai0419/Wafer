@@ -210,9 +210,10 @@ class TestTrayStartup:
         mock_qapp.side_effect = lambda *_args, **_kwargs: order.append("qapp") or mock_app
         mock_tray = MagicMock()
         mock_tray.show.side_effect = lambda: order.append("tray_show")
+        mock_tray.restart_requested = False
         mock_tray_app.return_value = mock_tray
 
-        with patch("main.SafeProcessLock", return_value=HeldLock()):
+        with patch("main.SafeProcessLock", return_value=HeldLock()), patch("main.AppProcess.new_main") as new_main:
             from main import _entry_tray
 
             with pytest.raises(SystemExit):
@@ -222,6 +223,38 @@ class TestTrayStartup:
         mock_bootstrap.assert_called_once_with()
         mock_terminate.assert_called_once_with([])
         mock_list_names.assert_called_once_with()
+        assert not [call for call in new_main.call_args_list if "--tray" in call.args]
+
+    @patch("main.sys.exit", side_effect=SystemExit)
+    @patch("wafer.app.tray.main_tray.TrayApp")
+    @patch("wafer.qt.common.tooltip.install_instant_tooltips")
+    @patch("PySide6.QtWidgets.QApplication")
+    @patch("wafer.qt.common.app_icon.get_icon")
+    @patch("main.list_setting_db_names", return_value=[])
+    @patch("main.AppProcess.terminate_and_wait")
+    @patch("main.AppProcess.get_by_args_subset", return_value=[])
+    @patch("main._bootstrap_plugins_for_tray")
+    def test_a_restarting_tray_starts_the_next_one_after_releasing_its_lock(self, _bootstrap, _get_by_args, _terminate, _list_names, _get_icon, mock_qapp, _tooltips, mock_tray_app, _exit):
+        order = []
+
+        class HeldLock:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                order.append("unlock")
+                return False
+
+        mock_qapp.return_value.exec.return_value = 0
+        mock_tray_app.return_value.restart_requested = True
+
+        with patch("main.SafeProcessLock", return_value=HeldLock()), patch("main.AppProcess.new_main", side_effect=lambda *args: "--tray" in args and order.append(args)):
+            from main import _entry_tray
+
+            with pytest.raises(SystemExit):
+                _entry_tray()
+
+        assert order == ["unlock", ("--tray",)]
 
 
 @patch("main.constants.MEMWATCH", False)

@@ -45,6 +45,10 @@ def restart_tray(ctx):
         Notifier.info("Pending install detected, restarting all windows")
         restart_all(ctx)
         return
+    tray = ctx.get_instance("Tray")
+    if tray:
+        tray.restart_self()
+        return
     AppProcess.terminate_cmd("--tray", wait=True)
     AppProcess.new_main("--tray")
 

@@ -170,10 +170,14 @@ def _entry_tray():
             for name in names:
                 AppProcess.new_main('--indexer', f'{name}', '--parent-pid', my_pid)
 
-            sys.exit(app.exec())
+            exit_code = app.exec()
+            restart = tray_icon.restart_requested
     except FileExistsError:
         AppLogger.info('tray already running, this instance exits (single-tray lock held by another process)')
         return
+    if restart:
+        AppProcess.new_main('--tray')
+    sys.exit(exit_code)
 
 def _entry_indexer(name, parent_pid=None):
     try:

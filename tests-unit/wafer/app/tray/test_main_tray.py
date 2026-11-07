@@ -23,6 +23,18 @@ def test_settings_saved_in_the_tray_reach_the_viewers():
     assert sent == [(("settings.changed", {"window/cache_size": 1024}), {"dst": "viewer"})]
 
 
+def test_restart_self_quits_and_asks_for_the_next_tray(monkeypatch):
+    quits = []
+    monkeypatch.setattr("wafer.app.tray.main_tray.QtWidgets.QApplication.quit", lambda: quits.append(True))
+
+    class _Tray:
+        restart_requested = False
+
+    tray = _Tray()
+    TrayApp.restart_self(tray)
+    assert tray.restart_requested is True and quits == [True]
+
+
 def test_close_all_waits_for_viewers_then_force_closes_remaining(monkeypatch):
     calls = []
 

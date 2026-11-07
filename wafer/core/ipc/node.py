@@ -26,7 +26,7 @@ from .transport import (
     tune_socket,
 )
 from .message import Message
-from .outbox import OutboxStore, scan_all_outbox, remove_outbox_batch_from, cleanup_empty_outbox_files
+from .outbox import OutboxStore, cleanup_dead_outbox_files, read_outbox_of, remove_outbox_batch_from, scan_all_outbox
 
 _OUTBOX_POLL = 30.0
 
@@ -62,8 +62,10 @@ class Node:
         self._outbox_event = threading.Event()
         self._outbox_poll = outbox_poll
         self._outbox_thread: threading.Thread | None = None
+        self._outbox_senders: set[str] = set()
+        self._outbox_senders_lock = threading.Lock()
         if consumer:
-            self._handlers["outbox.notify"] = lambda _msg: self._notify_outbox() or True
+            self._handlers["outbox.notify"] = lambda msg: self._notify_outbox(msg.source) or True
             self._outbox_thread = threading.Thread(target=self._outbox_worker, daemon=True)
 
     @property
@@ -175,23 +177,33 @@ class Node:
             AppLogger.warning(f"handler error: {msg.topic}", exc=e)
             return None
 
-    def _notify_outbox(self):
+    def _notify_outbox(self, sender: str):
+        with self._outbox_senders_lock:
+            self._outbox_senders.add(sender)
         self._outbox_event.set()
 
     def _outbox_worker(self):
+        last_full_scan = time.monotonic()
         while not self._stop.is_set():
             self._outbox_event.wait(timeout=self._outbox_poll)
             self._outbox_event.clear()
             if self._stop.is_set():
                 break
-            self._process_outbox()
+            with self._outbox_senders_lock:
+                senders, self._outbox_senders = self._outbox_senders, set()
+            if self._outbox_poll is not None and time.monotonic() - last_full_scan >= self._outbox_poll:
+                last_full_scan = time.monotonic()
+                self._process_outbox()
+            elif senders:
+                self._process_outbox(senders)
 
-    def _process_outbox(self):
+    def _process_outbox(self, senders: set[str] | None = None):
         dst_filter = {self.node_id, self.role, "ALL"}
         db_filter = self.default_db or None
-        records = scan_all_outbox(dst_filter=dst_filter, db_filter=db_filter)
-        if not records:
-            return
+        if senders is None:
+            records = scan_all_outbox(dst_filter=dst_filter, db_filter=db_filter)
+        else:
+            records = read_outbox_of(senders, dst_filter=dst_filter, db_filter=db_filter)
         done: dict[str, list[int]] = {}
         for rec in records:
             node_id = Path(rec.source_db).stem
@@ -200,7 +212,8 @@ class Node:
                 done.setdefault(rec.source_db, []).append(rec.id)
         for db_path, ids in done.items():
             remove_outbox_batch_from(db_path, ids)
-        cleanup_empty_outbox_files()
+        if senders is None:
+            cleanup_dead_outbox_files()
 
     def _create_socket(self) -> zmq.Socket:
         sock = self._ctx.socket(zmq.DEALER)

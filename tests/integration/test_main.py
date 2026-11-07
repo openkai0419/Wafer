@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -417,7 +418,7 @@ class TestOpenblasThreadDefault:
         if preset is not None:
             env["OPENBLAS_NUM_THREADS"] = preset
         code = "import os, main; print(os.environ['OPENBLAS_NUM_THREADS'])"
-        result = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=25)
+        result = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=25, cwd=str(Path(__file__).resolve().parents[2]))
         assert result.returncode == 0, result.stderr
         return result.stdout.strip().splitlines()[-1]
 

@@ -6,10 +6,8 @@ import numpy as np
 from PIL import Image
 
 from wafer.core.logs import AppLogger
-from wafer.core.profiling import profiler
 
 
-@profiler.profile
 def decode_numpy(path: str, size: int | None = None) -> np.ndarray | None:
     ext = os.path.splitext(path)[-1].lower()
     try:

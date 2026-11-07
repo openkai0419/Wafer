@@ -286,6 +286,9 @@ def _ensure_extension_package(name: str, folder: str) -> str:
     return pkg_name
 
 
+_failed_modules: set[str] = set()
+
+
 def _import_extension(name: str, folder: str, failed: list[str] | None = None) -> list[tuple[str, type]]:
     pkg_name = _ensure_extension_package(name, folder)
 
@@ -296,6 +299,8 @@ def _import_extension(name: str, folder: str, failed: list[str] | None = None) -
         module_name = f"{pkg_name}.{filename[:-3]}"
         if module_name in sys.modules:
             sub_mod = sys.modules[module_name]
+            if failed is not None and module_name in _failed_modules:
+                failed.append(module_name)
         else:
             filepath = os.path.join(folder, filename)
             try:
@@ -304,7 +309,7 @@ def _import_extension(name: str, folder: str, failed: list[str] | None = None) -
                 sys.modules[module_name] = sub_mod
                 sub_spec.loader.exec_module(sub_mod)
             except Exception as e:
-                sys.modules.pop(module_name, None)
+                _failed_modules.add(module_name)
                 AppLogger.warning(f"[PluginLoader] Failed to import: {module_name} ({e})", exc=e)
                 if failed is not None:
                     failed.append(module_name)

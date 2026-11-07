@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from collections.abc import Callable
 
-
 from ..logs import AppLogger
 from ..common.paths import safe_exists, safe_is_dir
 from ..common.virtual_paths import is_virtual_path

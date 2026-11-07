@@ -192,3 +192,19 @@ def test_import_does_not_pull_qt():
         timeout=25,
     )
     assert result.returncode == 0, f"pulled {result.stdout}\n{result.stderr}"
+
+
+def test_fingerprint_includes_nested_lib_folders(tmp_path):
+    folder = make_ext(tmp_path)
+    before = extension_fingerprint(str(folder))
+    (folder / "sub" / "lib").mkdir(parents=True)
+    (folder / "sub" / "lib" / "x.py").write_text("")
+    assert extension_fingerprint(str(folder)) != before
+
+
+def test_fingerprint_ignores_the_top_level_lib_folder(tmp_path):
+    folder = make_ext(tmp_path)
+    before = extension_fingerprint(str(folder))
+    (folder / "lib").mkdir()
+    (folder / "lib" / "x.py").write_text("")
+    assert extension_fingerprint(str(folder)) == before

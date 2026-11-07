@@ -497,6 +497,9 @@ def _purge_index_extensions():
     for key in list(sys.modules):
         if key.startswith("_plugins_idx_"):
             del sys.modules[key]
+    loader_module._failed_modules.difference_update(
+        [name for name in loader_module._failed_modules if name.startswith("_plugins_idx_")]
+    )
     importlib.invalidate_caches()
 
 
@@ -648,6 +651,20 @@ class TestRecordingTheIndex:
         loader.load_all()
 
         assert loader.records == {}
+
+    def test_sibling_of_a_half_failed_module_still_registers(self, plugin_dir):
+        folder = _write_extension(
+            plugin_dir,
+            "idx_a",
+            a=_plugin("collector", "ACollector", "a") + "raise ImportError('optional dependency')\n",
+            b="from .a import ACollector\n"
+            "class BCollector(ACollector):\n"
+            '    NAME = "b"\n',
+        )
+
+        found = PluginLoader.discover_extension(str(folder))
+
+        assert sorted(cls.NAME for _, cls in found) == ["a", "b"]
 
     def test_needs_setup_extension_is_not_recorded(self, plugin_dir, monkeypatch):
         _write_extension(plugin_dir, "idx_a", collector=_plugin("collector", "ACollector", "a"))
@@ -938,7 +955,7 @@ class TestImportExtensionFailures:
         assert failed == ["_plugins_idx_a.broken"]
         assert [cls.NAME for _, cls in found] == ["a"]
 
-    def test_failed_module_is_tried_again_by_the_next_import(self, plugin_dir):
+    def test_failed_module_is_reported_again_by_the_next_import(self, plugin_dir):
         folder = _write_extension(plugin_dir, "idx_a", broken="raise ImportError('missing dependency')\n")
 
         loader_module._import_extension("idx_a", str(folder))

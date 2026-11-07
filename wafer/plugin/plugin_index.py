@@ -11,7 +11,8 @@ from wafer.core.common.paths import resolve_cache_path
 from wafer.core.logs import AppLogger
 
 INDEX_SCHEMA = 1
-SKIPPED_DIRS = frozenset({"lib", "__pycache__"})
+SKIPPED_DIRS = frozenset({"__pycache__"})
+TOP_LEVEL_SKIPPED_DIRS = frozenset({"lib"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,7 +36,8 @@ def index_path() -> str:
 def extension_fingerprint(folder: str) -> str:
     rows = []
     for root, dirs, files in os.walk(folder):
-        dirs[:] = [d for d in dirs if d not in SKIPPED_DIRS]
+        skipped = SKIPPED_DIRS | TOP_LEVEL_SKIPPED_DIRS if root == folder else SKIPPED_DIRS
+        dirs[:] = [d for d in dirs if d not in skipped]
         for file in files:
             if not file.endswith(".py"):
                 continue
@@ -46,7 +48,7 @@ def extension_fingerprint(folder: str) -> str:
     rows.sort()
     digest = hashlib.sha1()
     for relative, size, mtime_ns in rows:
-        digest.update(f"{relative}\0{size}\0{mtime_ns}\n".encode("utf-8"))
+        digest.update(f"{relative}\0{size}\0{mtime_ns}\n".encode())
     return digest.hexdigest()
 
 
@@ -54,10 +56,7 @@ def serialize(records: dict[str, ExtensionRecord]) -> str:
     extensions = {
         name: {
             "fingerprint": record.fingerprint,
-            "plugins": [
-                {"kind": p.kind, "module": p.module, "class": p.class_name, "name": p.name}
-                for p in record.plugins
-            ],
+            "plugins": [{"kind": p.kind, "module": p.module, "class": p.class_name, "name": p.name} for p in record.plugins],
         }
         for name, record in sorted(records.items())
     }
@@ -106,7 +105,7 @@ def write_index(records: dict[str, ExtensionRecord], path: str | None = None) ->
     path = path or index_path()
     text = serialize(records)
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             if f.read() == text:
                 return False
     except FileNotFoundError:

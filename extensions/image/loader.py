@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from typing import TYPE_CHECKING
 
 from wafer.plugin import BaseImageLoader
@@ -19,7 +20,7 @@ class ImageFileLoader(BaseImageLoader):
 
     @classmethod
     def preload(cls):
-        from . import _decode  # noqa: F401
+        importlib.import_module(f"{__package__}._decode")
 
     @profiler.profile
     def load(self, path: str, size: int | None = None) -> np.ndarray | None:

@@ -10,7 +10,6 @@ from wafer.core.profiling import profiler
 from ._decode import _classify_opencv_array, _imread_flags_for_size
 
 
-@profiler.profile
 def load_image(path: str, size: int | QtCore.QSize | None = None) -> QtGui.QImage | None:
     size = _coerce_qimage_size(size)
     ext = os.path.splitext(path)[-1].lower()

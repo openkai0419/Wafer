@@ -87,8 +87,7 @@ def test_thumb_cache_defaults_to_512_mib(settings):
 
 
 def test_thumb_cache_is_saved_next_to_the_bind(settings):
-    settings.save(HOST_ALL, 9000)
-    settings.save_thumb_cache_mb(1024)
+    settings.save(HOST_ALL, 9000, thumb_cache_mb=1024)
     settings.save(HOST_ALL, 9001)
     assert settings.thumb_cache_mb() == 1024 and settings.port() == 9001
 

@@ -175,8 +175,7 @@ def open_settings(ctx=None):
     result = {"restart": False}
 
     def save():
-        settings.save(host_combo.currentData(), port_spin.value(), hosts_editor.hosts())
-        settings.save_thumb_cache_mb(thumb_cache_spin.value())
+        settings.save(host_combo.currentData(), port_spin.value(), hosts_editor.hosts(), thumb_cache_spin.value())
         dialog.accept()
 
     save_btn.clicked.connect(save)

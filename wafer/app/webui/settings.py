@@ -6,14 +6,15 @@ import threading
 from configparser import ConfigParser
 
 from ...core.logs import AppLogger
+from ...core.common.ini_io import write_ini
 from ...core.common.paths import resolve_data_path
+from ...web.media import THUMB_CACHE_DEFAULT_MB
 
 _FILENAME = "webui_settings.ini"
 _SECTION = "webui"
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8787
-DEFAULT_THUMB_CACHE_MB = 512
 
 HOST_LOCAL = "127.0.0.1"
 HOST_ALL = "0.0.0.0"
@@ -80,22 +81,11 @@ class WebUISettings:
 
     def thumb_cache_mb(self) -> int:
         try:
-            return self._read().getint(_SECTION, "thumb_cache_mb", fallback=DEFAULT_THUMB_CACHE_MB)
+            return self._read().getint(_SECTION, "thumb_cache_mb", fallback=THUMB_CACHE_DEFAULT_MB)
         except ValueError:
-            return DEFAULT_THUMB_CACHE_MB
+            return THUMB_CACHE_DEFAULT_MB
 
-    def save_thumb_cache_mb(self, limit_mb: int) -> None:
-        with _lock:
-            cp = self._read()
-            if not cp.has_section(_SECTION):
-                cp.add_section(_SECTION)
-            cp.set(_SECTION, "thumb_cache_mb", str(int(limit_mb)))
-            path = _path()
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                cp.write(f)
-
-    def save(self, host: str, port: int, allowed_hosts: tuple[str, ...] = ()) -> None:
+    def save(self, host: str, port: int, allowed_hosts: tuple[str, ...] = (), thumb_cache_mb: int | None = None) -> None:
         with _lock:
             cp = self._read()
             if not cp.has_section(_SECTION):
@@ -103,10 +93,9 @@ class WebUISettings:
             cp.set(_SECTION, "host", str(host))
             cp.set(_SECTION, "port", str(int(port)))
             cp.set(_SECTION, "allowed_hosts", ", ".join(allowed_hosts))
-            path = _path()
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                cp.write(f)
+            if thumb_cache_mb is not None:
+                cp.set(_SECTION, "thumb_cache_mb", str(int(thumb_cache_mb)))
+            write_ini(_path(), cp)
         AppLogger.info(f"WebUI settings saved: host={host} port={port} allowed_hosts={', '.join(allowed_hosts) or '-'}")
 
     def resolve_bind(self, cli_host: str | None, cli_port: int | None) -> tuple[str, int]:

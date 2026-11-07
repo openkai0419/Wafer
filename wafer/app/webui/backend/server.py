@@ -11,12 +11,13 @@ from aiohttp import web
 
 from wafer.core.logs import AppLogger
 from wafer.core.common.paths import get_resource_path
+from wafer.web.media import set_thumb_cache_limit
 
 from . import api, events, media
 from .events import EVENT_HUB, EventHub
 from .media import MEDIA_EXECUTOR
 from .session import QUERY_SERVICE, QueryService
-from ..settings import LOOPBACK_HOST_NAMES, PRIVATE_NAME_SUFFIXES, browse_url
+from ..settings import LOOPBACK_HOST_NAMES, PRIVATE_NAME_SUFFIXES, WebUISettings, browse_url
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -114,6 +115,7 @@ async def on_shutdown(app: web.Application):
 
 
 def create_app(with_events: bool = True, on_app_shutdown=None, on_dev_log=None, loopback_hosts=None, allowed_hosts: tuple[str, ...] = (), session_id: str = "") -> web.Application:
+    set_thumb_cache_limit(WebUISettings().thumb_cache_mb())
     app = web.Application(middlewares=[same_origin_middleware, no_cache_middleware])
     app[WITH_EVENTS] = with_events
     if loopback_hosts is not None:

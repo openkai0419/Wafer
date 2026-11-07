@@ -3,6 +3,16 @@ import asyncio
 from aiohttp import web
 
 from wafer.app.webui.backend import server as server_module
+from wafer.web import media
+
+
+def test_create_app_gives_the_saved_limit_to_the_thumbnail_cache(monkeypatch):
+    monkeypatch.setattr(media, "_thumb_cache", None)
+    monkeypatch.setattr(media, "_thumb_cache_limit_mb", media.THUMB_CACHE_DEFAULT_MB)
+    monkeypatch.setattr(server_module.WebUISettings, "thumb_cache_mb", lambda self: 128)
+    app = server_module.create_app(with_events=False)
+    app[server_module.MEDIA_EXECUTOR].shutdown(wait=True, cancel_futures=True)
+    assert media._thumb_cache_limit_mb == 128
 
 
 def test_stop_before_serve_skips_startup(monkeypatch):

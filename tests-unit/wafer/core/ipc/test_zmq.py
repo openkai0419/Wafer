@@ -428,6 +428,137 @@ class TestReconnection:
             broker.stop()
 
 
+class TestStalledNode:
+    """A plugin holding the GIL (a model load) stops the IO thread right after its poll returned empty."""
+
+    def _registered_without_io_thread(self, broker, handler):
+        node = Node("stalled")
+        node.subscribe("work", handler)
+        node._connect(broker.port)
+        node._send_to_broker("mgmt.register", {"role": node.role, "db": node.db, "session_id": ""})
+        assert node._dealer.poll(3000)
+        node._handle_received(Message.from_frames([bytes(f) for f in node._dealer.recv_multipart()]))
+        assert node.is_registered
+        return node
+
+    def _stall_past_the_timeouts(self, node):
+        long_ago = time.monotonic() - 100.0
+        node._last_recv = long_ago
+        node._last_connect_time = long_ago
+
+    def test_message_waiting_in_the_socket_survives_the_stall(self):
+        broker = Broker()
+        broker.start()
+        received = []
+        sender = Node("sender")
+        node = None
+        try:
+            sender.start(broker.port)
+            assert sender.wait_registered(timeout=3.0)
+            node = self._registered_without_io_thread(broker, lambda msg: received.append(msg.payload) or True)
+            dealer = node._dealer
+
+            sender.send("work", {"n": 1}, dst="stalled")
+            assert dealer.poll(3000)
+            self._stall_past_the_timeouts(node)
+            node._ensure_connection()
+
+            assert received == [{"n": 1}]
+            assert node._dealer is dealer
+            assert node.is_registered
+        finally:
+            if node:
+                node._dealer.close(linger=0)
+            sender.stop()
+            broker.stop()
+
+    def test_message_waiting_when_the_broker_says_not_registered_survives_the_reconnect(self):
+        broker = Broker()
+        broker.start()
+        received = []
+        sender = Node("sender")
+        node = None
+        try:
+            sender.start(broker.port)
+            assert sender.wait_registered(timeout=3.0)
+            node = self._registered_without_io_thread(broker, lambda msg: received.append(msg.payload) or True)
+
+            sender.send("work", {"n": 1}, dst="stalled")
+            assert node._dealer.poll(3000)
+            node._registered.clear()
+            self._stall_past_the_timeouts(node)
+            node._ensure_connection()
+
+            assert received == [{"n": 1}]
+        finally:
+            if node:
+                node._dealer.close(linger=0)
+            sender.stop()
+            broker.stop()
+
+
+class TestUndeliveredReliable:
+    @pytest.fixture(autouse=True)
+    def _isolated_outbox(self, tmp_path, monkeypatch):
+        outbox_dir = tmp_path / "outbox"
+        outbox_dir.mkdir()
+        monkeypatch.setattr("wafer.core.ipc.outbox._OUTBOX_DIR", str(outbox_dir))
+
+    def test_nothing_is_undelivered_before_any_reliable_send(self):
+        node = Node("sender")
+        assert node.nudge_undelivered("work", dst="late") is False
+
+    def test_message_reaches_a_consumer_that_registers_later_without_polling(self):
+        broker = Broker()
+        broker.start()
+        received = []
+        sender = Node("sender")
+        consumer = Node("late", consumer=True, outbox_poll=None)
+        consumer.subscribe("work", lambda msg: received.append(msg.payload) or True)
+        try:
+            sender.start(broker.port)
+            assert sender.wait_registered(timeout=3.0)
+            sender.send_reliable("work", {"n": 1}, dst="late")
+            assert sender.nudge_undelivered("work", dst="late") is True
+            assert sender.nudge_undelivered("other", dst="late") is False
+            assert sender.nudge_undelivered("work", dst="someone-else") is False
+
+            consumer.start(broker.port)
+            assert consumer.wait_registered(timeout=3.0)
+
+            def delivered():
+                return not sender.nudge_undelivered("work", dst="late")
+
+            assert _wait_until(delivered, timeout=5.0)
+            assert received == [{"n": 1}]
+        finally:
+            consumer.stop()
+            sender.stop()
+            broker.stop()
+
+    def test_message_stays_undelivered_while_nobody_handles_it(self):
+        broker = Broker()
+        broker.start()
+        consumer = Node("late", consumer=True, outbox_poll=None)
+        sender = Node("sender")
+        try:
+            sender.start(broker.port)
+            consumer.start(broker.port)
+            assert sender.wait_registered(timeout=3.0)
+            assert consumer.wait_registered(timeout=3.0)
+            handled = threading.Event()
+            consumer.subscribe("work", lambda msg: handled.set() or False)
+
+            sender.send_reliable("work", {"n": 1}, dst="late")
+
+            assert handled.wait(timeout=3.0)
+            assert sender.nudge_undelivered("work", dst="late") is True
+        finally:
+            consumer.stop()
+            sender.stop()
+            broker.stop()
+
+
 class TestProfileTracking:
     def _make_broker(self, tmp_path, slot_ids=()):
         from wafer.core.store.workspace import WorkspaceStore, WindowSlot

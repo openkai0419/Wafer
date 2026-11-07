@@ -115,6 +115,11 @@ class OutboxStore:
             for r in rows
         ]
 
+    def has_pending(self, topic: str, dst: str) -> bool:
+        with self._lock:
+            row = self._conn.execute("SELECT 1 FROM outbox WHERE topic = ? AND dst = ? LIMIT 1", (topic, dst)).fetchone()
+        return row is not None
+
     def cleanup(self, max_age_days: int = 30):
         cutoff = time.time() - max_age_days * 86400
         with self._lock:

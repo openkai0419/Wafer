@@ -1,41 +1,145 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from wafer.app.indexer.db_writer import DatabaseWriter
 from wafer.app.indexer.dispatch.collector_dispatcher import CollectorDispatcher
+from wafer.core.db.db_utils import open_readonly
 from wafer.plugin.collector.handler import collector_resolver
 
 
-def test_reset_stale_submits_task(tmp_path):
-    scheduler = MagicMock()
+class _BusyLane:
+    """The background lane during a flush: anything submitted waits until the test runs it."""
+
+    def __init__(self):
+        self.tasks = []
+        self.note_activity = MagicMock()
+
+    def submit(self, task):
+        self.tasks.append(task)
+
+    def run_all(self):
+        tasks, self.tasks = self.tasks, []
+        for task in tasks:
+            task.run()
+            if task.on_complete:
+                task.on_complete()
+
+
+@pytest.fixture
+def real_db_dispatcher(tmp_path):
+    writer = DatabaseWriter(tmp_path / "test.db")
+    writer.start()
+    writer.initialize()
+    sources = ["src0", "src1", "src2"]
+    writer.db.upsert_basic_sources([(s, f"hash-{s}", 1, 1.0) for s in sources], [])
+    writer.insert_pending(sources, ["exif"])
+    lane = _BusyLane()
+    dispatcher = CollectorDispatcher("testdb", tmp_path / "test.db", lane, writer, MagicMock(), collectors=["exif"])
+    dispatcher._node = MagicMock()
+    dispatcher._node.nudge_undelivered.return_value = False
+    dispatcher._read_conn = open_readonly(tmp_path / "test.db")
+    with patch.object(collector_resolver, "batch_size", return_value=2):
+        yield dispatcher, writer, lane
+    dispatcher._read_conn.close()
+    writer.close()
+
+
+def _statuses(writer):
+    return dict(writer.db.conn.execute("SELECT source, status FROM collection_status WHERE collector = 'exif'").fetchall())
+
+
+def _sent_paths(dispatcher):
+    return [call.args[1]["paths"] for call in dispatcher._node.send_reliable.call_args_list]
+
+
+def test_source_set_pending_again_is_not_taken_back_by_a_late_mark(real_db_dispatcher):
+    dispatcher, writer, lane = real_db_dispatcher
+
+    dispatcher._dispatch_pending()
+    sent = _sent_paths(dispatcher)[0]
+    writer.db.upsert_collection_results([], [], [], [(s, "exif", "ok", 1.0) for s in sent])
+    writer.insert_pending(sent, ["exif"])
+    lane.run_all()
+
+    assert all(_statuses(writer)[s] == "pending" for s in sent)
+
+
+def test_sources_are_dispatched_before_the_batch_leaves(real_db_dispatcher):
+    dispatcher, writer, _lane = real_db_dispatcher
+    seen = {}
+    dispatcher._node.send_reliable.side_effect = lambda *a, **k: seen.update(_statuses(writer))
+
+    dispatcher._dispatch_pending()
+
+    assert sorted(seen.values()) == ["dispatched", "dispatched", "pending"]
+
+
+def test_next_dispatch_sends_the_rest_while_the_lane_is_busy(real_db_dispatcher):
+    dispatcher, _writer, _lane = real_db_dispatcher
+
+    dispatcher._dispatch_pending()
+    dispatcher._dispatch_pending()
+
+    assert sorted(p for batch in _sent_paths(dispatcher) for p in batch) == ["src0", "src1", "src2"]
+
+
+def test_batch_goes_to_the_collector_through_the_outbox(real_db_dispatcher):
+    dispatcher, _writer, _lane = real_db_dispatcher
+
+    dispatcher._dispatch_pending()
+
+    call = dispatcher._node.send_reliable.call_args
+    assert call.args[0] == "collect.batch"
+    assert call.kwargs == {"dst": "collector-exif", "db": "testdb"}
+    assert sorted(call.args[1]["file_info"]) == sorted(call.args[1]["paths"])
+    dispatcher._node.send.assert_not_called()
+
+
+def test_undelivered_batch_holds_back_the_next_one(real_db_dispatcher):
+    dispatcher, writer, _lane = real_db_dispatcher
+    dispatcher._node.nudge_undelivered.return_value = True
+
+    dispatcher._dispatch_pending()
+
+    dispatcher._node.nudge_undelivered.assert_called_once_with("collect.batch", dst="collector-exif", db="testdb")
+    dispatcher._node.send_reliable.assert_not_called()
+    assert set(_statuses(writer).values()) == {"pending"}
+
+
+def test_dispatching_counts_as_activity_for_the_idle_tasks(real_db_dispatcher):
+    dispatcher, _writer, lane = real_db_dispatcher
+
+    dispatcher._dispatch_pending()
+
+    lane.note_activity.assert_called_once_with()
+
+
+def test_stale_rows_are_reset_before_the_first_dispatch(tmp_path, monkeypatch):
+    import threading
+
+    from wafer.app.indexer.dispatch import collector_dispatcher
+
+    monkeypatch.setattr(collector_dispatcher, "_DISPATCH_INTERVAL", 0.01)
+    calls = []
     writer = MagicMock()
-    progress = MagicMock()
-    db_path = tmp_path / "test.db"
-    dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress, collectors=["exif"])
-    dispatcher._reset_stale()
-    assert scheduler.submit.called
-    task = scheduler.submit.call_args[0][0]
-    assert task.name == "reset_stale"
-    task.run()
-    writer.reset_stale.assert_called_once_with(["exif"])
+    writer.reset_stale.side_effect = lambda names: calls.append(("reset", names))
+    dispatcher = CollectorDispatcher("testdb", tmp_path / "test.db", MagicMock(), writer, MagicMock(), collectors=["exif"])
+    dispatched = threading.Event()
 
+    def dispatch():
+        calls.append(("dispatch",))
+        dispatched.set()
 
-def test_dispatched_paths_tracking(tmp_path):
-    scheduler = MagicMock()
-    writer = MagicMock()
-    progress = MagicMock()
-    db_path = tmp_path / "test.db"
-    dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress, collectors=["exif"])
-    dispatcher._dispatched_paths.setdefault("exif", set()).update(["a", "b"])
-    dispatcher._clear_dispatched("exif", ["a"])
-    assert dispatcher._dispatched_paths["exif"] == {"b"}
+    dispatcher._dispatch_pending = dispatch
+    thread = threading.Thread(target=dispatcher._dispatch_loop, daemon=True)
+    thread.start()
+    assert dispatched.wait(timeout=3.0)
+    dispatcher._stop.set()
+    dispatcher._dispatch_event.set()
+    thread.join(timeout=3.0)
 
-
-def test_clear_dispatched_nonexistent_collector(tmp_path):
-    scheduler = MagicMock()
-    writer = MagicMock()
-    progress = MagicMock()
-    db_path = tmp_path / "test.db"
-    dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress, collectors=["exif"])
-    dispatcher._clear_dispatched("nonexistent", ["a"])
+    assert calls[:2] == [("reset", ["exif"]), ("dispatch",)]
 
 
 def test_dispatch_loop_survives_exception(tmp_path, monkeypatch):

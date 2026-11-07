@@ -73,6 +73,10 @@ class TaskScheduler:
     def set_idle_base_delay(self, seconds: float) -> None:
         self._idle_base_delay = max(0.0, float(seconds))
 
+    def note_activity(self) -> None:
+        self._last_active_time = time.monotonic()
+        self._reset_once_per_idle_flags()
+
     def submit(self, task: Task):
         if task.cancel_token:
             with self._tokens_lock:
@@ -140,8 +144,7 @@ class TaskScheduler:
                 _run_task(task, "immediate")
             finally:
                 self._task_finished()
-            self._last_active_time = time.monotonic()
-            self._reset_once_per_idle_flags()
+            self.note_activity()
 
     def _loop_background(self) -> None:
         while not self._stop.is_set():
@@ -160,8 +163,7 @@ class TaskScheduler:
             finally:
                 self._task_finished()
             if task.priority <= TaskPriority.DISPATCH:
-                self._last_active_time = time.monotonic()
-                self._reset_once_per_idle_flags()
+                self.note_activity()
 
     def _task_started(self) -> None:
         with self._active_lock:

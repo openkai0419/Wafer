@@ -25,7 +25,7 @@ class ParserWorker:
         if not self._singleton:
             self._plugin.db_name = db_name
         node_db = "" if self._singleton else db_name
-        self._node = Node(f"parser-{plugin_name}", db=node_db, broker_lost_timeout=BROKER_LOST_TIMEOUT)
+        self._node = Node(f"parser-{plugin_name}", db=node_db, consumer=True, outbox_poll=None, broker_lost_timeout=BROKER_LOST_TIMEOUT)
         self._node.subscribe("parse.batch", self._handle_batch)
         self._node.subscribe("plugin.notify", self._on_notify)
         self._node.subscribe("worker.shutdown", self._on_shutdown)

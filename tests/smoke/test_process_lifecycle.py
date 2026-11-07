@@ -198,6 +198,73 @@ class TestParserWorkerLifecycle:
             broker.stop()
 
 
+class _RecordingPlugin:
+    def __init__(self):
+        self.paths = []
+
+    def process(self, path, *_args):
+        self.paths.append(path)
+        return []
+
+    def shutdown(self):
+        pass
+
+
+class TestBatchDelivery:
+    @pytest.fixture(autouse=True)
+    def _isolated_outbox(self, tmp_path, monkeypatch):
+        outbox_dir = tmp_path / "outbox"
+        outbox_dir.mkdir()
+        monkeypatch.setattr("wafer.core.ipc.outbox._OUTBOX_DIR", str(outbox_dir))
+
+    def _deliver_before_the_worker_starts(self, worker, topic):
+        from wafer.core.ipc.broker import Broker
+        from wafer.core.ipc.node import Node
+
+        plugin = _RecordingPlugin()
+        worker._plugin = plugin
+        role = worker._node.role
+        broker = Broker()
+        broker.start()
+        indexer = Node("indexer", db="testdb")
+        try:
+            indexer.start(broker.port)
+            assert indexer.wait_registered(timeout=5.0)
+            indexer.send_reliable(topic, {"paths": ["/fake/a.jpg"], "file_info": {}}, dst=role, db="testdb")
+            worker.start()
+            try:
+                assert _poll_until(lambda: not indexer.nudge_undelivered(topic, dst=role, db="testdb"), timeout=10.0)
+                assert _poll_until(lambda: plugin.paths == ["/fake/a.jpg"], timeout=5.0)
+            finally:
+                worker.stop()
+        finally:
+            indexer.stop()
+            broker.stop()
+
+    def test_collector_receives_a_batch_sent_before_it_started(self):
+        from wafer.app.collector.worker import CollectorWorker
+
+        self._deliver_before_the_worker_starts(CollectorWorker("testdb", "exiftool"), "collect.batch")
+
+    def test_parser_receives_a_batch_sent_before_it_started(self):
+        from wafer.app.parser.worker import ParserWorker
+        from wafer.plugin.parser.base import BaseParserPlugin, ParserResult
+        from wafer.plugin.parser.handler import parser_resolver
+
+        class _StubParser(BaseParserPlugin):
+            NAME = "_test_batch_delivery"
+
+            def process(self, path, file_info, metadata):
+                return ParserResult(source=path, status=True)
+
+        parser_resolver.registry.register(_StubParser)
+        try:
+            self._deliver_before_the_worker_starts(ParserWorker("testdb", _StubParser.NAME), "parse.batch")
+        finally:
+            parser_resolver.registry._plugins.pop(_StubParser.NAME, None)
+            parser_resolver.registry._instances.pop(_StubParser.NAME, None)
+
+
 class TestDispatcherSingletonState:
     def test_reset_singleton_state(self):
         from wafer.app.indexer.dispatch.collector_dispatcher import CollectorDispatcher

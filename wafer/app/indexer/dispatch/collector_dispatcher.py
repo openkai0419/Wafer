@@ -12,7 +12,6 @@ from ....plugin.collector.handler import collector_resolver
 from ..db_writer import DatabaseWriter
 from ..runtime.progress_aggregator import ProgressAggregator
 from ..runtime.scheduler import TaskScheduler
-from ..runtime.task import Task, TaskPriority
 from ..runtime.worker_shutdown import WORKER_SHUTDOWN_TIMEOUT, wait_worker_stopped
 
 _DISPATCH_INTERVAL = 2.0
@@ -45,8 +44,6 @@ class CollectorDispatcher:
         self._collectors = list(collectors or collector_resolver.names())
         self._per_indexer = [c for c in self._collectors if c not in collector_resolver.singleton_names()]
         self._tray_pid = tray_pid
-        self._dispatched_paths: dict[str, set[str]] = {}
-        self._dispatched_lock = threading.Lock()
         self._read_conn = None
         self._node = None
         self._stop = threading.Event()
@@ -56,19 +53,9 @@ class CollectorDispatcher:
     def start(self, node):
         self._node = node
         self._read_conn = open_readonly(self._db_path)
-        self._reset_stale()
         self._start_collector_processes()
         self._thread = threading.Thread(target=self._dispatch_loop, daemon=True)
         self._thread.start()
-
-    def _reset_stale(self):
-        self._scheduler.submit(
-            Task.create(
-                "reset_stale",
-                priority=TaskPriority.DISPATCH,
-                run=lambda: self._writer.reset_stale(self._collectors),
-            )
-        )
 
     def stop(self):
         self._stop.set()
@@ -136,6 +123,10 @@ class CollectorDispatcher:
         return wait_worker_stopped("collector", self._db_name, plugin, timeout)
 
     def _dispatch_loop(self):
+        try:
+            self._writer.reset_stale(self._collectors)
+        except Exception as e:
+            AppLogger.error(f"[Dispatcher] reset_stale failed: {e}", exc=e)
         while not self._stop.is_set():
             self._dispatch_event.wait(timeout=_DISPATCH_INTERVAL)
             self._dispatch_event.clear()
@@ -149,6 +140,9 @@ class CollectorDispatcher:
     @profiler.profile
     def _dispatch_pending(self):
         for collector in self._collectors:
+            dst = f"collector-{collector}"
+            if self._node.nudge_undelivered("collect.batch", dst=dst, db=self._db_name):
+                continue
             batch_size = collector_resolver.batch_size(collector)
             cur = self._read_conn.cursor()
             cur.execute(
@@ -159,38 +153,21 @@ class CollectorDispatcher:
                 LIMIT ?""",
                 (collector, batch_size),
             )
-            pending = cur.fetchall()
+            rows = cur.fetchall()
             cur.close()
-            if not pending:
-                continue
-            with self._dispatched_lock:
-                already = self._dispatched_paths.get(collector, set())
-                rows = [row for row in pending if row[0] not in already]
             if not rows:
                 continue
             paths = [row[0] for row in rows]
             file_info = {row[0]: (row[1], row[2], row[3]) for row in rows}
-            with self._dispatched_lock:
-                self._dispatched_paths.setdefault(collector, set()).update(paths)
-            self._scheduler.submit(
-                Task.create(
-                    "mark_dispatched",
-                    priority=TaskPriority.DISPATCH,
-                    run=lambda ps=paths, c=collector: self._writer.mark_dispatched(ps, c),
-                    on_complete=lambda c=collector, ps=paths: self._clear_dispatched(c, ps),
-                )
-            )
+            # Before the batch leaves, not through the scheduler: a mark that runs later would
+            # turn a source set pending again meanwhile into 'dispatched' with no batch behind it.
+            self._writer.mark_dispatched(paths, collector)
+            self._scheduler.note_activity()
             self._progress.increment(0, len(paths))
-            self._node.send(
+            self._node.send_reliable(
                 "collect.batch",
                 {"paths": paths, "file_info": file_info},
-                dst=f"collector-{collector}",
+                dst=dst,
                 db=self._db_name,
             )
-            AppLogger.info(f"[Dispatcher] Sent {len(paths)} paths to collector-{collector}")
-
-    def _clear_dispatched(self, collector: str, paths: list[str]):
-        with self._dispatched_lock:
-            s = self._dispatched_paths.get(collector)
-            if s:
-                s.difference_update(paths)
+            AppLogger.info(f"[Dispatcher] Sent {len(paths)} paths to {dst}")

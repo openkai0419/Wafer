@@ -5,8 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
-import requests
-
 from ..._version import __version__
 from ... import _dev
 from ...core.common.json_io import read_json_file, write_json_file
@@ -68,6 +66,8 @@ def fetch_latest_release(*, timeout: float = DEFAULT_TIMEOUT) -> dict:
         if not isinstance(data, dict):
             raise ValueError(f"Local update latest.json is missing or invalid at {_dev.source_dir()}")
         return data
+    import requests
+
     response = requests.get(
         LATEST_RELEASE_API_URL,
         timeout=timeout,
@@ -86,6 +86,8 @@ def fetch_remote_release_notes(tag_name: str, *, timeout: float = DEFAULT_TIMEOU
     url = validate_external_url(f"{RELEASE_NOTES_RAW_BASE_URL}/{quote(tag_name, safe='')}/{RELEASE_NOTES_FILENAME}")
     if not url:
         raise ValueError("invalid release notes URL")
+    import requests
+
     response = requests.get(url, timeout=timeout, headers={"User-Agent": USER_AGENT})
     response.raise_for_status()
     return response.text

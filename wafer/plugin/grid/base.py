@@ -1,6 +1,5 @@
 from abc import ABC
 from typing import Any
-from PySide6 import QtCore
 from ...core.files.render_target import RenderPlan, ResolveContext
 from ..registry import BasePlugin
 
@@ -8,6 +7,8 @@ _error_image_cache = None
 
 
 def _get_error_image(size):
+    from PySide6 import QtCore
+
     global _error_image_cache
     if _error_image_cache is None:
         from ...qt.common.pixmap import PixmapFactory

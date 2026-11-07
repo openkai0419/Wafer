@@ -341,3 +341,88 @@ class TestViewerArguments:
         store.get_slot.assert_called_once_with("s1")
         order.send.assert_called_once_with(taken_slot, OpenRequest("C:/a.png", ""))
         order.wait.assert_not_called()
+
+
+class TestPluginLoadingPerRole:
+    def run_role(self, **role):
+        import argparse
+
+        values = dict(tray=False, viewer=False, webui=False, indexer=None, collector=None, parser=None, plugin="image", parent_pid=None, slot=None)
+        values.update(role)
+        entries = MagicMock()
+        with (
+            patch("main.argparse.ArgumentParser.parse_args", return_value=argparse.Namespace(**values)),
+            patch("main.setproctitle"),
+            patch("main._entry_indexer", entries.indexer),
+            patch("main._entry_collector", entries.collector),
+            patch("main._entry_parser", entries.parser),
+            patch("main._load_plugins", entries.load_all),
+            patch("wafer.plugin.loader.load_indexer_plugins", entries.load_indexer),
+            patch("wafer.plugin.loader.load_worker_plugins", entries.load_worker),
+        ):
+            from main import main
+
+            main()
+        return entries
+
+    def test_tray_writes_the_index(self):
+        with (
+            patch("wafer.plugin.startup_install.run_pending_installs"),
+            patch("wafer.plugin.loader.load_plugins") as load,
+            patch("wafer.plugin.loader.get_command_registry"),
+        ):
+            from main import _bootstrap_plugins_for_tray
+
+            _bootstrap_plugins_for_tray()
+        load.assert_called_once_with(write_index=True)
+
+    def test_indexer_loads_through_the_index(self):
+        entries = self.run_role(indexer="db", parent_pid=7)
+        assert entries.mock_calls == [call.load_indexer(), call.indexer("db", parent_pid=7)]
+
+    def test_collector_loads_only_itself(self):
+        entries = self.run_role(collector="db", plugin="color")
+        assert entries.mock_calls == [call.load_worker("collector", "color"), call.collector("db", "color", parent_pid=None)]
+
+    def test_parser_loads_only_itself(self):
+        entries = self.run_role(parser="db", plugin="duplicate")
+        assert entries.mock_calls == [call.load_worker("parser", "duplicate"), call.parser("db", "duplicate", parent_pid=None)]
+
+    @pytest.mark.parametrize("pick", [False, True])
+    @patch("main.constants.MEMWATCH", False)
+    @patch("wafer.core.profiling.profiler")
+    @patch("main.setproctitle")
+    def test_viewer_preloads_image_loaders(self, _title, _profiler, pick):
+        order = MagicMock()
+        with (
+            patch("wafer.plugin.imageloader.handler.image_loader_resolver.preload", order.preload),
+            patch("wafer.app.viewer.workspace_launch.run_viewer", order.viewer),
+            patch("wafer.app.viewer.workspace_launch.run_pick", order.pick),
+        ):
+            from main import _entry_viewer
+
+            _entry_viewer(MagicMock(), pick=pick, seed_slot="s1")
+        names = [c[0] for c in order.mock_calls]
+        assert names == (["preload", "pick", "viewer"] if pick else ["preload", "viewer"])
+
+
+class TestOpenblasThreadDefault:
+    @staticmethod
+    def imported_value(preset):
+        import os
+        import subprocess
+        import sys
+
+        env = {k: v for k, v in os.environ.items() if k != "OPENBLAS_NUM_THREADS"}
+        if preset is not None:
+            env["OPENBLAS_NUM_THREADS"] = preset
+        code = "import os, main; print(os.environ['OPENBLAS_NUM_THREADS'])"
+        result = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=25)
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip().splitlines()[-1]
+
+    def test_openblas_thread_default(self):
+        assert self.imported_value(None) == "4"
+
+    def test_a_preset_value_is_kept(self):
+        assert self.imported_value("1") == "1"

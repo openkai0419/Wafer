@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-import os
 import threading
 from configparser import ConfigParser
+from configparser import Error as ConfigError
+from functools import lru_cache
 
+from ..common.ini_io import write_ini
 from ..common.paths import resolve_data_path
+from ..logs import AppLogger
 
 _FILENAME = "cache_settings.ini"
 _SECTION = "database"
@@ -17,9 +20,11 @@ _lock = threading.Lock()
 
 def _read() -> ConfigParser:
     cp = ConfigParser()
-    path = resolve_data_path(_FILENAME)
-    if os.path.isfile(path):
-        cp.read(path, encoding="utf-8")
+    try:
+        cp.read(resolve_data_path(_FILENAME), encoding="utf-8")
+    except (ConfigError, UnicodeDecodeError) as exc:
+        AppLogger.warning(f"{_FILENAME} is damaged, using the default SQLite cache limit. Saving Cache Limits rewrites it.", exc=exc)
+        return ConfigParser()
     return cp
 
 
@@ -30,13 +35,15 @@ def db_cache_limit_mb() -> int:
         return DB_CACHE_DEFAULT_MB
 
 
+@lru_cache(maxsize=1)
+def process_db_cache_limit_mb() -> int:
+    return db_cache_limit_mb()
+
+
 def save_db_cache_limit(limit_mb: int) -> None:
     with _lock:
         cp = _read()
         if not cp.has_section(_SECTION):
             cp.add_section(_SECTION)
         cp.set(_SECTION, _OPTION, str(int(limit_mb)))
-        path = resolve_data_path(_FILENAME)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            cp.write(f)
+        write_ini(resolve_data_path(_FILENAME), cp)

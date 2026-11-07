@@ -74,13 +74,7 @@ def restart_all(ctx):
             replace_webui()
         w.close_by_restart()
         return
-    if ctx.get_instance("WebUIWindow"):
-        _shutdown_all(ctx, then_restart=True)
-        return
-    store = WorkspaceStore.instance()
-    store.set_restore_slot_ids(store.get_active_slot_ids())
-    AppProcess.terminate_cmd("--tray", wait=True)
-    AppProcess.new_main("--tray")
+    _shutdown_all(ctx, then_restart=True)
 
 
 def close_all(ctx):

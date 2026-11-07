@@ -47,7 +47,7 @@ wafer の永続化クラスは「**スコープ**」と「**用途**」の 2 軸
 | `DialogLayoutStore` | INI | Dialog ごと | 個別ダイアログ |
 | `ActionGroupStateManager` | (in-memory) | App 全体 | コマンドシステム |
 | `WebUISettings` | INI（`webui_settings.ini`） | App 全体 | WebUI サーバー（host / port / allowed_hosts / サムネイルのディスク上限。Qt 非依存で headless からも読む） |
-| `core/db/cache_limit.py` | INI（`cache_settings.ini`） | App 全体 | DB キャッシュのプロセス上限（Qt 非依存。Indexer・worker・WebUI からも読む） |
+| `core/db/cache_limit.py` | INI（`cache_settings.ini`） | App 全体 | DB キャッシュのプロセス上限（Qt 非依存。Indexer・worker・WebUI からも読む。各プロセスが最初の接続で 1 回だけ読むので、変更は再起動で反映） |
 
 ## よくある間違い
 

@@ -11,11 +11,11 @@ from ..common.paths import data_db_path, list_data_db_names, list_setting_db_nam
 from ..common.hashes import fast_signature_hash
 from ..profiling import profiler
 from ..logs import AppLogger
-from .cache_limit import db_cache_limit_mb
+from .cache_limit import process_db_cache_limit_mb
 
 
 def _apply_process_cache_limit(conn: sqlite3.Connection):
-    conn.execute(f"PRAGMA soft_heap_limit={db_cache_limit_mb() * 1024 * 1024}")
+    conn.execute(f"PRAGMA soft_heap_limit={process_db_cache_limit_mb() * 1024 * 1024}")
 
 
 def apply_write_pragmas(conn: sqlite3.Connection):

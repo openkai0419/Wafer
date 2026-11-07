@@ -19,6 +19,41 @@ def restore():
     save_db_cache_limit(db_before)
 
 
+@pytest.fixture(autouse=True)
+def restart_prompts(monkeypatch):
+    prompts = []
+    monkeypatch.setattr(cache_limits, "ask_restart_all", lambda body, parent=None: prompts.append((body, parent)))
+    return prompts
+
+
+def test_changing_the_database_limit_asks_to_restart(qtbot, restart_prompts):
+    save_db_cache_limit(512)
+    parent = QtWidgets.QWidget()
+    qtbot.addWidget(parent)
+    dialog = CacheLimitsDialog(parent)
+    dialog.db_limit.setValue(256)
+    dialog.save()
+    assert len(restart_prompts) == 1
+    assert "SQLite cache limit" in restart_prompts[0][0] and restart_prompts[0][1] is parent
+    assert dialog.result() == QtWidgets.QDialog.Accepted
+
+
+def test_changing_only_the_image_limit_does_not_ask_to_restart(qtbot, restart_prompts):
+    save_db_cache_limit(512)
+    dialog = CacheLimitsDialog()
+    qtbot.addWidget(dialog)
+    dialog.image_limit.setValue(1024)
+    dialog.save()
+    assert restart_prompts == []
+    assert image_cache_limit_mb() == 1024
+
+
+def test_the_database_limit_says_it_needs_a_restart(qtbot):
+    dialog = CacheLimitsDialog()
+    qtbot.addWidget(dialog)
+    assert any("Applies after a restart." in label.text() for label in dialog.findChildren(QtWidgets.QLabel))
+
+
 def test_dialog_starts_from_the_saved_values(qtbot):
     save_db_cache_limit(1024)
     dialog = CacheLimitsDialog()

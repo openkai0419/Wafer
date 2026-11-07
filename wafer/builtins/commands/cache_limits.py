@@ -5,6 +5,7 @@ from ...core.files.shared_image_cache import image_cache_limit_mb, set_image_cac
 from ...core.lang.manager import t
 from ...core.store.settings import app_settings
 from ...qt.commands.bridge import ActionKit
+from ...qt.widgets.restart_prompt import ask_restart_all
 
 _MINIMUM_MB = 64
 _MAXIMUM_MB = 1024 * 1024
@@ -43,7 +44,7 @@ class CacheLimitsDialog(QtWidgets.QDialog):
         form.addRow(t("Image cache (per Viewer)"), self.image_limit)
         form.addRow(_note(t("Thumbnails and full-size images kept in memory, so that images you saw recently open without being read again. Higher is faster and uses more memory.")))
         form.addRow(t("SQLite cache (per process)"), self.db_limit)
-        form.addRow(_note(t("Memory SQLite may use for reading and writing the database, in the Viewer, the Indexer and the WebUI. Indexers apply a change when they restart.")))
+        form.addRow(_note(t("Memory SQLite may use for reading and writing the database, in the Viewer, the Indexer and the WebUI. Applies after a restart.")))
         form.addRow(self.db_warning)
         form.addRow(buttons)
 
@@ -55,8 +56,12 @@ class CacheLimitsDialog(QtWidgets.QDialog):
 
     def save(self) -> None:
         set_image_cache_limit(self.image_limit.value())
-        save_db_cache_limit(self.db_limit.value())
+        db_changed = self.db_limit.value() != db_cache_limit_mb()
+        if db_changed:
+            save_db_cache_limit(self.db_limit.value())
         self.accept()
+        if db_changed:
+            ask_restart_all(t("The SQLite cache limit has been saved.\nRestart is required."), self.parentWidget())
 
 
 def open_cache_limits(ctx):

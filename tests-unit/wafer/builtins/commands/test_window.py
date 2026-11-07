@@ -42,6 +42,18 @@ class TestCloseAll:
         window_commands.close_all(_Ctx())
 
 
+class TestRestartAllFromTray:
+    def test_uses_the_shutdown_path_instead_of_terminating_itself(self, monkeypatch):
+        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_scope", lambda self: None)
+        monkeypatch.setattr(window_commands.installer_queue, "has_pending_queue", lambda _dir: False)
+        monkeypatch.setattr(window_commands.AppProcess, "terminate_cmd", staticmethod(lambda *a, **k: (_ for _ in ()).throw(AssertionError("the Tray must not terminate itself"))))
+
+        tray = MagicMock()
+        window_commands.restart_all(_Ctx(Tray=tray))
+
+        tray.restart_all.assert_called_once_with()
+
+
 class TestRestartAllPendingInstall:
     def _patch_common(self, monkeypatch, store, *, pending):
         monkeypatch.setattr(window_commands, "WorkspaceStore", MagicMock(instance=staticmethod(lambda: store)))

@@ -12,6 +12,7 @@ from ...qt.theme import ThemeManager
 from ...qt.common.dispatcher import Dispatcher
 from ...qt.common.thread import utility_pool
 from ...qt.commands.bridge import Command
+from ...qt.widgets.restart_prompt import ask_restart_all
 from ...core.lang.manager import t
 
 
@@ -328,18 +329,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
                 body = t("Plugin settings have been saved.\nViewer restart is required.")
         else:
             body = t("Pending updates will be applied on restart.")
-        msg = QtWidgets.QMessageBox(
-            QtWidgets.QMessageBox.Question,
-            t("Restart Required"),
-            body,
-            parent=self,
-        )
-        restart_btn = msg.addButton(t("Restart"), QtWidgets.QMessageBox.AcceptRole)
-        msg.addButton(t("Not Now"), QtWidgets.QMessageBox.RejectRole)
-        msg.setDefaultButton(restart_btn)
-        msg.exec()
-        if msg.clickedButton() == restart_btn:
-            Command.run("win.restart_all")
+        ask_restart_all(body, self)
 
     def _on_revert(self):
         from .viewers_tab import REGISTRY_KEYS

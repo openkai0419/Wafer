@@ -23,7 +23,10 @@ class ImageLoaderResolver:
 
     def preload(self) -> None:
         for plugin_cls in self.registry.list_all():
-            plugin_cls.preload()
+            try:
+                plugin_cls.preload()
+            except Exception as exc:
+                AppLogger.warning(f"[ImageLoaderResolver] Could not prepare image loader {plugin_cls.NAME}, its images may not open. Reinstall it from the Plugin Manager ({type(exc).__name__}: {exc})", exc=exc)
 
     def resolve_chain(self, path: str) -> list[type[BaseImageLoader]]:
         return self.registry.resolve_chain(path)

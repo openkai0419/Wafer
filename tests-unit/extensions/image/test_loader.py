@@ -382,3 +382,16 @@ def test_load_through_loader_does_not_need_qt(rgb_png):
 def test_preload_imports_the_decoder():
     loaded = run_probe(["from extensions.image.loader import ImageFileLoader", "ImageFileLoader.preload()"])
     assert "cv2" in loaded and "PySide6" not in loaded
+
+
+def test_a_broken_decoder_does_not_stop_the_resolver_preload():
+    run_probe(
+        [
+            "sys.modules['cv2'] = None",
+            "from extensions.image.loader import ImageFileLoader",
+            "from wafer.plugin.imageloader.handler import ImageLoaderResolver",
+            "resolver = ImageLoaderResolver()",
+            "resolver.registry.register(ImageFileLoader)",
+            "resolver.preload()",
+        ]
+    )

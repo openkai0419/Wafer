@@ -12,6 +12,39 @@ def _resolver_with(plugin_cls):
     return resolver
 
 
+class _BrokenPreloadLoader(BaseImageLoader):
+    NAME = "broken_preload"
+    EXTENSIONS = (".png",)
+
+    @classmethod
+    def preload(cls):
+        raise ImportError("DLL load failed while importing cv2")
+
+
+class _CountingPreloadLoader(BaseImageLoader):
+    NAME = "counting_preload"
+    EXTENSIONS = (".png",)
+    preloaded = 0
+
+    @classmethod
+    def preload(cls):
+        cls.preloaded += 1
+
+
+def test_a_failing_preload_is_logged_and_the_other_loaders_still_preload(monkeypatch):
+    logged = []
+    monkeypatch.setattr("wafer.plugin.imageloader.handler.AppLogger.warning", lambda message, **kwargs: logged.append(message))
+    monkeypatch.setattr(_CountingPreloadLoader, "preloaded", 0)
+    resolver = ImageLoaderResolver()
+    resolver.registry.register(_BrokenPreloadLoader)
+    resolver.registry.register(_CountingPreloadLoader)
+
+    resolver.preload()
+
+    assert _CountingPreloadLoader.preloaded == 1
+    assert len(logged) == 1 and "broken_preload" in logged[0] and "Plugin Manager" in logged[0]
+
+
 class _DirectQImageLoader(BaseImageLoader):
     NAME = "direct_qimage"
     EXTENSIONS = (".png",)

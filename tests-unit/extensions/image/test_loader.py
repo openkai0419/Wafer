@@ -1,19 +1,19 @@
 
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import cv2
 import numpy as np
 import pytest
 from PIL import Image
 from PySide6 import QtCore, QtGui
 
-from extensions.image.loader import (
-    ImageFileLoader,
-    load_image,
-    _imread_flags_for_size,
-    _jpeg_dimensions,
-    _classify_opencv_array,
-    _numpy_to_qimage,
-    _qt_read,
-)
+from extensions.image._decode import _classify_opencv_array, _imread_flags_for_size, _jpeg_dimensions
+from extensions.image._qimage import _numpy_to_qimage, _qt_read, load_image
+from extensions.image.loader import ImageFileLoader
 
 
 @pytest.fixture()
@@ -336,3 +336,49 @@ class TestQtRead:
     def test_nonexistent(self):
         img = _qt_read("/no/such/file.png", None, False)
         assert img is None
+
+
+ROOT = Path(__file__).resolve().parents[3]
+WATCHED = ("cv2", "numpy", "PySide6")
+
+
+def run_probe(lines, *args):
+    code = "\n".join(
+        [
+            "import sys, json",
+            *lines,
+            f"print(json.dumps(sorted(m for m in sys.modules if m in {WATCHED!r})))",
+        ]
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code, *args],
+        cwd=str(ROOT),
+        env={**os.environ},
+        capture_output=True,
+        text=True,
+        timeout=25,
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+def test_loader_module_imports_no_decoders():
+    loaded = run_probe(["import extensions.image.loader"])
+    assert not set(WATCHED) & set(loaded)
+
+
+def test_load_through_loader_does_not_need_qt(rgb_png):
+    loaded = run_probe(
+        [
+            "from extensions.image.loader import ImageFileLoader",
+            "arr = ImageFileLoader().load(sys.argv[1], 64)",
+            "assert arr is not None and arr.ndim == 3 and max(arr.shape[:2]) >= 64",
+        ],
+        rgb_png,
+    )
+    assert "cv2" in loaded and "PySide6" not in loaded
+
+
+def test_preload_imports_the_decoder():
+    loaded = run_probe(["from extensions.image.loader import ImageFileLoader", "ImageFileLoader.preload()"])
+    assert "cv2" in loaded and "PySide6" not in loaded

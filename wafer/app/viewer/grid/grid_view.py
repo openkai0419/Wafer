@@ -6,6 +6,7 @@ from ....core.profiling import profiler
 from ....qt.common.rate_limit import qt_debounce, qt_throttle
 from ....qt.common.visibility import WidgetVisibilityWatcher
 from ....qt.common.dispatcher import Dispatcher
+from ....core.files.image_cache import fullsize_key
 from ....core.store.settings import app_settings
 from ....plugin.grid.handler import grid_resolver, WidgetNotifier
 from ....plugin.grid.base import WidgetGridPlugin as _WidgetGridPlugin
@@ -886,7 +887,9 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             item.setGeometry(rect)
             self.widgets[i] = item
             content_size = self._content_size(rect.size())
-            cached = self.image_cache.get_if_sufficient(path, content_size)
+            cached = self.image_cache.get_if_sufficient(fullsize_key(path), content_size)
+            if cached is None:
+                cached = self.image_cache.get_if_sufficient(path, content_size)
             if cached is not None:
                 item.set_image(cached, path)
             else:

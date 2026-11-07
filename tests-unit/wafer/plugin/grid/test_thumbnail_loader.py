@@ -3,6 +3,7 @@ import threading
 import pytest
 from PySide6 import QtGui
 
+from wafer.core.files.image_cache import fullsize_key
 from wafer.plugin.grid import thumbnail_loader
 from wafer.plugin.grid.thumbnail_loader import ThumbnailLoader, shared_image_cache
 
@@ -167,6 +168,34 @@ def test_large_shared_images_are_kept_at_the_loader_size(qtbot, monkeypatch):
     shared_image_cache()["a"] = _image(1024)
     assert loader.get("a").width() == 64
     assert loader.get("a").width() == 64 and shared_image_cache().peek("a").width() == 1024
+
+
+def test_original_from_the_viewer_serves_the_request_without_decoding(qtbot, calls, monkeypatch):
+    monkeypatch.setattr(thumbnail_loader, "dpix", lambda value: value)
+    shared_image_cache()[fullsize_key("a")] = _image(256)
+    loaded = []
+    loader = ThumbnailLoader(loaded.append, size=64, cache_limit=10)
+    loader.request(["a"])
+    qtbot.waitUntil(lambda: loaded == ["a"], timeout=3000)
+    assert calls == [] and loader.get("a").width() == 64
+
+
+def test_original_smaller_than_the_size_is_treated_as_the_natural_size(qtbot, calls, monkeypatch):
+    monkeypatch.setattr(thumbnail_loader, "dpix", lambda value: value)
+    shared_image_cache()[fullsize_key("a")] = _image(32)
+    loaded = []
+    loader = ThumbnailLoader(loaded.append, size=128, cache_limit=10)
+    loader.request(["a"])
+    qtbot.waitUntil(lambda: loaded == ["a"], timeout=3000)
+    assert calls == [] and loader.sufficient("a") and loader.get("a").width() == 32
+
+
+def test_shared_original_is_not_stored_again_as_a_thumbnail(qtbot, monkeypatch):
+    monkeypatch.setattr(thumbnail_loader, "dpix", lambda value: value)
+    shared_image_cache()[fullsize_key("a")] = _image(256)
+    loader = ThumbnailLoader(lambda _p: None, size=64, cache_limit=10)
+    loader.store("a", _image(64))
+    assert shared_image_cache().peek("a") is None and loader.get("a").width() == 64
 
 
 def test_shrinking_the_size_shrinks_kept_pixmaps(qtbot, monkeypatch):

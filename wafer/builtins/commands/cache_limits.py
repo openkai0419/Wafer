@@ -3,20 +3,13 @@ from PySide6 import QtWidgets
 from ...core.db.cache_limit import db_cache_limit_mb, save_db_cache_limit
 from ...core.files.shared_image_cache import image_cache_limit_mb, set_image_cache_limit
 from ...core.lang.manager import t
-from ...core.platform.workspace_lock import WorkspaceLock
 from ...core.store.settings import app_settings
-from ...core.store.workspace import WorkspaceStore
 from ...qt.commands.bridge import ActionKit
 
 _MINIMUM_MB = 64
 _MAXIMUM_MB = 1024 * 1024
 _STEP_MB = 64
 _DB_SLOW_BELOW_MB = 200
-
-
-def open_viewer_count() -> int:
-    slots = WorkspaceStore.instance().list_slots()
-    return len(WorkspaceLock.open_slot_ids([slot.slot_id for slot in slots]))
 
 
 def _limit_box(value: int) -> QtWidgets.QSpinBox:
@@ -39,9 +32,7 @@ class CacheLimitsDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle(t("Cache Limits"))
         app_settings.settings.sync()
-        self.viewer_count = open_viewer_count()
         self.image_limit = _limit_box(image_cache_limit_mb())
-        self.image_total = _note()
         self.db_limit = _limit_box(db_cache_limit_mb())
         self.db_warning = _note(t("Below 200 MiB, searches get slower."))
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Save | QtWidgets.QDialogButtonBox.Cancel)
@@ -49,20 +40,17 @@ class CacheLimitsDialog(QtWidgets.QDialog):
         buttons.rejected.connect(self.reject)
 
         form = QtWidgets.QFormLayout(self)
-        form.addRow(t("Images (per Viewer)"), self.image_limit)
-        form.addRow(self.image_total)
-        form.addRow(t("Database (per process)"), self.db_limit)
+        form.addRow(t("Image cache (per Viewer)"), self.image_limit)
+        form.addRow(_note(t("Thumbnails and full-size images kept in memory, so that images you saw recently open without being read again. Higher is faster and uses more memory.")))
+        form.addRow(t("SQLite cache (per process)"), self.db_limit)
+        form.addRow(_note(t("Memory SQLite may use for reading and writing the database, in the Viewer, the Indexer and the WebUI. Indexers apply a change when they restart.")))
         form.addRow(self.db_warning)
-        form.addRow(_note(t("Indexers apply the database limit when they restart. Animated images, Mapping and Zip have their own limits in their menus.")))
         form.addRow(buttons)
 
-        self.image_limit.valueChanged.connect(self.update_notes)
-        self.db_limit.valueChanged.connect(self.update_notes)
-        self.update_notes()
+        self.db_limit.valueChanged.connect(self.update_db_warning)
+        self.update_db_warning()
 
-    def update_notes(self) -> None:
-        total = self.image_limit.value() * self.viewer_count
-        self.image_total.setText(t("Viewers open: {count}, up to {total} MiB of images").format(count=self.viewer_count, total=total))
+    def update_db_warning(self) -> None:
         self.db_warning.setVisible(self.db_limit.value() < _DB_SLOW_BELOW_MB)
 
     def save(self) -> None:
@@ -75,17 +63,15 @@ def open_cache_limits(ctx):
     CacheLimitsDialog(ctx.get("widget") or None).exec()
 
 
-class CacheLimitCommands(ActionKit.MenuBase):
+def cache_limits_command():
+    return ActionKit.Command(path="setting.cache_limits", display="Cache Limits...", func=open_cache_limits)
+
+
+class TrayCacheLimitCommands(ActionKit.MenuBase):
     NAME = ActionKit.MenuPath.SETTING
-    PRIORITY = 91
+    SCOPE = "tray"
+    PRIORITY = 90
 
     @classmethod
     def commands(cls):
-        return [
-            ":Cache",
-            ActionKit.Command(path="setting.cache_limits", display="Cache Limits...", func=open_cache_limits),
-        ]
-
-
-class TrayCacheLimitCommands(CacheLimitCommands):
-    SCOPE = "tray"
+        return [cache_limits_command()]

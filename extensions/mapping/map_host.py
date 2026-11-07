@@ -25,9 +25,9 @@ def thumb_bucket(size: float) -> int:
     return next((bucket for bucket in THUMB_BUCKETS if bucket >= size), THUMB_BUCKETS[-1])
 
 
-def fitting_thumb_bucket(size: float, count: int) -> int:
+def fitting_thumb_bucket(size: float, count: int, budget: int = THUMB_BUDGET) -> int:
     largest = thumb_bucket(size)
-    return next((bucket for bucket in reversed(THUMB_BUCKETS) if bucket <= largest and cache_limit(THUMB_BUDGET, bucket) >= count), THUMB_BUCKETS[0])
+    return next((bucket for bucket in reversed(THUMB_BUCKETS) if bucket <= largest and cache_limit(budget, bucket) >= count), THUMB_BUCKETS[0])
 
 
 def hover_bucket(size: int) -> int:
@@ -54,9 +54,10 @@ class MapHost(QtCore.QObject):
         super().__init__(parent)
         self.dispatcher = Dispatcher(pool=utility_pool, parent=self)
         thumb_size, hover_size = THUMB_BUCKETS[0], hover_bucket(256)
-        self.thumbs = ThumbnailLoader(self.on_thumbnail, size=thumb_size, cache_limit=cache_limit(THUMB_BUDGET, thumb_size), dispatcher=self.dispatcher)
-        self.hover_thumbs = ThumbnailLoader(self.on_hover_thumbnail, size=hover_size, cache_limit=cache_limit(HOVER_BUDGET, hover_size), dispatcher=self.dispatcher)
-        self.list_thumbs = ThumbnailLoader(self.on_list_thumbnail, size=LIST_BUCKET, cache_limit=cache_limit(LIST_BUDGET, LIST_BUCKET), dispatcher=self.dispatcher)
+        self.thumb_budget, self.hover_budget, self.list_budget = THUMB_BUDGET, HOVER_BUDGET, LIST_BUDGET
+        self.thumbs = ThumbnailLoader(self.on_thumbnail, size=thumb_size, cache_limit=cache_limit(self.thumb_budget, thumb_size), dispatcher=self.dispatcher)
+        self.hover_thumbs = ThumbnailLoader(self.on_hover_thumbnail, size=hover_size, cache_limit=cache_limit(self.hover_budget, hover_size), dispatcher=self.dispatcher)
+        self.list_thumbs = ThumbnailLoader(self.on_list_thumbnail, size=LIST_BUCKET, cache_limit=cache_limit(self.list_budget, LIST_BUCKET), dispatcher=self.dispatcher)
         self.preview = HoverPreview()
         self.sources: dict[str, str] = {}
         self.map_views: list = []
@@ -69,12 +70,19 @@ class MapHost(QtCore.QObject):
         self.destroyed.connect(partial(cancel_loaders, self.thumbs, self.hover_thumbs, self.list_thumbs))
         self.destroyed.connect(self.preview.deleteLater)
 
+    def set_cache_limit(self, limit_mb: int) -> None:
+        whole = THUMB_BUDGET + HOVER_BUDGET + LIST_BUDGET
+        self.thumb_budget, self.hover_budget, self.list_budget = (limit_mb * MEGABYTE * budget // whole for budget in (THUMB_BUDGET, HOVER_BUDGET, LIST_BUDGET))
+        resize_loader(self.thumbs, self.thumbs.size, self.thumb_budget)
+        resize_loader(self.hover_thumbs, self.hover_thumbs.size, self.hover_budget)
+        resize_loader(self.list_thumbs, self.list_thumbs.size, self.list_budget)
+
     def thumbnail(self, path: str) -> QtGui.QPixmap | None:
         self.list_thumbs.request([path])
         return self.list_thumbs.get(path)
 
     def map_thumbnails(self, paths: list[str], size: float) -> list[QtGui.QPixmap | None]:
-        resize_loader(self.thumbs, fitting_thumb_bucket(size, len(paths)), THUMB_BUDGET)
+        resize_loader(self.thumbs, fitting_thumb_bucket(size, len(paths), self.thumb_budget), self.thumb_budget)
         wanted = set(paths)
         self.thumbs.cancel([path for path in self.map_wanted if path not in wanted])
         self.map_wanted = list(paths)
@@ -84,7 +92,7 @@ class MapHost(QtCore.QObject):
     def set_hover_size(self, size: int) -> None:
         self.hover_size = size
         if size:
-            resize_loader(self.hover_thumbs, hover_bucket(size), HOVER_BUDGET)
+            resize_loader(self.hover_thumbs, hover_bucket(size), self.hover_budget)
         else:
             self.hide_hover()
 

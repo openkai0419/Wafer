@@ -147,6 +147,13 @@ def open_settings(ctx=None):
     port_spin.setRange(1, 65535)
     port_spin.setValue(settings.port())
 
+    thumb_cache_spin = QtWidgets.QSpinBox()
+    thumb_cache_spin.setObjectName("thumbCacheLimit")
+    thumb_cache_spin.setRange(64, 1024 * 1024)
+    thumb_cache_spin.setSingleStep(64)
+    thumb_cache_spin.setSuffix(" MiB")
+    thumb_cache_spin.setValue(settings.thumb_cache_mb())
+
     hosts_editor = AllowedHostsEditor(settings.allowed_hosts())
     hosts_editor.set_builtin(builtin_host_labels(host_combo.currentData()))
     host_combo.currentIndexChanged.connect(lambda: hosts_editor.set_builtin(builtin_host_labels(host_combo.currentData())))
@@ -161,6 +168,7 @@ def open_settings(ctx=None):
     form.addRow("Host", host_combo)
     form.addRow("Port", port_spin)
     form.addRow("Allowed hosts", hosts_editor)
+    form.addRow("Thumbnail cache on disk", thumb_cache_spin)
     form.addRow(note)
     form.addRow(buttons)
 
@@ -168,6 +176,7 @@ def open_settings(ctx=None):
 
     def save():
         settings.save(host_combo.currentData(), port_spin.value(), hosts_editor.hosts())
+        settings.save_thumb_cache_mb(thumb_cache_spin.value())
         dialog.accept()
 
     save_btn.clicked.connect(save)

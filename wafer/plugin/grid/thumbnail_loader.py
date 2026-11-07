@@ -5,17 +5,13 @@ from collections.abc import Callable, Iterable
 
 from PySide6 import QtCore, QtGui
 
-from ...core.files.image_cache import MemoryLimitedImageCache, fullsize_key
+from ...core.files.image_cache import fullsize_key
+from ...core.files.shared_image_cache import shared_image_cache
 from ...core.logs import AppLogger
-from ...core.store.settings import app_settings
 from ...qt.common.dispatcher import CancelToken, Dispatcher
 from ...qt.common.dpi import dpix
 from ...qt.common.thread import utility_pool
 from .handler import load_thumbnail
-
-
-def shared_image_cache() -> MemoryLimitedImageCache:
-    return MemoryLimitedImageCache(app_settings.get("window/cache_size", 500))
 
 
 def long_side(image: QtGui.QImage | QtGui.QPixmap | None) -> int:

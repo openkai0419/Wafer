@@ -13,6 +13,7 @@ _SECTION = "webui"
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8787
+DEFAULT_THUMB_CACHE_MB = 512
 
 HOST_LOCAL = "127.0.0.1"
 HOST_ALL = "0.0.0.0"
@@ -76,6 +77,23 @@ class WebUISettings:
 
     def allowed_hosts(self) -> tuple[str, ...]:
         return parse_allowed_hosts(self._read().get(_SECTION, "allowed_hosts", fallback=""))
+
+    def thumb_cache_mb(self) -> int:
+        try:
+            return self._read().getint(_SECTION, "thumb_cache_mb", fallback=DEFAULT_THUMB_CACHE_MB)
+        except ValueError:
+            return DEFAULT_THUMB_CACHE_MB
+
+    def save_thumb_cache_mb(self, limit_mb: int) -> None:
+        with _lock:
+            cp = self._read()
+            if not cp.has_section(_SECTION):
+                cp.add_section(_SECTION)
+            cp.set(_SECTION, "thumb_cache_mb", str(int(limit_mb)))
+            path = _path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                cp.write(f)
 
     def save(self, host: str, port: int, allowed_hosts: tuple[str, ...] = ()) -> None:
         with _lock:

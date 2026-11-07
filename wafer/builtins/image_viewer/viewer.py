@@ -1,7 +1,7 @@
 from __future__ import annotations
-from ...core.store.settings import app_settings
 from ...qt.common.dispatcher import CancelSlot, Dispatcher
-from ...core.files.image_cache import MemoryLimitedImageCache, fullsize_key
+from ...core.files.image_cache import fullsize_key
+from ...core.files.shared_image_cache import shared_image_cache
 from ...qt.common.pixmap import PixmapFactory
 from ...qt.common.thread import utility_pool
 from ...plugin.imageloader.handler import image_loader_resolver
@@ -37,7 +37,7 @@ class ImageViewer(MultiWidgetViewerPlugin):
         self.settingsChanged = CallbackSignal()
         self._dispatcher = Dispatcher(utility_pool)
         self._render_cancel = CancelSlot()
-        self._image_cache = MemoryLimitedImageCache(app_settings.get("window/cache_size", 500))
+        self._image_cache = shared_image_cache()
         self._display_count = 1
         self._direction = "right-to-left"
         self._match_size = True

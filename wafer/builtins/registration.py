@@ -50,6 +50,7 @@ def _import_builtin_modules():
         widget as _br_widget,
     )
     from .commands import (
+        cache_limits as _cmd_cache_limits,
         tools as _cmd_tools,
         database as _cmd_database,
         debug as _cmd_debug,
@@ -111,6 +112,7 @@ def _import_builtin_modules():
         _cmd_query,
         _cmd_workspace,
         _cmd_setting,
+        _cmd_cache_limits,
         tray,
         _cmd_window,
         _cmd_backend,

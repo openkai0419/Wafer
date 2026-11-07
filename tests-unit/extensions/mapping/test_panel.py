@@ -27,7 +27,7 @@ def test_plugin_restores_the_shared_view_settings_before_the_widget_exists(qtbot
 
 def test_shared_view_settings_keep_only_the_gear_values():
     assert ViewSettings.instance().to_dict() == {"params": ViewParams().to_dict()}
-    assert set(ViewParams().to_dict()) == {"outlier_percent", "point_size", "image_spacing", "max_images", "hover_size"}
+    assert set(ViewParams().to_dict()) == {"outlier_percent", "point_size", "image_spacing", "max_images", "hover_size", "thumbnail_cache"}
 
 
 def test_plugin_saves_the_current_view_settings():

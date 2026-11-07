@@ -9,6 +9,20 @@ class _Broker:
         self.kept = True
 
 
+def test_settings_saved_in_the_tray_reach_the_viewers():
+    sent = []
+
+    class _Node:
+        def send(self, *args, **kwargs):
+            sent.append((args, kwargs))
+
+    class _Tray:
+        _node = _Node()
+
+    TrayApp._broadcast_settings(_Tray(), {"window/cache_size": 1024})
+    assert sent == [(("settings.changed", {"window/cache_size": 1024}), {"dst": "viewer"})]
+
+
 def test_close_all_waits_for_viewers_then_force_closes_remaining(monkeypatch):
     calls = []
 

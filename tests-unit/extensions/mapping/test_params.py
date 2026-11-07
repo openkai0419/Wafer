@@ -16,7 +16,7 @@ def test_training_and_view_settings_are_separate():
     train = {name for name, _spec, _default in param_specs(TrainParams)}
     view = {name for name, _spec, _default in param_specs(ViewParams)}
     assert train == {"neighbors", "train_limit", "min_dist", "seed"}
-    assert view == {"outlier_percent", "point_size", "image_spacing", "max_images", "hover_size"}
+    assert view == {"outlier_percent", "point_size", "image_spacing", "max_images", "hover_size", "thumbnail_cache"}
     assert not train & {"ngram_min", "ngram_max", "svd_dims", "min_cluster_size", "min_samples"}
 
 

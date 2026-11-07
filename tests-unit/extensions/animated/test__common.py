@@ -3,6 +3,14 @@ from unittest.mock import MagicMock
 from PySide6 import QtCore, QtGui
 
 
+def _frame():
+    frame = MagicMock()
+    frame.width.return_value = 100
+    frame.height.return_value = 100
+    frame.depth.return_value = 32
+    return frame
+
+
 class TestIsAnimated:
     def test_animated_gif(self, tmp_path):
         from extensions.animated._common import is_animated
@@ -184,7 +192,7 @@ class TestFrameCache:
         from extensions.animated._common import FrameCache
 
         cache = FrameCache()
-        frames = [MagicMock()]
+        frames = [_frame()]
         delays = [100]
         cache.put("a.gif", frames, delays)
         result = cache.get("a.gif")
@@ -200,9 +208,9 @@ class TestFrameCache:
         from extensions.animated._common import FrameCache
 
         cache = FrameCache(max_entries=2)
-        cache.put("a.gif", [MagicMock()], [100])
-        cache.put("b.gif", [MagicMock()], [100])
-        cache.put("c.gif", [MagicMock()], [100])
+        cache.put("a.gif", [_frame()], [100])
+        cache.put("b.gif", [_frame()], [100])
+        cache.put("c.gif", [_frame()], [100])
         assert cache.get("a.gif") is None
         assert cache.get("b.gif") is not None
         assert cache.get("c.gif") is not None
@@ -211,10 +219,10 @@ class TestFrameCache:
         from extensions.animated._common import FrameCache
 
         cache = FrameCache(max_entries=2)
-        cache.put("a.gif", [MagicMock()], [100])
-        cache.put("b.gif", [MagicMock()], [100])
+        cache.put("a.gif", [_frame()], [100])
+        cache.put("b.gif", [_frame()], [100])
         cache.get("a.gif")
-        cache.put("c.gif", [MagicMock()], [100])
+        cache.put("c.gif", [_frame()], [100])
         assert cache.get("a.gif") is not None
         assert cache.get("b.gif") is None
 
@@ -222,7 +230,7 @@ class TestFrameCache:
         from extensions.animated._common import FrameCache
 
         cache = FrameCache()
-        cache.put("a.gif", [MagicMock()], [100])
+        cache.put("a.gif", [_frame()], [100])
         cache.clear()
         assert cache.get("a.gif") is None
 
@@ -230,7 +238,7 @@ class TestFrameCache:
         from extensions.animated._common import FrameCache
 
         cache = FrameCache()
-        cache.put("a.gif", [MagicMock()], [100])
+        cache.put("a.gif", [_frame()], [100])
         cache.remove("a.gif")
         assert cache.get("a.gif") is None
 
@@ -244,8 +252,8 @@ class TestFrameCache:
         from extensions.animated._common import FrameCache
 
         cache = FrameCache(max_entries=2)
-        frames1 = [MagicMock()]
-        frames2 = [MagicMock(), MagicMock()]
+        frames1 = [_frame()]
+        frames2 = [_frame(), _frame()]
         cache.put("a.gif", frames1, [100])
         cache.put("a.gif", frames2, [50, 50])
         result = cache.get("a.gif")
@@ -287,10 +295,7 @@ class TestFrameCache:
         def writer(start):
             try:
                 for i in range(50):
-                    mock_pm = MagicMock()
-                    mock_pm.width.return_value = 100
-                    mock_pm.height.return_value = 100
-                    cache.put(f"{start}_{i}.gif", [mock_pm], [100])
+                    cache.put(f"{start}_{i}.gif", [_frame()], [100])
             except Exception as e:
                 errors.append(e)
 
@@ -367,3 +372,131 @@ class TestAnimationDriver:
         driver._tick()
         cell.advance.assert_called_once()
         driver.unregister(cell)
+
+
+class TestFrameCacheByteLimit:
+    def _frames(self, count=1, side=100):
+        return [QtGui.QPixmap(side, side) for _ in range(count)], [100] * count
+
+    def _bytes(self, frames):
+        return sum(p.width() * p.height() * p.depth() // 8 for p in frames)
+
+    def test_oldest_entries_leave_when_the_bytes_run_out(self, qtbot):
+        from extensions.animated._common import FrameCache
+
+        first, delays = self._frames()
+        cache = FrameCache(max_entries=128, max_bytes=self._bytes(first) * 2)
+        cache.put("a", first, delays)
+        cache.put("b", *self._frames())
+        cache.put("c", *self._frames())
+        assert "a" not in cache and "b" in cache and "c" in cache
+
+    def test_the_entry_count_still_limits_small_frames(self, qtbot):
+        from extensions.animated._common import FrameCache
+
+        cache = FrameCache(max_entries=2, max_bytes=2**40)
+        for key in "abc":
+            cache.put(key, *self._frames())
+        assert "a" not in cache and "b" in cache and "c" in cache
+
+    def test_an_entry_larger_than_the_limit_is_not_cached_and_keeps_the_others(self, qtbot):
+        from extensions.animated._common import FrameCache
+
+        small, delays = self._frames()
+        cache = FrameCache(max_entries=128, max_bytes=self._bytes(small) * 2)
+        cache.put("small", small, delays)
+        cache.put("huge", *self._frames(count=3))
+        assert "huge" not in cache and "small" in cache
+
+    def test_replacing_or_removing_an_entry_returns_its_bytes(self, qtbot):
+        from extensions.animated._common import FrameCache
+
+        frames, delays = self._frames()
+        cache = FrameCache(max_entries=128, max_bytes=self._bytes(frames))
+        cache.put("a", frames, delays)
+        cache.put("a", *self._frames())
+        cache.remove("a")
+        cache.put("b", *self._frames())
+        assert "b" in cache
+        cache.clear()
+        cache.put("c", *self._frames())
+        assert "c" in cache
+
+    def test_an_insufficient_entry_returns_its_bytes(self, qtbot):
+        from extensions.animated._common import FrameCache
+
+        frames, delays = self._frames()
+        cache = FrameCache(max_entries=128, max_bytes=self._bytes(frames))
+        cache.put("a", frames, delays)
+        assert cache.get_if_sufficient("a", QtCore.QSize(500, 500)) is None
+        cache.put("b", *self._frames())
+        assert "b" in cache
+
+    def test_lowering_the_limit_evicts_at_once(self, qtbot):
+        from extensions.animated._common import FrameCache
+
+        first, delays = self._frames()
+        cache = FrameCache(max_entries=128, max_bytes=self._bytes(first) * 2)
+        cache.put("a", first, delays)
+        cache.put("b", *self._frames())
+        cache.set_byte_limit(self._bytes(first))
+        assert "a" not in cache and "b" in cache
+
+
+class TestCacheLimitSetting:
+    def _restore(self):
+        from extensions.animated._common import _grid_cache, _viewer_cache
+
+        return _grid_cache.max_bytes, _viewer_cache.max_bytes
+
+    def test_default_keeps_the_largest_measured_gifs(self):
+        from extensions.animated.settings import CACHE_LIMIT_DEFAULT_MB
+
+        assert CACHE_LIMIT_DEFAULT_MB == 2560
+
+    def test_changing_the_setting_applies_to_grid_and_viewer_alike(self, qapp):
+        from extensions.animated._common import _grid_cache, _viewer_cache
+        from extensions.animated.settings import CACHE_LIMIT_KEY
+        from wafer.core.store.settings import app_settings
+
+        grid, viewer = self._restore()
+        try:
+            app_settings.apply_remote({CACHE_LIMIT_KEY: 1024})
+            assert _grid_cache.max_bytes == 1024 * 1024 * 1024
+            assert _viewer_cache.max_bytes == 1024 * 1024 * 1024
+        finally:
+            app_settings.settings.remove(CACHE_LIMIT_KEY)
+            _grid_cache.set_byte_limit(grid)
+            _viewer_cache.set_byte_limit(viewer)
+
+
+class TestCacheLimitCommand:
+    def test_saves_and_applies_the_value(self, qapp, monkeypatch):
+        from extensions.animated import viewer_commands
+        from extensions.animated._common import _grid_cache, _viewer_cache
+        from extensions.animated.settings import CACHE_LIMIT_KEY
+        from wafer.core.store.settings import app_settings
+
+        grid, viewer = _grid_cache.max_bytes, _viewer_cache.max_bytes
+        monkeypatch.setattr(viewer_commands.QtWidgets.QInputDialog, "getInt", lambda *args, **kwargs: (1024, True))
+        ctx = MagicMock()
+        ctx.get.return_value = None
+        try:
+            viewer_commands.set_cache_limit(ctx)
+            assert app_settings.get(CACHE_LIMIT_KEY, 0, int) == 1024
+            assert _grid_cache.max_bytes == 1024 * 1024 * 1024 and _viewer_cache.max_bytes == 1024 * 1024 * 1024
+        finally:
+            app_settings.settings.remove(CACHE_LIMIT_KEY)
+            _grid_cache.set_byte_limit(grid)
+            _viewer_cache.set_byte_limit(viewer)
+
+    def test_cancel_changes_nothing(self, qapp, monkeypatch):
+        from extensions.animated import viewer_commands
+        from extensions.animated._common import _grid_cache
+
+        before = _grid_cache.max_bytes
+        monkeypatch.setattr(viewer_commands.QtWidgets.QInputDialog, "getInt", lambda *args, **kwargs: (1, False))
+        ctx = MagicMock()
+        ctx.get.return_value = None
+        viewer_commands.set_cache_limit(ctx)
+        assert _grid_cache.max_bytes == before

@@ -6,7 +6,11 @@ from functools import lru_cache
 from PySide6 import QtCore, QtGui
 
 from wafer.core.profiling import profiler
+from wafer.core.store.settings import app_settings
 
+from .settings import CACHE_LIMIT_DEFAULT_MB, CACHE_LIMIT_KEY
+
+_MEBIBYTE = 1024 * 1024
 _PNG_SIGNATURE_LEN = 8
 _CHUNK_HEADER_LEN = 8
 _CHUNK_CRC_LEN = 4
@@ -133,11 +137,30 @@ def decode_frames(path: str, size: QtCore.QSize | None, is_stale) -> tuple[list[
     return pixmaps, delays
 
 
+def _frames_bytes(frames: list[QtGui.QPixmap]) -> int:
+    return sum(frame.width() * frame.height() * frame.depth() // 8 for frame in frames)
+
+
 class FrameCache:
-    def __init__(self, max_entries=128):
+    def __init__(self, max_entries=128, max_bytes=CACHE_LIMIT_DEFAULT_MB * _MEBIBYTE):
         self._max = max_entries
+        self.max_bytes = max_bytes
+        self._total_bytes = 0
         self._cache: OrderedDict[str, tuple[list[QtGui.QPixmap], list[int]]] = OrderedDict()
         self._lock = threading.Lock()
+
+    def _drop(self, path: str) -> None:
+        frames, _delays = self._cache.pop(path)
+        self._total_bytes -= _frames_bytes(frames)
+
+    def _evict_to_limits(self) -> None:
+        while self._cache and (len(self._cache) > self._max or self._total_bytes > self.max_bytes):
+            self._drop(next(iter(self._cache)))
+
+    def set_byte_limit(self, max_bytes: int) -> None:
+        with self._lock:
+            self.max_bytes = max_bytes
+            self._evict_to_limits()
 
     @profiler.profile
     def get(self, path: str) -> tuple[list[QtGui.QPixmap], list[int]] | None:
@@ -157,19 +180,22 @@ class FrameCache:
             if frames:
                 first = frames[0]
                 if first.width() < size.width() or first.height() < size.height():
-                    self._cache.pop(path)
+                    self._drop(path)
                     return None
             self._cache.move_to_end(path)
             return entry
 
     @profiler.profile
     def put(self, path: str, frames: list[QtGui.QPixmap], delays: list[int]):
+        size = _frames_bytes(frames)
         with self._lock:
             if path in self._cache:
-                self._cache.pop(path)
-            elif len(self._cache) >= self._max:
-                self._cache.popitem(last=False)
+                self._drop(path)
+            if size > self.max_bytes:
+                return
             self._cache[path] = (frames, delays)
+            self._total_bytes += size
+            self._evict_to_limits()
 
     def __contains__(self, path: str) -> bool:
         with self._lock:
@@ -177,11 +203,13 @@ class FrameCache:
 
     def remove(self, path: str):
         with self._lock:
-            self._cache.pop(path, None)
+            if path in self._cache:
+                self._drop(path)
 
     def clear(self):
         with self._lock:
             self._cache.clear()
+            self._total_bytes = 0
 
 
 class AnimationDriver(QtCore.QObject):
@@ -222,6 +250,20 @@ _driver: AnimationDriver | None = None
 _viewer_driver: AnimationDriver | None = None
 _grid_cache = FrameCache()
 _viewer_cache = FrameCache(max_entries=8)
+
+
+def apply_cache_limit(limit_mb: int) -> None:
+    _grid_cache.set_byte_limit(limit_mb * _MEBIBYTE)
+    _viewer_cache.set_byte_limit(limit_mb * _MEBIBYTE)
+
+
+def _on_setting_changed(key: str) -> None:
+    if key == CACHE_LIMIT_KEY:
+        apply_cache_limit(app_settings.get(CACHE_LIMIT_KEY, CACHE_LIMIT_DEFAULT_MB, int))
+
+
+apply_cache_limit(app_settings.get(CACHE_LIMIT_KEY, CACHE_LIMIT_DEFAULT_MB, int))
+app_settings.key_changed.connect(_on_setting_changed)
 
 
 def get_driver() -> AnimationDriver:

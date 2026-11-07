@@ -9,6 +9,7 @@ from ...qt.common.rate_limit import qt_debounce
 from ...core.ipc.broker import Broker
 from ...core.ipc.node import Node
 from ...core.platform.process import AppProcess
+from ...core.store.settings import app_settings
 import threading
 
 
@@ -40,11 +41,15 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self._node.subscribe("app.quit_all", lambda msg: self._request_shutdown_all(then_restart=False) or True)
         self._node.subscribe("app.restart_all", lambda msg: self._request_shutdown_all(then_restart=True) or True)
         self._node.start(self.broker.port)
+        app_settings.committed.connect(self._broadcast_settings)
         AppLogger.set_node(self._node, role="tray")
         UI.register_instance("Tray", self)
         self._close_all_ready.connect(QtWidgets.QApplication.quit)
         self.setContextMenu(self._build_menu())
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_quit)
+
+    def _broadcast_settings(self, updates):
+        self._node.send("settings.changed", dict(updates), dst="viewer")
 
     def _build_menu(self):
         session = Menu.session(None, seed_ctx=self._ctx())

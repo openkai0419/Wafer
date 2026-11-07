@@ -46,14 +46,15 @@ wafer の永続化クラスは「**スコープ**」と「**用途**」の 2 軸
 | `CommandOptionStore` | JSON | App 全体 | コマンドシステム |
 | `DialogLayoutStore` | INI | Dialog ごと | 個別ダイアログ |
 | `ActionGroupStateManager` | (in-memory) | App 全体 | コマンドシステム |
-| `WebUISettings` | INI（`webui_settings.ini`） | App 全体 | WebUI サーバー（host / port / allowed_hosts。Qt 非依存で headless からも読む） |
+| `WebUISettings` | INI（`webui_settings.ini`） | App 全体 | WebUI サーバー（host / port / allowed_hosts / サムネイルのディスク上限。Qt 非依存で headless からも読む） |
+| `core/db/cache_limit.py` | INI（`cache_settings.ini`） | App 全体 | DB キャッシュのプロセス上限（Qt 非依存。Indexer・worker・WebUI からも読む） |
 
 ## よくある間違い
 
 - **「最後に開いた DB」を `app_settings` に書かない。** WindowSlot ごとに違うため、`WorkspaceStore.get_last_used_database_name()` から取る。
 - **右クリックメニュー（Open with Wafer）のオン・オフを `app_settings` に書かない。** レジストリのキー（`HKCU\Software\Classes\*\shell\Wafer`）そのものが記録（`core/platform/explorer_menu.py`）。
 - **「どの Workspace が開いているか」を `workspace.json`（`active_slot_ids`）に書いて判定しない。** 真実は `.temp/workspaces/<slot_id>.lock` の OS ファイルロック（`core/platform/workspace_lock.py`）。プロセスが落ちれば OS がロックを外すので古い記録が残らない。
-- **プラグイン設定を `app_settings` に書かない。** プラグインごとに `PluginConfig` を用意する（wd14 / florence / exiftool が参考実装）。
+- **プラグイン設定を `app_settings` に書かない。** プラグインごとに `PluginConfig` を用意する（wd14 / florence / exiftool が参考実装）。例外は、開いている全 Viewer へすぐ反映したい Viewer 専用の値で、`<拡張名>/キー` で `app_settings` に置いて `key_changed` で受ける（color のパレット数、animated のキャッシュ上限）。
 - **`StateStore` は永続化しない。** 自分で JSON を書こうとしないこと。`WindowSlot` に渡すだけのインメモリレジストリ。
 - **`ActionGroupStateManager` で「現在チェックされている項目」を保持しない。** 状態は UI/データ側が真実で、コマンドの `checked` リゾルバ経由で都度問い合わせる。
 - **パネルの「設定値」と「UI 状態」を混ぜない。**

@@ -7,10 +7,10 @@ from ....qt.common.rate_limit import qt_debounce, qt_throttle
 from ....qt.common.visibility import WidgetVisibilityWatcher
 from ....qt.common.dispatcher import Dispatcher
 from ....core.files.image_cache import fullsize_key
-from ....core.store.settings import app_settings
+from ....core.files.shared_image_cache import shared_image_cache
 from ....plugin.grid.handler import grid_resolver, WidgetNotifier
 from ....plugin.grid.base import WidgetGridPlugin as _WidgetGridPlugin
-from .cachemanager import MemoryLimitedImageCache, GraphicsItemPool, AdditionalWidgetPool
+from .cachemanager import GraphicsItemPool, AdditionalWidgetPool
 from ....plugin.layout.calc import LayoutData
 from .pipeline import GridPipeline
 from .items import GridItemModel
@@ -138,7 +138,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.layout_mode = "justified"
         self.scroll_anchor = "center"
         self.follow_selection_on_update = False
-        self.image_cache = MemoryLimitedImageCache(app_settings.get("window/cache_size", 500))
+        self.image_cache = shared_image_cache()
         self.pixmap_item_pool = GraphicsItemPool(self._scene)
         self.additional_pool = AdditionalWidgetPool(grid_resolver)
         self.additional_pool.warm_up(self.viewport())

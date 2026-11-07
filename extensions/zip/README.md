@@ -7,6 +7,10 @@ Zip support is implemented as normal Wafer plugins: Collector, Grid, and Viewer.
 - Rendering materializes the child into the Zip extension cache and delegates the real path back to normal Wafer plugin resolution.
 - The Zip extension does not classify child formats. Images, videos, animated files, and system thumbnail fallback are selected by existing plugins after materialization.
 
+## Cache Limit
+
+`Widgets > Zip > Cache Limit...` sets the disk space for extracted files. The default is 5 GiB. It applies from the next sweep (every 5 minutes), which removes the oldest files first.
+
 ## Limitations (MVP)
 
 - **In-archive file operations target the parent `.zip` file.** Selecting an in-archive entry and invoking `Delete` / `Copy` / `Cut` / `Rename` / `BatchRename` / `PasteHere` / `OS Shell Menu` operates on the whole parent archive (not on the individual entry). This is intentional for MVP and is enforced by the file command layer (`source` resolves to the parent archive for virtual paths).

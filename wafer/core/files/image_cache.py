@@ -46,9 +46,17 @@ class MemoryLimitedImageCache:
             self.cache[key] = image
             self.cache.move_to_end(key)
             self.current_bytes += image_size
-            while self.current_bytes > self.max_bytes and self.cache:
-                _old_key, old_image = self.cache.popitem(last=False)
-                self.current_bytes -= self._estimate_image_size(old_image)
+            self._evict_to_limit()
+
+    def _evict_to_limit(self):
+        while self.current_bytes > self.max_bytes and self.cache:
+            _old_key, old_image = self.cache.popitem(last=False)
+            self.current_bytes -= self._estimate_image_size(old_image)
+
+    def set_limit(self, max_mbytes):
+        with self._lock:
+            self.max_bytes = max_mbytes * 1024 * 1024
+            self._evict_to_limit()
 
     @profiler.profile
     def __getitem__(self, key):

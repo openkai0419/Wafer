@@ -37,3 +37,11 @@ def test_thumb_cache_singleton_rebinds_on_dir_change(monkeypatch, tmp_path):
     b = tmp_path / "b"
     monkeypatch.setattr(media, "thumb_cache_dir", lambda: str(b))
     assert media.thumb_cache() is not first
+
+
+def test_thumb_cache_uses_the_saved_limit(monkeypatch, tmp_path):
+    monkeypatch.setattr(media, "_thumb_cache", None)
+    monkeypatch.setattr(media, "_thumb_cache_dir", None)
+    monkeypatch.setattr(media, "thumb_cache_dir", lambda: str(tmp_path))
+    monkeypatch.setattr("wafer.app.webui.settings.WebUISettings.thumb_cache_mb", lambda self: 128)
+    assert media.thumb_cache().size_limit_bytes == 128 * 1024 * 1024

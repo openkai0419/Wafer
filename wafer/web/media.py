@@ -12,7 +12,6 @@ NATIVE_VIDEO_EXTS = frozenset({".mp4", ".webm", ".m4v", ".ogv"})
 
 THUMB_SIZE_DEFAULT = 256
 THUMB_SIZE_MAX = 1024
-THUMB_CACHE_SIZE_LIMIT_BYTES = 512 * 1024 * 1024
 
 
 def classify(path: str) -> str:
@@ -38,7 +37,9 @@ def thumb_cache() -> DiskCache:
     global _thumb_cache, _thumb_cache_dir
     directory = thumb_cache_dir()
     if _thumb_cache is None or _thumb_cache_dir != directory:
-        _thumb_cache = DiskCache(directory, size_limit_bytes=THUMB_CACHE_SIZE_LIMIT_BYTES)
+        from wafer.app.webui.settings import WebUISettings
+
+        _thumb_cache = DiskCache(directory, size_limit_bytes=WebUISettings().thumb_cache_mb() * 1024 * 1024)
         _thumb_cache_dir = directory
     return _thumb_cache
 

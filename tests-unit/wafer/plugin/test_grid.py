@@ -75,6 +75,19 @@ def test_load_thumbnail_keeps_a_small_source_at_its_own_size(tmp_path):
     assert (result.width(), result.height()) == (20, 30)
 
 
+def test_small_rotated_jpeg_thumbnail_follows_exif(tmp_path):
+    from PySide6 import QtCore
+
+    from wafer.plugin.grid.handler import load_thumbnail
+
+    img_path = tmp_path / "rotated.jpg"
+    exif = Image.Exif()
+    exif[0x0112] = 6
+    Image.new("RGB", (20, 30)).save(str(img_path), exif=exif)
+    result = load_thumbnail(str(img_path), QtCore.QSize(128, 128))
+    assert (result.width(), result.height()) == (30, 20)
+
+
 def test_load_thumbnail_still_shrinks_a_large_source(tmp_path):
     from PySide6 import QtCore
 

@@ -136,24 +136,24 @@ def _jpeg_dimensions(data):
 
 
 def _imread_flags_for_size(ext, size, data=None):
-    if size is None:
+    if ext not in (".jpg", ".jpeg"):
         return cv2.IMREAD_UNCHANGED
+    if size is None:
+        return cv2.IMREAD_ANYCOLOR
     if isinstance(size, int):
         tw = th = size
     else:
         tw, th = size.width(), size.height()
-    if ext in (".jpg", ".jpeg"):
-        dims = _jpeg_dimensions(data) if data is not None else None
-        if dims is not None:
-            ow, oh = dims
-            if ow // 8 >= tw and oh // 8 >= th:
-                return cv2.IMREAD_REDUCED_COLOR_8
-            if ow // 4 >= tw and oh // 4 >= th:
-                return cv2.IMREAD_REDUCED_COLOR_4
-            if ow // 2 >= tw and oh // 2 >= th:
-                return cv2.IMREAD_REDUCED_COLOR_2
-        return cv2.IMREAD_COLOR
-    return cv2.IMREAD_UNCHANGED
+    dims = _jpeg_dimensions(data) if data is not None else None
+    if dims is not None:
+        ow, oh = dims
+        if ow // 8 >= tw and oh // 8 >= th:
+            return cv2.IMREAD_REDUCED_COLOR_8
+        if ow // 4 >= tw and oh // 4 >= th:
+            return cv2.IMREAD_REDUCED_COLOR_4
+        if ow // 2 >= tw and oh // 2 >= th:
+            return cv2.IMREAD_REDUCED_COLOR_2
+    return cv2.IMREAD_COLOR
 
 
 def _classify_opencv_array(arr, ext):

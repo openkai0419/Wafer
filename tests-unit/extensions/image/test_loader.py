@@ -86,6 +86,33 @@ class TestLoadImageFullSize:
         assert img.height() == 30
 
 
+@pytest.fixture()
+def rotated_jpeg(tmp_path):
+    p = tmp_path / "rotated.jpg"
+    exif = Image.Exif()
+    exif[0x0112] = 6
+    Image.new("RGB", (100, 200), (200, 30, 30)).save(str(p), exif=exif)
+    return str(p)
+
+
+class TestExifOrientation:
+    def test_full_size_qimage_is_rotated(self, rotated_jpeg):
+        img = load_image(rotated_jpeg)
+        assert (img.width(), img.height()) == (200, 100)
+
+    def test_sized_qimage_is_rotated_like_the_full_size(self, rotated_jpeg):
+        img = load_image(rotated_jpeg, 64)
+        assert img.width() > img.height()
+
+    def test_full_size_numpy_is_rotated(self, rotated_jpeg):
+        assert ImageFileLoader().load(rotated_jpeg).shape[:2] == (100, 200)
+
+    def test_grayscale_full_size_stays_one_channel(self, tmp_path):
+        p = tmp_path / "gray.jpg"
+        Image.new("L", (100, 200), 128).save(str(p))
+        assert ImageFileLoader().load(str(p)).shape == (200, 100)
+
+
 class TestLoadImageResized:
     def test_downscale(self, rgb_png):
         size = QtCore.QSize(40, 30)
@@ -209,6 +236,9 @@ class TestImreadFlagsForSize:
 
     def test_none_size(self):
         assert _imread_flags_for_size(".png", None) == cv2.IMREAD_UNCHANGED
+
+    def test_full_size_jpeg_applies_orientation(self):
+        assert _imread_flags_for_size(".jpg", None) == cv2.IMREAD_ANYCOLOR
 
     def test_png_with_size(self):
         size = QtCore.QSize(200, 200)

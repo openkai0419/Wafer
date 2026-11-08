@@ -592,6 +592,46 @@ def test_concurrent_writes_no_error(tmp_path):
     db.close()
 
 
+def test_checkpoint_during_writes_from_other_threads_fails_nothing(tmp_path, monkeypatch):
+    import wafer.core.db.file_db as file_db_module
+
+    db = _setup_db_with_pending(tmp_path, sources_count=2000)
+    sources = [f"src{i}" for i in range(2000)]
+    failures = []
+    real_debug = file_db_module.AppLogger.debug
+
+    def record_checkpoint_failure(message, *args, **kwargs):
+        if message.startswith("wal_checkpoint"):
+            failures.append(message)
+        return real_debug(message, *args, **kwargs)
+
+    monkeypatch.setattr(file_db_module.AppLogger, "debug", record_checkpoint_failure)
+    writing = threading.Event()
+    writing.set()
+
+    def writer():
+        try:
+            for _ in range(100):
+                db.mark_dispatched(sources, "exif")
+                db.reset_stale_dispatched(["exif"])
+        except Exception as e:
+            failures.append(f"writer: {type(e).__name__}: {e}")
+        finally:
+            writing.clear()
+
+    def checkpointer():
+        while writing.is_set():
+            db.try_checkpoint("PASSIVE")
+
+    threads = [threading.Thread(target=writer), threading.Thread(target=checkpointer)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    db.close()
+    assert failures == []
+
+
 def _setup_db_with_collected(tmp_path, collectors=("exif",)):
     db = FileDB(tmp_path / "test.db")
     db.start()

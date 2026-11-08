@@ -242,9 +242,9 @@ class FileDB:
 
     def try_checkpoint(self, mode: str = "TRUNCATE"):
         try:
-            conn = self.conn or self.read_conn
-            cur = conn.execute(f"PRAGMA wal_checkpoint({mode})")
-            cur.close()
+            with self._write_lock:
+                conn = self.conn or self.read_conn
+                conn.execute(f"PRAGMA wal_checkpoint({mode})").close()
         except Exception as e:
             AppLogger.debug(f"wal_checkpoint({mode}) failed: {e}")
 
@@ -866,12 +866,12 @@ class FileDB:
                     AppLogger.info("RUNNING ANALYZE")
                     cur.execute("ANALYZE")
                     self.conn.commit()
-                    self.try_checkpoint()
                 finally:
                     cur.close()
         except Exception as e:
             AppLogger.warning(f"DATABASE CLEANUP FAILED: {e}", exc=e)
         else:
+            self.try_checkpoint()
             AppLogger.info("DATABASE CLEANUP END")
 
     @staticmethod

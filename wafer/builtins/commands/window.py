@@ -74,7 +74,7 @@ def restart_all(ctx):
     w = _win(ctx)
     if w:
         w._perform_system_restart(include_self=True)
-        if WebUILock.is_open():
+        if WebUILock.is_open() and not WebUILock.runs_headless():
             replace_webui()
         w.close_by_restart()
         return

@@ -73,6 +73,32 @@ def test_claim_webui_gives_up_when_the_owner_has_no_window(activated):
         held.release()
 
 
+def test_claim_webui_stops_at_once_when_a_headless_webui_holds_the_lock(activated, monkeypatch):
+    held = WebUILock.acquire()
+    held.mark_headless()
+    attempts = []
+    monkeypatch.setattr(WebUILock, "acquire", classmethod(lambda cls: attempts.append(1)))
+    try:
+        assert claim_webui() is None
+        assert activated == []
+        assert len(attempts) == 1
+    finally:
+        held.release()
+
+
+def test_runs_headless_follows_the_owner(activated):
+    held = WebUILock.acquire()
+    try:
+        assert WebUILock.runs_headless() is False
+        held.set_window(77)
+        assert WebUILock.runs_headless() is False
+        held.mark_headless()
+        assert WebUILock.runs_headless() is True
+    finally:
+        held.release()
+    assert WebUILock.runs_headless() is False
+
+
 def test_activate_webui_window_needs_an_owner(activated):
     assert activate_webui_window() is False
     assert activated == []

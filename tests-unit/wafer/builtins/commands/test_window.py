@@ -156,6 +156,20 @@ class TestRestartAllPendingInstall:
 
         assert [name for name, _, _ in order.mock_calls if "__" not in name] == ["win._perform_system_restart", "replace_webui", "win.close_by_restart"]
 
+    def test_no_pending_leaves_a_headless_webui_running(self, monkeypatch):
+        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_scope", lambda self: None)
+        monkeypatch.setattr(window_commands.installer_queue, "has_pending_queue", lambda _dir: False)
+        monkeypatch.setattr(window_commands.WebUILock, "is_open", classmethod(lambda cls: True))
+        monkeypatch.setattr(window_commands.WebUILock, "runs_headless", staticmethod(lambda: True))
+        replaced = []
+        monkeypatch.setattr(window_commands, "replace_webui", lambda: replaced.append(True))
+
+        win = MagicMock()
+        window_commands.restart_all(_Ctx(MainWindow=win))
+
+        win._perform_system_restart.assert_called_once_with(include_self=True)
+        assert replaced == []
+
 
 class TestWebUI:
     def test_close_all_delegates_to_tray_via_ipc(self, monkeypatch):

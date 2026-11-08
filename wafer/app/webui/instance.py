@@ -8,6 +8,7 @@ from ...core.store.workspace import WorkspaceStore
 
 SESSION_ID = "webui"
 LOCK_FILENAME = "webui_window.lock"
+HEADLESS_HWND = 0
 
 
 def lock_path() -> str:
@@ -27,12 +28,21 @@ class WebUILock(WindowLock):
         probe.release()
         return False
 
+    def mark_headless(self) -> None:
+        self.set_window(HEADLESS_HWND)
+
+    @staticmethod
+    def runs_headless() -> bool:
+        owner = WindowLock.read_owner_at(lock_path())
+        return owner is not None and owner.hwnd == HEADLESS_HWND
+
 
 def activate_webui_window() -> bool:
     owner = WindowLock.read_owner_at(lock_path())
     if owner is None:
         return False
-    activate_window(owner.hwnd)
+    if owner.hwnd != HEADLESS_HWND:
+        activate_window(owner.hwnd)
     return True
 
 

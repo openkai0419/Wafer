@@ -246,6 +246,8 @@ def _entry_webui(args):
     if lock is None:
         AppLogger.info('WebUI is already running.')
         return
+    if args.no_ui:
+        lock.mark_headless()
     try:
         if not args.no_tray:
             _ensure_tray_unless_pending()

@@ -176,12 +176,16 @@ class ParserDispatcher:
             if not paths:
                 continue
             self._writer.mark_dispatched(paths, status_name)
+            try:
+                self._node.send_reliable(
+                    "parse.batch",
+                    {"paths": paths, "file_info": file_info, "metadata": metadata},
+                    dst=dst,
+                    db=self._db_name,
+                )
+            except Exception:
+                self._writer.unmark_dispatched(paths, status_name)
+                raise
             self._scheduler.note_activity()
             self._progress.increment(0, len(paths))
-            self._node.send_reliable(
-                "parse.batch",
-                {"paths": paths, "file_info": file_info, "metadata": metadata},
-                dst=dst,
-                db=self._db_name,
-            )
             AppLogger.info(f"[ParserDispatcher] Sent {len(paths)} paths to {dst}")

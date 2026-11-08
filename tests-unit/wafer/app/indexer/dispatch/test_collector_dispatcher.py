@@ -1,3 +1,4 @@
+import sqlite3
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -94,6 +95,21 @@ def test_batch_goes_to_the_collector_through_the_outbox(real_db_dispatcher):
     assert call.kwargs == {"dst": "collector-exif", "db": "testdb"}
     assert sorted(call.args[1]["file_info"]) == sorted(call.args[1]["paths"])
     dispatcher._node.send.assert_not_called()
+
+
+def test_a_batch_that_could_not_be_sent_is_sent_again(real_db_dispatcher):
+    dispatcher, writer, _lane = real_db_dispatcher
+    dispatcher._node.send_reliable.side_effect = [sqlite3.OperationalError("database is locked"), None]
+
+    with pytest.raises(sqlite3.OperationalError):
+        dispatcher._dispatch_pending()
+    assert set(_statuses(writer).values()) == {"pending"}
+    dispatcher._progress.increment.assert_not_called()
+
+    dispatcher._dispatch_pending()
+    first, second = _sent_paths(dispatcher)
+    assert second == first
+    assert sorted(_statuses(writer)[s] for s in second) == ["dispatched", "dispatched"]
 
 
 def test_undelivered_batch_holds_back_the_next_one(real_db_dispatcher):

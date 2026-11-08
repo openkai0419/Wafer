@@ -155,6 +155,10 @@ class DatabaseWriter:
         self._db.mark_dispatched(sources, collector)
 
     @profiler.profile
+    def unmark_dispatched(self, sources, collector):
+        self._db.unmark_dispatched(sources, collector)
+
+    @profiler.profile
     def mark_collected(self, sources, collector):
         self._db.mark_collected(sources, collector)
 

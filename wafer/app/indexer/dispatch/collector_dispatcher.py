@@ -162,12 +162,16 @@ class CollectorDispatcher:
             # Before the batch leaves, not through the scheduler: a mark that runs later would
             # turn a source set pending again meanwhile into 'dispatched' with no batch behind it.
             self._writer.mark_dispatched(paths, collector)
+            try:
+                self._node.send_reliable(
+                    "collect.batch",
+                    {"paths": paths, "file_info": file_info},
+                    dst=dst,
+                    db=self._db_name,
+                )
+            except Exception:
+                self._writer.unmark_dispatched(paths, collector)
+                raise
             self._scheduler.note_activity()
             self._progress.increment(0, len(paths))
-            self._node.send_reliable(
-                "collect.batch",
-                {"paths": paths, "file_info": file_info},
-                dst=dst,
-                db=self._db_name,
-            )
             AppLogger.info(f"[Dispatcher] Sent {len(paths)} paths to {dst}")

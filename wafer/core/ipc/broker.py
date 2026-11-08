@@ -102,6 +102,7 @@ class Broker:
         self._restore_debounce: threading.Timer | None = None
         self._restore_debounce_lock = threading.Lock()
         self._restore_debounce_sec: float = 1.0
+        self._restore_webui_kept = False
         self._workspace_store_factory: Any = None
 
         self._io_thread = threading.Thread(target=self._io_loop, daemon=True)
@@ -161,6 +162,8 @@ class Broker:
                     self._sync_active_slots()
                 else:
                     self._on_viewer_connected(session_id)
+            elif role == "webui" and session_id:
+                self._on_webui_connected()
             AppLogger.info(f"peer added: {node_id} role={role} db={db_set} session={session_id}")
             return viewer_id
 
@@ -173,8 +176,8 @@ class Broker:
             self._by_role.get(peer.role, set()).discard(ident)
             self._by_node_id.pop(peer.node_id, None)
             self._viewer_ids.pop(ident, None)
-            if peer.role == "viewer":
-                self._on_viewer_disconnected()
+            if peer.role == "viewer" or (peer.role == "webui" and peer.session_id):
+                self._on_restorable_peer_disconnected()
 
     def _refresh_peer(self, ident: bytes):
         with self._lock:
@@ -362,6 +365,23 @@ class Broker:
             viewer_idents = self._by_role.get("viewer", set())
             return [self._peers[i].session_id for i in viewer_idents if i in self._peers and self._peers[i].session_id]
 
+    def is_webui_connected(self) -> bool:
+        with self._lock:
+            return any(self._peers[i].session_id for i in self._by_role.get("webui", set()) if i in self._peers)
+
+    def keep_restore_webui(self):
+        self._restore_webui_kept = True
+
+    def _record_restore_webui(self, store, value: bool):
+        if not self._restore_webui_kept and store.get_restore_webui() != value:
+            store.set_restore_webui(value)
+
+    def _on_webui_connected(self):
+        try:
+            self._record_restore_webui(self._get_workspace_store(), True)
+        except Exception as e:
+            AppLogger.warning(f"_on_webui_connected failed: {e}", exc=e)
+
     def _on_viewer_connected(self, session_id: str):
         if not session_id:
             return
@@ -378,7 +398,7 @@ class Broker:
         except Exception as e:
             AppLogger.warning(f"_on_viewer_connected failed: {e}", exc=e)
 
-    def _on_viewer_disconnected(self):
+    def _on_restorable_peer_disconnected(self):
         if self._stop.is_set():
             return
         self._cancel_restore_debounce()
@@ -408,6 +428,7 @@ class Broker:
             return
         try:
             active = self.active_viewer_slot_ids()
+            webui_connected = self.is_webui_connected()
             if self._stop.is_set():
                 return
             store = self._get_workspace_store()
@@ -418,6 +439,8 @@ class Broker:
                 return
             if active:
                 store.set_restore_slot_ids(list(active))
+            if active or webui_connected:
+                self._record_restore_webui(store, webui_connected)
         except Exception as e:
             AppLogger.warning(f"_debounce_fire failed: {e}", exc=e)
 

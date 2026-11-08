@@ -10,6 +10,7 @@ from ...core.platform.folders import show_in_explorer
 from ...core.store.settings import app_settings
 from ...qt.common.notifier import Notifier
 from ...core.lang.manager import t
+from .cache_limits import cache_limits_command
 
 _SETTING_KEY = "viewer/thumbnail_default_size"
 
@@ -77,6 +78,7 @@ class SettingCommands(ActionKit.MenuBase):
                 display="Viewer Thumbnail Default Size",
                 func=set_viewer_thumbnail_default_size,
             ),
+            cache_limits_command(),
             ActionKit.Command(path="setting.toggle_language", display="Toggle Language", func=toggle_language),
             ActionKit.Command(
                 path="setting.explorer_menu",

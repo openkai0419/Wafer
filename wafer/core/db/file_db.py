@@ -242,9 +242,9 @@ class FileDB:
 
     def try_checkpoint(self, mode: str = "TRUNCATE"):
         try:
-            conn = self.conn or self.read_conn
-            cur = conn.execute(f"PRAGMA wal_checkpoint({mode})")
-            cur.close()
+            with self._write_lock:
+                conn = self.conn or self.read_conn
+                conn.execute(f"PRAGMA wal_checkpoint({mode})").close()
         except Exception as e:
             AppLogger.debug(f"wal_checkpoint({mode}) failed: {e}")
 
@@ -777,6 +777,13 @@ class FileDB:
 
     @profiler.profile
     def mark_dispatched(self, sources, collector):
+        self._move_status(sources, collector, "pending", "dispatched")
+
+    @profiler.profile
+    def unmark_dispatched(self, sources, collector):
+        self._move_status(sources, collector, "dispatched", "pending")
+
+    def _move_status(self, sources, collector, current, new):
         if not sources:
             return
         with self._write_lock, self.conn:
@@ -785,9 +792,8 @@ class FileDB:
                 for i in range(0, len(sources), 900):
                     chunk = sources[i : i + 900]
                     cur.executemany(
-                        """UPDATE collection_status SET status = 'dispatched'
-                        WHERE source = ? AND collector = ? AND status = 'pending' """,
-                        [(s, collector) for s in chunk],
+                        "UPDATE collection_status SET status = ? WHERE source = ? AND collector = ? AND status = ?",
+                        [(new, s, collector, current) for s in chunk],
                     )
             finally:
                 cur.close()
@@ -866,12 +872,12 @@ class FileDB:
                     AppLogger.info("RUNNING ANALYZE")
                     cur.execute("ANALYZE")
                     self.conn.commit()
-                    self.try_checkpoint()
                 finally:
                     cur.close()
         except Exception as e:
             AppLogger.warning(f"DATABASE CLEANUP FAILED: {e}", exc=e)
         else:
+            self.try_checkpoint()
             AppLogger.info("DATABASE CLEANUP END")
 
     @staticmethod

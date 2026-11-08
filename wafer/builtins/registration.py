@@ -6,10 +6,22 @@ def register_all(registries):
 
     registry_map = _get_registry_map()
     for mod in _import_builtin_modules():
-        for registry_key, cls in _discover_builtins(mod, registry_map):
-            registry = registries.get(registry_key)
-            if registry is not None:
-                registry.register(cls)
+        _register_discovered(mod, registry_map, registries)
+
+
+def register_image_loaders(registries) -> None:
+    from . import imageloader
+    from ..plugin.imageloader.base import BaseImageLoader
+    from ..plugin.kinds import PLUGIN_KIND_IMAGE_LOADER
+
+    _register_discovered(imageloader, {BaseImageLoader: PLUGIN_KIND_IMAGE_LOADER}, registries)
+
+
+def _register_discovered(module, registry_map, registries) -> None:
+    for registry_key, cls in _discover_builtins(module, registry_map):
+        registry = registries.get(registry_key)
+        if registry is not None:
+            registry.register(cls)
 
 
 def _discover_builtins(module, registry_map) -> list[tuple[str, type]]:
@@ -38,6 +50,7 @@ def _import_builtin_modules():
         widget as _br_widget,
     )
     from .commands import (
+        cache_limits as _cmd_cache_limits,
         tools as _cmd_tools,
         database as _cmd_database,
         debug as _cmd_debug,
@@ -99,6 +112,7 @@ def _import_builtin_modules():
         _cmd_query,
         _cmd_workspace,
         _cmd_setting,
+        _cmd_cache_limits,
         tray,
         _cmd_window,
         _cmd_backend,

@@ -12,7 +12,6 @@ from ....plugin.parser.handler import parser_resolver
 from ..db_writer import DatabaseWriter
 from ..runtime.progress_aggregator import ProgressAggregator
 from ..runtime.scheduler import TaskScheduler
-from ..runtime.task import Task, TaskPriority
 from ..runtime.worker_shutdown import WORKER_SHUTDOWN_TIMEOUT, wait_worker_stopped
 
 _DISPATCH_INTERVAL = 2.0
@@ -45,8 +44,6 @@ class ParserDispatcher:
         self._parsers = list(parsers or parser_resolver.names())
         self._per_indexer = [d for d in self._parsers if d not in parser_resolver.singleton_names()]
         self._tray_pid = tray_pid
-        self._dispatched_paths: dict[str, set[str]] = {}
-        self._dispatched_lock = threading.Lock()
         self._read_conn = None
         self._node = None
         self._stop = threading.Event()
@@ -56,20 +53,9 @@ class ParserDispatcher:
     def start(self, node):
         self._node = node
         self._read_conn = open_readonly(self._db_path)
-        self._reset_stale()
         self._start_parser_processes()
         self._thread = threading.Thread(target=self._dispatch_loop, daemon=True)
         self._thread.start()
-
-    def _reset_stale(self):
-        status_names = [parser_resolver.status_name(d) for d in self._parsers]
-        self._scheduler.submit(
-            Task.create(
-                "reset_stale_parser",
-                priority=TaskPriority.DISPATCH,
-                run=lambda: self._writer.reset_stale(status_names),
-            )
-        )
 
     def stop(self):
         self._stop.set()
@@ -138,6 +124,10 @@ class ParserDispatcher:
         return wait_worker_stopped("parser", self._db_name, plugin, timeout)
 
     def _dispatch_loop(self):
+        try:
+            self._writer.reset_stale([parser_resolver.status_name(d) for d in self._parsers])
+        except Exception as e:
+            AppLogger.error(f"[ParserDispatcher] reset_stale failed: {e}", exc=e)
         while not self._stop.is_set():
             self._dispatch_event.wait(timeout=_DISPATCH_INTERVAL)
             self._dispatch_event.clear()
@@ -151,6 +141,9 @@ class ParserDispatcher:
     @profiler.profile
     def _dispatch_pending(self):
         for parser_name in self._parsers:
+            dst = f"parser-{parser_name}"
+            if self._node.nudge_undelivered("parse.batch", dst=dst, db=self._db_name):
+                continue
             status_name = parser_resolver.status_name(parser_name)
             batch_size = parser_resolver.batch_size(parser_name)
             trigger_keys = parser_resolver.trigger_keys(parser_name)
@@ -163,54 +156,36 @@ class ParserDispatcher:
                 LIMIT ?""",
                 (status_name, batch_size),
             )
-            pending = cur.fetchall()
+            rows = cur.fetchall()
             cur.close()
-            if not pending:
-                continue
-            with self._dispatched_lock:
-                already = self._dispatched_paths.get(parser_name, set())
-                rows = [row for row in pending if row[0] not in already]
             if not rows:
                 continue
             paths = [row[0] for row in rows]
             file_info = {row[0]: (row[1], row[2], row[3]) for row in rows}
             metadata = self._writer.db.get_trigger_metadata(paths, trigger_keys) if trigger_keys else {}
+            # Both marks run here, not through the scheduler: a mark that runs later would overwrite
+            # a source set pending again meanwhile ('dispatched' with no batch behind it, or a lost 'pending').
             if trigger_keys:
                 untriggered = [p for p in paths if p not in metadata]
                 if untriggered:
-                    self._scheduler.submit(
-                        Task.create(
-                            "mark_collected_parser",
-                            priority=TaskPriority.DISPATCH,
-                            run=lambda ps=untriggered, sn=status_name: self._writer.mark_collected(ps, sn),
-                        )
-                    )
+                    self._writer.mark_collected(untriggered, status_name)
+                    self._scheduler.note_activity()
                     paths = [p for p in paths if p in metadata]
                     file_info = {p: file_info[p] for p in paths}
-                    AppLogger.info(f"[ParserDispatcher] Skipped {len(untriggered)} paths without trigger keys for parser-{parser_name}")
+                    AppLogger.info(f"[ParserDispatcher] Skipped {len(untriggered)} paths without trigger keys for {dst}")
             if not paths:
                 continue
-            with self._dispatched_lock:
-                self._dispatched_paths.setdefault(parser_name, set()).update(paths)
-            self._scheduler.submit(
-                Task.create(
-                    "mark_dispatched_parser",
-                    priority=TaskPriority.DISPATCH,
-                    run=lambda ps=paths, sn=status_name: self._writer.mark_dispatched(ps, sn),
-                    on_complete=lambda dn=parser_name, ps=paths: self._clear_dispatched(dn, ps),
+            self._writer.mark_dispatched(paths, status_name)
+            try:
+                self._node.send_reliable(
+                    "parse.batch",
+                    {"paths": paths, "file_info": file_info, "metadata": metadata},
+                    dst=dst,
+                    db=self._db_name,
                 )
-            )
+            except Exception:
+                self._writer.unmark_dispatched(paths, status_name)
+                raise
+            self._scheduler.note_activity()
             self._progress.increment(0, len(paths))
-            self._node.send(
-                "parse.batch",
-                {"paths": paths, "file_info": file_info, "metadata": metadata},
-                dst=f"parser-{parser_name}",
-                db=self._db_name,
-            )
-            AppLogger.info(f"[ParserDispatcher] Sent {len(paths)} paths to parser-{parser_name}")
-
-    def _clear_dispatched(self, parser_name: str, paths: list[str]):
-        with self._dispatched_lock:
-            s = self._dispatched_paths.get(parser_name)
-            if s:
-                s.difference_update(paths)
+            AppLogger.info(f"[ParserDispatcher] Sent {len(paths)} paths to {dst}")

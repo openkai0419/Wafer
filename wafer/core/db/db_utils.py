@@ -11,9 +11,15 @@ from ..common.paths import data_db_path, list_data_db_names, list_setting_db_nam
 from ..common.hashes import fast_signature_hash
 from ..profiling import profiler
 from ..logs import AppLogger
+from .cache_limit import process_db_cache_limit_mb
+
+
+def _apply_process_cache_limit(conn: sqlite3.Connection):
+    conn.execute(f"PRAGMA soft_heap_limit={process_db_cache_limit_mb() * 1024 * 1024}")
 
 
 def apply_write_pragmas(conn: sqlite3.Connection):
+    _apply_process_cache_limit(conn)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA locking_mode=NORMAL")
@@ -21,6 +27,7 @@ def apply_write_pragmas(conn: sqlite3.Connection):
 
 
 def apply_read_pragmas(conn: sqlite3.Connection):
+    _apply_process_cache_limit(conn)
     conn.execute("PRAGMA query_only=ON")
     conn.execute("PRAGMA temp_store=MEMORY")
     conn.execute("PRAGMA cache_size=-50000")

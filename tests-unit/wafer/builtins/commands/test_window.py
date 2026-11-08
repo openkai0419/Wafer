@@ -42,6 +42,18 @@ class TestCloseAll:
         window_commands.close_all(_Ctx())
 
 
+class TestRestartAllFromTray:
+    def test_uses_the_shutdown_path_instead_of_terminating_itself(self, monkeypatch):
+        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_scope", lambda self: None)
+        monkeypatch.setattr(window_commands.installer_queue, "has_pending_queue", lambda _dir: False)
+        monkeypatch.setattr(window_commands.AppProcess, "terminate_cmd", staticmethod(lambda *a, **k: (_ for _ in ()).throw(AssertionError("the Tray must not terminate itself"))))
+
+        tray = MagicMock()
+        window_commands.restart_all(_Ctx(Tray=tray))
+
+        tray.restart_all.assert_called_once_with()
+
+
 class TestRestartAllPendingInstall:
     def _patch_common(self, monkeypatch, store, *, pending):
         monkeypatch.setattr(window_commands, "WorkspaceStore", MagicMock(instance=staticmethod(lambda: store)))
@@ -122,11 +134,41 @@ class TestRestartAllPendingInstall:
         monkeypatch.setattr(window_commands.installer_queue, "has_pending_queue", lambda _dir: False)
         monkeypatch.setattr(window_commands.AppProcess, "force_close_all", staticmethod(lambda: (_ for _ in ()).throw(AssertionError("should not force close"))))
 
+        monkeypatch.setattr(window_commands.WebUILock, "is_open", classmethod(lambda cls: False))
+        replaced = []
+        monkeypatch.setattr(window_commands, "replace_webui", lambda: replaced.append(True))
+
         win = MagicMock()
         window_commands.restart_all(_Ctx(MainWindow=win))
 
         win._perform_system_restart.assert_called_once_with(include_self=True)
         win.close_by_restart.assert_called_once_with()
+        assert replaced == []
+
+    def test_no_pending_restarts_an_open_webui_after_the_tray(self, monkeypatch):
+        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_scope", lambda self: None)
+        monkeypatch.setattr(window_commands.installer_queue, "has_pending_queue", lambda _dir: False)
+        monkeypatch.setattr(window_commands.WebUILock, "is_open", classmethod(lambda cls: True))
+
+        order = MagicMock()
+        monkeypatch.setattr(window_commands, "replace_webui", order.replace_webui)
+        window_commands.restart_all(_Ctx(MainWindow=order.win))
+
+        assert [name for name, _, _ in order.mock_calls if "__" not in name] == ["win._perform_system_restart", "replace_webui", "win.close_by_restart"]
+
+    def test_no_pending_leaves_a_headless_webui_running(self, monkeypatch):
+        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_scope", lambda self: None)
+        monkeypatch.setattr(window_commands.installer_queue, "has_pending_queue", lambda _dir: False)
+        monkeypatch.setattr(window_commands.WebUILock, "is_open", classmethod(lambda cls: True))
+        monkeypatch.setattr(window_commands.WebUILock, "runs_headless", staticmethod(lambda: True))
+        replaced = []
+        monkeypatch.setattr(window_commands, "replace_webui", lambda: replaced.append(True))
+
+        win = MagicMock()
+        window_commands.restart_all(_Ctx(MainWindow=win))
+
+        win._perform_system_restart.assert_called_once_with(include_self=True)
+        assert replaced == []
 
 
 class TestWebUI:
@@ -140,7 +182,7 @@ class TestWebUI:
         webui._node.send.assert_called_once_with("app.quit_all", dst="tray")
         webui.close.assert_not_called()
 
-    def test_restart_all_force_path_sets_restore_webui(self, monkeypatch):
+    def test_restart_all_force_path_leaves_the_record_to_the_broker(self, monkeypatch):
         store = MagicMock()
         monkeypatch.setattr(window_commands, "WorkspaceStore", MagicMock(instance=staticmethod(lambda: store)))
         monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_scope", lambda self: None)
@@ -155,29 +197,12 @@ class TestWebUI:
         webui = MagicMock()
         window_commands.restart_all(_Ctx(WebUIWindow=webui))
 
-        store.set_restore_webui.assert_called_once_with(True)
+        store.set_restore_webui.assert_not_called()
         assert calls == ["force", ("new_main", ())]
         webui.close.assert_called_once_with()
 
-    def test_restore_webui_from_viewer_when_webui_runs_separately(self, monkeypatch):
-        store = MagicMock()
-        store.get_active_slot_ids.return_value = ["s1"]
-        monkeypatch.setattr(window_commands, "WorkspaceStore", MagicMock(instance=staticmethod(lambda: store)))
-        monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_scope", lambda self: None)
-        monkeypatch.setattr(window_commands.installer_queue, "has_pending_queue", lambda _dir: True)
-        monkeypatch.setattr(window_commands, "get_plugin_dir", lambda: "/ext")
-        monkeypatch.setattr(window_commands, "Notifier", MagicMock())
-        monkeypatch.setattr(window_commands.AppProcess, "get_by_args_subset", staticmethod(lambda *a: [object()] if a and a[0] == "--webui" else []))
-        monkeypatch.setattr(window_commands.AppProcess, "force_close_all", staticmethod(lambda: None))
-        monkeypatch.setattr(window_commands.AppProcess, "new_main", staticmethod(lambda *a: None))
-
-        win = MagicMock()
-        window_commands.restart_all(_Ctx(MainWindow=win))
-
-        store.set_restore_webui.assert_called_once_with(True)
-
     def test_open_webui_opens_browser_when_running(self, monkeypatch):
-        monkeypatch.setattr(window_commands.AppProcess, "get_by_args_subset", staticmethod(lambda *a: [object()]))
+        monkeypatch.setattr(window_commands.WebUILock, "is_open", classmethod(lambda cls: True))
         monkeypatch.setattr("wafer.app.webui.state.read_url", lambda: "http://127.0.0.1:8787")
         opened = []
         monkeypatch.setattr(window_commands.webbrowser, "open", lambda url: opened.append(url))
@@ -188,7 +213,7 @@ class TestWebUI:
         assert opened == ["http://127.0.0.1:8787"]
 
     def test_open_webui_spawns_when_not_running(self, monkeypatch):
-        monkeypatch.setattr(window_commands.AppProcess, "get_by_args_subset", staticmethod(lambda *a: []))
+        monkeypatch.setattr(window_commands.WebUILock, "is_open", classmethod(lambda cls: False))
         spawned = []
         monkeypatch.setattr(window_commands.AppProcess, "new_main", staticmethod(lambda *a: spawned.append(a)))
 
@@ -219,6 +244,15 @@ class TestWindowRestartCommands:
                 },
             )(),
         )
-        window_commands.restart_tray(MagicMock())
+        window_commands.restart_tray(_Ctx())
         assert ("terminate", ("--tray",)) in calls
         assert ("new_main", ("--tray",)) in calls
+
+    def test_restart_tray_from_the_tray_does_not_terminate_itself(self, monkeypatch):
+        monkeypatch.setattr("wafer.builtins.commands.window.installer_queue.has_pending_queue", lambda _dir: False)
+        monkeypatch.setattr(window_commands.AppProcess, "terminate_cmd", staticmethod(lambda *a, **k: (_ for _ in ()).throw(AssertionError("the Tray must not terminate itself"))))
+
+        tray = MagicMock()
+        window_commands.restart_tray(_Ctx(Tray=tray))
+
+        tray.restart_self.assert_called_once_with()

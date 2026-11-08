@@ -36,7 +36,7 @@ def cache_dir(tmp_path, monkeypatch):
 
 def test_check_for_updates_fetches_release_and_remote_release_notes(cache_dir, monkeypatch):
     responses = [_Response(json_data=_release()), _Response(text="# Release Notes\n\n- new")]
-    monkeypatch.setattr(service.requests, "get", lambda *args, **kwargs: responses.pop(0))
+    monkeypatch.setattr("requests.get", lambda *args, **kwargs: responses.pop(0))
 
     result = service.check_for_updates(current_version="0.6.18")
 
@@ -51,7 +51,7 @@ def test_check_for_updates_fetches_release_and_remote_release_notes(cache_dir, m
 def test_check_for_updates_uses_cache_when_release_fetch_fails(cache_dir, monkeypatch):
     service.write_cached_latest_release(_release())
     service.write_cached_release_notes("v0.6.19", "cached release notes")
-    monkeypatch.setattr(service.requests, "get", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("offline")))
+    monkeypatch.setattr("requests.get", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("offline")))
 
     result = service.check_for_updates(current_version="0.6.18")
 
@@ -62,7 +62,7 @@ def test_check_for_updates_uses_cache_when_release_fetch_fails(cache_dir, monkey
 
 
 def test_check_for_updates_reports_error_when_network_and_cache_unavailable(cache_dir, monkeypatch):
-    monkeypatch.setattr(service.requests, "get", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("offline")))
+    monkeypatch.setattr("requests.get", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("offline")))
 
     result = service.check_for_updates(current_version="0.6.18")
 
@@ -123,7 +123,7 @@ def test_build_update_info_marks_in_app_update_unsupported_without_manifest():
 
 def test_remote_release_notes_failure_falls_back_to_release_body(cache_dir, tmp_path, monkeypatch):
     responses = [_Response(json_data=_release()), _Response(error=RuntimeError("not found"))]
-    monkeypatch.setattr(service.requests, "get", lambda *args, **kwargs: responses.pop(0))
+    monkeypatch.setattr("requests.get", lambda *args, **kwargs: responses.pop(0))
     monkeypatch.setattr(service, "get_app_root_dir", lambda: tmp_path)
 
     result = service.check_for_updates(current_version="0.6.18")
@@ -136,7 +136,7 @@ def test_remote_release_notes_failure_falls_back_to_local_release_notes(cache_di
     release["body"] = " \n "
     (tmp_path / service.RELEASE_NOTES_FILENAME).write_text("# Local Release Notes\n\n- local", encoding="utf-8")
     responses = [_Response(json_data=release), _Response(error=RuntimeError("not found"))]
-    monkeypatch.setattr(service.requests, "get", lambda *args, **kwargs: responses.pop(0))
+    monkeypatch.setattr("requests.get", lambda *args, **kwargs: responses.pop(0))
     monkeypatch.setattr(service, "get_app_root_dir", lambda: tmp_path)
 
     result = service.check_for_updates(current_version="0.6.18")
@@ -151,7 +151,7 @@ def test_up_to_date_check_does_not_fetch_remote_release_notes(cache_dir, monkeyp
         calls.append(args[0])
         return _Response(json_data=_release(tag="v0.6.18"))
 
-    monkeypatch.setattr(service.requests, "get", get)
+    monkeypatch.setattr("requests.get", get)
 
     result = service.check_for_updates(current_version="0.6.18")
 

@@ -4,7 +4,7 @@ from wafer.qt.commands.bridge import ActionKit, UI
 from wafer.qt.common.dispatcher import Dispatcher, CancelSlot
 from wafer.qt.common.thread import utility_pool
 from wafer.plugin import viewer_context_values
-from ._common import decode_frames, get_viewer_driver, _viewer_cache
+from ._common import decode_frames, get_viewer_driver, _grid_cache, _viewer_cache
 
 
 class AnimatedViewerWidget(QtWidgets.QWidget, ActionKit.UIMixin):
@@ -48,6 +48,10 @@ class AnimatedViewerWidget(QtWidgets.QWidget, ActionKit.UIMixin):
             self._set_frames(frames, delays)
             return
 
+        preview = _grid_cache.get(path)
+        if preview is not None:
+            self._set_frames(*preview)
+
         cancel = self._cancel.renew()
         self._dispatcher.post(lambda: self._decode(path, cancel), cancel=cancel)
 
@@ -64,7 +68,9 @@ class AnimatedViewerWidget(QtWidgets.QWidget, ActionKit.UIMixin):
     def _on_decoded(self, path, frames, delays):
         if self._path != path:
             return
+        position = self._frame_index if len(frames) == len(self._frames) else 0
         self._set_frames(frames, delays)
+        self._frame_index = position
 
     def _set_frames(self, frames, delays):
         self._frames = frames

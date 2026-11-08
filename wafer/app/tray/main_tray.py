@@ -9,6 +9,7 @@ from ...qt.common.rate_limit import qt_debounce
 from ...core.ipc.broker import Broker
 from ...core.ipc.node import Node
 from ...core.platform.process import AppProcess
+from ...core.store.settings import app_settings
 import threading
 
 
@@ -33,6 +34,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.setToolTip(f"{APP_NAME}")
         self.show_state = False
         self.shutting_down = False
+        self.restart_requested = False
         self.activated.connect(self.on_activated)
         self.broker = Broker()
         self.broker.start()
@@ -40,11 +42,15 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self._node.subscribe("app.quit_all", lambda msg: self._request_shutdown_all(then_restart=False) or True)
         self._node.subscribe("app.restart_all", lambda msg: self._request_shutdown_all(then_restart=True) or True)
         self._node.start(self.broker.port)
+        app_settings.committed.connect(self._broadcast_settings)
         AppLogger.set_node(self._node, role="tray")
         UI.register_instance("Tray", self)
         self._close_all_ready.connect(QtWidgets.QApplication.quit)
         self.setContextMenu(self._build_menu())
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.on_quit)
+
+    def _broadcast_settings(self, updates):
+        self._node.send("settings.changed", dict(updates), dst="viewer")
 
     def _build_menu(self):
         session = Menu.session(None, seed_ctx=self._ctx())
@@ -79,10 +85,14 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
     def restart_all(self):
         self._shutdown_all(then_restart=True)
 
+    def restart_self(self):
+        AppLogger.info("tray restarting itself after it exits")
+        self.restart_requested = True
+        QtWidgets.QApplication.quit()
+
     def _shutdown_all(self, *, then_restart):
         AppLogger.info(f"_shutdown_all: shutting down all viewers, then tray (restart={then_restart})")
         from ...plugin.settings import PluginSettings
-        from ...core.store.workspace import WorkspaceStore
 
         PluginSettings().clear_restart_scope()
         self.shutting_down = True
@@ -90,7 +100,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
             _disarm_child_reaper()
         viewers = AppProcess.list_viewers()
         webuis = AppProcess.get_by_args_subset("--webui")
-        WorkspaceStore.instance().set_restore_webui(then_restart and bool(webuis))
+        self.broker.keep_restore_webui()
         self._node.send("app.shutdown", dst="viewer")
         if webuis:
             self._node.send("app.shutdown", dst="webui")

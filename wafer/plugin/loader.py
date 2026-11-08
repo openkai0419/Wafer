@@ -3,22 +3,14 @@ import importlib.util
 import inspect
 import os
 import sys
+from collections.abc import Callable
 
 from ..core.common.paths import get_plugin_dir
 from ..core.logs import AppLogger
+from . import plugin_index
 from .installer import _PACKAGES_DIR, needs_setup
+from .plugin_index import ExtensionRecord, PluginEntry
 from .registry import RegistryBase, CommandGroupRegistry
-from .viewer.base import WidgetViewerPlugin
-from .grid.base import BaseGridPlugin
-from .grid_overlay.base import BaseOverlayPlugin
-from .collector.base import BaseCollector
-from .query.base import BaseFilterPlugin, BaseSortPlugin
-from .parser.base import BaseParser
-from .layout.base import BaseLayoutPlugin
-from .panel.base import BasePanelPlugin
-from .key_value_panel.base import BaseKeyValuePanelPlugin
-from .rename.base import BaseRenameSourcePlugin
-from .imageloader.base import BaseImageLoader
 from .kinds import (
     PLUGIN_KIND_COLLECTOR,
     PLUGIN_KIND_COMMAND,
@@ -38,6 +30,17 @@ from .kinds import (
 
 def _build_registry_map():
     from ..qt.commands.command.menu import MenuGroup
+    from .viewer.base import WidgetViewerPlugin
+    from .grid.base import BaseGridPlugin
+    from .grid_overlay.base import BaseOverlayPlugin
+    from .collector.base import BaseCollector
+    from .query.base import BaseFilterPlugin, BaseSortPlugin
+    from .parser.base import BaseParser
+    from .layout.base import BaseLayoutPlugin
+    from .panel.base import BasePanelPlugin
+    from .key_value_panel.base import BaseKeyValuePanelPlugin
+    from .rename.base import BaseRenameSourcePlugin
+    from .imageloader.base import BaseImageLoader
 
     return {
         WidgetViewerPlugin: PLUGIN_KIND_VIEWER,
@@ -82,6 +85,24 @@ def qualify_plugin_name(registry_key: str, cls: type) -> str:
     return f"{registry_key}:{cls.__name__}"
 
 
+def plugin_entries(extension: str, found: list[tuple[str, type]]) -> tuple[PluginEntry, ...] | None:
+    prefix = f"_plugins_{extension}."
+    entries = []
+    for kind, cls in found:
+        if not cls.__module__.startswith(prefix):
+            return None
+        entries.append(PluginEntry(kind, cls.__module__.removeprefix(prefix), cls.__name__, cls.NAME))
+    return tuple(dict.fromkeys(entries))
+
+
+def _fingerprint_or_none(name: str, folder: str) -> str | None:
+    try:
+        return plugin_index.extension_fingerprint(folder)
+    except OSError as e:
+        AppLogger.warning(f"[PluginLoader] Could not check the files of extension {name}, not using the plugin index for it ({e})", exc=e)
+        return None
+
+
 def _setup_dll_directory(folder: str):
     lib_dir = os.path.join(folder, "lib")
     if not os.path.isdir(lib_dir):
@@ -109,12 +130,27 @@ class PluginLoader:
         registries: dict[str, RegistryBase],
         *,
         enabled: dict[str, bool] | None = None,
+        record_index: bool = False,
     ):
         self._plugin_dir = plugin_dir
         self._registries = registries
         self._enabled_overrides = dict(enabled) if enabled else {}
+        self._record_index = record_index
+        self.records: dict[str, ExtensionRecord] = {}
 
     def load_all(self, on_progress=None) -> list[str]:
+        return self._load_extensions(self._import_and_register, on_progress)
+
+    def load_selected(self, select: Callable[[str, str], bool], index: dict[str, ExtensionRecord]) -> list[str]:
+        def load_extension(name: str, folder: str) -> int:
+            found = self._import_recorded(name, folder, select, index.get(name))
+            if found is None:
+                found = [(kind, cls) for kind, cls in _import_extension(name, folder) if select(kind, cls.NAME)]
+            return self._register_found(found)
+
+        return self._load_extensions(load_extension)
+
+    def _load_extensions(self, load_extension: Callable[[str, str], int], on_progress=None) -> list[str]:
         if not os.path.isdir(self._plugin_dir):
             return []
         packages_dir = os.path.join(self._plugin_dir, _PACKAGES_DIR)
@@ -127,7 +163,7 @@ class PluginLoader:
             if not os.path.isdir(folder) or name.startswith(".") or name == "__pycache__":
                 continue
             try:
-                count = self._load_one(name, folder, on_progress)
+                count = self._load_one(name, folder, load_extension)
                 if count > 0:
                     loaded.append(name)
                     AppLogger.info(f"[PluginLoader] Loaded plugin: {name} ({count} classes)")
@@ -152,20 +188,49 @@ class PluginLoader:
                     except Exception as e:
                         AppLogger.warning(f"[PluginLoader] configure failed: {plugin_cls.NAME} ({e})", exc=e)
 
-    def _load_one(self, name: str, folder: str, on_progress=None) -> int:
+    def _load_one(self, name: str, folder: str, load_extension: Callable[[str, str], int]) -> int:
         if needs_setup(folder):
             return 0
 
         _setup_dll_directory(folder)
 
-        total = self._import_and_register(name, folder)
-
-        return total
+        return load_extension(name, folder)
 
     def _import_and_register(self, name: str, folder: str) -> int:
+        fingerprint = _fingerprint_or_none(name, folder) if self._record_index else None
+        failed: list[str] = []
+        all_found = _import_extension(name, folder, failed)
+        total = self._register_found(all_found)
+        if fingerprint is not None and not failed:
+            entries = plugin_entries(name, all_found)
+            if entries is not None:
+                self.records[name] = ExtensionRecord(fingerprint, entries)
+        return total
+
+    def _import_recorded(
+        self,
+        name: str,
+        folder: str,
+        select: Callable[[str, str], bool],
+        record: ExtensionRecord | None,
+    ) -> list[tuple[str, type]] | None:
+        if record is None or _fingerprint_or_none(name, folder) != record.fingerprint:
+            return None
+        found = []
+        try:
+            for entry in record.plugins:
+                if select(entry.kind, entry.name):
+                    pkg_name = _ensure_extension_package(name, folder)
+                    module = importlib.import_module(f"{pkg_name}.{entry.module}")
+                    found.append((entry.kind, getattr(module, entry.class_name)))
+        except Exception as e:
+            AppLogger.warning(f"[PluginLoader] Plugin index entry of extension {name} could not be loaded, scanning the whole extension ({e})", exc=e)
+            return None
+        return found
+
+    def _register_found(self, found: list[tuple[str, type]]) -> int:
         total = 0
-        all_found = _import_extension(name, folder)
-        for registry_key, cls in all_found:
+        for registry_key, cls in found:
             qualified = qualify_plugin_name(registry_key, cls)
             if not self._is_enabled(qualified, cls):
                 continue
@@ -196,23 +261,36 @@ class PluginLoader:
                 sys.path.remove(packages_dir)
 
 
-def _import_extension(name: str, folder: str) -> list[tuple[str, type]]:
+def _ensure_extension_package(name: str, folder: str) -> str:
     pkg_name = f"_plugins_{name}"
-    if pkg_name not in sys.modules:
-        init_py = os.path.join(folder, "__init__.py")
-        spec = importlib.util.spec_from_file_location(
-            pkg_name,
-            init_py if os.path.isfile(init_py) else folder,
-            submodule_search_locations=[folder],
-        )
-        if spec is None:
-            spec = importlib.machinery.ModuleSpec(pkg_name, None, is_package=True)
-            spec.submodule_search_locations = [folder]
-        mod = importlib.util.module_from_spec(spec)
-        mod.__path__ = [folder]
-        sys.modules[pkg_name] = mod
-        if spec.loader is not None:
+    if pkg_name in sys.modules:
+        return pkg_name
+    init_py = os.path.join(folder, "__init__.py")
+    spec = importlib.util.spec_from_file_location(
+        pkg_name,
+        init_py if os.path.isfile(init_py) else folder,
+        submodule_search_locations=[folder],
+    )
+    if spec is None:
+        spec = importlib.machinery.ModuleSpec(pkg_name, None, is_package=True)
+        spec.submodule_search_locations = [folder]
+    mod = importlib.util.module_from_spec(spec)
+    mod.__path__ = [folder]
+    sys.modules[pkg_name] = mod
+    if spec.loader is not None:
+        try:
             spec.loader.exec_module(mod)
+        except Exception:
+            del sys.modules[pkg_name]
+            raise
+    return pkg_name
+
+
+_failed_modules: set[str] = set()
+
+
+def _import_extension(name: str, folder: str, failed: list[str] | None = None) -> list[tuple[str, type]]:
+    pkg_name = _ensure_extension_package(name, folder)
 
     found: list[tuple[str, type]] = []
     for filename in sorted(os.listdir(folder)):
@@ -221,6 +299,8 @@ def _import_extension(name: str, folder: str) -> list[tuple[str, type]]:
         module_name = f"{pkg_name}.{filename[:-3]}"
         if module_name in sys.modules:
             sub_mod = sys.modules[module_name]
+            if failed is not None and module_name in _failed_modules:
+                failed.append(module_name)
         else:
             filepath = os.path.join(folder, filename)
             try:
@@ -229,13 +309,57 @@ def _import_extension(name: str, folder: str) -> list[tuple[str, type]]:
                 sys.modules[module_name] = sub_mod
                 sub_spec.loader.exec_module(sub_mod)
             except Exception as e:
+                _failed_modules.add(module_name)
                 AppLogger.warning(f"[PluginLoader] Failed to import: {module_name} ({e})", exc=e)
+                if failed is not None:
+                    failed.append(module_name)
                 continue
         found.extend(_discover_plugins(sub_mod))
     return found
 
 
-def load_plugins(*, on_progress=None) -> list[str]:
+def _apply_priority_order(registries: dict[str, RegistryBase], settings) -> None:
+    for key, registry in registries.items():
+        order = settings.priority_order(key)
+        if order:
+            registry.set_order(order)
+
+
+def _load_scoped_plugins(select: Callable[[str, str], bool], *, with_builtin_image_loaders: bool = False) -> list[str]:
+    from .collector.handler import collector_resolver
+    from .parser.handler import parser_resolver
+    from .imageloader.handler import image_loader_resolver
+    from .settings import PluginSettings
+
+    registries = {
+        PLUGIN_KIND_COLLECTOR: collector_resolver.registry,
+        PLUGIN_KIND_PARSER: parser_resolver.registry,
+        PLUGIN_KIND_IMAGE_LOADER: image_loader_resolver.registry,
+    }
+    if with_builtin_image_loaders:
+        from ..builtins.registration import register_image_loaders
+
+        register_image_loaders(registries)
+
+    ps = PluginSettings()
+    loader = PluginLoader(get_plugin_dir(), registries, enabled=ps.enabled_overrides())
+    result = loader.load_selected(select, plugin_index.read_index())
+    _apply_priority_order(registries, ps)
+    return result
+
+
+def load_indexer_plugins() -> list[str]:
+    return _load_scoped_plugins(lambda kind, name: kind in (PLUGIN_KIND_COLLECTOR, PLUGIN_KIND_PARSER))
+
+
+def load_worker_plugins(kind: str, name: str) -> list[str]:
+    def select(entry_kind: str, entry_name: str) -> bool:
+        return (entry_kind == kind and entry_name == name) or entry_kind == PLUGIN_KIND_IMAGE_LOADER
+
+    return _load_scoped_plugins(select, with_builtin_image_loaders=True)
+
+
+def load_plugins(*, on_progress=None, write_index=False) -> list[str]:
     global _command_registry_ref
     from .viewer.handler import viewer_resolver
     from .grid.handler import grid_resolver
@@ -272,13 +396,16 @@ def load_plugins(*, on_progress=None) -> list[str]:
     from .settings import PluginSettings
 
     ps = PluginSettings()
-    loader = PluginLoader(get_plugin_dir(), registries, enabled=ps.enabled_overrides())
+    loader = PluginLoader(get_plugin_dir(), registries, enabled=ps.enabled_overrides(), record_index=write_index)
     result = loader.load_all(on_progress=on_progress)
 
-    for key, registry in registries.items():
-        order = ps.priority_order(key)
-        if order:
-            registry.set_order(order)
+    if write_index:
+        try:
+            plugin_index.write_index(loader.records)
+        except OSError as e:
+            AppLogger.warning(f"[PluginLoader] Could not save the plugin index, background processes will load slower ({e})", exc=e)
+
+    _apply_priority_order(registries, ps)
 
     _command_registry_ref = command_registry
     return result

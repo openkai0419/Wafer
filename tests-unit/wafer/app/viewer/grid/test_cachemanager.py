@@ -91,7 +91,7 @@ class TestFadePixmapItemRendering:
     def test_with_loaded_image_file(self, tmp_path):
         from PySide6 import QtGui, QtCore
         from PIL import Image as PILImage
-        from extensions.image.loader import load_image
+        from extensions.image._qimage import load_image
 
         cell_w, cell_h = 200, 200
         img_path = str(tmp_path / "wide.png")

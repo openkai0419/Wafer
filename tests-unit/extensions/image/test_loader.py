@@ -1,19 +1,19 @@
 
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import cv2
 import numpy as np
 import pytest
 from PIL import Image
 from PySide6 import QtCore, QtGui
 
-from extensions.image.loader import (
-    ImageFileLoader,
-    load_image,
-    _imread_flags_for_size,
-    _jpeg_dimensions,
-    _classify_opencv_array,
-    _numpy_to_qimage,
-    _qt_read,
-)
+from extensions.image._decode import _classify_opencv_array, _imread_flags_for_size, _jpeg_dimensions
+from extensions.image._qimage import _numpy_to_qimage, _qt_read, load_image
+from extensions.image.loader import ImageFileLoader
 
 
 @pytest.fixture()
@@ -84,6 +84,33 @@ class TestLoadImageFullSize:
         assert img is not None
         assert img.width() == 40
         assert img.height() == 30
+
+
+@pytest.fixture()
+def rotated_jpeg(tmp_path):
+    p = tmp_path / "rotated.jpg"
+    exif = Image.Exif()
+    exif[0x0112] = 6
+    Image.new("RGB", (100, 200), (200, 30, 30)).save(str(p), exif=exif)
+    return str(p)
+
+
+class TestExifOrientation:
+    def test_full_size_qimage_is_rotated(self, rotated_jpeg):
+        img = load_image(rotated_jpeg)
+        assert (img.width(), img.height()) == (200, 100)
+
+    def test_sized_qimage_is_rotated_like_the_full_size(self, rotated_jpeg):
+        img = load_image(rotated_jpeg, 64)
+        assert img.width() > img.height()
+
+    def test_full_size_numpy_is_rotated(self, rotated_jpeg):
+        assert ImageFileLoader().load(rotated_jpeg).shape[:2] == (100, 200)
+
+    def test_grayscale_full_size_stays_one_channel(self, tmp_path):
+        p = tmp_path / "gray.jpg"
+        Image.new("L", (100, 200), 128).save(str(p))
+        assert ImageFileLoader().load(str(p)).shape == (200, 100)
 
 
 class TestLoadImageResized:
@@ -209,6 +236,9 @@ class TestImreadFlagsForSize:
 
     def test_none_size(self):
         assert _imread_flags_for_size(".png", None) == cv2.IMREAD_UNCHANGED
+
+    def test_full_size_jpeg_applies_orientation(self):
+        assert _imread_flags_for_size(".jpg", None) == cv2.IMREAD_ANYCOLOR
 
     def test_png_with_size(self):
         size = QtCore.QSize(200, 200)
@@ -336,3 +366,62 @@ class TestQtRead:
     def test_nonexistent(self):
         img = _qt_read("/no/such/file.png", None, False)
         assert img is None
+
+
+ROOT = Path(__file__).resolve().parents[3]
+WATCHED = ("cv2", "numpy", "PySide6")
+
+
+def run_probe(lines, *args):
+    code = "\n".join(
+        [
+            "import sys, json",
+            *lines,
+            f"print(json.dumps(sorted(m for m in sys.modules if m in {WATCHED!r})))",
+        ]
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code, *args],
+        cwd=str(ROOT),
+        env={**os.environ},
+        capture_output=True,
+        text=True,
+        timeout=25,
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+def test_loader_module_imports_no_decoders():
+    loaded = run_probe(["import extensions.image.loader"])
+    assert not set(WATCHED) & set(loaded)
+
+
+def test_load_through_loader_does_not_need_qt(rgb_png):
+    loaded = run_probe(
+        [
+            "from extensions.image.loader import ImageFileLoader",
+            "arr = ImageFileLoader().load(sys.argv[1], 64)",
+            "assert arr is not None and arr.ndim == 3 and max(arr.shape[:2]) >= 64",
+        ],
+        rgb_png,
+    )
+    assert "cv2" in loaded and "PySide6" not in loaded
+
+
+def test_preload_imports_the_decoder():
+    loaded = run_probe(["from extensions.image.loader import ImageFileLoader", "ImageFileLoader.preload()"])
+    assert "cv2" in loaded and "PySide6" not in loaded
+
+
+def test_a_broken_decoder_does_not_stop_the_resolver_preload():
+    run_probe(
+        [
+            "sys.modules['cv2'] = None",
+            "from extensions.image.loader import ImageFileLoader",
+            "from wafer.plugin.imageloader.handler import ImageLoaderResolver",
+            "resolver = ImageLoaderResolver()",
+            "resolver.registry.register(ImageFileLoader)",
+            "resolver.preload()",
+        ]
+    )

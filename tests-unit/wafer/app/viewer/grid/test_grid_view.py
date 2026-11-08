@@ -274,6 +274,23 @@ class TestSetupCell:
         assert mock_item.current_path == "img.jpg"
 
     @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_cached_original_is_shown_on_the_first_paint(self, mock_resolver):
+        from wafer.core.files.image_cache import fullsize_key
+
+        fake = self._make_fake(["img.jpg"])
+        fake.rects = {0: QtCore.QRectF(0, 0, 200, 200)}
+        original = _make_image(800, 800)
+        fake.image_cache.get_if_sufficient.side_effect = lambda key, size: original if key == fullsize_key("img.jpg") else None
+        fake.image_cache.get.return_value = None
+        mock_item = MockItem()
+        mock_item.set_image = MagicMock()
+        fake.pixmap_item_pool.acquire.return_value = mock_item
+
+        self.GridView._setup_cell(fake, 0)
+
+        mock_item.set_image.assert_called_once_with(original, "img.jpg")
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
     def test_small_cached_sets_image_before_pipeline(self, mock_resolver):
         mock_resolver.resolve_chain.return_value = []
         fake = self._make_fake(["img.jpg"])

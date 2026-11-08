@@ -51,6 +51,7 @@ class ViewSettings(QtCore.QObject):
 
     def apply(self, view, host) -> None:
         params = self.params
+        host.set_cache_limit(params.thumbnail_cache)
         host.set_hover_size(params.hover_size)
         view.set_image_limit(params.max_images)
         view.set_image_spacing(params.image_spacing)

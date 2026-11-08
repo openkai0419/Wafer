@@ -16,9 +16,10 @@ class WebUIWindow(QtWidgets.QWidget):
     remote_log_received = QtCore.Signal(str, str, str, str)
     _server_stopped = QtCore.Signal()
 
-    def __init__(self, server):
+    def __init__(self, server, lock):
         super().__init__()
         self.server = server
+        self._lock = lock
         self.setWindowTitle("Wafer WebUI")
         self.resize(dpix(640), dpix(480))
         UI.register_instance("WebUIWindow", self)
@@ -51,6 +52,11 @@ class WebUIWindow(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(top)
         layout.addWidget(self._log_panel, 1)
+
+    def event(self, event):
+        if event.type() == QtCore.QEvent.WinIdChange:
+            self._lock.set_window(int(self.winId()))
+        return super().event(event)
 
     def bind_remote_logs(self):
         self.server.on_dev_log = self.remote_log_received.emit

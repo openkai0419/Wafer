@@ -2,6 +2,7 @@ import webbrowser
 
 from ...qt.commands.bridge import ActionKit
 from ...qt.commands.binding.instance_registry import InstanceRegistry
+from ...app.webui.instance import WebUILock, replace_webui
 from ...core.platform.process import AppProcess
 from ...core.store.workspace import WorkspaceStore
 from ...plugin import installer_queue
@@ -44,6 +45,10 @@ def restart_tray(ctx):
         Notifier.info("Pending install detected, restarting all windows")
         restart_all(ctx)
         return
+    tray = ctx.get_instance("Tray")
+    if tray:
+        tray.restart_self()
+        return
     AppProcess.terminate_cmd("--tray", wait=True)
     AppProcess.new_main("--tray")
 
@@ -69,15 +74,11 @@ def restart_all(ctx):
     w = _win(ctx)
     if w:
         w._perform_system_restart(include_self=True)
+        if WebUILock.is_open() and not WebUILock.runs_headless():
+            replace_webui()
         w.close_by_restart()
         return
-    if ctx.get_instance("WebUIWindow"):
-        _shutdown_all(ctx, then_restart=True)
-        return
-    store = WorkspaceStore.instance()
-    store.set_restore_slot_ids(store.get_active_slot_ids())
-    AppProcess.terminate_cmd("--tray", wait=True)
-    AppProcess.new_main("--tray")
+    _shutdown_all(ctx, then_restart=True)
 
 
 def close_all(ctx):
@@ -106,13 +107,10 @@ def _shutdown_all(ctx, *, then_restart):
         return
 
     AppLogger.info(f"shutdown_all(restart={then_restart}): tray unreachable, force-terminating all app processes")
-    webui_running = bool(AppProcess.get_by_args_subset("--webui"))
     AppProcess.force_close_all()
     if hasattr(w, "release_workspace"):
         w.release_workspace()
     if then_restart:
-        if webui_running:
-            WorkspaceStore.instance().set_restore_webui(True)
         AppProcess.new_main()
     if hasattr(w, "_close_reason"):
         from ...app.lifecycle import CloseReason
@@ -124,7 +122,7 @@ def _shutdown_all(ctx, *, then_restart):
 def open_webui(ctx=None):
     from ...app.webui.state import read_url
 
-    if AppProcess.get_by_args_subset("--webui"):
+    if WebUILock.is_open():
         url = read_url()
         if url:
             AppLogger.info(f"WebUI already running, opening {url}")

@@ -207,6 +207,10 @@ class WorkspaceStore:
     def _save_raw(self, data: dict[str, Any]) -> None:
         write_json_file(self._path, data)
 
+    def _locked_load(self) -> dict[str, Any]:
+        with file_lock(self._lock_path):
+            return self._load_raw()
+
     def _locked_update(self, fn: Callable[[dict[str, Any]], Any]) -> Any:
         with file_lock(self._lock_path):
             raw = self._load_raw()
@@ -477,7 +481,7 @@ class WorkspaceStore:
         self._locked_update(_u)
 
     def get_restore_slot_ids(self) -> list[str]:
-        raw = self._load_raw()
+        raw = self._locked_load()
         ids = raw.get("restore_slot_ids", [])
         slots = raw.get("slots", {})
         return [sid for sid in ids if sid in slots]
@@ -489,7 +493,7 @@ class WorkspaceStore:
         self._locked_update(_u)
 
     def get_restore_webui(self) -> bool:
-        return bool(self._load_raw().get("restore_webui", False))
+        return bool(self._locked_load().get("restore_webui", False))
 
     def set_restore_webui(self, value: bool) -> None:
         def _u(raw):

@@ -33,6 +33,23 @@ def test_delete(cache):
     assert cache.current_bytes == 0
 
 
+def test_set_limit_keeps_the_newest_images_that_fit():
+    cache = MemoryLimitedImageCache.__wrapped__(max_mbytes=2)
+    for key in "abcde":
+        cache[key] = _make_image(300, 300)
+    cache.set_limit(1)
+    assert [key for key in "abcde" if key in cache] == ["d", "e"]
+    assert cache.current_bytes == 2 * 300 * 300 * 4
+
+
+def test_raising_the_limit_keeps_every_image_and_lets_more_in(cache):
+    cache["a"] = _make_image(300, 300)
+    cache.set_limit(4)
+    for key in "bcdef":
+        cache[key] = _make_image(300, 300)
+    assert all(key in cache for key in "abcdef")
+
+
 def test_delete_nonexistent(cache):
     del cache["nope"]
     assert cache.current_bytes == 0

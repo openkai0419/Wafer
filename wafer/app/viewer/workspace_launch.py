@@ -1,7 +1,7 @@
 import os
 import sys
 from dataclasses import dataclass
-from time import monotonic, sleep
+from time import monotonic
 from typing import NoReturn
 
 from PySide6 import QtWidgets
@@ -14,17 +14,17 @@ from ...core.ipc.transport import NODE_TIMEOUT, RECONNECT_FORCE_INTERVAL
 from ...core.logs import AppLogger
 from ...core.platform.foreground import activate_window, allow_foreground
 from ...core.platform.process import AppProcess
+from ...core.platform.window_lock import claim_window
 from ...core.platform.workspace_lock import WorkspaceLock
 from ...core.store.workspace import WindowSlot, WorkspaceStore
 from ...qt.common.app_icon import get_icon
+from ..webui.instance import restore_webui
 from .widgets.workspace_labels import slot_title
 from .widgets.workspace_picker import PickResult, WorkspacePickerDialog
 
 OPEN_PATH_TIMEOUT = 5
 OPEN_PATH_ATTEMPT_TIMEOUT = 1.0
 VIEWER_REJOIN_SECONDS = NODE_TIMEOUT + RECONNECT_FORCE_INTERVAL
-CLAIM_RETRIES = 5
-CLAIM_RETRY_INTERVAL = 0.05
 
 
 @dataclass(frozen=True)
@@ -55,9 +55,7 @@ def restore_session(skip_slot_id: str | None) -> None:
     store = WorkspaceStore.instance()
     for slot_id in slots_to_restore(store.get_restore_slot_ids(), skip_slot_id):
         spawn_viewer(slot_id)
-    if store.get_restore_webui():
-        store.set_restore_webui(False)
-        AppProcess.new_main("--webui", "--no-browser")
+    restore_webui()
 
 
 def wait_for_pending_install(app) -> None:
@@ -85,15 +83,10 @@ def claim_workspace(slot_id: str | None) -> WorkspaceLock | None:
     store = WorkspaceStore.instance()
     if slot_id is None or store.get_slot(slot_id) is None:
         slot_id = store.create_slot_from(None)
-    for attempt in range(CLAIM_RETRIES + 1):
-        lock = WorkspaceLock.acquire(slot_id)
-        if lock is not None:
-            return lock
-        if activate_workspace_window(slot_id) or attempt == CLAIM_RETRIES:
-            break
-        sleep(CLAIM_RETRY_INTERVAL)
-    AppLogger.info(f"workspace {slot_id} is already open in another window; not opening a duplicate")
-    return None
+    lock = claim_window(lambda: WorkspaceLock.acquire(slot_id), lambda: activate_workspace_window(slot_id))
+    if lock is None:
+        AppLogger.info(f"workspace {slot_id} is already open in another window; not opening a duplicate")
+    return lock
 
 
 def run_viewer(app, lock: WorkspaceLock, open_request: OpenRequest | None = None) -> NoReturn:

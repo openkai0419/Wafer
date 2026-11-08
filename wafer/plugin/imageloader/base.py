@@ -20,6 +20,10 @@ class BaseImageLoader(BasePlugin):
             return None
         return RenderPlan(source=context.source, path=context.path, resolved_path=path, handler=self)
 
+    @classmethod
+    def preload(cls) -> None:
+        pass
+
     def load(self, path: str, size: int | None = None) -> np.ndarray | None:
         return None
 

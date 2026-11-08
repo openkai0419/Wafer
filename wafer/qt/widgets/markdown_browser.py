@@ -1,9 +1,7 @@
 import re
 from pathlib import Path
 import markdown as _md
-from PySide6 import QtWidgets, QtGui, QtCore
-from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
+from PySide6 import QtWidgets, QtCore
 import shiboken6
 from ..theme import ThemeManager
 from ...core.common.paths import get_resource_path
@@ -49,32 +47,14 @@ def render_to_html(text: str) -> str:
     return _md.markdown(preprocessed, extensions=_MD_EXTENSIONS, tab_length=_MD_TAB_LENGTH)
 
 
-class _ExternalLinkPage(QWebEnginePage):
-    def __init__(self, browser: "MarkdownBrowser", parent=None):
-        super().__init__(parent)
-        self._browser = browser
-        self.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, False)
-
-    def acceptNavigationRequest(self, url, nav_type, is_main_frame):
-        if nav_type != QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
-            return super().acceptNavigationRequest(url, nav_type, is_main_frame)
-        if url.isLocalFile() and url.toLocalFile().lower().endswith(".md"):
-            target = Path(url.toLocalFile()).resolve()
-            base_dir = self._browser._allowed_dir
-            if base_dir and not target.is_relative_to(base_dir):
-                AppLogger.warning(f"Blocked navigation outside base directory: {target}")
-                return False
-            self._browser.load_file(str(target))
-            return False
-        QtGui.QDesktopServices.openUrl(url)
-        return False
-
-
 class MarkdownBrowser(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        from PySide6.QtWebEngineWidgets import QWebEngineView
+        from .markdown_web_page import ExternalLinkPage
+
         self._view = QWebEngineView(self)
-        self._page = _ExternalLinkPage(self, self._view)
+        self._page = ExternalLinkPage(self, self._view)
         self._view.setPage(self._page)
         self._view.setZoomFactor(0.8)
         lay = QtWidgets.QVBoxLayout(self)

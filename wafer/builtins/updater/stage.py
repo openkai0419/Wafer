@@ -245,7 +245,6 @@ def restart_into_launcher(host) -> bool:
         return False
     from ...core.platform.process import AppProcess
     from ...core.store.workspace import WorkspaceStore
-    from ...qt.commands.binding.instance_registry import InstanceRegistry
 
     store = WorkspaceStore.instance()
     node = getattr(host, "_node", None)
@@ -255,12 +254,11 @@ def restart_into_launcher(host) -> bool:
         active_ids = store.get_active_slot_ids()
         if active_ids:
             store.set_restore_slot_ids(active_ids)
-        others = AppProcess.list_viewers()
+        others = AppProcess.list_viewers() + AppProcess.list_app("--webui")
         for sid in active_ids:
             if sid != slot_id:
                 node.send("slot.shutdown", sid, dst="viewer")
-    if InstanceRegistry.instance().get_one("WebUIWindow"):
-        store.set_restore_webui(True)
+        node.send("app.shutdown", dst="webui")
 
     AppLogger.info("[Updater] Restarting through launcher to apply staged update")
     AppProcess.terminate_cmd("--tray", wait=True)

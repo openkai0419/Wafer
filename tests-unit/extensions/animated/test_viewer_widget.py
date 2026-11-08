@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 from PySide6 import QtGui
 
@@ -13,6 +14,59 @@ class TestAnimatedViewerWidgetInit:
         assert w.cover_mode is True
         w.toggle_fit_mode()
         assert w.cover_mode is False
+
+
+class TestAnimatedViewerWidgetGridPreview:
+    def _widget(self, qtbot):
+        from extensions.animated._common import _grid_cache, _viewer_cache
+        from extensions.animated.viewer_widget import AnimatedViewerWidget
+
+        _grid_cache.clear()
+        _viewer_cache.clear()
+        w = AnimatedViewerWidget()
+        qtbot.addWidget(w)
+        w._dispatcher.post = lambda *args, **kwargs: None
+        return w, _grid_cache, _viewer_cache
+
+    def test_grid_frames_play_while_the_original_decodes(self, qtbot):
+        w, grid_cache, _ = self._widget(qtbot)
+        frames = [QtGui.QPixmap(10, 10), QtGui.QPixmap(10, 10)]
+        grid_cache.put("a.gif", frames, [100, 100])
+        w.load(SimpleNamespace(render_path="a.gif"))
+        assert w._frames is frames and w._playing is True
+        w.stop()
+        grid_cache.clear()
+
+    def test_decoded_frames_replace_the_preview_at_the_same_position(self, qtbot):
+        w, grid_cache, _ = self._widget(qtbot)
+        grid_cache.put("a.gif", [QtGui.QPixmap(10, 10), QtGui.QPixmap(10, 10)], [100, 100])
+        w.load(SimpleNamespace(render_path="a.gif"))
+        w._frame_index = 1
+        decoded = [QtGui.QPixmap(40, 40), QtGui.QPixmap(40, 40)]
+        w._on_decoded("a.gif", decoded, [100, 100])
+        assert w._frames is decoded and w._frame_index == 1
+        w.stop()
+        grid_cache.clear()
+
+    def test_decoded_frames_start_over_when_the_frame_count_differs(self, qtbot):
+        w, grid_cache, _ = self._widget(qtbot)
+        grid_cache.put("a.gif", [QtGui.QPixmap(10, 10), QtGui.QPixmap(10, 10)], [100, 100])
+        w.load(SimpleNamespace(render_path="a.gif"))
+        w._frame_index = 1
+        w._on_decoded("a.gif", [QtGui.QPixmap(40, 40)], [100])
+        assert w._frame_index == 0
+        w.stop()
+        grid_cache.clear()
+
+    def test_cached_original_is_used_instead_of_the_grid_frames(self, qtbot):
+        w, grid_cache, viewer_cache = self._widget(qtbot)
+        grid_cache.put("a.gif", [QtGui.QPixmap(10, 10)], [100])
+        original = [QtGui.QPixmap(40, 40)]
+        viewer_cache.put("a.gif", original, [100])
+        w.load(SimpleNamespace(render_path="a.gif"))
+        assert w._frames is original
+        grid_cache.clear()
+        viewer_cache.clear()
 
 
 class TestAnimatedViewerWidgetClear:

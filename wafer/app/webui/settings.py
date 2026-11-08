@@ -6,7 +6,9 @@ import threading
 from configparser import ConfigParser
 
 from ...core.logs import AppLogger
+from ...core.common.ini_io import write_ini
 from ...core.common.paths import resolve_data_path
+from ...web.media import THUMB_CACHE_DEFAULT_MB
 
 _FILENAME = "webui_settings.ini"
 _SECTION = "webui"
@@ -77,7 +79,13 @@ class WebUISettings:
     def allowed_hosts(self) -> tuple[str, ...]:
         return parse_allowed_hosts(self._read().get(_SECTION, "allowed_hosts", fallback=""))
 
-    def save(self, host: str, port: int, allowed_hosts: tuple[str, ...] = ()) -> None:
+    def thumb_cache_mb(self) -> int:
+        try:
+            return self._read().getint(_SECTION, "thumb_cache_mb", fallback=THUMB_CACHE_DEFAULT_MB)
+        except ValueError:
+            return THUMB_CACHE_DEFAULT_MB
+
+    def save(self, host: str, port: int, allowed_hosts: tuple[str, ...] = (), thumb_cache_mb: int | None = None) -> None:
         with _lock:
             cp = self._read()
             if not cp.has_section(_SECTION):
@@ -85,10 +93,9 @@ class WebUISettings:
             cp.set(_SECTION, "host", str(host))
             cp.set(_SECTION, "port", str(int(port)))
             cp.set(_SECTION, "allowed_hosts", ", ".join(allowed_hosts))
-            path = _path()
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                cp.write(f)
+            if thumb_cache_mb is not None:
+                cp.set(_SECTION, "thumb_cache_mb", str(int(thumb_cache_mb)))
+            write_ini(_path(), cp)
         AppLogger.info(f"WebUI settings saved: host={host} port={port} allowed_hosts={', '.join(allowed_hosts) or '-'}")
 
     def resolve_bind(self, cli_host: str | None, cli_port: int | None) -> tuple[str, int]:

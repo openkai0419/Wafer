@@ -55,9 +55,11 @@ class GridResolver:
         return isinstance(self.resolve_plan(path).handler, WidgetGridPlugin)
 
     @profiler.profile
-    def load(self, path: str, size: QtCore.QSize | None = None) -> QtGui.QImage | None:
+    def load(self, path: str, size: QtCore.QSize | None = None, *, enlarge: bool = True) -> QtGui.QImage | None:
         from ..imageloader.handler import image_loader_resolver
 
+        if not enlarge and size is not None and _source_fits(path, size):
+            return image_loader_resolver.load_qimage(path)
         int_size = max(size.width(), size.height()) if size is not None else self.thumbnail_size
         qimage = image_loader_resolver.load_qimage(path, int_size)
         if qimage is None or qimage.isNull():
@@ -67,11 +69,21 @@ class GridResolver:
         return qimage
 
 
+def _source_fits(path: str, size: QtCore.QSize) -> bool:
+    from ..imageloader.handler import image_loader_resolver
+
+    plan = image_loader_resolver.resolve_plan(path)
+    if plan is None:
+        return False
+    source = QtGui.QImageReader(plan.resolved_path).size()
+    return source.isValid() and source.width() <= size.width() and source.height() <= size.height()
+
+
 grid_resolver = GridResolver()
 
 
 def load_thumbnail(path: str, size=None):
-    return grid_resolver.load(path, size)
+    return grid_resolver.load(path, size, enlarge=False)
 
 
 class WidgetNotifier:

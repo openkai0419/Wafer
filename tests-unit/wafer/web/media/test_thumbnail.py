@@ -37,3 +37,13 @@ def test_thumb_cache_singleton_rebinds_on_dir_change(monkeypatch, tmp_path):
     b = tmp_path / "b"
     monkeypatch.setattr(media, "thumb_cache_dir", lambda: str(b))
     assert media.thumb_cache() is not first
+
+
+def test_thumb_cache_uses_the_given_limit(monkeypatch, tmp_path):
+    monkeypatch.setattr(media, "_thumb_cache", None)
+    monkeypatch.setattr(media, "_thumb_cache_dir", None)
+    monkeypatch.setattr(media, "_thumb_cache_limit_mb", media.THUMB_CACHE_DEFAULT_MB)
+    monkeypatch.setattr(media, "thumb_cache_dir", lambda: str(tmp_path))
+    assert media.thumb_cache().size_limit_bytes == media.THUMB_CACHE_DEFAULT_MB * 1024 * 1024
+    media.set_thumb_cache_limit(128)
+    assert media.thumb_cache().size_limit_bytes == 128 * 1024 * 1024

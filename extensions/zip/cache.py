@@ -120,7 +120,7 @@ class ZipCache:
         size_limit_bytes: int | None = None,
     ) -> tuple[int, int]:
         idle_seconds = cache_settings.ENTRY_IDLE_SECONDS if idle_seconds is None else idle_seconds
-        size_limit_bytes = cache_settings.TOTAL_SIZE_LIMIT_BYTES if size_limit_bytes is None else size_limit_bytes
+        size_limit_bytes = cache_settings.zip_config.load()["cache_limit_gb"] * cache_settings.GIBIBYTE if size_limit_bytes is None else size_limit_bytes
         cutoff = time.time() - idle_seconds
         idle_removed = 0
         lru_removed = 0

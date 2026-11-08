@@ -8,6 +8,7 @@ import sys
 import threading
 
 os.environ.setdefault('QSG_RHI_BACKEND', 'opengl')
+os.environ.setdefault('OPENBLAS_NUM_THREADS', '4')
 
 import setproctitle
 
@@ -62,8 +63,9 @@ def _bootstrap_plugins_for_tray():
     from wafer.plugin.startup_install import run_pending_installs
 
     run_pending_installs(get_plugin_dir())
-    _load_plugins()
-    from wafer.plugin.loader import get_command_registry
+    from wafer.plugin.loader import get_command_registry, load_plugins
+
+    load_plugins(write_index=True)
 
     get_command_registry().activate('tray')
 
@@ -124,6 +126,8 @@ def _entry_viewer(app, lock=None, pick=False, seed_slot=None, open_request=None)
     setproctitle.setproctitle(f'{APP_NAME}')
     _start_viewer_profiling()
     from wafer.app.viewer.workspace_launch import run_pick, run_viewer
+    from wafer.plugin.imageloader.handler import image_loader_resolver
+    image_loader_resolver.preload()
     if pick:
         run_pick(app, seed_slot)
     run_viewer(app, lock, open_request=open_request)
@@ -166,10 +170,14 @@ def _entry_tray():
             for name in names:
                 AppProcess.new_main('--indexer', f'{name}', '--parent-pid', my_pid)
 
-            sys.exit(app.exec())
+            exit_code = app.exec()
+            restart = tray_icon.restart_requested
     except FileExistsError:
         AppLogger.info('tray already running, this instance exits (single-tray lock held by another process)')
         return
+    if restart:
+        AppProcess.new_main('--tray')
+    sys.exit(exit_code)
 
 def _entry_indexer(name, parent_pid=None):
     try:
@@ -227,31 +235,37 @@ def _entry_parser(name, plugin, parent_pid=None):
         AppLogger.info(f"Parser '{plugin}' for '{name}' is already running.")
 
 def _entry_webui(args):
-    try:
-        setproctitle.setproctitle(f'{APP_NAME}-webui')
-        AppLogger.set_role('webui')
-        if os.environ.pop('WAFER_REPLACE_WEBUI', None):
-            AppProcess.terminate_cmd('--webui', wait=True, exclude_self=True)
-        from wafer.app.webui.settings import WebUISettings
-        host, port = WebUISettings().resolve_bind(args.host, args.port)
-        with SafeProcessLock(f'{APP_DATA_DIR_NAME}_webui'):
-            if not args.no_tray:
-                _ensure_tray_unless_pending()
-            from wafer.app.webui.entry import run_headless, run_ui
-            if args.no_ui:
-                from wafer.plugin.install_wait import wait_for_install_headless
-
-                wait_for_install_headless()
-                _load_plugins()
-                run_headless(host, port, open_browser=not args.no_browser)
-            else:
-                app = _create_app()
-                _wait_install_then_load_plugins(app)
-                from wafer.plugin.loader import get_command_registry
-                get_command_registry().activate('webui')
-                run_ui(app, host, port, open_browser=not args.no_browser)
-    except FileExistsError:
+    setproctitle.setproctitle(f'{APP_NAME}-webui')
+    AppLogger.set_role('webui')
+    if os.environ.pop('WAFER_REPLACE_WEBUI', None):
+        AppProcess.terminate_cmd('--webui', wait=True, exclude_self=True)
+    from wafer.app.webui.instance import claim_webui
+    from wafer.app.webui.settings import WebUISettings
+    host, port = WebUISettings().resolve_bind(args.host, args.port)
+    lock = claim_webui()
+    if lock is None:
         AppLogger.info('WebUI is already running.')
+        return
+    if args.no_ui:
+        lock.mark_headless()
+    try:
+        if not args.no_tray:
+            _ensure_tray_unless_pending()
+        from wafer.app.webui.entry import run_headless, run_ui
+        if args.no_ui:
+            from wafer.plugin.install_wait import wait_for_install_headless
+
+            wait_for_install_headless()
+            _load_plugins()
+            run_headless(host, port, open_browser=not args.no_browser)
+        else:
+            app = _create_app()
+            _wait_install_then_load_plugins(app)
+            from wafer.plugin.loader import get_command_registry
+            get_command_registry().activate('webui')
+            run_ui(app, lock, host, port, open_browser=not args.no_browser)
+    finally:
+        lock.release()
 
 def main():
     parser = argparse.ArgumentParser(description='Script with three run modes')
@@ -302,19 +316,22 @@ def main():
         _entry_webui(args)
     elif args.indexer:
         if isinstance(args.indexer, str):
-            _load_plugins()
+            from wafer.plugin.loader import load_indexer_plugins
+            load_indexer_plugins()
             _entry_indexer(args.indexer, parent_pid=args.parent_pid)
         else:
             AppProcess.ensure_tray()
     elif args.collector:
         if isinstance(args.collector, str):
-            _load_plugins()
+            from wafer.plugin.loader import load_worker_plugins
+            load_worker_plugins('collector', args.plugin)
             _entry_collector(args.collector, args.plugin, parent_pid=args.parent_pid)
         else:
             AppLogger.warning('--collector requires a db name')
     elif args.parser:
         if isinstance(args.parser, str):
-            _load_plugins()
+            from wafer.plugin.loader import load_worker_plugins
+            load_worker_plugins('parser', args.plugin)
             _entry_parser(args.parser, args.plugin, parent_pid=args.parent_pid)
         else:
             AppLogger.warning('--parser requires a db name')

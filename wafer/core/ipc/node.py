@@ -26,11 +26,13 @@ from .transport import (
     tune_socket,
 )
 from .message import Message
-from .outbox import OutboxStore, scan_all_outbox, remove_outbox_batch_from, cleanup_empty_outbox_files
+from .outbox import OutboxStore, cleanup_dead_outbox_files, read_outbox_of, remove_outbox_batch_from, scan_all_outbox
+
+_OUTBOX_POLL = 30.0
 
 
 class Node:
-    def __init__(self, role: str, db: str | list[str] = "", *, consumer: bool = False, broker_lost_timeout: float | None = None):
+    def __init__(self, role: str, db: str | list[str] = "", *, consumer: bool = False, outbox_poll: float | None = _OUTBOX_POLL, broker_lost_timeout: float | None = None):
         self.role = role
         self.db = db
         self.node_id = f"{role}-{os.getpid()}"
@@ -58,9 +60,12 @@ class Node:
         self._register_warned = False
         self._outbox: OutboxStore | None = None
         self._outbox_event = threading.Event()
+        self._outbox_poll = outbox_poll
         self._outbox_thread: threading.Thread | None = None
+        self._outbox_senders: set[str] = set()
+        self._outbox_senders_lock = threading.Lock()
         if consumer:
-            self._handlers["outbox.notify"] = lambda _msg: self._notify_outbox() or True
+            self._handlers["outbox.notify"] = lambda msg: self._notify_outbox(msg.source) or True
             self._outbox_thread = threading.Thread(target=self._outbox_worker, daemon=True)
 
     @property
@@ -106,7 +111,7 @@ class Node:
         try_put(self._out_q, self._sentinel, "node.stop")
         if self._io_thread:
             self._io_thread.join(timeout=2.0)
-        if self._outbox_thread:
+        if self._outbox_thread and self._outbox_thread.is_alive():
             self._outbox_thread.join(timeout=2.0)
         if self._outbox:
             self._outbox.delete_if_empty()
@@ -131,6 +136,16 @@ class Node:
             self._outbox = OutboxStore(self.node_id)
         self._outbox.push(topic, payload, dst, db)
         self.send("outbox.notify", dst=dst, db=db, priority=Priority.HIGH)
+
+    def nudge_undelivered(self, topic: str, *, dst: str, db: str = "") -> bool:
+        """Wake the consumer again if an earlier send_reliable of this topic is still in the outbox.
+
+        The notify is a plain send, lost while the consumer is not registered.
+        """
+        if self._outbox is None or not self._outbox.has_pending(topic, dst):
+            return False
+        self.send("outbox.notify", dst=dst, db=db, priority=Priority.HIGH)
+        return True
 
     def request(self, topic: str, payload: Any = None, *, dst: str = "ALL", db: str = "", timeout: float = 5.0) -> Message | None:
         rid = Message.make_request_id(f"{self.node_id}-")
@@ -162,23 +177,33 @@ class Node:
             AppLogger.warning(f"handler error: {msg.topic}", exc=e)
             return None
 
-    def _notify_outbox(self):
+    def _notify_outbox(self, sender: str):
+        with self._outbox_senders_lock:
+            self._outbox_senders.add(sender)
         self._outbox_event.set()
 
     def _outbox_worker(self):
+        last_full_scan = time.monotonic()
         while not self._stop.is_set():
-            self._outbox_event.wait(timeout=30)
+            self._outbox_event.wait(timeout=self._outbox_poll)
             self._outbox_event.clear()
             if self._stop.is_set():
                 break
-            self._process_outbox()
+            with self._outbox_senders_lock:
+                senders, self._outbox_senders = self._outbox_senders, set()
+            if self._outbox_poll is not None and time.monotonic() - last_full_scan >= self._outbox_poll:
+                last_full_scan = time.monotonic()
+                self._process_outbox()
+            elif senders:
+                self._process_outbox(senders)
 
-    def _process_outbox(self):
+    def _process_outbox(self, senders: set[str] | None = None):
         dst_filter = {self.node_id, self.role, "ALL"}
         db_filter = self.default_db or None
-        records = scan_all_outbox(dst_filter=dst_filter, db_filter=db_filter)
-        if not records:
-            return
+        if senders is None:
+            records = scan_all_outbox(dst_filter=dst_filter, db_filter=db_filter)
+        else:
+            records = read_outbox_of(senders, dst_filter=dst_filter, db_filter=db_filter)
         done: dict[str, list[int]] = {}
         for rec in records:
             node_id = Path(rec.source_db).stem
@@ -187,7 +212,8 @@ class Node:
                 done.setdefault(rec.source_db, []).append(rec.id)
         for db_path, ids in done.items():
             remove_outbox_batch_from(db_path, ids)
-        cleanup_empty_outbox_files()
+        if senders is None:
+            cleanup_dead_outbox_files()
 
     def _create_socket(self) -> zmq.Socket:
         sock = self._ctx.socket(zmq.DEALER)
@@ -218,7 +244,24 @@ class Node:
             self._last_connect_time = time.monotonic()
         self._registered.clear()
 
+    def _drain_inbound(self) -> bool:
+        did_work = False
+        while True:
+            try:
+                frames = self._dealer.recv_multipart(flags=zmq.NOBLOCK, copy=False)
+            except (zmq.Again, zmq.ZMQError):
+                return did_work
+            msg = Message.from_frames([bytes(f) for f in frames])
+            if msg:
+                with self._timing_lock:
+                    self._last_recv = time.monotonic()
+                self._handle_received(msg)
+            did_work = True
+
     def _ensure_connection(self):
+        # A plugin holding the GIL (a model load) stops this thread while messages wait in the socket.
+        # Read them first: they prove the broker is alive, and reconnecting would destroy them unread.
+        self._drain_inbound()
         if self._registered.is_set():
             with self._timing_lock:
                 if time.monotonic() - self._last_recv < NODE_TIMEOUT:
@@ -348,17 +391,7 @@ class Node:
             did_work = False
 
             if events.get(self._dealer) == zmq.POLLIN:
-                while True:
-                    try:
-                        frames = self._dealer.recv_multipart(flags=zmq.NOBLOCK, copy=False)
-                    except (zmq.Again, zmq.ZMQError):
-                        break
-                    msg = Message.from_frames([bytes(f) for f in frames])
-                    if msg:
-                        with self._timing_lock:
-                            self._last_recv = time.monotonic()
-                        self._handle_received(msg)
-                    did_work = True
+                did_work = self._drain_inbound()
 
             batch, sentinel = drain_queue(self._out_q, self._sentinel)
             for i, frames in enumerate(batch):

@@ -134,3 +134,11 @@ def test_editing_rows_does_not_log_invalid_rows_again(qtbot, monkeypatch):
     type_into_new_row(editor, "b.example.org")
     assert editor.hosts() == ("a.example.org", "b.example.org")
     assert logged == []
+
+
+def test_settings_dialog_saves_the_thumbnail_cache_limit(qtbot, settings_path, monkeypatch):
+    def edit(dialog, editor):
+        dialog.findChild(QtWidgets.QSpinBox, "thumbCacheLimit").setValue(1024)
+
+    run_dialog(monkeypatch, edit)
+    assert WebUISettings().thumb_cache_mb() == 1024

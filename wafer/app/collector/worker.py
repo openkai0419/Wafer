@@ -22,7 +22,7 @@ class CollectorWorker:
             raise ValueError(f"Unknown plugin: {plugin_name}")
         self._singleton = issubclass(collector_resolver.registry.get(plugin_name), BaseSingletonCollector)
         node_db = "" if self._singleton else db_name
-        self._node = Node(f"collector-{plugin_name}", db=node_db, broker_lost_timeout=BROKER_LOST_TIMEOUT)
+        self._node = Node(f"collector-{plugin_name}", db=node_db, consumer=True, outbox_poll=None, broker_lost_timeout=BROKER_LOST_TIMEOUT)
         self._node.subscribe("collect.batch", self._handle_batch)
         self._node.subscribe("plugin.notify", self._on_notify)
         self._node.subscribe("service.request", self._on_service_request)

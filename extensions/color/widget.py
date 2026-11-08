@@ -14,7 +14,8 @@ from wafer.qt.common.notifier import Notifier
 from wafer.core.common.paths import list_setting_db_names
 
 from ._color import normalize_hex, normalize_tolerance
-from .settings import MAX_PALETTE_SLOTS, MIN_PALETTE_SLOTS, ColorSettings
+from ._qt_settings import ColorSettings
+from .settings import MAX_PALETTE_SLOTS, MIN_PALETTE_SLOTS
 
 _DEFAULT_COLOR = "#808080"
 _DEFAULT_TOLERANCE = 0.20

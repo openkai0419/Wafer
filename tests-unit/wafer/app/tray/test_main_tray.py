@@ -1,18 +1,38 @@
 from wafer.app.tray.main_tray import TrayApp
 
 
-class _Store:
+class _Broker:
     def __init__(self):
-        self.restore_webui = None
+        self.kept = False
 
-    def set_restore_webui(self, value):
-        self.restore_webui = value
+    def keep_restore_webui(self):
+        self.kept = True
 
 
-def _patch_store(monkeypatch):
-    store = _Store()
-    monkeypatch.setattr("wafer.core.store.workspace.WorkspaceStore.instance", classmethod(lambda cls: store))
-    return store
+def test_settings_saved_in_the_tray_reach_the_viewers():
+    sent = []
+
+    class _Node:
+        def send(self, *args, **kwargs):
+            sent.append((args, kwargs))
+
+    class _Tray:
+        _node = _Node()
+
+    TrayApp._broadcast_settings(_Tray(), {"window/cache_size": 1024})
+    assert sent == [(("settings.changed", {"window/cache_size": 1024}), {"dst": "viewer"})]
+
+
+def test_restart_self_quits_and_asks_for_the_next_tray(monkeypatch):
+    quits = []
+    monkeypatch.setattr("wafer.app.tray.main_tray.QtWidgets.QApplication.quit", lambda: quits.append(True))
+
+    class _Tray:
+        restart_requested = False
+
+    tray = _Tray()
+    TrayApp.restart_self(tray)
+    assert tray.restart_requested is True and quits == [True]
 
 
 def test_close_all_waits_for_viewers_then_force_closes_remaining(monkeypatch):
@@ -43,7 +63,6 @@ def test_close_all_waits_for_viewers_then_force_closes_remaining(monkeypatch):
     monkeypatch.setattr("wafer.app.tray.main_tray.threading.Thread", _Thread)
     monkeypatch.setattr("wafer.app.tray.main_tray.AppProcess.list_viewers", lambda: viewers)
     monkeypatch.setattr("wafer.app.tray.main_tray.AppProcess.get_by_args_subset", lambda *a: [])
-    store = _patch_store(monkeypatch)
     monkeypatch.setattr(
         "wafer.app.tray.main_tray.AppProcess.wait_procs_then_kill",
         lambda procs: calls.append(("wait", procs)),
@@ -59,6 +78,7 @@ def test_close_all_waits_for_viewers_then_force_closes_remaining(monkeypatch):
 
     fake = type("FakeTray", (), {})()
     fake._node = _Node()
+    fake.broker = _Broker()
     fake._close_all_ready = _Signal()
 
     TrayApp._shutdown_all(fake, then_restart=False)
@@ -70,7 +90,7 @@ def test_close_all_waits_for_viewers_then_force_closes_remaining(monkeypatch):
         ("force_close_all", None),
     ]
     assert fake._close_all_ready.emitted is True
-    assert store.restore_webui is False
+    assert fake.broker.kept is True
 
 
 def test_restart_all_shuts_down_then_spawns_root(monkeypatch):
@@ -101,7 +121,6 @@ def test_restart_all_shuts_down_then_spawns_root(monkeypatch):
     monkeypatch.setattr("wafer.app.tray.main_tray.threading.Thread", _Thread)
     monkeypatch.setattr("wafer.app.tray.main_tray.AppProcess.list_viewers", lambda: viewers)
     monkeypatch.setattr("wafer.app.tray.main_tray.AppProcess.get_by_args_subset", lambda *a: [])
-    _patch_store(monkeypatch)
     monkeypatch.setattr(
         "wafer.app.tray.main_tray.AppProcess.wait_procs_then_kill",
         lambda procs: calls.append(("wait", procs)),
@@ -121,6 +140,7 @@ def test_restart_all_shuts_down_then_spawns_root(monkeypatch):
 
     fake = type("FakeTray", (), {})()
     fake._node = _Node()
+    fake.broker = _Broker()
     fake._close_all_ready = _Signal()
 
     TrayApp._shutdown_all(fake, then_restart=True)
@@ -135,7 +155,7 @@ def test_restart_all_shuts_down_then_spawns_root(monkeypatch):
     assert fake._close_all_ready.emitted is True
 
 
-def test_shutdown_all_delivers_shutdown_to_webui_and_records_restore(monkeypatch):
+def test_shutdown_all_delivers_shutdown_to_webui_and_keeps_its_record(monkeypatch):
     calls = []
 
     class _Signal:
@@ -165,10 +185,10 @@ def test_shutdown_all_delivers_shutdown_to_webui_and_records_restore(monkeypatch
     monkeypatch.setattr("wafer.app.tray.main_tray.AppProcess.force_close_all", lambda: None)
     monkeypatch.setattr("wafer.app.tray.main_tray.AppProcess.new_main", lambda *a, **kw: None)
     monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_scope", lambda self: None)
-    store = _patch_store(monkeypatch)
 
     fake = type("FakeTray", (), {})()
     fake._node = _Node()
+    fake.broker = _Broker()
     fake._close_all_ready = _Signal()
 
     TrayApp._shutdown_all(fake, then_restart=True)
@@ -178,7 +198,7 @@ def test_shutdown_all_delivers_shutdown_to_webui_and_records_restore(monkeypatch
         (("app.shutdown",), {"dst": "webui"}),
     ]
     assert calls == [("wait", viewers + webuis)]
-    assert store.restore_webui is True
+    assert fake.broker.kept is True
 
 
 def test_disarm_reaper_called_on_restart_only(monkeypatch):
@@ -202,13 +222,13 @@ def test_disarm_reaper_called_on_restart_only(monkeypatch):
     monkeypatch.setattr("wafer.app.tray.main_tray.threading.Thread", _Thread)
     monkeypatch.setattr("wafer.app.tray.main_tray.AppProcess.list_viewers", lambda: [])
     monkeypatch.setattr("wafer.app.tray.main_tray.AppProcess.get_by_args_subset", lambda *a: [])
-    _patch_store(monkeypatch)
     monkeypatch.setattr("wafer.app.tray.main_tray._disarm_child_reaper", lambda: disarmed.append(True))
     monkeypatch.setattr("wafer.plugin.settings.PluginSettings.clear_restart_scope", lambda self: None)
 
     def _make_fake():
         fake = type("FakeTray", (), {})()
         fake._node = _Node()
+        fake.broker = _Broker()
         fake._close_all_ready = _Signal()
         return fake
 

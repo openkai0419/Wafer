@@ -1,5 +1,7 @@
 import os
+import sqlite3
 import tempfile
+import threading
 import time
 from unittest.mock import patch, MagicMock
 
@@ -11,8 +13,9 @@ from wafer.core.ipc.outbox import (
     _extract_pid,
     _delete_db_files,
     scan_all_outbox,
+    read_outbox_of,
     remove_outbox_batch_from,
-    cleanup_empty_outbox_files,
+    cleanup_dead_outbox_files,
 )
 
 
@@ -50,20 +53,31 @@ class TestOutboxStore:
             assert len(remaining) == 2
             store.close()
 
-    def test_cleanup(self):
+    def test_read_outbox_of_reads_only_the_named_senders(self):
         with tempfile.TemporaryDirectory() as tmp:
-            store = self._make_store(tmp)
-            store._conn.execute(
-                "INSERT INTO outbox (topic, payload, dst, db, created_at) VALUES (?, ?, ?, ?, ?)",
-                ("old", b"\x90", "idx", "", time.time() - 86400 * 60),
-            )
-            store._conn.commit()
-            store.push("new", "data", "indexer")
-            store.cleanup(max_age_days=30)
-            records = store.pending()
-            assert len(records) == 1
-            assert records[0].topic == "new"
-            store.close()
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
+                for sender in ("sender-1", "sender-2"):
+                    store = OutboxStore(sender)
+                    store.push("t", sender, "indexer")
+                    store.close()
+                assert [r.payload for r in read_outbox_of({"sender-1"})] == ["sender-1"]
+
+    def test_read_outbox_of_does_not_create_a_missing_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
+                assert read_outbox_of({"gone-1", ""}) == []
+                assert os.listdir(tmp) == []
+
+    def test_read_outbox_of_stays_in_the_outbox_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            outbox = os.path.join(tmp, "outbox")
+            os.makedirs(outbox)
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
+                store = OutboxStore("outside-1")
+                store.push("t", "secret", "indexer")
+                store.close()
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", outbox):
+                assert read_outbox_of({"../outside-1"}) == []
 
     def test_scan_all(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -99,6 +113,20 @@ class TestOutboxStore:
 
                 records = scan_all_outbox(db_filter=None)
                 assert len(records) == 3
+
+    def test_dst_filter_combines_with_the_db_filter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
+                store = OutboxStore("node-a")
+                store.push("t1", "p1", "indexer", db="db_alpha")
+                store.push("t2", "p2", "collector-exif", db="db_alpha")
+                store.push("t3", "p3", "ALL", db="db_alpha")
+                store.push("t4", "p4", "indexer", db="db_beta")
+                store.close()
+
+                records = read_outbox_of({"node-a"}, dst_filter={"indexer", "ALL"}, db_filter="db_alpha")
+                assert [r.topic for r in records] == ["t1", "t3"]
+                assert [r.topic for r in scan_all_outbox(dst_filter={"collector-exif"})] == ["t2"]
 
     def test_remove_batch_from(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -152,7 +180,63 @@ class TestOutboxStore:
                 assert os.path.exists(db_path)
 
                 with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=False):
-                    cleanup_empty_outbox_files()
+                    cleanup_dead_outbox_files()
+                assert not os.path.exists(db_path)
+
+    @staticmethod
+    def _store_with_old_row(node_id, *, days_old):
+        store = OutboxStore(node_id)
+        store._conn.execute(
+            "INSERT INTO outbox (topic, payload, dst, db, created_at) VALUES (?, ?, ?, ?, ?)",
+            ("old", b"\x90", "indexer", "gone", time.time() - 86400 * days_old),
+        )
+        store._conn.commit()
+        store.close()
+        return store._path
+
+    def test_cleanup_drops_expired_rows_of_a_dead_sender_and_its_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
+                db_path = self._store_with_old_row("viewer-99999", days_old=31)
+                with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=False):
+                    cleanup_dead_outbox_files()
+                assert not os.path.exists(db_path)
+
+    def test_cleanup_keeps_recent_rows_of_a_dead_sender(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
+                self._store_with_old_row("viewer-99999", days_old=29)
+                with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=False):
+                    cleanup_dead_outbox_files()
+                assert len(scan_all_outbox()) == 1
+
+    def test_cleanup_leaves_a_living_sender_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
+                self._store_with_old_row("viewer-12345", days_old=31)
+                with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=True):
+                    cleanup_dead_outbox_files()
+                assert len(scan_all_outbox()) == 1
+
+    def test_cleanup_keeps_a_busy_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
+                store = OutboxStore("viewer-99999")
+                store.push("t", "data", "indexer")
+                db_path = store._path
+                store.close()
+                with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=False), patch("wafer.core.ipc.outbox._drop_expired_rows", side_effect=sqlite3.OperationalError("database is locked")):
+                    cleanup_dead_outbox_files()
+                assert os.path.exists(db_path)
+
+    def test_cleanup_deletes_a_file_that_is_not_a_database(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
+                db_path = os.path.join(tmp, "viewer-99999.db")
+                with open(db_path, "wb") as f:
+                    f.write(b"not a database" * 100)
+                with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=False):
+                    cleanup_dead_outbox_files()
                 assert not os.path.exists(db_path)
 
     def test_cleanup_empty_files_keeps_alive_pid(self):
@@ -163,7 +247,7 @@ class TestOutboxStore:
                 store.close()
 
                 with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=True):
-                    cleanup_empty_outbox_files()
+                    cleanup_dead_outbox_files()
                 assert os.path.exists(db_path)
 
     def test_cleanup_empty_files_keeps_nonempty(self):
@@ -175,7 +259,7 @@ class TestOutboxStore:
                 store.close()
 
                 with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=False):
-                    cleanup_empty_outbox_files()
+                    cleanup_dead_outbox_files()
                 assert os.path.exists(db_path)
 
 
@@ -302,3 +386,56 @@ class TestConsumeOutbox:
                 remaining = scan_all_outbox()
                 assert len(remaining) == 1
                 assert remaining[0].db == "otherdb"
+
+
+class TestNotifiedSenders:
+    def _push(self, sender, payload, dst="consumer"):
+        store = OutboxStore(sender)
+        store.push("work", payload, dst)
+        store.close()
+
+    def test_a_notify_reads_only_the_file_of_its_sender(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
+                self._push("noisy-1", "notified")
+                self._push("silent-2", "not notified")
+                received = []
+                node = Node("consumer", consumer=True, outbox_poll=None)
+                node.subscribe("work", lambda msg: received.append(msg.payload) or True)
+                node._outbox_thread.start()
+                try:
+                    node._notify_outbox("noisy-1")
+                    deadline = time.monotonic() + 5
+                    while not received and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                finally:
+                    node.stop()
+                assert received == ["notified"]
+                assert [r.payload for r in scan_all_outbox()] == ["not notified"]
+
+    def test_a_polling_consumer_still_scans_everything_under_constant_notifies(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
+                self._push("silent-2", "left behind")
+                received = threading.Event()
+                node = Node("consumer", consumer=True, outbox_poll=0.05)
+                node.subscribe("work", lambda msg: received.set() or True)
+                node._outbox_thread.start()
+                try:
+                    deadline = time.monotonic() + 5
+                    while not received.is_set() and time.monotonic() < deadline:
+                        node._notify_outbox("noisy-1")
+                        time.sleep(0.005)
+                finally:
+                    node.stop()
+                assert received.is_set()
+
+    def test_only_a_full_scan_cleans_up_dead_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
+                node = Node("consumer", consumer=True)
+                with patch("wafer.core.ipc.node.cleanup_dead_outbox_files") as cleanup:
+                    node._process_outbox({"sender-1"})
+                    cleanup.assert_not_called()
+                    node._process_outbox()
+                    cleanup.assert_called_once_with()

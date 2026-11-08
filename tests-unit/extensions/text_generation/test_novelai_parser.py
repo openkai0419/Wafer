@@ -64,7 +64,7 @@ class TestNovelAiImageParser:
         result = self.parser.process("img.png", (100, 1.0), metadata)
         assert result.meta_info == {
             "v4_prompt/caption/base_caption": "classroom",
-            "v4_prompt/caption/char_captions": "1girl, red hair\n1boy, glasses",
+            "v4_prompt/caption/char_captions": "1girl, red hair\n\n1boy, glasses",
             "v4_prompt/caption/char_captions/0/char_caption": "1girl, red hair",
             "v4_prompt/caption/char_captions/0/centers/0/x": "0.3",
             "v4_prompt/caption/char_captions/0/centers/0/y": "0.5",

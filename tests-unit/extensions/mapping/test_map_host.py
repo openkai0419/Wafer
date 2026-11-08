@@ -153,3 +153,29 @@ def test_map_reuses_images_loaded_by_the_list_and_larger_sizes(qtbot, monkeypatc
     small, large = host.map_thumbnails(["a.png", "b.png"], 40)
     assert small is not None and large is not None
     assert host.thumbnail("b.png") is not None
+
+
+def test_cache_limit_splits_like_the_original_budgets(qtbot, monkeypatch):
+    monkeypatch.setattr(map_host, "dpix", lambda value: value)
+    host = make_host(qtbot)
+    host.set_cache_limit(352)
+    assert (host.thumb_budget, host.hover_budget, host.list_budget) == (map_host.THUMB_BUDGET, map_host.HOVER_BUDGET, map_host.LIST_BUDGET)
+
+
+def test_cache_limit_applies_to_the_loaders(qtbot, monkeypatch):
+    monkeypatch.setattr(map_host, "dpix", lambda value: value)
+    host = make_host(qtbot)
+    host.set_cache_limit(704)
+    assert host.thumbs.cache_limit == map_host.cache_limit(2 * map_host.THUMB_BUDGET, host.thumbs.size)
+    assert host.list_thumbs.cache_limit == map_host.cache_limit(2 * map_host.LIST_BUDGET, map_host.LIST_BUCKET)
+
+
+def test_a_smaller_cache_limit_picks_smaller_thumbnails(qtbot, monkeypatch):
+    monkeypatch.setattr(map_host, "dpix", lambda value: value)
+    host = make_host(qtbot)
+    paths = [f"p{i}" for i in range(400)]
+    host.map_thumbnails(paths, 512)
+    assert host.thumbs.size == 256
+    host.set_cache_limit(88)
+    host.map_thumbnails(paths, 512)
+    assert host.thumbs.size == 128

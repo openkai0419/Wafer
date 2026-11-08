@@ -275,6 +275,56 @@ def test_zip_cache_sweep_lru_evicts_when_over_size_cap(tmp_path):
     assert os.path.exists(c_real)
 
 
+def test_zip_cache_sweep_uses_the_saved_limit(tmp_path, monkeypatch):
+    from extensions.zip import settings as zip_settings
+
+    monkeypatch.setattr(zip_settings.zip_config, "load", lambda: {"cache_limit_gb": 0})
+    zip_path = tmp_path / "sample.zip"
+    _create_zip(zip_path, {"a.png": b"x" * 1000})
+    cache = ZipCache(tmp_path / "cache")
+    real = cache.materialize(build_virtual_path(str(zip_path), "a.png"))
+    idle, lru = cache.sweep(idle_seconds=3600)
+    assert idle == 0 and lru == 1 and not os.path.exists(real)
+
+
+def test_zip_cache_limit_defaults_to_5_gib():
+    from extensions.zip.settings import CACHE_LIMIT_DEFAULT_GB, zip_config
+
+    assert CACHE_LIMIT_DEFAULT_GB == 5 and zip_config.to_dict()["cache_limit_gb"] == 5
+
+
+def test_zip_cache_limit_command_saves_the_value(monkeypatch):
+    from unittest.mock import MagicMock
+
+    from PySide6 import QtWidgets
+
+    from extensions.zip import commands, settings as zip_settings
+
+    saved = {}
+    monkeypatch.setattr(zip_settings.zip_config, "save", lambda **values: saved.update(values))
+    monkeypatch.setattr(QtWidgets.QInputDialog, "getInt", lambda *args, **kwargs: (20, True))
+    ctx = MagicMock()
+    ctx.get.return_value = None
+    commands.set_cache_limit(ctx)
+    assert saved == {"cache_limit_gb": 20}
+
+
+def test_zip_cache_limit_command_cancel_saves_nothing(monkeypatch):
+    from unittest.mock import MagicMock
+
+    from PySide6 import QtWidgets
+
+    from extensions.zip import commands, settings as zip_settings
+
+    saved = {}
+    monkeypatch.setattr(zip_settings.zip_config, "save", lambda **values: saved.update(values))
+    monkeypatch.setattr(QtWidgets.QInputDialog, "getInt", lambda *args, **kwargs: (20, False))
+    ctx = MagicMock()
+    ctx.get.return_value = None
+    commands.set_cache_limit(ctx)
+    assert saved == {}
+
+
 def test_open_zip_fallbacks_from_cp932_to_utf8(monkeypatch):
     calls = []
     expected = object()

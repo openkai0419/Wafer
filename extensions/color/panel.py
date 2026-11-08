@@ -11,7 +11,8 @@ from wafer.qt.common.dpi import dpix
 
 from ._color import packed_to_hex
 from .commands import apply_color_filter, apply_selected_color
-from .settings import ColorSettings, palette_keys
+from ._qt_settings import ColorSettings
+from .settings import palette_keys
 
 
 class ColorTagPanelPlugin(BaseKeyValuePanelPlugin):

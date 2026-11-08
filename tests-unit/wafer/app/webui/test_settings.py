@@ -80,3 +80,18 @@ def test_parse_allowed_hosts_logs_each_rejected_entry(monkeypatch):
     monkeypatch.setattr("wafer.app.webui.settings.AppLogger.warning", lambda message, **kwargs: logged.append(message))
     assert parse_allowed_hosts("nas.example.com bad_host!") == ("nas.example.com",)
     assert len(logged) == 1 and "bad_host!" in logged[0]
+
+
+def test_thumb_cache_defaults_to_512_mib(settings):
+    assert settings.thumb_cache_mb() == 512
+
+
+def test_thumb_cache_is_saved_next_to_the_bind(settings):
+    settings.save(HOST_ALL, 9000, thumb_cache_mb=1024)
+    settings.save(HOST_ALL, 9001)
+    assert settings.thumb_cache_mb() == 1024 and settings.port() == 9001
+
+
+def test_broken_thumb_cache_falls_back_to_the_default(settings, tmp_path):
+    (tmp_path / "webui_settings.ini").write_text("[webui]\nthumb_cache_mb = lots\n", encoding="utf-8")
+    assert settings.thumb_cache_mb() == 512

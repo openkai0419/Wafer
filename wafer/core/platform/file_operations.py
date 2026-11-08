@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from collections.abc import Callable
 
-import requests
-
 from ..logs import AppLogger
 from ..common.paths import safe_exists, safe_is_dir
 from ..common.virtual_paths import is_virtual_path
@@ -177,6 +175,8 @@ def _save_remote_item(item: ParsedItem, target_path: str, *, move: bool = False)
 
     if isinstance(src_info, str) and is_http_url(src_info):
         try:
+            import requests
+
             session = requests.Session()
             session.max_redirects = 5
             with session.get(src_info, timeout=10, stream=True) as resp:

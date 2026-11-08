@@ -4,6 +4,7 @@ import argparse
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -29,13 +30,24 @@ PACKAGES_MARKER = "extensions/.packages/e2e_marker.txt"
 USER_EXTENSION_MARKER = "extensions/e2e_user_ext/README.md"
 MARKERS = (LIB_MARKER, PACKAGES_MARKER, USER_EXTENSION_MARKER)
 
+# AppData is isolated by env, the registry is not: when the real entry points at a missing file,
+# explorer_menu.sync() rewrites it to the Wafer.exe it runs from, which here is deleted afterwards.
+E2E_MENU_KEY = r"Software\Wafer-update-e2e\explorer-menu"
+WEBUI_SHUTDOWN_LOG = "WebUI received app.shutdown."
+
 _FALLBACK_RE = re.compile(r'(FALLBACK_VERSION\s*=\s*["\'])(.+?)(["\'])')
 _FORCE_RE = re.compile(r"^FORCE_UPDATE_ENABLED = False$", re.MULTILINE)
+_MENU_KEY_RE = re.compile(r'^MENU_KEY = r".+"$', re.MULTILINE)
 _RELEASE_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)")
 
 DISABLE_AUTO_CHECK_DRIVER = """
 from wafer.builtins.updater.state import set_auto_check_enabled
 set_auto_check_enabled(False)
+"""
+
+WEBUI_PORT_DRIVER = """
+from wafer.app.webui.settings import DEFAULT_HOST, WebUISettings
+WebUISettings().save(DEFAULT_HOST, {port})
 """
 
 STAGE_DRIVER = """
@@ -101,6 +113,26 @@ def force_local_updates(app_root: Path) -> None:
     if count != 1:
         raise E2EFailure(f"'FORCE_UPDATE_ENABLED = False' not found in {path}")
     path.write_text(text, encoding="utf-8")
+
+
+def isolate_explorer_menu(app_root: Path) -> None:
+    path = app_root / "wafer" / "core" / "platform" / "explorer_menu.py"
+    text, count = _MENU_KEY_RE.subn(lambda _: f'MENU_KEY = r"{E2E_MENU_KEY}"', path.read_text(encoding="utf-8"), count=1)
+    if count != 1:
+        raise E2EFailure(f"MENU_KEY not found in {path}")
+    path.write_text(text, encoding="utf-8")
+
+
+def explorer_menu_command() -> str | None:
+    from wafer.core.platform import explorer_menu
+
+    return explorer_menu.stored_command()
+
+
+def require_explorer_menu_unchanged(before: str | None) -> None:
+    after = explorer_menu_command()
+    if after != before:
+        raise E2EFailure(f"the real Explorer menu entry changed: {before!r} -> {after!r}")
 
 
 def copy_release(dist: Path, dst: Path) -> None:
@@ -237,6 +269,8 @@ def prepare(dist: Path, work: Path) -> tuple[Path, str]:
     set_fallback_version(new_root, new_version)
     force_local_updates(app_root)
     force_local_updates(new_root)
+    isolate_explorer_menu(app_root)
+    isolate_explorer_menu(new_root)
     seed_markers(app_root)
     write_update_source(new_root, work / "source", new_version)
     shutil.rmtree(new_root.parent)
@@ -254,6 +288,39 @@ def start_old_version(app_root: Path, env: dict[str, str]) -> str:
     return slot_id
 
 
+def free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def start_old_webui(app_root: Path, env: dict[str, str]) -> subprocess.Popen:
+    from wafer.core.store.workspace import WorkspaceStore
+
+    run_driver(app_root, env, WEBUI_PORT_DRIVER.format(port=free_port()), "choosing the WebUI port")
+    print("[update-e2e] Opening the old WebUI")
+    proc = subprocess.Popen([str(app_root / "python" / "wafer-pythonw.exe"), str(app_root / "main.py"), "--webui", "--no-browser"], cwd=app_root, env=env)
+    wait_until(WorkspaceStore.instance().get_restore_webui, STARTUP_TIMEOUT, "the old WebUI to connect to the tray")
+    return proc
+
+
+def webui_running(app_root: Path) -> bool:
+    for proc in processes_under(app_root):
+        try:
+            if "--webui" in proc.cmdline():
+                return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return False
+
+
+def require_webui_closed(work: Path, old_webui: subprocess.Popen) -> None:
+    if old_webui.poll() is None:
+        raise E2EFailure("the old WebUI is still running after restart_into_launcher")
+    if not logs_contain(old_version_logs(work), WEBUI_SHUTDOWN_LOG):
+        raise E2EFailure(f"the old WebUI exited without receiving app.shutdown (logs: {old_version_logs(work)})")
+
+
 def verify_update(work: Path, app_root: Path, new_version: str, slot_id: str) -> None:
     update_dir = app_root / ".update"
 
@@ -265,12 +332,13 @@ def verify_update(work: Path, app_root: Path, new_version: str, slot_id: str) ->
 
     wait_until(applied_and_reported, APPLY_TIMEOUT, f"v{new_version} to be applied and reported by the new version")
     wait_until(lambda: slot_id in open_workspaces(), STARTUP_TIMEOUT, f"workspace {slot_id} to be restored")
+    wait_until(lambda: webui_running(app_root), STARTUP_TIMEOUT, "the WebUI to reopen in the new version")
     if read_fallback_version(app_root) != new_version:
         raise E2EFailure(f"app root still has v{read_fallback_version(app_root)}")
     if missing := missing_markers(app_root):
         raise E2EFailure(f"lost across the update: {missing}")
     if logs_contain(old_version_logs(work), "wait_procs_then_kill: force-killed"):
-        raise E2EFailure(f"the old Viewer did not close by itself on slot.shutdown and had to be killed (logs: {old_version_logs(work)})")
+        raise E2EFailure(f"the old Viewer or WebUI did not close by itself on shutdown and had to be killed (logs: {old_version_logs(work)})")
     print(f"[update-e2e] New version running:\n{describe(processes_under(app_root))}")
 
 
@@ -293,15 +361,21 @@ def run(dist: Path, keep: bool) -> int:
         app_root, new_version = prepare(dist, work)
         os.environ.update(isolated_env(work))
         env = dict(os.environ)
+        menu_command = explorer_menu_command()
+        print(f"[update-e2e] Real Explorer menu entry (must not change): {menu_command}")
         slot_id = start_old_version(app_root, env)
+        old_webui = start_old_webui(app_root, env)
         print(f"[update-e2e] Staging v{new_version}")
         run_driver(app_root, env, STAGE_DRIVER, "staging")
         print("[update-e2e] Restarting into the launcher")
         run_driver(app_root, env, RESTART_DRIVER, "restart_into_launcher")
         keep_old_version_logs(work)
+        require_webui_closed(work, old_webui)
         verify_update(work, app_root, new_version, slot_id)
+        require_explorer_menu_unchanged(menu_command)
         failed = False
-        print(f"[update-e2e] OK: updated to v{new_version}, workspace restored, lib/.packages/user extension kept")
+        print(f"[update-e2e] Real Explorer menu entry after the run: {explorer_menu_command()}")
+        print(f"[update-e2e] OK: updated to v{new_version}, workspace and WebUI restored, lib/.packages/user extension kept, Explorer menu untouched")
         return 0
     except E2EFailure as exc:
         print(f"[update-e2e] FAILED: {exc}", file=sys.stderr)

@@ -3,9 +3,9 @@ import webbrowser
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from ...app.webui.instance import replace_webui
 from ...app.webui.settings import HOST_ALL, HOST_LOCAL, LOOPBACK_HOST_NAMES, PRIVATE_NAME_SUFFIXES, WebUISettings, classify_allowed_hosts
 from ...qt.commands.bridge import ActionKit, Command
-from ...core.platform.process import AppProcess
 from ...qt.common.dpi import dpix
 from ...qt.common.icon_engine import themed_icon
 from ...qt.common.notifier import Notifier
@@ -126,7 +126,7 @@ def open_browser(ctx=None):
 
 def restart_webui(ctx=None):
     Notifier.info("Restarting WebUI...")
-    AppProcess.new_main("--webui", "--no-browser", extra_env={"WAFER_REPLACE_WEBUI": "1"})
+    replace_webui()
 
 
 def open_settings(ctx=None):
@@ -147,6 +147,13 @@ def open_settings(ctx=None):
     port_spin.setRange(1, 65535)
     port_spin.setValue(settings.port())
 
+    thumb_cache_spin = QtWidgets.QSpinBox()
+    thumb_cache_spin.setObjectName("thumbCacheLimit")
+    thumb_cache_spin.setRange(64, 1024 * 1024)
+    thumb_cache_spin.setSingleStep(64)
+    thumb_cache_spin.setSuffix(" MiB")
+    thumb_cache_spin.setValue(settings.thumb_cache_mb())
+
     hosts_editor = AllowedHostsEditor(settings.allowed_hosts())
     hosts_editor.set_builtin(builtin_host_labels(host_combo.currentData()))
     host_combo.currentIndexChanged.connect(lambda: hosts_editor.set_builtin(builtin_host_labels(host_combo.currentData())))
@@ -161,13 +168,14 @@ def open_settings(ctx=None):
     form.addRow("Host", host_combo)
     form.addRow("Port", port_spin)
     form.addRow("Allowed hosts", hosts_editor)
+    form.addRow("Thumbnail cache on disk", thumb_cache_spin)
     form.addRow(note)
     form.addRow(buttons)
 
     result = {"restart": False}
 
     def save():
-        settings.save(host_combo.currentData(), port_spin.value(), hosts_editor.hosts())
+        settings.save(host_combo.currentData(), port_spin.value(), hosts_editor.hosts(), thumb_cache_spin.value())
         dialog.accept()
 
     save_btn.clicked.connect(save)

@@ -5,17 +5,13 @@ from collections.abc import Callable, Iterable
 
 from PySide6 import QtCore, QtGui
 
-from ...core.files.image_cache import MemoryLimitedImageCache
+from ...core.files.image_cache import fullsize_key
+from ...core.files.shared_image_cache import shared_image_cache
 from ...core.logs import AppLogger
-from ...core.store.settings import app_settings
 from ...qt.common.dispatcher import CancelToken, Dispatcher
 from ...qt.common.dpi import dpix
 from ...qt.common.thread import utility_pool
 from .handler import load_thumbnail
-
-
-def shared_image_cache() -> MemoryLimitedImageCache:
-    return MemoryLimitedImageCache(app_settings.get("window/cache_size", 500))
 
 
 def long_side(image: QtGui.QImage | QtGui.QPixmap | None) -> int:
@@ -89,7 +85,9 @@ class ThumbnailLoader:
                 if token.is_cancelled():
                     continue
                 try:
-                    image = load_thumbnail(path, size)
+                    image = self._from_original(path, side)
+                    if image is None:
+                        image = load_thumbnail(path, size)
                 except Exception as e:
                     AppLogger.warning(f"Thumbnail load failed: {path}", exc=e)
                     image = None
@@ -99,13 +97,21 @@ class ThumbnailLoader:
 
         self._dispatcher.post(task)
 
+    def _from_original(self, path: str, side: int) -> QtGui.QImage | None:
+        original = self._images.get(fullsize_key(path))
+        if not long_side(original):
+            return None
+        if long_side(original) <= side:
+            return original
+        return original.scaled(side, side, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+
     def store(self, path: str, image: QtGui.QImage | None, requested: int | None = None) -> None:
         self._tokens.pop(path, None)
         loaded = long_side(image)
         if loaded < (requested or dpix(self._size)):
             self._natural[path] = loaded
         if loaded:
-            if long_side(self._images.peek(path)) < loaded:
+            if max(long_side(self._images.peek(path)), long_side(self._images.peek(fullsize_key(path)))) < loaded:
                 self._images[path] = image
             side = dpix(self._size)
             if long_side(self._cache.get(path)) < min(loaded, side):

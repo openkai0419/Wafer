@@ -6,7 +6,8 @@ from wafer.app.viewer import workspace_launch
 from wafer.app.viewer.widgets.workspace_picker import PickResult
 from wafer.core.common.paths import normalize_path
 from wafer.core.lang.manager import t
-from wafer.core.platform import workspace_lock
+from wafer.app.webui import instance as webui_instance
+from wafer.core.platform import window_lock, workspace_lock
 from wafer.core.platform.workspace_lock import WorkspaceLock
 from wafer.core.store.workspace import WindowSlot, WorkspaceStore
 
@@ -20,7 +21,7 @@ def lock_dir(tmp_path, monkeypatch):
 @pytest.fixture(autouse=True)
 def retry_waits(monkeypatch):
     waits = []
-    monkeypatch.setattr(workspace_launch, "sleep", waits.append)
+    monkeypatch.setattr(window_lock, "sleep", waits.append)
     return waits
 
 
@@ -57,7 +58,7 @@ def test_claim_workspace_gives_up_when_the_owner_never_shows_a_window(tmp_path, 
     try:
         assert workspace_launch.claim_workspace("s1") is None
         assert activated == []
-        assert retry_waits == [workspace_launch.CLAIM_RETRY_INTERVAL] * workspace_launch.CLAIM_RETRIES
+        assert retry_waits == [window_lock.CLAIM_RETRY_INTERVAL] * window_lock.CLAIM_RETRIES
     finally:
         held.release()
 
@@ -65,12 +66,12 @@ def test_claim_workspace_gives_up_when_the_owner_never_shows_a_window(tmp_path, 
 def test_claim_workspace_retries_while_a_status_probe_holds_the_lock(tmp_path, monkeypatch, lock_dir, activated, retry_waits):
     probe = WorkspaceLock.acquire("s1")
     store_with_slot(monkeypatch, tmp_path, "s1")
-    monkeypatch.setattr(workspace_launch, "sleep", lambda seconds: retry_waits.append(seconds) or probe.release())
+    monkeypatch.setattr(window_lock, "sleep", lambda seconds: retry_waits.append(seconds) or probe.release())
     lock = workspace_launch.claim_workspace("s1")
     try:
         assert lock is not None
         assert lock.slot_id == "s1"
-        assert retry_waits == [workspace_launch.CLAIM_RETRY_INTERVAL]
+        assert retry_waits == [window_lock.CLAIM_RETRY_INTERVAL]
         assert activated == []
     finally:
         lock.release()
@@ -79,7 +80,7 @@ def test_claim_workspace_retries_while_a_status_probe_holds_the_lock(tmp_path, m
 def test_claim_workspace_stops_retrying_once_the_owner_shows_its_window(tmp_path, monkeypatch, lock_dir, activated, retry_waits):
     held = WorkspaceLock.acquire("s1")
     store_with_slot(monkeypatch, tmp_path, "s1")
-    monkeypatch.setattr(workspace_launch, "sleep", lambda seconds: retry_waits.append(seconds) or held.set_window(88))
+    monkeypatch.setattr(window_lock, "sleep", lambda seconds: retry_waits.append(seconds) or held.set_window(88))
     try:
         assert workspace_launch.claim_workspace("s1") is None
         assert activated == [88]
@@ -257,9 +258,10 @@ def test_restore_session_spawns_other_slots_and_webui(tmp_path, monkeypatch):
     store.set_restore_webui(True)
     spawned = []
     monkeypatch.setattr(workspace_launch.AppProcess, "new_main", lambda *args: spawned.append(args))
+    monkeypatch.setattr(webui_instance.WebUILock, "is_open", classmethod(lambda cls: False))
     workspace_launch.restore_session("a")
     assert spawned == [("--viewer", "--slot", "b"), ("--webui", "--no-browser")]
-    assert store.get_restore_webui() is False
+    assert store.get_restore_webui() is True
 
 
 def test_restore_session_without_skip_spawns_every_slot(tmp_path, monkeypatch):

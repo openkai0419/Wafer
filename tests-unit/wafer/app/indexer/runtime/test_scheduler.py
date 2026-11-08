@@ -300,6 +300,19 @@ def test_stop_from_task_thread_no_hang():
     assert not s._background_thread.is_alive()
 
 
+def test_note_activity_restarts_the_idle_clock():
+    s = TaskScheduler()
+    s._last_active_time = time.monotonic() - 600
+    once = PeriodicTask(name="once", interval=0.0, once_per_idle=True, create_task=lambda: Task.create("t", priority=TaskPriority.MAINTENANCE, run=lambda: None))
+    once._idle_done = True
+    s.add_periodic_task(once)
+
+    s.note_activity()
+
+    assert time.monotonic() - s._last_active_time < 5.0
+    assert once._idle_done is False
+
+
 @pytest.mark.parametrize(
     "priority,resets",
     [

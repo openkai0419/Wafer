@@ -1,10 +1,33 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from PySide6 import QtCore
 
-from extensions.color.settings import APP_SETTINGS_KEY, ColorSettings
+from extensions.color.settings import APP_SETTINGS_KEY
+from extensions.color._qt_settings import ColorSettings
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def test_settings_module_does_not_import_qt():
+    code = (
+        "import sys;import extensions.color.settings;import extensions.color.collector;"
+        "hit = sorted(m for m in sys.modules if m == 'PySide6');print(hit);sys.exit(1 if hit else 0)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=str(ROOT),
+        env={**os.environ},
+        capture_output=True,
+        text=True,
+        timeout=25,
+    )
+    assert result.returncode == 0, f"pulled {result.stdout}\n{result.stderr}"
 
 
 class _FakeAppSettings(QtCore.QObject):
@@ -30,7 +53,7 @@ def test_color_settings_save_updates_app_settings_and_notifies_collector(qapp, m
     save_and_notify = MagicMock()
     monkeypatch.setattr(ColorSettings, "_instance", None)
     monkeypatch.setattr(ColorSettings, "_app_settings", staticmethod(lambda: fake_app))
-    monkeypatch.setattr("extensions.color.settings.color_config.save_and_notify", save_and_notify)
+    monkeypatch.setattr("extensions.color._qt_settings.color_config.save_and_notify", save_and_notify)
 
     settings = ColorSettings.instance()
     changed = MagicMock()

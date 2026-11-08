@@ -109,6 +109,7 @@ class ViewParams(ParamSet):
     image_spacing: float = param(0.01, label="Image spacing", description="Space between images, relative to their size. Lower lets them overlap more.", minimum=0.01, maximum=2.0, step=0.05)
     max_images: int = param(300, label="Image limit", description="Most images shown at once. Other files stay as dots.", minimum=0, maximum=2000, step=50)
     hover_size: int = param(256, label="Hover size", description="Size of the enlarged image shown under the cursor. 0 turns it off.", minimum=0, maximum=1024, step=32)
+    thumbnail_cache: int = param(352, label="Thumbnail cache (MiB)", description="Memory for the thumbnails this panel keeps ready to draw. Lower uses less memory, but crowded maps get smaller thumbnails.", minimum=64, maximum=65536, step=64)
 
 
 SUBGROUP_SIZE = ParamSpec(

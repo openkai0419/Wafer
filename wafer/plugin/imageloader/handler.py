@@ -1,13 +1,17 @@
-import numpy as np
-from PIL import Image
-from PySide6 import QtGui
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from ...core.files.render_target import RenderPlan, ResolveContext, SURFACE_IMAGE
-from ...qt.common.image import numpy_to_qimage, pil_to_qimage
 from ...core.logs import AppLogger
 from ...core.profiling import profiler
 from ..registry import FilePluginRegistry
 from .base import BaseImageLoader
+
+if TYPE_CHECKING:
+    import numpy as np
+    from PIL import Image
+    from PySide6 import QtGui
 
 
 class ImageLoaderResolver:
@@ -17,6 +21,13 @@ class ImageLoaderResolver:
     def resolve(self, path: str) -> type[BaseImageLoader] | None:
         return self.registry.resolve(path)
 
+    def preload(self) -> None:
+        for plugin_cls in self.registry.list_all():
+            try:
+                plugin_cls.preload()
+            except Exception as exc:
+                AppLogger.warning(f"[ImageLoaderResolver] Could not prepare image loader {plugin_cls.NAME}, its images may not open. Reinstall it from the Plugin Manager ({type(exc).__name__}: {exc})", exc=exc)
+
     def resolve_chain(self, path: str) -> list[type[BaseImageLoader]]:
         return self.registry.resolve_chain(path)
 
@@ -25,6 +36,8 @@ class ImageLoaderResolver:
 
     @profiler.profile
     def load(self, path: str, size: int | None = None) -> np.ndarray | None:
+        import numpy as np
+
         for plan in self._plans(path):
             instance = plan.handler
             result = instance.load(plan.resolved_path, size)
@@ -39,6 +52,8 @@ class ImageLoaderResolver:
 
     @profiler.profile
     def load_pil(self, path: str, size: int | None = None) -> Image.Image | None:
+        from PIL import Image
+
         for plan in self._plans(path):
             instance = plan.handler
             pil = instance.load_pil(plan.resolved_path, size)
@@ -52,6 +67,8 @@ class ImageLoaderResolver:
 
     @profiler.profile
     def load_qimage(self, path: str, size: int | None = None) -> QtGui.QImage | None:
+        from ...qt.common.image import numpy_to_qimage, pil_to_qimage
+
         for plan in self._plans(path):
             instance = plan.handler
             image = instance.load_qimage(plan.resolved_path, size)

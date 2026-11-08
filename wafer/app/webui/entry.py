@@ -4,6 +4,7 @@ import sys
 import webbrowser
 
 from ...core.logs import AppLogger
+from .instance import SESSION_ID, WebUILock
 from .settings import WebUISettings, browse_url
 from .state import write_state
 
@@ -26,13 +27,13 @@ def run_headless(host: str, port: int, *, open_browser: bool):
     run_server(host, port, allowed_hosts=WebUISettings().allowed_hosts(), on_started=lambda: _on_started(url, open_browser))
 
 
-def run_ui(app, host: str, port: int, *, open_browser: bool):
+def run_ui(app, lock: WebUILock, host: str, port: int, *, open_browser: bool):
     from ..startup import StartupTasks
     from .backend.server import WebServer
     from .window import WebUIWindow
 
-    server = WebServer(host, port, allowed_hosts=WebUISettings().allowed_hosts())
-    window = WebUIWindow(server)
+    server = WebServer(host, port, allowed_hosts=WebUISettings().allowed_hosts(), session_id=SESSION_ID)
+    window = WebUIWindow(server, lock)
     window.bind_remote_logs()
     server.on_started = lambda: _on_started(server.browse_url, open_browser)
     server.on_app_shutdown = window.request_shutdown

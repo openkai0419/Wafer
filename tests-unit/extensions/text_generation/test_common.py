@@ -16,10 +16,10 @@ class TestStringifyMetaInfo:
 
 
 class TestJoinListField:
-    def test_joins_field_of_each_item_with_newlines(self):
+    def test_joins_field_of_each_item_with_blank_lines(self):
         meta_info = stringify_meta_info({"chars": [{"caption": "a"}, {"other": "x"}, {"caption": "c"}]})
         join_list_field(meta_info, "chars", "caption")
-        assert meta_info["chars"] == "a\nc"
+        assert meta_info["chars"] == "a\n\nc"
 
     def test_ignores_nested_and_unrelated_keys(self):
         meta_info = {"chars/0/caption": "a", "chars/0/sub/caption": "nested", "charsx/0/caption": "other", "chars/x/caption": "bad"}

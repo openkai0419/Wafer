@@ -32,4 +32,4 @@ def join_list_field(meta_info: dict[str, str], list_key: str, field: str) -> Non
     prefix, suffix = f"{list_key}/", f"/{field}"
     values = [value for key, value in meta_info.items() if key.startswith(prefix) and key.endswith(suffix) and key[len(prefix) : -len(suffix)].isdigit()]
     if values:
-        meta_info[list_key] = "\n".join(values)
+        meta_info[list_key] = "\n\n".join(values)

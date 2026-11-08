@@ -183,19 +183,21 @@ def cleanup_dead_outbox_files():
 
 def _read_records(db_path: str, dst_filter: set[str] | None, db_filter: str | None) -> list[OutboxRecord]:
     records: list[OutboxRecord] = []
+    conditions, params = [], []
+    if dst_filter:
+        conditions.append(f"dst IN ({','.join('?' * len(dst_filter))})")
+        params.extend(dst_filter)
+    if db_filter is not None:
+        conditions.append("db = ?")
+        params.append(db_filter)
+    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
     try:
         conn = _connect(db_path)
         try:
             if not _has_outbox_table(conn):
                 return records
-            rows = conn.execute(
-                "SELECT id, topic, payload, dst, db, created_at FROM outbox ORDER BY id",
-            ).fetchall()
+            rows = conn.execute(f"SELECT id, topic, payload, dst, db, created_at FROM outbox{where} ORDER BY id", params).fetchall()
             for r in rows:
-                if dst_filter and r[3] not in dst_filter:
-                    continue
-                if db_filter is not None and r[4] != db_filter:
-                    continue
                 records.append(
                     OutboxRecord(
                         id=r[0],

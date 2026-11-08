@@ -114,6 +114,20 @@ class TestOutboxStore:
                 records = scan_all_outbox(db_filter=None)
                 assert len(records) == 3
 
+    def test_dst_filter_combines_with_the_db_filter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
+                store = OutboxStore("node-a")
+                store.push("t1", "p1", "indexer", db="db_alpha")
+                store.push("t2", "p2", "collector-exif", db="db_alpha")
+                store.push("t3", "p3", "ALL", db="db_alpha")
+                store.push("t4", "p4", "indexer", db="db_beta")
+                store.close()
+
+                records = read_outbox_of({"node-a"}, dst_filter={"indexer", "ALL"}, db_filter="db_alpha")
+                assert [r.topic for r in records] == ["t1", "t3"]
+                assert [r.topic for r in scan_all_outbox(dst_filter={"collector-exif"})] == ["t2"]
+
     def test_remove_batch_from(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):

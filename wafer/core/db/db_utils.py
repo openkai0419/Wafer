@@ -13,6 +13,8 @@ from ..profiling import profiler
 from ..logs import AppLogger
 from .cache_limit import process_db_cache_limit_mb
 
+WAL_SIZE_LIMIT_BYTES = 64 * 1024 * 1024
+
 
 def _apply_process_cache_limit(conn: sqlite3.Connection):
     conn.execute(f"PRAGMA soft_heap_limit={process_db_cache_limit_mb() * 1024 * 1024}")
@@ -21,6 +23,7 @@ def _apply_process_cache_limit(conn: sqlite3.Connection):
 def apply_write_pragmas(conn: sqlite3.Connection):
     _apply_process_cache_limit(conn)
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute(f"PRAGMA journal_size_limit={WAL_SIZE_LIMIT_BYTES}")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA locking_mode=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")

@@ -24,6 +24,37 @@ def test_filedb_start_exit(tmp_path):
     assert db.read_conn is None
 
 
+def test_filedb_start_waits_out_a_lock_longer_than_the_write_busy_timeout(tmp_path, monkeypatch):
+    import wafer.core.db.file_db as file_db
+
+    monkeypatch.setattr(file_db, "WRITE_BUSY_TIMEOUT_SECONDS", 0.05)
+    db_path = tmp_path / "test.db"
+    holder = sqlite3.connect(db_path, check_same_thread=False, isolation_level=None)
+    holder.execute("CREATE TABLE t (x)")
+    holder.execute("BEGIN EXCLUSIVE")
+    release = threading.Timer(0.5, holder.execute, args=("COMMIT",))
+    release.start()
+    db = FileDB(db_path)
+    try:
+        db.start()
+        assert db.conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+    finally:
+        release.join()
+        holder.close()
+        db.close()
+
+
+def test_filedb_write_connection_keeps_the_short_busy_timeout_after_start(tmp_path):
+    import wafer.core.db.file_db as file_db
+
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    try:
+        assert db.conn.execute("PRAGMA busy_timeout").fetchone()[0] == int(file_db.WRITE_BUSY_TIMEOUT_SECONDS * 1000)
+    finally:
+        db.close()
+
+
 def _index_names(db_path):
     with sqlite3.connect(db_path) as conn:
         return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}

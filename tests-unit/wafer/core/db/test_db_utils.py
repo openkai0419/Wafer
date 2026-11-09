@@ -22,6 +22,24 @@ def test_apply_write_pragmas(tmp_path):
     conn.close()
 
 
+def test_apply_write_pragmas_shrinks_the_wal_once_it_is_reused(tmp_path, monkeypatch):
+    import wafer.core.db.db_utils as db_utils
+
+    monkeypatch.setattr(db_utils, "WAL_SIZE_LIMIT_BYTES", 64 * 1024)
+    db_path = tmp_path / "test.db"
+    conn = sqlite3.connect(str(db_path))
+    apply_write_pragmas(conn)
+    conn.execute("CREATE TABLE t (x BLOB)")
+    with conn:
+        conn.executemany("INSERT INTO t VALUES (?)", [(b"x" * 4096,) for _ in range(500)])
+    assert (tmp_path / "test.db-wal").stat().st_size > 1024 * 1024
+    conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+    with conn:
+        conn.execute("INSERT INTO t VALUES (x'00')")
+    assert (tmp_path / "test.db-wal").stat().st_size <= 64 * 1024
+    conn.close()
+
+
 def test_apply_read_pragmas(tmp_path):
     conn = sqlite3.connect(str(tmp_path / "test.db"))
     apply_read_pragmas(conn)

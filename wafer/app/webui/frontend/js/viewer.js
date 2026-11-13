@@ -220,10 +220,12 @@ export class Viewer {
     this.el.classList.add('loading');
     const settle = (message) => {
       this.el.classList.remove('loading');
-      if (message !== undefined) {
-        this.caption.textContent = message;
-        this.controls.setHideable(false);
+      if (message === undefined) {
+        this.controls.revealIfClear();
+        return;
       }
+      this.caption.textContent = message;
+      this.controls.setHideable(false);
     };
     if (!item) {
       try {

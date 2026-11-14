@@ -33,6 +33,7 @@ export class ViewerControls {
     this.parts = [...this.main.querySelectorAll(':scope > button'), viewerEl.querySelector('#viewer-caption')];
     this.active = false;
     this.hideable = true;
+    this.autoHide = true;
     this.timer = null;
     const restart = () => this.restart();
     viewerEl.addEventListener('pointerdown', restart);
@@ -82,6 +83,11 @@ export class ViewerControls {
     if (!value && this.hidden) this.show();
   }
 
+  setAutoHide(value) {
+    this.autoHide = value;
+    if (this.active && !this.hidden) this.arm();
+  }
+
   revealIfClear() {
     if (this.active && this.hidden && !this.coversContent) this.show();
   }
@@ -102,7 +108,7 @@ export class ViewerControls {
 
   arm() {
     this.clearTimer();
-    this.timer = setTimeout(() => this.expire(), HIDE_DELAY_MS);
+    if (this.autoHide) this.timer = setTimeout(() => this.expire(), HIDE_DELAY_MS);
   }
 
   expire() {

@@ -77,8 +77,8 @@ def wait_until_hidden(page):
 
 def start_slideshow(page, seconds):
     page.click("#viewer-menu")
-    page.fill("#viewer-menu-popup input", str(seconds))
-    page.press("#viewer-menu-popup input", "Tab")
+    page.fill("#viewer-menu-popup input[type=number]", str(seconds))
+    page.press("#viewer-menu-popup input[type=number]", "Tab")
     page.click("#viewer-menu-popup .menu-item:nth-child(2)")
 
 
@@ -391,6 +391,53 @@ def test_the_next_image_clear_of_them_reveals(viewer_page):
     page.keyboard.press("ArrowRight")
     wait_for(page, "2/")
     page.wait_for_selector("#viewer:not(.controls-hidden)", timeout=5000)
+
+
+AUTO_HIDE = "#viewer-menu-popup input.switch"
+
+
+def set_auto_hide(page, on):
+    page.click("#viewer-menu")
+    page.set_checked(AUTO_HIDE, on)
+    page.click("#viewer-menu")
+    page.wait_for_selector("#viewer-menu-popup", state="hidden")
+
+
+def test_auto_hide_off_keeps_them_but_a_tap_still_toggles(viewer_page):
+    page = viewer_page
+    set_auto_hide(page, False)
+    page.clock.fast_forward(7000)
+    assert not hidden(page)
+    page.touchscreen.tap(*image_center(page))
+    assert hidden(page)
+    page.clock.fast_forward(7000)
+    assert hidden(page)
+    page.touchscreen.tap(*image_center(page))
+    assert not hidden(page)
+    page.clock.fast_forward(7000)
+    assert not hidden(page)
+
+
+def test_auto_hide_off_is_remembered(viewer_page):
+    page = viewer_page
+    set_auto_hide(page, False)
+    page.reload()
+    page.wait_for_selector("#grid-canvas .cell")
+    open_first(page)
+    assert not page.is_checked(AUTO_HIDE)
+    page.clock.fast_forward(3100)
+    assert not hidden(page)
+
+
+def test_auto_hide_on_again_hides_after_three_seconds(viewer_page):
+    page = viewer_page
+    set_auto_hide(page, False)
+    page.clock.fast_forward(7000)
+    set_auto_hide(page, True)
+    page.clock.fast_forward(2000)
+    assert not hidden(page)
+    page.clock.fast_forward(1100)
+    assert hidden(page)
 
 
 def test_a_resize_that_clears_the_image_reveals(viewer_page):

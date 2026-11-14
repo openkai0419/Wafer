@@ -48,8 +48,8 @@ def requests_to(page, fragment):
 
 def start_slideshow(page, seconds):
     page.click("#viewer-menu")
-    page.fill("#viewer-menu-popup input", str(seconds))
-    page.press("#viewer-menu-popup input", "Tab")
+    page.fill("#viewer-menu-popup input[type=number]", str(seconds))
+    page.press("#viewer-menu-popup input[type=number]", "Tab")
     page.click("#viewer-menu-popup .menu-item:nth-child(2)")
 
 

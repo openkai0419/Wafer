@@ -11,6 +11,7 @@ export const DEFAULT_LABELS = {
   interval: 'slideshow interval (s)',
   slideshowStart: 'start slideshow',
   slideshowStop: 'stop slideshow',
+  autoHide: 'auto hide UI',
   notFound: 'error: item not found',
   loadError: (message) => `error: ${message}`,
   mediaError: (name) => `error: failed to load ${name}`,
@@ -133,7 +134,21 @@ export class Viewer {
     input.addEventListener('change', apply);
     intervalRow.appendChild(input);
 
-    this.menu.append(selectFolder, this.slideshowToggle, intervalRow);
+    const autoHideRow = document.createElement('label');
+    autoHideRow.className = 'menu-item';
+    autoHideRow.textContent = this.labels.autoHide;
+    const autoHide = document.createElement('input');
+    autoHide.type = 'checkbox';
+    autoHide.className = 'switch';
+    autoHide.checked = load('autoHideControls', true);
+    this.controls.setAutoHide(autoHide.checked);
+    autoHide.addEventListener('change', () => {
+      save('autoHideControls', autoHide.checked);
+      this.controls.setAutoHide(autoHide.checked);
+    });
+    autoHideRow.appendChild(autoHide);
+
+    this.menu.append(selectFolder, this.slideshowToggle, intervalRow, autoHideRow);
     this.updateMenu();
   }
 

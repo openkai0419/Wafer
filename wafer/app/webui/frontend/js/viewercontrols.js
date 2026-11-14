@@ -1,5 +1,6 @@
 const HIDE_DELAY_MS = 3000;
 const HIDDEN_CLASS = 'controls-hidden';
+const OVERLAP_TOLERANCE_PX = 1;
 
 function drawnRect(img, box) {
   const scale = Math.min(box.width / img.naturalWidth, box.height / img.naturalHeight);
@@ -16,7 +17,9 @@ function untransformedBox(el) {
 }
 
 function overlaps(a, b) {
-  return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+  const width = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+  const height = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+  return width > OVERLAP_TOLERANCE_PX && height > OVERLAP_TOLERANCE_PX;
 }
 
 export function isInsideDrawnImage(img, x, y) {

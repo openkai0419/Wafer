@@ -393,6 +393,23 @@ def test_the_next_image_clear_of_them_reveals(viewer_page):
     page.wait_for_selector("#viewer:not(.controls-hidden)", timeout=5000)
 
 
+TOUCH_CAPTION = (
+    "overlap => { const img = document.querySelector('#viewer-stage > img');"
+    "const stage = document.querySelector('#viewer-stage').getBoundingClientRect();"
+    "const caption = document.querySelector('#viewer-caption').getBoundingClientRect();"
+    "img.style.cssText = `position: absolute; left: 150px; width: 80px; height: 40px;"
+    " top: ${caption.top - stage.top - 40 + overlap}px`; }"
+)
+
+
+@pytest.mark.parametrize("overlap,hides", [(1, False), (2, True)])
+def test_a_one_pixel_overlap_is_not_covering(viewer_page, overlap, hides):
+    page = viewer_page
+    page.evaluate(TOUCH_CAPTION, overlap)
+    page.clock.fast_forward(3100)
+    assert hidden(page) == hides
+
+
 AUTO_HIDE = "#viewer-menu-popup input.switch"
 
 

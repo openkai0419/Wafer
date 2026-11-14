@@ -9,16 +9,9 @@ START = (300, 400)
 FAR = (60, 400)
 CONTROLS = "#viewer-close"
 FILL_STAGE = (
-    "document.addEventListener('DOMContentLoaded', () => {"
-    "const s = document.createElement('style');"
-    "s.textContent = '#viewer-stage img { width: 100%; height: 100%; }';"
-    "document.head.append(s);});"
+    "document.addEventListener('DOMContentLoaded', () => {const s = document.createElement('style');s.textContent = '#viewer-stage img { width: 100%; height: 100%; }';document.head.append(s);});"
 )
-SHRINK = (
-    "const s = document.createElement('style');"
-    "s.textContent = '#viewer-stage img { width: 40px !important; height: 40px !important; }';"
-    "document.head.append(s);"
-)
+SHRINK = "const s = document.createElement('style');s.textContent = '#viewer-stage img { width: 40px !important; height: 40px !important; }';document.head.append(s);"
 
 
 @pytest.fixture

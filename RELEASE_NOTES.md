@@ -2,6 +2,20 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.8.2]
+
+### Highlights
+- WebUI viewer: swipe between images, and the controls fade when idle (tap the image to show them, or turn off "auto hide UI").
+
+### Improvements
+- Setting → Cache Limits sets how much memory images and the database use; Animated, Zip, Mapping and WebUI caches have their own limits.
+- Images already seen in the Viewer show in the grid and panels without reloading, and background processes start faster with less memory.
+- WebUI: pull down on the grid to refresh, and it reopens with the Viewer when it was open last time.
+
+### Fixes
+- Full-size JPEGs now follow their EXIF rotation.
+- Indexing no longer crashes or leaves files uncollected, and Restart Tray / Restart All from the Tray work again.
+
 ## [v0.8.1]
 
 ### Improvements

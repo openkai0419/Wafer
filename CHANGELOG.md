@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.8.2]
+### Added
+- WebUI viewer: swipe between images (the neighbor is preloaded); the controls fade after 3 seconds idle when they overlap the image, tapping the image toggles them, and an "auto hide UI" switch in the viewer menu turns the fade off.
+- WebUI grid: pull down at the top to re-run the query.
+- Setting → Cache Limits (Viewer and Tray) sets the in-memory image cache per Viewer and the SQLite cache per process (512 MiB each; the SQLite limit applies after a restart).
+- Own cache limits for animated frames (Widgets → Animated), Zip extraction (Widgets → Zip), Mapping thumbnails (gear popup) and WebUI thumbnails on disk (WebUI Settings).
+- The WebUI reopens with the Viewer when it was open last time, and launching it again brings its window to the front.
+
+### Changed
+- The Viewer, Grid and panels share one image cache: an image seen in the Viewer shows in the Grid and thumbnails without decoding again, and small images are no longer enlarged in Batch Renamer and Mapping.
+- Animated files play the Grid's frames until the full decode is ready, then continue at the same frame.
+- Workers and Indexers load only the plugins they run, and numpy, requests and QtWebEngine load only when used, so processes start faster and use less memory.
+- A notified worker reads only its sender's outbox, removing a cap of about 20 batches per second; messages of dead senders are dropped after 30 days.
+- The database WAL is kept to 64 MB after use.
+- NovelAI character captions are separated by a blank line.
+- The WebUI settings button shows a gear.
+
+### Fixed
+- Full-size JPEGs, and thumbnails made from them, follow their EXIF orientation.
+- An Indexer waits for another process's WAL recovery instead of crashing, and a WAL checkpoint no longer breaks writes on other Indexer threads.
+- Files no longer stay waiting to be collected when a batch is lost (first wd14 / full_hash collection, or a batch that failed to reach the outbox).
+- Restart Tray and Restart All from the Tray bring the Tray back, and Restart All from a Viewer keeps a headless WebUI headless.
+- A broken image loader (e.g. cv2) no longer stops the Viewer from starting.
+
 ## [v0.8.1]
 ### Added
 - WebUI Settings: Allowed hosts list (+/-) accepts extra domain names (e.g. `*.example.com`) on any bind and shows the names always allowed for the chosen bind; rejected hosts are logged once.

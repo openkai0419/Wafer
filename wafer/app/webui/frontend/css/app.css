@@ -377,7 +377,7 @@ input.switch:disabled { opacity: 0.4; cursor: default; }
   font-size: 13px;
 }
 #viewer-menu-popup button.menu-item:hover { background: var(--hover); }
-#viewer-menu-popup input { width: 64px; }
+#viewer-menu-popup input:not(.switch) { width: 64px; }
 
 #settings-modal {
   position: fixed;
@@ -402,7 +402,7 @@ input.switch:disabled { opacity: 0.4; cursor: default; }
 #settings-title { display: flex; align-items: center; min-height: var(--menu-row); padding: 0 var(--menu-inset); font-size: 14px; color: var(--fg); }
 .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--menu-row); padding: 0 var(--menu-inset); }
 .settings-row :is(select, button, input:not([type="range"], .switch)),
-#viewer-menu-popup input { height: var(--menu-control); padding-block: 0; }
+#viewer-menu-popup input:not(.switch) { height: var(--menu-control); padding-block: 0; }
 .menu-sep { align-self: stretch; margin: var(--menu-sep-space) var(--menu-inset); border: none; border-top: var(--rule); }
 #auto-scroll-toggle.active { color: var(--accent); border-color: var(--accent); }
 #auto-scroll-speed { flex: 1; min-width: 0; padding: 0; background: none; border: none; accent-color: var(--accent); }

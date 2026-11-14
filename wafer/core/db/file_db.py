@@ -14,6 +14,9 @@ from ..common.virtual_paths import display_name
 from ..profiling import profiler
 from ..logs import AppLogger
 
+OPEN_BUSY_TIMEOUT_SECONDS = 120.0
+WRITE_BUSY_TIMEOUT_SECONDS = 3.0
+
 _TABLES = (
     ("hash_index", (), "CREATE TABLE IF NOT EXISTS hash_index (file_hash TEXT PRIMARY KEY)"),
     (
@@ -218,8 +221,13 @@ class FileDB:
 
     @profiler.profile
     def start(self):
-        self.conn = connect_with_retry(self.db_path, timeout=3.0, check_same_thread=False)
+        opening = time.perf_counter()
+        self.conn = connect_with_retry(self.db_path, timeout=OPEN_BUSY_TIMEOUT_SECONDS, check_same_thread=False)
         apply_write_pragmas(self.conn)
+        self.conn.execute(f"PRAGMA busy_timeout={int(WRITE_BUSY_TIMEOUT_SECONDS * 1000)}")
+        waited = time.perf_counter() - opening
+        if waited > WRITE_BUSY_TIMEOUT_SECONDS:
+            AppLogger.info(f"waited {waited:.1f}s for {self.db_path.name} to be free before opening it")
         uri = Path(self.db_path).resolve().as_uri()
         self.read_conn = connect_with_retry(f"{uri}?mode=ro", timeout=1.0, uri=True, check_same_thread=False)
         apply_read_pragmas(self.read_conn)

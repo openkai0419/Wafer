@@ -244,7 +244,7 @@ function setupSettings() {
   const button = document.getElementById('settings-btn');
   const modal = document.getElementById('settings-modal');
   const thumbSelect = document.getElementById('thumb-size');
-  setIcon(button, 'menu');
+  setIcon(button, 'gear');
   for (const px of THUMB_STEPS) {
     const opt = document.createElement('option');
     opt.value = String(px);

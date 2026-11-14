@@ -48,8 +48,8 @@ def requests_to(page, fragment):
 
 def start_slideshow(page, seconds):
     page.click("#viewer-menu")
-    page.fill("#viewer-menu-popup input", str(seconds))
-    page.press("#viewer-menu-popup input", "Tab")
+    page.fill("#viewer-menu-popup input[type=number]", str(seconds))
+    page.press("#viewer-menu-popup input[type=number]", "Tab")
     page.click("#viewer-menu-popup .menu-item:nth-child(2)")
 
 
@@ -274,11 +274,7 @@ def test_a_video_ending_during_a_drag_moves_on_after_it(page, webui_base_url):
     touch.move(START[0] - 30, 100)
     touch.move(START[0] - 60, 100)
     page.wait_for_selector(".swipe-pane", state="attached")
-    page.evaluate(
-        "const video = document.querySelector('#viewer-stage video');"
-        "Object.defineProperty(video, 'ended', { value: true });"
-        "video.dispatchEvent(new Event('ended'));"
-    )
+    page.evaluate("const video = document.querySelector('#viewer-stage video');Object.defineProperty(video, 'ended', { value: true });video.dispatchEvent(new Event('ended'));")
     assert page.locator(".swipe-pane").count() == 1
     touch.cancel()
     wait_for(page, "2/")

@@ -45,7 +45,7 @@ def test_slideshow_interval_has_lower_bound(ready_page):
     page = ready_page
     _open_first(page)
     page.click("#viewer-menu")
-    interval = page.locator("#viewer-menu-popup input")
+    interval = page.locator("#viewer-menu-popup input[type=number]")
     interval.fill("0.5")
     interval.press("Tab")
     interval.fill("0.1")
@@ -56,7 +56,7 @@ def test_slideshow_interval_has_lower_bound(ready_page):
 def test_slideshow_advances_viewer(ready_page):
     page = ready_page
     _open_first(page)
-    interval = page.locator("#viewer-menu-popup input")
+    interval = page.locator("#viewer-menu-popup input[type=number]")
     page.click("#viewer-menu")
     interval.fill("0.5")
     interval.press("Tab")

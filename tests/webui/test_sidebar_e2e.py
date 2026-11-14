@@ -38,6 +38,14 @@ def test_settings_thumb_size_persists_across_reload(ready_page):
     assert page.input_value("#thumb-size") == "512"
 
 
+def test_settings_button_shows_a_gear(ready_page):
+    page = ready_page
+    assert page.locator("#settings-btn svg line").count() == 0
+    box = page.eval_on_selector("#settings-btn svg path", "p => { const b = p.getBBox(); return [b.width, b.height]; }")
+    assert all(19 < side <= 20 for side in box)
+    assert page.get_attribute("#settings-btn svg path", "fill-rule") == "evenodd"
+
+
 def test_sidebar_toggle_tip_follows_its_state(ready_page):
     page = ready_page
     assert page.get_attribute("#sidebar-toggle", "title") == "hide sidebar"

@@ -1,4 +1,16 @@
+function gear({ teeth = 8, outer = 10, inner = 6.3, hole = 2.6 } = {}) {
+  const corners = teeth * 4;
+  const points = Array.from({ length: corners }, (_, i) => {
+    const angle = (2 * Math.PI * i) / corners - Math.PI / 2;
+    const radius = i % 4 === 0 || i % 4 === 3 ? inner : outer;
+    return `${(12 + radius * Math.cos(angle)).toFixed(2)} ${(12 + radius * Math.sin(angle)).toFixed(2)}`;
+  });
+  const circle = `M${12 + hole} 12a${hole} ${hole} 0 1 0 ${-2 * hole} 0a${hole} ${hole} 0 1 0 ${2 * hole} 0Z`;
+  return `<path fill="currentColor" stroke="none" fill-rule="evenodd" d="M${points.join('L')}Z${circle}"/>`;
+}
+
 const PATHS = {
+  gear: gear(),
   'chevron-left': '<polyline points="15 18 9 12 15 6"/>',
   'chevron-right': '<polyline points="9 18 15 12 9 6"/>',
   'chevron-up': '<polyline points="18 15 12 9 6 15"/>',

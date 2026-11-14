@@ -8,7 +8,10 @@ MARGIN = (187, 700)
 START = (300, 400)
 FAR = (60, 400)
 CONTROLS = "#viewer-close"
-FILL_BOX = "const img = document.querySelector('#viewer-stage img');img.style.width = '100%'; img.style.height = '100%'; img.style.objectFit = 'contain';"
+FILL_STAGE = (
+    "document.addEventListener('DOMContentLoaded', () => {const s = document.createElement('style');s.textContent = '#viewer-stage img { width: 100%; height: 100%; }';document.head.append(s);});"
+)
+SHRINK = "const s = document.createElement('style');s.textContent = '#viewer-stage img { width: 40px !important; height: 40px !important; }';document.head.append(s);"
 
 
 @pytest.fixture
@@ -18,6 +21,7 @@ def browser_context_args(browser_context_args):
 
 @pytest.fixture
 def page(page):
+    page.add_init_script(FILL_STAGE)
     page.clock.install()
     return page
 
@@ -66,8 +70,8 @@ def wait_until_hidden(page):
 
 def start_slideshow(page, seconds):
     page.click("#viewer-menu")
-    page.fill("#viewer-menu-popup input", str(seconds))
-    page.press("#viewer-menu-popup input", "Tab")
+    page.fill("#viewer-menu-popup input[type=number]", str(seconds))
+    page.press("#viewer-menu-popup input[type=number]", "Tab")
     page.click("#viewer-menu-popup .menu-item:nth-child(2)")
 
 
@@ -229,7 +233,8 @@ def test_hidden_prev_does_not_move(viewer_page):
     x, y = center(page.locator("#viewer-prev").bounding_box())
     wait_until_hidden(page)
     page.touchscreen.tap(x, y)
-    assert closed(page)
+    assert caption(page).startswith("1/")
+    assert not hidden(page)
 
 
 def test_tab_focus_reveals(viewer_page):
@@ -332,7 +337,6 @@ def test_a_failed_image_reveals_and_stays(viewer_page):
     assert not hidden(page)
     page.clock.fast_forward(3100)
     assert not hidden(page)
-    page.evaluate(FILL_BOX)
     page.mouse.click(*image_center(page))
     assert not hidden(page)
     assert not closed(page)
@@ -356,8 +360,100 @@ def test_after_a_failure_the_next_image_hides_again(viewer_page):
 
 def test_a_click_outside_the_drawn_image_is_the_margin(viewer_page):
     page = viewer_page
-    page.evaluate(FILL_BOX)
     page.mouse.click(187, 406)
     assert hidden(page)
     page.mouse.click(187, 100)
     assert closed(page)
+
+
+def test_they_stay_when_the_image_is_clear_of_them(viewer_page):
+    page = viewer_page
+    page.evaluate(SHRINK)
+    page.clock.fast_forward(3100)
+    assert not hidden(page)
+    page.mouse.click(*image_center(page))
+    assert not hidden(page)
+    assert not closed(page)
+
+
+def test_the_next_image_clear_of_them_reveals(viewer_page):
+    page = viewer_page
+    wait_until_hidden(page)
+    page.evaluate(SHRINK)
+    assert hidden(page)
+    page.keyboard.press("ArrowRight")
+    wait_for(page, "2/")
+    page.wait_for_selector("#viewer:not(.controls-hidden)", timeout=5000)
+
+
+TOUCH_CAPTION = (
+    "overlap => { const img = document.querySelector('#viewer-stage > img');"
+    "const stage = document.querySelector('#viewer-stage').getBoundingClientRect();"
+    "const caption = document.querySelector('#viewer-caption').getBoundingClientRect();"
+    "img.style.cssText = `position: absolute; left: 150px; width: 80px; height: 40px;"
+    " top: ${caption.top - stage.top - 40 + overlap}px`; }"
+)
+
+
+@pytest.mark.parametrize("overlap,hides", [(1, False), (2, True)])
+def test_a_one_pixel_overlap_is_not_covering(viewer_page, overlap, hides):
+    page = viewer_page
+    page.evaluate(TOUCH_CAPTION, overlap)
+    page.clock.fast_forward(3100)
+    assert hidden(page) == hides
+
+
+AUTO_HIDE = "#viewer-menu-popup input.switch"
+
+
+def set_auto_hide(page, on):
+    page.click("#viewer-menu")
+    page.set_checked(AUTO_HIDE, on)
+    page.click("#viewer-menu")
+    page.wait_for_selector("#viewer-menu-popup", state="hidden")
+
+
+def test_auto_hide_off_keeps_them_but_a_tap_still_toggles(viewer_page):
+    page = viewer_page
+    set_auto_hide(page, False)
+    page.clock.fast_forward(7000)
+    assert not hidden(page)
+    page.touchscreen.tap(*image_center(page))
+    assert hidden(page)
+    page.clock.fast_forward(7000)
+    assert hidden(page)
+    page.touchscreen.tap(*image_center(page))
+    assert not hidden(page)
+    page.clock.fast_forward(7000)
+    assert not hidden(page)
+
+
+def test_auto_hide_off_is_remembered(viewer_page):
+    page = viewer_page
+    set_auto_hide(page, False)
+    page.reload()
+    page.wait_for_selector("#grid-canvas .cell")
+    open_first(page)
+    assert not page.is_checked(AUTO_HIDE)
+    page.clock.fast_forward(3100)
+    assert not hidden(page)
+
+
+def test_auto_hide_on_again_hides_after_three_seconds(viewer_page):
+    page = viewer_page
+    set_auto_hide(page, False)
+    page.clock.fast_forward(7000)
+    set_auto_hide(page, True)
+    page.clock.fast_forward(2000)
+    assert not hidden(page)
+    page.clock.fast_forward(1100)
+    assert hidden(page)
+
+
+def test_a_resize_that_clears_the_image_reveals(viewer_page):
+    page = viewer_page
+    wait_until_hidden(page)
+    page.evaluate(SHRINK)
+    assert hidden(page)
+    page.set_viewport_size({"width": 375, "height": 700})
+    page.wait_for_selector("#viewer:not(.controls-hidden)", timeout=5000)

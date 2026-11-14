@@ -20,6 +20,7 @@ LAYERS: dict[str, dict] = {
         "paths": ["tests-unit/"],
         "label": "Layer 1: Unit Tests",
         "maxfail": 20,
+        "timeout": 900,
     },
     "smoke": {
         "paths": ["tests/smoke/", "tests/integration/"],

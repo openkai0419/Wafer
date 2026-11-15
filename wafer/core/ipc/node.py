@@ -59,6 +59,7 @@ class Node:
         self._broker_lost_callback: Callable[[], None] | None = None
         self._register_warned = False
         self._outbox: OutboxStore | None = None
+        self._outbox_open_lock = threading.Lock()
         self._outbox_event = threading.Event()
         self._outbox_poll = outbox_poll
         self._outbox_thread: threading.Thread | None = None
@@ -132,10 +133,14 @@ class Node:
         try_put(self._out_q, msg.to_frames(), f"node.coalesced:{topic}")
 
     def send_reliable(self, topic: str, payload: Any = None, *, dst: str, db: str = ""):
-        if self._outbox is None:
-            self._outbox = OutboxStore(self.node_id)
-        self._outbox.push(topic, payload, dst, db)
+        self._open_outbox().push(topic, payload, dst, db)
         self.send("outbox.notify", dst=dst, db=db, priority=Priority.HIGH)
+
+    def _open_outbox(self) -> OutboxStore:
+        with self._outbox_open_lock:
+            if self._outbox is None:
+                self._outbox = OutboxStore(self.node_id)
+            return self._outbox
 
     def nudge_undelivered(self, topic: str, *, dst: str, db: str = "") -> bool:
         """Wake the consumer again if an earlier send_reliable of this topic is still in the outbox.

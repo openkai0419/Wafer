@@ -2,6 +2,12 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.8.3]
+
+### Fixes
+- Indexing a database no longer stops until a restart after its message queue was locked for a few seconds.
+- Starting indexing no longer logs a "database is locked" error.
+
 ## [v0.8.2]
 
 ### Highlights

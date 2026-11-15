@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.8.3]
+### Fixed
+- An Indexer no longer stops sending collection and parsing work until a restart after its message queue stays locked for over 5 seconds.
+- An Indexer no longer logs a "database is locked" error when its first collection and parsing work start at once.
+
 ## [v0.8.2]
 ### Added
 - WebUI viewer: swipe between images (the neighbor is preloaded); the controls fade after 3 seconds idle when they overlap the image, tapping the image toggles them, and an "auto hide UI" switch in the viewer menu turns the fade off.

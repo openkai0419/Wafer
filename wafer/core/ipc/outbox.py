@@ -48,13 +48,7 @@ def _delete_db_files(db_path: str):
 
 
 def _connect(path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(path, timeout=5.0, check_same_thread=False)
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-    except sqlite3.Error:
-        conn.close()
-        raise
-    return conn
+    return sqlite3.connect(path, timeout=5.0, check_same_thread=False)
 
 
 class OutboxRecord(NamedTuple):
@@ -76,32 +70,34 @@ class OutboxStore:
     @staticmethod
     def _open(path: str) -> sqlite3.Connection:
         conn = _connect(path)
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute(_SCHEMA)
-        conn.commit()
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute(_SCHEMA)
+            conn.commit()
+        except sqlite3.Error:
+            conn.close()
+            raise
         return conn
 
     def push(self, topic: str, payload: Any, dst: str, db: str = "") -> int:
         blob = msgpack.packb(payload, use_bin_type=True)
-        with self._lock:
+        with self._lock, self._conn:
             cur = self._conn.execute(
                 "INSERT INTO outbox (topic, payload, dst, db, created_at) VALUES (?, ?, ?, ?, ?)",
                 (topic, blob, dst, db, time.time()),
             )
-            self._conn.commit()
             return cur.lastrowid
 
     def remove(self, record_id: int):
-        with self._lock:
+        with self._lock, self._conn:
             self._conn.execute("DELETE FROM outbox WHERE id = ?", (record_id,))
-            self._conn.commit()
 
     def remove_batch(self, record_ids: list[int]):
         if not record_ids:
             return
-        with self._lock:
+        with self._lock, self._conn:
             self._conn.executemany("DELETE FROM outbox WHERE id = ?", [(rid,) for rid in record_ids])
-            self._conn.commit()
 
     def pending(self) -> list[OutboxRecord]:
         with self._lock:

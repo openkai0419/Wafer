@@ -142,6 +142,32 @@ class TestOutboxStore:
                 assert len(store2.pending()) == 2
                 store2.close()
 
+    def test_a_push_that_hit_a_lock_does_not_break_later_pushes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
+                store = OutboxStore("indexer-1")
+                try:
+                    store._conn.execute("PRAGMA busy_timeout=50")
+                    ids = [store.push("parse.batch", i, "parser-a") for i in range(2)]
+                    consumer = sqlite3.connect(store._path)
+                    consumer.execute("BEGIN IMMEDIATE")
+                    try:
+                        store.push("parse.batch", "blocked", "parser-b")
+                        raise AssertionError("push should fail while another connection holds the write lock")
+                    except sqlite3.OperationalError:
+                        pass
+                    finally:
+                        consumer.rollback()
+                        consumer.close()
+
+                    assert store.has_pending("parse.batch", "parser-a")
+                    remove_outbox_batch_from(store._path, ids)
+                    assert not store.has_pending("parse.batch", "parser-a")
+                    store.push("parse.batch", "after", "parser-b")
+                    assert [r.payload for r in store.pending()] == ["after"]
+                finally:
+                    store.close()
+
     def test_payload_types(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = self._make_store(tmp)

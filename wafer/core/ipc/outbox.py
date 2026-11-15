@@ -83,25 +83,22 @@ class OutboxStore:
 
     def push(self, topic: str, payload: Any, dst: str, db: str = "") -> int:
         blob = msgpack.packb(payload, use_bin_type=True)
-        with self._lock:
+        with self._lock, self._conn:
             cur = self._conn.execute(
                 "INSERT INTO outbox (topic, payload, dst, db, created_at) VALUES (?, ?, ?, ?, ?)",
                 (topic, blob, dst, db, time.time()),
             )
-            self._conn.commit()
             return cur.lastrowid
 
     def remove(self, record_id: int):
-        with self._lock:
+        with self._lock, self._conn:
             self._conn.execute("DELETE FROM outbox WHERE id = ?", (record_id,))
-            self._conn.commit()
 
     def remove_batch(self, record_ids: list[int]):
         if not record_ids:
             return
-        with self._lock:
+        with self._lock, self._conn:
             self._conn.executemany("DELETE FROM outbox WHERE id = ?", [(rid,) for rid in record_ids])
-            self._conn.commit()
 
     def pending(self) -> list[OutboxRecord]:
         with self._lock:

@@ -7,6 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [v0.8.3]
 ### Fixed
 - An Indexer no longer stops sending collection and parsing work until a restart after its message queue stays locked for over 5 seconds.
+- An Indexer no longer logs a "database is locked" error when its first collection and parsing work start at once.
 
 ## [v0.8.2]
 ### Added

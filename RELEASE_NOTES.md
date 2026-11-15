@@ -2,6 +2,11 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.8.3]
+
+### Fixes
+- Indexing and tag edits no longer stall until a restart after the database is briefly busy.
+
 ## [v0.8.2]
 
 ### Highlights

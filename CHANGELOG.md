@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.8.3]
+### Fixed
+- Collected results and tag edits are no longer stuck until a restart after one queued message hits a busy database.
+
 ## [v0.8.2]
 ### Added
 - WebUI viewer: swipe between images (the neighbor is preloaded); the controls fade after 3 seconds idle when they overlap the image, tapping the image toggles them, and an "auto hide UI" switch in the viewer menu turns the fade off.

@@ -5,7 +5,7 @@ User-facing highlights for each Wafer release. These notes are shown in the Upda
 ## [v0.8.3]
 
 ### Fixes
-- Indexing and tag edits no longer stall until a restart after the database is briefly busy.
+- Indexing a database no longer stops until a restart after its message queue was locked for a few seconds.
 
 ## [v0.8.2]
 

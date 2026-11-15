@@ -6,7 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [v0.8.3]
 ### Fixed
-- Collected results and tag edits are no longer stuck until a restart after one queued message hits a busy database.
+- An Indexer no longer stops sending collection and parsing work until a restart after its message queue stays locked for over 5 seconds.
 
 ## [v0.8.2]
 ### Added

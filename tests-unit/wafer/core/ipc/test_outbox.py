@@ -9,6 +9,7 @@ from wafer.core.ipc.transport import Priority
 from wafer.core.ipc.message import Message
 from wafer.core.ipc.node import Node
 from wafer.core.ipc.outbox import (
+    _SCHEMA,
     OutboxStore,
     _extract_pid,
     _delete_db_files,
@@ -412,6 +413,69 @@ class TestConsumeOutbox:
                 remaining = scan_all_outbox()
                 assert len(remaining) == 1
                 assert remaining[0].db == "otherdb"
+
+
+class TestOpeningTheOutbox:
+    def test_threads_sending_at_once_open_one_outbox(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
+                opened = []
+                both_inside = threading.Barrier(2, timeout=0.5)
+
+                def open_slowly(node_id):
+                    opened.append(node_id)
+                    try:
+                        both_inside.wait()
+                    except threading.BrokenBarrierError:
+                        pass
+                    return OutboxStore(node_id)
+
+                node = Node("indexer", consumer=False)
+                errors = []
+
+                def send(dst):
+                    try:
+                        node.send_reliable("work", dst, dst=dst)
+                    except Exception as e:
+                        errors.append(e)
+
+                with patch("wafer.core.ipc.node.OutboxStore", side_effect=open_slowly):
+                    threads = [threading.Thread(target=send, args=(f"worker-{i}",)) for i in range(2)]
+                    for t in threads:
+                        t.start()
+                    for t in threads:
+                        t.join()
+                try:
+                    assert errors == []
+                    assert len(opened) == 1
+                    assert sorted(r.payload for r in node._outbox.pending()) == ["worker-0", "worker-1"]
+                finally:
+                    node._outbox.close()
+
+    def test_reading_another_outbox_leaves_its_journal_mode_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
+                db_path = os.path.join(tmp, "sender-99999.db")
+                conn = sqlite3.connect(db_path)
+                conn.execute(_SCHEMA)
+                conn.executemany(
+                    "INSERT INTO outbox (topic, payload, dst, db, created_at) VALUES (?, ?, ?, ?, ?)",
+                    [("t", b"\xa1x", "indexer", "", time.time()), ("t", b"\xa1y", "viewer", "", time.time())],
+                )
+                conn.commit()
+                conn.close()
+
+                records = read_outbox_of({"sender-99999"}, dst_filter={"indexer"})
+                remove_outbox_batch_from(db_path, [r.id for r in records])
+                with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=False):
+                    cleanup_dead_outbox_files()
+                assert [r.payload for r in scan_all_outbox()] == ["y"]
+
+                conn = sqlite3.connect(db_path)
+                try:
+                    assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+                finally:
+                    conn.close()
 
 
 class TestNotifiedSenders:

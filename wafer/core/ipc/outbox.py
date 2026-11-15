@@ -48,13 +48,7 @@ def _delete_db_files(db_path: str):
 
 
 def _connect(path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(path, timeout=5.0, check_same_thread=False)
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-    except sqlite3.Error:
-        conn.close()
-        raise
-    return conn
+    return sqlite3.connect(path, timeout=5.0, check_same_thread=False)
 
 
 class OutboxRecord(NamedTuple):
@@ -76,9 +70,14 @@ class OutboxStore:
     @staticmethod
     def _open(path: str) -> sqlite3.Connection:
         conn = _connect(path)
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute(_SCHEMA)
-        conn.commit()
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute(_SCHEMA)
+            conn.commit()
+        except sqlite3.Error:
+            conn.close()
+            raise
         return conn
 
     def push(self, topic: str, payload: Any, dst: str, db: str = "") -> int:

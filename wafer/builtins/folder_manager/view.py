@@ -6,6 +6,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from wafer.app.viewer.widgets.foldertree import EXPAND_RECURSIVE_BATCH_SIZE, USER_ROLE_PATH, LazyFolderTreeModel, LazyFolderTreeView
 from wafer.builtins.commands.foldertree import folder_file_items, run_on_folder_files
 from wafer.core.common.paths import child_prefix, normalize_path
+from wafer.core.lang.manager import t
 from wafer.qt.commands.bridge import ActionKit, Context, Menu
 from wafer.qt.common.dpi import dpix
 
@@ -15,11 +16,13 @@ from .stats import DiskTree, FolderValues
 DISK_TOOLTIP = "Count on disk"
 BADGE_TEXT_COLOR = QtGui.QColor("#ffffff")
 RULE_FILE_ACTIONS = (
-    ("cut_direct", "Cut direct files", "file.cut", False),
-    ("copy_direct", "Copy direct files", "file.copy", False),
-    ("cut_all", "Cut all files below", "file.cut", True),
-    ("copy_all", "Copy all files below", "file.copy", True),
+    ("cut_direct", "{rule} · Cut direct files", "file.cut", False),
+    ("copy_direct", "{rule} · Copy direct files", "file.copy", False),
+    ("cut_all", "{rule} · Cut all files below", "file.cut", True),
+    ("copy_all", "{rule} · Copy all files below", "file.copy", True),
 )
+DISK_METRICS = ("folders", "all_folders")
+UNSCANNED = object()
 
 Badge = tuple[str, str | None]
 
@@ -27,11 +30,24 @@ Badge = tuple[str, str | None]
 class FolderStatsModel(LazyFolderTreeModel):
     EXTRA_COLUMNS = ("Files", "All files", "Folders", "All folders")
     paths_changed = QtCore.Signal(list)
+    stats_changed = QtCore.Signal()
 
     def __init__(self, roots, excluded=None, ignore_pattern_re=None):
         super().__init__(roots, excluded, ignore_pattern_re)
         self.disk: DiskTree | None = None
         self.rule_counts: list[tuple[HighlightRule, dict[str, tuple[int, int]]]] = []
+        self.values_cache: dict[str, FolderValues | None] = {}
+
+    def refresh_stats(self) -> None:
+        self.values_cache.clear()
+        self.stats_changed.emit()
+
+    def disk_values(self, path: str) -> FolderValues | None:
+        values = self.values_cache.get(path, UNSCANNED)
+        if values is UNSCANNED:
+            values = self.disk.values(path) if self.disk is not None else None
+            self.values_cache[path] = values
+        return values
 
     def data(self, index, role=QtCore.Qt.DisplayRole):
         column = index.column()
@@ -51,18 +67,21 @@ class FolderStatsModel(LazyFolderTreeModel):
         return super().headerData(section, orientation, role)
 
     def disk_text(self, path: str | None, column: int) -> str:
-        values = self.disk.values(path) if self.disk is not None and path else None
+        values = self.disk_values(path) if path else None
         if values is None:
             return ""
         value = getattr(values, METRICS[column - 1])
         return "" if value < 0 else f"{value:,}"
 
     def badges(self, path: str) -> list[Badge]:
-        values = self.disk.values(path) if self.disk is not None else None
+        values = self.disk_values(path)
+        unknown = set(DISK_METRICS) if values is None else {metric for metric in DISK_METRICS if getattr(values, metric) < 0}
         folders, all_folders = (values.folders, values.all_folders) if values is not None else (0, 0)
         found = []
         for rule, counts in self.rule_counts:
             if not rule.enabled:
+                continue
+            if unknown and any(condition.metric in unknown for condition in rule.conditions):
                 continue
             direct, total = counts.get(path, (0, 0))
             if rule.matches(FolderValues(direct, total, folders, all_folders)):
@@ -158,6 +177,7 @@ class FolderManagerTreeView(LazyFolderTreeView):
         self.setItemDelegateForColumn(0, BadgeDelegate(self.model_.badges, self))
         self.header().setStretchLastSection(False)
         self.model_.columnsInserted.connect(self.apply_header)
+        self.model_.stats_changed.connect(self.on_stats_changed)
         self.apply_header()
 
     def apply_header(self, *_):
@@ -167,7 +187,13 @@ class FolderManagerTreeView(LazyFolderTreeView):
         for column in range(1, self.model_.columnCount()):
             self.setColumnHidden(column, column in self.hidden_columns)
 
+    def on_stats_changed(self) -> None:
+        self.header().resizeSections()
+        self.viewport().update()
+
     def set_column_visible(self, column: int, visible: bool) -> None:
+        if column == 0:
+            return
         if visible:
             self.hidden_columns.discard(column)
         else:
@@ -195,16 +221,22 @@ class FolderManagerTreeView(LazyFolderTreeView):
 
     def rule_file_actions(self) -> list:
         actions = []
+        labels = set()
         for number, rule in enumerate(self.rules_source()):
             entries = rule.filter_entries() if rule.enabled else []
             if not entries:
                 continue
-            label = rule.name.replace("/", " ")
-            for key, display, command_id, recursive in RULE_FILE_ACTIONS:
+            label = rule.name.strip() or f"Rule {number + 1}"
+            if label in labels:
+                label = f"{label} ({number + 1})"
+            labels.add(label)
+            actions.append("Files in Folder/-")
+            for key, template, command_id, recursive in RULE_FILE_ACTIONS:
                 actions.append(
                     ActionKit.Action(
-                        path=f"Files in Folder/{label}/inline.folder_manager.rule{number}.{key}",
-                        display=display,
+                        path=f"Files in Folder/inline.folder_manager.rule{number}.{key}",
+                        display=t(template, rule=label),
+                        translate=False,
                         func=lambda ctx, entries=entries, command_id=command_id, recursive=recursive: self.run_rule_file_action(ctx, entries, command_id, recursive),
                     )
                 )
@@ -219,13 +251,12 @@ class FolderManagerTreeView(LazyFolderTreeView):
         ancestors = list(dict.fromkeys(a for path in paths for a in ancestors_within_roots(normalize_path(path), roots)))
         batch_size = EXPAND_RECURSIVE_BATCH_SIZE
         chunks = [ancestors[i : i + batch_size] for i in range(0, len(ancestors), batch_size)]
-        selected = self.get_selected_paths()
         self.expand_serial += 1
         serial = self.expand_serial
 
         def expand_chunk(number: int) -> None:
             if serial != self.expand_serial or number >= len(chunks):
                 return
-            self.set_state_async((chunks[number], selected), on_complete=lambda: expand_chunk(number + 1))
+            self.expand_paths_async(chunks[number], on_complete=lambda: expand_chunk(number + 1))
 
         expand_chunk(0)

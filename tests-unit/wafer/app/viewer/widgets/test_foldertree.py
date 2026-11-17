@@ -1417,3 +1417,58 @@ def test_context_on_an_extra_cell_resolves_its_folder(qtbot, tmp_path, monkeypat
         assert captured["ctx"].extras["path"] == normalize_path(str(root / "A"))
     finally:
         tree.close()
+
+
+def make_deep_tree(qtbot, tmp_path):
+    root = tmp_path / "root"
+    (root / "a" / "b").mkdir(parents=True)
+    (root / "z").mkdir()
+    tree = LazyFolderTreeView(roots=[str(root)], excluded=[])
+    qtbot.addWidget(tree)
+    tree.set_folders([str(root)])
+    return tree, normalize_path(str(root))
+
+
+def is_expanded(tree, path):
+    item = tree.model_.path_item_map.get(path)
+    return item is not None and tree.isExpanded(tree.model_.indexFromItem(item))
+
+
+def test_expand_paths_async_expands_without_touching_selection_or_scroll(qtbot, tmp_path):
+    tree, root = make_deep_tree(qtbot, tmp_path)
+    z = tree.model_.find_index_by_path(f"{root}/z")
+    tree.selectionModel().select(z, QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows)
+    tree.selectionModel().setCurrentIndex(z, QtCore.QItemSelectionModel.NoUpdate)
+    scrolled = []
+    tree.scrollTo = lambda *args: scrolled.append(args)
+    done = []
+
+    tree.expand_paths_async([root, f"{root}/a"], on_complete=lambda: done.append(True))
+
+    qtbot.waitUntil(lambda: bool(done))
+    assert is_expanded(tree, root) and is_expanded(tree, f"{root}/a")
+    assert not is_expanded(tree, f"{root}/a/b")
+    assert tree.get_selected_paths() == [f"{root}/z"]
+    assert tree.current_path() == f"{root}/z"
+    assert scrolled == []
+
+
+def test_expand_paths_async_empty_completes_immediately(qtbot, tmp_path):
+    tree, _root = make_deep_tree(qtbot, tmp_path)
+    done = []
+    tree.expand_paths_async([], on_complete=lambda: done.append(True))
+    assert done
+
+
+def test_load_paths_async_scans_only_unloaded_folders(qtbot, tmp_path, monkeypatch):
+    tree, root = make_deep_tree(qtbot, tmp_path)
+    tree.model_.find_item_by_path(f"{root}/a")
+    scanned = []
+    original = foldertree_module._scan_children
+    monkeypatch.setattr(foldertree_module, "_scan_children", lambda path, *args: (scanned.append(path), original(path, *args))[1])
+    done = []
+
+    tree.load_paths_async([f"{root}/a/b"], lambda: done.append(True))
+
+    qtbot.waitUntil(lambda: bool(done))
+    assert scanned == [f"{root}/a/b"]

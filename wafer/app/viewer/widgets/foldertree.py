@@ -1082,34 +1082,63 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             if on_complete:
                 on_complete()
             return
-        roots = [normalize_path(r) for r in self.model_.roots]
-        all_paths = list(dict.fromkeys(expanded + selected))
-        segments = _collect_segments_for_paths([normalize_path(p) for p in all_paths], roots)
-        excluded = set(self.model_.excluded)
-        ignore_pattern_re = self.model_.ignore_pattern_re
-        dispatcher = self.model_._dispatcher
+        expanded = [normalize_path(p) for p in expanded]
+        selected = [normalize_path(p) for p in selected]
+
+        def apply():
+            self._expand_loaded_paths(expanded)
+            self._select_loaded_paths(selected)
+            if on_complete:
+                on_complete()
+
+        self.load_paths_async(list(dict.fromkeys(expanded + selected)), apply)
+
+    def expand_paths_async(self, paths, on_complete=None):
+        normalized = list(dict.fromkeys(normalize_path(p) for p in paths if p))
+        if not normalized:
+            if on_complete:
+                on_complete()
+            return
+
+        def apply():
+            self._expand_loaded_paths(normalized)
+            if on_complete:
+                on_complete()
+
+        self.load_paths_async(normalized, apply)
+
+    def load_paths_async(self, paths, on_loaded):
+        model = self.model_
+        roots = [normalize_path(r) for r in model.roots]
+        segments = [seg for seg in _collect_segments_for_paths(paths, roots) if not self._children_loaded(seg)]
+        excluded = set(model.excluded)
+        ignore_pattern_re = model.ignore_pattern_re
+        dispatcher = model._dispatcher
 
         def task():
-            children_map = {}
-            for seg in segments:
-                children_map[seg] = _scan_children(seg, excluded, ignore_pattern_re)
-            dispatcher.invoke(lambda: self._apply_state_async(expanded, selected, children_map, on_complete))
+            children_map = {seg: _scan_children(seg, excluded, ignore_pattern_re) for seg in segments}
+            dispatcher.invoke(lambda: self._apply_loaded_children(children_map, on_loaded))
 
         dispatcher.post(task, priority=8)
 
-    def _apply_state_async(self, expanded, selected, children_map, on_complete):
+    def _children_loaded(self, path):
+        item = self.model_.path_item_map.get(path)
+        return self.model_._is_valid_item(item) and item.hasChildren() and bool(item.child(0).data(USER_ROLE_PATH))
+
+    def _apply_loaded_children(self, children_map, on_loaded):
         model = self.model_
         for seg_path, children in children_map.items():
-            item = model.path_item_map.get(normalize_path(seg_path))
-            if not model._is_valid_item(item):
-                continue
-            if item.hasChildren() and item.child(0).data(USER_ROLE_PATH):
+            item = model.path_item_map.get(seg_path)
+            if not model._is_valid_item(item) or self._children_loaded(seg_path):
                 continue
             model._apply_children(item, seg_path, children)
+        on_loaded()
+
+    def _expand_loaded_paths(self, paths):
+        model = self.model_
         self._programmatic_expand += 1
         try:
-            for path in expanded:
-                path = normalize_path(path)
+            for path in paths:
                 item = model.path_item_map.get(path)
                 if model._is_valid_item(item):
                     index = model.indexFromItem(item)
@@ -1117,11 +1146,13 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
                         self.expand(index)
         finally:
             self._programmatic_expand -= 1
+
+    def _select_loaded_paths(self, paths):
+        model = self.model_
         selmodel = self.selectionModel()
         selmodel.clearSelection()
         to_select = []
-        for path in selected:
-            path = normalize_path(path)
+        for path in paths:
             item = model.path_item_map.get(path)
             if model._is_valid_item(item):
                 index = model.indexFromItem(item)
@@ -1132,8 +1163,6 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         if to_select:
             selmodel.setCurrentIndex(to_select[0], QtCore.QItemSelectionModel.NoUpdate)
             self.scrollTo(to_select[0], QtWidgets.QAbstractItemView.PositionAtCenter)
-        if on_complete:
-            on_complete()
 
     @profiler.profile
     def expand_and_select_path(self, path, on_complete=None, emit_selected=True, expand_target=True):
@@ -1146,27 +1175,10 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             if on_complete:
                 on_complete()
             return
-        roots = [normalize_path(r) for r in self.model_.roots]
-        segments = _collect_segments_for_paths(normalized, roots)
-        excluded = set(self.model_.excluded)
-        ignore_pattern_re = self.model_.ignore_pattern_re
-        dispatcher = self.model_._dispatcher
+        self.load_paths_async(normalized, lambda: self._apply_expand_and_select(normalized, on_complete, emit_selected, expand_target))
 
-        def task():
-            children_map = {seg: _scan_children(seg, excluded, ignore_pattern_re) for seg in segments}
-            dispatcher.invoke(lambda: self._apply_expand_and_select(normalized, children_map, on_complete, emit_selected, expand_target))
-
-        dispatcher.post(task, priority=8)
-
-    def _apply_expand_and_select(self, paths, children_map, on_complete, emit_selected, expand_target):
+    def _apply_expand_and_select(self, paths, on_complete, emit_selected, expand_target):
         model = self.model_
-        for seg_path, children in children_map.items():
-            item = model.path_item_map.get(seg_path)
-            if not model._is_valid_item(item):
-                continue
-            if item.hasChildren() and item.child(0).data(USER_ROLE_PATH):
-                continue
-            model._apply_children(item, seg_path, children)
         to_select = []
         self._programmatic_expand += 1
         try:

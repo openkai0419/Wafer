@@ -56,6 +56,7 @@ def test_columns_show_disk_counts(qtbot, tmp_path):
     assert [cell(c) for c in (1, 2, 3, 4)] == ["1", "", "1", ""]
 
     disk.finish()
+    model.refresh_stats()
     assert [cell(c) for c in (1, 2, 3, 4)] == ["1", "3", "1", "1"]
     assert model.index(0, 2).data(QtCore.Qt.ToolTipRole) == "Count on disk"
     assert model.headerData(2, QtCore.Qt.Horizontal, QtCore.Qt.ToolTipRole) == "Count on disk"
@@ -154,10 +155,11 @@ def test_context_menu_lists_rule_actions_only_for_rules_with_query(qtbot, tmp_pa
     assert "Files in Folder/ft.files.cut_all" in items
     assert not any("ignore" in str(i) or "remove_from_view" in str(i) for i in items)
     actions = [i for i in items if not isinstance(i, str)]
-    assert [a.path.split("/")[1] for a in actions] == ["Cats"] * 4
-    assert all(a.path.startswith("Files in Folder/Cats/") for a in actions)
-    last_files_in_folder = max(n for n, i in enumerate(items) if isinstance(i, str) and i.startswith("Files in Folder/"))
-    assert items.index(actions[0]) > last_files_in_folder
+    assert [a.display for a in actions] == ["Cats · Cut direct files", "Cats · Copy direct files", "Cats · Cut all files below", "Cats · Copy all files below"]
+    assert all(a.path.startswith("Files in Folder/inline.") and "Cats" not in a.path and not a.translate for a in actions)
+    first = items.index(actions[0])
+    assert items[first - 1] == "Files in Folder/-"
+    assert items[first - 2] == "Files in Folder/ft.files.copy_all"
     assert seen["executed"]
 
     from wafer.qt.commands.bridge import Context
@@ -173,6 +175,42 @@ def test_context_menu_lists_rule_actions_only_for_rules_with_query(qtbot, tmp_pa
         (entries, [root], "file.copy", True),
     ]
     view.close()
+
+
+def test_rule_names_never_reach_translation(qtbot, tmp_path, monkeypatch, text_filter):
+    from wafer.qt.commands.bridge import Menu
+    from wafer.qt.commands.command import menu_builder
+
+    translated = []
+    original_t = menu_builder.t
+    monkeypatch.setattr(menu_builder, "t", lambda text, **kwargs: (translated.append(text), original_t(text, **kwargs))[1])
+    view, _root = make_view(qtbot, tmp_path)
+    bar = {"filter": "text", "params": {"q": "cat"}, "op": "and", "enabled": True}
+    view.set_rules_source(lambda: [rule("Secret Rule Name", "#111111", ("files", ">=", 1), bars=[bar])])
+
+    menu = Menu.session(view).menu(["ft.show_in_tree", *view.rule_file_actions()]).build()
+
+    assert menu is not None
+    assert translated
+    assert not any("Secret Rule Name" in text for text in translated)
+
+
+def test_rule_actions_keep_empty_and_duplicate_names_distinct(qtbot, tmp_path, text_filter):
+    view, _root = make_view(qtbot, tmp_path)
+    bar = {"filter": "text", "params": {"q": "cat"}, "op": "and", "enabled": True}
+    view.set_rules_source(
+        lambda: [
+            rule("", "#111111", ("files", ">=", 1), bars=[bar]),
+            rule("Same", "#222222", ("files", ">=", 1), bars=[bar]),
+            rule("Same", "#333333", ("files", ">=", 1), bars=[bar]),
+        ]
+    )
+
+    actions = [a for a in view.rule_file_actions() if not isinstance(a, str)]
+
+    labels = [a.display.split(" · ")[0] for a in actions[::4]]
+    assert labels == ["Rule 1", "Same", "Same (3)"]
+    assert len({a.path for a in actions}) == 12
 
 
 def test_context_menu_without_folder_does_nothing(qtbot, tmp_path, monkeypatch):
@@ -193,28 +231,33 @@ def test_expand_to_opens_ancestors_in_batches(qtbot, tmp_path, monkeypatch):
     view, root = make_view(qtbot, tmp_path)
     selected = view.model_.index(0, 0)
     view.selectionModel().select(selected, QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows)
+    view.selectionModel().setCurrentIndex(selected, QtCore.QItemSelectionModel.NoUpdate)
     calls = []
-    original = view.set_state_async
-    monkeypatch.setattr(view, "set_state_async", lambda states, on_complete=None: (calls.append(states), original(states, on_complete=on_complete)))
+    original = view.expand_paths_async
+    monkeypatch.setattr(view, "expand_paths_async", lambda paths, on_complete=None: (calls.append(list(paths)), original(paths, on_complete=on_complete)))
+    scrolled = []
+    monkeypatch.setattr(view, "scrollTo", lambda *args: scrolled.append(args))
     target = path_of(root, "a", "b", "c")
 
     view.expand_to([target, path_of(root, "a", "b")])
+    view.clearSelection()
 
     def expanded(path):
         item = view.model_.path_item_map.get(path)
         return item is not None and view.isExpanded(view.model_.indexFromItem(item))
 
     qtbot.waitUntil(lambda: all(expanded(p) for p in (root, path_of(root, "a"), path_of(root, "a", "b"))))
-    assert [c[0] for c in calls] == [[root], [path_of(root, "a")], [path_of(root, "a", "b")]]
-    assert all(c[1] == [root] for c in calls)
+    assert calls == [[root], [path_of(root, "a")], [path_of(root, "a", "b")]]
     assert not expanded(target)
-    assert view.get_selected_paths() == [root]
+    assert view.get_selected_paths() == []
+    assert view.current_path() == root
+    assert scrolled == []
 
 
 def test_expand_to_ignores_paths_outside_roots(qtbot, tmp_path, monkeypatch):
     view, _root = make_view(qtbot, tmp_path)
     calls = []
-    monkeypatch.setattr(view, "set_state_async", lambda states, on_complete=None: calls.append(states))
+    monkeypatch.setattr(view, "expand_paths_async", lambda paths, on_complete=None: calls.append(paths))
 
     view.expand_to([normalize_path(str(tmp_path / "elsewhere" / "x"))])
 
@@ -227,6 +270,8 @@ def test_set_column_visible_hides_and_shows(qtbot, tmp_path):
     assert view.isColumnHidden(4)
     view.set_column_visible(4, True)
     assert not view.isColumnHidden(4)
+    view.set_column_visible(0, False)
+    assert not view.isColumnHidden(0)
 
 
 def test_hidden_columns_and_layout_survive_reload(qtbot, tmp_path):
@@ -313,11 +358,85 @@ def test_badge_delegate_paints_without_error(qtbot, tmp_path):
 
 def test_badge_delegate_skips_rows_without_badges(qtbot, tmp_path):
     view, _root = make_view(qtbot, tmp_path)
-    delegate = BadgeDelegate(lambda path: [], view)
-    image = QtGui.QImage(200, 24, QtGui.QImage.Format_ARGB32)
-    image.fill(QtGui.QColor("#000000"))
-    option = QtWidgets.QStyleOptionViewItem()
-    option.rect = QtCore.QRect(0, 0, 200, 24)
-    painter = QtGui.QPainter(image)
-    delegate.paint(painter, option, view.model_.index(0, 0))
-    painter.end()
+    index = view.model_.index(0, 0)
+
+    def paint_with(delegate):
+        image = QtGui.QImage(200, 24, QtGui.QImage.Format_ARGB32)
+        image.fill(QtGui.QColor("#000000"))
+        option = QtWidgets.QStyleOptionViewItem()
+        option.rect = QtCore.QRect(0, 0, 200, 24)
+        painter = QtGui.QPainter(image)
+        delegate.paint(painter, option, index)
+        painter.end()
+        return image
+
+    asked = []
+    badge_image = paint_with(BadgeDelegate(lambda path: asked.append(path) or [], view))
+    assert asked == [index.data(USER_ROLE_PATH)]
+    assert badge_image == paint_with(QtWidgets.QStyledItemDelegate(view))
+
+
+def test_folder_rules_show_no_badge_until_disk_values_are_known(qtbot):
+    model = FolderStatsModel([], [])
+    few_folders = rule("Few", "#111111", ("all_folders", "<=", 3))
+    flat = rule("Flat", "#222222", ("folders", "==", 0))
+    files = rule("Files", "#333333", ("files", "<=", 0))
+    model.rule_counts = [(few_folders, {}), (flat, {}), (files, {})]
+
+    assert model.badges("D:/x") == [("#333333", "0")]
+
+    disk = DiskTree(["D:/x"])
+    disk.add("D:/x", [], 2)
+    model.disk = disk
+    model.refresh_stats()
+    assert model.badges("D:/x") == [("#222222", None), ("#333333", "0")]
+
+    disk.finish()
+    model.refresh_stats()
+    assert model.badges("D:/x") == [("#111111", None), ("#222222", None), ("#333333", "0")]
+
+
+def test_disk_values_are_cached_until_refresh(qtbot, tmp_path, monkeypatch):
+    view, root = make_view(qtbot, tmp_path)
+    model = view.model_
+    disk = DiskTree([root])
+    disk.add(root, [], 4)
+    disk.finish()
+    model.disk = disk
+    model.rule_counts = [(rule("Files", "#111111", ("files", ">=", 0)), {})]
+    asked = []
+    original = disk.values
+    monkeypatch.setattr(disk, "values", lambda path: (asked.append(path), original(path))[1])
+
+    for column in (1, 2, 3, 4):
+        model.index(0, column).data(QtCore.Qt.DisplayRole)
+    model.badges(root)
+    assert asked == [root]
+
+    disk.add(root, [], 9)
+    disk.finish()
+    with qtbot.waitSignal(model.stats_changed):
+        model.refresh_stats()
+    assert model.index(0, 1).data(QtCore.Qt.DisplayRole) == "9"
+    assert asked == [root, root]
+
+
+def test_refresh_stats_resizes_count_columns(qtbot, tmp_path):
+    view, root = make_view(qtbot, tmp_path)
+    view.resize(600, 200)
+    view.show()
+    disk = DiskTree([root])
+    disk.add(root, [], 1)
+    disk.finish()
+    view.model_.disk = disk
+    view.model_.refresh_stats()
+    QtWidgets.QApplication.processEvents()
+    narrow = view.columnWidth(1)
+
+    disk.add(root, [], 123456789012)
+    disk.finish()
+    view.model_.refresh_stats()
+    QtWidgets.QApplication.processEvents()
+
+    assert view.columnWidth(1) > narrow
+    view.close()

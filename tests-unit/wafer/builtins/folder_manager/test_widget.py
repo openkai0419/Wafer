@@ -205,7 +205,7 @@ def test_scan_fills_disk_counts(qtbot, tmp_path, query_calls):
     assert disk.values(root) == FolderValues(1, 7, 2, 3)
     assert disk.values(f"{root}/b") == FolderValues(1, 4, 1, 1)
     assert panel.status_label.isHidden()
-    assert panel.view.model_.index(0, 2).data() == "7"
+    assert panel.model.disk_text(root, 2) == "7"
 
 
 def test_switching_folders_discards_the_running_scan(qtbot, tmp_path, monkeypatch, query_calls):
@@ -296,7 +296,7 @@ def test_a_rescan_keeps_the_previous_counts_until_it_ends(qtbot, tmp_path, monke
     qtbot.waitUntil(delivered.is_set, timeout=5000)
     QtCore.QCoreApplication.processEvents()
     assert panel.scanning and panel.model.disk is first
-    assert panel.view.model_.index(0, 2).data() == "3"
+    assert panel.model.disk_text(root, 2) == "3"
     release.set()
     qtbot.waitUntil(lambda: not panel.scanning, timeout=5000)
     assert panel.model.disk.values(root) == FolderValues(2, 4, 1, 1)
@@ -581,6 +581,8 @@ def test_expand_to_matches_scans_in_slices_and_finds_ancestors_off_the_main_thre
     monkeypatch.setattr(widget_module, "folders_to_open", lambda *args: threads.append(threading.current_thread()) or real_folders_to_open(*args))
     expanded = []
     monkeypatch.setattr(panel.view, "expand_folders", lambda folders: expanded.append(list(folders)))
+    panel.view.hide()
+    QtCore.QCoreApplication.processEvents()
     cached = len(panel.model.values_cache)
 
     panel.expand_to_matches()

@@ -21,6 +21,7 @@ RULE_FILE_ACTIONS = (
     ("copy_all", "{rule} · Copy all files below", "file.copy", True),
 )
 DISK_METRICS = ("folders", "all_folders")
+COUNT_SAMPLE = "99,999,999"
 UNSCANNED = object()
 
 Badge = tuple[str, str | None]
@@ -51,17 +52,11 @@ class FolderStatsModel(LazyFolderTreeModel):
             self.values_cache[path] = values
         return values
 
-    def data(self, index, role=QtCore.Qt.DisplayRole):
-        column = index.column()
-        if column == 0:
-            return super().data(index, role)
-        if role == QtCore.Qt.DisplayRole:
-            return self.disk_text(index.siblingAtColumn(0).data(USER_ROLE_PATH), column)
-        if role == QtCore.Qt.ToolTipRole:
-            return DISK_TOOLTIP
-        if role == QtCore.Qt.TextAlignmentRole:
-            return int(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        return super().data(index, role)
+    def make_row(self, path: str) -> list[QtGui.QStandardItem]:
+        row = super().make_row(path)
+        for cell in row[1:]:
+            cell.setToolTip(DISK_TOOLTIP)
+        return row
 
     def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
         if role == QtCore.Qt.ToolTipRole and orientation == QtCore.Qt.Horizontal and section > 0:
@@ -109,6 +104,22 @@ class FolderStatsModel(LazyFolderTreeModel):
         if new_parent != old_parent:
             self.paths_changed.emit([old_parent, new_parent])
         return moved
+
+
+class CountDelegate(QtWidgets.QStyledItemDelegate):
+    def __init__(self, text_for: Callable[[str | None, int], str], parent=None):
+        super().__init__(parent)
+        self.text_for = text_for
+
+    def paint(self, painter, option, index):
+        opt = QtWidgets.QStyleOptionViewItem(option)
+        opt.index = index
+        opt.text = self.text_for(index.siblingAtColumn(0).data(USER_ROLE_PATH), index.column())
+        opt.displayAlignment = QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+        opt.features |= QtWidgets.QStyleOptionViewItem.HasDisplay
+        widget = opt.widget
+        style = widget.style() if widget is not None else QtWidgets.QApplication.style()
+        style.drawControl(QtWidgets.QStyle.CE_ItemViewItem, opt, painter, widget)
 
 
 class BadgeDelegate(QtWidgets.QStyledItemDelegate):
@@ -178,6 +189,7 @@ def folders_to_open(paths: Iterable[str], roots: Sequence[str]) -> list[str]:
 class FolderManagerTreeView(LazyFolderTreeView):
     MODEL_CLASS = FolderStatsModel
     BINDING_SCOPE = "FolderManagerTree"
+    header_ready = False
 
     def __init__(self, roots=None, excluded=None, ignore_pattern_re=None):
         super().__init__(roots, excluded, ignore_pattern_re, instance_name="FolderManagerTree")
@@ -186,20 +198,38 @@ class FolderManagerTreeView(LazyFolderTreeView):
         self.expand_serial = 0
         self.setHeaderHidden(False)
         self.setItemDelegateForColumn(0, BadgeDelegate(self.model_.badges, self))
+        self.count_delegate = CountDelegate(self.model_.disk_text, self)
+        for column in range(1, len(FolderStatsModel.EXTRA_COLUMNS) + 1):
+            self.setItemDelegateForColumn(column, self.count_delegate)
         self.header().setStretchLastSection(False)
-        self.model_.columnsInserted.connect(self.apply_header)
+        self.model_.columnsInserted.connect(self.on_columns_inserted)
         self.model_.stats_changed.connect(self.on_stats_changed)
         self.apply_header()
+        self.header_ready = True
 
-    def apply_header(self, *_):
+    def on_columns_inserted(self, parent: QtCore.QModelIndex, *_) -> None:
+        if not parent.isValid():
+            self.apply_header()
+
+    def apply_header(self) -> None:
         header = self.header()
-        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
         for column in range(1, self.model_.columnCount()):
+            header.resizeSection(column, self.count_column_width(column))
             self.setColumnHidden(column, column in self.hidden_columns)
 
+    def count_column_width(self, column: int) -> int:
+        label = str(self.model_.headerData(column, QtCore.Qt.Horizontal) or "")
+        text_width = max(self.header().fontMetrics().horizontalAdvance(label), self.fontMetrics().horizontalAdvance(COUNT_SAMPLE))
+        return text_width + dpix(16)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if self.header_ready and event.type() in (QtCore.QEvent.FontChange, QtCore.QEvent.StyleChange):
+            self.apply_header()
+
     def on_stats_changed(self) -> None:
-        self.header().resizeSections()
         self.viewport().update()
 
     def set_column_visible(self, column: int, visible: bool) -> None:

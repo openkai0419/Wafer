@@ -33,6 +33,11 @@ def make_view(qtbot, tmp_path):
     return view, normalize_path(str(root))
 
 
+def cell_text(view, column, row=0):
+    index = view.model_.index(row, column)
+    return view.model_.disk_text(index.siblingAtColumn(0).data(USER_ROLE_PATH), column)
+
+
 def path_of(root, *parts):
     return normalize_path("/".join([root, *parts]))
 
@@ -67,12 +72,11 @@ def test_columns_show_disk_counts(qtbot, tmp_path):
     disk.add(child, [], 2)
     model.disk = disk
 
-    cell = lambda column: model.index(0, column).data(QtCore.Qt.DisplayRole)
-    assert [cell(c) for c in (1, 2, 3, 4)] == ["1", "", "1", ""]
+    assert [cell_text(view, c) for c in (1, 2, 3, 4)] == ["1", "", "1", ""]
 
     disk.finish()
     model.refresh_stats()
-    assert [cell(c) for c in (1, 2, 3, 4)] == ["1", "3", "1", "1"]
+    assert [cell_text(view, c) for c in (1, 2, 3, 4)] == ["1", "3", "1", "1"]
     assert model.index(0, 2).data(QtCore.Qt.ToolTipRole) == "Count on disk"
     assert model.headerData(2, QtCore.Qt.Horizontal, QtCore.Qt.ToolTipRole) == "Count on disk"
     assert model.index(0, 0).data(QtCore.Qt.DisplayRole) == "root"
@@ -81,9 +85,29 @@ def test_columns_show_disk_counts(qtbot, tmp_path):
 def test_columns_are_empty_without_disk_values(qtbot, tmp_path):
     view, root = make_view(qtbot, tmp_path)
     model = view.model_
-    assert model.index(0, 1).data(QtCore.Qt.DisplayRole) == ""
+    assert cell_text(view, 1) == ""
     model.disk = DiskTree([root])
-    assert model.index(0, 1).data(QtCore.Qt.DisplayRole) == ""
+    assert cell_text(view, 1) == ""
+
+
+def test_count_delegate_paints_the_count_of_the_row_folder(qtbot, tmp_path):
+    view, root = make_view(qtbot, tmp_path)
+    asked = []
+    delegate = view_module.CountDelegate(lambda path, column: asked.append((path, column)) or "88,888", view)
+    image = QtGui.QImage(120, 24, QtGui.QImage.Format_ARGB32)
+    image.fill(QtGui.QColor("#000000"))
+    option = QtWidgets.QStyleOptionViewItem()
+    view.initViewItemOption(option)
+    option.rect = QtCore.QRect(0, 0, 120, 24)
+    option.palette.setColor(QtGui.QPalette.Text, QtGui.QColor("#ffffff"))
+    painter = QtGui.QPainter(image)
+    delegate.paint(painter, option, view.model_.index(0, 2))
+    painter.end()
+
+    assert asked == [(root, 2)]
+    lit = [x for x in range(120) for y in range(24) if image.pixelColor(x, y).lightness() > 128]
+    assert lit and min(lit) > 40
+    assert isinstance(view.itemDelegateForColumn(3), view_module.CountDelegate)
 
 
 def test_badges_follow_rule_order_and_only_matching_rules(qtbot):
@@ -456,7 +480,7 @@ def test_disk_values_are_cached_until_refresh(qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr(disk, "values", lambda path: (asked.append(path), original(path))[1])
 
     for column in (1, 2, 3, 4):
-        model.index(0, column).data(QtCore.Qt.DisplayRole)
+        cell_text(view, column)
     model.badges(root)
     assert asked == [root]
 
@@ -464,28 +488,51 @@ def test_disk_values_are_cached_until_refresh(qtbot, tmp_path, monkeypatch):
     disk.finish()
     with qtbot.waitSignal(model.stats_changed):
         model.refresh_stats()
-    assert model.index(0, 1).data(QtCore.Qt.DisplayRole) == "9"
+    assert cell_text(view, 1) == "9"
     assert asked == [root, root]
 
 
-def test_refresh_stats_resizes_count_columns(qtbot, tmp_path):
-    view, root = make_view(qtbot, tmp_path)
+def test_count_columns_have_a_fixed_width_that_fits_large_counts(qtbot, tmp_path):
+    view, _root = make_view(qtbot, tmp_path)
+    header = view.header()
+    assert header.sectionResizeMode(0) == QtWidgets.QHeaderView.Stretch
+    for column in (1, 2, 3, 4):
+        assert header.sectionResizeMode(column) == QtWidgets.QHeaderView.Interactive
+        label = view.model_.headerData(column, QtCore.Qt.Horizontal)
+        assert view.columnWidth(column) >= view.fontMetrics().horizontalAdvance("99,999,999")
+        assert view.columnWidth(column) >= header.fontMetrics().horizontalAdvance(label)
+    width = view.columnWidth(1)
+    view.reload_tree()
+    assert view.columnWidth(1) == width
+
+
+def test_counts_are_not_measured_row_by_row(qtbot, tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    for number in range(300):
+        (root / f"d{number:03}").mkdir(parents=True)
+    view = FolderManagerTreeView(roots=[str(root)], excluded=[])
+    qtbot.addWidget(view)
     view.resize(600, 200)
     view.show()
-    disk = DiskTree([root])
-    disk.add(root, [], 1)
+    view.set_folders([str(root)])
+    normalized = normalize_path(str(root))
+    disk = DiskTree([normalized])
+    disk.add(normalized, [f"{normalized}/d{number:03}" for number in range(300)], 1)
+    for number in range(300):
+        disk.add(f"{normalized}/d{number:03}", [], number)
     disk.finish()
     view.model_.disk = disk
-    view.model_.refresh_stats()
-    QtWidgets.QApplication.processEvents()
-    narrow = view.columnWidth(1)
+    calls = []
+    original = FolderStatsModel.data
+    monkeypatch.setattr(FolderStatsModel, "data", lambda self, index, role=QtCore.Qt.DisplayRole: (calls.append(index.column()), original(self, index, role))[1])
 
-    disk.add(root, [], 123456789012)
-    disk.finish()
-    view.model_.refresh_stats()
+    view.expand_path(normalized)
+    for _ in range(5):
+        view.model_.refresh_stats()
     QtWidgets.QApplication.processEvents()
 
-    assert view.columnWidth(1) > narrow
+    assert len([column for column in calls if column > 0]) < 100
+    assert len(calls) < 1000
     view.close()
 
 

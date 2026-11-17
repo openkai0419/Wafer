@@ -1,9 +1,8 @@
-import posixpath
 from collections.abc import Sequence
 
 from wafer.builtins.filters import DirectoryFilter
 from wafer.builtins.sorts import NoSort
-from wafer.core.common.paths import normalize_path
+from wafer.core.common.paths import normalize_path, parent_folder
 from wafer.core.db.query import FileSearchEngine
 from wafer.plugin.query.composer import SearchComposer
 
@@ -25,4 +24,4 @@ def folder_sources(
     if recursive:
         return sources
     direct = {normalize_path(folder) for folder in folders}
-    return [source for source in sources if posixpath.dirname(source) in direct]
+    return [source for source in sources if parent_folder(source) in direct]

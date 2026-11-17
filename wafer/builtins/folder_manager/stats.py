@@ -1,11 +1,10 @@
 import os
-import posixpath
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from wafer.core.common.paths import child_prefix, normalize_path
+from wafer.core.common.paths import child_prefix, normalize_path, parent_folder
 from wafer.core.logs import AppLogger
 
 
@@ -167,10 +166,10 @@ class DiskTree:
             return
         child = path
         while True:
-            parent = normalize_path(posixpath.dirname(child))
+            parent = parent_folder(child)
             node = self.nodes.get(parent)
             total = self.totals.get(parent)
-            if parent == child or node is None or total is None or child not in node[0]:
+            if len(parent) >= len(child) or node is None or total is None or child not in node[0]:
                 return
             self.totals[parent] = (total[0] + files_delta, total[1] + folders_delta)
             child = parent
@@ -178,19 +177,17 @@ class DiskTree:
 
 def count_sources_by_folder(sources: Iterable[str], roots: Sequence[str]) -> dict[str, tuple[int, int]]:
     root_prefixes = sorted(((root, child_prefix(root)) for root in map(normalize_path, roots)), key=lambda r: -len(r[0]))
-    direct_by_folder = Counter(posixpath.dirname(source) for source in sources)
-    direct: dict[str, int] = {}
+    direct = Counter(parent_folder(source) for source in sources)
     total: dict[str, int] = {}
-    for raw_folder, count in direct_by_folder.items():
-        folder = normalize_path(raw_folder)
+    for folder, count in direct.items():
         root = next((r for r, prefix in root_prefixes if folder == r or folder.startswith(prefix)), None)
         if root is None:
             continue
-        direct[folder] = direct.get(folder, 0) + count
         current = folder
         while True:
             total[current] = total.get(current, 0) + count
-            if current == root:
+            parent = parent_folder(current)
+            if current == root or len(parent) >= len(current):
                 break
-            current = normalize_path(posixpath.dirname(current))
+            current = parent
     return {folder: (direct.get(folder, 0), all_count) for folder, all_count in total.items()}

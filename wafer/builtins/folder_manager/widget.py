@@ -1,13 +1,12 @@
 import json
 import os
-import posixpath
 from collections.abc import Callable, Iterable, Sequence
 
 from PySide6 import QtCore, QtWidgets
 
 from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
 from wafer.app.viewer.widgets.foldertree import LazyFolderTreeView
-from wafer.core.common.paths import data_db_path, normalize_path
+from wafer.core.common.paths import data_db_path, normalize_path, parent_folder
 from wafer.core.common.virtual_paths import source_path
 from wafer.core.db.path_scope import is_under
 from wafer.core.lang.manager import t
@@ -31,16 +30,21 @@ STATS_REFRESH_MS = 100
 EXPAND_SCAN_CHUNK = 5000
 
 
+def existing_folder(path: str, roots: set[str]) -> str:
+    while path not in roots and not os.path.isdir(path):
+        parent = parent_folder(path)
+        if len(parent) >= len(path):
+            break
+        path = parent
+    return path
+
+
 def outermost(paths: Iterable[str]) -> list[str]:
     kept: list[str] = []
     for path in sorted(set(paths), key=len):
         if not any(is_under(path, other) for other in kept):
             kept.append(path)
     return kept
-
-
-def parent_folder(path: str) -> str:
-    return normalize_path(posixpath.dirname(path))
 
 
 class RulesArea(QtWidgets.QScrollArea):
@@ -366,35 +370,35 @@ class FolderManagerWidget(QtWidgets.QWidget):
         if self.stale_parents:
             self.flush_if_visible()
 
-    def known_ancestors(self, path: str) -> list[str]:
-        nodes = self.model.disk.nodes
-        chain = []
-        while self.under_roots(path):
-            if path in nodes:
-                chain.append(path)
+    def nearest_known(self, path: str) -> str | None:
+        disk = self.model.disk
+        if disk is None or not self.under_roots(path):
+            return None
+        while path not in disk.nodes:
             parent = parent_folder(path)
-            if parent == path:
-                break
+            if len(parent) >= len(path):
+                return None
             path = parent
-        return chain
+        return path
 
     def relist_parents(self, parents: Iterable[str]) -> None:
         disk = self.model.disk
         if disk is None:
             return
-        chains = [chain for chain in map(self.known_ancestors, parents) if chain]
-        if not chains:
+        targets = {path for path in map(self.nearest_known, parents) if path is not None}
+        if not targets:
             return
         token = self.relist_slot.renew()
+        roots = set(self.model.roots or ())
         excluded = set(self.model.excluded or ())
         pattern = self.model.ignore_pattern_re
 
         def task():
             listed: dict[str, tuple[list[str], int]] = {}
-            for chain in chains:
+            for target in targets:
                 if token.is_cancelled():
                     return
-                path = next((folder for folder in chain if os.path.isdir(folder)), chain[-1])
+                path = existing_folder(target, roots)
                 if path not in listed:
                     listed[path] = list_folder(path, excluded, pattern)
             self.dispatcher.invoke(lambda: self.apply_relist(disk, token, listed))

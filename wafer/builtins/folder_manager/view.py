@@ -1,11 +1,10 @@
-import posixpath
 from collections.abc import Callable, Sequence
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.app.viewer.widgets.foldertree import EXPAND_RECURSIVE_BATCH_SIZE, USER_ROLE_PATH, LazyFolderTreeModel, LazyFolderTreeView
 from wafer.builtins.commands.foldertree import folder_file_items, run_on_folder_files
-from wafer.core.common.paths import child_prefix, normalize_path
+from wafer.core.common.paths import child_prefix, normalize_path, parent_folder
 from wafer.core.lang.manager import t
 from wafer.qt.commands.bridge import ActionKit, Context, Menu
 from wafer.qt.common.dpi import dpix
@@ -95,7 +94,7 @@ class FolderStatsModel(LazyFolderTreeModel):
         old_path = normalize_path(item.data(USER_ROLE_PATH))
         renamed = super()._rename_item(item, new_name)
         if renamed and self._is_valid_item(item) and normalize_path(item.data(USER_ROLE_PATH)) != old_path:
-            self.paths_changed.emit([posixpath.dirname(old_path)])
+            self.paths_changed.emit([parent_folder(old_path)])
         return renamed
 
     def _move_item(self, item, new_parent_item):
@@ -104,7 +103,7 @@ class FolderStatsModel(LazyFolderTreeModel):
         if not moved:
             return moved
         new_parent = normalize_path(new_parent_item.data(USER_ROLE_PATH))
-        old_parent = posixpath.dirname(old_path)
+        old_parent = parent_folder(old_path)
         if new_parent != old_parent:
             self.paths_changed.emit([old_parent, new_parent])
         return moved
@@ -162,7 +161,10 @@ def ancestors_within_roots(path: str, roots: Sequence[str]) -> list[str]:
     chain = []
     current = path
     while current != root:
-        current = posixpath.dirname(current)
+        parent = parent_folder(current)
+        if len(parent) >= len(current):
+            break
+        current = parent
         chain.append(current)
     return chain[::-1]
 

@@ -221,6 +221,24 @@ def test_count_sources_under_a_drive_root():
     assert result == {"D:/": (1, 2), "D:/a": (1, 1)}
 
 
+CWD_ROOT = os.path.splitdrive(os.getcwd())[0] + "/"
+
+
+def test_count_sources_under_the_current_drive_root():
+    result = count_sources_by_folder([f"{CWD_ROOT}1.png", f"{CWD_ROOT}a/2.png", f"{CWD_ROOT}a/b/3.png"], [CWD_ROOT])
+    assert result == {CWD_ROOT: (1, 3), f"{CWD_ROOT}a": (1, 2), f"{CWD_ROOT}a/b": (1, 1)}
+
+
+def test_updates_reach_the_current_drive_root():
+    tree = DiskTree([CWD_ROOT])
+    tree.add(CWD_ROOT, [f"{CWD_ROOT}a"], 1)
+    tree.add(f"{CWD_ROOT}a", [], 1)
+    tree.finish()
+    tree.update_folder(f"{CWD_ROOT}a", [], 3)
+    assert tree.values(CWD_ROOT) == FolderValues(files=1, all_files=4, folders=1, all_folders=1)
+    assert tree.totals == fresh_totals(tree)
+
+
 def test_sources_outside_roots_are_ignored():
     assert count_sources_by_folder(["D:/x/1.png"], ["C:/r"]) == {}
 

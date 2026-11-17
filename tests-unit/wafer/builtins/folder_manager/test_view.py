@@ -1,3 +1,4 @@
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -37,6 +38,12 @@ def path_of(root, *parts):
 
 def rule(name, color, *conditions, enabled=True, bars=None):
     return HighlightRule(name, color, enabled=enabled, bars=bars or [], conditions=[Condition(*c) for c in conditions])
+
+
+def test_ancestors_stop_at_the_current_drive_root():
+    root = os.path.splitdrive(os.getcwd())[0] + "/"
+    assert view_module.ancestors_within_roots(f"{root}a/b", [root]) == [root, f"{root}a"]
+    assert view_module.ancestors_within_roots(f"{root}a", [root]) == [root]
 
 
 def test_model_declares_count_columns():

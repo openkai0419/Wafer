@@ -11,6 +11,10 @@ def normalize_path(p):
     return path
 
 
+def parent_folder(path: str) -> str:
+    return os.path.dirname(path).replace("\\", "/")
+
+
 def child_prefix(folder: str) -> str:
     return folder if folder.endswith("/") else f"{folder}/"
 

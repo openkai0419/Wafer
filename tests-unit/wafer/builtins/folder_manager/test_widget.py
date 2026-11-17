@@ -1,3 +1,4 @@
+import os
 import shutil
 import threading
 
@@ -264,6 +265,23 @@ def test_a_file_in_a_new_folder_adds_that_folder(qtbot, tmp_path, monkeypatch, q
     qtbot.waitUntil(lambda: disk.values(f"{root}/b/old") is None, timeout=5000)
     assert disk.values(f"{root}/b") == FolderValues(1, 1, 0, 0)
     assert disk.totals == fresh_totals(disk) and finishes == []
+
+
+def test_parents_on_the_current_drive_root_stay_on_that_drive(qtbot):
+    root = os.path.splitdrive(os.getcwd())[0] + "/"
+    panel = FolderManagerWidget()
+    qtbot.addWidget(panel)
+    panel.model.roots = [root]
+    panel.model.disk = DiskTree([root])
+    panel.model.disk.add(root, [f"{root}a"], 1)
+    panel.model.disk.add(f"{root}a", [], 0)
+    panel.model.disk.finish()
+    panel.on_files_changed("", {"modified": [f"{root}file.png", f"{root}a/new/deep/f.png"], "removed": []})
+    assert panel.stale_parents == {root, f"{root}a/new/deep"}
+    assert panel.nearest_known(f"{root}a/new/deep") == f"{root}a"
+    assert panel.nearest_known(f"{root}never/listed") == root
+    panel.model.disk = DiskTree([root])
+    assert panel.nearest_known(f"{root}a/b") is None
 
 
 def test_notifications_for_another_db_are_ignored(qtbot, tmp_path, query_calls, immediate_debounce):

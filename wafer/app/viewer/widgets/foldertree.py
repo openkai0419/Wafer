@@ -125,12 +125,14 @@ def iter_root_items(model):
 
 
 class LazyFolderTreeModel(QtGui.QStandardItemModel):
+    EXTRA_COLUMNS: tuple[str, ...] = ()
+
     def __init__(self, roots, excluded=None, ignore_pattern_re=None):
         super().__init__()
         self.roots = roots
         self.excluded = set(normalize_path(p) for p in excluded or [])
         self.ignore_pattern_re = ignore_pattern_re
-        self.setHorizontalHeaderLabels(["Folders"])
+        self.setHorizontalHeaderLabels(["Folders", *self.EXTRA_COLUMNS])
         self.path_item_map = {}
         self.path_item_trie = {}
         self._mime_type = "application/x-foldertree-paths"
@@ -314,6 +316,14 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                 return None
         return node.get("__item__")
 
+    def make_row(self, path: str) -> list[QtGui.QStandardItem]:
+        row = [create_folder_item(path)]
+        for _ in self.EXTRA_COLUMNS:
+            cell = QtGui.QStandardItem()
+            cell.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
+            row.append(cell)
+        return row
+
     @profiler.profile
     def _build_roots(self, roots):
         self.roots = roots
@@ -323,16 +333,17 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                 continue
             if self.ignore_pattern_re is not None and self.ignore_pattern_re.match(root):
                 continue
-            item = create_folder_item(root)
+            row = self.make_row(root)
+            item = row[0]
             if _has_subfolders_bg(root, self.excluded, self.ignore_pattern_re):
                 item.setChild(0, QtGui.QStandardItem())
-            self.appendRow(item)
+            self.appendRow(row)
             self._add_item(root, item)
         self.sort(0, QtCore.Qt.AscendingOrder)
 
     def flags(self, index):
         default = super().flags(index)
-        if not index.isValid():
+        if not index.isValid() or index.column() != 0:
             return default
         return default | QtCore.Qt.ItemIsEditable | QtCore.Qt.ItemIsDragEnabled | QtCore.Qt.ItemIsDropEnabled
 
@@ -505,10 +516,11 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             return
         item.removeRows(0, item.rowCount())
         for full_path, has_sub in children:
-            child = create_folder_item(full_path)
+            row = self.make_row(full_path)
+            child = row[0]
             if has_sub:
                 child.setChild(0, QtGui.QStandardItem())
-            item.appendRow(child)
+            item.appendRow(row)
             self._add_item(full_path, child)
 
     @profiler.profile
@@ -568,10 +580,13 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
 
 
 class LazyFolderTreeView(QtWidgets.QTreeView):
+    MODEL_CLASS = LazyFolderTreeModel
+    BINDING_SCOPE = "FolderTree"
     folder_selected = QtCore.Signal()
     current_path_changed = QtCore.Signal(object)
+    folders_set = QtCore.Signal()
 
-    def __init__(self, roots=None, excluded=None, ignore_pattern_re=None):
+    def __init__(self, roots=None, excluded=None, ignore_pattern_re=None, *, instance_name: str = "FolderTree"):
         super().__init__()
         from ....qt.theme import ThemeManager
 
@@ -582,7 +597,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self._drop_target_pen = QtGui.QPen(QtGui.QColor(_p.accent))
         self.setHeaderHidden(True)
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        self.model_ = LazyFolderTreeModel(roots, excluded, ignore_pattern_re)
+        self.model_ = self.MODEL_CLASS(roots, excluded, ignore_pattern_re)
         self.model_.setParent(self)
         self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.setModel(self.model_)
@@ -601,14 +616,14 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self._drop_target_index = QtCore.QModelIndex()
         self.expanded.connect(self.on_expanded)
         self.clicked.connect(self._on_item_clicked)
-        UI.register_instance("FolderTree", self)
+        UI.register_instance(instance_name, self)
         self.viewport().installEventFilter(self)
 
         self.viewport().setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.viewport().customContextMenuRequested.connect(self.show_context_menu)
 
     def binding_scope(self) -> str:
-        return "FolderTree"
+        return self.BINDING_SCOPE
 
     def keyboardSearch(self, search):
         return
@@ -836,8 +851,9 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self.model_.roots = roots
         self.model_.excluded = excluded
         self.model_.ignore_pattern_re = ignore_pattern_re
-        self.model_.setHorizontalHeaderLabels(["Folders"])
+        self.model_.setHorizontalHeaderLabels(["Folders", *self.model_.EXTRA_COLUMNS])
         self.model_._build_roots(roots)
+        self.folders_set.emit()
 
     def _iter_inline_editors(self):
         seen = set()
@@ -1192,11 +1208,12 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         for item in iter_root_items(self.model_):
             if item.data(USER_ROLE_PATH) == path:
                 return
-        item = create_folder_item(path)
+        row = self.model_.make_row(path)
+        item = row[0]
         if self.model_.has_subfolders(path):
             item.setChild(0, QtGui.QStandardItem())
         self.model_.roots.append(path)
-        self.model_.appendRow(item)
+        self.model_.appendRow(row)
         self.model_._add_item(path, item)
         self.model_.sort(0, QtCore.Qt.AscendingOrder)
 
@@ -1245,7 +1262,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         roots = [item.data(USER_ROLE_PATH) for item in iter_root_items(self.model_)]
         self.model_.clear()
         self.model_.clear_cache()
-        self.model_.setHorizontalHeaderLabels(["Folders"])
+        self.model_.setHorizontalHeaderLabels(["Folders", *self.model_.EXTRA_COLUMNS])
         self.model_._build_roots(roots)
         self.set_state(state, scroll_to_selection=False)
         self.restore_scroll_state(scroll_state)

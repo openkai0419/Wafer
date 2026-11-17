@@ -1244,3 +1244,105 @@ def test_cancel_expand_recursive_cancels_active_job(qtbot, monkeypatch, tmp_path
     assert root not in tree._recursive_expand_jobs
     assert root not in tree.model_._pending_expands
     assert not tree.isExpanded(root_index)
+
+
+class ExtraColumnsModel(foldertree_module.LazyFolderTreeModel):
+    EXTRA_COLUMNS = ("A",)
+
+
+class ExtraColumnsTreeView(LazyFolderTreeView):
+    MODEL_CLASS = ExtraColumnsModel
+    BINDING_SCOPE = "ExtraColumnsTree"
+
+
+def make_extra_columns_tree(qtbot, tmp_path):
+    root = tmp_path / "root"
+    (root / "A" / "A1").mkdir(parents=True)
+    (root / "B").mkdir()
+    tree = ExtraColumnsTreeView(roots=[str(root)], excluded=[], instance_name="ExtraColumnsTree")
+    qtbot.addWidget(tree)
+    tree.set_folders([str(root)])
+    return tree, root
+
+
+def test_subclass_registers_under_its_own_name(qtbot):
+    from wafer.qt.commands.binding.instance_registry import InstanceRegistry
+
+    main = LazyFolderTreeView(roots=[], excluded=[])
+    qtbot.addWidget(main)
+    other = ExtraColumnsTreeView(roots=[], excluded=[], instance_name="Other")
+    qtbot.addWidget(other)
+    registry = InstanceRegistry.instance()
+
+    assert main in registry.get_all("FolderTree")
+    assert other not in registry.get_all("FolderTree")
+    assert other in registry.get_all("Other")
+    assert main.binding_scope() == "FolderTree"
+    assert other.binding_scope() == "ExtraColumnsTree"
+    assert isinstance(other.model_, ExtraColumnsModel)
+
+
+def test_extra_columns_add_non_editable_cells(qtbot, tmp_path):
+    tree, root = make_extra_columns_tree(qtbot, tmp_path)
+    model = tree.model_
+
+    assert model.columnCount() == 2
+    assert [model.headerData(c, QtCore.Qt.Horizontal) for c in range(2)] == ["Folders", "A"]
+    root_index = model.find_index_by_path(str(root))
+    extra = root_index.siblingAtColumn(1)
+    assert extra.isValid()
+    extra_flags = model.flags(extra)
+    for flag in (QtCore.Qt.ItemIsEditable, QtCore.Qt.ItemIsDragEnabled, QtCore.Qt.ItemIsDropEnabled):
+        assert not extra_flags & flag
+        assert model.flags(root_index) & flag
+    assert extra.data(foldertree_module.USER_ROLE_PATH) is None
+
+
+def test_extra_columns_follow_children_added_roots_and_reload(qtbot, tmp_path):
+    tree, root = make_extra_columns_tree(qtbot, tmp_path)
+    model = tree.model_
+    other_root = tmp_path / "other"
+    other_root.mkdir()
+
+    tree.expand_path(str(root / "A"))
+    tree.add_root(str(other_root))
+    for path in (root / "A", root / "A" / "A1", other_root):
+        index = model.find_index_by_path(str(path))
+        assert index.siblingAtColumn(1).isValid(), path
+
+    tree.reload_tree()
+    assert model.columnCount() == 2
+    assert model.headerData(1, QtCore.Qt.Horizontal) == "A"
+    assert model.find_index_by_path(str(root / "A")).siblingAtColumn(1).isValid()
+
+
+def test_extra_columns_move_with_their_folder(qtbot, tmp_path):
+    tree, root = make_extra_columns_tree(qtbot, tmp_path)
+    tree.expand_path(str(root))
+    tree.expand_path(str(root / "B"))
+
+    assert tree.move_paths([str(root / "A")], str(root / "B")) is True
+    moved = tree.model_.find_index_by_path(str(root / "B" / "A"))
+    assert moved.siblingAtColumn(1).isValid()
+
+
+def test_set_folders_emits_folders_set(qtbot, tmp_path):
+    tree = LazyFolderTreeView(roots=[], excluded=[])
+    qtbot.addWidget(tree)
+
+    with qtbot.waitSignal(tree.folders_set, timeout=1000):
+        tree.set_folders([str(tmp_path)])
+
+
+def test_default_tree_keeps_one_column(qtbot, tmp_path):
+    (tmp_path / "A").mkdir()
+    tree = LazyFolderTreeView(roots=[str(tmp_path)], excluded=[])
+    qtbot.addWidget(tree)
+    tree.set_folders([str(tmp_path)])
+    tree.expand_path(str(tmp_path))
+
+    assert tree.model_.columnCount() == 1
+    assert tree.isHeaderHidden()
+    assert tree.model_.find_index_by_path(str(tmp_path / "A")).siblingAtColumn(1).isValid() is False
+    tree.reload_tree()
+    assert tree.model_.columnCount() == 1

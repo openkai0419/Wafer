@@ -152,6 +152,9 @@ class TestPanelRegistryState:
     def test_plugin_manager_registered(self):
         assert "plugin_manager" in panel_registry.names()
 
+    def test_folder_manager_registered(self):
+        assert "folder_manager" in panel_registry.names()
+
 
 class TestRenameSourceRegistryState:
     EXPECTED_SOURCES = {"name", "fixed", "seq", "datetime", "meta", "random", "ext"}

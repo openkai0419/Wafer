@@ -60,7 +60,7 @@ class TestBuiltinLayoutRegistration:
 
 
 class TestBuiltinPanelRegistration:
-    BUILTIN_PANELS = {"database_manager", "batch_renamer", "plugin_manager"}
+    BUILTIN_PANELS = {"database_manager", "batch_renamer", "plugin_manager", "folder_manager"}
 
     def test_all_builtin_panels_registered(self):
         names = set(panel_registry.names())

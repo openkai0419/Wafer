@@ -11,6 +11,8 @@ from wafer.core.common.virtual_paths import source_path
 from wafer.core.db.path_scope import is_under
 from wafer.core.lang.manager import t
 from wafer.core.logs import AppLogger
+from wafer.plugin.panel.base import BasePanelPlugin
+from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 from wafer.qt.commands.bridge import ActionKit, Menu
 from wafer.qt.common.dispatcher import CancelSlot, Dispatcher
 from wafer.qt.common.dpi import dpix
@@ -511,3 +513,50 @@ class FolderManagerWidget(QtWidgets.QWidget):
                 self.view.expand_to(matches)
 
         scan_chunk(0)
+
+
+class FolderManagerPlugin(BasePanelPlugin):
+    NAME = "folder_manager"
+    DISPLAY_NAME = "Folder Manager"
+    PRIORITY = 0
+    SOURCE = "Builtin"
+    DEFAULT_ENABLED = True
+    STANDALONE_AVAILABLE = False
+
+    def __init__(self):
+        self.widget: FolderManagerWidget | None = None
+        self.state: dict = {}
+
+    def save_ui_state(self) -> dict:
+        if self.widget is not None:
+            try:
+                self.state = self.widget.save_state()
+            except RuntimeError as exc:
+                AppLogger.warning("[FolderManager] save_state failed", exc=exc)
+        return dict(self.state)
+
+    def restore_ui_state(self, state: dict) -> None:
+        self.state = dict(state)
+        if self.widget is not None:
+            try:
+                self.widget.restore_state(self.state)
+            except RuntimeError as exc:
+                AppLogger.warning("[FolderManager] restore_state failed", exc=exc)
+
+    def create_widget(self) -> FolderManagerWidget:
+        widget = FolderManagerWidget()
+        self.widget = widget
+        widget.destroyed.connect(lambda *_: self.forget(widget))
+        if self.state:
+            widget.restore_state(self.state)
+        host = InstanceRegistry.instance().get_host_window()
+        tree = getattr(host, "folder_view", None)
+        if tree is None:
+            AppLogger.warning("[FolderManager] no folder tree is available, the panel stays empty")
+        else:
+            widget.bind_folder_tree(tree, lambda: host.database_path)
+        return widget
+
+    def forget(self, widget: FolderManagerWidget) -> None:
+        if self.widget is widget:
+            self.widget = None

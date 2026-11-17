@@ -11,9 +11,10 @@ from wafer.builtins.folder_manager import widget as widget_module
 from wafer.builtins.folder_manager.rules import Condition, HighlightRule
 from wafer.builtins.folder_manager.rule_editor import describe_rule
 from wafer.builtins.folder_manager.stats import DiskTree, FolderValues
-from wafer.builtins.folder_manager.widget import FolderManagerWidget
+from wafer.builtins.folder_manager.widget import FolderManagerPlugin, FolderManagerWidget
 from wafer.core.common.paths import normalize_path
 from wafer.plugin.query.handler import filter_registry
+from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 from wafer.qt.commands.bridge import Menu
 from wafer.qt.common import rate_limit
 from wafer.qt.common.dpi import dpix
@@ -382,3 +383,38 @@ def test_panel_can_be_made_short(qtbot):
     panel = FolderManagerWidget()
     qtbot.addWidget(panel)
     assert panel.minimumSizeHint().height() <= dpix(150)
+
+
+class HostWindow:
+    def __init__(self, folder_view, database_path):
+        self.folder_view = folder_view
+        self.database_path = database_path
+
+
+def test_plugin_keeps_state_until_the_widget_exists(qtbot):
+    plugin = FolderManagerPlugin()
+    plugin.restore_ui_state({"rules": [], "columns": {"files": False}})
+    widget = plugin.create_widget()
+    qtbot.addWidget(widget)
+    assert widget.rules == []
+    assert widget.columns["files"] is False
+    assert plugin.save_ui_state()["columns"]["files"] is False
+
+
+def test_plugin_without_host_window_creates_unbound_widget(qtbot, monkeypatch):
+    monkeypatch.setattr(InstanceRegistry.instance(), "get_host_window", lambda: None)
+    widget = FolderManagerPlugin().create_widget()
+    qtbot.addWidget(widget)
+    assert widget.source_tree is None
+
+
+def test_plugin_binds_host_folder_tree_and_db_path(qtbot, monkeypatch):
+    tree = make_tree(qtbot)
+    host = HostWindow(tree, "db.sqlite")
+    monkeypatch.setattr(InstanceRegistry.instance(), "get_host_window", lambda: host)
+    widget = FolderManagerPlugin().create_widget()
+    qtbot.addWidget(widget)
+    assert widget.source_tree is tree
+    assert widget.db_path_getter() == "db.sqlite"
+    host.database_path = "other.sqlite"
+    assert widget.db_path_getter() == "other.sqlite"

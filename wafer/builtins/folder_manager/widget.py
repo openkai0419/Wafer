@@ -9,16 +9,17 @@ from PySide6 import QtCore, QtWidgets
 from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
 from wafer.app.viewer.widgets.foldertree import LazyFolderTreeView
 from wafer.builtins.commands.folder_files import query_sources
-from wafer.core.common.paths import data_db_path, normalize_path, parent_folder
+from wafer.core.common.paths import child_prefix, data_db_path, normalize_path, parent_folder
 from wafer.core.common.virtual_paths import source_path
 from wafer.core.db.path_scope import is_under
 from wafer.core.lang.manager import t
 from wafer.core.logs import AppLogger
 from wafer.plugin.panel.base import BasePanelPlugin
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
-from wafer.qt.commands.bridge import ActionKit, Menu
+from wafer.qt.commands.bridge import UI, ActionKit, Menu
 from wafer.qt.common.dispatcher import CancelSlot, Dispatcher
 from wafer.qt.common.dpi import dpix
+from wafer.qt.common.notifier import Notifier
 from wafer.qt.common.rate_limit import qt_throttle
 from wafer.qt.common.thread import utility_pool
 from wafer.qt.widgets.flow_layout import FlowLayout
@@ -28,6 +29,7 @@ from .rules import METRICS, HighlightRule, default_rules, new_rule
 from .stats import DiskTree, count_sources_by_folder, list_folder, walk_disk
 from .view import FolderManagerTreeView, folders_to_open
 
+INSTANCE_NAME = "FolderManager"
 DEFAULT_COLUMNS = {"files": True, "all_files": True, "folders": True, "all_folders": False}
 RULE_EDIT_DELAY_MS = 400
 STATS_REFRESH_MS = 100
@@ -107,6 +109,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.expand_serial = 0
         self.build_ui()
         self.restore_state({})
+        UI.register_instance(INSTANCE_NAME, self)
         bridge = ViewerIpcBridge.instance()
         if bridge is not None:
             bridge.db_content_updated.connect(self.on_db_content_updated)
@@ -141,15 +144,17 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.flow = FlowLayout(self.bar, margin=dpix(2), spacing=dpix(4))
         self.status_label = QtWidgets.QLabel()
         self.status_label.hide()
-        self.expand_button = tool_button("chevron_down", t("Open the tree to every folder a rule marks"), t("Expand to matches"))
-        self.expand_button.clicked.connect(self.expand_to_matches)
+        self.expand_button = tool_button("chevron_down", t("Open the tree to every folder a rule marks (only under the selected folders, if any)"), t("Expand to matches"))
+        self.expand_button.clicked.connect(lambda: self.expand_to_matches())
+        self.select_button = tool_button("check", t("Open the tree to every folder a rule marks and select them (only under the selected folders, if any)"), t("Select matches"))
+        self.select_button.clicked.connect(lambda: self.expand_to_matches(select=True))
         self.columns_button = tool_button("gear", t("Columns"))
         self.columns_button.clicked.connect(self.show_column_menu)
         self.refresh_button = tool_button("refresh", t("Scan again"))
         self.refresh_button.clicked.connect(self.refresh)
         self.add_rule_button = tool_button("plus", t("Add rule"), t("Add rule"))
         self.add_rule_button.clicked.connect(self.add_rule)
-        for widget in (self.status_label, self.expand_button, self.columns_button, self.refresh_button, self.add_rule_button):
+        for widget in (self.status_label, self.expand_button, self.select_button, self.columns_button, self.refresh_button, self.add_rule_button):
             self.flow.addWidget(widget)
         return self.bar
 
@@ -546,7 +551,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.model.rule_counts = [(rule, self.counts.get(id(rule), {})) for rule in self.rules]
         self.model.refresh_stats()
 
-    def expand_to_matches(self) -> None:
+    def expand_to_matches(self, select: bool = False) -> None:
         self.expand_serial += 1
         serial = self.expand_serial
         disk = self.model.disk
@@ -554,8 +559,13 @@ class FolderManagerWidget(QtWidgets.QWidget):
         lists.extend(list(counts) for _rule, counts in self.model.rule_counts)
         candidates = chain.from_iterable(lists)
         roots = [normalize_path(root) for root in self.model.roots or ()]
+        scopes = outermost(normalize_path(path) for path in self.view.get_selected_paths())
+        prefixes = tuple(child_prefix(scope) for scope in scopes)
         seen: set[str] = set()
         matches: list[str] = []
+
+        def in_scope(path: str) -> bool:
+            return not scopes or path in scopes or path.startswith(prefixes)
 
         def scan_slice() -> None:
             if serial != self.expand_serial:
@@ -566,22 +576,31 @@ class FolderManagerWidget(QtWidgets.QWidget):
                 if path not in seen:
                     seen.add(path)
                     current = model.disk
-                    if model.badges_for(path, current.values(path) if current is not None else None):
+                    if in_scope(path) and model.badges_for(path, current.values(path) if current is not None else None):
                         matches.append(path)
                 if number % EXPAND_DEADLINE_CHECK == 0 and time.perf_counter() >= deadline:
                     QtCore.QTimer.singleShot(0, scan_slice)
                     return
+            if not matches:
+                Notifier.info(t("No matching folders"))
+                return
             self.dispatcher.post(lambda: find_folders())
 
         def find_folders() -> None:
             folders = folders_to_open(matches, roots)
-            self.dispatcher.invoke(lambda: self.open_folders(serial, folders))
+            self.dispatcher.invoke(lambda: self.open_folders(serial, folders, matches if select else None))
 
         scan_slice()
 
-    def open_folders(self, serial: int, folders: list[str]) -> None:
-        if serial == self.expand_serial:
-            self.view.expand_folders(folders)
+    def open_folders(self, serial: int, folders: list[str], selection: list[str] | None = None) -> None:
+        if serial != self.expand_serial:
+            return
+
+        def select_matches() -> None:
+            if selection is not None and serial == self.expand_serial:
+                self.view.select_folders(selection)
+
+        self.view.expand_folders(folders, on_complete=select_matches)
 
 
 class FolderManagerPlugin(BasePanelPlugin):

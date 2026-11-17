@@ -20,6 +20,7 @@ RULE_FILE_ACTIONS = (
     ("cut_all", "{rule} · Cut all files below", "file.cut", True),
     ("copy_all", "{rule} · Copy all files below", "file.copy", True),
 )
+MATCH_COMMANDS = ("folder_manager.expand_matches", "folder_manager.select_matches")
 DISK_METRICS = ("folders", "all_folders")
 COUNT_SAMPLE = "99,999,999"
 UNSCANNED = object()
@@ -251,7 +252,7 @@ class FolderManagerTreeView(LazyFolderTreeView):
         path = ctx.get("path")
         if not path:
             return
-        items = ["ft.show_in_tree", "-", *folder_items(normalize_path(path))]
+        items = ["ft.show_in_tree", *MATCH_COMMANDS, "-", *folder_items(normalize_path(path))]
         files_items = [n for n, item in enumerate(items) if item.startswith("Files in Folder/")]
         if files_items:
             items[files_items[-1] + 1 : files_items[-1] + 1] = self.rule_file_actions()
@@ -289,15 +290,32 @@ class FolderManagerTreeView(LazyFolderTreeView):
         ctx.extras["filter_entries"] = entries
         run_on_folder_files(ctx, command_id, recursive)
 
-    def expand_folders(self, folders: Sequence[str]) -> None:
+    def expand_folders(self, folders: Sequence[str], on_complete: Callable[[], None] | None = None) -> None:
         batch_size = EXPAND_RECURSIVE_BATCH_SIZE
         chunks = [folders[i : i + batch_size] for i in range(0, len(folders), batch_size)]
         self.expand_serial += 1
         serial = self.expand_serial
 
         def expand_chunk(number: int) -> None:
-            if serial != self.expand_serial or number >= len(chunks):
+            if serial != self.expand_serial:
+                return
+            if number >= len(chunks):
+                if on_complete is not None:
+                    on_complete()
                 return
             self.expand_paths_async(chunks[number], on_complete=lambda: expand_chunk(number + 1))
 
         expand_chunk(0)
+
+    def select_folders(self, paths: Sequence[str]) -> None:
+        model = self.model_
+        items = (model.path_item_map.get(path) for path in paths)
+        indexes = [model.indexFromItem(item) for item in items if model._is_valid_item(item)]
+        selection = QtCore.QItemSelection()
+        for index in indexes:
+            selection.select(index, index)
+        selection_model = self.selectionModel()
+        selection_model.select(selection, QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows)
+        if indexes:
+            selection_model.setCurrentIndex(indexes[0], QtCore.QItemSelectionModel.NoUpdate)
+            self.scrollTo(indexes[0], QtWidgets.QAbstractItemView.PositionAtCenter)

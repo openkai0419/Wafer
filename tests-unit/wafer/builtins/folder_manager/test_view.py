@@ -190,7 +190,7 @@ def test_context_menu_lists_rule_actions_only_for_rules_with_query(qtbot, tmp_pa
     view.show_context_menu(view.visualRect(index).center())
 
     items = seen["items"]
-    assert items[:2] == ["ft.show_in_tree", "-"]
+    assert items[:4] == ["ft.show_in_tree", "folder_manager.expand_matches", "folder_manager.select_matches", "-"]
     assert "Files in Folder/ft.files.cut_all" in items
     assert not any("ignore" in str(i) or "remove_from_view" in str(i) for i in items)
     actions = [i for i in items if not isinstance(i, str)]
@@ -265,7 +265,7 @@ def test_context_menu_for_a_vanished_folder_offers_only_safe_items(qtbot, tmp_pa
 
     view.show_context_menu(view.visualRect(index).center())
 
-    assert seen["items"] == ["ft.show_in_tree", "-", "file.copy_path", "-"]
+    assert seen["items"] == ["ft.show_in_tree", "folder_manager.expand_matches", "folder_manager.select_matches", "-", "file.copy_path", "-"]
     view.close()
 
 
@@ -544,3 +544,44 @@ def test_folder_count_rule_uses_the_listing_before_children_are_walked(qtbot):
     model.rule_counts = [(rule("Leaf", "#111111", ("folders", "==", 0)), {}), (rule("Parent", "#222222", ("folders", ">=", 1)), {})]
 
     assert model.badges("D:/x") == [("#222222", None)]
+
+
+def test_expand_folders_calls_on_complete_after_the_last_batch(qtbot, tmp_path, monkeypatch):
+    monkeypatch.setattr(view_module, "EXPAND_RECURSIVE_BATCH_SIZE", 1)
+    view, root = make_view(qtbot, tmp_path)
+    done = []
+
+    def on_complete():
+        item = view.model_.path_item_map[path_of(root, "a")]
+        done.append(view.isExpanded(view.model_.indexFromItem(item)))
+
+    view.expand_folders([root, path_of(root, "a")], on_complete=on_complete)
+
+    qtbot.waitUntil(lambda: bool(done))
+    assert done == [True]
+
+
+def test_expand_folders_without_folders_still_completes(qtbot, tmp_path):
+    view, _root = make_view(qtbot, tmp_path)
+    done = []
+
+    view.expand_folders([], on_complete=lambda: done.append(True))
+
+    assert done == [True]
+
+
+def test_select_folders_selects_loaded_folders_and_skips_unknown_ones(qtbot, tmp_path, monkeypatch):
+    view, root = make_view(qtbot, tmp_path)
+    view.expand_folders([root])
+    qtbot.waitUntil(lambda: path_of(root, "d") in view.model_.path_item_map)
+    loaded = []
+    monkeypatch.setattr(view.model_, "load_children", lambda item: loaded.append(item))
+    scrolled = []
+    monkeypatch.setattr(view, "scrollTo", lambda *args: scrolled.append(args))
+
+    view.select_folders([path_of(root, "d"), path_of(root, "a"), path_of(root, "missing")])
+
+    assert sorted(view.get_selected_paths()) == [path_of(root, "a"), path_of(root, "d")]
+    assert view.current_path() == path_of(root, "d")
+    assert len(scrolled) == 1
+    assert loaded == []

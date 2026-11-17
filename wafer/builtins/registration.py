@@ -49,7 +49,7 @@ def _import_builtin_modules():
         table as _br_table,
         widget as _br_widget,
     )
-    from .folder_manager import widget as _fm_widget
+    from .folder_manager import commands as _fm_commands, widget as _fm_widget
     from .commands import (
         cache_limits as _cmd_cache_limits,
         tools as _cmd_tools,
@@ -119,6 +119,7 @@ def _import_builtin_modules():
         _cmd_backend,
         _dm_widget,
         _fm_widget,
+        _fm_commands,
         collectors_tab,
         data_tab,
         extensions_tab,

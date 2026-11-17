@@ -562,7 +562,7 @@ def test_expand_to_matches_collects_badged_folders(qtbot, tmp_path, monkeypatch,
     bind(qtbot, panel, [root])
     qtbot.waitUntil(lambda: bool(panel.model.badges(root)), timeout=5000)
     expanded = []
-    monkeypatch.setattr(panel.view, "expand_folders", lambda folders: expanded.append(list(folders)))
+    monkeypatch.setattr(panel.view, "expand_folders", lambda folders, **_: expanded.append(list(folders)))
     panel.expand_button.click()
     qtbot.waitUntil(lambda: bool(expanded), timeout=5000)
     assert expanded == [[root]]
@@ -580,7 +580,7 @@ def test_expand_to_matches_scans_in_slices_and_finds_ancestors_off_the_main_thre
     real_folders_to_open = widget_module.folders_to_open
     monkeypatch.setattr(widget_module, "folders_to_open", lambda *args: threads.append(threading.current_thread()) or real_folders_to_open(*args))
     expanded = []
-    monkeypatch.setattr(panel.view, "expand_folders", lambda folders: expanded.append(list(folders)))
+    monkeypatch.setattr(panel.view, "expand_folders", lambda folders, **_: expanded.append(list(folders)))
     panel.view.hide()
     QtCore.QCoreApplication.processEvents()
     cached = len(panel.model.values_cache)
@@ -674,3 +674,51 @@ def test_plugin_binds_host_folder_tree_and_db_path(qtbot, monkeypatch):
     assert widget.db_path_getter() == "db.sqlite"
     host.database_path = "other.sqlite"
     assert widget.db_path_getter() == "other.sqlite"
+
+
+def test_expand_to_matches_only_looks_under_the_selected_folders(qtbot, tmp_path, monkeypatch, query_calls):
+    root = make_folders(tmp_path / "root", {"": 0, "a": 1, "a/s": 0, "c": 0, "c/x": 1, "c/x/s": 0})
+    query_calls.sources = [f"{root}/a/f0.png", f"{root}/c/x/f0.png"]
+    panel = make_panel(qtbot)
+    bind(qtbot, panel, [root])
+    qtbot.waitUntil(lambda: bool(panel.model.badges(f"{root}/c/x")) and bool(panel.model.badges(f"{root}/a")), timeout=5000)
+    expanded = []
+    monkeypatch.setattr(panel.view, "expand_folders", lambda folders, **_: expanded.append(list(folders)))
+    monkeypatch.setattr(panel.view, "get_selected_paths", lambda: [f"{root}/c"])
+
+    panel.expand_to_matches()
+
+    qtbot.waitUntil(lambda: bool(expanded), timeout=5000)
+    assert expanded == [[root, f"{root}/c"]]
+
+
+def test_select_matches_selects_every_match_after_expanding(qtbot, tmp_path, query_calls):
+    root = make_folders(tmp_path / "root", {"": 0, "a": 1, "a/b": 0, "a/b/c": 1, "a/b/c/s": 0, "d": 0})
+    query_calls.sources = [f"{root}/a/f0.png", f"{root}/a/b/c/f0.png"]
+    panel = make_panel(qtbot)
+    bind(qtbot, panel, [root])
+    qtbot.waitUntil(lambda: bool(panel.model.badges(f"{root}/a/b/c")), timeout=5000)
+
+    panel.select_button.click()
+
+    qtbot.waitUntil(lambda: sorted(panel.view.get_selected_paths()) == [f"{root}/a", f"{root}/a/b/c"], timeout=5000)
+
+
+def test_expand_to_matches_without_matches_tells_the_user(qtbot, tmp_path, monkeypatch, query_calls):
+    root = make_folders(tmp_path / "root", {"": 0, "a": 0})
+    panel = make_panel(qtbot)
+    bind(qtbot, panel, [root])
+    notices = []
+    monkeypatch.setattr(widget_module.Notifier, "info", lambda text, *args, **kwargs: notices.append(text))
+    expanded = []
+    monkeypatch.setattr(panel.view, "expand_folders", lambda folders, **_: expanded.append(list(folders)))
+
+    panel.expand_to_matches(select=True)
+
+    qtbot.waitUntil(lambda: bool(notices), timeout=5000)
+    assert expanded == []
+
+
+def test_panel_registers_itself_for_commands(qtbot):
+    panel = make_panel(qtbot)
+    assert panel in InstanceRegistry.instance().get_all(widget_module.INSTANCE_NAME)

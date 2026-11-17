@@ -1346,3 +1346,74 @@ def test_default_tree_keeps_one_column(qtbot, tmp_path):
     assert tree.model_.find_index_by_path(str(tmp_path / "A")).siblingAtColumn(1).isValid() is False
     tree.reload_tree()
     assert tree.model_.columnCount() == 1
+
+
+def test_subclass_registers_under_its_binding_scope_by_default(qtbot):
+    from wafer.qt.commands.binding.instance_registry import InstanceRegistry
+
+    tree = ExtraColumnsTreeView(roots=[], excluded=[])
+    qtbot.addWidget(tree)
+    registry = InstanceRegistry.instance()
+
+    assert tree in registry.get_all("ExtraColumnsTree")
+    assert tree not in registry.get_all("FolderTree")
+
+
+def show_extra_columns_tree(qtbot, tmp_path):
+    tree, root = make_extra_columns_tree(qtbot, tmp_path)
+    tree.resize(480, 240)
+    tree.show()
+    tree.expand_path(str(root))
+    QtWidgets.QApplication.processEvents()
+    return tree, root
+
+
+def test_navigation_from_an_extra_cell_uses_its_folder(qtbot, tmp_path):
+    tree, root = show_extra_columns_tree(qtbot, tmp_path)
+    model = tree.model_
+    try:
+        a_extra = model.find_index_by_path(str(root / "A")).siblingAtColumn(1)
+        tree.setCurrentIndex(a_extra)
+        assert tree.currentIndex().column() == 1
+        assert tree.current_path() == normalize_path(str(root / "A"))
+
+        emitted = []
+        tree.current_path_changed.connect(emitted.append)
+        assert tree.navigate_child(trigger_search=False) == normalize_path(str(root / "A" / "A1"))
+        assert model.itemFromIndex(a_extra).rowCount() == 0
+        assert all(p.startswith(normalize_path(str(root))) for p in model.path_item_map)
+        assert emitted == [normalize_path(str(root / "A" / "A1"))]
+
+        tree.setCurrentIndex(model.find_index_by_path(str(root / "A")).siblingAtColumn(1))
+        assert tree.navigate_next_folder(trigger_search=False) == normalize_path(str(root / "B"))
+        tree.setCurrentIndex(model.find_index_by_path(str(root / "B")).siblingAtColumn(1))
+        assert tree.navigate_prev_folder(trigger_search=False) == normalize_path(str(root / "A"))
+        tree.setCurrentIndex(model.find_index_by_path(str(root / "A")).siblingAtColumn(1))
+        assert tree.navigate_parent(trigger_search=False) == normalize_path(str(root))
+    finally:
+        tree.close()
+
+
+def test_context_on_an_extra_cell_resolves_its_folder(qtbot, tmp_path, monkeypatch):
+    from wafer.builtins.commands import foldertree as foldertree_commands
+
+    tree, root = show_extra_columns_tree(qtbot, tmp_path)
+    try:
+        a_extra = tree.model_.find_index_by_path(str(root / "A")).siblingAtColumn(1)
+        pos = tree.visualRect(a_extra).center()
+        assert tree.indexAt(pos).column() == 1
+        captured = {}
+        monkeypatch.setattr(foldertree_commands, "show_context_menu", lambda ctx: captured.setdefault("ctx", ctx))
+        original = foldertree_module.Context.create_menu_context
+        monkeypatch.setattr(
+            foldertree_module.Context,
+            "create_menu_context",
+            staticmethod(lambda widget, scope, **kwargs: captured.setdefault("scope", scope) and original(widget, scope, **kwargs)),
+        )
+
+        tree.show_context_menu(pos)
+
+        assert captured["scope"] == "ExtraColumnsTree"
+        assert captured["ctx"].extras["path"] == normalize_path(str(root / "A"))
+    finally:
+        tree.close()

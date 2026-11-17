@@ -132,7 +132,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         self.roots = roots
         self.excluded = set(normalize_path(p) for p in excluded or [])
         self.ignore_pattern_re = ignore_pattern_re
-        self.setHorizontalHeaderLabels(["Folders", *self.EXTRA_COLUMNS])
+        self.reset_header()
         self.path_item_map = {}
         self.path_item_trie = {}
         self._mime_type = "application/x-foldertree-paths"
@@ -315,6 +315,9 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             if node is None:
                 return None
         return node.get("__item__")
+
+    def reset_header(self):
+        self.setHorizontalHeaderLabels(["Folders", *self.EXTRA_COLUMNS])
 
     def make_row(self, path: str) -> list[QtGui.QStandardItem]:
         row = [create_folder_item(path)]
@@ -586,7 +589,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
     current_path_changed = QtCore.Signal(object)
     folders_set = QtCore.Signal()
 
-    def __init__(self, roots=None, excluded=None, ignore_pattern_re=None, *, instance_name: str = "FolderTree"):
+    def __init__(self, roots=None, excluded=None, ignore_pattern_re=None, *, instance_name: str | None = None):
         super().__init__()
         from ....qt.theme import ThemeManager
 
@@ -616,7 +619,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self._drop_target_index = QtCore.QModelIndex()
         self.expanded.connect(self.on_expanded)
         self.clicked.connect(self._on_item_clicked)
-        UI.register_instance(instance_name, self)
+        UI.register_instance(instance_name or self.BINDING_SCOPE, self)
         self.viewport().installEventFilter(self)
 
         self.viewport().setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -797,13 +800,13 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         from wafer.builtins.commands import foldertree
 
         gp = self.viewport().mapToGlobal(position)
-        ctx = Context.create_menu_context(self, "FolderTree", pos=position, global_pos=gp)
+        ctx = Context.create_menu_context(self, self.binding_scope(), pos=position, global_pos=gp)
         ctx.extras.update(self.extend_context(ctx, None, source="menu") or {})
         foldertree.show_context_menu(ctx)
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
         pos = ctx.get("pos") if hasattr(ctx, "get") else None
-        idx = self.indexAt(pos) if pos is not None else QtCore.QModelIndex()
+        idx = self.indexAt(pos).siblingAtColumn(0) if pos is not None else QtCore.QModelIndex()
         clicked = idx.data(USER_ROLE_PATH) if idx.isValid() else None
         selected = self.get_selected_paths()
         path = clicked or (selected[0] if selected else None)
@@ -851,7 +854,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self.model_.roots = roots
         self.model_.excluded = excluded
         self.model_.ignore_pattern_re = ignore_pattern_re
-        self.model_.setHorizontalHeaderLabels(["Folders", *self.model_.EXTRA_COLUMNS])
+        self.model_.reset_header()
         self.model_._build_roots(roots)
         self.folders_set.emit()
 
@@ -1262,7 +1265,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         roots = [item.data(USER_ROLE_PATH) for item in iter_root_items(self.model_)]
         self.model_.clear()
         self.model_.clear_cache()
-        self.model_.setHorizontalHeaderLabels(["Folders", *self.model_.EXTRA_COLUMNS])
+        self.model_.reset_header()
         self.model_._build_roots(roots)
         self.set_state(state, scroll_to_selection=False)
         self.restore_scroll_state(scroll_state)
@@ -1548,8 +1551,11 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             job.token.cancel()
             self._finish_expand_recursive_job(root_path)
 
+    def current_folder_index(self):
+        return self.currentIndex().siblingAtColumn(0)
+
     def current_path(self) -> str | None:
-        idx = self.currentIndex()
+        idx = self.current_folder_index()
         return idx.data(USER_ROLE_PATH) if idx.isValid() else None
 
     def _select_path_for_navigation(self, path, trigger_search=True):
@@ -1586,7 +1592,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
     @profiler.profile
     def navigate_next_folder(self, trigger_search=True) -> str | None:
-        idx = self.currentIndex()
+        idx = self.current_folder_index()
         if not idx.isValid():
             first = self.model().index(0, 0)
             if first.isValid():
@@ -1596,14 +1602,14 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
     @profiler.profile
     def navigate_prev_folder(self, trigger_search=True) -> str | None:
-        idx = self.currentIndex()
+        idx = self.current_folder_index()
         if not idx.isValid():
             return None
         return self._select_index_for_navigation(self._sibling_index(idx, -1), trigger_search=trigger_search)
 
     @profiler.profile
     def navigate_parent(self, trigger_search=True, collapse=False) -> str | None:
-        idx = self.currentIndex()
+        idx = self.current_folder_index()
         if not idx.isValid():
             return None
         parent = idx.parent()
@@ -1616,7 +1622,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
     @profiler.profile
     def navigate_child(self, trigger_search=True) -> str | None:
-        idx = self.currentIndex()
+        idx = self.current_folder_index()
         if not idx.isValid():
             return None
         item = self.model_.itemFromIndex(idx)

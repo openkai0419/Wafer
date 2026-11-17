@@ -17,8 +17,7 @@ def read(key: str, value_type: type):
 
 
 def write(key: str, value) -> None:
-    app_settings.set(key, value)
-    app_settings.commit()
+    app_settings.save_immediate(key, value)
 
 
 def load_rules() -> list[HighlightRule]:
@@ -39,12 +38,10 @@ def save_rules(rules: Sequence[HighlightRule]) -> None:
 
 
 def load_columns() -> dict[str, bool]:
-    saved = read(COLUMNS_KEY, dict)
-    if saved is None:
-        raw = app_settings.get(COLUMNS_KEY, None)
-        if raw is not None:
-            AppLogger.warning(f"[FolderManager] saved columns are not readable, showing the default columns: {raw!r}")
-        saved = {}
+    raw = read(COLUMNS_KEY, None)
+    saved = raw if isinstance(raw, dict) else {}
+    if raw is not None and not isinstance(raw, dict):
+        AppLogger.warning(f"[FolderManager] saved columns are not readable, showing the default columns: {raw!r}")
     return {metric: bool(saved.get(metric, DEFAULT_COLUMNS[metric])) for metric in METRICS}
 
 

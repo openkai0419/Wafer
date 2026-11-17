@@ -27,14 +27,7 @@ def clear_keys() -> None:
 
 
 @pytest.fixture(autouse=True)
-def clean_keys(monkeypatch):
-    def commit_now():
-        snapshot = dict(app_settings._buffer)
-        app_settings._buffer.clear()
-        app_settings._saver.set_buffer(snapshot)
-        app_settings._saver.flush()
-
-    monkeypatch.setattr(app_settings, "commit", commit_now)
+def clean_keys():
     clear_keys()
     yield
     clear_keys()
@@ -87,3 +80,13 @@ def test_last_database_round_trip():
     assert load_last_database() == ""
     save_last_database("main")
     assert load_last_database() == "main"
+
+
+def test_save_rules_emits_committed():
+    sent = []
+    app_settings.committed.connect(sent.append)
+    try:
+        save_rules(default_rules()[:1])
+    finally:
+        app_settings.committed.disconnect(sent.append)
+    assert [list(update) for update in sent] == [[RULES_KEY]]

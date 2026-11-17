@@ -7,6 +7,8 @@ from typing import Protocol
 from wafer.core.common.paths import child_prefix, normalize_path, parent_folder
 from wafer.core.logs import AppLogger
 
+CANCEL_CHECK_EVERY = 20000
+
 
 class Cancellable(Protocol):
     def is_cancelled(self) -> bool: ...
@@ -75,6 +77,8 @@ class DiskTree:
         self.nodes: dict[str, tuple[list[str], int]] = {}
         self.totals: dict[str, tuple[int, int]] = {}
         self.finished = False
+        self.orphans: list[str] = []
+        self.orphan_roots: set[str] = set()
 
     def add(self, path: str, child_dirs: list[str], file_count: int) -> None:
         self.nodes[path] = (child_dirs, file_count)
@@ -120,31 +124,50 @@ class DiskTree:
         return FolderValues(file_count, all_files, folders, all_folders)
 
     def update_folder(self, path: str, child_dirs: list[str], file_count: int) -> None:
+        if self.overlaps_orphans([path]) or any(child in self.orphan_roots for child in child_dirs):
+            self.dispose()
         before = self.contribution(path)
         old = self.nodes.get(path)
         if old is not None:
             kept = set(child_dirs)
-            for child in old[0]:
-                if child not in kept:
-                    self.forget(child)
+            vanished = [child for child in old[0] if child not in kept]
+            self.orphans.extend(vanished)
+            self.orphan_roots.update(vanished)
         self.nodes[path] = (list(child_dirs), file_count)
         if self.finished and path in self.totals:
             self.totals[path] = self.sum_children(path)
             self.push_up(path, before)
 
-    def replace_subtrees(self, paths: Sequence[str], entries: Iterable[tuple[str, list[str], int]]) -> None:
-        before = {path: self.contribution(path) for path in paths}
-        for path in paths:
+    def merge(self, walked: "DiskTree") -> None:
+        if self.overlaps_orphans(walked.roots):
+            self.dispose()
+        before = {path: self.contribution(path) for path in walked.roots}
+        for path in walked.roots:
             for child in self.nodes.get(path, ([], 0))[0]:
                 self.forget(child)
-        for path, child_dirs, file_count in entries:
-            self.nodes[path] = (list(child_dirs), file_count)
+        self.nodes.update(walked.nodes)
         if not self.finished:
             return
-        for path in paths:
-            if path in self.nodes:
-                self.total_subtree(path)
+        self.totals.update(walked.totals)
+        for path in walked.roots:
+            if path in walked.nodes:
                 self.push_up(path, before[path])
+
+    def overlaps_orphans(self, paths: Iterable[str]) -> bool:
+        return bool(self.orphan_roots) and any(within(path, root) or within(root, path) for path in paths for root in self.orphan_roots)
+
+    def dispose(self, budget: int | None = None) -> bool:
+        count = 0
+        while self.orphans and (budget is None or count < budget):
+            path = self.orphans.pop()
+            self.totals.pop(path, None)
+            node = self.nodes.pop(path, None)
+            if node is not None:
+                self.orphans.extend(node[0])
+            count += 1
+        if not self.orphans:
+            self.orphan_roots.clear()
+        return bool(self.orphans)
 
     def forget(self, path: str) -> None:
         stack = [path]
@@ -154,6 +177,12 @@ class DiskTree:
             node = self.nodes.pop(current, None)
             if node is not None:
                 stack.extend(node[0])
+
+    def clear(self) -> None:
+        self.nodes = {}
+        self.totals = {}
+        self.orphans = []
+        self.orphan_roots = set()
 
     def contribution(self, path: str) -> tuple[int, int]:
         total = self.totals.get(path)
@@ -175,11 +204,21 @@ class DiskTree:
             child = parent
 
 
-def count_sources_by_folder(sources: Iterable[str], roots: Sequence[str]) -> dict[str, tuple[int, int]]:
+def within(path: str, folder: str) -> bool:
+    return path == folder or path.startswith(child_prefix(folder))
+
+
+def count_sources_by_folder(sources: Sequence[str], roots: Sequence[str], cancel: Cancellable | None = None) -> dict[str, tuple[int, int]]:
     root_prefixes = sorted(((root, child_prefix(root)) for root in map(normalize_path, roots)), key=lambda r: -len(r[0]))
-    direct = Counter(parent_folder(source) for source in sources)
+    direct: Counter = Counter()
+    for start in range(0, len(sources), CANCEL_CHECK_EVERY):
+        if cancel is not None and cancel.is_cancelled():
+            return {}
+        direct.update(map(parent_folder, sources[start : start + CANCEL_CHECK_EVERY]))
     total: dict[str, int] = {}
-    for folder, count in direct.items():
+    for number, (folder, count) in enumerate(direct.items()):
+        if number % CANCEL_CHECK_EVERY == 0 and cancel is not None and cancel.is_cancelled():
+            return {}
         root = next((r for r, prefix in root_prefixes if folder == r or folder.startswith(prefix)), None)
         if root is None:
             continue

@@ -30,6 +30,7 @@ DEFAULT_COLUMNS = {"files": True, "all_files": True, "folders": True, "all_folde
 RULE_EDIT_DELAY_MS = 400
 STATS_REFRESH_MS = 100
 EXPAND_SCAN_CHUNK = 5000
+DISPOSE_BATCH = 20000
 
 
 def existing_folder(path: str, roots: set[str]) -> str:
@@ -95,6 +96,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.stale_disk = False
         self.stale_rules = False
         self.stale_parents: set[str] = set()
+        self.relisting: set[str] = set()
         self.expand_serial = 0
         self.build_ui()
         self.restore_state({})
@@ -117,7 +119,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         layout.addWidget(self.rules_area)
         self.view = FolderManagerTreeView()
         self.view.set_rules_source(lambda: self.rules)
-        self.model.paths_changed.connect(self.rescan_paths)
+        self.model.paths_changed.connect(self.on_paths_changed)
         layout.addWidget(self.view, 1)
         self.stats_timer = QtCore.QTimer(self)
         self.stats_timer.setSingleShot(True)
@@ -311,12 +313,15 @@ class FolderManagerWidget(QtWidgets.QWidget):
         return self.scanning and self.walk_roots is None
 
     def rescan_all(self) -> None:
-        self.model.disk = DiskTree(self.model.roots or [])
-        self.start_walk(list(self.model.roots or []), full=True)
+        roots = list(self.model.roots or [])
+        if self.model.disk is None or not self.model.disk.finished:
+            self.model.disk = DiskTree(roots)
+        self.start_walk(roots, full=True)
 
     def rescan_paths(self, paths: Sequence[str]) -> None:
         paths = [normalize_path(path) for path in paths]
-        if self.model.disk is None or self.full_scan_running() or not all(map(self.under_roots, paths)):
+        disk = self.model.disk
+        if disk is None or not disk.finished or self.full_scan_running() or not all(map(self.under_roots, paths)):
             self.rescan_all()
             return
         if self.scanning:
@@ -327,50 +332,64 @@ class FolderManagerWidget(QtWidgets.QWidget):
         token = self.disk_slot.renew()
         if full:
             self.relist_slot.cancel()
-        disk = self.model.disk
+            self.relisting.clear()
+        preview = self.model.disk if full and not self.model.disk.finished else None
         excluded = set(self.model.excluded or ())
         pattern = self.model.ignore_pattern_re
         self.scanning = True
         self.scanned = 0
         self.walk_roots = None if full else roots
         self.refresh_stats()
-        walked: list[tuple[str, list[str], int]] = []
-
-        def on_batch(batch):
-            if not full:
-                walked.extend(batch)
-            self.dispatcher.invoke(lambda: self.apply_batch(disk, token, batch, full))
 
         def task():
+            walked = DiskTree(roots)
+
+            def on_batch(batch):
+                for entry in batch:
+                    walked.add(*entry)
+                self.dispatcher.invoke(lambda: self.apply_batch(preview, token, batch))
+
             walk_disk(roots, excluded, pattern, token, on_batch)
+            if token.is_cancelled():
+                return
+            walked.finish()
             if not token.is_cancelled():
-                self.dispatcher.invoke(lambda: self.finish_walk(disk, token, roots, None if full else walked))
+                self.dispatcher.invoke(lambda: self.finish_walk(token, walked, full))
 
         self.dispatcher.post(task, cancel=token)
 
-    def apply_batch(self, disk: DiskTree, token, batch, full: bool) -> None:
-        if token.is_cancelled() or disk is not self.model.disk:
+    def apply_batch(self, preview: DiskTree | None, token, batch) -> None:
+        if token.is_cancelled():
             return
-        if full:
-            for path, child_dirs, file_count in batch:
-                disk.add(path, child_dirs, file_count)
+        if preview is not None and preview is self.model.disk:
+            for entry in batch:
+                preview.add(*entry)
         self.scanned += len(batch)
         if not self.stats_timer.isActive():
             self.stats_timer.start()
 
-    def finish_walk(self, disk: DiskTree, token, roots: list[str], walked: list | None) -> None:
-        if token.is_cancelled() or disk is not self.model.disk:
+    def finish_walk(self, token, walked: DiskTree, full: bool) -> None:
+        if token.is_cancelled():
             return
-        if walked is None:
-            disk.finish()
-        else:
-            disk.replace_subtrees(roots, walked)
+        disk = self.model.disk
+        if full:
+            self.model.disk = walked
+            if disk is not None:
+                self.dispatcher.post(disk.clear)
+        elif disk is not None and disk.finished:
+            disk.merge(walked)
         self.scanning = False
         self.walk_roots = None
         self.stats_timer.stop()
         self.refresh_stats()
         if self.stale_parents:
             self.flush_if_visible()
+
+    def on_paths_changed(self, paths: Sequence[str]) -> None:
+        self.stale_parents.update(normalize_path(path) for path in paths)
+        if not self.full_scan_running():
+            parents, self.stale_parents = self.stale_parents, set()
+            self.relist_parents(parents)
 
     def nearest_known(self, path: str) -> str | None:
         disk = self.model.disk
@@ -387,9 +406,10 @@ class FolderManagerWidget(QtWidgets.QWidget):
         disk = self.model.disk
         if disk is None:
             return
-        targets = {path for path in map(self.nearest_known, parents) if path is not None}
+        targets = self.relisting | {path for path in map(self.nearest_known, parents) if path is not None}
         if not targets:
             return
+        self.relisting = targets
         token = self.relist_slot.renew()
         roots = set(self.model.roots or ())
         excluded = set(self.model.excluded or ())
@@ -410,15 +430,21 @@ class FolderManagerWidget(QtWidgets.QWidget):
     def apply_relist(self, disk: DiskTree, token, listed: dict[str, tuple[list[str], int]]) -> None:
         if token.is_cancelled() or disk is not self.model.disk:
             return
+        self.relisting = set()
         new_folders = []
         for path, (child_dirs, file_count) in listed.items():
             if path not in disk.nodes:
                 continue
             disk.update_folder(path, child_dirs, file_count)
             new_folders.extend(child for child in child_dirs if child not in disk.nodes)
+        self.dispose_orphans(disk)
         self.refresh_stats()
         if new_folders:
             self.rescan_paths(new_folders)
+
+    def dispose_orphans(self, disk: DiskTree) -> None:
+        if disk is self.model.disk and disk.dispose(DISPOSE_BATCH):
+            QtCore.QTimer.singleShot(0, lambda: self.dispose_orphans(disk))
 
     def refresh_stats(self) -> None:
         self.model.refresh_stats()

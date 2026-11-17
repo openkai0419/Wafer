@@ -111,6 +111,14 @@ def walk_entries(paths):
     return entries
 
 
+def walked_tree(paths):
+    walked = DiskTree(paths)
+    for entry in walk_entries(paths):
+        walked.add(*entry)
+    walked.finish()
+    return walked
+
+
 def fresh_totals(tree):
     fresh = DiskTree(tree.roots)
     for path, (child_dirs, file_count) in tree.nodes.items():
@@ -137,9 +145,60 @@ def test_update_folder_forgets_removed_child_folders(tmp_path):
     tree = scan(root)
     tree.finish()
     tree.update_folder(f"{root}/a", [], 1)
-    assert tree.values(f"{root}/a/b") is None
     assert tree.values(root) == FolderValues(files=1, all_files=2, folders=2, all_folders=2)
+    assert tree.orphans == [f"{root}/a/b"]
+    assert not tree.dispose()
+    assert tree.values(f"{root}/a/b") is None
     assert tree.totals == fresh_totals(tree)
+
+
+def test_removed_subtrees_are_disposed_in_batches():
+    tree = DiskTree(["D:/x"])
+    tree.add("D:/x", ["D:/x/big"], 0)
+    tree.add("D:/x/big", [f"D:/x/big/{n}" for n in range(5)], 1)
+    for n in range(5):
+        tree.add(f"D:/x/big/{n}", [], 1)
+    tree.finish()
+    tree.update_folder("D:/x", [], 0)
+    assert tree.values("D:/x") == FolderValues(files=0, all_files=0, folders=0, all_folders=0)
+    assert tree.dispose(budget=2)
+    assert tree.dispose(budget=2)
+    assert not tree.dispose(budget=2)
+    assert set(tree.nodes) == set(tree.totals) == {"D:/x"}
+    assert tree.orphan_roots == set()
+
+
+def test_a_folder_that_comes_back_before_disposal_is_not_lost():
+    tree = DiskTree(["D:/x"])
+    tree.add("D:/x", ["D:/x/a"], 0)
+    tree.add("D:/x/a", ["D:/x/a/old"], 1)
+    tree.add("D:/x/a/old", [], 1)
+    tree.finish()
+    tree.update_folder("D:/x", [], 0)
+    tree.update_folder("D:/x", ["D:/x/a"], 0)
+    assert "D:/x/a" not in tree.nodes and tree.orphans == []
+    back = DiskTree(["D:/x/a"])
+    back.add("D:/x/a", [], 4)
+    back.finish()
+    tree.merge(back)
+    assert tree.values("D:/x") == FolderValues(files=0, all_files=4, folders=1, all_folders=1)
+    assert tree.totals == fresh_totals(tree)
+
+
+def test_merging_inside_a_pending_orphan_disposes_it_first():
+    tree = DiskTree(["D:/x"])
+    tree.add("D:/x", ["D:/x/a"], 0)
+    tree.add("D:/x/a", ["D:/x/a/b"], 0)
+    tree.add("D:/x/a/b", [], 2)
+    tree.finish()
+    tree.update_folder("D:/x", [], 0)
+    walked = DiskTree(["D:/x/a/b"])
+    walked.add("D:/x/a/b", [], 5)
+    walked.finish()
+    tree.merge(walked)
+    assert tree.orphans == []
+    assert tree.dispose() is False
+    assert tree.values("D:/x/a/b").files == 5
 
 
 def test_update_folder_counts_a_new_child_once_it_is_walked(tmp_path):
@@ -149,20 +208,20 @@ def test_update_folder_counts_a_new_child_once_it_is_walked(tmp_path):
     touch(tmp_path / "root" / "c" / "new" / "deep" / "6.txt")
     tree.update_folder(f"{root}/c", *list_folder(f"{root}/c", set(), None))
     assert tree.values(f"{root}/c") == FolderValues(files=0, all_files=0, folders=1, all_folders=0)
-    tree.replace_subtrees([f"{root}/c/new"], walk_entries([f"{root}/c/new"]))
+    tree.merge(walked_tree([f"{root}/c/new"]))
     assert tree.finished
     assert tree.values(root) == FolderValues(files=1, all_files=4, folders=2, all_folders=5)
     assert tree.totals == fresh_totals(tree)
 
 
-def test_replace_subtrees_swaps_a_walked_subtree(tmp_path):
+def test_merge_swaps_a_walked_subtree(tmp_path):
     root = build_tree(tmp_path)
     tree = scan(root)
     tree.finish()
     shutil.rmtree(tmp_path / "root" / "a" / "b")
     touch(tmp_path / "root" / "a" / "x" / "y" / "7.txt")
     touch(tmp_path / "root" / "c" / "8.txt")
-    tree.replace_subtrees([f"{root}/a", f"{root}/c"], walk_entries([f"{root}/a", f"{root}/c"]))
+    tree.merge(walked_tree([f"{root}/a", f"{root}/c"]))
     assert tree.finished
     assert tree.values(f"{root}/a/b") is None
     assert tree.values(f"{root}/a") == FolderValues(files=1, all_files=2, folders=1, all_folders=2)
@@ -174,7 +233,10 @@ def test_incremental_updates_before_finish_only_store_listings():
     tree = DiskTree(["D:/x"])
     tree.add("D:/x", ["D:/x/sub"], 0)
     tree.update_folder("D:/x", [], 2)
-    tree.replace_subtrees(["D:/x/other"], [("D:/x/other", [], 1)])
+    other = DiskTree(["D:/x/other"])
+    other.add("D:/x/other", [], 1)
+    other.finish()
+    tree.merge(other)
     assert not tree.finished
     assert tree.values("D:/x") == FolderValues(files=2, all_files=-1, folders=0, all_folders=-1)
 
@@ -237,6 +299,32 @@ def test_updates_reach_the_current_drive_root():
     tree.update_folder(f"{CWD_ROOT}a", [], 3)
     assert tree.values(CWD_ROOT) == FolderValues(files=1, all_files=4, folders=1, all_folders=1)
     assert tree.totals == fresh_totals(tree)
+
+
+def test_counting_stops_when_cancelled(monkeypatch):
+    from wafer.builtins.folder_manager import stats as stats_module
+
+    monkeypatch.setattr(stats_module, "CANCEL_CHECK_EVERY", 2)
+    sources = [f"C:/r/{n}/x.png" for n in range(10)]
+    cancel = FakeCancel()
+    checks = []
+
+    def is_cancelled():
+        checks.append(1)
+        return len(checks) > 2
+
+    cancel.is_cancelled = is_cancelled
+    assert count_sources_by_folder(sources, ["C:/r"], cancel) == {}
+    assert len(checks) == 3
+    assert count_sources_by_folder(sources, ["C:/r"], FakeCancel())["C:/r"] == (0, 10)
+
+
+def test_clear_releases_every_folder():
+    tree = DiskTree(["D:/x"])
+    tree.add("D:/x", [], 1)
+    tree.finish()
+    tree.clear()
+    assert tree.nodes == {} and tree.totals == {}
 
 
 def test_sources_outside_roots_are_ignored():

@@ -26,11 +26,11 @@ from wafer.qt.widgets.flow_layout import FlowLayout
 
 from .rule_editor import METRIC_LABELS, RuleList, tool_button
 from .rules import METRICS, HighlightRule, default_rules, new_rule
+from .shared_settings import DEFAULT_COLUMNS
 from .stats import DiskTree, count_sources_by_folder, list_folder, walk_disk
 from .view import FolderManagerTreeView, folders_to_open
 
 INSTANCE_NAME = "FolderManager"
-DEFAULT_COLUMNS = {"files": True, "all_files": True, "folders": True, "all_folders": False}
 RULE_EDIT_DELAY_MS = 400
 STATS_REFRESH_MS = 100
 REFRESH_INTERVAL_MS = 3000

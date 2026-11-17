@@ -1,6 +1,6 @@
 import os
 
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 from ...qt.commands.bridge import ActionKit, Command, Menu
 from ...core.lang.manager import t
@@ -11,6 +11,8 @@ from ...qt.common.notifier import Notifier
 from ...qt.common.thread import utility_pool
 from ...qt.widgets.dialogs import ConfirmDialog
 from .folder_files import folder_sources
+
+COLLECTING_NOTICE_MS = 400
 
 
 def _ctx_tree(ctx):
@@ -121,12 +123,26 @@ def run_on_folder_files(ctx, command_id: str, recursive: bool) -> None:
         return
     filter_entries = list(ctx.get("filter_entries") or ())
     dispatcher = _files_dispatcher()
+    collecting = [True]
 
     def work():
         sources = folder_sources(db_path, folders, recursive, filter_entries)
-        dispatcher.invoke(lambda: _apply_to_sources(command_id, sources))
+        dispatcher.invoke(lambda: finish(sources))
+
+    def finish(sources: list[str]) -> None:
+        collecting[0] = False
+        _apply_to_sources(command_id, sources)
+
+    def notice() -> None:
+        if collecting[0]:
+            Notifier.info("Collecting files…")
 
     dispatcher.post(work)
+    QtCore.QTimer.singleShot(COLLECTING_NOTICE_MS, notice)
+
+
+def folder_items(path: str) -> list:
+    return folder_file_items() if os.path.isdir(path) else ["file.copy_path", "-"]
 
 
 def _apply_to_sources(command_id: str, sources: list[str]) -> None:
@@ -198,22 +214,12 @@ def show_context_menu(ctx):
     path = _ctx_normalized_path(ctx)
     if not path:
         return
-    exists = os.path.isdir(path)
     if hasattr(tree, "folder_selected"):
         try:
             tree.folder_selected.emit()
         except Exception as e:
             AppLogger.debug(f"folder_selected emit failed: {e}")
-    items = []
-    if exists:
-        items.extend(folder_file_items())
-    else:
-        items.extend(
-            [
-                "file.copy_path",
-                "-",
-            ]
-        )
+    items = folder_items(path)
     if hasattr(tree, "roots") and path in tree.roots:
         items.append(ActionKit.Action(path="inline.folder.remove_from_view", display="Remove from view", func=remove_from_view))
     else:

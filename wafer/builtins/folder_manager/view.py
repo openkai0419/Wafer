@@ -3,7 +3,7 @@ from collections.abc import Callable, Sequence
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.app.viewer.widgets.foldertree import EXPAND_RECURSIVE_BATCH_SIZE, USER_ROLE_PATH, LazyFolderTreeModel, LazyFolderTreeView
-from wafer.builtins.commands.foldertree import folder_file_items, run_on_folder_files
+from wafer.builtins.commands.foldertree import folder_items, run_on_folder_files
 from wafer.core.common.paths import child_prefix, normalize_path, parent_folder
 from wafer.core.lang.manager import t
 from wafer.qt.commands.bridge import ActionKit, Context, Menu
@@ -212,11 +212,13 @@ class FolderManagerTreeView(LazyFolderTreeView):
         gp = self.viewport().mapToGlobal(position)
         ctx = Context.create_menu_context(self, self.binding_scope(), pos=position, global_pos=gp)
         ctx.extras.update(self.extend_context(ctx, None, source="menu") or {})
-        if not ctx.get("path"):
+        path = ctx.get("path")
+        if not path:
             return
-        items = ["ft.show_in_tree", "-", *folder_file_items()]
-        last_files_item = max(n for n, item in enumerate(items) if item.startswith("Files in Folder/"))
-        items[last_files_item + 1 : last_files_item + 1] = self.rule_file_actions()
+        items = ["ft.show_in_tree", "-", *folder_items(normalize_path(path))]
+        files_items = [n for n, item in enumerate(items) if item.startswith("Files in Folder/")]
+        if files_items:
+            items[files_items[-1] + 1 : files_items[-1] + 1] = self.rule_file_actions()
         session = Menu.from_context(ctx)
         if session is None:
             return
@@ -228,7 +230,7 @@ class FolderManagerTreeView(LazyFolderTreeView):
         actions = []
         labels = set()
         for number, rule in enumerate(self.rules_source()):
-            entries = rule.filter_entries() if rule.enabled else []
+            entries = rule.query_entries() if rule.enabled else []
             if not entries:
                 continue
             label = rule.name.strip() or f"Rule {number + 1}"

@@ -27,6 +27,12 @@ class QueryLog(list):
 
 
 @pytest.fixture
+def text_filter_registered():
+    filter_registry.register(TextFilter)
+    return TextFilter
+
+
+@pytest.fixture
 def query_calls(monkeypatch):
     filter_registry.register(TextFilter)
     calls = QueryLog()
@@ -150,6 +156,14 @@ def test_restore_skips_malformed_rules_and_keeps_a_deliberate_empty_list(qtbot):
 def test_summary_of_an_empty_query_reads_every_file():
     rule = HighlightRule("Mixed", "#000", conditions=[Condition("files", ">=", 1), Condition("folders", ">=", 1)])
     assert describe_rule(rule) == "Every file · Files ≥ 1 and Folders ≥ 1"
+
+
+def test_summary_of_a_query_that_matches_every_file_reads_every_file(text_filter_registered):
+    blank = {"filter": "text", "params": {"keys": ["path"], "keywords": ""}, "op": None, "enabled": True}
+    rule = HighlightRule("Blank", "#000", bars=[blank], conditions=[Condition("files", ">=", 1)])
+    assert describe_rule(rule) == "Every file · Files ≥ 1"
+    rule.bars = [{**blank, "params": {"keys": ["path"], "keywords": "cat"}}]
+    assert describe_rule(rule) == 'Text "cat" · Files ≥ 1'
 
 
 def test_scan_fills_disk_counts(qtbot, tmp_path, query_calls):

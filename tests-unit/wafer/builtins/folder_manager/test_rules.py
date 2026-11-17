@@ -19,6 +19,14 @@ def text_filter():
     return TextFilter
 
 
+def test_query_entries_are_empty_when_the_bars_do_not_narrow(text_filter):
+    blank = {"filter": "text", "params": {"keys": ["path"], "keywords": ""}, "op": None, "enabled": True}
+    rule = HighlightRule("x", "#000", bars=[blank])
+    assert rule.filter_entries() and rule.query_entries() == []
+    rule.bars = [{**blank, "params": {"keys": ["path"], "keywords": "cat"}}]
+    assert rule.query_entries() == rule.filter_entries()
+
+
 def test_mixed_matches_folder_with_files_and_folders():
     assert default_rules()[0].matches(FolderValues(3, 9, 2, 5))
     assert not default_rules()[0].matches(FolderValues(0, 9, 2, 5))

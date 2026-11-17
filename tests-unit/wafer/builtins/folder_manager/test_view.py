@@ -1,4 +1,5 @@
 import os
+import shutil
 from types import SimpleNamespace
 
 import pytest
@@ -225,6 +226,32 @@ def test_rule_actions_keep_empty_and_duplicate_names_distinct(qtbot, tmp_path, t
     labels = [a.display.split(" · ")[0] for a in actions[::4]]
     assert labels == ["Rule 1", "Same", "Same (3)"]
     assert len({a.path for a in actions}) == 12
+
+
+def test_context_menu_for_a_vanished_folder_offers_only_safe_items(qtbot, tmp_path, monkeypatch, text_filter):
+    seen = capture_menu(monkeypatch)
+    view, root = make_view(qtbot, tmp_path)
+    view.resize(480, 240)
+    view.show()
+    bar = {"filter": "text", "params": {"keys": ["Comment"], "keywords": "cat"}, "op": None, "enabled": True}
+    view.set_rules_source(lambda: [rule("Cats", "#111111", ("files", ">=", 1), bars=[bar])])
+    index = view.model_.index(0, 0)
+    view.selectionModel().select(index, QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows)
+    shutil.rmtree(tmp_path / "root")
+
+    view.show_context_menu(view.visualRect(index).center())
+
+    assert seen["items"] == ["ft.show_in_tree", "-", "file.copy_path", "-"]
+    view.close()
+
+
+def test_rules_whose_query_matches_every_file_add_no_actions(qtbot, tmp_path, text_filter):
+    view, _root = make_view(qtbot, tmp_path)
+    empty = {"filter": "text", "params": {"keys": ["path"], "keywords": ""}, "op": None, "enabled": True}
+    blank = {"filter": "text", "params": {"keys": ["path"], "keywords": "  "}, "op": "AND", "enabled": True}
+    view.set_rules_source(lambda: [rule("Empty", "#111111", ("files", ">=", 1), bars=[empty, blank])])
+
+    assert view.rule_file_actions() == []
 
 
 def test_context_menu_without_folder_does_nothing(qtbot, tmp_path, monkeypatch):

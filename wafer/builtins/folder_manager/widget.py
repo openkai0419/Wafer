@@ -471,7 +471,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
                 slot.cancel()
                 self.counts.pop(rule_id, None)
                 continue
-            self.post_count(rule_id, slot.renew(), db_path, rule.filter_entries(), roots)
+            self.post_count(rule_id, slot.renew(), db_path, rule.query_entries(), roots)
         self.publish_counts()
 
     def post_count(self, rule_id: int, token, db_path: str, entries: list[tuple], roots: list[str]) -> None:

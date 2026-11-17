@@ -2,6 +2,7 @@ import operator
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from wafer.builtins.commands.folder_files import narrows
 from wafer.core.logs import AppLogger
 from wafer.plugin.query.handler import filter_registry
 
@@ -56,6 +57,10 @@ class HighlightRule:
                 continue
             entries.append((filter_cls, dict(bar.get("params", {})), bar.get("op")))
         return entries
+
+    def query_entries(self) -> list[tuple]:
+        entries = self.filter_entries()
+        return entries if narrows(entries) else []
 
     def to_dict(self) -> dict:
         return {

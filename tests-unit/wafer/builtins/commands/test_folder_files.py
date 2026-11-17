@@ -1,7 +1,8 @@
 import pytest
 
-from wafer.builtins.filters import TextFilter
-from wafer.builtins.commands.folder_files import folder_sources, query_sources
+from wafer.builtins.commands import folder_files as folder_files_module
+from wafer.builtins.commands.folder_files import folder_sources, narrows, query_sources
+from wafer.builtins.filters import DirectoryFilter, TextFilter
 from wafer.core.common.virtual_paths import build_virtual_path
 from wafer.core.db.file_db import FileDB
 
@@ -53,3 +54,47 @@ def test_several_folders_are_combined_without_duplicates(db):
         "C:/lib/sub/b.png",
         "C:/lib/sub/deep/c.png",
     ]
+
+
+def text_entry(keywords, keys=("path",), op=None):
+    return (TextFilter, {"keys": list(keys) if keys is not None else None, "keywords": keywords}, op)
+
+
+def test_only_entries_that_filter_count_as_a_query():
+    assert not narrows([])
+    assert not narrows([text_entry("")])
+    assert not narrows([text_entry(""), text_entry("  ", op="AND")])
+    assert narrows([text_entry("cat", ["Comment"])])
+    assert narrows([text_entry(""), text_entry("cat", ["Comment"], op="AND")])
+    assert narrows([text_entry("", ["Comment"])])
+    assert narrows([text_entry("", None)])
+    assert narrows([(DirectoryFilter, {"directories": ["C:/lib"]}, None)])
+
+
+def test_post_filters_count_as_a_query():
+    class PostOnly(TextFilter):
+        NAME = ""
+
+        @classmethod
+        def build_path_query(cls, params, normalize_path):
+            return None, []
+
+        @classmethod
+        def post_filter(cls, params, rows):
+            return rows
+
+    assert narrows([(PostOnly, {}, None)])
+
+
+def test_without_a_query_sources_come_from_the_sources_table(db, monkeypatch):
+    expected_all = sorted(folder_files_module.composed_sources(db, []))
+    monkeypatch.setattr(folder_files_module, "composed_sources", lambda *args: pytest.fail("composer used without a query"))
+    assert sorted(query_sources(db, [text_entry("")])) == expected_all
+    assert sorted(folder_sources(db, ["C:/lib"], False, [text_entry("")])) == ["C:/lib/a.png", "C:/lib/pack.zip"]
+    assert sorted(folder_sources(db, ["C:/lib/sub", "C:/lib/sub/deep"], True)) == ["C:/lib/sub/b.png", "C:/lib/sub/deep/c.png"]
+    assert folder_sources(db, ["C:/li"], True) == []
+
+
+def test_a_missing_database_has_no_sources(tmp_path):
+    assert folder_sources(str(tmp_path / "missing.db"), ["C:/lib"], True) == []
+    assert query_sources(str(tmp_path / "missing.db"), []) == []

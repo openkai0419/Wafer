@@ -1,4 +1,5 @@
 import os
+import threading
 
 from PySide6 import QtWidgets
 
@@ -8,6 +9,7 @@ from wafer.core.common.paths import normalize_path
 from wafer.builtins.commands import foldertree as foldertree_module
 from wafer.builtins.commands.foldertree import (
     folder_file_items,
+    folder_items,
     run_on_folder_files,
     show_in_tree,
     FolderTreeCommands,
@@ -332,6 +334,41 @@ def test_no_database_or_folders_does_nothing(qtbot, monkeypatch, tmp_path):
     run_on_folder_files(_FilesCtx([]), "file.cut", True)
     assert calls["sources"] == []
     assert calls["invoke"] == []
+
+
+def capture_notice_timer(monkeypatch):
+    timers = []
+    monkeypatch.setattr(foldertree_module.QtCore.QTimer, "singleShot", lambda ms, callback: timers.append((ms, callback)))
+    return timers
+
+
+def test_slow_collection_tells_the_user_it_is_collecting(qtbot, monkeypatch, tmp_path):
+    calls = _capture(monkeypatch, ["a.png"])
+    timers = capture_notice_timer(monkeypatch)
+    release = threading.Event()
+    real_sources = foldertree_module.folder_sources
+    monkeypatch.setattr(foldertree_module, "folder_sources", lambda *args: release.wait(5) and real_sources(*args))
+
+    run_on_folder_files(_FilesCtx([str(tmp_path)]), "file.cut", True)
+    assert [ms for ms, _callback in timers] == [foldertree_module.COLLECTING_NOTICE_MS]
+    timers[0][1]()
+    assert calls["notices"] == ["Collecting files…"]
+    release.set()
+    qtbot.waitUntil(lambda: bool(calls["invoke"]), timeout=3000)
+
+
+def test_quick_collection_shows_no_collecting_notice(qtbot, monkeypatch, tmp_path):
+    calls = _capture(monkeypatch, ["a.png"])
+    timers = capture_notice_timer(monkeypatch)
+    run_on_folder_files(_FilesCtx([str(tmp_path)]), "file.copy", False)
+    qtbot.waitUntil(lambda: bool(calls["invoke"]), timeout=3000)
+    timers[0][1]()
+    assert calls["notices"] == []
+
+
+def test_folder_items_offer_only_copy_path_for_a_missing_folder(tmp_path):
+    assert folder_items(str(tmp_path)) == folder_file_items()
+    assert folder_items(str(tmp_path / "gone")) == ["file.copy_path", "-"]
 
 
 def test_show_in_tree_selects_path(tmp_path):

@@ -34,7 +34,7 @@ def describe_query(bars: Sequence[dict]) -> str:
 
 
 def describe_rule(rule: HighlightRule) -> str:
-    query = describe_query(rule.bars) or t("Every file")
+    query = describe_query(rule.bars) if rule.query_entries() else t("Every file")
     conditions = f" {t('and')} ".join(f"{t(METRIC_LABELS[c.metric])} {OPERATOR_LABELS[c.op]} {c.value}" for c in rule.conditions)
     return f"{query} · {conditions}" if conditions else query
 

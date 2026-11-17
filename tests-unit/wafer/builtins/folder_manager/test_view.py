@@ -267,7 +267,13 @@ def test_context_menu_without_folder_does_nothing(qtbot, tmp_path, monkeypatch):
     view.close()
 
 
-def test_expand_to_opens_ancestors_in_batches(qtbot, tmp_path, monkeypatch):
+def test_folders_to_open_lists_each_ancestor_once_parents_first():
+    roots = ["D:/lib", "E:/"]
+    paths = ["D:/lib/a/b/c", "D:/lib/a/x", "E:/p/q", "F:/elsewhere/x", "D:/lib"]
+    assert view_module.folders_to_open(paths, roots) == ["D:/lib", "D:/lib/a", "D:/lib/a/b", "E:/", "E:/p"]
+
+
+def test_expand_folders_opens_folders_in_batches(qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr(view_module, "EXPAND_RECURSIVE_BATCH_SIZE", 1)
     view, root = make_view(qtbot, tmp_path)
     selected = view.model_.index(0, 0)
@@ -280,7 +286,7 @@ def test_expand_to_opens_ancestors_in_batches(qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr(view, "scrollTo", lambda *args: scrolled.append(args))
     target = path_of(root, "a", "b", "c")
 
-    view.expand_to([target, path_of(root, "a", "b")])
+    view.expand_folders(view_module.folders_to_open([target, path_of(root, "a", "b")], [root]))
     view.clearSelection()
 
     def expanded(path):
@@ -295,12 +301,12 @@ def test_expand_to_opens_ancestors_in_batches(qtbot, tmp_path, monkeypatch):
     assert scrolled == []
 
 
-def test_expand_to_ignores_paths_outside_roots(qtbot, tmp_path, monkeypatch):
+def test_expand_folders_without_folders_does_nothing(qtbot, tmp_path, monkeypatch):
     view, _root = make_view(qtbot, tmp_path)
     calls = []
     monkeypatch.setattr(view, "expand_paths_async", lambda paths, on_complete=None: calls.append(paths))
 
-    view.expand_to([normalize_path(str(tmp_path / "elsewhere" / "x"))])
+    view.expand_folders([])
 
     assert calls == []
 

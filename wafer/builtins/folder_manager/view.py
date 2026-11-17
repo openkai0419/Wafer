@@ -1,4 +1,4 @@
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -76,7 +76,9 @@ class FolderStatsModel(LazyFolderTreeModel):
         return "" if value < 0 else f"{value:,}"
 
     def badges(self, path: str) -> list[Badge]:
-        values = self.disk_values(path)
+        return self.badges_for(path, self.disk_values(path))
+
+    def badges_for(self, path: str, values: FolderValues | None) -> list[Badge]:
         unknown = set(DISK_METRICS) if values is None else {metric for metric in DISK_METRICS if getattr(values, metric) < 0}
         folders, all_folders = (values.folders, values.all_folders) if values is not None else (0, 0)
         found = []
@@ -169,6 +171,10 @@ def ancestors_within_roots(path: str, roots: Sequence[str]) -> list[str]:
     return chain[::-1]
 
 
+def folders_to_open(paths: Iterable[str], roots: Sequence[str]) -> list[str]:
+    return list(dict.fromkeys(folder for path in paths for folder in ancestors_within_roots(path, roots)))
+
+
 class FolderManagerTreeView(LazyFolderTreeView):
     MODEL_CLASS = FolderStatsModel
     BINDING_SCOPE = "FolderManagerTree"
@@ -253,11 +259,9 @@ class FolderManagerTreeView(LazyFolderTreeView):
         ctx.extras["filter_entries"] = entries
         run_on_folder_files(ctx, command_id, recursive)
 
-    def expand_to(self, paths: Sequence[str]) -> None:
-        roots = [normalize_path(root) for root in self.model_.roots or ()]
-        ancestors = list(dict.fromkeys(a for path in paths for a in ancestors_within_roots(normalize_path(path), roots)))
+    def expand_folders(self, folders: Sequence[str]) -> None:
         batch_size = EXPAND_RECURSIVE_BATCH_SIZE
-        chunks = [ancestors[i : i + batch_size] for i in range(0, len(ancestors), batch_size)]
+        chunks = [folders[i : i + batch_size] for i in range(0, len(folders), batch_size)]
         self.expand_serial += 1
         serial = self.expand_serial
 

@@ -491,10 +491,39 @@ def test_expand_to_matches_collects_badged_folders(qtbot, tmp_path, monkeypatch,
     bind(qtbot, panel, [root])
     qtbot.waitUntil(lambda: bool(panel.model.badges(root)), timeout=5000)
     expanded = []
-    monkeypatch.setattr(panel.view, "expand_to", lambda paths: expanded.append(sorted(paths)))
+    monkeypatch.setattr(panel.view, "expand_folders", lambda folders: expanded.append(list(folders)))
     panel.expand_button.click()
     qtbot.waitUntil(lambda: bool(expanded), timeout=5000)
-    assert expanded == [sorted([root, f"{root}/a"])]
+    assert expanded == [[root]]
+
+
+def test_expand_to_matches_scans_in_slices_and_finds_ancestors_off_the_main_thread(qtbot, tmp_path, monkeypatch, query_calls):
+    root = make_folders(tmp_path / "root", {"": 1, "a": 1, "a/b": 1, "a/b/c": 1, "a/b/c/d": 0})
+    query_calls.sources = [f"{root}/f0.png", f"{root}/a/f0.png", f"{root}/a/b/f0.png", f"{root}/a/b/c/f0.png"]
+    panel = make_panel(qtbot)
+    bind(qtbot, panel, [root])
+    qtbot.waitUntil(lambda: bool(panel.model.badges(f"{root}/a/b/c")), timeout=5000)
+    monkeypatch.setattr(widget_module, "EXPAND_SLICE_SECONDS", -1)
+    monkeypatch.setattr(widget_module, "EXPAND_DEADLINE_CHECK", 1)
+    threads = []
+    real_folders_to_open = widget_module.folders_to_open
+    monkeypatch.setattr(widget_module, "folders_to_open", lambda *args: threads.append(threading.current_thread()) or real_folders_to_open(*args))
+    expanded = []
+    monkeypatch.setattr(panel.view, "expand_folders", lambda folders: expanded.append(list(folders)))
+    cached = len(panel.model.values_cache)
+
+    panel.expand_to_matches()
+    assert expanded == [] and threads == []
+    qtbot.waitUntil(lambda: bool(expanded), timeout=5000)
+    assert expanded == [[root, f"{root}/a", f"{root}/a/b"]]
+    assert threads and threading.main_thread() not in threads
+    assert len(panel.model.values_cache) == cached
+
+    panel.expand_to_matches()
+    panel.expand_to_matches()
+    qtbot.waitUntil(lambda: len(expanded) == 2, timeout=5000)
+    QtCore.QCoreApplication.processEvents()
+    assert len(expanded) == 2
 
 
 def test_column_menu_toggles_columns(qtbot):

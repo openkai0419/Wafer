@@ -1,11 +1,14 @@
 import json
 import os
+import time
 from collections.abc import Callable, Iterable, Sequence
+from itertools import chain
 
 from PySide6 import QtCore, QtWidgets
 
 from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
 from wafer.app.viewer.widgets.foldertree import LazyFolderTreeView
+from wafer.builtins.commands.folder_files import query_sources
 from wafer.core.common.paths import data_db_path, normalize_path, parent_folder
 from wafer.core.common.virtual_paths import source_path
 from wafer.core.db.path_scope import is_under
@@ -22,14 +25,14 @@ from wafer.qt.widgets.flow_layout import FlowLayout
 
 from .rule_editor import METRIC_LABELS, RuleList, tool_button
 from .rules import METRICS, HighlightRule, default_rules, new_rule
-from wafer.builtins.commands.folder_files import query_sources
 from .stats import DiskTree, count_sources_by_folder, list_folder, walk_disk
-from .view import FolderManagerTreeView
+from .view import FolderManagerTreeView, folders_to_open
 
 DEFAULT_COLUMNS = {"files": True, "all_files": True, "folders": True, "all_folders": False}
 RULE_EDIT_DELAY_MS = 400
 STATS_REFRESH_MS = 100
-EXPAND_SCAN_CHUNK = 5000
+EXPAND_SLICE_SECONDS = 0.015
+EXPAND_DEADLINE_CHECK = 256
 DISPOSE_BATCH = 20000
 
 
@@ -523,22 +526,39 @@ class FolderManagerWidget(QtWidgets.QWidget):
     def expand_to_matches(self) -> None:
         self.expand_serial += 1
         serial = self.expand_serial
-        known = set(self.model.disk.nodes) if self.model.disk is not None else set()
-        for _rule, counts in self.model.rule_counts:
-            known.update(counts)
-        candidates = list(known)
+        disk = self.model.disk
+        lists = [list(disk.nodes)] if disk is not None else []
+        lists.extend(list(counts) for _rule, counts in self.model.rule_counts)
+        candidates = chain.from_iterable(lists)
+        roots = [normalize_path(root) for root in self.model.roots or ()]
+        seen: set[str] = set()
         matches: list[str] = []
 
-        def scan_chunk(start: int) -> None:
+        def scan_slice() -> None:
             if serial != self.expand_serial:
                 return
-            matches.extend(path for path in candidates[start : start + EXPAND_SCAN_CHUNK] if self.model.badges(path))
-            if start + EXPAND_SCAN_CHUNK < len(candidates):
-                QtCore.QTimer.singleShot(0, lambda: scan_chunk(start + EXPAND_SCAN_CHUNK))
-            else:
-                self.view.expand_to(matches)
+            deadline = time.perf_counter() + EXPAND_SLICE_SECONDS
+            model = self.model
+            for number, path in enumerate(candidates):
+                if path not in seen:
+                    seen.add(path)
+                    current = model.disk
+                    if model.badges_for(path, current.values(path) if current is not None else None):
+                        matches.append(path)
+                if number % EXPAND_DEADLINE_CHECK == 0 and time.perf_counter() >= deadline:
+                    QtCore.QTimer.singleShot(0, scan_slice)
+                    return
+            self.dispatcher.post(lambda: find_folders())
 
-        scan_chunk(0)
+        def find_folders() -> None:
+            folders = folders_to_open(matches, roots)
+            self.dispatcher.invoke(lambda: self.open_folders(serial, folders))
+
+        scan_slice()
+
+    def open_folders(self, serial: int, folders: list[str]) -> None:
+        if serial == self.expand_serial:
+            self.view.expand_folders(folders)
 
 
 class FolderManagerPlugin(BasePanelPlugin):

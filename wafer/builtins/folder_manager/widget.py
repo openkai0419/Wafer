@@ -19,7 +19,7 @@ from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 from wafer.qt.commands.bridge import ActionKit, Menu
 from wafer.qt.common.dispatcher import CancelSlot, Dispatcher
 from wafer.qt.common.dpi import dpix
-from wafer.qt.common.rate_limit import qt_debounce
+from wafer.qt.common.rate_limit import qt_throttle
 from wafer.qt.common.thread import utility_pool
 from wafer.qt.widgets.flow_layout import FlowLayout
 
@@ -31,6 +31,8 @@ from .view import FolderManagerTreeView, folders_to_open
 DEFAULT_COLUMNS = {"files": True, "all_files": True, "folders": True, "all_folders": False}
 RULE_EDIT_DELAY_MS = 400
 STATS_REFRESH_MS = 100
+REFRESH_INTERVAL_MS = 3000
+REFRESH_IDLE_MS = 1000
 EXPAND_SLICE_SECONDS = 0.015
 EXPAND_DEADLINE_CHECK = 256
 DISPOSE_BATCH = 20000
@@ -92,6 +94,8 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.counts: dict[int, dict[str, tuple[int, int]]] = {}
         self.counted_keys: dict[int, str | None] = {}
         self.pending_rule_ids: set[int] = set()
+        self.counting: dict[int, tuple] = {}
+        self.recount_after: set[int] = set()
         self.scanning = False
         self.scanned = 0
         self.walk_roots: list[str] | None = None
@@ -179,6 +183,8 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.counts.clear()
         self.counted_keys.clear()
         self.pending_rule_ids.clear()
+        self.counting.clear()
+        self.recount_after.clear()
         self.rule_timer.stop()
         self.rule_list.set_rules(rules)
         saved_columns = state.get("columns", {})
@@ -266,7 +272,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         if self.isVisible():
             self.flush_later()
 
-    @qt_debounce(1000)
+    @qt_throttle(REFRESH_INTERVAL_MS, REFRESH_IDLE_MS)
     def flush_later(self) -> None:
         self.flush_if_visible()
 
@@ -470,6 +476,8 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.counts.pop(id(rule), None)
         self.counted_keys.pop(id(rule), None)
         self.pending_rule_ids.discard(id(rule))
+        self.counting.pop(id(rule), None)
+        self.recount_after.discard(id(rule))
         self.publish_counts()
 
     def on_rule_edited(self, rule: HighlightRule) -> None:
@@ -499,25 +507,40 @@ class FolderManagerWidget(QtWidgets.QWidget):
             if key is None or not db_path or not roots:
                 slot.cancel()
                 self.counts.pop(rule_id, None)
+                self.counting.pop(rule_id, None)
+                self.recount_after.discard(rule_id)
                 continue
+            inputs = (db_path, tuple(roots), key)
+            if self.counting.get(rule_id) == inputs:
+                self.recount_after.add(rule_id)
+                continue
+            self.counting[rule_id] = inputs
+            self.recount_after.discard(rule_id)
             self.post_count(rule_id, slot.renew(), db_path, rule.query_entries(), roots)
         self.publish_counts()
 
     def post_count(self, rule_id: int, token, db_path: str, entries: list[tuple], roots: list[str]) -> None:
         def task():
-            sources = query_sources(db_path, entries)
-            if token.is_cancelled():
-                return
-            counts = count_sources_by_folder(sources, roots)
-            self.dispatcher.invoke(lambda: self.apply_counts(rule_id, token, counts))
+            counts = None
+            try:
+                sources = query_sources(db_path, entries)
+                if not token.is_cancelled():
+                    counts = count_sources_by_folder(sources, roots, token)
+            finally:
+                self.dispatcher.invoke(lambda: self.apply_counts(rule_id, token, counts))
 
         self.dispatcher.post(task, cancel=token)
 
-    def apply_counts(self, rule_id: int, token, counts: dict[str, tuple[int, int]]) -> None:
+    def apply_counts(self, rule_id: int, token, counts: dict[str, tuple[int, int]] | None) -> None:
         if token.is_cancelled():
             return
-        self.counts[rule_id] = counts
-        self.publish_counts()
+        self.counting.pop(rule_id, None)
+        if counts is not None:
+            self.counts[rule_id] = counts
+            self.publish_counts()
+        if rule_id in self.recount_after:
+            self.recount_after.discard(rule_id)
+            self.recount([rule for rule in self.rules if id(rule) == rule_id])
 
     def publish_counts(self) -> None:
         self.model.rule_counts = [(rule, self.counts.get(id(rule), {})) for rule in self.rules]

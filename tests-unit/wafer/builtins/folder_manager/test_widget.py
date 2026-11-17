@@ -51,8 +51,8 @@ def query_calls(monkeypatch):
 
 
 @pytest.fixture
-def immediate_debounce(monkeypatch):
-    monkeypatch.setattr(rate_limit.qt_debounce_manager, "debounce", lambda key, delay, callback, *args, **kwargs: callback(*args, **kwargs))
+def immediate_flush(monkeypatch):
+    monkeypatch.setattr(rate_limit._qt_throttle_manager, "throttle", lambda key, throttle_ms, idle_ms, callback, *args, **kwargs: callback(*args, **kwargs))
 
 
 def make_folders(base, layout):
@@ -316,7 +316,7 @@ def test_the_first_scan_shows_direct_counts_while_walking(qtbot, tmp_path, monke
     assert panel.model.disk.values(root) == FolderValues(3, 5, 1, 1)
 
 
-def test_files_changed_rescans_only_parent_folders(qtbot, tmp_path, monkeypatch, query_calls, immediate_debounce, finish_threads):
+def test_files_changed_rescans_only_parent_folders(qtbot, tmp_path, monkeypatch, query_calls, immediate_flush, finish_threads):
     root = make_folders(tmp_path / "root", {"a": 1, "b": 1})
     panel = make_panel(qtbot)
     bind(qtbot, panel, [root])
@@ -338,7 +338,7 @@ def test_files_changed_rescans_only_parent_folders(qtbot, tmp_path, monkeypatch,
     qtbot.waitUntil(lambda: len(query_calls) == 2, timeout=5000)
 
 
-def test_a_file_in_a_new_folder_adds_that_folder(qtbot, tmp_path, monkeypatch, query_calls, immediate_debounce, finish_threads):
+def test_a_file_in_a_new_folder_adds_that_folder(qtbot, tmp_path, monkeypatch, query_calls, immediate_flush, finish_threads):
     root = make_folders(tmp_path / "root", {"a": 1, "b": 1, "b/old": 1})
     panel = make_panel(qtbot)
     bind(qtbot, panel, [root])
@@ -380,7 +380,7 @@ def test_parents_on_the_current_drive_root_stay_on_that_drive(qtbot):
     assert panel.nearest_known(f"{root}a/b") is None
 
 
-def test_notifications_for_another_db_are_ignored(qtbot, tmp_path, query_calls, immediate_debounce):
+def test_notifications_for_another_db_are_ignored(qtbot, tmp_path, query_calls, immediate_flush):
     root = make_folders(tmp_path / "root", {"a": 1})
     panel = make_panel(qtbot)
     bind(qtbot, panel, [root])
@@ -390,6 +390,77 @@ def test_notifications_for_another_db_are_ignored(qtbot, tmp_path, query_calls, 
     assert len(query_calls) == 1
     panel.on_db_content_updated("")
     qtbot.waitUntil(lambda: len(query_calls) == 2, timeout=5000)
+
+
+def test_updates_during_a_count_queue_one_more_count(qtbot, tmp_path, monkeypatch, query_calls, immediate_flush):
+    root = make_folders(tmp_path / "root", {"a": 1})
+    panel = make_panel(qtbot)
+    bind(qtbot, panel, [root])
+    qtbot.waitUntil(lambda: len(query_calls) == 1 and not panel.counting, timeout=5000)
+    started = threading.Event()
+    release = threading.Event()
+    tokens = []
+    real_count = widget_module.count_sources_by_folder
+
+    def slow_count(sources, roots, cancel):
+        tokens.append(cancel)
+        started.set()
+        release.wait(5)
+        return real_count(sources, roots, cancel)
+
+    monkeypatch.setattr(widget_module, "count_sources_by_folder", slow_count)
+    panel.on_db_content_updated("")
+    qtbot.waitUntil(started.is_set, timeout=5000)
+    for _ in range(5):
+        panel.on_db_content_updated("")
+        QtCore.QCoreApplication.processEvents()
+    assert len(query_calls) == 2
+    assert not tokens[0].is_cancelled()
+    release.set()
+    qtbot.waitUntil(lambda: len(query_calls) == 3 and not panel.counting, timeout=5000)
+    QtCore.QCoreApplication.processEvents()
+    assert len(query_calls) == 3
+
+
+def test_editing_a_rule_restarts_its_running_count(qtbot, tmp_path, monkeypatch, query_calls):
+    root = make_folders(tmp_path / "root", {"a": 1})
+    panel = make_panel(qtbot)
+    bind(qtbot, panel, [root])
+    qtbot.waitUntil(lambda: len(query_calls) == 1 and not panel.counting, timeout=5000)
+    started = threading.Event()
+    release = threading.Event()
+    tokens = []
+    real_count = widget_module.count_sources_by_folder
+
+    def slow_count(sources, roots, cancel):
+        tokens.append(cancel)
+        if len(tokens) == 1:
+            started.set()
+            release.wait(5)
+        return real_count(sources, roots, cancel)
+
+    monkeypatch.setattr(widget_module, "count_sources_by_folder", slow_count)
+    rule = panel.rules[0]
+    panel.recount([rule])
+    qtbot.waitUntil(started.is_set, timeout=5000)
+    rule.bars = [text_bar("cat")]
+    panel.recount([rule])
+    assert tokens[0].is_cancelled()
+    release.set()
+    qtbot.waitUntil(lambda: len(tokens) == 2 and not panel.counting, timeout=5000)
+    assert id(rule) in panel.counts
+
+
+def test_a_burst_of_updates_recounts_once_per_interval(qtbot, tmp_path, query_calls):
+    root = make_folders(tmp_path / "root", {"a": 1})
+    panel = make_panel(qtbot)
+    bind(qtbot, panel, [root])
+    qtbot.waitUntil(lambda: len(query_calls) == 1 and not panel.counting, timeout=5000)
+    for _ in range(4):
+        panel.on_db_content_updated("")
+        qtbot.waitUntil(lambda: not panel.counting, timeout=5000)
+        QtCore.QCoreApplication.processEvents()
+    assert len(query_calls) == 2
 
 
 def test_hidden_panel_waits_until_shown(qtbot, tmp_path, query_calls):

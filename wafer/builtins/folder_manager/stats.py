@@ -82,25 +82,32 @@ class DiskTree:
         self.finished = False
 
     def finish(self) -> None:
+        self.totals = {}
+        for root in self.roots:
+            if root in self.nodes:
+                self.total_subtree(root)
+        self.finished = True
+
+    def total_subtree(self, start: str) -> None:
         order: list[str] = []
-        stack = [root for root in self.roots if root in self.nodes]
+        stack = [start]
         while stack:
             path = stack.pop()
             order.append(path)
             stack.extend(child for child in self.nodes[path][0] if child in self.nodes)
-        totals: dict[str, tuple[int, int]] = {}
         for path in reversed(order):
-            child_dirs, file_count = self.nodes[path]
-            all_files = file_count
-            all_folders = 0
-            for child in child_dirs:
-                child_total = totals.get(child)
-                if child_total is not None:
-                    all_files += child_total[0]
-                    all_folders += child_total[1] + 1
-            totals[path] = (all_files, all_folders)
-        self.totals = totals
-        self.finished = True
+            self.totals[path] = self.sum_children(path)
+
+    def sum_children(self, path: str) -> tuple[int, int]:
+        child_dirs, file_count = self.nodes[path]
+        all_files = file_count
+        all_folders = 0
+        for child in child_dirs:
+            child_total = self.totals.get(child)
+            if child_total is not None:
+                all_files += child_total[0]
+                all_folders += child_total[1] + 1
+        return all_files, all_folders
 
     def values(self, path: str) -> FolderValues | None:
         node = self.nodes.get(path)
@@ -113,17 +120,60 @@ class DiskTree:
         all_files, all_folders = self.totals.get(path, (file_count, folders))
         return FolderValues(file_count, all_files, folders, all_folders)
 
-    def drop_subtree(self, path: str) -> None:
-        parent = self.nodes.get(posixpath.dirname(path))
-        if parent is not None and path in parent[0]:
-            self.nodes[posixpath.dirname(path)] = ([child for child in parent[0] if child != path], parent[1])
+    def update_folder(self, path: str, child_dirs: list[str], file_count: int) -> None:
+        before = self.contribution(path)
+        old = self.nodes.get(path)
+        if old is not None:
+            kept = set(child_dirs)
+            for child in old[0]:
+                if child not in kept:
+                    self.forget(child)
+        self.nodes[path] = (list(child_dirs), file_count)
+        if self.finished and path in self.totals:
+            self.totals[path] = self.sum_children(path)
+            self.push_up(path, before)
+
+    def replace_subtrees(self, paths: Sequence[str], entries: Iterable[tuple[str, list[str], int]]) -> None:
+        before = {path: self.contribution(path) for path in paths}
+        for path in paths:
+            for child in self.nodes.get(path, ([], 0))[0]:
+                self.forget(child)
+        for path, child_dirs, file_count in entries:
+            self.nodes[path] = (list(child_dirs), file_count)
+        if not self.finished:
+            return
+        for path in paths:
+            if path in self.nodes:
+                self.total_subtree(path)
+                self.push_up(path, before[path])
+
+    def forget(self, path: str) -> None:
         stack = [path]
         while stack:
             current = stack.pop()
+            self.totals.pop(current, None)
             node = self.nodes.pop(current, None)
             if node is not None:
                 stack.extend(node[0])
-        self.finished = False
+
+    def contribution(self, path: str) -> tuple[int, int]:
+        total = self.totals.get(path)
+        return (total[0], total[1] + 1) if total is not None else (0, 0)
+
+    def push_up(self, path: str, before: tuple[int, int]) -> None:
+        after = self.contribution(path)
+        files_delta, folders_delta = after[0] - before[0], after[1] - before[1]
+        if not files_delta and not folders_delta:
+            return
+        child = path
+        while True:
+            parent = normalize_path(posixpath.dirname(child))
+            node = self.nodes.get(parent)
+            total = self.totals.get(parent)
+            if parent == child or node is None or total is None or child not in node[0]:
+                return
+            self.totals[parent] = (total[0] + files_delta, total[1] + folders_delta)
+            child = parent
 
 
 def count_sources_by_folder(sources: Iterable[str], roots: Sequence[str]) -> dict[str, tuple[int, int]]:
@@ -131,15 +181,16 @@ def count_sources_by_folder(sources: Iterable[str], roots: Sequence[str]) -> dic
     direct_by_folder = Counter(posixpath.dirname(source) for source in sources)
     direct: dict[str, int] = {}
     total: dict[str, int] = {}
-    for folder, count in direct_by_folder.items():
+    for raw_folder, count in direct_by_folder.items():
+        folder = normalize_path(raw_folder)
         root = next((r for r, prefix in root_prefixes if folder == r or folder.startswith(prefix)), None)
         if root is None:
             continue
-        direct[folder] = count
+        direct[folder] = direct.get(folder, 0) + count
         current = folder
         while True:
             total[current] = total.get(current, 0) + count
             if current == root:
                 break
-            current = posixpath.dirname(current)
+            current = normalize_path(posixpath.dirname(current))
     return {folder: (direct.get(folder, 0), all_count) for folder, all_count in total.items()}

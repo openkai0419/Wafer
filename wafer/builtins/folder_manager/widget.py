@@ -1,4 +1,5 @@
 import json
+import os
 import posixpath
 from collections.abc import Callable, Iterable, Sequence
 
@@ -6,8 +7,9 @@ from PySide6 import QtCore, QtWidgets
 
 from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
 from wafer.app.viewer.widgets.foldertree import LazyFolderTreeView
-from wafer.core.common.paths import child_prefix, data_db_path, normalize_path
+from wafer.core.common.paths import data_db_path, normalize_path
 from wafer.core.common.virtual_paths import source_path
+from wafer.core.db.path_scope import is_under
 from wafer.core.lang.manager import t
 from wafer.core.logs import AppLogger
 from wafer.qt.commands.bridge import ActionKit, Menu
@@ -32,9 +34,13 @@ EXPAND_SCAN_CHUNK = 5000
 def outermost(paths: Iterable[str]) -> list[str]:
     kept: list[str] = []
     for path in sorted(set(paths), key=len):
-        if not any(path == other or path.startswith(child_prefix(other)) for other in kept):
+        if not any(is_under(path, other) for other in kept):
             kept.append(path)
     return kept
+
+
+def parent_folder(path: str) -> str:
+    return normalize_path(posixpath.dirname(path))
 
 
 class RulesArea(QtWidgets.QScrollArea):
@@ -77,6 +83,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.counted_keys: dict[int, str | None] = {}
         self.pending_rule_ids: set[int] = set()
         self.scanning = False
+        self.scanned = 0
         self.walk_roots: list[str] | None = None
         self.stale_tree = False
         self.stale_disk = False
@@ -143,21 +150,30 @@ class FolderManagerWidget(QtWidgets.QWidget):
         return {"rules": [rule.to_dict() for rule in self.rules], "columns": dict(self.columns)}
 
     def restore_state(self, state: dict) -> None:
+        saved_rules = state.get("rules")
+        if saved_rules is not None and not isinstance(saved_rules, list):
+            AppLogger.warning(f"[FolderManager] saved rules are not a list, starting from the default rules: {saved_rules!r}")
+            saved_rules = None
         rules = []
-        for data in state.get("rules", []):
+        for data in saved_rules or []:
             try:
                 rules.append(HighlightRule.from_dict(data))
             except (KeyError, TypeError, AttributeError) as exc:
                 AppLogger.warning(f"[FolderManager] skipped a saved rule that could not be read: {data!r} ({exc!r})")
-        if not rules and "rules" not in state:
+        if saved_rules is None:
             rules = default_rules()
         for slot in self.count_slots.values():
             slot.cancel()
         self.count_slots.clear()
         self.counts.clear()
         self.counted_keys.clear()
+        self.pending_rule_ids.clear()
+        self.rule_timer.stop()
         self.rule_list.set_rules(rules)
         saved_columns = state.get("columns", {})
+        if not isinstance(saved_columns, dict):
+            AppLogger.warning(f"[FolderManager] saved columns are not readable, showing the default columns: {saved_columns!r}")
+            saved_columns = {}
         for metric in METRICS:
             self.set_column_visible(metric, bool(saved_columns.get(metric, DEFAULT_COLUMNS[metric])))
         self.publish_counts()
@@ -220,7 +236,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
             return
         self.stale_rules = True
         for path in (*payload.get("modified", ()), *payload.get("removed", ())):
-            self.stale_parents.add(posixpath.dirname(normalize_path(source_path(path))))
+            self.stale_parents.add(parent_folder(normalize_path(source_path(path))))
         self.flush_later_if_visible()
 
     def showEvent(self, event):
@@ -253,7 +269,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
             self.stale_disk = False
             self.stale_parents.clear()
             self.rescan_all()
-        elif self.stale_parents:
+        elif self.stale_parents and not self.full_scan_running():
             parents, self.stale_parents = self.stale_parents, set()
             self.relist_parents(parents)
         if self.stale_rules:
@@ -283,97 +299,127 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.flush()
 
     def under_roots(self, path: str) -> bool:
-        return any(path == root or path.startswith(child_prefix(root)) for root in self.model.roots or ())
+        return any(is_under(path, root) for root in self.model.roots or ())
+
+    def full_scan_running(self) -> bool:
+        return self.scanning and self.walk_roots is None
 
     def rescan_all(self) -> None:
         self.model.disk = DiskTree(self.model.roots or [])
         self.start_walk(list(self.model.roots or []), full=True)
 
     def rescan_paths(self, paths: Sequence[str]) -> None:
-        disk = self.model.disk
         paths = [normalize_path(path) for path in paths]
-        if disk is None or (self.scanning and self.walk_roots is None) or not all(map(self.under_roots, paths)):
+        if self.model.disk is None or self.full_scan_running() or not all(map(self.under_roots, paths)):
             self.rescan_all()
             return
         if self.scanning:
             paths = [*self.walk_roots, *paths]
-        paths = outermost(paths)
-        for path in paths:
-            for child in list(disk.nodes.get(path, ([], 0))[0]):
-                disk.drop_subtree(child)
-        self.start_walk(paths, full=False)
+        self.start_walk(outermost(paths), full=False)
 
     def start_walk(self, roots: list[str], full: bool) -> None:
         token = self.disk_slot.renew()
-        self.relist_slot.cancel()
+        if full:
+            self.relist_slot.cancel()
         disk = self.model.disk
         excluded = set(self.model.excluded or ())
         pattern = self.model.ignore_pattern_re
         self.scanning = True
+        self.scanned = 0
         self.walk_roots = None if full else roots
         self.refresh_stats()
+        walked: list[tuple[str, list[str], int]] = []
 
         def on_batch(batch):
-            self.dispatcher.invoke(lambda: self.apply_batch(disk, token, batch))
+            if not full:
+                walked.extend(batch)
+            self.dispatcher.invoke(lambda: self.apply_batch(disk, token, batch, full))
 
         def task():
             walk_disk(roots, excluded, pattern, token, on_batch)
             if not token.is_cancelled():
-                self.dispatcher.invoke(lambda: self.finish_walk(disk, token))
+                self.dispatcher.invoke(lambda: self.finish_walk(disk, token, roots, None if full else walked))
 
         self.dispatcher.post(task, cancel=token)
 
-    def apply_batch(self, disk: DiskTree, token, batch) -> None:
+    def apply_batch(self, disk: DiskTree, token, batch, full: bool) -> None:
         if token.is_cancelled() or disk is not self.model.disk:
             return
-        for path, child_dirs, file_count in batch:
-            disk.add(path, child_dirs, file_count)
+        if full:
+            for path, child_dirs, file_count in batch:
+                disk.add(path, child_dirs, file_count)
+        self.scanned += len(batch)
         if not self.stats_timer.isActive():
             self.stats_timer.start()
 
-    def finish_walk(self, disk: DiskTree, token) -> None:
+    def finish_walk(self, disk: DiskTree, token, roots: list[str], walked: list | None) -> None:
         if token.is_cancelled() or disk is not self.model.disk:
             return
-        disk.finish()
+        if walked is None:
+            disk.finish()
+        else:
+            disk.replace_subtrees(roots, walked)
         self.scanning = False
         self.walk_roots = None
         self.stats_timer.stop()
         self.refresh_stats()
+        if self.stale_parents:
+            self.flush_if_visible()
+
+    def known_ancestors(self, path: str) -> list[str]:
+        nodes = self.model.disk.nodes
+        chain = []
+        while self.under_roots(path):
+            if path in nodes:
+                chain.append(path)
+            parent = parent_folder(path)
+            if parent == path:
+                break
+            path = parent
+        return chain
 
     def relist_parents(self, parents: Iterable[str]) -> None:
         disk = self.model.disk
         if disk is None:
             return
-        paths = [path for path in parents if path in disk.nodes]
-        if not paths:
+        chains = [chain for chain in map(self.known_ancestors, parents) if chain]
+        if not chains:
             return
         token = self.relist_slot.renew()
         excluded = set(self.model.excluded or ())
         pattern = self.model.ignore_pattern_re
 
         def task():
-            listed = [(path, *list_folder(path, excluded, pattern)) for path in paths]
+            listed: dict[str, tuple[list[str], int]] = {}
+            for chain in chains:
+                if token.is_cancelled():
+                    return
+                path = next((folder for folder in chain if os.path.isdir(folder)), chain[-1])
+                if path not in listed:
+                    listed[path] = list_folder(path, excluded, pattern)
             self.dispatcher.invoke(lambda: self.apply_relist(disk, token, listed))
 
         self.dispatcher.post(task, cancel=token)
 
-    def apply_relist(self, disk: DiskTree, token, listed) -> None:
+    def apply_relist(self, disk: DiskTree, token, listed: dict[str, tuple[list[str], int]]) -> None:
         if token.is_cancelled() or disk is not self.model.disk:
             return
-        for path, child_dirs, file_count in listed:
-            disk.add(path, child_dirs, file_count)
-        if not self.scanning:
-            disk.finish()
+        new_folders = []
+        for path, (child_dirs, file_count) in listed.items():
+            if path not in disk.nodes:
+                continue
+            disk.update_folder(path, child_dirs, file_count)
+            new_folders.extend(child for child in child_dirs if child not in disk.nodes)
         self.refresh_stats()
+        if new_folders:
+            self.rescan_paths(new_folders)
 
     def refresh_stats(self) -> None:
         self.model.refresh_stats()
         self.update_status()
 
     def update_status(self) -> None:
-        disk = self.model.disk
-        count = len(disk.nodes) if disk is not None else 0
-        self.status_label.setText(t("Scanning… {count}", count=f"{count:,}"))
+        self.status_label.setText(t("Scanning… {count}", count=f"{self.scanned:,}"))
         self.status_label.setVisible(self.scanning)
 
     def add_rule(self) -> None:

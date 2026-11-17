@@ -179,6 +179,19 @@ class TestSearchContainer:
         container.show()
         assert container._rows[0].remove_button.isVisibleTo(container)
 
+    def test_sort_button_is_shown_unless_unsortable(self, qapp):
+        for sortable in (True, False):
+            container = SearchContainer(sortable=sortable)
+            container.show()
+            assert container._sort_button.isVisibleTo(container) is sortable
+            container.apply_bars([])
+            assert container._sort_button.isVisibleTo(container) is sortable
+            container.apply_bars([{"filter": "text", "params": {}}])
+            qapp.processEvents()
+            assert container._sort_button.isVisibleTo(container) is sortable
+            assert container._add_button.isVisibleTo(container)
+            container.close()
+
     def test_add_row(self, qapp):
         container = SearchContainer()
         container._add_row(TextFilter)

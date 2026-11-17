@@ -146,8 +146,9 @@ class FilterRow(QtWidgets.QWidget):
 class SearchContainer(QtWidgets.QWidget):
     filter_changed = QtCore.Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, sortable: bool = True):
         super().__init__(parent)
+        self.sortable = sortable
         self._dispatcher = Dispatcher(utility_pool)
         self._key_cancel = CancelSlot()
         self._key_store = KeyStore(self)
@@ -439,7 +440,7 @@ class SearchContainer(QtWidgets.QWidget):
             idx = target.layout().indexOf(target.remove_button)
             target.layout().insertWidget(idx, self._sort_button)
             target.layout().insertWidget(idx + 1, self._add_button)
-            self._sort_button.show()
+            self._sort_button.setVisible(self.sortable)
             self._add_button.show()
             self._add_button.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
             self._empty_row.hide()
@@ -448,7 +449,7 @@ class SearchContainer(QtWidgets.QWidget):
             el = self._empty_row.layout()
             el.addWidget(self._sort_button)
             el.addWidget(self._add_button, 1)
-            self._sort_button.show()
+            self._sort_button.setVisible(self.sortable)
             self._add_button.show()
             self._add_button.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
             self._empty_row.show()

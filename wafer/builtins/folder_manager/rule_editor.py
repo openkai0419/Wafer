@@ -34,7 +34,7 @@ def describe_query(bars: Sequence[dict]) -> str:
 
 
 def describe_rule(rule: HighlightRule) -> str:
-    query = describe_query(rule.bars) or t("All files")
+    query = describe_query(rule.bars) or t("Every file")
     conditions = f" {t('and')} ".join(f"{t(METRIC_LABELS[c.metric])} {OPERATOR_LABELS[c.op]} {c.value}" for c in rule.conditions)
     return f"{query} · {conditions}" if conditions else query
 
@@ -197,7 +197,7 @@ class RuleRow(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self.body)
         layout.setContentsMargins(dpix(22), 0, 0, dpix(4))
         layout.setSpacing(dpix(2))
-        self.search = SearchContainer()
+        self.search = SearchContainer(sortable=False)
         if self.rule.bars:
             self.search.apply_bars(self.rule.bars)
         self.search.filter_changed.connect(self.read_query)

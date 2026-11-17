@@ -38,6 +38,9 @@ class FolderStatsModel(LazyFolderTreeModel):
         self.rule_counts: list[tuple[HighlightRule, dict[str, tuple[int, int]]]] = []
         self.values_cache: dict[str, FolderValues | None] = {}
 
+    def reset_header(self):
+        self.setHorizontalHeaderLabels(["Folder", *self.EXTRA_COLUMNS])
+
     def refresh_stats(self) -> None:
         self.values_cache.clear()
         self.stats_changed.emit()

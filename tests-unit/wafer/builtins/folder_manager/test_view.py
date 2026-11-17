@@ -43,6 +43,13 @@ def test_model_declares_count_columns():
     assert FolderStatsModel.EXTRA_COLUMNS == ("Files", "All files", "Folders", "All folders")
 
 
+def test_header_names_the_folder_column_in_singular(qtbot, tmp_path):
+    view, _root = make_view(qtbot, tmp_path)
+    labels = [view.model_.headerData(column, QtCore.Qt.Horizontal) for column in range(5)]
+    assert labels == ["Folder", "Files", "All files", "Folders", "All folders"]
+    assert foldertree_module.LazyFolderTreeModel([]).headerData(0, QtCore.Qt.Horizontal) == "Folders"
+
+
 def test_columns_show_disk_counts(qtbot, tmp_path):
     view, root = make_view(qtbot, tmp_path)
     model = view.model_

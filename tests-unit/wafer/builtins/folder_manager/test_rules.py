@@ -104,6 +104,26 @@ def test_malformed_conditions_are_skipped_with_a_warning(monkeypatch):
     assert len(warnings) == 2 and all("Broken" in message for message in warnings)
 
 
+def test_mistyped_rule_parts_are_skipped_or_rejected(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(AppLogger, "warning", lambda message: warnings.append(message))
+    rule = HighlightRule.from_dict(
+        {
+            "name": "Odd",
+            "color": "#000",
+            "bars": ["text", {"filter": "text", "params": "x"}, {"filter": "text", "params": {"keywords": "a"}}],
+            "conditions": ["files", {"metric": "files", "op": ">=", "value": 1}],
+        }
+    )
+    assert rule.bars == [{"filter": "text", "params": {"keywords": "a"}}]
+    assert rule.conditions == [Condition("files", ">=", 1)]
+    assert len(warnings) == 3
+    assert HighlightRule.from_dict({"name": "Odd", "color": "#000", "bars": "text", "conditions": 5}).bars == []
+    for bad in ({"name": 1, "color": "#000"}, {"name": "Odd", "color": None}, "rule"):
+        with pytest.raises((TypeError, KeyError)):
+            HighlightRule.from_dict(bad)
+
+
 def test_bar_without_filter_is_skipped_with_a_warning(text_filter, monkeypatch):
     warnings = []
     monkeypatch.setattr(AppLogger, "warning", lambda message: warnings.append(message))

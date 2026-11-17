@@ -1,3 +1,4 @@
+import shutil
 import threading
 
 import pytest
@@ -7,7 +8,8 @@ from wafer.app.viewer.widgets.foldertree import LazyFolderTreeView
 from wafer.builtins.filters import TextFilter
 from wafer.builtins.folder_manager import widget as widget_module
 from wafer.builtins.folder_manager.rules import Condition, HighlightRule
-from wafer.builtins.folder_manager.stats import FolderValues
+from wafer.builtins.folder_manager.rule_editor import describe_rule
+from wafer.builtins.folder_manager.stats import DiskTree, FolderValues
 from wafer.builtins.folder_manager.widget import FolderManagerWidget
 from wafer.core.common.paths import normalize_path
 from wafer.plugin.query.handler import filter_registry
@@ -76,6 +78,21 @@ def bind(qtbot, panel, roots):
     return tree
 
 
+def watch_finish(monkeypatch, disk):
+    calls = []
+    real_finish = disk.finish
+    monkeypatch.setattr(disk, "finish", lambda: calls.append(1) or real_finish())
+    return calls
+
+
+def fresh_totals(disk):
+    fresh = DiskTree(disk.roots)
+    for path, (child_dirs, file_count) in disk.nodes.items():
+        fresh.add(path, child_dirs, file_count)
+    fresh.finish()
+    return fresh.totals
+
+
 def rule_dict(name, color, bars=(), conditions=(("files", ">=", 1),), enabled=True):
     return HighlightRule(name, color, enabled=enabled, bars=list(bars), conditions=[Condition(*c) for c in conditions]).to_dict()
 
@@ -121,6 +138,16 @@ def test_restore_skips_malformed_rules_and_keeps_a_deliberate_empty_list(qtbot):
     assert [rule.name for rule in panel.rules] == ["Kept"]
     panel.restore_state({"rules": []})
     assert panel.rules == []
+    panel.restore_state({"rules": [{"name": "Odd", "color": "#000", "bars": ["text", {"filter": "text", "params": "x"}]}], "columns": "all"})
+    assert [rule.name for rule in panel.rules] == ["Odd"] and panel.rules[0].bars == []
+    assert panel.save_state()["columns"] == DEFAULT_COLUMNS
+    panel.restore_state({"rules": "Mixed"})
+    assert [rule.name for rule in panel.rules] == ["Mixed"]
+
+
+def test_summary_of_an_empty_query_reads_every_file():
+    rule = HighlightRule("Mixed", "#000", conditions=[Condition("files", ">=", 1), Condition("folders", ">=", 1)])
+    assert describe_rule(rule) == "Every file · Files ≥ 1 and Folders ≥ 1"
 
 
 def test_scan_fills_disk_counts(qtbot, tmp_path, query_calls):
@@ -180,10 +207,14 @@ def test_editing_one_rule_recounts_only_that_rule(qtbot, tmp_path, query_calls):
     assert query_calls[2] == ["bird"]
     assert panel.rules[1].bars[0]["params"]["keywords"] == "bird"
 
+    assert not row.search.sortable and not row.search._sort_button.isVisibleTo(row.search)
+
     panel.rules[0].conditions[0].value = 2
     panel.rule_list.rows[0].emit_edited()
+    disabled = panel.rules[1]
+    assert id(disabled) in panel.counts
     row.enabled_check.setChecked(False)
-    QtCore.QCoreApplication.processEvents()
+    qtbot.waitUntil(lambda: id(disabled) not in panel.counts, timeout=5000)
     assert len(query_calls) == 3
 
 
@@ -192,6 +223,7 @@ def test_files_changed_rescans_only_parent_folders(qtbot, tmp_path, monkeypatch,
     panel = make_panel(qtbot)
     bind(qtbot, panel, [root])
     qtbot.waitUntil(lambda: len(query_calls) == 1, timeout=5000)
+    finishes = watch_finish(monkeypatch, panel.model.disk)
     listed = []
     real_list = widget_module.list_folder
     monkeypatch.setattr(widget_module, "list_folder", lambda path, *args: listed.append(path) or real_list(path, *args))
@@ -201,10 +233,37 @@ def test_files_changed_rescans_only_parent_folders(qtbot, tmp_path, monkeypatch,
     panel.on_files_changed("", {"modified": [f"{root}/a/new.png"], "removed": []})
     qtbot.waitUntil(lambda: panel.model.disk.values(f"{root}/a").files == 2, timeout=5000)
     assert listed == [f"{root}/a"]
-    assert panel.model.disk.finished
+    assert panel.model.disk.finished and finishes == []
+    assert panel.model.disk.totals == fresh_totals(panel.model.disk)
     assert panel.model.disk.values(root) == FolderValues(0, 3, 2, 2)
     assert panel.model.disk.values(f"{root}/b").files == 1
     qtbot.waitUntil(lambda: len(query_calls) == 2, timeout=5000)
+
+
+def test_a_file_in_a_new_folder_adds_that_folder(qtbot, tmp_path, monkeypatch, query_calls, immediate_debounce):
+    root = make_folders(tmp_path / "root", {"a": 1, "b": 1, "b/old": 1})
+    panel = make_panel(qtbot)
+    bind(qtbot, panel, [root])
+    disk = panel.model.disk
+    finishes = watch_finish(monkeypatch, disk)
+    walked = []
+    real_walk = widget_module.walk_disk
+    monkeypatch.setattr(widget_module, "walk_disk", lambda roots, *args: walked.append(list(roots)) or real_walk(roots, *args))
+    make_folders(tmp_path / "root" / "a" / "2026-11" / "sub", {"": 2})
+
+    panel.on_files_changed("", {"modified": [f"{root}/a/2026-11/sub/f0.png", f"{root}/a/2026-11/sub/f1.png"], "removed": []})
+    qtbot.waitUntil(lambda: disk.values(f"{root}/a/2026-11/sub") is not None and not panel.scanning, timeout=5000)
+    assert walked == [[f"{root}/a/2026-11"]]
+    assert disk.values(f"{root}/a") == FolderValues(1, 3, 1, 2)
+    assert disk.values(root) == FolderValues(0, 5, 2, 5)
+    assert disk.finished and finishes == []
+    assert disk.totals == fresh_totals(disk)
+
+    shutil.rmtree(tmp_path / "root" / "b" / "old")
+    panel.on_files_changed("", {"modified": [], "removed": [f"{root}/b/old/f0.png"]})
+    qtbot.waitUntil(lambda: disk.values(f"{root}/b/old") is None, timeout=5000)
+    assert disk.values(f"{root}/b") == FolderValues(1, 1, 0, 0)
+    assert disk.totals == fresh_totals(disk) and finishes == []
 
 
 def test_notifications_for_another_db_are_ignored(qtbot, tmp_path, query_calls, immediate_debounce):
@@ -232,18 +291,21 @@ def test_hidden_panel_waits_until_shown(qtbot, tmp_path, query_calls):
     qtbot.waitUntil(lambda: panel.model.disk is not None and panel.model.disk.finished and len(query_calls) == 1, timeout=5000)
 
 
-def test_moving_inside_a_root_rescans_that_folder(qtbot, tmp_path, query_calls):
+def test_moving_inside_a_root_rescans_that_folder(qtbot, tmp_path, monkeypatch, query_calls):
     root = make_folders(tmp_path / "root", {"a": 1, "a/b": 2})
     panel = make_panel(qtbot)
     bind(qtbot, panel, [root])
     disk = panel.model.disk
+    finishes = watch_finish(monkeypatch, disk)
     (tmp_path / "root" / "a" / "b" / "c").mkdir()
     (tmp_path / "root" / "a" / "b" / "c" / "f.png").write_bytes(b"x")
 
     panel.model.paths_changed.emit([f"{root}/a"])
-    qtbot.waitUntil(lambda: disk.finished and not panel.scanning and disk.values(root).all_folders == 3, timeout=5000)
-    assert panel.model.disk is disk
+    assert disk.finished and disk.values(root) == FolderValues(0, 3, 1, 2)
+    qtbot.waitUntil(lambda: not panel.scanning and disk.values(root).all_folders == 3, timeout=5000)
+    assert panel.model.disk is disk and disk.finished and finishes == []
     assert disk.values(f"{root}/a") == FolderValues(1, 4, 1, 2)
+    assert disk.totals == fresh_totals(disk)
 
     panel.model.paths_changed.emit([normalize_path(str(tmp_path))])
     qtbot.waitUntil(lambda: panel.model.disk is not disk and panel.model.disk.finished, timeout=5000)

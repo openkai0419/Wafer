@@ -69,23 +69,49 @@ class HighlightRule:
     @classmethod
     def from_dict(cls, data: dict) -> "HighlightRule":
         name = data["name"]
-        conditions = []
-        for item in data.get("conditions", []):
-            if item.get("metric") not in METRICS or item.get("op") not in OPERATORS:
-                continue
-            try:
-                value = int(item["value"])
-            except (KeyError, TypeError, ValueError) as exc:
-                AppLogger.warning(f"[FolderManager] rule '{name}': skipped condition {item!r}: {exc!r}")
-                continue
-            conditions.append(Condition(item["metric"], item["op"], value))
+        color = data["color"]
+        if not isinstance(name, str) or not isinstance(color, str):
+            raise TypeError(f"rule name and color must be text: {name!r}, {color!r}")
         return cls(
             name=name,
-            color=data["color"],
-            enabled=data.get("enabled", True),
-            bars=list(data.get("bars", [])),
-            conditions=conditions,
+            color=color,
+            enabled=bool(data.get("enabled", True)),
+            bars=read_bars(name, data.get("bars", [])),
+            conditions=read_conditions(name, data.get("conditions", [])),
         )
+
+
+def read_bars(rule_name: str, items) -> list[dict]:
+    if not isinstance(items, list):
+        AppLogger.warning(f"[FolderManager] rule '{rule_name}': skipped its query, which is not a list: {items!r}")
+        return []
+    bars = []
+    for item in items:
+        if not isinstance(item, dict) or not isinstance(item.get("params", {}), dict):
+            AppLogger.warning(f"[FolderManager] rule '{rule_name}': skipped search bar {item!r}")
+            continue
+        bars.append(item)
+    return bars
+
+
+def read_conditions(rule_name: str, items) -> list[Condition]:
+    if not isinstance(items, list):
+        AppLogger.warning(f"[FolderManager] rule '{rule_name}': skipped its conditions, which are not a list: {items!r}")
+        return []
+    conditions = []
+    for item in items:
+        if not isinstance(item, dict):
+            AppLogger.warning(f"[FolderManager] rule '{rule_name}': skipped condition {item!r}")
+            continue
+        if item.get("metric") not in METRICS or item.get("op") not in OPERATORS:
+            continue
+        try:
+            value = int(item["value"])
+        except (KeyError, TypeError, ValueError) as exc:
+            AppLogger.warning(f"[FolderManager] rule '{rule_name}': skipped condition {item!r}: {exc!r}")
+            continue
+        conditions.append(Condition(item["metric"], item["op"], value))
+    return conditions
 
 
 def default_rules() -> list[HighlightRule]:

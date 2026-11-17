@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 
 import pytest
 
@@ -94,17 +95,6 @@ def test_totals_are_unknown_until_finish(tmp_path):
     assert tree.values(root).all_folders == -1
 
 
-def test_drop_subtree_removes_folder_and_descendants(tmp_path):
-    root = build_tree(tmp_path)
-    tree = scan(root)
-    tree.finish()
-    tree.drop_subtree(f"{root}/a")
-    tree.finish()
-    assert tree.values(f"{root}/a") is None
-    assert tree.values(f"{root}/a/b") is None
-    assert tree.values(root) == FolderValues(files=1, all_files=1, folders=1, all_folders=1)
-
-
 def test_direct_folder_count_is_exact_before_children_are_walked():
     tree = DiskTree(["D:/x"])
     tree.add("D:/x", ["D:/x/sub", "D:/x/other"], 3)
@@ -115,16 +105,87 @@ def test_direct_folder_count_is_exact_before_children_are_walked():
     assert tree.values("D:/x") == FolderValues(files=3, all_files=3, folders=2, all_folders=2)
 
 
-def test_drop_subtree_updates_the_parent_folder_count():
+def walk_entries(paths):
+    entries = []
+    walk_disk(paths, set(), None, FakeCancel(), entries.extend)
+    return entries
+
+
+def fresh_totals(tree):
+    fresh = DiskTree(tree.roots)
+    for path, (child_dirs, file_count) in tree.nodes.items():
+        fresh.add(path, child_dirs, file_count)
+    fresh.finish()
+    return fresh.totals
+
+
+def test_update_folder_pushes_the_difference_up(tmp_path):
+    root = build_tree(tmp_path)
+    tree = scan(root)
+    tree.finish()
+    touch(tmp_path / "root" / "a" / "b" / "4.txt")
+    touch(tmp_path / "root" / "a" / "b" / "5.txt")
+    tree.update_folder(f"{root}/a/b", *list_folder(f"{root}/a/b", set(), None))
+    assert tree.finished
+    assert tree.values(root) == FolderValues(files=1, all_files=5, folders=2, all_folders=3)
+    assert tree.values(f"{root}/a") == FolderValues(files=1, all_files=4, folders=1, all_folders=1)
+    assert tree.totals == fresh_totals(tree)
+
+
+def test_update_folder_forgets_removed_child_folders(tmp_path):
+    root = build_tree(tmp_path)
+    tree = scan(root)
+    tree.finish()
+    tree.update_folder(f"{root}/a", [], 1)
+    assert tree.values(f"{root}/a/b") is None
+    assert tree.values(root) == FolderValues(files=1, all_files=2, folders=2, all_folders=2)
+    assert tree.totals == fresh_totals(tree)
+
+
+def test_update_folder_counts_a_new_child_once_it_is_walked(tmp_path):
+    root = build_tree(tmp_path)
+    tree = scan(root)
+    tree.finish()
+    touch(tmp_path / "root" / "c" / "new" / "deep" / "6.txt")
+    tree.update_folder(f"{root}/c", *list_folder(f"{root}/c", set(), None))
+    assert tree.values(f"{root}/c") == FolderValues(files=0, all_files=0, folders=1, all_folders=0)
+    tree.replace_subtrees([f"{root}/c/new"], walk_entries([f"{root}/c/new"]))
+    assert tree.finished
+    assert tree.values(root) == FolderValues(files=1, all_files=4, folders=2, all_folders=5)
+    assert tree.totals == fresh_totals(tree)
+
+
+def test_replace_subtrees_swaps_a_walked_subtree(tmp_path):
+    root = build_tree(tmp_path)
+    tree = scan(root)
+    tree.finish()
+    shutil.rmtree(tmp_path / "root" / "a" / "b")
+    touch(tmp_path / "root" / "a" / "x" / "y" / "7.txt")
+    touch(tmp_path / "root" / "c" / "8.txt")
+    tree.replace_subtrees([f"{root}/a", f"{root}/c"], walk_entries([f"{root}/a", f"{root}/c"]))
+    assert tree.finished
+    assert tree.values(f"{root}/a/b") is None
+    assert tree.values(f"{root}/a") == FolderValues(files=1, all_files=2, folders=1, all_folders=2)
+    assert tree.values(root) == FolderValues(files=1, all_files=4, folders=2, all_folders=4)
+    assert tree.totals == fresh_totals(tree)
+
+
+def test_incremental_updates_before_finish_only_store_listings():
     tree = DiskTree(["D:/x"])
-    tree.add("D:/x", ["D:/x/sub", "D:/x/other"], 0)
-    tree.add("D:/x/sub", ["D:/x/sub/deep"], 0)
-    tree.drop_subtree("D:/x/sub")
-    assert tree.values("D:/x").folders == 1
-    tree.drop_subtree("D:/x/never-listed")
-    assert tree.values("D:/x").folders == 1
-    tree.drop_subtree("D:/x")
-    assert tree.values("D:/x") is None
+    tree.add("D:/x", ["D:/x/sub"], 0)
+    tree.update_folder("D:/x", [], 2)
+    tree.replace_subtrees(["D:/x/other"], [("D:/x/other", [], 1)])
+    assert not tree.finished
+    assert tree.values("D:/x") == FolderValues(files=2, all_files=-1, folders=0, all_folders=-1)
+
+
+def test_drive_root_updates_stop_at_the_root():
+    tree = DiskTree(["D:/"])
+    tree.add("D:/", ["D:/a"], 1)
+    tree.add("D:/a", [], 1)
+    tree.finish()
+    tree.update_folder("D:/a", [], 3)
+    assert tree.values("D:/") == FolderValues(files=1, all_files=4, folders=1, all_folders=1)
 
 
 def test_walk_batches_and_stops_when_cancelled(tmp_path):
@@ -153,6 +214,11 @@ def test_walk_batches_and_stops_when_cancelled(tmp_path):
 def test_count_sources_by_folder_rolls_up_by_path():
     result = count_sources_by_folder(["C:/r/a/1.png", "C:/r/a/b/2.png"], ["C:/r"])
     assert result == {"C:/r/a/b": (1, 1), "C:/r/a": (1, 2), "C:/r": (0, 2)}
+
+
+def test_count_sources_under_a_drive_root():
+    result = count_sources_by_folder(["D:/1.png", "D:/a/2.png"], ["D:/"])
+    assert result == {"D:/": (1, 2), "D:/a": (1, 1)}
 
 
 def test_sources_outside_roots_are_ignored():

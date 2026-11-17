@@ -1,0 +1,323 @@
+from types import SimpleNamespace
+
+import pytest
+from PySide6 import QtCore, QtGui, QtWidgets
+
+from wafer.app.viewer.widgets import foldertree as foldertree_module
+from wafer.app.viewer.widgets.foldertree import USER_ROLE_PATH, LazyFolderTreeView
+from wafer.builtins.filters import TextFilter
+from wafer.builtins.folder_manager import view as view_module
+from wafer.builtins.folder_manager.rules import Condition, HighlightRule
+from wafer.builtins.folder_manager.stats import DiskTree
+from wafer.builtins.folder_manager.view import BadgeDelegate, FolderManagerTreeView, FolderStatsModel
+from wafer.core.common.paths import normalize_path
+from wafer.plugin.query.handler import filter_registry
+from wafer.qt.commands.binding.instance_registry import InstanceRegistry
+
+
+@pytest.fixture
+def text_filter():
+    filter_registry.register(TextFilter)
+    return TextFilter
+
+
+def make_view(qtbot, tmp_path):
+    root = tmp_path / "root"
+    (root / "a" / "b" / "c").mkdir(parents=True)
+    (root / "d").mkdir()
+    view = FolderManagerTreeView(roots=[str(root)], excluded=[])
+    qtbot.addWidget(view)
+    view.set_folders([str(root)])
+    return view, normalize_path(str(root))
+
+
+def path_of(root, *parts):
+    return normalize_path("/".join([root, *parts]))
+
+
+def rule(name, color, *conditions, enabled=True, bars=None):
+    return HighlightRule(name, color, enabled=enabled, bars=bars or [], conditions=[Condition(*c) for c in conditions])
+
+
+def test_model_declares_count_columns():
+    assert FolderStatsModel.EXTRA_COLUMNS == ("Files", "All files", "Folders", "All folders")
+
+
+def test_columns_show_disk_counts(qtbot, tmp_path):
+    view, root = make_view(qtbot, tmp_path)
+    model = view.model_
+    child = path_of(root, "a")
+    disk = DiskTree([root])
+    disk.add(root, [child], 1)
+    disk.add(child, [], 2)
+    model.disk = disk
+
+    cell = lambda column: model.index(0, column).data(QtCore.Qt.DisplayRole)
+    assert [cell(c) for c in (1, 2, 3, 4)] == ["1", "", "1", ""]
+
+    disk.finish()
+    assert [cell(c) for c in (1, 2, 3, 4)] == ["1", "3", "1", "1"]
+    assert model.index(0, 2).data(QtCore.Qt.ToolTipRole) == "Count on disk"
+    assert model.headerData(2, QtCore.Qt.Horizontal, QtCore.Qt.ToolTipRole) == "Count on disk"
+    assert model.index(0, 0).data(QtCore.Qt.DisplayRole) == "root"
+
+
+def test_columns_are_empty_without_disk_values(qtbot, tmp_path):
+    view, root = make_view(qtbot, tmp_path)
+    model = view.model_
+    assert model.index(0, 1).data(QtCore.Qt.DisplayRole) == ""
+    model.disk = DiskTree([root])
+    assert model.index(0, 1).data(QtCore.Qt.DisplayRole) == ""
+
+
+def test_badges_follow_rule_order_and_only_matching_rules(qtbot):
+    model = FolderStatsModel([], [])
+    folder = "D:/x"
+    first = rule("First", "#111111", ("files", ">=", 1))
+    off = rule("Off", "#222222", ("files", ">=", 1), enabled=False)
+    miss = rule("Miss", "#333333", ("all_files", ">=", 100))
+    last = rule("Last", "#444444", ("all_files", ">=", 5))
+    model.rule_counts = [(last, {folder: (2, 5)}), (off, {folder: (2, 5)}), (miss, {folder: (2, 5)}), (first, {folder: (2, 5)})]
+
+    assert model.badges(folder) == [("#444444", "2"), ("#111111", "2")]
+    assert model.badges("D:/other") == []
+
+
+def test_folder_only_rule_badge_has_no_number(qtbot):
+    model = FolderStatsModel([], [])
+    disk = DiskTree(["D:/x"])
+    disk.add("D:/x", ["D:/x/y"], 0)
+    disk.add("D:/x/y", [], 0)
+    disk.finish()
+    model.disk = disk
+    model.rule_counts = [(rule("Folders", "#123456", ("folders", ">=", 1)), {})]
+
+    assert model.badges("D:/x") == [("#123456", None)]
+    assert model.badges("D:/x/y") == []
+    assert model.badges("D:/missing") == []
+
+
+def test_view_does_not_replace_main_folder_tree_instance(qtbot):
+    main = LazyFolderTreeView(roots=[], excluded=[])
+    qtbot.addWidget(main)
+    manager = FolderManagerTreeView(roots=[], excluded=[])
+    qtbot.addWidget(manager)
+    registry = InstanceRegistry.instance()
+
+    assert main in registry.get_all("FolderTree")
+    assert manager not in registry.get_all("FolderTree")
+    assert manager in registry.get_all("FolderManagerTree")
+    assert manager.binding_scope() == "FolderManagerTree"
+    assert not manager.isHeaderHidden()
+    assert isinstance(manager.itemDelegateForColumn(0), BadgeDelegate)
+
+
+def capture_menu(monkeypatch):
+    seen = {}
+
+    class FakeSpec:
+        def exec(self, *args, **kwargs):
+            seen["executed"] = True
+
+    class FakeSession:
+        def menu(self, items):
+            seen["items"] = items
+            return FakeSpec()
+
+    monkeypatch.setattr(view_module.Menu, "session", staticmethod(lambda *args, **kwargs: FakeSession()))
+    return seen
+
+
+def test_context_menu_lists_rule_actions_only_for_rules_with_query(qtbot, tmp_path, monkeypatch, text_filter):
+    seen = capture_menu(monkeypatch)
+    calls = []
+    monkeypatch.setattr(view_module, "run_on_folder_files", lambda ctx, command_id, recursive: calls.append((ctx.get("filter_entries"), ctx.get("paths"), command_id, recursive)))
+    view, root = make_view(qtbot, tmp_path)
+    view.resize(480, 240)
+    view.show()
+    bar = {"filter": "text", "params": {"q": "cat"}, "op": "and", "enabled": True}
+    queried = rule("Cats", "#111111", ("files", ">=", 1), bars=[bar])
+    view.set_rules_source(
+        lambda: [
+            rule("Plain", "#222222", ("files", ">=", 1)),
+            queried,
+            rule("Off", "#333333", ("files", ">=", 1), enabled=False, bars=[bar]),
+        ]
+    )
+    index = view.model_.index(0, 0)
+    view.selectionModel().select(index, QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows)
+
+    view.show_context_menu(view.visualRect(index).center())
+
+    items = seen["items"]
+    assert items[:2] == ["ft.show_in_tree", "-"]
+    assert "Files in Folder/ft.files.cut_all" in items
+    assert not any("ignore" in str(i) or "remove_from_view" in str(i) for i in items)
+    actions = [i for i in items if not isinstance(i, str)]
+    assert [a.path.split("/")[1] for a in actions] == ["Cats"] * 4
+    assert all(a.path.startswith("Files in Folder/Cats/") for a in actions)
+    last_files_in_folder = max(n for n, i in enumerate(items) if isinstance(i, str) and i.startswith("Files in Folder/"))
+    assert items.index(actions[0]) > last_files_in_folder
+    assert seen["executed"]
+
+    from wafer.qt.commands.bridge import Context
+
+    for action in actions:
+        ctx = Context.create_menu_context(view, view.binding_scope(), extras={"paths": [root]})
+        action.func(ctx)
+    entries = queried.filter_entries()
+    assert calls == [
+        (entries, [root], "file.cut", False),
+        (entries, [root], "file.copy", False),
+        (entries, [root], "file.cut", True),
+        (entries, [root], "file.copy", True),
+    ]
+    view.close()
+
+
+def test_context_menu_without_folder_does_nothing(qtbot, tmp_path, monkeypatch):
+    seen = capture_menu(monkeypatch)
+    view, _root = make_view(qtbot, tmp_path)
+    view.resize(480, 240)
+    view.show()
+    view.clearSelection()
+
+    view.show_context_menu(QtCore.QPoint(5, view.viewport().height() - 2))
+
+    assert "items" not in seen
+    view.close()
+
+
+def test_expand_to_opens_ancestors_in_batches(qtbot, tmp_path, monkeypatch):
+    monkeypatch.setattr(view_module, "EXPAND_RECURSIVE_BATCH_SIZE", 1)
+    view, root = make_view(qtbot, tmp_path)
+    selected = view.model_.index(0, 0)
+    view.selectionModel().select(selected, QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows)
+    calls = []
+    original = view.set_state_async
+    monkeypatch.setattr(view, "set_state_async", lambda states, on_complete=None: (calls.append(states), original(states, on_complete=on_complete)))
+    target = path_of(root, "a", "b", "c")
+
+    view.expand_to([target, path_of(root, "a", "b")])
+
+    def expanded(path):
+        item = view.model_.path_item_map.get(path)
+        return item is not None and view.isExpanded(view.model_.indexFromItem(item))
+
+    qtbot.waitUntil(lambda: all(expanded(p) for p in (root, path_of(root, "a"), path_of(root, "a", "b"))))
+    assert [c[0] for c in calls] == [[root], [path_of(root, "a")], [path_of(root, "a", "b")]]
+    assert all(c[1] == [root] for c in calls)
+    assert not expanded(target)
+    assert view.get_selected_paths() == [root]
+
+
+def test_expand_to_ignores_paths_outside_roots(qtbot, tmp_path, monkeypatch):
+    view, _root = make_view(qtbot, tmp_path)
+    calls = []
+    monkeypatch.setattr(view, "set_state_async", lambda states, on_complete=None: calls.append(states))
+
+    view.expand_to([normalize_path(str(tmp_path / "elsewhere" / "x"))])
+
+    assert calls == []
+
+
+def test_set_column_visible_hides_and_shows(qtbot, tmp_path):
+    view, _root = make_view(qtbot, tmp_path)
+    view.set_column_visible(4, False)
+    assert view.isColumnHidden(4)
+    view.set_column_visible(4, True)
+    assert not view.isColumnHidden(4)
+
+
+def test_hidden_columns_and_layout_survive_reload(qtbot, tmp_path):
+    view, root = make_view(qtbot, tmp_path)
+    view.set_column_visible(4, False)
+
+    view.set_folders([root])
+    assert view.isColumnHidden(4)
+    view.reload_tree()
+    assert view.isColumnHidden(4)
+    assert not view.isColumnHidden(1)
+    assert view.header().sectionResizeMode(0) == QtWidgets.QHeaderView.Stretch
+
+
+def fake_paste_ok(monkeypatch):
+    def paste(plans, **kwargs):
+        return [SimpleNamespace(status="ok", dst=str(plans[0].dst_default))]
+
+    monkeypatch.setattr(foldertree_module, "execute_paste_plans_with_ui", paste)
+
+
+def test_rename_emits_parent_folder(qtbot, tmp_path, monkeypatch):
+    fake_paste_ok(monkeypatch)
+    view, root = make_view(qtbot, tmp_path)
+    view.expand_path(path_of(root, "a"))
+    with qtbot.waitSignal(view.model_.paths_changed) as blocker:
+        assert view.rename_path(path_of(root, "a", "b"), "renamed")
+    assert blocker.args == [[path_of(root, "a")]]
+
+
+def test_rename_to_same_name_does_not_emit(qtbot, tmp_path, monkeypatch):
+    fake_paste_ok(monkeypatch)
+    view, root = make_view(qtbot, tmp_path)
+    view.expand_path(root)
+    emitted = []
+    view.model_.paths_changed.connect(emitted.append)
+    assert view.rename_path(path_of(root, "a"), "a")
+    assert emitted == []
+
+
+def test_failed_rename_does_not_emit(qtbot, tmp_path, monkeypatch):
+    monkeypatch.setattr(foldertree_module, "execute_paste_plans_with_ui", lambda plans, **kwargs: [])
+    view, root = make_view(qtbot, tmp_path)
+    view.expand_path(root)
+    emitted = []
+    view.model_.paths_changed.connect(emitted.append)
+    assert not view.rename_path(path_of(root, "a"), "x")
+    assert emitted == []
+
+
+def test_move_emits_source_and_destination_parents(qtbot, tmp_path, monkeypatch):
+    fake_paste_ok(monkeypatch)
+    view, root = make_view(qtbot, tmp_path)
+    view.expand_path(path_of(root, "a"))
+    with qtbot.waitSignal(view.model_.paths_changed) as blocker:
+        assert view.move_paths([path_of(root, "a", "b")], path_of(root, "d"))
+    assert blocker.args == [[path_of(root, "a"), path_of(root, "d")]]
+
+
+def test_badge_delegate_paints_without_error(qtbot, tmp_path):
+    view, _root = make_view(qtbot, tmp_path)
+    delegate = BadgeDelegate(lambda path: [("#ff0000", "12"), ("#00ff00", None)], view)
+    index = view.model_.index(0, 0)
+    assert index.data(USER_ROLE_PATH)
+    image = QtGui.QImage(400, 24, QtGui.QImage.Format_ARGB32)
+    image.fill(QtGui.QColor("#000000"))
+    option = QtWidgets.QStyleOptionViewItem()
+    option.rect = QtCore.QRect(0, 0, 400, 24)
+    option.font = view.font()
+    option.fontMetrics = view.fontMetrics()
+    painter = QtGui.QPainter(image)
+    delegate.paint(painter, option, index)
+    painter.end()
+
+    pixels = {(x, y): image.pixelColor(x, y) for x in range(400) for y in range(24)}
+    red = [xy for xy, c in pixels.items() if c.name() == "#ff0000"]
+    assert red
+    assert any(c.name() == "#00ff00" for c in pixels.values())
+    left, right = min(x for x, _ in red), max(x for x, _ in red)
+    top, bottom = min(y for _, y in red), max(y for _, y in red)
+    whitish = [c for (x, y), c in pixels.items() if left <= x <= right and top <= y <= bottom and min(c.red(), c.green(), c.blue()) > 180]
+    assert whitish
+
+
+def test_badge_delegate_skips_rows_without_badges(qtbot, tmp_path):
+    view, _root = make_view(qtbot, tmp_path)
+    delegate = BadgeDelegate(lambda path: [], view)
+    image = QtGui.QImage(200, 24, QtGui.QImage.Format_ARGB32)
+    image.fill(QtGui.QColor("#000000"))
+    option = QtWidgets.QStyleOptionViewItem()
+    option.rect = QtCore.QRect(0, 0, 200, 24)
+    painter = QtGui.QPainter(image)
+    delegate.paint(painter, option, view.model_.index(0, 0))
+    painter.end()

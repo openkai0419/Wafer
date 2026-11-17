@@ -10,7 +10,7 @@ from ...qt.common.dispatcher import Dispatcher
 from ...qt.common.notifier import Notifier
 from ...qt.common.thread import utility_pool
 from ...qt.widgets.dialogs import ConfirmDialog
-from ..folder_manager.sources import folder_sources
+from .folder_files import folder_sources
 
 
 def _ctx_tree(ctx):

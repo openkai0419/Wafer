@@ -1,7 +1,7 @@
 import pytest
 
 from wafer.builtins.filters import TextFilter
-from wafer.builtins.folder_manager.sources import folder_sources, query_sources
+from wafer.builtins.commands.folder_files import folder_sources, query_sources
 from wafer.core.common.virtual_paths import build_virtual_path
 from wafer.core.db.file_db import FileDB
 

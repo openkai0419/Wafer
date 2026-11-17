@@ -22,7 +22,7 @@ from wafer.qt.widgets.flow_layout import FlowLayout
 
 from .rule_editor import METRIC_LABELS, RuleList, tool_button
 from .rules import METRICS, HighlightRule, default_rules, new_rule
-from .sources import query_sources
+from wafer.builtins.commands.folder_files import query_sources
 from .stats import DiskTree, count_sources_by_folder, list_folder, walk_disk
 from .view import FolderManagerTreeView
 

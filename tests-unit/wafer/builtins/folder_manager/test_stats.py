@@ -1,6 +1,9 @@
 import os
 import re
 
+import pytest
+
+from wafer.app.viewer.widgets.foldertree import _scan_child_paths
 from wafer.builtins.folder_manager.stats import (
     DiskTree,
     FolderValues,
@@ -51,7 +54,7 @@ def test_list_folder_skips_excluded_and_ignored(tmp_path):
     for name in ("keep", "skip", ".thumbs"):
         (tmp_path / name).mkdir()
     base = normalize_path(str(tmp_path))
-    dirs, files = list_folder(base, {f"{base}/skip"}, re.compile(r"^\."))
+    dirs, files = list_folder(base, {f"{base}/skip"}, re.compile(r".*/\.[^/]*$"))
     assert dirs == [f"{base}/keep"]
     assert files == 0
 
@@ -137,3 +140,46 @@ def test_sources_outside_roots_are_ignored():
 def test_nested_roots_use_the_longest_and_siblings_do_not_match():
     result = count_sources_by_folder(["C:/r/a/1.png", "C:/rr/2.png"], ["C:/r", "C:/r/a"])
     assert result == {"C:/r/a": (1, 1)}
+
+
+def test_list_folder_matches_foldertree_rules(tmp_path):
+    for name in ("keep", "skip", ".thumbs", "tmp_x", "z"):
+        (tmp_path / name / "inner").mkdir(parents=True)
+    base = normalize_path(str(tmp_path))
+    excluded = {f"{base}/skip"}
+    pattern = re.compile(r".*/tmp_[^/]*$")
+    for ignore in (None, pattern):
+        mine = sorted(list_folder(base, excluded, ignore)[0])
+        assert mine == sorted(_scan_child_paths(base, excluded, ignore))
+    assert f"{base}/tmp_x" not in list_folder(base, excluded, pattern)[0]
+
+
+def test_ignore_pattern_matches_the_full_path_not_the_name(tmp_path):
+    (tmp_path / "plain").mkdir()
+    base = normalize_path(str(tmp_path))
+    assert list_folder(base, set(), re.compile(r"plain"))[0] == [f"{base}/plain"]
+    assert list_folder(base, set(), re.compile(r".*/plain$"))[0] == []
+
+
+def test_excluded_or_ignored_roots_are_not_walked(tmp_path):
+    for name in ("x", "y", "z"):
+        (tmp_path / name / "sub").mkdir(parents=True)
+    base = normalize_path(str(tmp_path))
+    roots = [f"{base}/x", f"{base}/y", f"{base}/z"]
+    seen = []
+    walk_disk(roots, {f"{base}/x"}, re.compile(r".*/y$"), FakeCancel(), lambda batch: seen.extend(p for p, _, _ in batch))
+    assert seen == [f"{base}/z", f"{base}/z/sub"]
+
+
+def test_directory_links_are_not_followed(tmp_path):
+    target = tmp_path / "target"
+    (target / "inner").mkdir(parents=True)
+    root = tmp_path / "root"
+    root.mkdir()
+    try:
+        os.symlink(target, root / "link", target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlinks unavailable")
+    base = normalize_path(str(root))
+    assert list_folder(base, set(), None) == ([], 1)
+    assert list_folder(base, set(), None)[0] == list(_scan_child_paths(base, set()))

@@ -21,17 +21,19 @@ class FolderValues:
     all_folders: int
 
 
+def is_hidden(path: str, excluded: set[str], ignore_pattern_re) -> bool:
+    return path in excluded or (ignore_pattern_re is not None and ignore_pattern_re.match(path) is not None)
+
+
 def list_folder(path: str, excluded: set[str], ignore_pattern_re) -> tuple[list[str], int]:
     child_dirs: list[str] = []
     file_count = 0
     try:
         with os.scandir(path) as entries:
             for entry in entries:
-                if entry.is_dir():
-                    if ignore_pattern_re is not None and ignore_pattern_re.search(entry.name):
-                        continue
+                if entry.is_dir(follow_symlinks=False):
                     child = normalize_path(entry.path)
-                    if child not in excluded:
+                    if not is_hidden(child, excluded, ignore_pattern_re):
                         child_dirs.append(child)
                 else:
                     file_count += 1
@@ -49,7 +51,8 @@ def walk_disk(
     on_batch: Callable[[list[tuple[str, list[str], int]]], None],
     batch_size: int = 256,
 ) -> None:
-    queue = [normalize_path(root) for root in roots]
+    normalized = (normalize_path(root) for root in roots)
+    queue = [root for root in normalized if not is_hidden(root, excluded, ignore_pattern_re)]
     head = 0
     batch: list[tuple[str, list[str], int]] = []
     while head < len(queue):

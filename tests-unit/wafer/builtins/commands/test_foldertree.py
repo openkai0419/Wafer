@@ -5,7 +5,11 @@ from PySide6 import QtWidgets
 from wafer.qt.commands.bridge import Menu
 from wafer.qt.commands.command.core import CommandRegistry
 from wafer.core.common.paths import normalize_path
+from wafer.builtins.commands import foldertree as foldertree_module
 from wafer.builtins.commands.foldertree import (
+    folder_file_items,
+    run_on_folder_files,
+    show_in_tree,
     FolderTreeCommands,
     _ctx_normalized_path,
     _ctx_normalized_paths,
@@ -250,3 +254,110 @@ def test_parent_folder_command_passes_collapse_flag(qtbot):
     assert parent_folder(ctx, trigger_search=True, collapse=True) == "parent"
     assert tree.trigger_search is True
     assert tree.collapse is True
+
+
+class _FilesCtx(_FakeCtx):
+    def __init__(self, paths, db_path="x.db", filter_entries=None, instances=None):
+        super().__init__(path=paths[0] if paths else None, paths=paths)
+        self._db_path = db_path
+        self._filter_entries = filter_entries
+        self._instances = instances if instances is not None else {"MainWindow": type("W", (), {"database_path": db_path})()}
+
+    def get(self, key):
+        if key == "filter_entries":
+            return self._filter_entries
+        return super().get(key)
+
+    def get_instance(self, name):
+        return self._instances.get(name)
+
+
+def _capture(monkeypatch, sources):
+    calls = {"sources": [], "invoke": [], "notices": []}
+
+    def fake_sources(db_path, folders, recursive, filter_entries=()):
+        calls["sources"].append((db_path, list(folders), recursive, list(filter_entries)))
+        return list(sources)
+
+    monkeypatch.setattr(foldertree_module, "folder_sources", fake_sources)
+    monkeypatch.setattr(
+        foldertree_module.Command, "invoke", lambda command_id, extras=None, **kw: calls["invoke"].append((command_id, extras))
+    )
+    monkeypatch.setattr(foldertree_module.Notifier, "info", lambda text: calls["notices"].append(text))
+    return calls
+
+
+def test_files_in_folder_commands_are_registered(qtbot):
+    FolderTreeCommands.register()
+    registry = CommandRegistry.instance()
+    for command_id in ("ft.files.cut_direct", "ft.files.copy_direct", "ft.files.cut_all", "ft.files.copy_all", "ft.show_in_tree"):
+        assert registry.has_command(command_id)
+
+
+def test_cut_all_invokes_file_cut_with_folder_sources(qtbot, monkeypatch, tmp_path):
+    calls = _capture(monkeypatch, ["a.png", "b.png"])
+    run_on_folder_files(_FilesCtx([str(tmp_path)]), "file.cut", True)
+    qtbot.waitUntil(lambda: bool(calls["invoke"]), timeout=3000)
+    assert calls["invoke"] == [("file.cut", {"sources": ["a.png", "b.png"], "paths": ["a.png", "b.png"]})]
+    assert calls["sources"][0][:3] == ("x.db", [normalize_path(str(tmp_path))], True)
+
+
+def test_direct_passes_recursive_false(qtbot, monkeypatch, tmp_path):
+    calls = _capture(monkeypatch, ["a.png"])
+    run_on_folder_files(_FilesCtx([str(tmp_path)]), "file.copy", False)
+    qtbot.waitUntil(lambda: bool(calls["invoke"]), timeout=3000)
+    assert calls["sources"][0][2] is False
+    assert calls["invoke"][0][0] == "file.copy"
+
+
+def test_query_entries_from_ctx_are_passed_through(qtbot, monkeypatch, tmp_path):
+    calls = _capture(monkeypatch, ["a.png"])
+    entries = [("FilterCls", {"k": 1}, None)]
+    run_on_folder_files(_FilesCtx([str(tmp_path)], filter_entries=entries), "file.cut", True)
+    qtbot.waitUntil(lambda: bool(calls["invoke"]), timeout=3000)
+    assert calls["sources"][0][3] == entries
+
+
+def test_no_files_shows_notice_and_skips_command(qtbot, monkeypatch, tmp_path):
+    calls = _capture(monkeypatch, [])
+    run_on_folder_files(_FilesCtx([str(tmp_path)]), "file.cut", True)
+    qtbot.waitUntil(lambda: bool(calls["notices"]), timeout=3000)
+    assert calls["notices"] == ["No files"]
+    assert calls["invoke"] == []
+
+
+def test_no_database_or_folders_does_nothing(qtbot, monkeypatch, tmp_path):
+    calls = _capture(monkeypatch, ["a.png"])
+    run_on_folder_files(_FilesCtx([str(tmp_path)], db_path=None), "file.cut", True)
+    run_on_folder_files(_FilesCtx([]), "file.cut", True)
+    assert calls["sources"] == []
+    assert calls["invoke"] == []
+
+
+def test_show_in_tree_selects_path(tmp_path):
+    selected = []
+    tree = type("T", (), {"expand_and_select_path": lambda self, p: selected.append(p)})()
+    show_in_tree(_FilesCtx([str(tmp_path)], instances={"FolderTree": tree}))
+    assert selected == [normalize_path(str(tmp_path))]
+
+
+def test_folder_file_items_include_files_in_folder_and_no_ignore():
+    items = folder_file_items()
+    assert "Files in Folder/ft.files.cut_all" in items
+    assert "Files in Folder/ft.files.copy_direct" in items
+    assert all("ignore" not in str(i) and "remove_from_view" not in str(i) for i in items)
+
+
+def test_context_menu_contains_files_in_folder(qtbot, tmp_path, monkeypatch):
+    seen = {}
+
+    class FakeSession:
+        def menu(self, items):
+            seen["items"] = items
+            return type("M", (), {"exec": lambda self: None})()
+
+    monkeypatch.setattr(foldertree_module.Menu, "from_context", lambda ctx: FakeSession())
+    tree = _FakeTree(roots=set())
+    qtbot.addWidget(tree)
+    show_context_menu(_FakeCtx(path=str(tmp_path), widget=tree))
+    assert "Files in Folder/ft.files.cut_all" in seen["items"]

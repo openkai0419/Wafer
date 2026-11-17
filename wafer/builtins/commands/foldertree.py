@@ -2,11 +2,15 @@ import os
 
 from PySide6 import QtWidgets
 
-from ...qt.commands.bridge import ActionKit, Menu
+from ...qt.commands.bridge import ActionKit, Command, Menu
 from ...core.lang.manager import t
 from ...core.common.paths import normalize_path
 from ...core.logs import AppLogger
+from ...qt.common.dispatcher import Dispatcher
+from ...qt.common.notifier import Notifier
+from ...qt.common.thread import utility_pool
 from ...qt.widgets.dialogs import ConfirmDialog
+from ..folder_manager.sources import folder_sources
 
 
 def _ctx_tree(ctx):
@@ -99,6 +103,94 @@ def ignore_folder(ctx):
         root.setting_db.add_ignore_folder(p)
 
 
+_dispatcher: Dispatcher | None = None
+
+
+def _files_dispatcher() -> Dispatcher:
+    global _dispatcher
+    if _dispatcher is None:
+        _dispatcher = Dispatcher(utility_pool)
+    return _dispatcher
+
+
+def run_on_folder_files(ctx, command_id: str, recursive: bool) -> None:
+    folders = _ctx_normalized_paths(ctx)
+    window = ctx.get_instance("MainWindow")
+    db_path = getattr(window, "database_path", None)
+    if not folders or not db_path:
+        return
+    filter_entries = list(ctx.get("filter_entries") or ())
+    dispatcher = _files_dispatcher()
+
+    def work():
+        sources = folder_sources(db_path, folders, recursive, filter_entries)
+        dispatcher.invoke(lambda: _apply_to_sources(command_id, sources))
+
+    dispatcher.post(work)
+
+
+def _apply_to_sources(command_id: str, sources: list[str]) -> None:
+    if not sources:
+        Notifier.info("No files")
+        return
+    Command.invoke(command_id, extras={"sources": sources, "paths": sources})
+
+
+def cut_direct_files(ctx):
+    run_on_folder_files(ctx, "file.cut", False)
+
+
+def copy_direct_files(ctx):
+    run_on_folder_files(ctx, "file.copy", False)
+
+
+def cut_all_files(ctx):
+    run_on_folder_files(ctx, "file.cut", True)
+
+
+def copy_all_files(ctx):
+    run_on_folder_files(ctx, "file.copy", True)
+
+
+def show_in_tree(ctx):
+    path = _ctx_normalized_path(ctx)
+    if not path:
+        return
+    ctx.get_instance("FolderTree").expand_and_select_path(path)
+
+
+def folder_file_items() -> list:
+    return [
+        ":Path",
+        "file.show_explorer",
+        "file.shell_context_menu",
+        "-",
+        "file.copy_path",
+        "-",
+        "file.select_path",
+        "-",
+        "-",
+        "file.cut",
+        "file.copy",
+        "file.delete",
+        "-",
+        "file.paste",
+        "file.new_folder",
+        "-",
+        "Files in Folder/:Files in Folder",
+        "Files in Folder/ft.files.cut_direct",
+        "Files in Folder/ft.files.copy_direct",
+        "Files in Folder/ft.files.cut_all",
+        "Files in Folder/ft.files.copy_all",
+        "-",
+        "Recollect/:Recollect",
+        "Recollect/file.recollect.folder.reset_prefix",
+        "Recollect/file.recollect.folder.reset_all",
+        "Recollect/file.recollect.folder.forget",
+        "-",
+    ]
+
+
 def show_context_menu(ctx):
     tree = _ctx_tree(ctx)
     if tree is None:
@@ -114,31 +206,7 @@ def show_context_menu(ctx):
             AppLogger.debug(f"folder_selected emit failed: {e}")
     items = []
     if exists:
-        items.extend(
-            [
-                ":Path",
-                "file.show_explorer",
-                "file.shell_context_menu",
-                "-",
-                "file.copy_path",
-                "-",
-                "file.select_path",
-                "-",
-                "-",
-                "file.cut",
-                "file.copy",
-                "file.delete",
-                "-",
-                "file.paste",
-                "file.new_folder",
-                "-",
-                "Recollect/:Recollect",
-                "Recollect/file.recollect.folder.reset_prefix",
-                "Recollect/file.recollect.folder.reset_all",
-                "Recollect/file.recollect.folder.forget",
-                "-",
-            ]
-        )
+        items.extend(folder_file_items())
     else:
         items.extend(
             [
@@ -262,6 +330,13 @@ class FolderTreeCommands(ActionKit.MenuBase):
             ),
             "-",
             ActionKit.Command(path="ft.reload_tree", display="Reload Tree", func=reload_tree),
+            "-",
+            ":Files in Folder",
+            ActionKit.Command(path="ft.files.cut_direct", display="Cut direct files", func=cut_direct_files),
+            ActionKit.Command(path="ft.files.copy_direct", display="Copy direct files", func=copy_direct_files),
+            ActionKit.Command(path="ft.files.cut_all", display="Cut all files below", func=cut_all_files),
+            ActionKit.Command(path="ft.files.copy_all", display="Copy all files below", func=copy_all_files),
+            ActionKit.Command(path="ft.show_in_tree", display="Show in FolderTree", func=show_in_tree, hidden=True),
             "-",
             ActionKit.Command(path="ft.add_folder", display="Add Folder", func=add_folder),
         ]

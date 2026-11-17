@@ -1,0 +1,103 @@
+import pytest
+
+from wafer.builtins.folder_manager.rules import (
+    RULE_COLORS,
+    Condition,
+    HighlightRule,
+    default_rules,
+    new_rule,
+)
+from wafer.builtins.folder_manager.stats import FolderValues
+from wafer.plugin.query.handler import filter_registry
+
+
+class FakeFilter:
+    NAME = "fake_rule_filter"
+    PRIORITY = 0
+
+
+@pytest.fixture
+def fake_filter(monkeypatch):
+    monkeypatch.setitem(filter_registry._plugins, FakeFilter.NAME, FakeFilter)
+    return FakeFilter
+
+
+def test_mixed_matches_folder_with_files_and_folders():
+    assert default_rules()[0].matches(FolderValues(3, 9, 2, 5))
+    assert not default_rules()[0].matches(FolderValues(0, 9, 2, 5))
+
+
+def test_rule_without_conditions_matches_nothing():
+    assert not HighlightRule("x", "#000").matches(FolderValues(1, 1, 1, 1))
+
+
+def test_conditions_are_anded_and_support_all_operators():
+    rule = HighlightRule(
+        "x", "#000", conditions=[Condition("files", "<=", 5), Condition("all_files", "==", 9)]
+    )
+    assert rule.matches(FolderValues(5, 9, 0, 0))
+    assert not rule.matches(FolderValues(6, 9, 0, 0))
+    assert not rule.matches(FolderValues(5, 8, 0, 0))
+
+
+def test_folder_only_rule_has_no_count():
+    assert not HighlightRule("x", "#000", conditions=[Condition("folders", ">=", 1)]).shows_count()
+    assert HighlightRule("x", "#000", conditions=[Condition("all_files", ">=", 1)]).shows_count()
+
+
+def test_rule_round_trips_through_dict():
+    rule = HighlightRule(
+        "Big",
+        "#123456",
+        enabled=False,
+        bars=[{"filter": "text", "params": {"q": "a"}, "op": "and", "enabled": True}],
+        conditions=[Condition("all_files", ">=", 100)],
+    )
+    assert HighlightRule.from_dict(rule.to_dict()) == rule
+
+
+def test_from_dict_tolerates_missing_optional_keys():
+    rule = HighlightRule.from_dict({"name": "x", "color": "#000"})
+    assert rule.enabled and rule.bars == [] and rule.conditions == []
+
+
+def test_unknown_metric_is_dropped_on_load():
+    rule = HighlightRule.from_dict(
+        {
+            "name": "x",
+            "color": "#000",
+            "conditions": [
+                {"metric": "bogus", "op": ">=", "value": 1},
+                {"metric": "files", "op": "!=", "value": 1},
+                {"metric": "files", "op": ">=", "value": 2},
+            ],
+        }
+    )
+    assert rule.conditions == [Condition("files", ">=", 2)]
+
+
+def test_filter_entries_skip_disabled_and_unknown_filters(fake_filter):
+    rule = HighlightRule(
+        "x",
+        "#000",
+        bars=[
+            {"filter": fake_filter.NAME, "params": {"a": 1}, "op": "or", "enabled": True},
+            {"filter": fake_filter.NAME, "params": {}, "op": None, "enabled": False},
+            {"filter": "nope", "params": {}, "op": None, "enabled": True},
+        ],
+    )
+    assert rule.filter_entries() == [(fake_filter, {"a": 1}, "or")]
+
+
+def test_new_rule_takes_next_free_name_and_color():
+    first = new_rule([])
+    assert (first.name, first.color) == ("Rule 1", RULE_COLORS[0])
+    assert first.conditions == [Condition("files", ">=", 1)]
+    existing = [HighlightRule("Rule 1", RULE_COLORS[0]), HighlightRule("Rule 3", RULE_COLORS[1])]
+    second = new_rule(existing)
+    assert (second.name, second.color) == ("Rule 2", RULE_COLORS[2])
+
+
+def test_new_rule_reuses_first_color_when_all_are_used():
+    existing = [HighlightRule(f"Rule {i + 1}", color) for i, color in enumerate(RULE_COLORS)]
+    assert new_rule(existing).color == RULE_COLORS[0]

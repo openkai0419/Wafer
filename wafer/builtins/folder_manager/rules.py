@@ -2,16 +2,17 @@ import operator
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from wafer.core.logs import AppLogger
 from wafer.plugin.query.handler import filter_registry
 
 from .stats import FolderValues
 
 METRICS = ("files", "all_files", "folders", "all_folders")
 COUNT_METRICS = ("files", "all_files")
-OPERATORS = (">=", "<=", "==")
 RULE_COLORS = ("#1D9E75", "#D85A30", "#378ADD", "#BA7517", "#7F77DD", "#D4537E")
 
 COMPARATORS = {">=": operator.ge, "<=": operator.le, "==": operator.eq}
+OPERATORS = tuple(COMPARATORS)
 
 
 @dataclass
@@ -44,12 +45,16 @@ class HighlightRule:
     def filter_entries(self) -> list[tuple]:
         entries = []
         for bar in self.bars:
+            name = bar.get("filter")
+            if name is None:
+                AppLogger.warning(f"[FolderManager] rule '{self.name}': skipped a search bar without a filter")
+                continue
             if not bar.get("enabled", True):
                 continue
-            filter_cls = filter_registry.get(bar["filter"])
+            filter_cls = filter_registry.get(name)
             if filter_cls is None:
                 continue
-            entries.append((filter_cls, bar.get("params", {}), bar.get("op")))
+            entries.append((filter_cls, dict(bar.get("params", {})), bar.get("op")))
         return entries
 
     def to_dict(self) -> dict:
@@ -57,19 +62,25 @@ class HighlightRule:
             "name": self.name,
             "color": self.color,
             "enabled": self.enabled,
-            "bars": self.bars,
+            "bars": [{**bar, "params": dict(bar.get("params", {}))} for bar in self.bars],
             "conditions": [condition.to_dict() for condition in self.conditions],
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "HighlightRule":
-        conditions = [
-            Condition(item["metric"], item["op"], int(item["value"]))
-            for item in data.get("conditions", [])
-            if item.get("metric") in METRICS and item.get("op") in OPERATORS
-        ]
+        name = data["name"]
+        conditions = []
+        for item in data.get("conditions", []):
+            if item.get("metric") not in METRICS or item.get("op") not in OPERATORS:
+                continue
+            try:
+                value = int(item["value"])
+            except (KeyError, TypeError, ValueError) as exc:
+                AppLogger.warning(f"[FolderManager] rule '{name}': skipped condition {item!r}: {exc!r}")
+                continue
+            conditions.append(Condition(item["metric"], item["op"], value))
         return cls(
-            name=data["name"],
+            name=name,
             color=data["color"],
             enabled=data.get("enabled", True),
             bars=list(data.get("bars", [])),

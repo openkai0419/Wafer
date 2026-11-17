@@ -8,18 +8,15 @@ from wafer.builtins.folder_manager.rules import (
     new_rule,
 )
 from wafer.builtins.folder_manager.stats import FolderValues
+from wafer.core.logs import AppLogger
+from wafer.builtins.filters import TextFilter
 from wafer.plugin.query.handler import filter_registry
 
 
-class FakeFilter:
-    NAME = "fake_rule_filter"
-    PRIORITY = 0
-
-
 @pytest.fixture
-def fake_filter(monkeypatch):
-    monkeypatch.setitem(filter_registry._plugins, FakeFilter.NAME, FakeFilter)
-    return FakeFilter
+def text_filter():
+    filter_registry.register(TextFilter)
+    return TextFilter
 
 
 def test_mixed_matches_folder_with_files_and_folders():
@@ -76,17 +73,47 @@ def test_unknown_metric_is_dropped_on_load():
     assert rule.conditions == [Condition("files", ">=", 2)]
 
 
-def test_filter_entries_skip_disabled_and_unknown_filters(fake_filter):
+def test_filter_entries_skip_disabled_and_unknown_filters(text_filter):
     rule = HighlightRule(
         "x",
         "#000",
         bars=[
-            {"filter": fake_filter.NAME, "params": {"a": 1}, "op": "or", "enabled": True},
-            {"filter": fake_filter.NAME, "params": {}, "op": None, "enabled": False},
+            {"filter": "text", "params": {"a": 1}, "op": "or", "enabled": True},
+            {"filter": "text", "params": {}, "op": None, "enabled": False},
             {"filter": "nope", "params": {}, "op": None, "enabled": True},
         ],
     )
-    assert rule.filter_entries() == [(fake_filter, {"a": 1}, "or")]
+    assert rule.filter_entries() == [(text_filter, {"a": 1}, "or")]
+
+
+def test_malformed_conditions_are_skipped_with_a_warning(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(AppLogger, "warning", lambda message: warnings.append(message))
+    rule = HighlightRule.from_dict(
+        {
+            "name": "Broken",
+            "color": "#000",
+            "conditions": [
+                {"metric": "files", "op": ">="},
+                {"metric": "files", "op": ">=", "value": "many"},
+                {"metric": "files", "op": ">=", "value": 3},
+            ],
+        }
+    )
+    assert rule.conditions == [Condition("files", ">=", 3)]
+    assert len(warnings) == 2 and all("Broken" in message for message in warnings)
+
+
+def test_bar_without_filter_is_skipped_with_a_warning(text_filter, monkeypatch):
+    warnings = []
+    monkeypatch.setattr(AppLogger, "warning", lambda message: warnings.append(message))
+    rule = HighlightRule(
+        "Broken",
+        "#000",
+        bars=[{"params": {}}, {"filter": "text", "params": {"a": 1}, "op": None, "enabled": True}],
+    )
+    assert rule.filter_entries() == [(text_filter, {"a": 1}, None)]
+    assert len(warnings) == 1 and "Broken" in warnings[0]
 
 
 def test_new_rule_takes_next_free_name_and_color():

@@ -17,6 +17,7 @@ from extensions.mapping.space_panel import MappingSpaceWidget, SpaceSnapshot, cu
 from wafer.core.db.db_utils import open_readonly
 from wafer.core.db.file_db import FileDB
 from wafer.core.db.path_values import PathValue
+from wafer.qt.widgets import database_box
 
 
 def test_status_text_states():
@@ -556,7 +557,7 @@ def test_the_database_can_be_chosen_and_starts_at_the_open_window(qtbot, monkeyp
     from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
     monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: SimpleNamespace(database_name="nai"))
-    monkeypatch.setattr(space_panel, "list_data_db_names", lambda: ["work", "nai"])
+    monkeypatch.setattr(database_box, "list_data_db_names", lambda: ["work", "nai"])
     refreshed = []
     monkeypatch.setattr(MappingSpaceWidget, "refresh", lambda self: refreshed.append(self.db_name))
     w = MappingSpaceWidget()
@@ -573,7 +574,7 @@ def test_the_database_can_be_chosen_and_starts_at_the_open_window(qtbot, monkeyp
 
 def test_save_and_retrain_uses_the_chosen_database(widget, monkeypatch):
     w, saved, resets = widget
-    monkeypatch.setattr(space_panel, "list_data_db_names", lambda: ["db1", "db2"])
+    monkeypatch.setattr(database_box, "list_data_db_names", lambda: ["db1", "db2"])
     w.db_box.reload()
     w.db_box.setCurrentText("db2")
     w.feature_bar.add_feature("path")
@@ -646,7 +647,7 @@ def blocked_widget(qtbot, monkeypatch, open_db="nai"):
     from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
     monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: SimpleNamespace(database_name=open_db))
-    monkeypatch.setattr(space_panel, "list_data_db_names", lambda: ["nai", "off"])
+    monkeypatch.setattr(database_box, "list_data_db_names", lambda: ["nai", "off"])
     monkeypatch.setattr(MappingSpaceWidget, "can_open", lambda self, db_name: db_name != "off")
     refreshed = []
     monkeypatch.setattr(MappingSpaceWidget, "refresh", lambda self: refreshed.append(self.db_name))

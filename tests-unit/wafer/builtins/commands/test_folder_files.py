@@ -14,7 +14,7 @@ def db(tmp_path):
     file_db.start()
     file_db.initialize_database()
     zip_path = "C:/lib/pack.zip"
-    plain = ["C:/lib/a.png", "C:/lib/sub/b.png", "C:/lib/sub/deep/c.png", "C:/other/d.png"]
+    plain = ["C:/lib/a.png", "C:/lib/sub/b.png", "C:/lib/sub/deep/c.png", "C:/other/d.png", "C:/root.png"]
     members = [build_virtual_path(zip_path, "x/1.png"), build_virtual_path(zip_path, "2.png")]
     sources = [(p, f"hash_{i}", 100, 1.0) for i, p in enumerate([*plain, zip_path])]
     images = [(p, p, p.rsplit("/", 1)[1], 1.0, None) for p in [*plain, zip_path]]
@@ -93,6 +93,8 @@ def test_without_a_query_sources_come_from_the_sources_table(db, monkeypatch):
     assert sorted(folder_sources(db, ["C:/lib"], False, [text_entry("")])) == ["C:/lib/a.png", "C:/lib/pack.zip"]
     assert sorted(folder_sources(db, ["C:/lib/sub", "C:/lib/sub/deep"], True)) == ["C:/lib/sub/b.png", "C:/lib/sub/deep/c.png"]
     assert folder_sources(db, ["C:/li"], True) == []
+    assert folder_sources(db, ["C:/"], False) == ["C:/root.png"]
+    assert sorted(folder_sources(db, ["C:/lib", "C:/lib/sub/deep"], False)) == ["C:/lib/a.png", "C:/lib/pack.zip", "C:/lib/sub/deep/c.png"]
 
 
 def test_a_missing_database_has_no_sources(tmp_path):

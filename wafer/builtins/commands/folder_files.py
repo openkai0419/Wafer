@@ -3,7 +3,7 @@ from collections.abc import Sequence
 
 from wafer.builtins.filters import DirectoryFilter
 from wafer.builtins.sorts import NoSort
-from wafer.core.common.paths import child_prefix, normalize_path, parent_folder
+from wafer.core.common.paths import child_prefix, normalize_path
 from wafer.core.db.db_utils import open_readonly
 from wafer.core.db.query import ALL_PATHS_SQL, FileSearchEngine, path_prefix_condition
 from wafer.plugin.query.composer import SearchComposer
@@ -58,5 +58,5 @@ def folder_sources(
         sources = stored_sources(db_path, folders)
     if recursive:
         return sources
-    direct = {normalize_path(folder) for folder in folders}
-    return [source for source in sources if parent_folder(source) in direct]
+    prefixes = {child_prefix(normalize_path(folder)) for folder in folders}
+    return [source for source in sources if source[: source.rfind("/") + 1] in prefixes]

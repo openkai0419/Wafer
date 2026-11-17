@@ -440,3 +440,13 @@ def test_refresh_stats_resizes_count_columns(qtbot, tmp_path):
 
     assert view.columnWidth(1) > narrow
     view.close()
+
+
+def test_folder_count_rule_uses_the_listing_before_children_are_walked(qtbot):
+    model = FolderStatsModel([], [])
+    disk = DiskTree(["D:/x"])
+    disk.add("D:/x", ["D:/x/sub"], 0)
+    model.disk = disk
+    model.rule_counts = [(rule("Leaf", "#111111", ("folders", "==", 0)), {}), (rule("Parent", "#222222", ("folders", ">=", 1)), {})]
+
+    assert model.badges("D:/x") == [("#222222", None)]

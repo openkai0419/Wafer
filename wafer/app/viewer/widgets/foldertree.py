@@ -1105,12 +1105,14 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             if on_complete:
                 on_complete()
 
-        self.load_paths_async(normalized, apply)
+        self.load_paths_async(normalized, apply, skip_loaded=True)
 
-    def load_paths_async(self, paths, on_loaded):
+    def load_paths_async(self, paths, on_loaded, *, skip_loaded=False):
         model = self.model_
         roots = [normalize_path(r) for r in model.roots]
-        segments = [seg for seg in _collect_segments_for_paths(paths, roots) if not self._children_loaded(seg)]
+        segments = _collect_segments_for_paths(paths, roots)
+        if skip_loaded:
+            segments = [seg for seg in segments if not self._children_loaded(seg)]
         excluded = set(model.excluded)
         ignore_pattern_re = model.ignore_pattern_re
         dispatcher = model._dispatcher

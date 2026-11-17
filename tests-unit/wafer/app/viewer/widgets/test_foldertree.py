@@ -1460,7 +1460,7 @@ def test_expand_paths_async_empty_completes_immediately(qtbot, tmp_path):
     assert done
 
 
-def test_load_paths_async_scans_only_unloaded_folders(qtbot, tmp_path, monkeypatch):
+def test_load_paths_async_skips_loaded_folders_only_when_asked(qtbot, tmp_path, monkeypatch):
     tree, root = make_deep_tree(qtbot, tmp_path)
     tree.model_.find_item_by_path(f"{root}/a")
     scanned = []
@@ -1468,7 +1468,37 @@ def test_load_paths_async_scans_only_unloaded_folders(qtbot, tmp_path, monkeypat
     monkeypatch.setattr(foldertree_module, "_scan_children", lambda path, *args: (scanned.append(path), original(path, *args))[1])
     done = []
 
+    tree.load_paths_async([f"{root}/a/b"], lambda: done.append(True), skip_loaded=True)
+    qtbot.waitUntil(lambda: len(done) == 1)
+    assert scanned == [f"{root}/a/b"]
+
+    scanned.clear()
     tree.load_paths_async([f"{root}/a/b"], lambda: done.append(True))
+    qtbot.waitUntil(lambda: len(done) == 2)
+    assert scanned == [root, f"{root}/a", f"{root}/a/b"]
+
+
+def test_set_state_async_fills_a_tree_reloaded_before_apply(qtbot, tmp_path):
+    tree, root = make_deep_tree(qtbot, tmp_path)
+    tree.model_.find_item_by_path(f"{root}/a")
+    done = []
+
+    tree.set_state_async(([root, f"{root}/a"], [f"{root}/a/b"]), on_complete=lambda: done.append(True))
+    tree.set_folders([root])
 
     qtbot.waitUntil(lambda: bool(done))
-    assert scanned == [f"{root}/a/b"]
+    assert is_expanded(tree, root) and is_expanded(tree, f"{root}/a")
+    assert tree.get_selected_paths() == [f"{root}/a/b"]
+
+
+def test_expand_and_select_paths_fills_a_tree_reloaded_before_apply(qtbot, tmp_path):
+    tree, root = make_deep_tree(qtbot, tmp_path)
+    tree.model_.find_item_by_path(f"{root}/a")
+    done = []
+
+    tree.expand_and_select_paths([f"{root}/a/b"], on_complete=lambda: done.append(True), emit_selected=False)
+    tree.reload_tree()
+
+    qtbot.waitUntil(lambda: bool(done))
+    assert is_expanded(tree, f"{root}/a")
+    assert tree.get_selected_paths() == [f"{root}/a/b"]

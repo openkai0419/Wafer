@@ -107,13 +107,16 @@ class DiskTree:
         if node is None:
             return None
         child_dirs, file_count = node
-        folders = sum(1 for child in child_dirs if child in self.nodes)
+        folders = len(child_dirs)
         if not self.finished:
             return FolderValues(file_count, -1, folders, -1)
         all_files, all_folders = self.totals.get(path, (file_count, folders))
         return FolderValues(file_count, all_files, folders, all_folders)
 
     def drop_subtree(self, path: str) -> None:
+        parent = self.nodes.get(posixpath.dirname(path))
+        if parent is not None and path in parent[0]:
+            self.nodes[posixpath.dirname(path)] = ([child for child in parent[0] if child != path], parent[1])
         stack = [path]
         while stack:
             current = stack.pop()

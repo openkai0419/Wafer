@@ -105,6 +105,28 @@ def test_drop_subtree_removes_folder_and_descendants(tmp_path):
     assert tree.values(root) == FolderValues(files=1, all_files=1, folders=1, all_folders=1)
 
 
+def test_direct_folder_count_is_exact_before_children_are_walked():
+    tree = DiskTree(["D:/x"])
+    tree.add("D:/x", ["D:/x/sub", "D:/x/other"], 3)
+    assert tree.values("D:/x") == FolderValues(files=3, all_files=-1, folders=2, all_folders=-1)
+    tree.add("D:/x/sub", [], 0)
+    tree.add("D:/x/other", [], 0)
+    tree.finish()
+    assert tree.values("D:/x") == FolderValues(files=3, all_files=3, folders=2, all_folders=2)
+
+
+def test_drop_subtree_updates_the_parent_folder_count():
+    tree = DiskTree(["D:/x"])
+    tree.add("D:/x", ["D:/x/sub", "D:/x/other"], 0)
+    tree.add("D:/x/sub", ["D:/x/sub/deep"], 0)
+    tree.drop_subtree("D:/x/sub")
+    assert tree.values("D:/x").folders == 1
+    tree.drop_subtree("D:/x/never-listed")
+    assert tree.values("D:/x").folders == 1
+    tree.drop_subtree("D:/x")
+    assert tree.values("D:/x") is None
+
+
 def test_walk_batches_and_stops_when_cancelled(tmp_path):
     root = tmp_path / "root"
     for i in range(4):

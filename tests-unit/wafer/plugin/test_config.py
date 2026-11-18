@@ -114,3 +114,48 @@ class TestPluginConfigGet:
         d = cfg.to_dict()
         d["x"] = 999
         assert cfg.get("x") == 1
+
+
+class TestPluginConfigSharedFile:
+    def test_save_keeps_keys_another_instance_wrote(self, ini_dir):
+        defaults = {"filters": {}, "sort_mode": 1}
+        viewer_a = PluginConfig("key_filter", defaults)
+        viewer_a.load()
+        PluginConfig("key_filter", defaults).save(filters={"exif": {"mode": "blacklist", "keys": ["a"]}})
+        viewer_a.save(sort_mode=0)
+        assert PluginConfig("key_filter", defaults).load() == {"filters": {"exif": {"mode": "blacklist", "keys": ["a"]}}, "sort_mode": 0}
+
+    def test_save_before_load_keeps_untouched_keys(self, ini_dir):
+        (ini_dir / "viewer_plugins.ini").write_text("[wd14]\na = 5\nb = 7\n", encoding="utf-8")
+        cfg = PluginConfig("wd14", {"a": 1, "b": 2})
+        cfg.save(a=9)
+        assert cfg.get("b") == 7
+        assert PluginConfig("wd14", {"a": 1, "b": 2}).load() == {"a": 9, "b": 7}
+
+    def test_failed_write_leaves_the_file_intact(self, ini_dir, monkeypatch):
+        ini_path = ini_dir / "viewer_plugins.ini"
+        ini_path.write_text("[s]\nx = 1\n", encoding="utf-8")
+
+        def fail(path, parser):
+            raise OSError("disk full")
+
+        monkeypatch.setattr("wafer.plugin.config.write_ini", fail)
+        with pytest.raises(OSError):
+            PluginConfig("s", {"x": 0}).save(x=2)
+        assert ini_path.read_text(encoding="utf-8") == "[s]\nx = 1\n"
+
+    def test_unreadable_file_loads_defaults(self, ini_dir):
+        (ini_dir / "viewer_plugins.ini").write_text("x = 1\n", encoding="utf-8")
+        assert PluginConfig("s", {"x": 0}).load() == {"x": 0}
+
+    def test_update_holds_the_process_lock(self, ini_dir):
+        from wafer.core.platform.process_lock import file_lock
+        from wafer.plugin.config import update_ini
+
+        lock_path = str(ini_dir / "viewer_plugins.ini.lock")
+        with update_ini():
+            with pytest.raises(TimeoutError):
+                with file_lock(lock_path, timeout=0.05):
+                    pass
+        with file_lock(lock_path, timeout=0.05):
+            pass

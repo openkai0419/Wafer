@@ -493,3 +493,15 @@ def test_scan_directory_does_not_follow_junctions(tmp_path):
     results = dict(scanner._scan_directory(str(root)))
 
     assert list(results) == [normalize_path(str(root / "f.png"))]
+
+
+def test_backfill_selects_only_matching_extensions_in_sql(tmp_path):
+    sources = ["/a.jpg", "/b.txt", "/c.JPG", "/d_jpg", "/e.jpgx"]
+    scanner, _ = _scanner_with_sources(tmp_path, sources, collectors=[("image", [".jpg"])])
+
+    scanner._do_backfill()
+
+    tasks = [c[0][0] for c in scanner._scheduler.submit.call_args_list if c[0][0].name == "insert_pending"]
+    tasks[0].run()
+    scanner._writer.insert_pending.assert_called_once_with(["/a.jpg", "/c.JPG"], ["image"])
+    scanner.stop()

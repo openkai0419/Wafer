@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from collections.abc import Callable, Iterable, Sequence
 
-from ...core.db.db_utils import build_basic_entries, open_readonly
+from ...core.db.db_utils import build_basic_entries, escape_like, open_readonly
 from ...core.db.file_db import SOURCE_TRIGGER_KEYS
 from ...core.logs import AppLogger
 from ...core.common.paths import child_prefix, normalize_path
@@ -21,6 +21,7 @@ from .runtime.scheduler import TaskScheduler
 from .runtime.task import CancelToken, Task, TaskPriority
 
 _CHUNK = 400
+_LIKE_SUFFIX = "s.source LIKE ? ESCAPE '\\'"
 
 
 class DirectoryScanner:
@@ -326,18 +327,16 @@ class DirectoryScanner:
         if self._collectors:
             cur = self._read_conn.cursor()
             for name, extensions in self._collectors:
+                extension_filter = f" AND ({' OR '.join([_LIKE_SUFFIX] * len(extensions))})" if extensions else ""
                 cur.execute(
-                    """SELECT s.source FROM sources s
+                    f"""SELECT s.source FROM sources s
                     WHERE NOT EXISTS (
                         SELECT 1 FROM collection_status cs
                         WHERE cs.source = s.source AND cs.collector = ?
-                    )""",
-                    (name,),
+                    ){extension_filter}""",
+                    (name, *(f"%{escape_like(ext)}" for ext in extensions)),
                 )
                 sources = [row[0] for row in cur.fetchall()]
-                if extensions:
-                    ext_set = set(extensions)
-                    sources = [p for p in sources if os.path.splitext(p)[1].lower() in ext_set]
                 if not sources:
                     continue
                 for i in range(0, len(sources), _CHUNK):

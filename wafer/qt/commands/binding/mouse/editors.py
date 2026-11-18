@@ -130,7 +130,7 @@ class MouseBindingEditor(BindingEditorBase):
     def _reload_sections(self, skip_save: bool = False):
         if not skip_save:
             self._save_current_sections_to_draft()
-        self._clear_sections()
+        clear_layout(self.sections_layout, self, "MouseBindingEditor clear sections")
         self.sections.clear()
         b, c = self._current_action()
         data = self._merged_data()
@@ -154,15 +154,6 @@ class MouseBindingEditor(BindingEditorBase):
             d = s.collect_entries()
             scopes = d.get(key, {})
             self._draft.update(key, scopes)
-
-    def _clear_sections(self):
-        clear_layout(self.sections_layout, self, "MouseBindingEditor clear sections")
-        try:
-            self.panel.update()
-            self.scroll.viewport().update()
-            QtWidgets.QApplication.processEvents()
-        except Exception as e:
-            AppLogger.warning("MouseBindingEditor clear sections update failed", exc=e)
 
     def _apply(self):
         self._save_current_sections_to_draft()

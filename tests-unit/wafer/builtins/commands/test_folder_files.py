@@ -1,7 +1,10 @@
+import os
+import subprocess
+
 import pytest
 
 from wafer.builtins.commands import folder_files as folder_files_module
-from wafer.builtins.commands.folder_files import folder_sources, narrows, query_sources
+from wafer.builtins.commands.folder_files import disk_files, narrows, query_folder_sources, query_sources
 from wafer.builtins.filters import DirectoryFilter, TextFilter
 from wafer.core.common.virtual_paths import build_virtual_path
 from wafer.core.db.file_db import FileDB
@@ -27,33 +30,28 @@ def db(tmp_path):
     return db_path
 
 
-def test_direct_sources_are_only_the_folder_itself(db):
-    assert sorted(folder_sources(db, ["C:/lib"], recursive=False)) == ["C:/lib/a.png", "C:/lib/pack.zip"]
+def cat_entries():
+    return [(TextFilter, {"keys": ["Comment"], "keywords": "cat"}, None)]
 
 
-def test_recursive_sources_include_every_subfolder(db):
-    assert sorted(folder_sources(db, ["C:/lib"], recursive=True)) == [
-        "C:/lib/a.png",
-        "C:/lib/pack.zip",
-        "C:/lib/sub/b.png",
-        "C:/lib/sub/deep/c.png",
-    ]
+def test_query_direct_sources_are_only_the_folder_itself(db):
+    assert query_folder_sources(db, ["C:/lib"], False, cat_entries()) == ["C:/lib/a.png"]
 
 
-def test_query_narrows_folder_sources(db):
-    entries = [(TextFilter, {"keys": ["Comment"], "keywords": "cat"}, None)]
-    assert sorted(folder_sources(db, ["C:/lib"], True, entries)) == ["C:/lib/a.png", "C:/lib/sub/deep/c.png"]
+def test_query_recursive_sources_include_every_subfolder(db):
+    assert sorted(query_folder_sources(db, ["C:/lib"], True, cat_entries())) == ["C:/lib/a.png", "C:/lib/sub/deep/c.png"]
+
+
+def test_query_sources_of_several_folders_are_combined_without_duplicates(db):
+    assert query_folder_sources(db, ["C:/lib/sub", "C:/lib/sub/deep"], True, cat_entries()) == ["C:/lib/sub/deep/c.png"]
+
+
+def test_query_sources_of_nested_direct_folders_keep_each_folder(db):
+    assert sorted(query_folder_sources(db, ["C:/lib", "C:/lib/sub/deep"], False, cat_entries())) == ["C:/lib/a.png", "C:/lib/sub/deep/c.png"]
 
 
 def test_virtual_paths_count_as_their_source(db):
     assert query_sources(db, []).count("C:/lib/pack.zip") == 1
-
-
-def test_several_folders_are_combined_without_duplicates(db):
-    assert sorted(folder_sources(db, ["C:/lib/sub", "C:/lib/sub/deep"], True)) == [
-        "C:/lib/sub/b.png",
-        "C:/lib/sub/deep/c.png",
-    ]
 
 
 def text_entry(keywords, keys=("path",), op=None):
@@ -90,13 +88,86 @@ def test_without_a_query_sources_come_from_the_sources_table(db, monkeypatch):
     expected_all = sorted(folder_files_module.composed_sources(db, []))
     monkeypatch.setattr(folder_files_module, "composed_sources", lambda *args: pytest.fail("composer used without a query"))
     assert sorted(query_sources(db, [text_entry("")])) == expected_all
-    assert sorted(folder_sources(db, ["C:/lib"], False, [text_entry("")])) == ["C:/lib/a.png", "C:/lib/pack.zip"]
-    assert sorted(folder_sources(db, ["C:/lib/sub", "C:/lib/sub/deep"], True)) == ["C:/lib/sub/b.png", "C:/lib/sub/deep/c.png"]
-    assert folder_sources(db, ["C:/li"], True) == []
-    assert folder_sources(db, ["C:/"], False) == ["C:/root.png"]
-    assert sorted(folder_sources(db, ["C:/lib", "C:/lib/sub/deep"], False)) == ["C:/lib/a.png", "C:/lib/pack.zip", "C:/lib/sub/deep/c.png"]
 
 
 def test_a_missing_database_has_no_sources(tmp_path):
-    assert folder_sources(str(tmp_path / "missing.db"), ["C:/lib"], True) == []
     assert query_sources(str(tmp_path / "missing.db"), []) == []
+
+
+def write_files(root, *names):
+    for name in names:
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x")
+    return root
+
+
+def norm(*paths):
+    return sorted(os.path.abspath(str(path)).replace("\\", "/") for path in paths)
+
+
+def test_disk_files_of_a_folder_are_its_direct_files_only(tmp_path):
+    root = write_files(tmp_path / "root", "a.png", "notes.txt", "sub/b.png")
+    assert sorted(disk_files([str(root)], recursive=False)) == norm(root / "a.png", root / "notes.txt")
+
+
+def test_disk_files_below_include_every_nested_file_and_no_folders(tmp_path):
+    root = write_files(tmp_path / "root", "a.png", "sub/b.png", "sub/deep/c.txt", "excluded/d.png", "#ignored/e.png")
+    (root / "empty").mkdir()
+    assert sorted(disk_files([str(root)], recursive=True)) == norm(
+        root / "a.png", root / "sub/b.png", root / "sub/deep/c.txt", root / "excluded/d.png", root / "#ignored/e.png"
+    )
+
+
+def test_disk_files_of_overlapping_folders_have_no_duplicates(tmp_path):
+    root = write_files(tmp_path / "root", "a.png", "sub/b.png")
+    assert sorted(disk_files([str(root), str(root / "sub")], recursive=True)) == norm(root / "a.png", root / "sub/b.png")
+    assert sorted(disk_files([str(root), str(root / "sub")], recursive=False)) == norm(root / "a.png", root / "sub/b.png")
+
+
+def make_junction(link, target):
+    subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], check=True, capture_output=True)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="junctions are a Windows feature")
+def test_disk_files_do_not_follow_junctions(tmp_path):
+    outside = write_files(tmp_path / "outside", "secret.png")
+    root = write_files(tmp_path / "root", "a.png")
+    make_junction(root / "junction", outside)
+    assert sorted(disk_files([str(root)], recursive=True)) == norm(root / "a.png")
+
+
+def test_disk_files_do_not_follow_folder_symlinks_but_keep_file_symlinks(tmp_path):
+    outside = write_files(tmp_path / "outside", "secret.png")
+    root = write_files(tmp_path / "root", "a.png")
+    try:
+        os.symlink(outside, root / "folder_link", target_is_directory=True)
+        os.symlink(outside / "secret.png", root / "file_link.png")
+    except OSError as exc:
+        pytest.skip(f"symlinks need privileges here: {exc}")
+    assert sorted(disk_files([str(root)], recursive=True)) == norm(root / "a.png", root / "file_link.png")
+
+
+def test_disk_files_skip_an_unreadable_folder_and_log_it(tmp_path, monkeypatch):
+    root = write_files(tmp_path / "root", "a.png", "locked/b.png", "open/c.png")
+    locked = os.path.abspath(str(root / "locked")).replace("\\", "/")
+    real_scandir = os.scandir
+    warnings = []
+
+    def scandir(path):
+        if os.path.abspath(path).replace("\\", "/") == locked:
+            raise PermissionError(13, "Access is denied", path)
+        return real_scandir(path)
+
+    monkeypatch.setattr(folder_files_module.os, "scandir", scandir)
+    monkeypatch.setattr(folder_files_module.AppLogger, "warning", warnings.append)
+
+    assert sorted(disk_files([str(root)], recursive=True)) == norm(root / "a.png", root / "open/c.png")
+    assert len(warnings) == 1 and locked in warnings[0]
+
+
+def test_disk_files_of_a_missing_folder_are_empty_and_logged(tmp_path, monkeypatch):
+    warnings = []
+    monkeypatch.setattr(folder_files_module.AppLogger, "warning", warnings.append)
+    assert disk_files([str(tmp_path / "gone")], recursive=True) == []
+    assert len(warnings) == 1

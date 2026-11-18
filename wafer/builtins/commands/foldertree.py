@@ -11,7 +11,7 @@ from ...qt.common.dispatcher import Dispatcher
 from ...qt.common.notifier import Notifier
 from ...qt.common.thread import utility_pool
 from ...qt.widgets.dialogs import ConfirmDialog
-from .folder_files import folder_sources
+from .folder_files import disk_files
 
 COLLECTING_NOTICE_MS = 400
 
@@ -116,18 +116,16 @@ def _files_dispatcher() -> Dispatcher:
     return _dispatcher
 
 
-def run_on_folder_files(ctx, command_id: str, recursive: bool) -> None:
+def run_on_folder_files(ctx, command_id: str, collect: Callable[[list[str]], list[str]]) -> None:
     folders = _ctx_normalized_paths(ctx)
-    db_path = ctx.get("database_path") or getattr(ctx.get_instance("MainWindow"), "database_path", None)
-    if not folders or not db_path:
+    if not folders:
         return
-    filter_entries = list(ctx.get("filter_entries") or ())
     notify = ctx.get("notify") or Notifier.info
     dispatcher = _files_dispatcher()
     collecting = [True]
 
     def work():
-        sources = folder_sources(db_path, folders, recursive, filter_entries)
+        sources = collect(folders)
         dispatcher.invoke(lambda: finish(sources))
 
     def finish(sources: list[str]) -> None:
@@ -142,6 +140,10 @@ def run_on_folder_files(ctx, command_id: str, recursive: bool) -> None:
     QtCore.QTimer.singleShot(COLLECTING_NOTICE_MS, notice)
 
 
+def run_on_disk_files(ctx, command_id: str, recursive: bool) -> None:
+    run_on_folder_files(ctx, command_id, lambda folders: disk_files(folders, recursive))
+
+
 def folder_items(path: str) -> list:
     return folder_file_items() if os.path.isdir(path) else ["file.copy_path", "-"]
 
@@ -154,19 +156,19 @@ def _apply_to_sources(command_id: str, sources: list[str], notify: Callable[[str
 
 
 def cut_direct_files(ctx):
-    run_on_folder_files(ctx, "file.cut", False)
+    run_on_disk_files(ctx, "file.cut", False)
 
 
 def copy_direct_files(ctx):
-    run_on_folder_files(ctx, "file.copy", False)
+    run_on_disk_files(ctx, "file.copy", False)
 
 
 def cut_all_files(ctx):
-    run_on_folder_files(ctx, "file.cut", True)
+    run_on_disk_files(ctx, "file.cut", True)
 
 
 def copy_all_files(ctx):
-    run_on_folder_files(ctx, "file.copy", True)
+    run_on_disk_files(ctx, "file.copy", True)
 
 
 def show_in_tree(ctx):
@@ -194,7 +196,7 @@ def folder_file_items() -> list:
         "file.paste",
         "file.new_folder",
         "-",
-        "Files in Folder/:Files in Folder",
+        "Files in Folder/:All files on disk",
         "Files in Folder/ft.files.cut_direct",
         "Files in Folder/ft.files.copy_direct",
         "Files in Folder/ft.files.cut_all",

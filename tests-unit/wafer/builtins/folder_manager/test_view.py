@@ -171,11 +171,18 @@ def capture_menu(monkeypatch):
     return seen
 
 
-def test_context_menu_lists_rule_actions_only_for_rules_with_query(qtbot, tmp_path, monkeypatch, text_filter):
+RULE_ROWS = ["Cut direct files", "Copy direct files", "Cut all files below", "Copy all files below"]
+DISK_ROWS = [f"Files in Folder/ft.files.{key}" for key in ("cut_direct", "copy_direct", "cut_all", "copy_all")]
+
+
+def test_context_menu_separates_disk_files_from_each_rule_with_a_query(qtbot, tmp_path, monkeypatch, text_filter):
     seen = capture_menu(monkeypatch)
-    calls = []
-    monkeypatch.setattr(view_module, "run_on_folder_files", lambda ctx, command_id, recursive: calls.append((ctx.get("filter_entries"), ctx.get("paths"), command_id, recursive)))
+    runs = []
+    monkeypatch.setattr(view_module, "run_on_folder_files", lambda ctx, command_id, collect: runs.append((ctx.get("paths"), command_id, collect)))
+    queried_calls = []
+    monkeypatch.setattr(view_module, "query_folder_sources", lambda *args: queried_calls.append(args) or ["hit.png"])
     view, root = make_view(qtbot, tmp_path)
+    view.database_name = "main"
     view.show_in_tree_available = lambda: True
     view.resize(480, 240)
     view.show()
@@ -194,29 +201,28 @@ def test_context_menu_lists_rule_actions_only_for_rules_with_query(qtbot, tmp_pa
     view.show_context_menu(view.visualRect(index).center())
 
     items = seen["items"]
-    assert items[:6] == ["ft.show_in_tree", *MENU_HEAD, "-"]
-    assert "Files in Folder/ft.files.cut_all" in items
+    assert items[: len(MENU_HEAD) + 2] == ["ft.show_in_tree", *MENU_HEAD, "-"]
+    disk = items.index("Files in Folder/:All files on disk")
+    assert items[disk + 1 : disk + 5] == DISK_ROWS
     assert not any("ignore" in str(i) or "remove_from_view" in str(i) for i in items)
-    actions = [i for i in items if not isinstance(i, str)]
-    assert [a.display for a in actions] == ["Cats · Cut direct files", "Cats · Copy direct files", "Cats · Cut all files below", "Cats · Copy all files below"]
-    assert all(a.path.startswith("Files in Folder/inline.") and "Cats" not in a.path and not a.translate for a in actions)
-    first = items.index(actions[0])
-    assert items[first - 1] == "Files in Folder/-"
-    assert items[first - 2] == "Files in Folder/ft.files.copy_all"
+    header, *rows = [i for i in items if not isinstance(i, str)]
+    assert items[items.index(header) - 1] == "Files in Folder/-"
+    assert items.index(header) > disk + 4
+    assert header.path.startswith("Files in Folder/:inline.") and "Cats" not in header.path
+    assert header.display == "Cats (matches)" and not header.translate
+    assert [a.display for a in rows] == RULE_ROWS
+    assert all(a.path.startswith("Files in Folder/inline.") and "Cats" not in a.path and a.translate for a in rows)
     assert seen["executed"]
 
     from wafer.qt.commands.bridge import Context
 
-    for action in actions:
+    for action in rows:
         ctx = Context.create_menu_context(view, view.binding_scope(), extras={"paths": [root]})
         action.func(ctx)
+    assert [(paths, command_id) for paths, command_id, _collect in runs] == [([root], "file.cut"), ([root], "file.copy"), ([root], "file.cut"), ([root], "file.copy")]
+    assert [collect([root]) for _paths, _command_id, collect in runs] == [["hit.png"]] * 4
     entries = queried.filter_entries()
-    assert calls == [
-        (entries, [root], "file.cut", False),
-        (entries, [root], "file.copy", False),
-        (entries, [root], "file.cut", True),
-        (entries, [root], "file.copy", True),
-    ]
+    assert queried_calls == [(data_db_path("main"), [root], recursive, entries) for recursive in (False, False, True, True)]
     view.close()
 
 
@@ -234,6 +240,9 @@ def test_rule_names_never_reach_translation(qtbot, tmp_path, monkeypatch, text_f
     menu = Menu.session(view).menu(["ft.show_in_tree", *view.rule_file_actions()]).build()
 
     assert menu is not None
+    submenu = next(action.menu() for action in menu.actions() if action.menu() is not None)
+    labels = [label.text() for action in submenu.actions() if isinstance(action, QtWidgets.QWidgetAction) for label in action.defaultWidget().findChildren(QtWidgets.QLabel)]
+    assert "Secret Rule Name (matches)" in labels
     assert translated
     assert not any("Secret Rule Name" in text for text in translated)
 
@@ -251,9 +260,9 @@ def test_rule_actions_keep_empty_and_duplicate_names_distinct(qtbot, tmp_path, t
 
     actions = [a for a in view.rule_file_actions() if not isinstance(a, str)]
 
-    labels = [a.display.split(" · ")[0] for a in actions[::4]]
-    assert labels == ["Rule 1", "Same", "Same (3)"]
-    assert len({a.path for a in actions}) == 12
+    labels = [a.display for a in actions[::5]]
+    assert labels == ["Rule 1 (matches)", "Same (matches)", "Same (3) (matches)"]
+    assert len({a.path for a in actions}) == 15
 
 
 def test_context_menu_for_a_vanished_folder_offers_only_safe_items(qtbot, tmp_path, monkeypatch, text_filter):
@@ -312,7 +321,7 @@ def test_context_carries_the_panel_database(qtbot, tmp_path):
     context = view.extend_context(ctx, None, source="menu")
 
     assert context["database_name"] == "main"
-    assert context["database_path"] == data_db_path("main")
+    assert "database_path" not in context
     assert context["path"] == root
     view.close()
 

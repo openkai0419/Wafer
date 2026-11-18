@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.app.viewer.widgets.foldertree import EXPAND_RECURSIVE_BATCH_SIZE, USER_ROLE_PATH, LazyFolderTreeModel, LazyFolderTreeView
+from wafer.builtins.commands.folder_files import query_folder_sources
 from wafer.builtins.commands.foldertree import folder_items, run_on_folder_files
 from wafer.core.common.paths import child_prefix, data_db_path, normalize_path, parent_folder
 from wafer.core.lang.manager import t
@@ -18,10 +19,10 @@ from .stats import DiskTree, FolderValues
 DISK_TOOLTIP = "Count on disk"
 BADGE_TEXT_COLOR = QtGui.QColor("#ffffff")
 RULE_FILE_ACTIONS = (
-    ("cut_direct", "{rule} · Cut direct files", "file.cut", False),
-    ("copy_direct", "{rule} · Copy direct files", "file.copy", False),
-    ("cut_all", "{rule} · Cut all files below", "file.cut", True),
-    ("copy_all", "{rule} · Copy all files below", "file.copy", True),
+    ("cut_direct", "Cut direct files", "file.cut", False),
+    ("copy_direct", "Copy direct files", "file.copy", False),
+    ("cut_all", "Cut all files below", "file.cut", True),
+    ("copy_all", "Copy all files below", "file.copy", True),
 )
 PANEL_COMMANDS = ("folder_manager.expand_matches", "folder_manager.select_matches", "folder_manager.matches_only", "folder_manager.collapse_all")
 WINDOW_TREE_COMMANDS = ("file.select_path",)
@@ -287,8 +288,7 @@ class FolderManagerTreeView(LazyFolderTreeView):
         self.rules_source = rules
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
-        database_path = data_db_path(self.database_name) if self.database_name else None
-        return {**super().extend_context(ctx, cmd, event, key, source), "database_name": self.database_name, "database_path": database_path, "notify": self.notify}
+        return {**super().extend_context(ctx, cmd, event, key, source), "database_name": self.database_name, "notify": self.notify}
 
     def show_context_menu(self, position):
         gp = self.viewport().mapToGlobal(position)
@@ -322,20 +322,22 @@ class FolderManagerTreeView(LazyFolderTreeView):
                 label = f"{label} ({number + 1})"
             labels.add(label)
             actions.append("Files in Folder/-")
-            for key, template, command_id, recursive in RULE_FILE_ACTIONS:
+            actions.append(ActionKit.Action(path=f"Files in Folder/:inline.folder_manager.rule{number}", display=t("{rule} (matches)", rule=label), translate=False))
+            for key, display, command_id, recursive in RULE_FILE_ACTIONS:
                 actions.append(
                     ActionKit.Action(
                         path=f"Files in Folder/inline.folder_manager.rule{number}.{key}",
-                        display=t(template, rule=label),
-                        translate=False,
+                        display=display,
                         func=lambda ctx, entries=entries, command_id=command_id, recursive=recursive: self.run_rule_file_action(ctx, entries, command_id, recursive),
                     )
                 )
         return actions
 
     def run_rule_file_action(self, ctx, entries: list[tuple], command_id: str, recursive: bool) -> None:
-        ctx.extras["filter_entries"] = entries
-        run_on_folder_files(ctx, command_id, recursive)
+        if not self.database_name:
+            return
+        db_path = data_db_path(self.database_name)
+        run_on_folder_files(ctx, command_id, lambda folders: query_folder_sources(db_path, folders, recursive, entries))
 
     def expand_folders(self, folders: Sequence[str], on_complete: Callable[[], None] | None = None, channel: str = "expand") -> None:
         batch_size = EXPAND_RECURSIVE_BATCH_SIZE

@@ -197,6 +197,12 @@ def test_drill_down_needs_three(mapping):
     assert mapping.message_text() == "Select at least 3 files."
 
 
+def test_setting_files_again_stops_the_layout_of_the_old_files(mapping):
+    token = mapping.levels[-1].layout_token
+    mapping.set_files(list(PATHS), "db")
+    assert token.is_cancelled()
+
+
 def test_remove_files(mapping, qtbot):
     mapping.remove_files(["c:/0.png"])
     qtbot.waitUntil(lambda: mapping.current_result() is not None and len(mapping.current_result().paths) == 29, timeout=5000)

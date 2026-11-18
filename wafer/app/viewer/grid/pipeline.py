@@ -17,7 +17,6 @@ from .cachemanager import fullsize_key
 
 class GridPipeline(QtCore.QObject):
     layout_ready = QtCore.Signal(object)
-    _image_ready = QtCore.Signal(int, str, object)
 
     def __init__(
         self,
@@ -40,7 +39,6 @@ class GridPipeline(QtCore.QObject):
         self._appear_fn = appear_fn
         self._active: dict[int, CancelToken] = {}
         self._layout_cancel = CancelSlot()
-        self._image_ready.connect(self._on_image_ready)
 
     def request_layout(
         self,
@@ -77,9 +75,13 @@ class GridPipeline(QtCore.QObject):
                 return
             layout = calc._result
             if layout is not None:
-                self._utility_dispatcher.invoke(lambda l=layout: self.layout_ready.emit(l))
+                self._utility_dispatcher.invoke(lambda l=layout: self._deliver_layout(l, cancel))
 
         self._utility_dispatcher.post(task, priority=7, cancel=cancel)
+
+    def _deliver_layout(self, layout, cancel):
+        if not cancel.is_cancelled():
+            self.layout_ready.emit(layout)
 
     def schedule_render(self, index: int, path: str, size: QtCore.QSize, plugin=None):
         self.cancel_index(index)
@@ -156,7 +158,7 @@ class GridPipeline(QtCore.QObject):
         if cached is None:
             cached = self._cache.get_if_sufficient(path, size)
         if cached is not None:
-            self._render_dispatcher.invoke(lambda: self._image_ready.emit(index, path, cached))
+            self._render_dispatcher.invoke(lambda: self._on_image_ready(index, path, cached, cancel))
             return
         image = load_fn(plan.resolved_path, size)
         if cancel.is_cancelled():
@@ -164,7 +166,7 @@ class GridPipeline(QtCore.QObject):
         if image is None or (isinstance(image, QtGui.QImage) and image.isNull()):
             image = _get_error_image(size)
         self._cache[path] = image
-        self._render_dispatcher.invoke(lambda i=index, p=path, img=image: self._image_ready.emit(i, p, img))
+        self._render_dispatcher.invoke(lambda: self._on_image_ready(index, path, image, cancel))
 
     def _dispatch_thumbnail(self, index, plan: RenderPlan, size, plugin, cancel):
         path = plan.path
@@ -176,26 +178,25 @@ class GridPipeline(QtCore.QObject):
             if cached is None:
                 cached = self._cache.get_if_sufficient(path, size)
             if cached is not None:
-                self._thumb_dispatcher.invoke(lambda: self._deliver_thumbnail(index, plugin, cached))
+                self._thumb_dispatcher.invoke(lambda: self._deliver_thumbnail(index, plugin, cached, cancel))
                 return
             image = grid_resolver.load(plan.resolved_path, size)
             if image is None or cancel.is_cancelled():
                 return
             self._cache[path] = image
-            self._thumb_dispatcher.invoke(lambda: self._deliver_thumbnail(index, plugin, image))
+            self._thumb_dispatcher.invoke(lambda: self._deliver_thumbnail(index, plugin, image, cancel))
 
         self._thumb_dispatcher.post(task, priority=5, cancel=cancel)
 
-    def _deliver_thumbnail(self, index, plugin, image):
-        if index not in self._active:
+    def _deliver_thumbnail(self, index, plugin, image, cancel):
+        if self._active.get(index) is not cancel:
             return
         widget = self._widget_lookup(index)
         if widget is not None and isinstance(widget, plugin.WIDGET_CLASS):
             plugin.on_thumb_loaded(widget, image)
 
-    @QtCore.Slot(int, str, object)
-    def _on_image_ready(self, index, path, image):
-        if index not in self._active:
+    def _on_image_ready(self, index, path, image, cancel):
+        if self._active.get(index) is not cancel:
             return
         widget = self._widget_lookup(index)
         if widget is not None:

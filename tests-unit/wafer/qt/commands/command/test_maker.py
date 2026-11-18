@@ -257,6 +257,13 @@ def test_hide_folder_also_drops_its_sections_and_separators():
     assert tokens == ["__MKeep__/__mkeep_a__"]
 
 
+def test_hide_a_nested_folder_drops_only_that_folder():
+    _group("__MOuter__/Inner", 10, [":Inner", CommandMeta(path="__mouter_inner__", display="I", func=_noop)]).register()
+    _group("__MOuter__", 10, [CommandMeta(path="__mouter_keep__", display="K", func=_noop)]).register()
+    tokens = MenuMaker().menu(["__MOuter__"]).hide(["__MOuter__/Inner"]).resolve_tokens()
+    assert [token for token in tokens if not token.endswith("/-")] == ["__MOuter__/__mouter_keep__"]
+
+
 def test_all_roots_puts_the_fixed_roots_first_in_their_order():
     from wafer.qt.commands.command.menu import MenuPath
 

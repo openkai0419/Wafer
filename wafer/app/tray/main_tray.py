@@ -57,7 +57,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         spec = session.all_roots()
         if spec is None:
             return QtWidgets.QMenu()
-        return spec.hide([MenuPath.FILE, MenuPath.SELECTION]).build()
+        return spec.hide([MenuPath.FILE, MenuPath.SELECTION, MenuPath.FOLDER_TREE]).build()
 
     def _ctx(self):
         return Context.create_context(None, "Tray", source="tray", extras={"tray": self})

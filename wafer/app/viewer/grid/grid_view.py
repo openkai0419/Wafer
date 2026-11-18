@@ -479,7 +479,6 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self._notifier.clear()
         self._pipeline.cancel_all()
         self.visible_indices.clear()
-        self._sync_overlay_visible_paths()
         self.rects = LayoutData.empty()
         self._scene.setSceneRect(0, 0, 0, 0)
 
@@ -809,7 +808,6 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 if i < len(self.rects):
                     self._setup_cell(i)
         self.visible_indices = new_visible
-        self._sync_overlay_visible_paths()
         self._sync_additional_widgets()
         if self.rects:
             margin = self._half_pos
@@ -821,13 +819,6 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 self._scene.setSceneRect(new_rect)
         self._overlay.raise_()
         self.viewport().update()
-
-    def _sync_overlay_visible_paths(self):
-        host = self._overlay_host or getattr(self.root, "grid_overlay_host", None)
-        if host is None:
-            return
-        paths = tuple(self.items.paths[i] for i in sorted(self.visible_indices) if 0 <= i < len(self.items.paths) and self.items.paths[i])
-        host.set_visible_paths(paths)
 
     def _paint_grid_overlays(self, painter, map_rect):
         host = self._overlay_host or getattr(self.root, "grid_overlay_host", None)

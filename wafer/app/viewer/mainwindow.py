@@ -200,7 +200,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._db_reload_cancel = None
         self.setting_db = sdb
         self.folder_view.set_folders(roots, excluded, ignore_pattern_re)
-        self.grid_overlay_host.reload()
         self._run_db_reload_callbacks()
         if refresh:
             self.refresh_search()

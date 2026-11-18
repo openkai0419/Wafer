@@ -17,20 +17,9 @@ def _make_host(monkeypatch):
     return host, helper
 
 
-def test_set_visible_paths_does_not_refresh_overlay_helpers(monkeypatch):
-    host, helper = _make_host(monkeypatch)
-
-    host.set_visible_paths(["a.jpg", "b.jpg", "a.jpg"])
-    host.set_visible_paths(["a.jpg", "b.jpg"])
-
-    assert host._visible_paths == ("a.jpg", "b.jpg")
-    assert helper.calls == []
-
-
 def test_reload_refreshes_overlay_helpers_without_visible_path_filter(monkeypatch):
     host, helper = _make_host(monkeypatch)
 
-    host.set_visible_paths(["visible.jpg"])
     host.reload()
 
     assert helper.calls == [(None, True)]

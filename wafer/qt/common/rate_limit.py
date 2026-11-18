@@ -65,39 +65,53 @@ def qt_debounce(delay_ms):
     return decorator
 
 
+class ThrottleState:
+    __slots__ = ("last_call", "pending", "timer")
+
+    def __init__(self, timer: QTimer, last_call: float):
+        self.timer = timer
+        self.last_call = last_call
+        self.pending: tuple | None = None
+
+
 class QtThrottleManager(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._states = {}
+        self._states: dict[object, ThrottleState] = {}
 
     def throttle(self, key, throttle_ms, idle_ms, callback, *args, **kwargs):
-        now = time.time() * 1000
+        now = time.monotonic() * 1000
         state = self._states.get(key)
-        if state:
-            last_call, idle_timer, pending = state
-            idle_timer.stop()
-            pending[:] = [args, kwargs]
-            idle_timer.start(idle_ms)
-            if now - last_call >= throttle_ms:
-                self._states[key] = (now, idle_timer, pending)
-                callback(*args, **kwargs)
-        else:
-            idle_timer = QTimer(self)
-            idle_timer.setSingleShot(True)
-            pending = [args, kwargs]
-
-            @Slot()
-            def on_idle():
-                a, kw = pending
-                self._states.pop(key, None)
-                if a and isinstance(a[0], QObject) and not isValid(a[0]):
-                    return
-                callback(*a, **kw)
-
-            idle_timer.timeout.connect(on_idle)
-            idle_timer.start(idle_ms)
-            self._states[key] = (now, idle_timer, pending)
+        if state is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(lambda: self._on_idle(key, callback))
+            state = self._states[key] = ThrottleState(timer, now - throttle_ms)
+        state.timer.start(idle_ms)
+        if now - state.last_call >= throttle_ms:
+            state.last_call = now
+            state.pending = None
             callback(*args, **kwargs)
+        else:
+            state.pending = (args, kwargs)
+
+    def _on_idle(self, key, callback):
+        state = self._states.pop(key, None)
+        if state is None:
+            return
+        state.timer.deleteLater()
+        if state.pending is None:
+            return
+        args, kwargs = state.pending
+        if args and isinstance(args[0], QObject) and not isValid(args[0]):
+            return
+        callback(*args, **kwargs)
+
+    def cancel(self, key):
+        state = self._states.pop(key, None)
+        if state is not None:
+            state.timer.stop()
+            state.timer.deleteLater()
 
 
 _qt_throttle_manager = QtThrottleManager()

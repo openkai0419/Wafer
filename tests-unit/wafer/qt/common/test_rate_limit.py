@@ -94,3 +94,47 @@ class TestQtThrottleManager:
 
         _flush_events(150)
         assert received[-1] == "third"
+
+    def test_single_call_runs_once(self, manager, qtbot):
+        received = []
+
+        manager.throttle("k", 5000, 20, received.append, "only")
+        qtbot.waitUntil(lambda: "k" not in manager._states, timeout=1000)
+        _flush_events(40)
+
+        assert received == ["only"]
+
+    def test_call_after_the_interval_is_not_repeated_on_idle(self, manager, qtbot, monkeypatch):
+        from wafer.qt.common import rate_limit
+
+        clock = [0.0]
+        monkeypatch.setattr(rate_limit.time, "monotonic", lambda: clock[0])
+        received = []
+
+        manager.throttle("k", 100, 20, received.append, "first")
+        clock[0] = 1.0
+        manager.throttle("k", 100, 20, received.append, "second")
+        qtbot.waitUntil(lambda: "k" not in manager._states, timeout=1000)
+        _flush_events(40)
+
+        assert received == ["first", "second"]
+
+    def test_timers_do_not_pile_up_across_periods(self, manager, qtbot):
+        from PySide6.QtCore import QCoreApplication, QEvent, QTimer
+
+        for _ in range(5):
+            manager.throttle("k", 5000, 10, lambda: None)
+            qtbot.waitUntil(lambda: "k" not in manager._states, timeout=1000)
+            QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+
+        assert manager.findChildren(QTimer) == []
+
+    def test_cancel_drops_the_pending_call(self, manager, qtbot):
+        received = []
+
+        manager.throttle("k", 5000, 20, received.append, "first")
+        manager.throttle("k", 5000, 20, received.append, "second")
+        manager.cancel("k")
+        _flush_events(60)
+
+        assert received == ["first"]

@@ -99,9 +99,8 @@ def _close_qt_widgets_after_test():
 
         for key in list(qt_debounce_manager._timers):
             qt_debounce_manager.cancel(key)
-        for _last_call, idle_timer, _pending in _qt_throttle_manager._states.values():
-            idle_timer.stop()
-        _qt_throttle_manager._states.clear()
+        for key in list(_qt_throttle_manager._states):
+            _qt_throttle_manager.cancel(key)
     except Exception as e:
         _record_cleanup_error("cancel pending debounced calls after test", e)
     try:

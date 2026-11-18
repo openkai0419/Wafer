@@ -163,6 +163,13 @@ class TestStageUpdate:
             stage.stage_update("v2.0.0", "2.0.0")
         assert stage.staged_version() == ""
 
+    def test_restage_unmarks_ready_before_download(self, app_root, fake_network):
+        stage.stage_update("v2.0.0", "2.0.0")
+        marked = []
+        stage.stage_update("v2.0.0", "2.0.0", on_phase=lambda phase: marked.append(plan_path(app_root).exists() or stage.ready_path(app_root).exists()))
+        assert marked[:3] == [False, False, False]
+        assert stage.staged_version() == "2.0.0"
+
 
 class TestStagedState:
     def test_empty_without_files(self, app_root):

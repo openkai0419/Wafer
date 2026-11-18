@@ -61,10 +61,14 @@ def staged_version(app_root: str | Path | None = None) -> str:
     return normalize_version(str(data.get("target_version", "")))
 
 
-def discard_staged(app_root: str | Path | None = None) -> None:
-    root = Path(app_root) if app_root else get_app_root_dir()
+def _unmark_ready(root: Path) -> None:
     for path in (update_plan.plan_path(root), ready_path(root)):
         path.unlink(missing_ok=True)
+
+
+def discard_staged(app_root: str | Path | None = None) -> None:
+    root = Path(app_root) if app_root else get_app_root_dir()
+    _unmark_ready(root)
     for directory in (update_plan.next_dir(root), update_plan.download_dir(root)):
         if directory.is_dir():
             shutil.rmtree(directory, ignore_errors=True)
@@ -97,6 +101,7 @@ def _emit_phase(on_phase, phase: str) -> None:
 
 
 def _stage_locked(root: Path, target_tag: str, target_version: str, on_progress, on_phase, is_cancelled) -> str:
+    _unmark_ready(root)
     release = read_cached_latest_release()
     if not isinstance(release, dict) or normalize_version(str(release.get("tag_name", ""))) != normalize_version(target_tag):
         raise StageError("Cached release info is outdated. Run the update check again")

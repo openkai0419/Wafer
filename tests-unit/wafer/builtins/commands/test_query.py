@@ -25,3 +25,18 @@ def test_commands_exclude_removed_query_option_commands():
     assert "qry.cycle_mode" not in paths
     assert "qry.cycle_keyword" not in paths
     assert "qry.set_keyword_delimiter" not in paths
+
+
+def test_commands_include_sort_added_by_extension(monkeypatch):
+    from wafer.plugin.query.base import BaseSortPlugin
+    from wafer.plugin.query.handler import sort_registry
+
+    class RatingSort(BaseSortPlugin):
+        NAME = "rating"
+
+    monkeypatch.setitem(sort_registry._plugins, "rating", RatingSort)
+
+    items = {str(item.path): item for item in QueryCommands.commands() if hasattr(item, "path")}
+
+    assert items["Sort By/qry.sort_rating"].display == "Rating"
+    assert items["Sort By/qry.sort_path"].display == "Path"

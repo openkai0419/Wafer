@@ -524,6 +524,35 @@ def test_rename_paths_nonexistent_source(tmp_path):
     db.close()
 
 
+
+def test_rename_paths_replaces_a_registered_destination(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    sources = [("c:/a.png", "hash_a", 1, 1.0), ("c:/b.png", "hash_b", 2, 2.0), ("c:/z.zip", "hash_z", 3, 3.0)]
+    db.upsert_basic_sources(sources, [(source, source, 1.0) for source, *_ in sources], [("c:/b.png", "k", "old b", None)])
+
+    missing = db.rename_paths([("c:/z.zip", "c:/zz.zip"), ("c:/a.png", "c:/b.png")])
+
+    assert missing == []
+    rows = db.read_conn.execute("SELECT source, file_hash FROM sources ORDER BY source").fetchall()
+    assert rows == [("c:/b.png", "hash_a"), ("c:/zz.zip", "hash_z")]
+    assert db.read_conn.execute("SELECT COUNT(*) FROM meta_info").fetchone()[0] == 0
+    db.close()
+
+
+def test_rename_paths_keeps_the_destination_when_the_source_is_unknown(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    db.upsert_basic_sources([("c:/b.png", "hash_b", 2, 2.0)], [("c:/b.png", "c:/b.png", 1.0)])
+
+    missing = db.rename_paths([("c:/a.png", "c:/b.png")])
+
+    assert missing == ["c:/b.png"]
+    assert db.read_conn.execute("SELECT source FROM sources").fetchall() == [("c:/b.png",)]
+    db.close()
+
 def _setup_db_with_pending(tmp_path, sources_count=3):
     db = FileDB(tmp_path / "test.db")
     db.start()

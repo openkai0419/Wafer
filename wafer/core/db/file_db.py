@@ -498,6 +498,8 @@ class FileDB:
             try:
                 cur.execute("PRAGMA foreign_keys=ON")
                 for old, new in pairs:
+                    if old != new:
+                        cur.execute("DELETE FROM sources WHERE source = ? AND EXISTS (SELECT 1 FROM sources WHERE source = ?)", (new, old))
                     path_map = self._renamed_file_paths(cur, old, new)
                     cur.execute("UPDATE sources SET source = ? WHERE source = ?", (new, old))
                     if cur.rowcount == 0:

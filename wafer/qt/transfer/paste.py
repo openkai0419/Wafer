@@ -11,6 +11,8 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from ...core.logs import AppLogger
 from ..common.notifier import Notifier
+from ..common.dispatcher import CancelToken, Dispatcher
+from ..common.thread import utility_pool
 from ...core.lang.manager import t
 from ...core.store.settings import app_settings
 from ...core.common.paths import safe_exists, safe_is_dir
@@ -288,6 +290,20 @@ def _resolve_conflicts_with_ui(
     )
 
 
+class _OperationProgressDialog(QtWidgets.QProgressDialog):
+    def __init__(self, label: str, parent: QtWidgets.QWidget | None):
+        super().__init__(label, t("Cancel"), 0, 0, parent)
+        self.canceled.disconnect(self.cancel)
+        self.setWindowModality(QtCore.Qt.WindowModal)
+        self.setMinimumDuration(0)
+        self.setAutoReset(False)
+        self.setAutoClose(False)
+
+    def closeEvent(self, event):
+        event.ignore()
+        self.canceled.emit()
+
+
 def _run_with_progress(
     parent: QtWidgets.QWidget | None,
     label: str,
@@ -300,30 +316,21 @@ def _run_with_progress(
     if total == 0:
         return []
 
-    from ..common.dispatcher import CancelToken, Dispatcher
-    from ..common.thread import utility_pool
-
     token = CancelToken()
     results: list[OperationResult] = []
     progress_value = 0
     progress_limit: int | None = None
 
-    dialog = QtWidgets.QProgressDialog(label, t("Cancel"), 0, 0, parent)
-    dialog.setWindowModality(QtCore.Qt.WindowModal)
-    dialog.setMinimumDuration(0)
-    dialog.setAutoReset(False)
-    dialog.setAutoClose(False)
-    dialog.canceled.connect(token.cancel)
+    dialog = _OperationProgressDialog(label, parent)
+
+    def _on_cancel():
+        token.cancel()
+        dialog.setLabelText(t("Cancelling..."))
+
+    dialog.canceled.connect(_on_cancel)
     dialog.setValue(0)
 
     dispatcher = Dispatcher(utility_pool)
-
-    def _close_dialog():
-        try:
-            dialog.canceled.disconnect(token.cancel)
-        except RuntimeError:
-            pass
-        dialog.close()
 
     def _set_progress_limit(limit: int):
         nonlocal progress_limit, progress_value
@@ -341,33 +348,40 @@ def _run_with_progress(
             progress_value = min(progress_value, progress_limit)
         dispatcher.invoke(lambda v=progress_value: dialog.setValue(v))
 
-    def bg_task():
-        if progress_total_provider is not None:
-            try:
-                progress_total = progress_total_provider(token.is_cancelled)
-            except PasteCancelledError:
-                dispatcher.invoke(_close_dialog)
-                return
-            except Exception as e:
-                AppLogger.warning("progress total calculation failed", exc=e)
-                progress_total = total
-            if token.is_cancelled():
-                dispatcher.invoke(_close_dialog)
-                return
-            dispatcher.invoke(lambda value=progress_total: _set_progress_limit(value))
-        for i in range(total):
-            if token.is_cancelled():
-                break
+    def run_step(i: int) -> OperationResult:
+        try:
             if manual_progress:
-                result = execute_fn(i, advance, token.is_cancelled)
-            else:
-                result = execute_fn(i)
-                advance()
-            results.append(result)
-        dispatcher.invoke(_close_dialog)
+                return execute_fn(i, advance, token.is_cancelled)
+            result = execute_fn(i)
+            advance()
+            return result
+        except Exception as e:
+            AppLogger.warning(f"{label} item {i} failed", exc=e)
+            return OperationResult(action="unknown", src="", dst="", status="error", error=repr(e))
+
+    def bg_task():
+        try:
+            if progress_total_provider is not None:
+                try:
+                    progress_total = progress_total_provider(token.is_cancelled)
+                except PasteCancelledError:
+                    return
+                except Exception as e:
+                    AppLogger.warning("progress total calculation failed", exc=e)
+                    progress_total = total
+                if token.is_cancelled():
+                    return
+                dispatcher.invoke(lambda value=progress_total: _set_progress_limit(value))
+            for i in range(total):
+                if token.is_cancelled():
+                    break
+                results.append(run_step(i))
+        finally:
+            dispatcher.invoke(dialog.accept)
 
     dispatcher.post(bg_task)
     dialog.exec()
+    dialog.deleteLater()
 
     ok_count = sum(1 for r in results if r.status == "ok")
     if token.is_cancelled():

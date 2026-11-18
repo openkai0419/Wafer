@@ -31,6 +31,18 @@ def _process_events_until(predicate, timeout_ms=5000):
         time.sleep(0.01)
 
 
+def _click_cancel(app, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        for w in app.topLevelWidgets():
+            if isinstance(w, QtWidgets.QProgressDialog) and w.isVisible():
+                QtCore.QMetaObject.invokeMethod(w.findChild(QtWidgets.QPushButton), "click", QtCore.Qt.QueuedConnection)
+                return
+        if threading.current_thread() is threading.main_thread():
+            return
+        time.sleep(0.01)
+
+
 class TestRunWithProgress:
     def test_moves_files_in_background(self, qapp, tmp_path):
         from wafer.qt.transfer.paste import _run_with_progress
@@ -75,10 +87,7 @@ class TestRunWithProgress:
         def execute_fn(idx: int) -> OperationResult:
             time.sleep(0.05)
             if idx == cancel_at:
-                for w in qapp.topLevelWidgets():
-                    if isinstance(w, QtWidgets.QProgressDialog):
-                        QtCore.QMetaObject.invokeMethod(w, "cancel", QtCore.Qt.QueuedConnection)
-                        break
+                _click_cancel(qapp)
                 time.sleep(0.3)
             return OperationResult(action="move", src=f"s{idx}", dst=f"d{idx}", status="ok")
 
@@ -305,3 +314,69 @@ class TestDirectoryProgress:
         assert sum(advances) == 2
         assert dst.exists()
         assert not src.exists()
+
+
+class TestCancelAndFailure:
+    def _wait_for_cancel_and_finish(self, qapp, request_cancel):
+        from wafer.qt.transfer.paste import _run_with_progress
+
+        finished = []
+
+        def step(idx, advance, is_cancelled):
+            deadline = time.monotonic() + 5
+            while not is_cancelled() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            time.sleep(0.2)
+            finished.append(idx)
+            return OperationResult(action="move", src=f"s{idx}", dst=f"d{idx}", status="ok")
+
+        QtCore.QTimer.singleShot(100, lambda: request_cancel(qapp))
+        results = _run_with_progress(None, "Moving...", 3, step, manual_progress=True)
+        return results, finished
+
+    def test_cancel_button_waits_for_the_running_item(self, qapp):
+        results, finished = self._wait_for_cancel_and_finish(qapp, _click_cancel)
+
+        assert finished == [0]
+        assert [r.status for r in results] == ["ok"]
+
+    def test_closing_the_dialog_waits_for_the_running_item(self, qapp):
+        def close_dialog(app):
+            for w in app.topLevelWidgets():
+                if isinstance(w, QtWidgets.QProgressDialog) and w.isVisible():
+                    QtCore.QMetaObject.invokeMethod(w, "close", QtCore.Qt.QueuedConnection)
+                    return
+
+        results, finished = self._wait_for_cancel_and_finish(qapp, close_dialog)
+
+        assert finished == [0]
+        assert [r.status for r in results] == ["ok"]
+
+    def test_escape_key_waits_for_the_running_item(self, qapp):
+        from PySide6.QtTest import QTest
+
+        def press_escape(app):
+            for w in app.topLevelWidgets():
+                if isinstance(w, QtWidgets.QProgressDialog) and w.isVisible():
+                    QTest.keyClick(w, QtCore.Qt.Key_Escape)
+                    return
+
+        results, finished = self._wait_for_cancel_and_finish(qapp, press_escape)
+
+        assert finished == [0]
+        assert [r.status for r in results] == ["ok"]
+
+    def test_step_exception_becomes_an_error_and_the_rest_still_runs(self, qapp):
+        from wafer.qt.transfer.paste import _run_with_progress
+
+        def execute_fn(idx: int) -> OperationResult:
+            if idx == 1:
+                raise PermissionError("in use")
+            return OperationResult(action="copy", src=f"s{idx}", dst=f"d{idx}", status="ok")
+
+        QtCore.QTimer.singleShot(5000, lambda: _click_cancel(qapp))
+        results = _run_with_progress(None, "Copying...", 3, execute_fn)
+
+        assert [r.status for r in results] == ["ok", "error", "ok"]
+        assert "in use" in results[1].error
+

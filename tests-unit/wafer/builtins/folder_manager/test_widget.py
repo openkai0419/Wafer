@@ -477,7 +477,9 @@ def test_full_scan_totals_are_computed_off_the_main_thread_and_swapped_in(qtbot,
     assert panel.model.disk is not first and panel.model.disk.finished
     assert panel.model.disk.values(root) == FolderValues(1, 4, 1, 2)
     assert finished_on_main(finish_threads) == []
-    assert all(disk is first for disk in swapped[:-1])
+    new = panel.model.disk
+    swap = next(n for n, disk in enumerate(swapped) if disk is new)
+    assert all(disk is first for disk in swapped[:swap]) and all(disk is new for disk in swapped[swap:])
     qtbot.waitUntil(lambda: first.nodes == {}, timeout=5000)
 
 

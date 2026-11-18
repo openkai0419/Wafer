@@ -4,7 +4,9 @@ from ...core.lang.manager import t
 from ...core.common.paths import list_setting_db_names, setting_db_path
 from ...core.db.setting_db import SettingDB
 from ...core.logs import AppLogger
+from ...core.platform.path_utils import validate_filename
 from ...core.platform.process import AppProcess
+from ...qt.common.notifier import Notifier
 from ...qt.widgets.dialogs import ConfirmDialog, InputDialog
 
 
@@ -60,6 +62,10 @@ def add_database(ctx, w):
     text = text.strip()
     AppLogger.info(f"[add_database] {text}")
     if not text or text in list_setting_db_names():
+        return
+    issues = validate_filename(text)
+    if issues:
+        Notifier.warning(f"Invalid database name: {', '.join(issues)}")
         return
     create_database(text)
     w.database_combo.addItem(text)

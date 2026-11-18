@@ -79,9 +79,9 @@ def _wait_install_then_load_plugins(app):
 
 
 def _ensure_tray_unless_pending():
-    from wafer.plugin import installer_queue
+    from wafer.plugin.install_wait import has_pending_install
 
-    if not installer_queue.has_pending_queue(get_plugin_dir()):
+    if not has_pending_install():
         AppProcess.ensure_tray()
 
 

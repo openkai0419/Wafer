@@ -1,9 +1,11 @@
 import time
 from collections.abc import Callable
+from functools import lru_cache
 
 import psutil
 
 from ..core.common.paths import get_plugin_dir
+from ..core.common.profile import current_profile
 from ..core.logs import AppLogger
 from ..core.platform.process import AppProcess
 from ..core.platform.process_lock import SafeProcessLock
@@ -22,7 +24,17 @@ _PHASE_LABEL = {
 
 
 def has_pending_install() -> bool:
-    return installer_queue.has_pending_queue(get_plugin_dir())
+    if not installer_queue.has_pending_queue(get_plugin_dir()):
+        return False
+    if current_profile() is not None:
+        _log_left_to_normal_wafer()
+        return False
+    return True
+
+
+@lru_cache(maxsize=1)
+def _log_left_to_normal_wafer() -> None:
+    AppLogger.info("[InstallWaiter] A pending extension install is left to the normal Wafer; a debug profile never installs or waits for it")
 
 
 def wait_for_install(

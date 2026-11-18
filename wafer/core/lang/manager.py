@@ -1,6 +1,9 @@
-from ..common.paths import get_resource_path
+import os
+
+from ..common.paths import get_resource_path, resolve_data_path
 from ..logs import AppLogger
 from ..common.json_io import read_json_file, write_json_file
+from ..platform.process_lock import file_lock
 
 _t_instance = None
 
@@ -55,14 +58,20 @@ class TranslationManager:
 
     def dump_missing_keys(self, output_path=None):
         output_path = output_path or self.json_path
-        existing = read_json_file(output_path, {})
-
-        keys = sorted(set(self.missing_keys) | set(existing))
-        if not keys:
+        if not self.missing_keys:
             return
-        out = {k: existing.get(k, {}) for k in keys}
-
-        write_json_file(output_path, out, indent=2, ensure_ascii=False)
+        with file_lock(resolve_data_path(".temp/translations.lock")):
+            existing = read_json_file(output_path, None)
+            if not isinstance(existing, dict):
+                if os.path.exists(output_path):
+                    AppLogger.warning(f"Missing keys not written: could not read {output_path}")
+                    return
+                existing = {}
+            new_keys = self.missing_keys - existing.keys()
+            if not new_keys:
+                return
+            out = {k: existing.get(k, {}) for k in sorted(existing.keys() | new_keys)}
+            write_json_file(output_path, out, indent=2, ensure_ascii=False)
         AppLogger.info(f"Missing keys written to: {output_path}")
 
 

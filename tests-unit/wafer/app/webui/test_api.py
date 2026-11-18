@@ -460,6 +460,13 @@ def test_keys_retry_after_a_failed_refresh(client, app, monkeypatch):
     _wait_until(client.loop, lambda: len(calls) == 3)
 
 
+def test_items_carry_the_source_mtime(client, dataset, query):
+    qid, _ = query(DB, sort="name", ascending=True)
+    resp, body = client.get(f"/api/query/{qid}/items?offset=0&limit=1")
+    item = jbody(body)["items"][0]
+    assert item["mtime"] == os.stat(item["source"]).st_mtime
+
+
 def test_folders_check_the_parent_off_the_event_loop(client, dataset, monkeypatch):
     import threading
 

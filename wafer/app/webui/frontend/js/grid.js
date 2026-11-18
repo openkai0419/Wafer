@@ -133,7 +133,7 @@ export class Grid {
     cell.title = item.name;
     const img = document.createElement('img');
     img.loading = 'lazy';
-    img.src = thumbUrl(this.client.db, item.path, size);
+    img.src = thumbUrl(this.client.db, item.path, size, item.mtime);
     img.onerror = () => {
       const label = document.createElement('div');
       label.className = `placeholder ${item.kind}`;

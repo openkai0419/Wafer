@@ -68,6 +68,14 @@ async def get_aspects(request: web.Request):
     return web.Response(body=data, content_type="application/octet-stream")
 
 
+def read_source_modified(engine, sources: list[str]) -> dict[str, float]:
+    unique = list(dict.fromkeys(sources))
+    if not unique or not engine._connect_if_needed():
+        return {}
+    placeholders = ",".join("?" * len(unique))
+    return {row[0]: row[1] for row in engine.fetch(f"SELECT source, modified FROM sources WHERE source IN ({placeholders})", unique)}
+
+
 @routes.get("/api/query/{query_id}/items")
 async def get_items(request: web.Request):
     session = get_session_or_404(request)
@@ -76,16 +84,24 @@ async def get_items(request: web.Request):
         limit = min(max(int(request.query.get("limit", 200)), 1), ITEMS_LIMIT_MAX)
     except ValueError:
         raise web.HTTPBadRequest(reason="invalid offset/limit") from None
+    indices = range(offset, min(offset + limit, session.total))
+    try:
+        service = request.app[QUERY_SERVICE].db(session.db)
+    except KeyError:
+        raise web.HTTPNotFound(reason=f"unknown db: {session.db}") from None
+    modified = await service.run(read_source_modified, service.engine, [session.sources[i] for i in indices])
     items = []
-    for i in range(offset, min(offset + limit, session.total)):
+    for i in indices:
         path = session.paths[i]
+        source = session.sources[i]
         items.append(
             {
                 "i": i,
                 "path": path,
-                "source": session.sources[i],
+                "source": source,
                 "name": os.path.basename(path),
                 "kind": classify(path),
+                "mtime": modified.get(source),
             }
         )
     return web.json_response({"items": items, "db": session.db})

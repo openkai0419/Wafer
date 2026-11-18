@@ -11,7 +11,7 @@ from wafer.core.profiling import profiler
 
 DEFAULT_VOLUME = 20
 GL_COLOR_BUFFER_BIT = 0x00004000
-_MPV_EVENT_PLAYBACK_RESTART = 21
+MPV_EVENT_PLAYBACK_RESTART = 21
 MPV_LOCAL_ONLY_OPTIONS = dict(
     access_references="no",
     ytdl="no",
@@ -126,7 +126,7 @@ class MpvGLOverlay(QOpenGLWidget):
                 self._ctx = None
 
     def _on_mpv_event(self, event):
-        if event.event_id.value == _MPV_EVENT_PLAYBACK_RESTART:
+        if event.event_id.value == MPV_EVENT_PLAYBACK_RESTART:
             self._on_playback_ready.emit(self._play_generation)
 
     @Slot(int)

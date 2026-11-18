@@ -15,7 +15,7 @@ from wafer.qt.theme import ThemeManager
 from wafer.qt.common.icon_engine import icon_draw
 from wafer.plugin import viewer_context_values
 
-from .widget import MPV_LOCAL_ONLY_OPTIONS
+from .widget import MPV_EVENT_PLAYBACK_RESTART, MPV_LOCAL_ONLY_OPTIONS
 
 DEFAULT_VOLUME = 50
 _CONTROL_BAR_HEIGHT = 32
@@ -271,6 +271,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self._controls_visible = False
         self._autoplay_advance = None
         self._prev_time_pos = None
+        self._seek_pending = False
 
         self._player_area = QWidget(self)
         self._player_area.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
@@ -351,6 +352,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
             self._player["loop-file"] = "inf" if self.looping else "no"
             self._player.observe_property("time-pos", self._on_mpv_time_pos)
             self._player.observe_property("eof-reached", self._on_mpv_eof)
+            self._player.register_event_callback(self._on_mpv_event)
         except Exception as e:
             AppLogger.error(f"Failed to create mpv player: {e}", exc=e)
             self._player = None
@@ -360,6 +362,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         path = context.render_path
         self._path = path
         self._prev_time_pos = None
+        self._seek_pending = False
         self._ensure_player()
         if self._player:
             self._player.play(path)
@@ -374,6 +377,7 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
         self._viewer_context = None
         self._autoplay_advance = None
         self._prev_time_pos = None
+        self._seek_pending = False
         self._stop_playback()
         self._pos_timer.stop()
         self._hide_controls()
@@ -403,10 +407,12 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
 
     def seek(self, seconds):
         if self._player:
+            self._seek_pending = True
             self._player.seek(seconds)
 
     def seek_absolute(self, seconds):
         if self._player:
+            self._seek_pending = True
             self._player.seek(seconds, reference="absolute")
 
     def frame_step(self):
@@ -478,8 +484,13 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
             except Exception as e:
                 AppLogger.debug(f"mpv eof_reached check failed: {e}")
 
+    def _on_mpv_event(self, event):
+        if self._seek_pending and event.event_id.value == MPV_EVENT_PLAYBACK_RESTART:
+            self._seek_pending = False
+            self._prev_time_pos = None
+
     def _on_mpv_time_pos(self, name, value):
-        if not self._autoplay_advance or not self.looping:
+        if self._seek_pending or not self._autoplay_advance or not self.looping:
             self._prev_time_pos = value
             return
         if value is not None and self._prev_time_pos is not None:

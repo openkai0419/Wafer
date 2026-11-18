@@ -1,3 +1,5 @@
+import heapq
+
 from PySide6 import QtCore
 from ..plugin.layout import BaseLayoutPlugin, BaseLayoutCalculator, SCROLLBAR_INT_MAX
 from ..core.profiling import profiler
@@ -78,6 +80,7 @@ class MasonryLayoutCalculator(BaseLayoutCalculator):
         lane_size = (container - spacing * (num_lanes - 1)) / num_lanes
         lane_int = max(1, int(lane_size))
         lane_offsets = [0] * num_lanes
+        shortest_lanes = [(0, lane) for lane in range(num_lanes)]
         lane_positions = [l * (lane_int + spacing) for l in range(num_lanes)]
         if hz and reverse:
             lane_positions = [container - lp - lane_int for lp in lane_positions]
@@ -88,8 +91,7 @@ class MasonryLayoutCalculator(BaseLayoutCalculator):
             if self._cancelled:
                 return
             a = aspects[i] or 1.0
-            lane = min(range(num_lanes), key=lambda c: lane_offsets[c])
-            primary_offset = lane_offsets[lane]
+            primary_offset, lane = shortest_lanes[0]
             if hz:
                 item_var = max(1, int(lane_int / a))
                 rects[i] = QtCore.QRect(lane_positions[lane], primary_offset, lane_int, item_var)
@@ -97,6 +99,7 @@ class MasonryLayoutCalculator(BaseLayoutCalculator):
                 item_var = max(1, int(lane_int * a))
                 rects[i] = QtCore.QRect(primary_offset, lane_positions[lane], item_var, lane_int)
             lane_offsets[lane] = primary_offset + item_var + spacing
+            heapq.heapreplace(shortest_lanes, (lane_offsets[lane], lane))
             if lane_offsets[lane] > SCROLLBAR_INT_MAX:
                 final_count = i + 1
                 AppLogger.debug(f"[MasonryLayout] truncated at item {i}")

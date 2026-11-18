@@ -174,3 +174,15 @@ def test_masonry_inscribed_rendering():
     assert len(calc._result) == 1
     r = calc._result[0]
     assert r.width() > 0 and r.height() > 0
+
+
+def test_masonry_places_each_item_in_the_shortest_lane_lowest_index_first():
+    aspects = [1.0, 0.5, 2.0, 1.0, 1.0, 0.8, 1.5, 1.0, 0.7, 1.2] * 20
+    calc = MasonryLayoutCalculator(aspects, 100, 5, 500, None, orientation=0)
+    calc.run()
+    lane_x = sorted({r.x() for r in calc._result})
+    offsets = dict.fromkeys(lane_x, 0)
+    for rect in calc._result:
+        expected_x = min(lane_x, key=lambda x: offsets[x])
+        assert (rect.x(), rect.y()) == (expected_x, offsets[expected_x])
+        offsets[expected_x] = rect.y() + rect.height() + 5

@@ -281,3 +281,31 @@ class TestWindowRestartCommands:
         window_commands.restart_tray(_Ctx(Tray=tray))
 
         tray.restart_self.assert_called_once_with()
+
+
+def _debug_open_hidden():
+    group = window_commands.WindowRestartCommands
+    return [c for c in group.commands() if getattr(c, "path", None) == "debug.open"][0].hidden if any(getattr(c, "path", None) == "debug.open" for c in group.commands()) else True
+
+
+def test_open_debug_hidden_without_debug_dir(tmp_path):
+    with patch.object(window_commands, "get_app_root_dir", return_value=tmp_path), patch.object(window_commands, "current_profile", return_value=None):
+        assert _debug_open_hidden() is True
+
+
+def test_open_debug_hidden_in_profile(tmp_path):
+    (tmp_path / "debug").mkdir()
+    (tmp_path / "debug" / "profile_setup.py").write_text("", encoding="utf-8")
+    with patch.object(window_commands, "get_app_root_dir", return_value=tmp_path), patch.object(window_commands, "current_profile", return_value="debug-x"):
+        assert _debug_open_hidden() is True
+
+
+def test_open_debug_shown_and_spawns_launch(tmp_path):
+    (tmp_path / "debug").mkdir()
+    (tmp_path / "debug" / "profile_setup.py").write_text("", encoding="utf-8")
+    with patch.object(window_commands, "get_app_root_dir", return_value=tmp_path), patch.object(window_commands, "current_profile", return_value=None):
+        assert _debug_open_hidden() is False
+        with patch.object(window_commands.AppProcess, "base_command", return_value=["py.exe", "main.py"]), patch.object(window_commands.AppProcess, "spawn") as spawn, patch.object(window_commands.Notifier, "info") as info:
+            window_commands.open_debug(None)
+    spawn.assert_called_once_with(["py.exe", "-m", "debug.profile_setup", "--profile", "debug-tools", "launch", "--checkout", str(tmp_path)], cwd=tmp_path)
+    info.assert_called_once()

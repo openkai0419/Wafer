@@ -274,3 +274,28 @@ class TestRenameEngine:
         assert not global_errors
         assert not results[0].errors
         assert results[0].new_name == "x.jpg"
+
+
+class TestCheckFiles:
+    def _preview(self, paths, name):
+        col = RenameColumn(FixedSource(text=name))
+        results, _ = RenameEngine.preview(paths, [col], RenameColumn(ExtSource()))
+        RenameEngine.check_files(paths, results)
+        return results
+
+    def test_existing_file_outside_the_batch_is_a_conflict(self, tmp_path):
+        (tmp_path / "a.png").write_text("A")
+        (tmp_path / "b.png").write_text("B")
+        results = self._preview([tmp_path / "a.png"], "b")
+        assert results[0].conflict
+
+    def test_case_only_rename_is_not_a_conflict(self, tmp_path):
+        (tmp_path / "Photo.png").write_text("A")
+        results = self._preview([tmp_path / "Photo.png"], "photo")
+        assert not results[0].conflict
+        assert not results[0].missing
+
+    def test_missing_file_is_flagged(self, tmp_path):
+        (tmp_path / "a.png").write_text("A")
+        results = self._preview([tmp_path / "a.png", tmp_path / "gone.png"], "x")
+        assert [r.missing for r in results] == [False, True]

@@ -218,6 +218,34 @@ class TestIdleTimeout:
             mock_ensure.assert_called_once_with("large", version=POST_INSTALL_VERSION)
 
 
+    def test_preview_uses_the_panel_variant(self):
+        mock_inference_mod = MagicMock()
+        mock_inference_mod.FlorenceInference.return_value.predict.return_value = "caption"
+        self.collector._settings["model_variant"] = "base"
+        with (
+            patch("extensions.florence.collector.ensure_model", return_value="/fake/model") as mock_ensure,
+            patch.dict("sys.modules", {"extensions.florence._inference": mock_inference_mod}),
+            patch("extensions.florence.collector.image_loader_resolver") as mock_resolver,
+        ):
+            mock_resolver.load_pil.return_value = Image.new("RGB", (10, 10))
+            self.collector._handle_preview({"path": "/a.jpg", "settings": {"model_variant": "large"}})
+        assert mock_ensure.call_args.args[0] == "large"
+        assert self.collector._loaded_variant == "large"
+
+    def test_settings_reload_retries_failed_engine(self):
+        mock_inference_mod = MagicMock()
+        with (
+            patch("extensions.florence.collector.ensure_model", side_effect=[RuntimeError("missing"), "/fake/model"]),
+            patch.dict("sys.modules", {"extensions.florence._inference": mock_inference_mod}),
+            patch("extensions.florence.collector.florence_config.load", return_value=dict(self.collector._settings)),
+        ):
+            with pytest.raises(RuntimeError):
+                self.collector._ensure_engine()
+            self.collector.on_notify()
+            self.collector._ensure_engine()
+        assert self.collector._engine is mock_inference_mod.FlorenceInference.return_value
+
+
 class TestPostInstall:
     def test_post_install_propagates_model_error(self):
         with patch("extensions.florence.collector.ensure_model", side_effect=RuntimeError("dl failed")):

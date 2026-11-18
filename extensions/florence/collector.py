@@ -48,8 +48,8 @@ class FlorenceCollector(BaseSingletonCollector):
         self._idle_timer: threading.Timer | None = None
         self._settings = florence_config.load()
 
-    def _ensure_engine(self):
-        variant = self._settings.get("model_variant", "base")
+    def _ensure_engine(self, variant: str | None = None):
+        variant = variant or self._settings.get("model_variant", "base")
         if self._engine is not None and self._loaded_variant == variant:
             return
         with self._engine_lock:
@@ -152,7 +152,7 @@ class FlorenceCollector(BaseSingletonCollector):
         settings = payload.get("settings", {})
         if not path:
             return {"error": "no_path"}
-        self._ensure_engine()
+        self._ensure_engine(settings.get("model_variant"))
         self._touch()
         thumb = image_loader_resolver.load_pil(path, size=384)
         if thumb is None:

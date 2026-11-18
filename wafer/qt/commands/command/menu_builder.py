@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from PySide6 import QtCore, QtGui, QtWidgets
 from ....core.lang.manager import t
 from ....core.profiling import profiler
+from ...theme import ThemeManager
 from .core import COMMAND_MENU_MARKER, CommandMeta, CommandRegistry, MenuAction, call_with_matching_args, persistent_args
 from .context import CommandContext
 from ....core.logs import AppLogger
@@ -596,7 +597,7 @@ class CommandMenuBuilder:
         l.setContentsMargins(int(s * 1.6), int(s / 4), int(s * 1.6), 0)
         lbl = QtWidgets.QLabel(text)
         lbl.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        lbl.setStyleSheet(f"color: gray; font-size: {s}px;")
+        lbl.setStyleSheet(f"color: {ThemeManager.instance().palette.text_secondary}; font-size: {s}px;")
         lbl.setSizePolicy(QtWidgets.QSizePolicy.Maximum, QtWidgets.QSizePolicy.Maximum)
         l.addWidget(lbl)
         a.setDefaultWidget(w)

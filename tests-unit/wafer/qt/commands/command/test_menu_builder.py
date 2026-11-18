@@ -102,3 +102,16 @@ def test_a_failing_command_is_logged_with_its_traceback(qtbot, monkeypatch):
     CommandMenuBuilder.instance()._execute("exec_fail")
 
     assert len(warnings) == 1 and isinstance(warnings[0], AttributeError)
+
+
+def test_a_section_header_uses_the_theme_text_color(qtbot):
+    from wafer.qt.theme import ThemeManager
+
+    parent = QtWidgets.QWidget()
+    qtbot.addWidget(parent)
+
+    action = CommandMenuBuilder.instance()._create_section_action(parent, "Head")
+    label = action.defaultWidget().findChild(QtWidgets.QLabel)
+
+    assert "gray" not in label.styleSheet()
+    assert ThemeManager.instance().palette.text_secondary in label.styleSheet()

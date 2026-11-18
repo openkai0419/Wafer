@@ -178,6 +178,20 @@ class TestLoadImageEdgeCases:
         assert result is None
 
 
+class TestDecodeNumpyFailure:
+    def test_unreadable_image_logs_the_pil_error(self, tmp_path, monkeypatch):
+        from extensions.image import _decode
+
+        path = tmp_path / "broken.png"
+        path.write_bytes(b"not an image")
+        warnings = []
+        monkeypatch.setattr(_decode.AppLogger, "warning", lambda text, *, exc=None: warnings.append((text, exc)))
+
+        assert _decode.decode_numpy(str(path)) is None
+        assert len(warnings) == 1
+        assert isinstance(warnings[0][1], OSError)
+
+
 class TestImageFileLoaderQImage:
     def test_load_qimage_returns_fullsize_qimage(self, rgb_png):
         image = ImageFileLoader().load_qimage(rgb_png)

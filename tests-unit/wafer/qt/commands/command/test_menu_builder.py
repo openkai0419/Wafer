@@ -51,3 +51,29 @@ def test_build_keeps_separator_between_paths(qtbot):
     menu = CommandMenuBuilder.instance().build(parent, items)
 
     assert any(a.isSeparator() for a in menu.actions())
+
+
+def section_texts(menu):
+    return [label.text() for action in menu.actions() if isinstance(action, QtWidgets.QWidgetAction) for label in action.defaultWidget().findChildren(QtWidgets.QLabel)]
+
+
+def test_an_action_on_a_section_path_is_a_header_that_can_skip_translation(qtbot, monkeypatch):
+    from wafer.qt.commands.bridge import ActionKit, Menu
+    from wafer.qt.commands.command import menu_builder
+
+    translated = []
+    original_t = menu_builder.t
+    monkeypatch.setattr(menu_builder, "t", lambda text, **kwargs: (translated.append(text), original_t(text, **kwargs))[1])
+    parent = QtWidgets.QWidget()
+    qtbot.addWidget(parent)
+
+    menu = Menu.session(parent).menu(
+        [
+            ActionKit.Action(path="Sub/:inline.head", display="User / Name", translate=False),
+            ActionKit.Action(path="Sub/inline.row", display="Row", func=lambda ctx: None),
+        ]
+    ).build()
+
+    submenu = next(action.menu() for action in menu.actions() if action.menu() is not None)
+    assert section_texts(submenu)[0] == "User / Name"
+    assert "User / Name" not in translated and "Row" in translated

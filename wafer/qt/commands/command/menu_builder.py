@@ -191,9 +191,11 @@ class CommandMenuBuilder:
                 parts = section_parts(token)
                 if not parts:
                     continue
-                text = parts[-1]
+                action = getattr(item, "action", None)
+                text = action.display if action is not None and action.display else parts[-1]
+                translate = action is None or action.translate
                 target_menu = menu if len(parts) == 1 else self._get_or_create_submenu_chain(menu, menus_cache, parts[:-1], parent)
-                target_menu.addAction(self._create_section_action(parent, t(text) or text))
+                target_menu.addAction(self._create_section_action(parent, (t(text) or text) if translate else text))
                 continue
             path_parts = split_menu_path(token)
             target_menu = menu if len(path_parts) <= 1 else self._get_or_create_submenu_chain(menu, menus_cache, path_parts[:-1], parent)

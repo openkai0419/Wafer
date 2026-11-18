@@ -138,10 +138,10 @@ class MenuMaker:
         if not action.path:
             raise ValueError("MenuAction.path is required")
         parts = split_menu_path(str(action.path))
-        if not parts or parts[-1] == MENU_SEPARATOR or str(parts[-1]).startswith(MENU_SECTION_PREFIX):
+        if not parts or parts[-1] == MENU_SEPARATOR:
             raise ValueError(f"Invalid menu action path: {action.path}")
-        command_id = parts[-1]
-        return _ResolvedItem(token=str(action.path), kind="action", command_id=command_id, canonical_path=str(action.path), action=action)
+        kind = "section" if str(parts[-1]).startswith(MENU_SECTION_PREFIX) else "action"
+        return _ResolvedItem(token=str(action.path), kind=kind, command_id=parts[-1], canonical_path=str(action.path), action=action)
 
     @staticmethod
     def _item_to_resolved(hub: MenuHub, token: str) -> _ResolvedItem:

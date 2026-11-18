@@ -853,7 +853,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 AppLogger.info("on_close [STOPPING]")
                 self._bridge.stop()
         except Exception as e:
-            AppLogger.debug(f"on_close bridge.stop failed: {e}")
+            AppLogger.warning(f"on_close bridge.stop failed, the IPC thread may stay alive: {e}", exc=e)
         self.release_workspace()
 
     def release_workspace(self):

@@ -6,7 +6,7 @@ from typing import Any
 from ....plugin.key_filter import KeyFilter
 from ....core.logs import AppLogger
 from ....core.profiling import profiler
-from ._batch_utils import BATCH_SIZE, FLUSH_DELAY, ResultBuffer, try_float
+from ._batch_utils import BATCH_SIZE, FLUSH_DELAY, ResultBuffer, run_after, try_float
 from ..db_writer import DatabaseWriter
 from ..runtime.progress_aggregator import ProgressAggregator
 from ..runtime.scheduler import TaskScheduler
@@ -91,6 +91,9 @@ class CollectorReceiver:
         return True
 
     def _schedule_flush(self):
+        run_after(FLUSH_DELAY - self._buffer.time_since_first(), self._submit_flush)
+
+    def _submit_flush(self):
         self._scheduler.submit(
             Task.create(
                 "flush_collection_results",
@@ -101,9 +104,6 @@ class CollectorReceiver:
 
     @profiler.profile
     def _flush(self):
-        remaining = FLUSH_DELAY - self._buffer.time_since_first()
-        if remaining > 0:
-            time.sleep(remaining)
         data, count = self._buffer.drain()
         if not data:
             return

@@ -181,7 +181,7 @@ def test_flush_applies_hash_updates_before_writing_and_retriggers():
         _parse_batch([{"source": "/a.png", "update_hash": "full1", "status": True, "parser": "_test_det_a"}]),
         1,
     )
-    with patch("wafer.app.indexer.receivers.parser_receiver.FLUSH_DELAY", 0), patch("wafer.app.indexer.receivers.parser_receiver.trigger_parser_pending") as trigger:
+    with patch("wafer.app.indexer.receivers.parser_receiver.trigger_parser_pending") as trigger:
         receiver._flush()
 
     writer.update_source_hashes.assert_called_once_with([("/a.png", "full1")])

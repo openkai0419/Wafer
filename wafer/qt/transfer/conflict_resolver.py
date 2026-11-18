@@ -55,7 +55,10 @@ class ConflictResolver:
             if src is not None:
                 c = check_copy_conflict(src, dst)
                 if c == "same_path":
-                    same_path_items.append((idx, p))
+                    if self._op == "move" and Path(src).name != Path(dst).name:
+                        no_conflict.append((idx, p))
+                    else:
+                        same_path_items.append((idx, p))
                     continue
                 if c == "subpath":
                     subpath_items.append((idx, p))

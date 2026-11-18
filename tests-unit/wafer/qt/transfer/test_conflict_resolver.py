@@ -245,6 +245,22 @@ def test_same_path_rename_mode_forces_rename(tmp_path):
     assert decisions[0].mode == "rename"
 
 
+def test_case_only_move_renames_the_file(tmp_path):
+    from wafer.qt.transfer import conflict_resolver as r
+    from wafer.core.platform.file_operations import FileExecutor
+
+    src = tmp_path / "Photo.PNG"
+    src.write_text("x", encoding="utf-8")
+    plan = _make_plan(0, src, tmp_path / "photo.png", conflict=False, action="cut")
+    resolver = r.ConflictResolver(op="move", overwrite_mode="ask", parent=None, folder_message="")
+    decision = resolver.resolve_plans([plan])[0]
+
+    result = FileExecutor()._execute_item(plan.src, plan.dst_default, "cut", decision)
+
+    assert result.status == "ok"
+    assert [f.name for f in tmp_path.iterdir()] == ["photo.png"]
+
+
 def test_overwrite_mode_forces_decision(tmp_path):
     from wafer.qt.transfer import conflict_resolver as r
 

@@ -737,3 +737,25 @@ class TestSelectableParamWidgets:
 
         assert len(widgets) == 1
         assert widgets[0] is container._rows[0].get_param_widget()
+
+
+class TestAppliedRows:
+    def test_applied_rows_behave_like_added_rows(self, qapp):
+        container = SearchContainer()
+        container.apply_bars(
+            [
+                {"filter": "text", "params": {"keywords": "first"}},
+                {"filter": "text", "params": {"keywords": "second"}, "op": "OR", "enabled": False},
+            ]
+        )
+        second = container._rows[1]
+        assert second.read_op() == "OR"
+        assert second.is_enabled() is False
+        assert second.read_params()["keywords"] == "second"
+        changed = []
+        container.filter_changed.connect(lambda: changed.append(True))
+
+        second.remove_requested.emit(second)
+
+        assert len(container._rows) == 1
+        assert changed == [True]

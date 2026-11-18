@@ -280,15 +280,20 @@ class SearchContainer(QtWidgets.QWidget):
     def _add_row(self, filter_cls, emit=True):
         self._insert_row(len(self._rows), filter_cls, emit=emit)
 
-    def _insert_row(self, index: int, filter_cls, emit=True):
+    def _insert_row(self, index: int, filter_cls, emit=True, *, params: dict | None = None, op: str | None = None, enabled: bool = True):
         index = max(0, min(index, len(self._rows)))
-        inherited = self._collect_inherited_params(index)
+        values = self._collect_inherited_params(index) if params is None else params
         row = FilterRow(filter_cls, show_op=index > 0, key_store=self._key_store, parent=self)
         row.changed.connect(self._on_row_changed)
         row.remove_requested.connect(self._on_remove_row)
         row.context_requested.connect(self._show_row_menu)
-        if inherited and row.get_param_widget():
-            filter_cls.write_params(row.get_param_widget(), inherited)
+        if values and row.get_param_widget():
+            filter_cls.write_params(row.get_param_widget(), values)
+        if op and index > 0:
+            op_index = row.op_combo.findData(op)
+            if op_index >= 0:
+                row.op_combo.setCurrentIndex(op_index)
+        row.set_enabled(enabled)
         self._rows.insert(index, row)
         self._filter_stack.insertWidget(index, row)
         self._update_op_visibility()
@@ -478,10 +483,6 @@ class SearchContainer(QtWidgets.QWidget):
     def set_sort(self, sort_by: str, ascending: bool):
         self._sort_name = sort_by
         self._ascending = ascending
-        self._sync_sort_menu()
-
-    def _sync_sort_menu(self):
-        return
 
     def invalidate_key_cache(self):
         self._last_paths = object()
@@ -563,25 +564,7 @@ class SearchContainer(QtWidgets.QWidget):
             filter_cls = filter_registry.get(rd.get("filter", "text"))
             if not filter_cls:
                 continue
-            is_first = len(self._rows) == 0
-            row = FilterRow(
-                filter_cls=filter_cls,
-                show_op=not is_first,
-                key_store=self._key_store,
-                parent=self,
-            )
-            row.changed.connect(self._on_row_changed)
-            row.remove_requested.connect(self._on_remove_row)
-            row.context_requested.connect(self._show_row_menu)
-            if rd.get("params") and row.get_param_widget():
-                row.filter_cls.write_params(row.get_param_widget(), rd["params"])
-            if not is_first and rd.get("op"):
-                idx = row.op_combo.findData(rd["op"])
-                if idx >= 0:
-                    row.op_combo.setCurrentIndex(idx)
-            row.set_enabled(rd.get("enabled", True))
-            self._rows.append(row)
-            self._filter_stack.addWidget(row)
+            self._insert_row(len(self._rows), filter_cls, emit=False, params=rd.get("params") or {}, op=rd.get("op"), enabled=rd.get("enabled", True))
         self._update_op_visibility()
         self._update_tool_placement()
         self.filter_changed.emit()
@@ -611,8 +594,6 @@ class SearchContainer(QtWidgets.QWidget):
 
     def set_sort_by(self, key: str):
         self._sort_name = key
-        self._sync_sort_menu()
 
     def set_ascending(self, ascending: bool):
         self._ascending = ascending
-        self._sync_sort_menu()

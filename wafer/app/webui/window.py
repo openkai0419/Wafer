@@ -15,6 +15,7 @@ class WebUIWindow(QtWidgets.QWidget):
     shutdown_requested = QtCore.Signal()
     remote_log_received = QtCore.Signal(str, str, str, str)
     _server_stopped = QtCore.Signal()
+    _failure_reported = QtCore.Signal(str)
 
     def __init__(self, server, lock):
         super().__init__()
@@ -27,6 +28,8 @@ class WebUIWindow(QtWidgets.QWidget):
         self.remote_log_received.connect(self._on_remote_log)
         self._server_stopped.connect(QtWidgets.QApplication.quit)
         self._closing = False
+        self._failed = False
+        self._failure_reported.connect(self._on_failure)
 
         url_edit = QtWidgets.QLineEdit(server.browse_url)
         url_edit.setReadOnly(True)
@@ -80,7 +83,20 @@ class WebUIWindow(QtWidgets.QWidget):
         return spec.build()
 
     def request_shutdown(self):
-        self.shutdown_requested.emit()
+        if not self._failed:
+            self.shutdown_requested.emit()
+
+    def report_failure(self, message: str):
+        self._failed = True
+        self._failure_reported.emit(message)
+
+    @QtCore.Slot(str)
+    def _on_failure(self, message: str):
+        from ...qt.widgets.dialogs import ConfirmDialog
+
+        self.show()
+        ConfirmDialog.ask(message, title="Wafer WebUI", buttons=("OK",), parent=self)
+        self.close()
 
     def closeEvent(self, event):
         AppLogger.info("WebUI window closing, stopping server.")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import ipaddress
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -9,6 +10,7 @@ from urllib.parse import urlparse, urlsplit
 
 from aiohttp import web
 
+from wafer.core.lang.manager import t
 from wafer.core.logs import AppLogger
 from wafer.core.common.paths import get_resource_path
 from wafer.web.media import set_thumb_cache_limit
@@ -144,6 +146,13 @@ def create_app(with_events: bool = True, on_app_shutdown=None, on_dev_log=None, 
     return app
 
 
+WSAEADDRINUSE = 10048
+
+
+def is_address_in_use(error: BaseException) -> bool:
+    return isinstance(error, OSError) and (error.errno in (errno.EADDRINUSE, WSAEADDRINUSE) or getattr(error, "winerror", None) == WSAEADDRINUSE)
+
+
 def quiet_connection_reset_handler(loop, context):
     if isinstance(context.get("exception"), ConnectionResetError):
         return
@@ -151,7 +160,7 @@ def quiet_connection_reset_handler(loop, context):
 
 
 class WebServer:
-    def __init__(self, host: str, port: int, *, allowed_hosts: tuple[str, ...] = (), on_started=None, on_app_shutdown=None, on_dev_log=None, session_id: str = ""):
+    def __init__(self, host: str, port: int, *, allowed_hosts: tuple[str, ...] = (), on_started=None, on_app_shutdown=None, on_dev_log=None, on_failed=None, session_id: str = ""):
         self.host = host
         self.port = port
         self.allowed_hosts = tuple(allowed_hosts)
@@ -159,6 +168,7 @@ class WebServer:
         self.on_started = on_started
         self.on_app_shutdown = on_app_shutdown
         self.on_dev_log = on_dev_log
+        self.on_failed = on_failed
         self.app: web.Application | None = None
         self.loop: asyncio.AbstractEventLoop | None = None
         self._stop_event: asyncio.Event | None = None
@@ -191,7 +201,13 @@ class WebServer:
         try:
             loop.run_until_complete(self._serve())
         except Exception as e:
-            AppLogger.error(f"WebUI server failed: {e}")
+            if is_address_in_use(e):
+                message = t("Port {port} is in use by another app. Change it in WebUI Settings.").format(port=self.port)
+                AppLogger.error(message)
+                if self.on_failed is not None:
+                    self.on_failed(message)
+            else:
+                AppLogger.error(f"WebUI server failed: {e}")
             if self.on_app_shutdown is not None:
                 self.on_app_shutdown()
         finally:
@@ -213,7 +229,11 @@ class WebServer:
         runner = web.AppRunner(self.app)
         await runner.setup()
         site = web.TCPSite(runner, self.host, self.port)
-        await site.start()
+        try:
+            await site.start()
+        except OSError:
+            await runner.cleanup()
+            raise
         AppLogger.info(f"WebUI serving at {self.url}")
         if self.allowed_hosts:
             AppLogger.info(f"WebUI also accepts these host names: {', '.join(self.allowed_hosts)}")

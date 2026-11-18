@@ -1,4 +1,6 @@
 import asyncio
+import socket
+import time
 
 from aiohttp import web
 
@@ -40,3 +42,45 @@ def test_start_then_immediate_stop_terminates_thread(monkeypatch):
 
         assert server._thread is not None
         assert not server._thread.is_alive()
+
+
+def _wait_for(predicate, timeout=20.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def test_server_reports_port_in_use():
+    blocker = socket.socket()
+    blocker.bind(("127.0.0.1", 0))
+    blocker.listen()
+    port = blocker.getsockname()[1]
+    messages = []
+    shutdowns = []
+    server = server_module.WebServer("127.0.0.1", port, on_failed=messages.append, on_app_shutdown=lambda: shutdowns.append(1))
+    try:
+        server.start()
+        assert _wait_for(lambda: messages and shutdowns), (messages, shutdowns)
+        assert str(port) in messages[0]
+        assert "WebUI Settings" in messages[0]
+        assert len(messages) == 1
+    finally:
+        server.stop(timeout=3.0)
+        blocker.close()
+
+
+def test_other_start_failure_does_not_call_on_failed(monkeypatch):
+    def boom(**kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(server_module, "create_app", boom)
+    messages = []
+    shutdowns = []
+    server = server_module.WebServer("127.0.0.1", 0, on_failed=messages.append, on_app_shutdown=lambda: shutdowns.append(1))
+    server.start()
+    assert _wait_for(lambda: shutdowns)
+    server.stop(timeout=3.0)
+    assert messages == []

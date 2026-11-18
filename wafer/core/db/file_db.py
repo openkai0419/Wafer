@@ -9,7 +9,9 @@ from collections.abc import Sequence
 
 from .db_utils import apply_read_pragmas, apply_write_pragmas, connect_with_retry, escape_like
 from .key_value import SCOPE_ALL, SCOPE_META_INFO, SCOPE_TAG, conversion_spec, normalize_data_scope, scope_spec
+from .query import path_prefix_condition
 from ...constants import VIRTUAL_PATH_SEPARATOR
+from ..common.paths import child_prefix
 from ..common.virtual_paths import display_name
 from ..profiling import profiler
 from ..logs import AppLogger
@@ -118,6 +120,11 @@ SOURCE_TRIGGER_KEYS = ("file_hash", "size", "modified", "created", "collected")
 def _split_trigger_keys(trigger_keys: Sequence[str]) -> tuple[list[str], list[str]]:
     source_columns = [key for key in SOURCE_TRIGGER_KEYS if key in trigger_keys]
     return source_columns, [key for key in trigger_keys if key not in SOURCE_TRIGGER_KEYS]
+
+
+def source_tree_condition(prefix: str) -> tuple[str, list[str]]:
+    clause, args = path_prefix_condition("source", child_prefix(prefix))
+    return f"(source = ? OR {clause})", [prefix, *args]
 
 
 def _chunked(values: Sequence, size: int = 900):
@@ -473,16 +480,10 @@ class FileDB:
                     existing.update(row[0] for row in rows)
                     cur.executemany("DELETE FROM sources WHERE source = ?", [(path,) for path in chunk])
                 for prefix in (path for path in prefixes if path not in existing):
-                    child_pattern = f"{escape_like(prefix if prefix.endswith('/') else prefix + '/')}%"
-                    rows = cur.execute(
-                        "SELECT file_hash FROM sources WHERE source = ? OR source LIKE ? ESCAPE '\\'",
-                        (prefix, child_pattern),
-                    ).fetchall()
+                    condition, args = source_tree_condition(prefix)
+                    rows = cur.execute(f"SELECT file_hash FROM sources WHERE {condition}", args).fetchall()
                     hashes.update(file_hash for (file_hash,) in rows if file_hash)
-                    cur.execute(
-                        "DELETE FROM sources WHERE source = ? OR source LIKE ? ESCAPE '\\'",
-                        (prefix, child_pattern),
-                    )
+                    cur.execute(f"DELETE FROM sources WHERE {condition}", args)
                 return self._sources_sharing_hashes(cur, hashes)
             finally:
                 cur.close()
@@ -906,8 +907,7 @@ class FileDB:
                 yield f"source IN ({placeholders})", list(chunk)
         elif prefixes:
             for prefix in dict.fromkeys(p for p in prefixes if p):
-                child = f"{escape_like(prefix if prefix.endswith('/') else prefix + '/')}%"
-                yield "(source = ? OR source LIKE ? ESCAPE '\\')", [prefix, child]
+                yield source_tree_condition(prefix)
 
     def _delete_keys_cur(self, cur, keys: list[str]) -> tuple[int, int]:
         meta_deleted = tags_deleted = 0

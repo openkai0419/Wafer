@@ -9,6 +9,7 @@ from wafer.core.db.file_db import (
     _expected_table_signature,
     _TABLES,
     schema_columns,
+    source_tree_condition,
 )
 from wafer.core.common.virtual_paths import build_virtual_path
 
@@ -162,6 +163,17 @@ def test_filedb_delete_sources_by_path_prefixes_escapes_like(tmp_path):
     assert set(prev) == {"/root/aX%/file.jpg"}
     db.close()
 
+
+
+def test_source_tree_condition_searches_the_source_indexes(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    condition, args = source_tree_condition("/root/dir")
+    for table in ("sources", "collection_status"):
+        plan = " ".join(row[3] for row in db.conn.execute(f"EXPLAIN QUERY PLAN SELECT * FROM {table} WHERE {condition}", args))
+        assert "SCAN" not in plan, plan
+    db.close()
 
 def test_schema_no_change_preserves_data(tmp_path):
     db = FileDB(tmp_path / "test.db")

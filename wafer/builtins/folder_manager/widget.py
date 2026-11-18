@@ -418,10 +418,12 @@ class FolderManagerWidget(QtWidgets.QWidget):
         super().hideEvent(event)
         self.save_pending()
 
-    def changeEvent(self, event):
-        super().changeEvent(event)
-        if event.type() == QtCore.QEvent.ActivationChange and not self.follows_viewer:
+    def event(self, event):
+        if event.type() == QtCore.QEvent.WindowActivate and not self.follows_viewer:
             self.reload_shared_settings()
+        elif event.type() == QtCore.QEvent.WindowDeactivate and not self.follows_viewer:
+            self.save_pending()
+        return super().event(event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

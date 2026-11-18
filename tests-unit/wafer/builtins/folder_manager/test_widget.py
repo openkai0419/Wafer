@@ -1,9 +1,10 @@
+import json
 import os
 import shutil
 import threading
 
 import pytest
-from PySide6 import QtCore
+from PySide6 import QtCore, QtWidgets
 
 from wafer.app.viewer.widgets.foldertree import USER_ROLE_PATH
 from wafer.builtins.filters import TextFilter
@@ -22,6 +23,7 @@ from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 from wafer.qt.commands.bridge import Menu
 from wafer.qt.common import rate_limit
 from wafer.qt.common.dpi import dpix
+from wafer.qt.layout.standalone import open_standalone
 
 DEFAULT_COLUMNS = {"files": True, "all_files": True, "folders": True, "all_folders": False}
 REAL_FINISH = DiskTree.finish
@@ -119,7 +121,7 @@ def viewer_bridge(monkeypatch):
 
 
 def activate(panel):
-    QtCore.QCoreApplication.sendEvent(panel, QtCore.QEvent(QtCore.QEvent.ActivationChange))
+    QtCore.QCoreApplication.sendEvent(panel, QtCore.QEvent(QtCore.QEvent.WindowActivate))
 
 
 @pytest.fixture
@@ -427,6 +429,40 @@ def test_the_tray_window_rereads_shared_settings_when_activated(qtbot, monkeypat
     activate(panel)
     assert all(a is b for a, b in zip(panel.rules, rules))
     panel.close()
+
+
+def write_from_another_process(key, value):
+    writer = QtCore.QSettings(str(app_settings.ini_path), QtCore.QSettings.IniFormat)
+    writer.setValue(key, json.dumps(value))
+    writer.sync()
+
+
+def bring_to_front(qtbot, window):
+    window.raise_()
+    window.activateWindow()
+    qtbot.waitUntil(lambda: QtWidgets.QApplication.activeWindow() is window, timeout=5000)
+
+
+def test_the_tray_window_rereads_rules_another_process_saved_when_it_comes_to_the_front(qtbot, monkeypatch):
+    without_viewer(monkeypatch)
+    other = QtWidgets.QWidget()
+    qtbot.addWidget(other)
+    other.show()
+    panel = open_standalone(FolderManagerWidget, "Folder Manager", "test_folder_manager", (400, 400))
+    dialog = panel.window()
+    assert dialog is not panel
+    qtbot.waitExposed(dialog)
+    bring_to_front(qtbot, other)
+    write_from_another_process(RULES_KEY, [rule_dict("FromViewer", "#378ADD")])
+
+    bring_to_front(qtbot, dialog)
+
+    assert [rule.name for rule in panel.rules] == ["FromViewer"]
+    panel.add_rule_button.click()
+    bring_to_front(qtbot, other)
+    assert [rule.name for rule in load_rules()] == ["FromViewer", "Rule 1"]
+    dialog.close()
+    other.close()
 
 
 def test_the_tray_window_saves_its_pending_edit_before_rereading(qtbot, monkeypatch):

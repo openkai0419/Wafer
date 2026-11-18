@@ -386,6 +386,8 @@ class _KeySelectorPopup(PopupBase):
         return list(self._catalog_data)
 
     def set_catalog(self, datas: list[tuple[str, int]]):
+        if datas == self._catalog_data:
+            return
         self._catalog_data = list(datas)
         count_map = dict(datas)
         for key, item in self._active_items.items():

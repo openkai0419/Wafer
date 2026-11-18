@@ -291,6 +291,24 @@ class TestKeySelectorPopupGroups:
         qapp.processEvents()
         assert not popup._active_items["prompt"].checked
 
+    def test_rows_sharing_a_key_store_rebuild_the_catalog_once(self, qapp, monkeypatch):
+        from wafer.plugin.query.widgets import KeyStore
+
+        combos = [CheckableCombo() for _ in range(3)]
+        popup = _KeySelectorPopup.instance()
+        rebuilds = []
+        monkeypatch.setattr(popup.catalog, "rebuild", lambda: rebuilds.append(True))
+        store = KeyStore()
+        for combo in combos:
+            store.updated.connect(combo.remake)
+
+        store.set_data([("path", 10), ("prompt", 5)])
+
+        assert len(rebuilds) == 1
+        assert _catalog_keys() == ["path", "prompt"]
+        store.set_data([("path", 11)])
+        assert len(rebuilds) == 2
+
 
 def test_catalog_tree_groups_by_prefix_and_filters(qtbot):
     tree = KeyCatalogTree()

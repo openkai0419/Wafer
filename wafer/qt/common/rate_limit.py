@@ -99,7 +99,7 @@ class QtThrottleManager(QObject):
         state = self._states.pop(key, None)
         if state is None:
             return
-        state.timer.deleteLater()
+        self._dispose_timer(state.timer)
         if state.pending is None:
             return
         args, kwargs = state.pending
@@ -110,8 +110,13 @@ class QtThrottleManager(QObject):
     def cancel(self, key):
         state = self._states.pop(key, None)
         if state is not None:
-            state.timer.stop()
-            state.timer.deleteLater()
+            self._dispose_timer(state.timer)
+
+    @staticmethod
+    def _dispose_timer(timer: QTimer):
+        timer.stop()
+        timer.timeout.disconnect()
+        timer.deleteLater()
 
 
 _qt_throttle_manager = QtThrottleManager()

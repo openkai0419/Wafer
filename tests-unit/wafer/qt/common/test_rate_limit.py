@@ -138,3 +138,15 @@ class TestQtThrottleManager:
         _flush_events(60)
 
         assert received == ["first"]
+
+    def test_manager_can_be_destroyed_before_a_cancelled_timer_is_deleted(self, qtbot):
+        from PySide6.QtCore import QCoreApplication, QEvent
+        from wafer.qt.common.rate_limit import QtThrottleManager
+
+        manager = QtThrottleManager()
+        manager.throttle("k", 5000, 20, lambda _: None, "first")
+        manager.throttle("k", 5000, 20, lambda _: None, "second")
+        manager.cancel("k")
+        del manager
+        gc.collect()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)

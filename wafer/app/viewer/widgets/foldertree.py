@@ -11,12 +11,13 @@ from ....core.common.paths import normalize_path
 from ....core.profiling import profiler
 from ....core.logs import AppLogger
 from ....qt.common.dispatcher import Dispatcher, CancelSlot, CancelToken
+from ....qt.common.notifier import Notifier
 from ....qt.common.thread import utility_pool
 from ....qt.commands.bridge import UI, Context
 from ....qt.commands.binding.common import TEXT_ENTRY_TYPES as INLINE_EDITOR_TYPES
 from ....qt.transfer.dragparser import MimeDataParser
 from ....core.platform.file_operations import PastePlanItem
-from ....core.platform.path_utils import unique_path
+from ....core.platform.path_utils import unique_path, validate_filename
 from ....qt.transfer.paste import execute_paste_plans_with_ui, drop_files_with_ui, resolve_drop_operation_with_ui
 
 FOLDER_SORT_KEY = natsort_keygen(key=lambda path: (os.path.basename(path) or path).lower())
@@ -193,6 +194,10 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
 
     @profiler.profile
     def _rename_item(self, item, new_name):
+        issues = validate_filename(new_name)
+        if issues:
+            Notifier.warning(f"Invalid filename: {', '.join(issues)}")
+            return False
         old_path = normalize_path(item.data(USER_ROLE_PATH))
         parent_item = item.parent() or self.invisibleRootItem()
         parent_path = normalize_path(os.path.dirname(old_path)) if parent_item is self.invisibleRootItem() else normalize_path(parent_item.data(USER_ROLE_PATH))

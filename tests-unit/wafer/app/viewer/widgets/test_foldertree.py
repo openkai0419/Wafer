@@ -61,6 +61,25 @@ def test_inline_rename_moves_the_folder_and_its_item(qtbot, tmp_path):
     assert item_of(tree, tmp_path / "A") is None
 
 
+def test_inline_rename_rejects_names_that_leave_the_parent(qtbot, tmp_path, monkeypatch):
+    create_fs_tree(str(tmp_path))
+    tree = LazyFolderTreeView(roots=[str(tmp_path)], excluded=[])
+    qtbot.addWidget(tree)
+    tree.model_._build_roots([str(tmp_path)])
+    a_index = expand_to(qtbot, tree, tmp_path / "A")
+    warnings = []
+    monkeypatch.setattr(foldertree_module.Notifier, "warning", warnings.append)
+    executed = []
+    monkeypatch.setattr(foldertree_module, "execute_paste_plans_with_ui", lambda **kwargs: executed.append(kwargs))
+
+    for name in ("x/y", "..", "CON"):
+        assert tree.model_.setData(a_index, name) is False
+
+    assert executed == []
+    assert len(warnings) == 3
+    assert (tmp_path / "A" / "A1").is_dir()
+
+
 def test_set_state_preserves_multi_selection(qtbot):
     tmpdir = tempfile.mkdtemp()
     try:

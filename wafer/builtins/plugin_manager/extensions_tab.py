@@ -6,6 +6,7 @@ from ...qt.common.dpi import dpix
 from ...core.logs import AppLogger
 from ...qt.widgets.markdown_browser import MarkdownBrowser, render_to_html
 from ...qt.theme import ThemeManager
+from ...qt.palette import rgba
 from ...core.lang.manager import t
 from ...qt.common.color_utils import mix_colors
 from ...core.common.paths import get_plugin_dir
@@ -54,13 +55,6 @@ _CARD_STATUS_CONFIG: dict[CardStatus, tuple[str, str, bool]] = {
 }
 
 
-def _hex_to_rgba(hex_color: str, alpha: float) -> str:
-    r = int(hex_color[1:3], 16)
-    g = int(hex_color[3:5], 16)
-    b = int(hex_color[5:7], 16)
-    return f"rgba({r},{g},{b},{alpha})"
-
-
 class _InstantTooltipLabel(QtWidgets.QLabel):
     def enterEvent(self, event):
         text = self.toolTip()
@@ -80,7 +74,7 @@ class _PluginRow(QtWidgets.QWidget):
         tag_text = plugin_kind_label(registry_key)
         tag = QtWidgets.QLabel(tag_text)
         tag.setObjectName("plugin_kind_badge")
-        tag.setStyleSheet(f"color: {tag_color}; background: {_hex_to_rgba(tag_color, 0.15)}; font-size: {dpix(11)}px; font-weight: bold; padding: {dpix(2)}px {dpix(6)}px; border-radius: {dpix(3)}px;")
+        tag.setStyleSheet(f"color: {tag_color}; background: {rgba(tag_color, 0.15)}; font-size: {dpix(11)}px; font-weight: bold; padding: {dpix(2)}px {dpix(6)}px; border-radius: {dpix(3)}px;")
         tag.setFixedWidth(dpix(_PLUGIN_KIND_BADGE_WIDTH))
         tag.setAlignment(QtCore.Qt.AlignCenter)
 

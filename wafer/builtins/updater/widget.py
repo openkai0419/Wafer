@@ -4,6 +4,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from ..._version import __version__
 from ...qt.theme import ThemeManager
+from ...qt.palette import rgba
 from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...core.lang.manager import t
 from ...qt.common.dispatcher import Dispatcher
@@ -21,9 +22,6 @@ from .versioning import normalize_version
 
 PANEL_DISPLAY_NAME = "Update"
 
-
-def _hex_rgb(hex_color: str) -> str:
-    return f"{int(hex_color[1:3], 16)},{int(hex_color[3:5], 16)},{int(hex_color[5:7], 16)}"
 
 
 def _phase_status(phase: str) -> str:
@@ -95,17 +93,17 @@ def _build_stylesheet() -> str:
             font-weight: normal;
         }}
         QPushButton#primary_update_btn[actionState="cancel"] {{
-            background: rgba({_hex_rgb(p.warning)}, 0.15);
+            background: {rgba(p.warning, 0.15)};
             color: {p.warning};
-            border: 1px solid rgba({_hex_rgb(p.warning)}, 0.4);
+            border: 1px solid {rgba(p.warning, 0.4)};
         }}
         QPushButton#primary_update_btn[actionState="cancel"]:hover {{
-            background: rgba({_hex_rgb(p.warning)}, 0.28);
+            background: {rgba(p.warning, 0.28)};
         }}
         QPushButton#primary_update_btn[actionState="cancelling"]:disabled {{
             background: {p.bg_secondary};
             color: {p.warning};
-            border: 1px solid rgba({_hex_rgb(p.warning)}, 0.3);
+            border: 1px solid {rgba(p.warning, 0.3)};
             font-weight: bold;
         }}
         QPushButton#secondary_update_btn {{

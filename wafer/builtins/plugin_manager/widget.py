@@ -9,15 +9,13 @@ from ...core.common.paths import get_plugin_dir
 from ...plugin.kinds import PLUGIN_KIND_COLLECTOR, PLUGIN_KIND_COMMAND, PLUGIN_KIND_PARSER
 from ...plugin.panel.base import BasePanelPlugin
 from ...qt.theme import ThemeManager
+from ...qt.palette import rgba
 from ...qt.common.dispatcher import Dispatcher
 from ...qt.common.thread import utility_pool
 from ...qt.commands.bridge import Command
 from ...qt.widgets.restart_prompt import ask_restart_all
 from ...core.lang.manager import t
 
-
-def _hex_rgb(hex_color: str) -> str:
-    return f"{int(hex_color[1:3], 16)},{int(hex_color[3:5], 16)},{int(hex_color[5:7], 16)}"
 
 
 def _build_stylesheet() -> str:
@@ -62,14 +60,14 @@ def _build_stylesheet() -> str:
             padding: {dpix(2)}px {dpix(10)}px;
         }}
         QPushButton#status_btn[status="installed"] {{
-            background: rgba({_hex_rgb(p.success)}, 0.12);
+            background: {rgba(p.success, 0.12)};
             color: {p.success};
-            border: 1px solid rgba({_hex_rgb(p.success)}, 0.3);
+            border: 1px solid {rgba(p.success, 0.3)};
         }}
         QPushButton#status_btn[status="deferred"] {{
-            background: rgba({_hex_rgb(p.warning)}, 0.12);
+            background: {rgba(p.warning, 0.12)};
             color: {p.warning};
-            border: 1px solid rgba({_hex_rgb(p.warning)}, 0.3);
+            border: 1px solid {rgba(p.warning, 0.3)};
         }}
         QPushButton#status_btn[status="install"] {{
             background: {p.accent};
@@ -101,30 +99,30 @@ def _build_stylesheet() -> str:
             font-size: {dpix(10)}px;
             border-radius: {r}px;
             padding: {dpix(2)}px {dpix(10)}px;
-            background: rgba({_hex_rgb(p.warning)}, 0.15);
+            background: {rgba(p.warning, 0.15)};
             color: {p.warning};
-            border: 1px solid rgba({_hex_rgb(p.warning)}, 0.4);
+            border: 1px solid {rgba(p.warning, 0.4)};
         }}
         QPushButton#install_cancel_btn:hover {{
-            background: rgba({_hex_rgb(p.warning)}, 0.3);
+            background: {rgba(p.warning, 0.3)};
         }}
         QPushButton#install_cancel_btn:disabled {{
             color: {p.text_muted};
             border: 1px solid {p.border_default};
         }}
         QPushButton#status_btn[status="failed"] {{
-            background: rgba({_hex_rgb(p.error)}, 0.12);
+            background: {rgba(p.error, 0.12)};
             color: {p.error};
-            border: 1px solid rgba({_hex_rgb(p.error)}, 0.3);
+            border: 1px solid {rgba(p.error, 0.3)};
         }}
         QPushButton#status_btn[status="failed"]:hover {{
             background: {p.error};
             color: {p.accent_text};
         }}
         QPushButton#delete_btn {{
-            background: rgba({_hex_rgb(p.error)}, 0.1);
+            background: {rgba(p.error, 0.1)};
             color: {p.error};
-            border: 1px solid rgba({_hex_rgb(p.error)}, 0.3);
+            border: 1px solid {rgba(p.error, 0.3)};
             border-radius: {r}px;
             padding: {dpix(4)}px {dpix(12)}px;
             font-weight: bold;
@@ -134,16 +132,16 @@ def _build_stylesheet() -> str:
             color: {p.accent_text};
         }}
         QPushButton#open_panel_btn {{
-            background: rgba({_hex_rgb(p.accent)}, 0.15);
+            background: {rgba(p.accent, 0.15)};
             color: {p.accent};
-            border: 1px solid rgba({_hex_rgb(p.accent)}, 0.4);
+            border: 1px solid {rgba(p.accent, 0.4)};
             border-radius: {r}px;
             padding: {dpix(2)}px {dpix(10)}px;
             font-size: {dpix(10)}px;
             font-weight: bold;
         }}
         QPushButton#open_panel_btn:hover {{
-            background: rgba({_hex_rgb(p.accent)}, 0.3);
+            background: {rgba(p.accent, 0.3)};
         }}
         QPushButton#open_panel_btn:disabled {{
             background: {p.bg_secondary};
@@ -164,8 +162,8 @@ def _build_stylesheet() -> str:
         }}
         QLabel#restart_label {{
             color: {p.warning};
-            background: rgba({_hex_rgb(p.warning)}, 0.1);
-            border: 1px solid rgba({_hex_rgb(p.warning)}, 0.3);
+            background: {rgba(p.warning, 0.1)};
+            border: 1px solid {rgba(p.warning, 0.3)};
             border-radius: {r}px;
             font-weight: bold;
             font-size: {dpix(11)}px;

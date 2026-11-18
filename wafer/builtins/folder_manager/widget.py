@@ -166,6 +166,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.opening_folders: frozenset[str] = frozenset()
         self.collapses = 0
         self.notice = ""
+        self.pending_select: bool | None = None
         self.build_ui()
         self.apply_rules(load_rules())
         self.apply_columns(load_columns())
@@ -408,6 +409,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.expand_slot.cancel()
         self.filter_slot.cancel()
         self.filtering = False
+        self.pending_select = None
         self.view.stop_expanding()
         self.stats_timer.stop()
         disk = self.model.disk
@@ -582,6 +584,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.refresh_stats()
         if self.stale_parents:
             self.flush_if_visible()
+        self.run_pending_expand()
 
     def on_paths_changed(self, paths: Sequence[str]) -> None:
         self.stale_parents.update(normalize_path(path) for path in paths)
@@ -650,7 +653,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.on_matches_changed()
 
     def update_status(self) -> None:
-        text = t("Scanning… {count}", count=f"{self.scanned:,}") if self.scanning else self.notice
+        text = t("Scanning… {count}", count=f"{self.scanned:,}") if self.scanning or self.pending_select is not None else self.notice
         self.status_label.setText(text)
         self.status_label.setVisible(bool(text))
 
@@ -749,39 +752,61 @@ class FolderManagerWidget(QtWidgets.QWidget):
         if rule_id in self.recount_after:
             self.recount_after.discard(rule_id)
             self.recount([rule for rule in self.rules if id(rule) == rule_id])
+        self.run_pending_expand()
 
     def publish_counts(self) -> None:
         self.model.rule_counts = [(rule, self.counts.get(id(rule), {})) for rule in self.rules]
         self.model.refresh_stats()
         self.on_matches_changed()
 
-    def scan_matches(self, scopes: Sequence[str], token, on_found: Callable[[MatchScan], None]) -> None:
+    def scan_matches(self, scopes: Sequence[str], token, on_found: Callable[[MatchScan | None], None]) -> None:
         rule_counts = [(copy.deepcopy(rule), counts) for rule, counts in self.model.rule_counts if rule.enabled and rule.conditions]
         disk = self.model.disk
         disk_folders = list(disk.nodes) if disk is not None and not needs_files(rule_counts) else []
         roots = [normalize_path(root) for root in self.model.roots or ()]
 
         def task() -> None:
-            matches = find_matches(rule_counts, disk, disk_folders, scopes, token)
-            if token.is_cancelled():
-                return
-            folders = folders_to_open(matches, roots)
-            ancestors = frozenset(folders)
-            found = MatchScan(matches, folders, ancestors.union(matches), ancestors)
-            self.dispatcher.invoke(lambda: deliver(found))
+            found = None
+            try:
+                matches = find_matches(rule_counts, disk, disk_folders, scopes, token)
+                if token.is_cancelled():
+                    return
+                folders = folders_to_open(matches, roots)
+                ancestors = frozenset(folders)
+                found = MatchScan(matches, folders, ancestors.union(matches), ancestors)
+            finally:
+                self.dispatcher.invoke(lambda: deliver(found))
 
-        def deliver(found: MatchScan) -> None:
+        def deliver(found: MatchScan | None) -> None:
             if not token.is_cancelled():
                 on_found(found)
 
         self.dispatcher.post(task, cancel=token)
 
+    def ready_for_matches(self) -> bool:
+        disk = self.model.disk
+        return disk is not None and disk.finished and not self.scanning and not self.counting
+
+    def run_pending_expand(self) -> None:
+        if self.pending_select is not None and self.ready_for_matches():
+            self.expand_to_matches(self.pending_select)
+
     def expand_to_matches(self, select: bool = False) -> None:
+        if self.database_name and not self.ready_for_matches():
+            self.expand_slot.cancel()
+            self.pending_select = select
+            self.update_status()
+            return
+        if self.pending_select is not None:
+            self.pending_select = None
+            self.update_status()
         token = self.expand_slot.renew()
         scopes = outermost(normalize_path(path) for path in self.view.get_selected_paths())
         self.scan_matches(scopes, token, lambda found: self.open_matches(token, found, select))
 
-    def open_matches(self, token, found: MatchScan, select: bool) -> None:
+    def open_matches(self, token, found: MatchScan | None, select: bool) -> None:
+        if found is None:
+            return
         if not found.matches:
             self.notify(t("No matching folders"))
             return
@@ -833,8 +858,10 @@ class FolderManagerWidget(QtWidgets.QWidget):
         collapses = self.collapses
         self.scan_matches([], self.filter_slot.renew(), lambda found: self.on_filter_scanned(version, collapses, found))
 
-    def on_filter_scanned(self, version: int, collapses: int, found: MatchScan) -> None:
+    def on_filter_scanned(self, version: int, collapses: int, found: MatchScan | None) -> None:
         self.filtering = False
+        if found is None:
+            return
         self.found_matches = found
         self.found_version = version
         if collapses != self.collapses:

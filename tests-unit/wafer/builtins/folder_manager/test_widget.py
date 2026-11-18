@@ -8,6 +8,7 @@ from PySide6 import QtCore, QtWidgets
 
 from wafer.app.viewer.widgets.foldertree import USER_ROLE_PATH
 from wafer.builtins.filters import TextFilter
+from wafer.builtins.folder_manager import commands as commands_module
 from wafer.builtins.folder_manager import view as view_module
 from wafer.builtins.folder_manager import widget as widget_module
 from wafer.builtins.folder_manager.database import FolderSettings
@@ -23,7 +24,7 @@ from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 from wafer.qt.commands.bridge import Menu
 from wafer.qt.common import rate_limit
 from wafer.qt.common.dpi import dpix
-from wafer.qt.layout.standalone import open_standalone
+from wafer.qt.layout.standalone import _standalone_dialogs as standalone_dialogs, open_standalone
 
 DEFAULT_COLUMNS = {"files": True, "all_files": True, "folders": True, "all_folders": False}
 REAL_FINISH = DiskTree.finish
@@ -431,6 +432,14 @@ def test_the_tray_window_rereads_shared_settings_when_activated(qtbot, monkeypat
     panel.close()
 
 
+class CommandContext:
+    def __init__(self, instance):
+        self.instance = instance
+
+    def get_instance(self, name):
+        return self.instance
+
+
 def write_from_another_process(key, value):
     writer = QtCore.QSettings(str(app_settings.ini_path), QtCore.QSettings.IniFormat)
     writer.setValue(key, json.dumps(value))
@@ -450,6 +459,7 @@ def test_the_tray_window_rereads_rules_another_process_saved_when_it_comes_to_th
     other.show()
     panel = open_standalone(FolderManagerWidget, "Folder Manager", "test_folder_manager", (400, 400))
     dialog = panel.window()
+    qtbot.addWidget(dialog)
     assert dialog is not panel
     qtbot.waitExposed(dialog)
     bring_to_front(qtbot, other)
@@ -461,8 +471,6 @@ def test_the_tray_window_rereads_rules_another_process_saved_when_it_comes_to_th
     panel.add_rule_button.click()
     bring_to_front(qtbot, other)
     assert [rule.name for rule in load_rules()] == ["FromViewer", "Rule 1"]
-    dialog.close()
-    other.close()
 
 
 def test_the_tray_window_saves_its_pending_edit_before_rereading(qtbot, monkeypatch):
@@ -1581,3 +1589,99 @@ def test_matches_only_waits_for_a_full_scan_to_end_before_judging_again(qtbot, t
     qtbot.waitUntil(lambda: scanned(panel, [root]) and matches_shown(panel), timeout=5000)
     settle()
     assert scans == [False]
+
+
+def expand_layout(tmp_path, query_calls):
+    root = make_folders(tmp_path / "root", {"": 0, "a": 1, "a/s": 0, "c": 0, "c/x": 1, "c/x/s": 0, "e": 0})
+    query_calls.sources = [f"{root}/a/f0.png", f"{root}/c/x/f0.png"]
+    serve("test", [root])
+    return root
+
+
+def test_expand_without_a_database_answers_at_once(qtbot, monkeypatch):
+    notices = []
+    monkeypatch.setattr(widget_module.Notifier, "info", lambda text, *args, **kwargs: notices.append(text))
+    panel = make_panel(qtbot)
+
+    panel.expand_to_matches()
+
+    qtbot.waitUntil(lambda: notices == ["No matching folders"], timeout=5000)
+    assert panel.pending_select is None
+
+
+def test_expand_before_the_panel_is_ready_runs_once_it_is(qtbot, tmp_path, monkeypatch, query_calls):
+    root = expand_layout(tmp_path, query_calls)
+    notices = []
+    monkeypatch.setattr(widget_module.Notifier, "info", lambda text, *args, **kwargs: notices.append(text))
+    panel = make_panel(qtbot)
+    expanded = []
+    real_expand = panel.view.expand_folders
+    monkeypatch.setattr(panel.view, "expand_folders", lambda folders, **kwargs: (expanded.append(kwargs.get("channel", "expand")), real_expand(folders, **kwargs)))
+    panel.set_database("test")
+
+    panel.expand_to_matches(select=False)
+    panel.expand_to_matches(select=True)
+
+    assert panel.status_label.isVisible() and panel.status_label.text().startswith("Scanning")
+    qtbot.waitUntil(lambda: sorted(panel.view.get_selected_paths()) == [f"{root}/a", f"{root}/c/x"], timeout=5000)
+    settle()
+    assert expanded == ["expand"]
+    assert notices == []
+    assert not panel.status_label.isVisible()
+
+
+def test_expand_from_the_viewer_menu_with_the_panel_closed_selects_the_matches(qtbot, tmp_path, monkeypatch, query_calls):
+    root = expand_layout(tmp_path, query_calls)
+    monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: HostWindow("test"))
+    monkeypatch.setattr(widget_module, "list_data_db_names", lambda: ["other", "test"])
+    opened = []
+
+    def show_panel(name="", *, toggle=True):
+        widget = FolderManagerPlugin().create_widget()
+        qtbot.addWidget(widget)
+        widget.show()
+        opened.append(widget)
+        return widget
+
+    monkeypatch.setattr(commands_module, "show_panel", show_panel)
+
+    commands_module.select_matches(CommandContext(None))
+
+    panel = opened[0]
+    qtbot.waitUntil(lambda: sorted(panel.view.get_selected_paths()) == [f"{root}/a", f"{root}/c/x"], timeout=5000)
+
+
+def test_expand_from_the_tray_menu_opens_the_window_and_selects_the_matches(qtbot, tmp_path, monkeypatch, query_calls):
+    without_viewer(monkeypatch)
+    root = expand_layout(tmp_path, query_calls)
+    monkeypatch.setattr(InstanceRegistry, "get_one", lambda self, name: None)
+    monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: None)
+    monkeypatch.setattr(widget_module, "list_data_db_names", lambda: ["test"])
+
+    commands_module.select_matches(CommandContext(None))
+
+    panel = standalone_dialogs["folder_manager"].content_widget
+    qtbot.addWidget(panel.window())
+    qtbot.waitUntil(lambda: sorted(panel.view.get_selected_paths()) == [f"{root}/a", f"{root}/c/x"], timeout=5000)
+
+
+def test_matches_only_keeps_following_after_a_judge_fails(qtbot, tmp_path, monkeypatch, query_calls):
+    monkeypatch.setattr(widget_module, "MATCHES_REFRESH_MS", 0)
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    real_find_matches = widget_module.find_matches
+    failures = []
+
+    def fail_once(*args):
+        if not failures:
+            failures.append(True)
+            raise RuntimeError("judge failed")
+        return real_find_matches(*args)
+
+    monkeypatch.setattr(widget_module, "find_matches", fail_once)
+    panel.set_matches_only(True)
+    qtbot.waitUntil(lambda: bool(failures) and not panel.filtering, timeout=5000)
+
+    panel.recount(panel.rules)
+
+    qtbot.waitUntil(lambda: matches_shown(panel), timeout=5000)
+    assert sorted(panel.found_matches.matches) == [f"{root}/a", f"{root}/c/x"]

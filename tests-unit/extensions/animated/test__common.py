@@ -187,6 +187,22 @@ class TestDecodeFrames:
             assert px.width() <= 50 and px.height() <= 50
 
 
+    def test_wide_frames_cover_the_cell_and_hit_the_cache(self, qapp, tmp_path):
+        from extensions.animated._common import FrameCache, decode_frames
+        from PIL import Image
+
+        size = QtCore.QSize(50, 50)
+        for name in ("wide.gif", "wide.apng"):
+            path = str(tmp_path / name)
+            imgs = [Image.new("RGBA", (200, 100), c) for c in ["red", "blue"]]
+            imgs[0].save(path, save_all=True, append_images=imgs[1:], duration=100, loop=0)
+            pixmaps, delays = decode_frames(path, size, lambda: False)
+            assert (pixmaps[0].width(), pixmaps[0].height()) == (100, 50)
+            cache = FrameCache()
+            cache.put(path, pixmaps, delays)
+            assert cache.get_if_sufficient(path, size) is not None
+
+
 class TestFrameCache:
     def test_put_and_get(self):
         from extensions.animated._common import FrameCache

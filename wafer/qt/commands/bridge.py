@@ -174,10 +174,6 @@ class Command:
         return CommandRegistry.instance()
 
     @staticmethod
-    def cycle_action_group(group_name: str):
-        return ActionKit.CommandMenuBuilder.instance().cycle_action_group(str(group_name))
-
-    @staticmethod
     def get_checked(command_id: str) -> bool:
         cmd_class = Command._registry().get_command(str(command_id))
         if cmd_class is None:

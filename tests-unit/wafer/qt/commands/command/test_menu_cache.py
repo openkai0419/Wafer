@@ -10,7 +10,7 @@ from wafer.qt.commands.command.core import (
 )
 from wafer.qt.commands.command.menu_builder import CommandMenuBuilder, MenuBuilder
 from wafer.qt.commands.command.maker import MenuMaker
-from wafer.qt.commands.command.state import ActionGroupStateManager, CommandOptionStore
+from wafer.qt.commands.command.state import CommandOptionStore
 from wafer.core.lang.manager import translator
 
 
@@ -37,9 +37,6 @@ def _reset_singletons(tmp_path):
     CommandOptionStore.configure(tmp_path / "command_options.json")
     CommandMenuBuilder._menu_cache.clear()
     CommandMenuBuilder._action_groups.clear()
-    state_mgr = ActionGroupStateManager.instance()
-    for k in [k for k in state_mgr._group_members if k.startswith(PREFIX)]:
-        del state_mgr._group_members[k]
     store = CommandOptionStore.instance()
     store._ensure_loaded()
     for k in [k for k in store._map if k.startswith(PREFIX) or k.startswith(f"__group__{PREFIX}")]:
@@ -50,8 +47,6 @@ def _reset_singletons(tmp_path):
     yield
     CommandMenuBuilder._menu_cache.clear()
     CommandMenuBuilder._action_groups.clear()
-    for k in [k for k in state_mgr._group_members if k.startswith(PREFIX)]:
-        del state_mgr._group_members[k]
     store._ensure_loaded()
     for k in [k for k in store._map if k.startswith(PREFIX) or k.startswith(f"__group__{PREFIX}")]:
         del store._map[k]
@@ -242,29 +237,3 @@ class TestMenuBuilderCache:
         menu1 = builder.build(w1, [cmd_id])
         menu2 = builder.build(w2, [cmd_id])
         assert menu1 is not menu2
-
-
-class TestExternalStateChangeBugs:
-    def test_group_cycle_action_group_reflects(self, qtbot):
-        gid = _make_id("cyc_grp")
-        a_id = _make_id("cyca")
-        b_id = _make_id("cycb")
-        sel = {"id": a_id}
-        _register_checkable(a_id, "CycA", action_group=gid, checked=lambda: sel["id"] == a_id)
-        _register_checkable(b_id, "CycB", action_group=gid, checked=lambda: sel["id"] == b_id)
-        w = QtWidgets.QWidget()
-        qtbot.addWidget(w)
-        builder = CommandMenuBuilder.instance()
-        menu = builder.build(w, [a_id, b_id])
-        tracker = menu.property("__checkable_tracker__")
-        wa_a = tracker[0][0]
-        wa_b = tracker[1][0]
-        assert wa_a.isChecked() is True
-        assert wa_b.isChecked() is False
-
-        sel["id"] = b_id
-        builder.cycle_action_group(gid)
-
-        builder.refresh_check_states(menu)
-        assert wa_a.isChecked() is False, "After cycle, old item should be unchecked"
-        assert wa_b.isChecked() is True, "After cycle, new item should be checked"

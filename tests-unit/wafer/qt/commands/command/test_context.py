@@ -158,18 +158,6 @@ class TestCommandContextGet:
         assert ctx.get("wheel_steps") == 99
 
 
-class TestCommandContextGetMany:
-    def test_empty_keys(self):
-        ctx = CommandContext()
-        assert ctx.get_many([]) == []
-
-    def test_multiple_keys(self):
-        ctx = CommandContext()
-        ctx.extras["a"] = 1
-        ctx.extras["b"] = 2
-        assert ctx.get_many(["a", "b", "c"], default=0) == [1, 2, 0]
-
-
 class TestCommandContextPut:
     def test_put_stores_value(self):
         ctx = CommandContext()

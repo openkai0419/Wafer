@@ -92,9 +92,6 @@ class CommandBindingMixin:
     def set_physical_shortcut_bindings(self, bindings: dict[Any, CommandPayload]):
         self._shortcut_manager.set_physical_bindings(self, bindings)
 
-    def set_key_bindings(self, bindings: dict[tuple, CommandPayload]):
-        self._shortcut_manager.set_key_bindings(self, bindings)
-
     def exec_command(self, cmd: Any, event=None, key: MouseActionKey | None = None, source: str | None = None, extra: dict[str, Any] | None = None):
         self._execute_payload(cmd, event=event, key=None, source=source, extra=extra)
 

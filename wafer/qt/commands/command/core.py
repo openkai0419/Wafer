@@ -354,10 +354,7 @@ def create_command_from_meta(meta: CommandMeta) -> type[CommandBase]:
 
 
 def register_command_defs(defs: list[CommandMeta]):
-    from .state import ActionGroupStateManager
-
     r = CommandRegistry.instance()
-    state_manager = ActionGroupStateManager.instance()
     for meta in defs:
         acceptor = getattr(meta, "drop_acceptor", None)
         if callable(acceptor):
@@ -375,24 +372,3 @@ def register_command_defs(defs: list[CommandMeta]):
             raise ValueError(f"Command '{meta.id}' has category='drop' but uses func. Use drop_callbacks instead.")
 
         r.register(create_command_from_meta(meta))
-
-        if not (meta.action_group and meta.checkable):
-            continue
-        if meta.id:
-            state_manager.register_member(meta.action_group, meta.id)
-
-
-def create_cycle_command(group_name: str, display: str) -> CommandMeta:
-    from .menu_builder import CommandMenuBuilder
-
-    def _cycle_func():
-        builder = CommandMenuBuilder.instance()
-        result = builder.cycle_action_group(group_name)
-        if result:
-            AppLogger.debug(f"Cycled to: {result}")
-
-    return CommandMeta(
-        path=f"cycle_{group_name}",
-        display=display,
-        func=_cycle_func,
-    )

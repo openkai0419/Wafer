@@ -197,11 +197,6 @@ class CommandContext:
             return getattr(self, k)
         return default
 
-    def get_many(self, keys, default: Any = None) -> list:
-        if not keys:
-            return []
-        return [self.get(k, default) for k in keys]
-
     def get_instance(self, name: str, default: Any = None) -> Any:
         xs = self.get_instances(name)
         return xs[0] if xs else default

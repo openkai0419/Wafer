@@ -37,15 +37,6 @@ class KeyChordStateManager:
     def modifiers_from_event(self, e: QtGui.QKeyEvent) -> set[int]:
         return set(modifier_keys_from_qt(e.modifiers()))
 
-    def pressed_for_match(self, *, include_modifiers: set[int] | None = None) -> set[int]:
-        s = set(self._logical.pressed)
-        if include_modifiers:
-            s.update(include_modifiers)
-        return s
-
-    def physical_pressed_for_match(self) -> set[int]:
-        return set(self._physical.pressed)
-
     def payload_for_press(
         self,
         *,
@@ -128,15 +119,6 @@ class KeyChordStateManager:
 
     def pop_mapped_key(self, sc: int, default: int) -> int:
         return int(self._sc_mapper.pop(0, int(sc), int(default)))
-
-    def has_any_pressed(self) -> bool:
-        return bool(self._logical.pressed or self._physical.pressed)
-
-    def consume_only(self, key: int | None = None, sc: int | None = None):
-        if key is not None:
-            self._logical.consumed[int(key)] = True
-        if sc is not None:
-            self._physical.consumed[int(sc)] = True
 
     def physical_single_fire(self, *, sc: int, combo_map: dict[KeyCombo, CommandPayload]) -> CommandPayload | None:
         if self.is_physical_consumed(sc):

@@ -40,24 +40,6 @@ class ComboParser:
             return tuple()
         return self._validate(xs)
 
-    def from_string(self, s: str) -> KeyCombo:
-        if not s:
-            return tuple()
-        head = s.split(",")[0].strip()
-        if not head:
-            return tuple()
-        parts = [p.strip() for p in head.replace("&", "+").split("+") if p.strip()]
-        tokens: list[int] = []
-        for p in parts:
-            tokens.append(self._resolver.to_key_code(self._resolver.normalize_token(p)))
-        xs = [t for t in tokens if t]
-        return self._validate(xs)
-
-    def from_spec(self, spec: KeyChordSpec) -> KeyCombo:
-        xs = [self._resolver.to_key_code(x) for x in spec]
-        xs = [x for x in xs if x]
-        return self._validate(xs)
-
     def from_sc_spec(self, spec: KeyChordSpec) -> KeyCombo:
         def to_sc_code(token: KeySpec) -> int:
             if isinstance(token, int):

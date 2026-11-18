@@ -78,14 +78,6 @@ class BindingManager:
         self.apply_mouse_bindings(ws)
         self.apply_key_bindings(ws)
 
-    def clear_shortcuts(self, widgets: list[QtWidgets.QWidget]) -> None:
-        for w in widgets:
-            if hasattr(w, "set_shortcut_bindings"):
-                w.set_shortcut_bindings({})
-
-    def clear_shortcuts_registered(self) -> None:
-        self.clear_shortcuts(list(self._widgets))
-
     def register(self, widget: QtWidgets.QWidget) -> None:
         try:
             self._widgets.add(widget)

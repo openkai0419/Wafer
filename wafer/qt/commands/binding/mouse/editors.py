@@ -163,13 +163,6 @@ class MouseBindingEditor(BindingEditorBase):
         self._save_store(manager.mouse_bindings_path())
         self.accept()
 
-    def _reset_to_defaults(self):
-        try:
-            self._reset_draft_to_seed()
-            self._reload_sections()
-        except Exception as e:
-            AppLogger.warning("MouseBindingEditor reset_to_defaults failed", exc=e)
-
     def _reset_current_action(self):
         try:
             b, c = self._current_action()

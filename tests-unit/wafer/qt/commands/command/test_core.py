@@ -14,7 +14,7 @@ from wafer.qt.commands.command.core import (
     call_with_matching_args,
 )
 from wafer.qt.commands.command.context import CommandContext
-from wafer.qt.commands.command.state import CommandOptionStore, ActionGroupStateManager
+from wafer.qt.commands.command.state import CommandOptionStore
 
 
 @pytest.fixture(autouse=True)
@@ -43,14 +43,6 @@ def _isolate_option_store(tmp_path):
     yield
     CommandOptionStore._instance = prev_inst
     CommandOptionStore._default_path = prev_path
-
-
-@pytest.fixture(autouse=True)
-def _isolate_state_manager():
-    prev = ActionGroupStateManager._instance
-    ActionGroupStateManager._instance = None
-    yield
-    ActionGroupStateManager._instance = prev
 
 
 class TestDropAcceptRegistry:
@@ -173,29 +165,6 @@ class TestRegisterCommandDefs:
         )
         register_command_defs([meta])
         assert CommandRegistry.instance().has_command("test.drop_ok")
-
-    def test_action_group_registered(self):
-        meta = CommandMeta(
-            id="test.grp_member",
-            display="Member",
-            action_group="test_group",
-            checked=lambda: False,
-            func=lambda ctx: None,
-        )
-        register_command_defs([meta])
-        mgr = ActionGroupStateManager.instance()
-        assert "test.grp_member" in mgr.get_members("test_group")
-
-    def test_action_group_not_registered_without_checkable(self):
-        meta = CommandMeta(
-            id="test.grp_nochk",
-            display="NoCheck",
-            action_group="test_group",
-            func=lambda ctx: None,
-        )
-        register_command_defs([meta])
-        mgr = ActionGroupStateManager.instance()
-        assert "test.grp_nochk" not in mgr.get_members("test_group")
 
     def test_drop_acceptor_registered(self):
         acceptor = lambda event: True

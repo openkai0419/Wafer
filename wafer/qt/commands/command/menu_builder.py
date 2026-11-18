@@ -9,7 +9,7 @@ from .core import COMMAND_MENU_MARKER, CommandMeta, CommandRegistry, MenuAction,
 from .context import CommandContext
 from ....core.logs import AppLogger
 from .payload import CommandPayload
-from .state import ActionGroupStateManager, CommandOptionStore
+from .state import CommandOptionStore
 from .menu import split_menu_path, is_sep_token, sep_path, is_section_token, section_parts
 from .maker import MenuMaker, MenuPlan
 from .menu_item import CommandMenuRow
@@ -72,7 +72,6 @@ class CommandMenuBuilder:
         if CommandMenuBuilder._initialized:
             return
         self.registry = CommandRegistry.instance()
-        self.state_manager = ActionGroupStateManager.instance()
         self._active_seed_ctx: CommandContext | None = None
         CommandMenuBuilder._initialized = True
 
@@ -212,8 +211,6 @@ class CommandMenuBuilder:
                 continue
             meta = command_class.meta
             target_menu, text_override = self._display_override(menu, menus_cache, parent, target_menu, command_id, meta, display_map)
-            if meta.action_group and meta.checkable:
-                self.state_manager.register_member(meta.action_group, command_id)
             self._add_entry(
                 target_menu,
                 parent,
@@ -399,33 +396,6 @@ class CommandMenuBuilder:
             container = action.defaultWidget() if isinstance(action, QtWidgets.QWidgetAction) else None
             if container is not None:
                 self._update_checkmark(container, checked)
-
-    def cycle_action_group(self, group_name: str) -> str | None:
-        members = self.state_manager.get_members(group_name)
-        if not members:
-            return None
-        current = self.state_manager.find_current(group_name, self.registry)
-        try:
-            idx = members.index(current) if current else -1
-        except ValueError:
-            idx = -1
-        result = members[(idx + 1) % len(members)]
-        group = self._action_groups.get(group_name)
-        if group:
-            result_action = next((a for a in group.actions() if str(a.data()) == result), None)
-            if result_action:
-                result_action.trigger()
-                return result
-        try:
-            ctx = CommandContext.create(None, "*", source="cycle", event=None)
-            ctx.put("checked", True)
-            self.registry.execute(result, ctx=ctx)
-        except Exception as e:
-            AppLogger.warning(f"Failed to execute command: {e}")
-        return result
-
-    def get_action_group_current(self, group_name: str) -> str | None:
-        return self.state_manager.find_current(group_name, self.registry)
 
     def _update_checkmark(self, container: QtWidgets.QWidget, state: bool):
         lbl = getattr(container, "_chk", None)

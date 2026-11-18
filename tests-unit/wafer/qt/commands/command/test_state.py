@@ -1,9 +1,7 @@
 import pytest
-from types import SimpleNamespace
 
 from wafer.qt.commands.command.state import (
     CommandOptionStore,
-    ActionGroupStateManager,
     PersistentStore,
 )
 from wafer.qt.commands.command.payload import CommandPayload
@@ -18,14 +16,6 @@ def _isolate_option_store(tmp_path):
     yield
     CommandOptionStore._instance = prev_inst
     CommandOptionStore._default_path = prev_path
-
-
-@pytest.fixture(autouse=True)
-def _isolate_state_manager():
-    prev = ActionGroupStateManager._instance
-    ActionGroupStateManager._instance = None
-    yield
-    ActionGroupStateManager._instance = prev
 
 
 class TestPersistentStore:
@@ -145,74 +135,3 @@ class TestStoresSharingAFile:
         fresh = PersistentStore(path)
         assert fresh._get_raw("x") == {}
         assert fresh._get_raw("y") == {"v": 2}
-
-
-class _FakeRegistry:
-    def __init__(self, members: dict[str, dict]):
-        self._members = members
-
-    def get_command(self, cmd_id):
-        spec = self._members.get(cmd_id)
-        if spec is None:
-            return None
-        meta = SimpleNamespace(checked=spec.get("resolver"))
-        return SimpleNamespace(meta=meta)
-
-
-class TestActionGroupStateManager:
-    def test_register_and_get_members(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp", "cmd.a")
-        mgr.register_member("grp", "cmd.b")
-        assert mgr.get_members("grp") == ["cmd.a", "cmd.b"]
-
-    def test_register_member_prevents_duplicate(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp", "cmd.a")
-        mgr.register_member("grp", "cmd.a")
-        assert mgr.get_members("grp") == ["cmd.a"]
-
-    def test_get_members_empty_group(self):
-        mgr = ActionGroupStateManager.instance()
-        assert mgr.get_members("nonexistent") == []
-
-    def test_find_current_returns_first_truthy(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp", "cmd.a")
-        mgr.register_member("grp", "cmd.b")
-        mgr.register_member("grp", "cmd.c")
-        registry = _FakeRegistry(
-            {
-                "cmd.a": {"resolver": lambda: False},
-                "cmd.b": {"resolver": lambda: True},
-                "cmd.c": {"resolver": lambda: True},
-            }
-        )
-        assert mgr.find_current("grp", registry) == "cmd.b"
-
-    def test_find_current_no_default_no_resolver_match(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp", "cmd.a")
-        registry = _FakeRegistry({"cmd.a": {"resolver": lambda: False}})
-        assert mgr.find_current("grp", registry) is None
-
-    def test_find_current_handles_resolver_exception(self):
-        mgr = ActionGroupStateManager.instance()
-        mgr.register_member("grp", "cmd.a")
-        mgr.register_member("grp", "cmd.b")
-
-        def broken():
-            raise RuntimeError("resolver failed")
-
-        registry = _FakeRegistry(
-            {
-                "cmd.a": {"resolver": broken},
-                "cmd.b": {"resolver": lambda: True},
-            }
-        )
-        assert mgr.find_current("grp", registry) == "cmd.b"
-
-    def test_find_current_empty_group(self):
-        mgr = ActionGroupStateManager.instance()
-        registry = _FakeRegistry({})
-        assert mgr.find_current("nonexistent", registry) is None

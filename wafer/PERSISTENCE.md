@@ -45,7 +45,6 @@ wafer の永続化クラスは「**スコープ**」と「**用途**」の 2 軸
 | `SettingDB` | SQLite | DB ごと | 個別 DB |
 | `CommandOptionStore` | JSON | App 全体 | コマンドシステム |
 | `DialogLayoutStore` | INI | Dialog ごと | 個別ダイアログ |
-| `ActionGroupStateManager` | (in-memory) | App 全体 | コマンドシステム |
 | `WebUISettings` | INI（`webui_settings.ini`） | App 全体 | WebUI サーバー（host / port / allowed_hosts / サムネイルのディスク上限。Qt 非依存で headless からも読む） |
 | `core/db/cache_limit.py` | INI（`cache_settings.ini`） | App 全体 | DB キャッシュのプロセス上限（Qt 非依存。Indexer・worker・WebUI からも読む。各プロセスが最初の接続で 1 回だけ読むので、変更は再起動で反映） |
 
@@ -56,7 +55,7 @@ wafer の永続化クラスは「**スコープ**」と「**用途**」の 2 軸
 - **「どの Workspace が開いているか」を `workspace.json`（`active_slot_ids`）に書いて判定しない。** 真実は `.temp/workspaces/<slot_id>.lock` の OS ファイルロック（`core/platform/workspace_lock.py`）。プロセスが落ちれば OS がロックを外すので古い記録が残らない。
 - **プラグイン設定を `app_settings` に書かない。** プラグインごとに `PluginConfig` を用意する（wd14 / florence / exiftool が参考実装）。例外は、開いている全 Viewer へすぐ反映したい Viewer 専用の値で、`<拡張名>/キー` で `app_settings` に置いて `key_changed` で受ける（color のパレット数、animated のキャッシュ上限）。
 - **`StateStore` は永続化しない。** 自分で JSON を書こうとしないこと。`WindowSlot` に渡すだけのインメモリレジストリ。
-- **`ActionGroupStateManager` で「現在チェックされている項目」を保持しない。** 状態は UI/データ側が真実で、コマンドの `checked` リゾルバ経由で都度問い合わせる。
+- **`action_group` の「現在チェックされている項目」を保持しない。** 状態は UI/データ側が真実で、コマンドの `checked` リゾルバ経由で都度問い合わせる。
 - **パネルの「設定値」と「UI 状態」を混ぜない。**
   - 設定値（収集器に渡したい、blacklist 等） → `PluginConfig.save_and_notify(...)`
   - UI 状態（スプリッタ・展開・スクロール） → `BasePanelPlugin.save_ui_state / restore_ui_state`

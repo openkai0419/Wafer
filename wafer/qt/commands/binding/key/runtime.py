@@ -269,10 +269,3 @@ class KeyNameResolver:
 
     def format_combo(self, combo: tuple[int, ...], pretty: bool = False) -> str:
         return self.format_keys(list(combo), "+", pretty)
-
-    def key_text_from_event(self, e: QtGui.QKeyEvent, pretty: bool = False) -> str:
-        from .combo import modifier_keys_from_qt
-
-        keys = modifier_keys_from_qt(e.modifiers())
-        keys.append(e.key())
-        return self.format_keys(keys, "+", pretty)

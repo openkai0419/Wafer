@@ -156,7 +156,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.stale_rules = False
         self.stale_parents: set[str] = set()
         self.relisting: set[str] = set()
-        self.expand_slot = CancelSlot()
+        self.select_slot = CancelSlot()
         self.matches_only = False
         self.matches_version = 0
         self.filter_slot = CancelSlot()
@@ -167,7 +167,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.opening_folders: frozenset[str] = frozenset()
         self.collapses = 0
         self.notice = ""
-        self.pending_select: bool | None = None
+        self.pending_select = False
         self.build_ui()
         self.apply_rules(load_rules())
         self.apply_columns(load_columns())
@@ -228,10 +228,8 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.db_box.currentTextChanged.connect(self.set_database)
         self.status_label = QtWidgets.QLabel()
         self.status_label.hide()
-        self.expand_button = tool_button("chevron_down", t("Open the tree to every folder a rule marks (only under the selected folders, if any)"), t("Expand to matches"))
-        self.expand_button.clicked.connect(lambda: self.expand_to_matches())
         self.select_button = tool_button("check", t("Open the tree to every folder a rule marks and select them (only under the selected folders, if any)"), t("Select matches"))
-        self.select_button.clicked.connect(lambda: self.expand_to_matches(select=True))
+        self.select_button.clicked.connect(self.select_matches)
         self.matches_button = tool_button("query", t("Show only folders a rule marks"))
         self.matches_button.setCheckable(True)
         self.matches_button.toggled.connect(self.set_matches_only)
@@ -246,7 +244,6 @@ class FolderManagerWidget(QtWidgets.QWidget):
         for widget in (
             self.db_box,
             self.status_label,
-            self.expand_button,
             self.select_button,
             self.matches_button,
             self.collapse_button,
@@ -407,10 +404,10 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.relisting = set()
         self.stale_disk = False
         self.stale_parents.clear()
-        self.expand_slot.cancel()
+        self.select_slot.cancel()
         self.filter_slot.cancel()
         self.filtering = False
-        self.pending_select = None
+        self.pending_select = False
         self.view.stop_expanding()
         self.stats_timer.stop()
         disk = self.model.disk
@@ -585,7 +582,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.refresh_stats()
         if self.stale_parents:
             self.flush_if_visible()
-        self.run_pending_expand()
+        self.run_pending_select()
 
     def on_paths_changed(self, paths: Sequence[str]) -> None:
         self.stale_parents.update(normalize_path(path) for path in paths)
@@ -654,7 +651,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.on_matches_changed()
 
     def update_status(self) -> None:
-        text = t("Scanning… {count}", count=f"{self.scanned:,}") if self.scanning or self.pending_select is not None else self.notice
+        text = t("Scanning… {count}", count=f"{self.scanned:,}") if self.scanning or self.pending_select else self.notice
         self.status_label.setText(text)
         self.status_label.setVisible(bool(text))
 
@@ -753,7 +750,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         if rule_id in self.recount_after:
             self.recount_after.discard(rule_id)
             self.recount([rule for rule in self.rules if id(rule) == rule_id])
-        self.run_pending_expand()
+        self.run_pending_select()
 
     def publish_counts(self) -> None:
         self.model.rule_counts = [(rule, self.counts.get(id(rule), {})) for rule in self.rules]
@@ -790,40 +787,40 @@ class FolderManagerWidget(QtWidgets.QWidget):
         disk = self.model.disk
         return disk is not None and disk.finished and not self.scanning and not self.counting
 
-    def run_pending_expand(self) -> None:
-        if self.pending_select is not None and self.ready_for_matches():
-            self.expand_to_matches(self.pending_select)
+    def run_pending_select(self) -> None:
+        if self.pending_select and self.ready_for_matches():
+            self.select_matches()
 
-    def expand_to_matches(self, select: bool = False) -> None:
+    def select_matches(self) -> None:
         if self.database_name and not self.ready_for_matches():
-            self.expand_slot.cancel()
-            self.pending_select = select
+            self.select_slot.cancel()
+            self.pending_select = True
             self.update_status()
             return
-        if self.pending_select is not None:
-            self.pending_select = None
+        if self.pending_select:
+            self.pending_select = False
             self.update_status()
-        token = self.expand_slot.renew()
+        token = self.select_slot.renew()
         scopes = outermost(normalize_path(path) for path in self.view.get_selected_paths())
-        self.scan_matches(scopes, token, lambda found: self.open_matches(token, found, select))
+        self.scan_matches(scopes, token, lambda found: self.open_and_select(token, found))
 
-    def open_matches(self, token, found: MatchScan | None, select: bool) -> None:
+    def open_and_select(self, token, found: MatchScan | None) -> None:
         if found is None:
             return
         if not found.matches:
             self.notify(t("No matching folders"))
             return
 
-        def select_matches() -> None:
-            if select and not token.is_cancelled():
+        def select_found() -> None:
+            if not token.is_cancelled():
                 self.view.select_folders(found.matches)
 
-        self.view.expand_folders(found.folders, on_complete=select_matches)
+        self.view.expand_folders(found.folders, on_complete=select_found)
 
     def collapse_all(self) -> None:
-        self.expand_slot.cancel()
-        if self.pending_select is not None:
-            self.pending_select = None
+        self.select_slot.cancel()
+        if self.pending_select:
+            self.pending_select = False
             self.update_status()
         self.collapses += 1
         self.opening_folders = frozenset()

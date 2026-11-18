@@ -987,7 +987,7 @@ def test_changes_outside_the_roots_are_ignored(qtbot, tmp_path, query_calls):
     assert panel.model.disk is disk and not panel.scanning
 
 
-def test_expand_to_matches_collects_badged_folders(qtbot, tmp_path, monkeypatch, query_calls):
+def test_select_matches_opens_the_tree_to_badged_folders(qtbot, tmp_path, monkeypatch, query_calls):
     root = make_folders(tmp_path / "root", {"": 1, "a": 1, "a/b": 1, "c": 0})
     query_calls.sources = [f"{root}/f0.png", f"{root}/a/f0.png", f"{root}/a/b/f0.png"]
     panel = make_panel(qtbot)
@@ -995,12 +995,12 @@ def test_expand_to_matches_collects_badged_folders(qtbot, tmp_path, monkeypatch,
     qtbot.waitUntil(lambda: bool(panel.model.badges(root)), timeout=5000)
     expanded = []
     monkeypatch.setattr(panel.view, "expand_folders", lambda folders, **_: expanded.append(list(folders)))
-    panel.expand_button.click()
+    panel.select_button.click()
     qtbot.waitUntil(lambda: bool(expanded), timeout=5000)
     assert expanded == [[root]]
 
 
-def test_expand_to_matches_judges_and_finds_ancestors_off_the_main_thread(qtbot, tmp_path, monkeypatch, query_calls):
+def test_select_matches_judges_and_finds_ancestors_off_the_main_thread(qtbot, tmp_path, monkeypatch, query_calls):
     root = make_folders(tmp_path / "root", {"": 1, "a": 1, "a/b": 1, "a/b/c": 1, "a/b/c/d": 0})
     query_calls.sources = [f"{root}/f0.png", f"{root}/a/f0.png", f"{root}/a/b/f0.png", f"{root}/a/b/c/f0.png"]
     panel = make_panel(qtbot)
@@ -1017,15 +1017,15 @@ def test_expand_to_matches_judges_and_finds_ancestors_off_the_main_thread(qtbot,
     QtCore.QCoreApplication.processEvents()
     cached = len(panel.model.values_cache)
 
-    panel.expand_to_matches()
+    panel.select_matches()
     assert expanded == [] and threads == []
     qtbot.waitUntil(lambda: bool(expanded), timeout=5000)
     assert expanded == [[root, f"{root}/a", f"{root}/a/b"]]
     assert threads and threading.main_thread() not in threads
     assert len(panel.model.values_cache) == cached
 
-    panel.expand_to_matches()
-    panel.expand_to_matches()
+    panel.select_matches()
+    panel.select_matches()
     qtbot.waitUntil(lambda: len(expanded) == 2, timeout=5000)
     QtCore.QCoreApplication.processEvents()
     assert len(expanded) == 2
@@ -1056,6 +1056,7 @@ def test_add_and_remove_rule_updates_the_model(qtbot):
 
 def test_bar_stays_one_row_with_the_new_buttons(qtbot):
     panel = make_panel(qtbot)
+    assert not hasattr(panel, "expand_button") and not hasattr(panel, "expand_to_matches")
     assert panel.matches_button.isCheckable() and not panel.matches_button.text()
     assert not panel.collapse_button.text()
     bar_widgets = [panel.flow.itemAt(n).widget() for n in range(panel.flow.count())]
@@ -1132,7 +1133,7 @@ def test_show_in_tree_is_offered_only_when_the_window_shows_the_panel_database(q
     assert not panel.view.show_in_tree_available()
 
 
-def test_expand_to_matches_only_looks_under_the_selected_folders(qtbot, tmp_path, monkeypatch, query_calls):
+def test_select_matches_only_looks_under_the_selected_folders(qtbot, tmp_path, monkeypatch, query_calls):
     root = make_folders(tmp_path / "root", {"": 0, "a": 1, "a/s": 0, "c": 0, "c/x": 1, "c/x/s": 0})
     query_calls.sources = [f"{root}/a/f0.png", f"{root}/c/x/f0.png"]
     panel = make_panel(qtbot)
@@ -1142,7 +1143,7 @@ def test_expand_to_matches_only_looks_under_the_selected_folders(qtbot, tmp_path
     monkeypatch.setattr(panel.view, "expand_folders", lambda folders, **_: expanded.append(list(folders)))
     monkeypatch.setattr(panel.view, "get_selected_paths", lambda: [f"{root}/c"])
 
-    panel.expand_to_matches()
+    panel.select_matches()
 
     qtbot.waitUntil(lambda: bool(expanded), timeout=5000)
     assert expanded == [[root, f"{root}/c"]]
@@ -1160,7 +1161,7 @@ def test_select_matches_selects_every_match_after_expanding(qtbot, tmp_path, que
     qtbot.waitUntil(lambda: sorted(panel.view.get_selected_paths()) == [f"{root}/a", f"{root}/a/b/c"], timeout=5000)
 
 
-def test_expand_to_matches_without_matches_tells_the_user(qtbot, tmp_path, monkeypatch, query_calls):
+def test_select_matches_without_matches_tells_the_user(qtbot, tmp_path, monkeypatch, query_calls):
     root = make_folders(tmp_path / "root", {"": 0, "a": 0})
     panel = make_panel(qtbot)
     bind(qtbot, panel, [root])
@@ -1169,7 +1170,7 @@ def test_expand_to_matches_without_matches_tells_the_user(qtbot, tmp_path, monke
     expanded = []
     monkeypatch.setattr(panel.view, "expand_folders", lambda folders, **_: expanded.append(list(folders)))
 
-    panel.expand_to_matches(select=True)
+    panel.select_matches()
 
     qtbot.waitUntil(lambda: bool(notices), timeout=5000)
     assert expanded == []
@@ -1299,7 +1300,7 @@ def test_collapse_all_stops_expanding_and_collapses(qtbot, tmp_path, monkeypatch
     panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
     opened = []
     monkeypatch.setattr(panel.view, "expand_folders", lambda folders, **_: opened.append(list(folders)))
-    panel.expand_to_matches()
+    panel.select_matches()
 
     panel.collapse_button.click()
 
@@ -1339,7 +1340,7 @@ def test_matches_only_does_not_cancel_a_running_select(qtbot, tmp_path, monkeypa
 
     monkeypatch.setattr(view, "expand_folders", expand_then_toggle)
 
-    panel.expand_to_matches(select=True)
+    panel.select_matches()
 
     qtbot.waitUntil(lambda: sorted(view.get_selected_paths()) == [f"{root}/a", f"{root}/c/x"], timeout=5000)
     assert calls[0] == "expand" and widget_module.MATCHES_ONLY_CHANNEL in calls
@@ -1598,18 +1599,18 @@ def expand_layout(tmp_path, query_calls):
     return root
 
 
-def test_expand_without_a_database_answers_at_once(qtbot, monkeypatch):
+def test_select_without_a_database_answers_at_once(qtbot, monkeypatch):
     notices = []
     monkeypatch.setattr(widget_module.Notifier, "info", lambda text, *args, **kwargs: notices.append(text))
     panel = make_panel(qtbot)
 
-    panel.expand_to_matches()
+    panel.select_matches()
 
     qtbot.waitUntil(lambda: notices == ["No matching folders"], timeout=5000)
-    assert panel.pending_select is None
+    assert panel.pending_select is False
 
 
-def test_expand_before_the_panel_is_ready_runs_once_it_is(qtbot, tmp_path, monkeypatch, query_calls):
+def test_select_before_the_panel_is_ready_runs_once_it_is(qtbot, tmp_path, monkeypatch, query_calls):
     root = expand_layout(tmp_path, query_calls)
     notices = []
     monkeypatch.setattr(widget_module.Notifier, "info", lambda text, *args, **kwargs: notices.append(text))
@@ -1619,8 +1620,8 @@ def test_expand_before_the_panel_is_ready_runs_once_it_is(qtbot, tmp_path, monke
     monkeypatch.setattr(panel.view, "expand_folders", lambda folders, **kwargs: (expanded.append(kwargs.get("channel", "expand")), real_expand(folders, **kwargs)))
     panel.set_database("test")
 
-    panel.expand_to_matches(select=False)
-    panel.expand_to_matches(select=True)
+    panel.select_matches()
+    panel.select_matches()
 
     assert panel.status_label.isVisible() and panel.status_label.text().startswith("Scanning")
     qtbot.waitUntil(lambda: sorted(panel.view.get_selected_paths()) == [f"{root}/a", f"{root}/c/x"], timeout=5000)
@@ -1630,7 +1631,7 @@ def test_expand_before_the_panel_is_ready_runs_once_it_is(qtbot, tmp_path, monke
     assert not panel.status_label.isVisible()
 
 
-def test_expand_from_the_viewer_menu_with_the_panel_closed_selects_the_matches(qtbot, tmp_path, monkeypatch, query_calls):
+def test_select_from_the_viewer_menu_with_the_panel_closed_selects_the_matches(qtbot, tmp_path, monkeypatch, query_calls):
     root = expand_layout(tmp_path, query_calls)
     monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: HostWindow("test"))
     monkeypatch.setattr(widget_module, "list_data_db_names", lambda: ["other", "test"])
@@ -1651,7 +1652,7 @@ def test_expand_from_the_viewer_menu_with_the_panel_closed_selects_the_matches(q
     qtbot.waitUntil(lambda: sorted(panel.view.get_selected_paths()) == [f"{root}/a", f"{root}/c/x"], timeout=5000)
 
 
-def test_expand_from_the_tray_menu_opens_the_window_and_selects_the_matches(qtbot, tmp_path, monkeypatch, query_calls):
+def test_select_from_the_tray_menu_opens_the_window_and_selects_the_matches(qtbot, tmp_path, monkeypatch, query_calls):
     without_viewer(monkeypatch)
     root = expand_layout(tmp_path, query_calls)
     monkeypatch.setattr(InstanceRegistry, "get_one", lambda self, name: None)
@@ -1703,17 +1704,17 @@ def test_an_unchanged_judge_hands_the_view_no_row_work(qtbot, tmp_path, monkeypa
     assert panel.view.row_filter is panel.found_matches.visible
 
 
-def test_collapse_all_drops_a_waiting_expand(qtbot, tmp_path, monkeypatch, query_calls):
+def test_collapse_all_drops_a_waiting_select(qtbot, tmp_path, monkeypatch, query_calls):
     expand_layout(tmp_path, query_calls)
     panel = make_panel(qtbot)
     expanded = []
     monkeypatch.setattr(panel.view, "expand_folders", lambda folders, **kwargs: expanded.append(list(folders)))
     panel.set_database("test")
-    panel.expand_to_matches(select=True)
+    panel.select_matches()
 
     panel.collapse_all()
 
-    assert panel.pending_select is None
+    assert panel.pending_select is False
     qtbot.waitUntil(lambda: panel.model.disk is not None and panel.model.disk.finished and not panel.scanning and not panel.counting, timeout=5000)
     settle()
     assert expanded == []

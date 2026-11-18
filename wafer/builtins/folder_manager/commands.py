@@ -13,16 +13,10 @@ def open_panel(ctx):
     return show_panel(name=FolderManagerPlugin.DISPLAY_NAME, toggle=False)
 
 
-def expand_matches(ctx):
-    widget = open_panel(ctx)
-    if widget is not None:
-        widget.expand_to_matches(select=False)
-
-
 def select_matches(ctx):
     widget = open_panel(ctx)
     if widget is not None:
-        widget.expand_to_matches(select=True)
+        widget.select_matches()
 
 
 def toggle_matches_only(ctx):
@@ -51,7 +45,6 @@ class FolderManagerCommands(MenuGroup):
     def commands(cls):
         return [
             ":Folder Manager",
-            CommandMeta(path="folder_manager.expand_matches", display=t("Expand to matches"), func=expand_matches),
             CommandMeta(path="folder_manager.select_matches", display=t("Select matches"), func=select_matches),
             CommandMeta(path="folder_manager.matches_only", display=t("Matches only"), func=toggle_matches_only, checked=matches_only_checked),
             CommandMeta(path="folder_manager.collapse_all", display=t("Collapse all"), func=collapse_all),

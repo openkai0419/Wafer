@@ -23,7 +23,7 @@ def text_filter():
     return TextFilter
 
 
-MENU_HEAD = ["folder_manager.expand_matches", "folder_manager.select_matches", "folder_manager.matches_only", "folder_manager.collapse_all"]
+MENU_HEAD = ["folder_manager.select_matches", "folder_manager.matches_only", "folder_manager.collapse_all"]
 
 
 def make_view(qtbot, tmp_path):
@@ -297,12 +297,12 @@ def test_context_menu_shows_show_in_tree_only_for_the_window_database(qtbot, tmp
     assert view.show_in_tree_available() is False
 
     open_menu_on_first_row(view)
-    assert seen["items"][:5] == [*MENU_HEAD, "-"]
+    assert seen["items"][:4] == [*MENU_HEAD, "-"]
     assert "file.select_path" not in seen["items"]
 
     view.show_in_tree_available = lambda: True
     open_menu_on_first_row(view)
-    assert seen["items"][:5] == ["ft.show_in_tree", *MENU_HEAD]
+    assert seen["items"][:4] == ["ft.show_in_tree", *MENU_HEAD]
     assert "file.select_path" in seen["items"]
     view.close()
 

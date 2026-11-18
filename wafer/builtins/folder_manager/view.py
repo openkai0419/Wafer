@@ -24,7 +24,7 @@ RULE_FILE_ACTIONS = (
     ("cut_all", "Cut all files below", "file.cut", True),
     ("copy_all", "Copy all files below", "file.copy", True),
 )
-PANEL_COMMANDS = ("folder_manager.expand_matches", "folder_manager.select_matches", "folder_manager.matches_only", "folder_manager.collapse_all")
+PANEL_COMMANDS = ("folder_manager.select_matches", "folder_manager.matches_only", "folder_manager.collapse_all")
 WINDOW_TREE_COMMANDS = ("file.select_path",)
 DISK_METRICS = ("folders", "all_folders")
 COUNT_SAMPLE = "99,999,999"

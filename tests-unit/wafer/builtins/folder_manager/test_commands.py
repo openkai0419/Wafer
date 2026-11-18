@@ -1,5 +1,5 @@
 from wafer.builtins.folder_manager import commands as commands_module
-from wafer.builtins.folder_manager.commands import FolderManagerCommands, collapse_all, expand_matches, select_matches, toggle_matches_only
+from wafer.builtins.folder_manager.commands import FolderManagerCommands, collapse_all, select_matches, toggle_matches_only
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 from wafer.qt.commands.bridge import Command
 from wafer.qt.commands.command.core import CommandRegistry
@@ -24,8 +24,8 @@ class FakePanel:
     def isVisible(self):
         return self.visible
 
-    def expand_to_matches(self, select=False):
-        self.calls.append(select)
+    def select_matches(self):
+        self.calls.append("select")
 
     def set_matches_only(self, on):
         self.matches_only = on
@@ -37,19 +37,19 @@ class FakePanel:
 def test_commands_are_registered(qtbot):
     FolderManagerCommands.register()
     registry = CommandRegistry.instance()
-    assert registry.has_command("folder_manager.expand_matches")
     assert registry.has_command("folder_manager.select_matches")
+    assert not registry.has_command("folder_manager.expand_matches")
+    assert "folder_manager.expand_matches" not in [getattr(item, "path", item) for item in FolderManagerCommands.commands()]
 
 
 def test_commands_run_on_the_open_panel():
     panel = FakePanel()
     ctx = FakeCtx(panel)
 
-    expand_matches(ctx)
     select_matches(ctx)
 
-    assert panel.calls == [False, True]
-    assert ctx.asked == ["FolderManager", "FolderManager"]
+    assert panel.calls == ["select"]
+    assert ctx.asked == ["FolderManager"]
 
 
 def opened_panels(monkeypatch, panel):
@@ -62,12 +62,12 @@ def test_commands_open_the_panel_when_it_is_not_open_and_then_act(monkeypatch):
     panel = FakePanel()
     opened = opened_panels(monkeypatch, panel)
 
-    expand_matches(FakeCtx(None))
+    select_matches(FakeCtx(None))
     toggle_matches_only(FakeCtx(None))
     collapse_all(FakeCtx(FakePanel(visible=False)))
 
     assert opened == [("Folder Manager", False)] * 3
-    assert panel.calls == [False, "collapse"] and panel.matches_only
+    assert panel.calls == ["select", "collapse"] and panel.matches_only
 
 
 def test_commands_do_nothing_when_the_panel_cannot_be_opened(monkeypatch):

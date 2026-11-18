@@ -1,13 +1,10 @@
-import sqlite3
-from pathlib import Path
-
 from PySide6 import QtWidgets, QtCore
 from ...qt.common.dpi import dpix
 from ...core.logs import AppLogger
 from ...qt.common.icon_engine import themed_icon
 from ...core.common.paths import list_setting_db_names, data_db_path, setting_db_path
 from ...core.db.setting_db import SettingDB
-from ...core.db.db_utils import apply_read_pragmas
+from ...core.db.db_utils import open_readonly
 from ...qt.common.dispatcher import Dispatcher, CancelSlot
 from ...core.lang.manager import t
 
@@ -43,10 +40,8 @@ def _resolve_plugin_info(prefix: str) -> tuple[str, str]:
 
 
 def _query_prefix_summary(db_path: str) -> list[tuple[str, int, int]]:
-    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
-    conn = sqlite3.connect(uri, timeout=1.0, uri=True, check_same_thread=False)
+    conn = open_readonly(db_path)
     try:
-        apply_read_pragmas(conn)
         cur = conn.execute("""
             SELECT prefix, SUM(meta_count), SUM(tag_count) FROM (
                 SELECT

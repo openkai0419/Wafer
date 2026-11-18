@@ -327,7 +327,7 @@ class TestQuerySampleValues:
         conn.execute("INSERT INTO tags VALUES ('h1', 'exif.Make', 'Nikon')")
         conn.commit()
         monkeypatch.setattr(f"{MODULE}.list_setting_db_names", lambda: ["db1"])
-        monkeypatch.setattr(f"{MODULE}._open_ro", lambda name: conn)
+        monkeypatch.setattr(f"{MODULE}.open_readonly", lambda path: conn)
         return conn
 
     def test_returns_meta_and_tags(self, monkeypatch):
@@ -356,7 +356,7 @@ class TestQuerySampleValues:
             conn.execute("INSERT INTO meta_info VALUES (?, 'k.v', ?)", (f"/{i}.jpg", val))
         conn.commit()
         monkeypatch.setattr(f"{MODULE}.list_setting_db_names", lambda: ["db1"])
-        monkeypatch.setattr(f"{MODULE}._open_ro", lambda name: conn)
+        monkeypatch.setattr(f"{MODULE}.open_readonly", lambda path: conn)
         rows = _query_sample_values("k.v", limit=3)
         assert [r[2] for r in rows] == ["abcd", "abc", "ab"]
 
@@ -374,8 +374,49 @@ class TestQuerySampleValues:
         setup.commit()
         setup.close()
         monkeypatch.setattr(f"{MODULE}.list_setting_db_names", lambda: ["db1"])
-        monkeypatch.setattr(f"{MODULE}._open_ro", lambda name: sqlite3.connect(db_file))
+        monkeypatch.setattr(f"{MODULE}.open_readonly", lambda path: sqlite3.connect(db_file))
         rows = _query_sample_values("k.v", limit=3)
         assert rows[0][2] == "meaningful"
         assert len(rows) == 3
         assert all(v in (None, "") for v in [r[2] for r in rows[1:]])
+
+
+class _QueuedDispatcher(_SyncDispatcher):
+    def __init__(self):
+        super().__init__()
+        self.tasks = []
+
+    def post(self, fn, priority=5, cancel=None):
+        self.tasks.append(fn)
+
+    def run_all(self):
+        while self.tasks:
+            self.tasks.pop(0)()
+
+
+class TestKeyLoadAndPreview:
+    def test_widget_uses_utility_pool(self, qtbot, monkeypatch):
+        from wafer.qt.common.thread import utility_pool
+
+        monkeypatch.setattr(f"{MODULE}.KeyFilterWidget._build_tabs", lambda self: None)
+        monkeypatch.setattr(f"{MODULE}.KeyFilterWidget._connect_bridge", lambda self: None)
+        from wafer.builtins.key_filter.panel import KeyFilterWidget
+
+        widget = KeyFilterWidget()
+        qtbot.addWidget(widget)
+        assert widget._dispatcher._pool is utility_pool
+
+    def test_preview_does_not_cancel_key_loading(self, qtbot, monkeypatch):
+        tab = _make_tab(qtbot, monkeypatch)
+        dispatcher = _QueuedDispatcher()
+        tab._dispatcher = dispatcher
+        monkeypatch.setattr(f"{MODULE}._query_prefix_keys", lambda prefix: KEY_ROWS + [("New:Key", 5)])
+        monkeypatch.setattr(f"{MODULE}._query_sample_values", lambda key: [])
+        tab.refresh()
+        item = tab._tree.topLevelItem(0)
+        while item.childCount():
+            item = item.child(0)
+        tab._show_key_preview(item)
+        dispatcher.run_all()
+        assert ("New:Key", 5) in tab._key_data
+        assert not tab._loading._timer.isActive()

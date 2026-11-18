@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import os
-import sqlite3
-from pathlib import Path
 from functools import partial
 
 from PySide6 import QtWidgets, QtCore
@@ -17,8 +15,9 @@ from ...core.logs import AppLogger
 from ...qt.common.notifier import Notifier
 from ...core.lang.manager import t
 from ...core.common.paths import list_setting_db_names, data_db_path
-from ...core.db.db_utils import apply_read_pragmas
+from ...core.db.db_utils import open_readonly
 from ...qt.common.dispatcher import Dispatcher, CancelSlot
+from ...qt.common.thread import utility_pool
 from ...qt.common.icon_engine import themed_icon
 from ...app.viewer.widgets.loading_overlay import OverlayLoadingIndicator
 
@@ -47,7 +46,7 @@ class KeyFilterPanelPlugin(BasePanelPlugin):
 class KeyFilterWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._dispatcher = Dispatcher()
+        self._dispatcher = Dispatcher(utility_pool)
 
         self._tabs = QtWidgets.QTabWidget()
         self._tabs.currentChanged.connect(self._on_tab_changed)
@@ -215,7 +214,8 @@ class _FilterTab(QtWidgets.QWidget):
         super().__init__(parent)
         self.prefix = prefix
         self._dispatcher = dispatcher
-        self._cancel = CancelSlot()
+        self._load_cancel = CancelSlot()
+        self._preview_cancel = CancelSlot()
         self._filter_mode, keys = KeyFilter.get(prefix)
         self._filter_keys = set(keys)
         self._saved_mode = self._filter_mode
@@ -438,7 +438,7 @@ class _FilterTab(QtWidgets.QWidget):
         self._loading.move(m, m)
 
     def _load_keys(self):
-        cancel = self._cancel.renew()
+        cancel = self._load_cancel.renew()
         self._position_loading()
         self._loading.start()
         prefix = self.prefix
@@ -597,7 +597,7 @@ class _FilterTab(QtWidgets.QWidget):
         full_key = item.data(_KEY_COL, QtCore.Qt.UserRole)
         if not full_key:
             return
-        cancel = self._cancel.renew()
+        cancel = self._preview_cancel.renew()
         prefix = self.prefix
 
         def _bg():
@@ -645,21 +645,13 @@ class _FilterTab(QtWidgets.QWidget):
         return result
 
 
-def _open_ro(db_name: str):
-    db_path = data_db_path(db_name)
-    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
-    conn = sqlite3.connect(uri, timeout=1.0, uri=True, check_same_thread=False)
-    apply_read_pragmas(conn)
-    return conn
-
-
 def _list_prefixes() -> list[str]:
     prefixes: set[str] = set()
     sql = "SELECT DISTINCT SUBSTR(key, 1, INSTR(key, '.') - 1) FROM meta_info WHERE key LIKE '%.%' UNION SELECT DISTINCT SUBSTR(key, 1, INSTR(key, '.') - 1) FROM tags WHERE key LIKE '%.%'"
     for db_name in list_setting_db_names():
         conn = None
         try:
-            conn = _open_ro(db_name)
+            conn = open_readonly(data_db_path(db_name))
             for row in conn.execute(sql).fetchall():
                 if row[0]:
                     prefixes.add(row[0])
@@ -682,7 +674,7 @@ def _query_prefix_keys(prefix: str) -> list[tuple[str, int]]:
     for db_name in list_setting_db_names():
         conn = None
         try:
-            conn = _open_ro(db_name)
+            conn = open_readonly(data_db_path(db_name))
             for row in conn.execute(sql, (like, like)).fetchall():
                 merged[row[0]] = merged.get(row[0], 0) + row[1]
         except Exception as e:
@@ -712,7 +704,7 @@ def _collect_samples(sql: str, key: str, budget: int) -> list[tuple[str, str, st
             break
         conn = None
         try:
-            conn = _open_ro(db_name)
+            conn = open_readonly(data_db_path(db_name))
             rows = conn.execute(sql, (key, remaining, key, remaining)).fetchall()[:remaining]
             out.extend((db_name, row[0], row[1]) for row in rows)
             remaining -= len(rows)

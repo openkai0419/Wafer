@@ -123,6 +123,12 @@ def _create_app(*, shared_opengl=True):
     install_instant_tooltips(app)
     return app
 
+def _attach_debug_agent(process_role):
+    if current_profile() is None:
+        return
+    from debug.agent import attach
+    attach(process_role)
+
 def _start_viewer_profiling():
     if constants.DEV_MODE:
         from wafer.core.profiling import profiler
@@ -169,6 +175,7 @@ def _entry_tray():
             AppLogger.info('TRAY RUNNING')
 
             app = _create_app()
+            _attach_debug_agent('tray')
             app.setQuitOnLastWindowClosed(False)
             app.aboutToQuit.connect(AppProcess.shutdown_children)
             tray_icon = TrayApp(get_icon())
@@ -269,6 +276,7 @@ def _entry_webui(args):
             run_headless(host, port, open_browser=not args.no_browser)
         else:
             app = _create_app()
+            _attach_debug_agent('webui')
             _wait_install_then_load_plugins(app)
             from wafer.plugin.loader import get_command_registry
             get_command_registry().activate('webui')
@@ -306,6 +314,7 @@ def main():
             _entry_launcher(args.path)
             return
         app = _create_app()
+        _attach_debug_agent('viewer')
         if os.environ.pop('WAFER_REPLACE_TRAY', None):
             AppProcess.terminate_cmd('--tray', wait=True)
         _ensure_tray_unless_pending()
@@ -346,6 +355,7 @@ def main():
             AppLogger.warning('--parser requires a db name')
     elif args.viewer:
         app = _create_app()
+        _attach_debug_agent('viewer')
         open_request = _open_request(args)
         lock = None
         if not args.pick:

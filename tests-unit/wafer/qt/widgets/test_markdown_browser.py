@@ -115,6 +115,18 @@ class TestMarkdownBrowser:
         browser.cleanup()
         browser.cleanup()
 
+    def test_destroyed_browser_stops_receiving_theme_changes(self, qtbot):
+        from wafer.qt.theme import ThemeManager
+
+        callbacks = ThemeManager.instance().on_theme_changed._callbacks
+        before = len(callbacks)
+        parent = QtWidgets.QWidget()
+        qtbot.addWidget(parent)
+        browser = MarkdownBrowser(parent)
+        assert len(callbacks) == before + 1
+        shiboken6.delete(browser)
+        assert len(callbacks) == before
+
 
 class TestRenderToHtml:
     def test_heading(self):

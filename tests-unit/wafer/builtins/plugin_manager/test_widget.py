@@ -600,6 +600,72 @@ class TestOrderTab:
         assert tab.get_orders()["command"] == ["Video"]
 
 
+    def test_saved_order_survives_revert_after_save(self, qtbot):
+        from wafer.builtins.plugin_manager.viewers_tab import OrderTab
+
+        class PlugA(BasePlugin):
+            NAME = "a"
+            PRIORITY = 2
+
+        class PlugB(BasePlugin):
+            NAME = "b"
+            PRIORITY = 1
+
+        tab = OrderTab({"viewer": [PlugA, PlugB]}, {"viewer": ["a", "b"]})
+        qtbot.addWidget(tab)
+        tab._lists["viewer"].set_plugins([PlugB, PlugA])
+        changed = tab.changed_orders()
+        assert changed == {"viewer": ["b", "a"]}
+        tab.mark_saved(changed)
+
+        tab.revert({"viewer": [PlugA, PlugB]})
+
+        assert tab.get_orders()["viewer"] == ["b", "a"]
+        assert tab.changed_orders() == {}
+
+    def test_refresh_keeps_unsaved_reorder_when_plugin_added(self, qtbot):
+        from wafer.builtins.plugin_manager.viewers_tab import OrderTab
+
+        class PlugA(BasePlugin):
+            NAME = "a"
+            PRIORITY = 3
+
+        class PlugB(BasePlugin):
+            NAME = "b"
+            PRIORITY = 2
+
+        class PlugC(BasePlugin):
+            NAME = "c"
+            PRIORITY = 1
+
+        tab = OrderTab({"viewer": [PlugA, PlugB]}, {"viewer": ["a", "b"]})
+        qtbot.addWidget(tab)
+        tab._lists["viewer"].set_plugins([PlugB, PlugA])
+
+        tab.refresh({"viewer": [PlugA, PlugB, PlugC]})
+
+        assert tab.get_orders()["viewer"] == ["b", "a", "c"]
+        assert tab.changed_orders() == {"viewer": ["b", "a", "c"]}
+
+    def test_unsaved_kind_discovered_in_steps_has_no_change(self, qtbot):
+        from wafer.builtins.plugin_manager.viewers_tab import OrderTab
+
+        class PlugA(BasePlugin):
+            NAME = "a"
+            PRIORITY = 1
+
+        class PlugB(BasePlugin):
+            NAME = "b"
+            PRIORITY = 2
+
+        tab = OrderTab({}, {})
+        qtbot.addWidget(tab)
+        tab.refresh({"viewer": [PlugB]})
+        tab.refresh({"viewer": [PlugA, PlugB]})
+
+        assert tab.changed_orders() == {}
+
+
 class TestPluginManagerWidget:
     def test_restart_button_runs_restart_all(self, qtbot, monkeypatch):
         monkeypatch.setattr(
@@ -626,10 +692,37 @@ class TestPluginManagerWidget:
         dlg = PluginManagerWidget()
         qtbot.addWidget(dlg)
         dlg._initial_enabled_overrides = {"a": False, "b": True}
-        dlg._initial_orders = {"grid": ["a"]}
-        assert not dlg._has_plugin_changes({"a": False, "b": True}, {"grid": ["a"]})
-        assert dlg._has_plugin_changes({"a": False, "b": True, "c": False}, {"grid": ["a"]})
+        assert not dlg._has_plugin_changes({"a": False, "b": True}, {})
+        assert dlg._has_plugin_changes({"a": False, "b": True, "c": False}, {})
         assert dlg._has_plugin_changes({"a": False, "b": True}, {"grid": ["b", "a"]})
+
+    def test_save_without_changes_writes_nothing(self, qtbot, monkeypatch):
+        monkeypatch.setattr("wafer.builtins.plugin_manager.extensions_tab.get_plugin_dir", lambda: "/nonexistent")
+        monkeypatch.setattr("wafer.builtins.plugin_manager.widget.get_plugin_dir", lambda: "/nonexistent")
+        from wafer.builtins.plugin_manager.widget import PluginManagerWidget
+
+        class PlugA(BasePlugin):
+            NAME = "a"
+            PRIORITY = 1
+
+        class PlugB(BasePlugin):
+            NAME = "b"
+            PRIORITY = 2
+
+        dlg = PluginManagerWidget()
+        qtbot.addWidget(dlg)
+        dlg._order_tab.refresh({"viewer": [PlugA]})
+        dlg._order_tab.refresh({"viewer": [PlugA, PlugB]})
+        notes = []
+        monkeypatch.setattr("wafer.builtins.plugin_manager.widget.Notifier.info", staticmethod(lambda msg: notes.append(msg)))
+        saved = []
+        monkeypatch.setattr(dlg._collectors_tab, "save_to_dbs", lambda: saved.append("dbs"))
+        monkeypatch.setattr(dlg._settings, "set_priority_order", lambda key, order: saved.append(key))
+
+        dlg._on_save()
+
+        assert saved == []
+        assert notes == ["No changes to save"]
 
     def test_send_delete_dispatches_to_node(self, qtbot, monkeypatch):
         monkeypatch.setattr(

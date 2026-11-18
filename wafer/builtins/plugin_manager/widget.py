@@ -211,7 +211,6 @@ class PluginManagerWidget(QtWidgets.QWidget):
         self._order_tab = OrderTab(registry_data, saved_orders, builtin_command_names)
 
         self._initial_enabled_overrides = dict(enabled_overrides)
-        self._initial_orders = dict(saved_orders)
         self._order_scroll = self._scrollable(self._order_tab)
         self._tabs.addTab(self._order_scroll, t("Order"))
         self._collectors_dirty = False
@@ -280,19 +279,19 @@ class PluginManagerWidget(QtWidgets.QWidget):
                 result[qualified] = plugin_cls
         return result
 
-    def _has_plugin_changes(self, enabled_overrides, orders):
+    def _has_plugin_changes(self, enabled_overrides, changed_orders):
         if enabled_overrides != self._initial_enabled_overrides:
             return True
         if self._changed_plugin_classes():
             return True
-        return orders != self._initial_orders
+        return bool(changed_orders)
 
     def _on_save(self):
         collectors_changed = self._collectors_tab.has_changes()
         if collectors_changed and not self._collectors_tab.confirm_and_save():
             return
         enabled_overrides = self._ext_tab.collect_enabled_overrides()
-        orders = self._order_tab.get_orders()
+        orders = self._order_tab.changed_orders()
         has_changes = self._has_plugin_changes(enabled_overrides, orders) or collectors_changed
         extensions_dir = get_plugin_dir()
         pending = installer_queue.has_pending_queue(extensions_dir)
@@ -304,7 +303,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
         changed_classes = list(self._changed_plugin_classes().values())
         if changed_classes:
             scope |= restart_scope_from_plugins(changed_classes)
-        if orders != self._initial_orders:
+        if orders:
             scope |= RestartScope.VIEWER
         if collectors_changed:
             scope |= RestartScope.TRAY
@@ -319,7 +318,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
                 self._settings.set_priority_order(key, order)
             AppLogger.info(f"[PluginManager] Saved: enabled_overrides={enabled_overrides}, orders={orders}")
             self._initial_enabled_overrides = dict(enabled_overrides)
-            self._initial_orders = dict(orders)
+            self._order_tab.mark_saved(orders)
         self._update_restart_label()
         if has_changes:
             if RestartScope.TRAY in scope and RestartScope.VIEWER in scope:
@@ -336,7 +335,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
         from .viewers_tab import REGISTRY_KEYS
 
         enabled_overrides = self._ext_tab.collect_enabled_overrides()
-        orders = self._order_tab.get_orders()
+        orders = self._order_tab.changed_orders()
         if not self._has_plugin_changes(enabled_overrides, orders) and not self._collectors_tab.has_changes():
             return
         self._ext_tab.revert(self._initial_enabled_overrides)

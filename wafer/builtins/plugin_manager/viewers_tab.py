@@ -70,25 +70,19 @@ class OrderTab(QtWidgets.QWidget):
         self._builtin_command_names = builtin_command_names or set()
         self._lists: dict[str, _ReorderList] = {}
         self._labels: dict[str, QtWidgets.QLabel] = {}
+        self._plugins: dict[str, list[type]] = {}
         self._saved_orders: dict[str, list[str]] = {k: list(v) for k, v in saved_orders.items()}
 
         self._main_layout = QtWidgets.QVBoxLayout(self)
         self._main_layout.setSpacing(dpix(8))
 
-        desc = QtWidgets.QLabel(t("Drag to reorder \u00b7 higher = preferred"))
+        desc = QtWidgets.QLabel(t("Drag to reorder · higher = preferred"))
         desc.setStyleSheet(f"color: #888; font-size: {dpix(10)}px;")
         self._main_layout.addWidget(desc)
 
         for key in REGISTRY_KEYS:
             self._add_section(key)
-            plugins = self._prepare_plugins(key, registry_data.get(key, []))
-            if not plugins:
-                self._labels[key].hide()
-                self._lists[key].hide()
-                continue
-            order = saved_orders.get(key, [])
-            sorted_plugins = self._sorted_by_order(plugins, order)
-            self._lists[key].set_plugins(sorted_plugins)
+        self.revert(registry_data)
 
     def _add_section(self, key: str):
         suffix = "Priority" if key in _PRIORITY_KEYS else "Order"
@@ -109,11 +103,12 @@ class OrderTab(QtWidgets.QWidget):
             key=lambda c: (0, order_map[c.NAME]) if c.NAME in order_map else (1, -c.PRIORITY),
         )
 
-    def refresh(self, registry_data: dict[str, list[type]], builtin_command_names: set[str] | None = None):
+    def _show_plugins(self, registry_data: dict[str, list[type]], builtin_command_names: set[str] | None, orders: dict[str, list[str]]):
         if builtin_command_names is not None:
             self._builtin_command_names = builtin_command_names
         for key in REGISTRY_KEYS:
             plugins = self._prepare_plugins(key, registry_data.get(key, []))
+            self._plugins[key] = plugins
             reorder_list = self._lists[key]
             if not plugins:
                 reorder_list.clear()
@@ -122,27 +117,26 @@ class OrderTab(QtWidgets.QWidget):
                 continue
             reorder_list.show()
             self._labels[key].show()
-            incoming = {c.NAME for c in plugins}
-            current = reorder_list.get_order()
-            order = current if set(current) == incoming else self._saved_orders.get(key, [])
-            sorted_plugins = self._sorted_by_order(plugins, order)
-            reorder_list.set_plugins(sorted_plugins)
+            reorder_list.set_plugins(self._sorted_by_order(plugins, orders.get(key, [])))
+
+    def refresh(self, registry_data: dict[str, list[type]], builtin_command_names: set[str] | None = None):
+        orders = {}
+        for key in REGISTRY_KEYS:
+            current = self._lists[key].get_order()
+            orders[key] = current if current != self.saved_order(key) else self._saved_orders.get(key, [])
+        self._show_plugins(registry_data, builtin_command_names, orders)
+
+    def revert(self, registry_data: dict[str, list[type]], builtin_command_names: set[str] | None = None):
+        self._show_plugins(registry_data, builtin_command_names, self._saved_orders)
+
+    def saved_order(self, key: str) -> list[str]:
+        return [c.NAME for c in self._sorted_by_order(self._plugins.get(key, []), self._saved_orders.get(key, []))]
 
     def get_orders(self) -> dict[str, list[str]]:
         return {key: lst.get_order() for key, lst in self._lists.items()}
 
-    def revert(self, registry_data: dict[str, list[type]], builtin_command_names: set[str] | None = None):
-        if builtin_command_names is not None:
-            self._builtin_command_names = builtin_command_names
-        for key in REGISTRY_KEYS:
-            plugins = self._prepare_plugins(key, registry_data.get(key, []))
-            reorder_list = self._lists[key]
-            if not plugins:
-                reorder_list.clear()
-                reorder_list.hide()
-                self._labels[key].hide()
-                continue
-            reorder_list.show()
-            self._labels[key].show()
-            sorted_plugins = self._sorted_by_order(plugins, self._saved_orders.get(key, []))
-            reorder_list.set_plugins(sorted_plugins)
+    def changed_orders(self) -> dict[str, list[str]]:
+        return {key: order for key, order in self.get_orders().items() if order != self.saved_order(key)}
+
+    def mark_saved(self, orders: dict[str, list[str]]):
+        self._saved_orders.update({key: list(order) for key, order in orders.items()})

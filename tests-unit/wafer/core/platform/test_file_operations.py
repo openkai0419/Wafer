@@ -476,3 +476,212 @@ def test_execute_item_same_path_cut_noop(tmp_path):
     assert res.status == "skipped"
     assert src.exists()
     assert src.read_text(encoding="utf-8") == "x"
+
+
+def _overwrite_plan(src, dst):
+    from wafer.core.platform.file_operations import PastePlanItem
+
+    return PastePlanItem(index=0, src=src, is_dir=src.is_dir(), action="copy", dst_default=dst, conflict=True, suggested_dst=None)
+
+
+def test_overwrite_cancelled_before_copy_keeps_the_old_file(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    src = tmp_path / "src" / "a.txt"
+    src.parent.mkdir()
+    src.write_text("new", encoding="utf-8")
+    dst = tmp_path / "a.txt"
+    dst.write_text("old", encoding="utf-8")
+
+    res = FileExecutor(cancel_check=lambda: True).execute_one(_overwrite_plan(src, dst), PasteDecision(mode="overwrite"))
+
+    assert res.error == "cancelled"
+    assert dst.read_text(encoding="utf-8") == "old"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["a.txt", "src"]
+
+
+def test_overwrite_with_unreadable_source_keeps_the_old_file(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    dst = tmp_path / "a.txt"
+    dst.write_text("old", encoding="utf-8")
+
+    res = FileExecutor()._execute_item(tmp_path / "missing" / "a.txt", dst, "copy", PasteDecision(mode="overwrite"))
+
+    assert res.status == "error"
+    assert dst.read_text(encoding="utf-8") == "old"
+    assert [p.name for p in tmp_path.iterdir()] == ["a.txt"]
+
+
+def test_overwrite_replaces_the_file(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    src = tmp_path / "src" / "a.txt"
+    src.parent.mkdir()
+    src.write_text("new", encoding="utf-8")
+    dst = tmp_path / "a.txt"
+    dst.write_text("old", encoding="utf-8")
+
+    res = FileExecutor().execute_one(_overwrite_plan(src, dst), PasteDecision(mode="overwrite"))
+
+    assert res.status == "ok"
+    assert dst.read_text(encoding="utf-8") == "new"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["a.txt", "src"]
+
+
+def test_overwrite_replaces_a_folder_with_a_folder(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    src = tmp_path / "src" / "d"
+    src.mkdir(parents=True)
+    (src / "new.txt").write_text("new", encoding="utf-8")
+    dst = tmp_path / "out" / "d"
+    dst.mkdir(parents=True)
+    (dst / "old.txt").write_text("old", encoding="utf-8")
+
+    res = FileExecutor()._execute_item(src, dst, "copy", PasteDecision(mode="overwrite"))
+
+    assert res.status == "ok"
+    assert [p.name for p in dst.iterdir()] == ["new.txt"]
+    assert [p.name for p in dst.parent.iterdir()] == ["d"]
+
+
+def test_overwrite_never_replaces_a_folder_with_a_file(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    src = tmp_path / "src" / "export"
+    src.parent.mkdir()
+    src.write_text("file", encoding="utf-8")
+    folder = tmp_path / "export"
+    folder.mkdir()
+    (folder / "keep.txt").write_text("keep", encoding="utf-8")
+
+    res = FileExecutor().execute_one(_overwrite_plan(src, folder), PasteDecision(mode="overwrite"))
+
+    assert res.status == "ok"
+    assert (folder / "keep.txt").read_text(encoding="utf-8") == "keep"
+    assert Path(res.dst) != folder
+    assert Path(res.dst).read_text(encoding="utf-8") == "file"
+
+
+def test_merge_overwrite_keeps_a_folder_that_shares_a_file_name(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    src = tmp_path / "src" / "d"
+    src.mkdir(parents=True)
+    (src / "x").write_text("file", encoding="utf-8")
+    dst = tmp_path / "d"
+    (dst / "x").mkdir(parents=True)
+    (dst / "x" / "keep.txt").write_text("keep", encoding="utf-8")
+
+    res = FileExecutor()._execute_item(src, dst, "copy", PasteDecision(mode="merge", merge_decisions={}))
+
+    assert res.status == "ok"
+    assert (dst / "x" / "keep.txt").read_text(encoding="utf-8") == "keep"
+    assert sorted(p.name for p in dst.iterdir()) == ["x", "x (2)"]
+
+
+def test_merge_cancel_keeps_every_destination_file(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    src = tmp_path / "src" / "d"
+    src.mkdir(parents=True)
+    dst = tmp_path / "d"
+    dst.mkdir()
+    for i in range(3):
+        (src / f"f{i}").write_text(f"new{i}", encoding="utf-8")
+        (dst / f"f{i}").write_text(f"old{i}", encoding="utf-8")
+    copies = []
+
+    executor = FileExecutor(progress_callback=copies.append, cancel_check=lambda: len(copies) >= 1)
+    res = executor._execute_item(src, dst, "copy", PasteDecision(mode="merge", merge_decisions={}))
+
+    assert res.error == "cancelled"
+    assert sorted(p.name for p in dst.iterdir()) == ["f0", "f1", "f2"]
+    assert [(dst / f"f{i}").read_text(encoding="utf-8") for i in range(3)] == ["new0", "old1", "old2"]
+
+
+class _FakeResponse:
+    def __init__(self, status_code, chunks=()):
+        self.status_code = status_code
+        self._chunks = chunks
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def iter_content(self, chunk_size):
+        yield from self._chunks
+
+
+def _remote_plan(tmp_path, source, *, binary=False):
+    from wafer.core.platform.file_operations import DropPlanItem
+    from wafer.qt.transfer.dragparser import ParsedItem
+
+    dst = tmp_path / "image.png"
+    item = ParsedItem(source=source, name=dst.name, is_binary=binary, mime_type="" if binary else "url")
+    return DropPlanItem(index=0, src=None, name=dst.name, is_dir=False, action="copy", dst_default=dst, conflict=dst.exists(), suggested_dst=None, parsed_item=item)
+
+
+def test_remote_overwrite_keeps_the_old_file_when_the_download_fails(tmp_path, monkeypatch):
+    import requests
+
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    (tmp_path / "image.png").write_bytes(b"old")
+    monkeypatch.setattr(requests.Session, "get", lambda self, url, **kw: _FakeResponse(403))
+
+    res = FileExecutor().execute_one(_remote_plan(tmp_path, "https://example.com/image.png"), PasteDecision(mode="overwrite"))
+
+    assert res.status == "error"
+    assert (tmp_path / "image.png").read_bytes() == b"old"
+    assert [p.name for p in tmp_path.iterdir()] == ["image.png"]
+
+
+def test_remote_overwrite_replaces_the_file_after_download(tmp_path, monkeypatch):
+    import requests
+
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    (tmp_path / "image.png").write_bytes(b"old")
+    monkeypatch.setattr(requests.Session, "get", lambda self, url, **kw: _FakeResponse(200, [b"ne", b"w"]))
+
+    res = FileExecutor().execute_one(_remote_plan(tmp_path, "https://example.com/image.png"), PasteDecision(mode="overwrite"))
+
+    assert res.status == "ok"
+    assert (tmp_path / "image.png").read_bytes() == b"new"
+    assert [p.name for p in tmp_path.iterdir()] == ["image.png"]
+
+
+def test_remote_drop_failure_mid_download_leaves_no_partial_file(tmp_path, monkeypatch):
+    import requests
+
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    def broken_chunks():
+        yield b"half"
+        raise requests.ConnectionError("reset")
+
+    monkeypatch.setattr(requests.Session, "get", lambda self, url, **kw: _FakeResponse(200, broken_chunks()))
+
+    res = FileExecutor().execute_one(_remote_plan(tmp_path, "https://example.com/image.png"), PasteDecision(mode="overwrite"))
+
+    assert res.status == "error"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_binary_drop_skip_and_rename(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    (tmp_path / "image.png").write_bytes(b"old")
+    plan = _remote_plan(tmp_path, b"new", binary=True)
+
+    skipped = FileExecutor().execute_one(plan, PasteDecision(mode="skip"))
+    renamed = FileExecutor().execute_one(plan, PasteDecision(mode="rename"))
+
+    assert skipped.status == "skipped"
+    assert renamed.status == "ok"
+    assert (tmp_path / "image.png").read_bytes() == b"old"
+    assert Path(renamed.dst).read_bytes() == b"new"

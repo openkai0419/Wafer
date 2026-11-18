@@ -112,7 +112,7 @@ def test_execute_paste_plans_with_ui_preserves_result_order_with_virtual_plan(mo
         return [OperationResult(action="copy", src=str(plan.src), dst=str(plan.dst_default), status="ok") for plan in plans]
 
     monkeypatch.setattr(paste, "_resolve_conflicts_with_ui", fake_resolve_conflicts_with_ui)
-    monkeypatch.setattr(paste, "_execute_paste_items", fake_execute_paste_items)
+    monkeypatch.setattr(paste, "_execute_plans", fake_execute_paste_items)
 
     valid_a = tmp_path / "a.txt"
     valid_b = tmp_path / "b.txt"

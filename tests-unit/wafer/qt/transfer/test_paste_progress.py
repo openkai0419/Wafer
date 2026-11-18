@@ -144,7 +144,7 @@ class TestRunWithProgress:
 
 class TestExecutePasteItems:
     def test_move_files_with_progress(self, qapp, tmp_path):
-        from wafer.qt.transfer.paste import _execute_paste_items
+        from wafer.qt.transfer.paste import _execute_plans
 
         src = tmp_path / "b.txt"
         src.write_text("world", encoding="utf-8")
@@ -164,14 +164,14 @@ class TestExecutePasteItems:
             )
         ]
         decisions = {0: PasteDecision(mode="overwrite")}
-        results = _execute_paste_items(plans, decisions, None, "move")
+        results = _execute_plans(plans, decisions, None, "move")
         assert len(results) == 1
         assert results[0].status == "ok"
         assert dst.exists()
         assert not src.exists()
 
     def test_skip_decision_skips(self, qapp, tmp_path):
-        from wafer.qt.transfer.paste import _execute_paste_items
+        from wafer.qt.transfer.paste import _execute_plans
 
         src = tmp_path / "c.txt"
         src.write_text("data", encoding="utf-8")
@@ -189,12 +189,12 @@ class TestExecutePasteItems:
             )
         ]
         decisions = {0: PasteDecision(mode="skip")}
-        results = _execute_paste_items(plans, decisions, None, "copy")
+        results = _execute_plans(plans, decisions, None, "copy")
         assert len(results) == 1
         assert results[0].status == "skipped"
 
     def test_multiple_files(self, qapp, tmp_path):
-        from wafer.qt.transfer.paste import _execute_paste_items
+        from wafer.qt.transfer.paste import _execute_plans
 
         dst_dir = tmp_path / "dst"
         dst_dir.mkdir()
@@ -218,7 +218,7 @@ class TestExecutePasteItems:
             )
             decisions[i] = PasteDecision(mode="overwrite")
 
-        results = _execute_paste_items(plans, decisions, None, "copy")
+        results = _execute_plans(plans, decisions, None, "copy")
         assert len(results) == 5
         assert all(r.status == "ok" for r in results)
         for i in range(5):

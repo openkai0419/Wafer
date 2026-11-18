@@ -1,9 +1,29 @@
 import os
+from pathlib import Path
+
 from PySide6 import QtCore, QtGui
 
 from wafer.qt.transfer.dragparser import MimeDataParser, ParsedItem
-from wafer.core.platform.file_operations import FileSaver
+from wafer.core.platform.file_operations import DropPlanItem, FileExecutor, PasteDecision
 from wafer.core.common.virtual_paths import build_virtual_path
+
+
+class _Saver:
+    def save(self, item, target_path, move=False):
+        src = Path(item.source) if item.is_local_file() else None
+        dst = Path(target_path)
+        plan = DropPlanItem(
+            index=0,
+            src=src,
+            name=dst.name,
+            is_dir=bool(src and src.is_dir()),
+            action="cut" if move else "copy",
+            dst_default=dst,
+            conflict=dst.exists(),
+            suggested_dst=None,
+            parsed_item=item,
+        )
+        return FileExecutor().execute_one(plan, PasteDecision(mode="overwrite"))
 
 
 def test_mimedata_parser_parse_collects_all_local_urls(tmp_path):
@@ -109,8 +129,8 @@ def test_image_data_is_encoded_as_png(qtbot):
     assert (decoded.width(), decoded.height()) == (3, 2)
 
 
-def test_file_saver_copies_and_moves_files_and_dirs(tmp_path):
-    saver = FileSaver()
+def test_execute_one_copies_and_moves_files_and_dirs(tmp_path):
+    saver = _Saver()
 
     src_file = tmp_path / "src.txt"
     src_file.write_text("x", encoding="utf-8")
@@ -147,8 +167,8 @@ def test_file_saver_copies_and_moves_files_and_dirs(tmp_path):
     assert (dst_dir2 / "inner2.txt").read_text(encoding="utf-8") == "w"
 
 
-def test_file_saver_skips_same_path(tmp_path):
-    saver = FileSaver()
+def test_execute_one_skips_same_path(tmp_path):
+    saver = _Saver()
     src_file = tmp_path / "same.txt"
     src_file.write_text("x", encoding="utf-8")
     saver.save(ParsedItem(str(src_file), "same.txt"), str(src_file), move=False)
@@ -156,8 +176,8 @@ def test_file_saver_skips_same_path(tmp_path):
     assert src_file.read_text(encoding="utf-8") == "x"
 
 
-def test_file_saver_skips_dir_into_itself(tmp_path):
-    saver = FileSaver()
+def test_execute_one_skips_dir_into_itself(tmp_path):
+    saver = _Saver()
     src_dir = tmp_path / "src"
     src_dir.mkdir()
     (src_dir / "a.txt").write_text("x", encoding="utf-8")
@@ -167,8 +187,8 @@ def test_file_saver_skips_dir_into_itself(tmp_path):
     assert not dst_inside.exists()
 
 
-def test_file_saver_rejects_virtual_remote_destination(tmp_path):
-    saver = FileSaver()
+def test_execute_one_rejects_virtual_remote_destination(tmp_path):
+    saver = _Saver()
     virtual_dst = build_virtual_path(str(tmp_path / "archive.zip"), "remote.txt")
 
     result = saver.save(ParsedItem(b"x", "remote.txt", is_binary=True), virtual_dst)

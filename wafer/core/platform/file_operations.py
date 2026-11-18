@@ -51,6 +51,37 @@ def _safe_remove(path: str | Path) -> None:
         shutil.rmtree(p, onerror=_rmtree_onerror)
 
 
+def _staging_path(dst: Path, tag: str) -> Path:
+    return Path(unique_path(dst.parent, f"{dst.name}.{tag}"))
+
+
+def _swap_into_place(staged: Path, dst: Path) -> None:
+    if not dst.is_dir() or dst.is_symlink():
+        os.replace(staged, dst)
+        return
+    backup = _staging_path(dst, "wafer-old")
+    os.replace(dst, backup)
+    try:
+        os.replace(staged, dst)
+    except OSError:
+        os.replace(backup, dst)
+        raise
+    _safe_remove(backup)
+
+
+def _write_replacing(target: Path, chunks) -> None:
+    partial = _staging_path(target, "wafer-partial")
+    try:
+        with open(partial, "wb") as f:
+            for chunk in chunks:
+                if chunk:
+                    f.write(chunk)
+        os.replace(partial, target)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
+
+
 def _copy_file(src: Path, dst: Path, follow_symlinks: bool = True, progress_callback: ProgressCallback | None = None, cancel_check: CancelCheck | None = None) -> Path:
     _check_cancel(cancel_check)
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -154,38 +185,34 @@ def count_operation_units(src: Path, dst: Path, action: Literal["copy", "cut"], 
     return max(1, total)
 
 
-def _save_remote_item(item: ParsedItem, target_path: str, *, move: bool = False) -> OperationResult:
+def _save_remote_item(item: ParsedItem, target_path: str) -> OperationResult:
     src_info = str(getattr(item, "source", ""))
     if _is_virtual_operation_path(target_path):
         AppLogger.warning(f"[save] virtual destination rejected: {target_path} (file ops must target source files)")
         return OperationResult(action="save", src=src_info, dst=str(target_path), status="skipped", error="virtual path rejected")
 
-    d = os.path.dirname(target_path)
-    if d:
-        os.makedirs(d, exist_ok=True)
-
+    target = Path(target_path)
     if getattr(item, "is_binary", False) and isinstance(getattr(item, "source", None), (bytes, bytearray)):
         try:
-            with open(target_path, "wb") as f:
-                f.write(item.source)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            _write_replacing(target, [item.source])
             AppLogger.info(f"Saved binary data to {target_path}")
             return OperationResult(action="save", src="(binary)", dst=target_path, status="ok")
         except Exception as e:
+            AppLogger.warning(f"Failed to save dropped data to {target_path}", exc=e)
             return OperationResult(action="save", src="(binary)", dst=target_path, status="error", error=repr(e))
 
-    if isinstance(src_info, str) and is_http_url(src_info):
+    if is_http_url(src_info):
         try:
             import requests
 
+            target.parent.mkdir(parents=True, exist_ok=True)
             session = requests.Session()
             session.max_redirects = 5
             with session.get(src_info, timeout=10, stream=True) as resp:
                 if resp.status_code != 200:
                     raise ValueError(f"HTTP {resp.status_code}")
-                with open(target_path, "wb") as f:
-                    for chunk in resp.iter_content(chunk_size=1024 * 256):
-                        if chunk:
-                            f.write(chunk)
+                _write_replacing(target, resp.iter_content(chunk_size=1024 * 256))
             AppLogger.info(f"Downloaded: {src_info} -> {target_path}")
             return OperationResult(action="download", src=src_info, dst=target_path, status="ok")
         except Exception as e:
@@ -296,44 +323,30 @@ class FileExecutor:
 
     def execute_plans(
         self,
-        plans: list[PastePlanItem],
+        plans: list[PastePlanItem] | list[DropPlanItem],
         decisions: dict[int, PasteDecision],
     ) -> list[OperationResult]:
-        results: list[OperationResult] = []
-        for item in plans:
-            dec = decisions.get(item.index)
-            if dec is None:
-                dec = PasteDecision(mode="skip")
-            result = self._execute_item(item.src, item.dst_default, item.action, dec)
-            results.append(result)
-        return results
+        return [self.execute_one(plan, decisions.get(plan.index)) for plan in plans]
 
-    def execute_drop_plans(
-        self,
-        plans: list[DropPlanItem],
-        decisions: dict[int, PasteDecision],
-        *,
-        op: str,
-    ) -> list[OperationResult]:
-        action: Literal["copy", "cut"] = "cut" if op == "move" else "copy"
-        results: list[OperationResult] = []
-        for plan in plans:
-            dec = decisions.get(plan.index)
-            if dec is None or dec.mode == "skip":
-                results.append(OperationResult(action="skip", src=str(plan.src or ""), dst="", status="skipped"))
-                continue
-            if plan.src is not None:
-                result = self._execute_item(plan.src, plan.dst_default, action, dec)
-                results.append(result)
-            else:
-                dst_path = str(plan.dst_default)
-                if dec.mode == "rename" and plan.suggested_dst:
-                    dst_path = str(plan.suggested_dst)
-                elif dec.mode == "overwrite" and plan.conflict:
-                    _safe_remove(dst_path)
-                result = _save_remote_item(plan.parsed_item, dst_path, move=(op == "move"))
-                results.append(result)
-        return results
+    def execute_one(self, plan: PastePlanItem | DropPlanItem, decision: PasteDecision | None) -> OperationResult:
+        decision = decision or PasteDecision(mode="skip")
+        if plan.src is not None:
+            return self._execute_item(plan.src, plan.dst_default, plan.action, decision)
+        return self._execute_remote(plan, decision)
+
+    def _execute_remote(self, plan: DropPlanItem, decision: PasteDecision) -> OperationResult:
+        if decision.mode == "skip":
+            self._advance()
+            return OperationResult(action="skip", src="", dst="", status="skipped")
+        final_dst = self._resolve_dst(plan.dst_default, decision)
+        if final_dst is None:
+            self._advance()
+            return OperationResult(action="unknown", src="", dst="", status="error", error=f"unknown mode: {decision.mode}")
+        if final_dst.is_dir():
+            final_dst = Path(unique_path(final_dst.parent, final_dst.name))
+        result = _save_remote_item(plan.parsed_item, str(final_dst))
+        self._advance()
+        return result
 
     def _execute_item(
         self,
@@ -381,18 +394,50 @@ class FileExecutor:
             return OperationResult(action="skip", src=str(src), dst=str(final_dst), status="skipped", error="cannot copy into itself")
 
         try:
-            if decision.mode == "overwrite" and final_dst.exists():
-                _safe_remove(final_dst)
             if is_dir and decision.mode == "merge" and final_dst.exists():
                 self._merge_dir(src, final_dst, action=action, merge_decisions=decision.merge_decisions or {}, root_src=src)
                 return OperationResult(action="move" if action == "cut" else "copy", src=str(src), dst=str(final_dst), status="ok")
-            done = _copy_or_move(src, final_dst, action=action, follow_symlinks=self._follow_symlinks, progress_callback=self._progress_callback, cancel_check=self._cancel_check)
+            if decision.mode == "overwrite" and (final_dst.exists() or final_dst.is_symlink()):
+                done = self._overwrite(src, final_dst, action)
+            else:
+                done = self._copy_or_move(src, final_dst, action)
             return OperationResult(action="move" if action == "cut" else "copy", src=str(src), dst=str(done), status="ok")
         except PasteCancelledError:
             return OperationResult(action="move" if action == "cut" else "copy", src=str(src), dst=str(final_dst), status="skipped", error="cancelled")
         except Exception as e:
             AppLogger.warning(f"copy/move failed: {src} -> {final_dst}", exc=e)
             return OperationResult(action="move" if action == "cut" else "copy", src=str(src), dst=str(final_dst), status="error", error=repr(e))
+
+    def _copy_or_move(self, src: Path, dst: Path, action: Literal["copy", "cut"]) -> Path:
+        return _copy_or_move(src, dst, action=action, follow_symlinks=self._follow_symlinks, progress_callback=self._progress_callback, cancel_check=self._cancel_check)
+
+    def _overwrite(self, src: Path, dst: Path, action: Literal["copy", "cut"]) -> Path:
+        if src.is_dir() != dst.is_dir():
+            renamed = Path(unique_path(dst.parent, dst.name))
+            AppLogger.info(f"[{_operation_name(action)}] {dst} is kept because a file and a folder share the name; saved as {renamed.name}")
+            return self._copy_or_move(src, renamed, action)
+        staged = _staging_path(dst, "wafer-partial")
+        try:
+            self._copy_or_move(src, staged, action)
+        except BaseException:
+            _safe_remove(staged)
+            raise
+        try:
+            _swap_into_place(staged, dst)
+        except OSError:
+            self._undo_staging(src, staged, action)
+            raise
+        return dst
+
+    @staticmethod
+    def _undo_staging(src: Path, staged: Path, action: Literal["copy", "cut"]) -> None:
+        if action != "cut":
+            _safe_remove(staged)
+            return
+        try:
+            _move_any(staged, src)
+        except OSError as e:
+            AppLogger.error(f"[move] could not put {src} back; it is at {staged}", exc=e)
 
     @staticmethod
     def _resolve_dst(dst: Path, decision: PasteDecision) -> Path | None:
@@ -426,7 +471,7 @@ class FileExecutor:
             is_dir = entry.is_dir()
 
             if not d.exists() and not d.is_symlink():
-                _copy_or_move(entry, d, action=action, follow_symlinks=self._follow_symlinks, progress_callback=self._progress_callback, cancel_check=self._cancel_check)
+                self._copy_or_move(entry, d, action)
                 continue
 
             if is_dir and d.is_dir():
@@ -440,12 +485,9 @@ class FileExecutor:
                 self._advance()
                 continue
             if dec.mode == "rename":
-                _copy_or_move(
-                    entry, Path(unique_path(d.parent, d.name)), action=action, follow_symlinks=self._follow_symlinks, progress_callback=self._progress_callback, cancel_check=self._cancel_check
-                )
+                self._copy_or_move(entry, Path(unique_path(d.parent, d.name)), action)
             else:
-                _safe_remove(d)
-                _copy_or_move(entry, d, action=action, follow_symlinks=self._follow_symlinks, progress_callback=self._progress_callback, cancel_check=self._cancel_check)
+                self._overwrite(entry, d, action)
 
         if action == "cut":
             try:
@@ -509,21 +551,7 @@ def build_drop_plans(parsed_items: list[ParsedItem], dst_dir: str, op: str) -> l
     return plans
 
 
-class FileSaver:
-    def save(self, item: ParsedItem, target_path: str, move: bool = False) -> OperationResult:
-        if getattr(item, "is_local_file", lambda: False)():
-            src = Path(str(getattr(item, "source", "")))
-            dst = Path(target_path)
-            action: Literal["copy", "cut"] = "cut" if move else "copy"
-            plan = PastePlanItem(index=0, src=src, is_dir=safe_is_dir(src), action=action, dst_default=dst, conflict=safe_exists(dst), suggested_dst=None)
-            results = FileExecutor().execute_plans([plan], {0: PasteDecision(mode="overwrite")})
-            return results[0] if results else OperationResult(action="unknown", src=str(src), dst="", status="error")
-        return _save_remote_item(item, target_path, move=move)
-
-
 def delete_to_trash(paths: list[str | Path]) -> list[OperationResult]:
-    from ..common.virtual_paths import is_virtual_path
-
     physical = [p for p in paths if p and not is_virtual_path(str(p))]
     rejected = len(paths) - len(physical)
     if rejected:

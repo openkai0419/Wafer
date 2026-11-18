@@ -24,8 +24,6 @@ from ...core.platform.file_operations import (
     PasteCancelledError,
     PasteDecision,
     PastePlanItem,
-    _safe_remove,
-    _save_remote_item,
     build_drop_plans,
     count_operation_units,
 )
@@ -379,55 +377,20 @@ def _run_with_progress(
     return results
 
 
-def _execute_paste_items(
-    plans: list[PastePlanItem],
+def _execute_plans(
+    plans: list[PastePlanItem] | list[DropPlanItem],
     decisions: dict[int, PasteDecision],
     parent: QtWidgets.QWidget | None,
     op: str,
 ) -> list[OperationResult]:
-    label = t("Moving files...") if op == "move" else t("Copying files...")
-
-    def step(i: int, advance: Callable[[int], None], is_cancelled: Callable[[], bool]) -> OperationResult:
-        item = plans[i]
-        dec = decisions.get(item.index, PasteDecision(mode="skip"))
-        executor = FileExecutor(progress_callback=advance, cancel_check=is_cancelled)
-        return executor._execute_item(item.src, item.dst_default, item.action, dec)
-
-    def progress_total_provider(is_cancelled: Callable[[], bool]) -> int:
-        return sum(count_operation_units(item.src, item.dst_default, item.action, cancel_check=is_cancelled) for item in plans)
-
-    return _run_with_progress(parent, label, len(plans), step, progress_total_provider=progress_total_provider, manual_progress=True)
-
-
-def _execute_drop_items(
-    plans: list[DropPlanItem],
-    decisions: dict[int, PasteDecision],
-    parent: QtWidgets.QWidget | None,
-    op: str,
-) -> list[OperationResult]:
-    action: Literal["copy", "cut"] = "cut" if op == "move" else "copy"
     label = t("Moving files...") if op == "move" else t("Copying files...")
 
     def step(i: int, advance: Callable[[int], None], is_cancelled: Callable[[], bool]) -> OperationResult:
         plan = plans[i]
-        dec = decisions.get(plan.index)
-        if dec is None or dec.mode == "skip":
-            advance()
-            return OperationResult(action="skip", src=str(plan.src or ""), dst="", status="skipped")
-        if plan.src is not None:
-            executor = FileExecutor(progress_callback=advance, cancel_check=is_cancelled)
-            return executor._execute_item(plan.src, plan.dst_default, action, dec)
-        dst_path = str(plan.dst_default)
-        if dec.mode == "rename" and plan.suggested_dst:
-            dst_path = str(plan.suggested_dst)
-        elif dec.mode == "overwrite" and plan.conflict:
-            _safe_remove(dst_path)
-        result = _save_remote_item(plan.parsed_item, dst_path, move=(op == "move"))
-        advance()
-        return result
+        return FileExecutor(progress_callback=advance, cancel_check=is_cancelled).execute_one(plan, decisions.get(plan.index))
 
     def progress_total_provider(is_cancelled: Callable[[], bool]) -> int:
-        return sum(count_operation_units(plan.src, plan.dst_default, action, cancel_check=is_cancelled) if plan.src is not None else 1 for plan in plans)
+        return sum(count_operation_units(plan.src, plan.dst_default, plan.action, cancel_check=is_cancelled) if plan.src is not None else 1 for plan in plans)
 
     return _run_with_progress(parent, label, len(plans), step, progress_total_provider=progress_total_provider, manual_progress=True)
 
@@ -449,7 +412,7 @@ def paste_clipboard_files(
         decisions = _resolve_conflicts_with_ui(plans=plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
     except PasteCancelledError:
         return []
-    return _execute_paste_items(plans, decisions, parent, op)
+    return _execute_plans(plans, decisions, parent, op)
 
 
 def execute_paste_plans_with_ui(
@@ -473,7 +436,7 @@ def execute_paste_plans_with_ui(
         decisions = _resolve_conflicts_with_ui(plans=accepted_plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
     except PasteCancelledError:
         return []
-    accepted_results = _execute_paste_items(accepted_plans, decisions, parent, op)
+    accepted_results = _execute_plans(accepted_plans, decisions, parent, op)
     return _merge_paste_plan_results(len(plans), accepted, accepted_results, rejected)
 
 
@@ -503,4 +466,4 @@ def drop_files_with_ui(
         decisions = _resolve_conflicts_with_ui(plans=plans, op=resolved_op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
     except PasteCancelledError:
         return []
-    return _execute_drop_items(plans, decisions, parent, resolved_op)
+    return _execute_plans(plans, decisions, parent, resolved_op)

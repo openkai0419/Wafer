@@ -50,3 +50,21 @@ def test_restore_db_reopens_a_db_whose_delete_failed(db_copy):
         return session.total
 
     assert asyncio.run(scenario()) == 5
+
+
+def test_lookup_file_reports_a_file_missing_on_disk(db_copy, dataset, monkeypatch):
+    from wafer.app.webui.backend.session import DbService
+
+    service = DbService(DB_NAME)
+    path = dataset["files"][0][0]
+    try:
+        assert service.lookup_file(path)[2] is not None
+
+        def missing(p, *args, **kwargs):
+            raise FileNotFoundError(p)
+
+        monkeypatch.setattr("wafer.app.webui.backend.session.os.stat", missing)
+        logical, source, found = service.lookup_file(path)
+        assert (logical, source, found) == (path, path, None)
+    finally:
+        service.close()

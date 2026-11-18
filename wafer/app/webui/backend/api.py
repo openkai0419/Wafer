@@ -189,7 +189,7 @@ async def get_folders(request: web.Request):
     parent = normalize_path(parent)
     if not is_under_roots(parent, roots):
         raise web.HTTPForbidden(reason="path is outside of indexed folders")
-    if not safe_is_dir(parent):
+    if not await loop.run_in_executor(None, safe_is_dir, parent):
         raise web.HTTPNotFound(reason="folder not found")
     folders = await loop.run_in_executor(None, scan_folder_entries, parent, ignored_set)
     return web.json_response({"folders": folders})

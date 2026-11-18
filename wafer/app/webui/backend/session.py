@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import stat
 import time
 import uuid
 from collections import OrderedDict
@@ -58,11 +60,18 @@ class DbService:
     async def run(self, fn, *args):
         return await asyncio.get_running_loop().run_in_executor(self.executor, fn, *args)
 
-    def lookup_file(self, path: str) -> tuple[str, str] | None:
+    def lookup_file(self, path: str) -> tuple[str, str, os.stat_result | None] | None:
         record = self.engine.get_file_record(path)
         if not record:
             return None
-        return record["path"], record["source"]
+        source = record["source"]
+        try:
+            found = os.stat(source)
+        except OSError:
+            found = None
+        if found is not None and not stat.S_ISREG(found.st_mode):
+            found = None
+        return record["path"], source, found
 
     def close(self):
         self.executor.shutdown(wait=True, cancel_futures=True)

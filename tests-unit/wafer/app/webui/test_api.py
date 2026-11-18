@@ -458,3 +458,21 @@ def test_keys_retry_after_a_failed_refresh(client, app, monkeypatch):
     assert resp.status == 200
     assert jbody(retried) == jbody(first)
     _wait_until(client.loop, lambda: len(calls) == 3)
+
+
+def test_folders_check_the_parent_off_the_event_loop(client, dataset, monkeypatch):
+    import threading
+
+    from wafer.app.webui.backend import api
+
+    threads = []
+    original = api.safe_is_dir
+
+    def recorded(p):
+        threads.append(threading.current_thread())
+        return original(p)
+
+    monkeypatch.setattr(api, "safe_is_dir", recorded)
+    resp, _ = client.get("/api/folders", params={"db": DB, "path": dataset["images"]})
+    assert resp.status == 200
+    assert threads and threading.main_thread() not in threads

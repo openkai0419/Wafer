@@ -23,7 +23,7 @@ MEDIA_EXECUTOR = web.AppKey("media_executor", ThreadPoolExecutor)
 routes = web.RouteTableDef()
 
 
-async def lookup_db_row(request: web.Request) -> tuple[str, str]:
+async def lookup_db_row(request: web.Request) -> tuple[str, str, os.stat_result]:
     db = request.query.get("db", "")
     path = request.query.get("path", "")
     if not db or not path:
@@ -36,15 +36,15 @@ async def lookup_db_row(request: web.Request) -> tuple[str, str]:
     found = await service.run(service.lookup_file, path)
     if found is None:
         raise web.HTTPNotFound(reason="file is not registered in the database")
-    logical, source = found[0], found[1]
-    if not os.path.isfile(source):
+    logical, source, stat = found
+    if stat is None:
         raise web.HTTPNotFound(reason="file does not exist on disk")
-    return logical, source
+    return logical, source, stat
 
 
 @routes.get("/api/thumb")
 async def get_thumb(request: web.Request):
-    logical, source = await lookup_db_row(request)
+    logical, _, stat = await lookup_db_row(request)
     try:
         size = int(request.query.get("size", THUMB_SIZE_DEFAULT))
     except ValueError:
@@ -52,7 +52,6 @@ async def get_thumb(request: web.Request):
     if size <= 0:
         raise web.HTTPBadRequest(reason="size must be positive")
     size = min(size, THUMB_SIZE_MAX)
-    stat = os.stat(source)
     key = f"{logical}|{stat.st_mtime_ns}|{stat.st_size}|{size}"
     cache = thumb_cache()
     executor = request.app[MEDIA_EXECUTOR]
@@ -65,7 +64,7 @@ async def get_thumb(request: web.Request):
 
 @routes.get("/api/file")
 async def get_file(request: web.Request):
-    logical, source = await lookup_db_row(request)
+    logical, source, _ = await lookup_db_row(request)
     if VIRTUAL_PATH_SEPARATOR in logical:
         executor = request.app[MEDIA_EXECUTOR]
         resolved = await asyncio.get_running_loop().run_in_executor(executor, resolve_image_source, logical)

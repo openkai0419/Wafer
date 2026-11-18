@@ -4,6 +4,7 @@ import os
 import re
 import sqlite3
 import threading
+from functools import lru_cache
 
 from ...constants import VIRTUAL_PATH_SEPARATOR
 from .db_utils import escape_like, open_readonly
@@ -21,6 +22,15 @@ STANDARD_KEYS_SOURCES = ("size", "modified", "created", "collected")
 STANDARD_KEYS = STANDARD_KEYS_FILES + STANDARD_KEYS_SOURCES
 
 ALL_PATHS_SQL = "SELECT path FROM files"
+
+
+@lru_cache(maxsize=64)
+def compiled_regex(pattern: str) -> re.Pattern:
+    return re.compile(pattern)
+
+
+def regexp(pattern: str, value) -> bool:
+    return value is not None and compiled_regex(pattern).search(str(value)) is not None
 
 
 def path_prefix_condition(column: str, prefix: str) -> tuple[str, list]:
@@ -165,6 +175,7 @@ class FileSearchEngine:
                     AppLogger.warning(f"Required table/view '{name}' not found in DB.")
                     conn.close()
                     return False
+            conn.create_function("regexp", 2, regexp, deterministic=True)
             self.conn = conn
             return True
         except sqlite3.OperationalError as e:

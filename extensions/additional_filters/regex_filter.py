@@ -4,7 +4,7 @@ import re
 from functools import partial
 
 from wafer.core.db.db_utils import escape_like
-from wafer.core.db.query import ALL_PATHS_SQL, key_path_queries
+from wafer.core.db.query import compiled_regex, key_path_queries
 from wafer.plugin import BaseFilterPlugin
 from wafer.core.profiling import profiler
 
@@ -120,6 +120,10 @@ def _skip_group_modifier(pattern, i, n):
     c = pattern[i]
     if c in ":=!":
         return i + 1
+    if c in "aiLmsux-":
+        while i < n and pattern[i] not in ":)":
+            i += 1
+        return i + 1 if i < n and pattern[i] == ":" else i
     if c == "P":
         i += 1
         if i < n and pattern[i] == "<":
@@ -138,15 +142,10 @@ def _skip_group_modifier(pattern, i, n):
     return i
 
 
-def _build_like_conditions(field, hints):
-    if not hints:
-        return [], []
-    clauses = []
-    params = []
-    for h in hints:
-        clauses.append(f"{field} LIKE ? ESCAPE '\\'")
-        params.append(f"%{escape_like(h)}%")
-    return clauses, params
+def _build_value_conditions(field, hints, pattern):
+    clauses = [f"{field} LIKE ? ESCAPE '\\'" for _ in hints]
+    params = [f"%{escape_like(h)}%" for h in hints]
+    return [*clauses, f"{field} REGEXP ?"], [*params, pattern]
 
 
 class RegexFilter(BaseFilterPlugin):
@@ -190,54 +189,22 @@ class RegexFilter(BaseFilterPlugin):
         if not pattern:
             return None, []
 
-        flags = re.IGNORECASE if params.get("ignore_case", False) else 0
+        hints = _extract_literal_hints(pattern)
+        if params.get("ignore_case", False):
+            pattern = f"(?i){pattern}"
         try:
-            compiled = re.compile(pattern, flags)
+            compiled = compiled_regex(pattern)
         except re.error:
             return None, []
 
-        params["_compiled"] = compiled
-
-        keys, _ignore_case = cls._normalize_params(params)
-        require_keys = params.get("require_keys", True)
-        if require_keys and not keys:
+        keys = params.get("keys") or []
+        if isinstance(keys, str):
+            keys = [keys]
+        if params.get("require_keys", True) and not keys:
             return "SELECT path FROM files WHERE 0", []
 
-        hints = _extract_literal_hints(pattern)
-        parts, all_params = key_path_queries(keys, partial(_build_like_conditions, hints=hints))
-        if not parts:
-            return None, []
-        if parts == [ALL_PATHS_SQL]:
-            return ALL_PATHS_SQL, []
-
+        if compiled.flags & re.IGNORECASE:
+            hints = [h for h in hints if h.isascii()]
+        parts, all_params = key_path_queries(list(keys), partial(_build_value_conditions, hints=hints, pattern=pattern))
         subquery = " UNION ALL ".join(parts)
         return f"SELECT DISTINCT path FROM ({subquery})", all_params
-
-    @classmethod
-    def _normalize_params(cls, params):
-        keys = params.get("keys") or []
-        if isinstance(keys, str):
-            keys = [keys]
-        else:
-            keys = list(keys)
-        ignore_case = params.get("ignore_case", False)
-        return keys, ignore_case
-
-    @classmethod
-    def post_filter(cls, params, rows):
-        compiled = params.get("_compiled")
-        if compiled is None:
-            return rows
-
-        keys = params.get("keys") or []
-        if isinstance(keys, str):
-            keys = [keys]
-
-        has_path = "path" in keys
-        other_keys = [k for k in keys if k != "path"]
-        query_all = not keys
-
-        if has_path and not other_keys and not query_all:
-            return [r for r in rows if compiled.search(r["path"])]
-
-        return rows

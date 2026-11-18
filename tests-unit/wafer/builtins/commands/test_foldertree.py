@@ -12,6 +12,7 @@ from wafer.builtins.commands.foldertree import (
     folder_items,
     run_on_folder_files,
     show_in_tree,
+    FolderFilesCommands,
     FolderTreeCommands,
     _ctx_normalized_path,
     _ctx_normalized_paths,
@@ -291,9 +292,39 @@ def _capture(monkeypatch, sources):
 
 def test_files_in_folder_commands_are_registered(qtbot):
     FolderTreeCommands.register()
+    FolderFilesCommands.register()
     registry = CommandRegistry.instance()
     for command_id in ("ft.files.cut_direct", "ft.files.copy_direct", "ft.files.cut_all", "ft.files.copy_all", "ft.show_in_tree"):
         assert registry.has_command(command_id)
+
+
+def command_paths(group):
+    return [getattr(item, "path", item) for item in group.commands()]
+
+
+def test_files_in_folder_commands_are_available_everywhere():
+    assert FolderFilesCommands.SCOPE == "*"
+    assert FolderFilesCommands.NAME == FolderTreeCommands.NAME
+    files = ["ft.files.cut_direct", "ft.files.copy_direct", "ft.files.cut_all", "ft.files.copy_all"]
+    assert [path for path in command_paths(FolderFilesCommands) if path in files] == files
+    assert not set(files) & set(command_paths(FolderTreeCommands))
+    assert "ft.show_in_tree" in command_paths(FolderTreeCommands)
+    assert FolderTreeCommands.SCOPE != "*"
+
+
+def test_files_in_folder_uses_the_panel_database(qtbot, monkeypatch, tmp_path):
+    calls = _capture(monkeypatch, ["a.png"])
+
+    class PanelCtx(_FilesCtx):
+        def get(self, key):
+            if key == "database_path":
+                return "panel.db"
+            return super().get(key)
+
+    run_on_folder_files(PanelCtx([str(tmp_path)], db_path="window.db"), "file.cut", True)
+    run_on_folder_files(PanelCtx([str(tmp_path)], instances={}), "file.copy", True)
+    qtbot.waitUntil(lambda: len(calls["invoke"]) == 2, timeout=3000)
+    assert [call[0] for call in calls["sources"]] == ["panel.db", "panel.db"]
 
 
 def test_cut_all_invokes_file_cut_with_folder_sources(qtbot, monkeypatch, tmp_path):

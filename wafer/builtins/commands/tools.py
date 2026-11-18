@@ -77,6 +77,11 @@ class ToolCommands(ActionKit.MenuBase):
                 display="Batch Renamer",
                 func=partial(open_panel, name="Batch Renamer"),
             ),
+            ActionKit.Command(
+                path="setting.folder_manager",
+                display="Folder Manager",
+                func=partial(open_panel, name="Folder Manager"),
+            ),
         ]
 
 

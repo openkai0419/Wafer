@@ -25,6 +25,7 @@ class FolderManagerCommands(MenuGroup):
     NAME = f"{MenuPath.WIDGETS}/Folder Manager"
     DEFAULT_ENABLED = True
     PRIORITY = 120
+    SCOPE = "*"
 
     @classmethod
     def commands(cls):

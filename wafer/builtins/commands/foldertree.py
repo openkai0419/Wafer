@@ -117,8 +117,7 @@ def _files_dispatcher() -> Dispatcher:
 
 def run_on_folder_files(ctx, command_id: str, recursive: bool) -> None:
     folders = _ctx_normalized_paths(ctx)
-    window = ctx.get_instance("MainWindow")
-    db_path = getattr(window, "database_path", None)
+    db_path = ctx.get("database_path") or getattr(ctx.get_instance("MainWindow"), "database_path", None)
     if not folders or not db_path:
         return
     filter_entries = list(ctx.get("filter_entries") or ())
@@ -336,13 +335,23 @@ class FolderTreeCommands(ActionKit.MenuBase):
             ),
             "-",
             ActionKit.Command(path="ft.reload_tree", display="Reload Tree", func=reload_tree),
+            ActionKit.Command(path="ft.show_in_tree", display="Show in FolderTree", func=show_in_tree, hidden=True),
             "-",
+            ActionKit.Command(path="ft.add_folder", display="Add Folder", func=add_folder),
+        ]
+
+
+class FolderFilesCommands(ActionKit.MenuBase):
+    NAME = ActionKit.MenuPath.FOLDER_TREE
+    PRIORITY = 31
+    SCOPE = "*"
+
+    @classmethod
+    def commands(cls):
+        return [
             ":Files in Folder",
             ActionKit.Command(path="ft.files.cut_direct", display="Cut direct files", func=cut_direct_files),
             ActionKit.Command(path="ft.files.copy_direct", display="Copy direct files", func=copy_direct_files),
             ActionKit.Command(path="ft.files.cut_all", display="Cut all files below", func=cut_all_files),
             ActionKit.Command(path="ft.files.copy_all", display="Copy all files below", func=copy_all_files),
-            ActionKit.Command(path="ft.show_in_tree", display="Show in FolderTree", func=show_in_tree, hidden=True),
-            "-",
-            ActionKit.Command(path="ft.add_folder", display="Add Folder", func=add_folder),
         ]

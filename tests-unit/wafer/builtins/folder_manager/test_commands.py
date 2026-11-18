@@ -46,3 +46,7 @@ def test_commands_without_the_panel_tell_the_user(monkeypatch):
     expand_matches(FakeCtx(None))
 
     assert len(notices) == 1
+
+
+def test_commands_are_available_in_the_viewer_and_the_tray():
+    assert FolderManagerCommands.SCOPE == "*"

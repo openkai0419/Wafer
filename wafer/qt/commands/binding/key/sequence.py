@@ -79,9 +79,9 @@ class Key(KeySequence):
 class KeySpecCatalog:
     def __init__(self):
         self.modifiers = ["Control", "Shift", "Alt", "Meta"]
-        self.special = ["Space", "Tab", "Return", "Enter", "Escape", "Backspace"]
+        self.special = ["Space", "Tab", "Return", "Enter", "Esc", "Backspace"]
         self.arrows = {"Left": 0, "Right": 1, "Up": 2, "Down": 3}
-        self.nav = ["Home", "End", "PageUp", "PageDown", "Insert", "Delete"]
+        self.nav = ["Home", "End", "PgUp", "PgDown", "Ins", "Del"]
 
     def modifier_priority(self, name: str) -> int:
         return self.modifiers.index(name) if name in self.modifiers else 9
@@ -91,27 +91,24 @@ class KeySpecCatalog:
         xs.sort(key=lambda x: (self.modifier_priority(x), x))
         return xs
 
-    def key_sort_tuple(self, k: str) -> tuple[int, object, str]:
+    def key_sort_tuple(self, k: str) -> tuple[int, int, str]:
         if not k:
-            return (9, "", "")
+            return (9, 0, "")
         if k in self.modifiers:
             return (0, self.modifier_priority(k), k)
         if k in self.special:
             return (1, self.special.index(k), k)
+        if k.startswith("F") and k[1:].isdigit():
+            return (2, int(k[1:]), k)
         if k in self.arrows:
             return (3, self.arrows[k], k)
         if k in self.nav:
             return (3, 10 + self.nav.index(k), k)
-        if k.startswith("F") and k[1:].isdigit():
-            try:
-                return (2, int(k[1:]), k)
-            except ValueError:
-                return (2, 9999, k)
-        if len(k) == 1 and ("0" <= k <= "9"):
+        if len(k) == 1 and k.isdigit():
             return (4, int(k), k)
-        if len(k) == 1 and ("A" <= k <= "Z"):
-            return (5, k, k)
-        return (2, k, k)
+        if len(k) == 1 and "A" <= k <= "Z":
+            return (5, 0, k)
+        return (6, 0, k)
 
     def sort_main_keys(self, keys: list[str], exclude: tuple[str, ...] = ()) -> list[str]:
         xs = [k for k in keys if k not in exclude]

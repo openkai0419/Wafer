@@ -1733,14 +1733,12 @@ class BatchRenameWidget(QtWidgets.QWidget):
                 new_path = Path(succeeded[sp])
                 self._initial_paths[i] = new_path
                 self._initial_keys[i] = str(new_path).replace("\\", "/")
-        new_meta: dict[str, dict[str, str]] = {}
-        for key, meta in self._metadata.items():
-            matched = next((new for old, new in succeeded.items() if key == old or key == old.replace("\\", "/")), None)
-            if matched:
-                new_meta[matched.replace("\\", "/")] = meta
-            else:
-                new_meta[key] = meta
-        self._metadata = new_meta
+        moved: dict[str, str] = {}
+        for old, new in succeeded.items():
+            new_key = new.replace("\\", "/")
+            moved[old] = new_key
+            moved[old.replace("\\", "/")] = new_key
+        self._metadata = {moved.get(key, key): meta for key, meta in self._metadata.items()}
         self._thumbs.clear()
         self._thumb_visible.clear()
         self._title.setText(self._title_text())

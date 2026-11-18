@@ -192,7 +192,7 @@ class CommandMenuBuilder:
                 if not parts:
                     continue
                 action = getattr(item, "action", None)
-                text = action.display if action is not None and action.display else parts[-1]
+                text = parts[-1] if action is None else action.display
                 translate = action is None or action.translate
                 target_menu = menu if len(parts) == 1 else self._get_or_create_submenu_chain(menu, menus_cache, parts[:-1], parent)
                 target_menu.addAction(self._create_section_action(parent, (t(text) or text) if translate else text))

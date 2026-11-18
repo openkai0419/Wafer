@@ -141,6 +141,8 @@ class MenuMaker:
         if not parts or parts[-1] == MENU_SEPARATOR:
             raise ValueError(f"Invalid menu action path: {action.path}")
         kind = "section" if str(parts[-1]).startswith(MENU_SECTION_PREFIX) else "action"
+        if kind == "section" and (not action.display or action.func is not None or action.checked is not None):
+            raise ValueError(f"A header action needs a display and takes no func or checked: {action.path}")
         return _ResolvedItem(token=str(action.path), kind=kind, command_id=parts[-1], canonical_path=str(action.path), action=action)
 
     @staticmethod

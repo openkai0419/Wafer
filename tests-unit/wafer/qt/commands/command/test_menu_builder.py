@@ -77,3 +77,15 @@ def test_an_action_on_a_section_path_is_a_header_that_can_skip_translation(qtbot
     submenu = next(action.menu() for action in menu.actions() if action.menu() is not None)
     assert section_texts(submenu)[0] == "User / Name"
     assert "User / Name" not in translated and "Row" in translated
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [{"display": ""}, {"display": "Head", "func": lambda ctx: None}, {"display": "Head", "checked": lambda: True}],
+)
+def test_a_header_action_needs_a_display_and_takes_no_func_or_checked(extra):
+    from wafer.qt.commands.bridge import ActionKit
+    from wafer.qt.commands.command.maker import MenuMaker
+
+    with pytest.raises(ValueError):
+        MenuMaker._action_to_resolved(ActionKit.Action(path="Sub/:inline.head", **extra))

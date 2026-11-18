@@ -37,3 +37,19 @@ class TestElidingToolButton:
         qtbot.addWidget(button)
         assert button.minimumWidth() == 0
         assert button.sizePolicy().horizontalPolicy() == QtWidgets.QSizePolicy.Ignored
+
+
+def test_both_widgets_elide_to_their_width_and_restore_full_text(qtbot):
+    from wafer.qt.widgets.eliding import ElidingLabel, ElidingToolButton
+
+    for cls in (ElidingLabel, ElidingToolButton):
+        widget = cls("C" * 200)
+        qtbot.addWidget(widget)
+        widget.show()
+        widget.resize(60, 20)
+        assert widget.text() != "C" * 200
+        assert widget.text().endswith("…")
+        widget.resize(4000, 20)
+        assert widget.text() == "C" * 200
+        assert widget.full_text() == "C" * 200
+        widget.close()

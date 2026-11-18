@@ -198,9 +198,11 @@ class FolderManagerTreeView(LazyFolderTreeView):
         self.database_path: str | None = None
         self.show_in_tree_available: Callable[[], bool] = lambda: False
         self.hidden_columns: set[int] = set()
-        self.expand_serial = 0
+        self.expand_serials: dict[str, int] = {}
         self.row_filter: AbstractSet[str] | None = None
+        self.filter_ancestors: AbstractSet[str] = frozenset()
         self.hidden_paths: set[str] = set()
+        self.hidden_placeholders: set[str] = set()
         self.following_rows = False
         self.setHeaderHidden(False)
         self.setItemDelegateForColumn(0, BadgeDelegate(self.model_.badges, self))
@@ -300,14 +302,17 @@ class FolderManagerTreeView(LazyFolderTreeView):
         ctx.extras["filter_entries"] = entries
         run_on_folder_files(ctx, command_id, recursive)
 
-    def expand_folders(self, folders: Sequence[str], on_complete: Callable[[], None] | None = None) -> None:
+    def expand_folders(self, folders: Sequence[str], on_complete: Callable[[], None] | None = None, channel: str = "expand") -> None:
         batch_size = EXPAND_RECURSIVE_BATCH_SIZE
         chunks = [folders[i : i + batch_size] for i in range(0, len(folders), batch_size)]
-        self.expand_serial += 1
-        serial = self.expand_serial
+        serial = self.expand_serials.get(channel, 0) + 1
+        self.expand_serials[channel] = serial
+
+        def current() -> bool:
+            return self.expand_serials[channel] == serial
 
         def load_chunk(number: int) -> None:
-            if serial != self.expand_serial:
+            if not current():
                 return
             if number >= len(chunks):
                 if on_complete is not None:
@@ -316,37 +321,47 @@ class FolderManagerTreeView(LazyFolderTreeView):
             self.load_paths_async(chunks[number], lambda: open_chunk(number), skip_loaded=True)
 
         def open_chunk(number: int) -> None:
-            if serial == self.expand_serial:
+            if current():
                 self._expand_loaded_paths(chunks[number])
                 load_chunk(number + 1)
 
         load_chunk(0)
 
     def collapse_all(self) -> None:
-        self.expand_serial += 1
+        for channel in self.expand_serials:
+            self.expand_serials[channel] += 1
         self.collapseAll()
 
-    def apply_row_filter(self, keep: AbstractSet[str] | None) -> None:
+    def apply_row_filter(self, keep: AbstractSet[str] | None, ancestors: AbstractSet[str] = frozenset()) -> None:
         hidden, self.hidden_paths = self.hidden_paths, set()
+        placeholders, self.hidden_placeholders = self.hidden_placeholders, set()
         self.row_filter = keep
+        self.filter_ancestors = ancestors
         self.follow_inserted_rows(keep is not None)
         for path in hidden if keep is None else hidden & keep:
             self.show_path(path)
-        if keep is None:
-            return
-        self.hidden_paths = hidden - keep
+        if keep is not None:
+            self.hidden_paths = hidden - keep
+            self.hide_rows_outside(keep, ancestors, placeholders)
+        for path in placeholders - self.hidden_placeholders:
+            self.show_placeholder(path)
+
+    def hide_rows_outside(self, keep: AbstractSet[str], ancestors: AbstractSet[str], hidden_placeholders: AbstractSet[str]) -> None:
         model = self.model_
-        parents = [model.invisibleRootItem()]
+        parents: list[tuple[QtGui.QStandardItem, str | None]] = [(model.invisibleRootItem(), None)]
         while parents:
-            parent = parents.pop()
+            parent, parent_path = parents.pop()
             parent_index = model.indexFromItem(parent)
             for row in range(parent.rowCount()):
                 child = parent.child(row)
                 path = child.data(USER_ROLE_PATH)
                 if not path:
-                    continue
-                if path in keep:
-                    parents.append(child)
+                    if parent_path is not None and parent_path not in ancestors:
+                        if parent_path not in hidden_placeholders:
+                            self.setRowHidden(row, parent_index, True)
+                        self.hidden_placeholders.add(parent_path)
+                elif path in keep:
+                    parents.append((child, path))
                 elif path not in self.hidden_paths:
                     self.hide_row(row, parent_index, path)
 
@@ -365,22 +380,40 @@ class FolderManagerTreeView(LazyFolderTreeView):
             return
         model = self.model_
         for row in range(first, last + 1):
-            path = model.index(row, 0, parent).data(USER_ROLE_PATH)
-            if path and path not in keep:
+            index = model.index(row, 0, parent)
+            path = index.data(USER_ROLE_PATH)
+            if not path:
+                continue
+            if path not in keep:
                 self.hide_row(row, parent, path)
+            elif path not in self.filter_ancestors and self.has_placeholder(index):
+                self.setRowHidden(0, index, True)
+                self.hidden_placeholders.add(path)
 
     def hide_row(self, row: int, parent: QtCore.QModelIndex, path: str) -> None:
         self.setRowHidden(row, parent, True)
         self.hidden_paths.add(path)
 
-    def show_path(self, path: str) -> None:
+    def item_index(self, path: str) -> QtCore.QModelIndex | None:
         item = self.model_.path_item_map.get(path)
-        if self.model_._is_valid_item(item):
-            index = self.model_.indexFromItem(item)
+        return self.model_.indexFromItem(item) if self.model_._is_valid_item(item) else None
+
+    def show_path(self, path: str) -> None:
+        index = self.item_index(path)
+        if index is not None:
             self.setRowHidden(index.row(), index.parent(), False)
+
+    def has_placeholder(self, index: QtCore.QModelIndex) -> bool:
+        return self.model_.rowCount(index) > 0 and not self.model_.index(0, 0, index).data(USER_ROLE_PATH)
+
+    def show_placeholder(self, path: str) -> None:
+        index = self.item_index(path)
+        if index is not None and self.has_placeholder(index):
+            self.setRowHidden(0, index, False)
 
     def on_model_reset(self) -> None:
         self.hidden_paths.clear()
+        self.hidden_placeholders.clear()
 
     def select_folders(self, paths: Sequence[str]) -> None:
         model = self.model_

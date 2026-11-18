@@ -41,6 +41,7 @@ REFRESH_IDLE_MS = 1000
 EXPAND_SLICE_SECONDS = 0.015
 EXPAND_DEADLINE_CHECK = 256
 MATCHES_REFRESH_MS = 1000
+MATCHES_ONLY_CHANNEL = "matches_only"
 DISPOSE_BATCH = 20000
 
 
@@ -66,6 +67,7 @@ class MatchScan:
     matches: list[str]
     folders: list[str]
     visible: frozenset[str]
+    ancestors: frozenset[str]
 
 
 class RulesArea(QtWidgets.QScrollArea):
@@ -126,8 +128,9 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.filtering = False
         self.found_matches: MatchScan | None = None
         self.found_version = -1
-        self.shown_visible: frozenset[str] = frozenset()
         self.opened_folders: frozenset[str] = frozenset()
+        self.opening_folders: frozenset[str] = frozenset()
+        self.collapses = 0
         self.build_ui()
         self.apply_rules(load_rules())
         self.apply_columns(load_columns())
@@ -728,7 +731,8 @@ class FolderManagerWidget(QtWidgets.QWidget):
 
         def find_folders() -> None:
             folders = folders_to_open(matches, roots)
-            found = MatchScan(matches, folders, frozenset(chain(matches, folders)))
+            ancestors = frozenset(folders)
+            found = MatchScan(matches, folders, ancestors.union(matches), ancestors)
             self.dispatcher.invoke(lambda: deliver(found))
 
         def deliver(found: MatchScan) -> None:
@@ -756,7 +760,8 @@ class FolderManagerWidget(QtWidgets.QWidget):
 
     def collapse_all(self) -> None:
         self.expand_serial += 1
-        self.opened_folders = self.shown_visible
+        self.collapses += 1
+        self.opening_folders = frozenset()
         self.view.collapse_all()
 
     def set_matches_only(self, on: bool) -> None:
@@ -766,10 +771,9 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.matches_button.setChecked(on)
         self.filter_serial += 1
         self.filtering = False
-        self.opened_folders = frozenset()
+        self.opened_folders = self.opening_folders = frozenset()
         if not on:
             self.filter_timer.stop()
-            self.shown_visible = frozenset()
             self.view.apply_row_filter(None)
             return
         if self.found_matches is not None:
@@ -792,29 +796,35 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.filtering = True
         serial = self.filter_serial
         version = self.matches_version
-        self.scan_matches([], lambda: serial == self.filter_serial, lambda found: self.on_filter_scanned(version, found))
+        collapses = self.collapses
+        self.scan_matches([], lambda: serial == self.filter_serial, lambda found: self.on_filter_scanned(version, collapses, found))
 
-    def on_filter_scanned(self, version: int, found: MatchScan) -> None:
+    def on_filter_scanned(self, version: int, collapses: int, found: MatchScan) -> None:
         self.filtering = False
         self.found_matches = found
         self.found_version = version
+        if collapses != self.collapses:
+            self.opened_folders = self.opened_folders.union(found.folders)
         self.show_matches(found)
         if version != self.matches_version:
             self.schedule_refilter()
 
     def show_matches(self, found: MatchScan) -> None:
-        self.shown_visible = found.visible
-        self.view.apply_row_filter(found.visible)
-        pending = [folder for folder in found.folders if folder not in self.opened_folders]
-        if pending:
-            self.view.expand_folders(pending, on_complete=lambda: self.on_folders_opened(pending))
+        self.view.apply_row_filter(found.visible, found.ancestors)
+        pending = [folder for folder in found.folders if folder not in self.opened_folders or folder in self.opening_folders]
+        if not pending:
+            return
+        self.opened_folders = self.opened_folders.union(pending)
+        self.opening_folders = frozenset(pending)
+        self.view.expand_folders(pending, on_complete=self.on_filter_folders_opened, channel=MATCHES_ONLY_CHANNEL)
 
-    def on_folders_opened(self, folders: list[str]) -> None:
-        if self.matches_only:
-            self.opened_folders = self.opened_folders.union(folders)
+    def on_filter_folders_opened(self) -> None:
+        self.opening_folders = frozenset()
 
     def on_folders_set(self) -> None:
-        self.opened_folders = frozenset()
+        self.opened_folders = self.opening_folders = frozenset()
+        self.found_matches = None
+        self.found_version = -1
 
 
 class FolderManagerPlugin(BasePanelPlugin):

@@ -701,3 +701,41 @@ def test_collapse_all_stops_expanding_and_collapses(qtbot, tmp_path, monkeypatch
         QtCore.QCoreApplication.processEvents()
     assert loaded == [[path_of(root, "a")]]
     assert not any(view.isExpanded(view.model_.indexFromItem(item)) for item in view.model_.path_item_map.values())
+
+
+def test_expand_channels_do_not_cancel_each_other_and_collapse_all_stops_both(qtbot, tmp_path):
+    view, root = make_view(qtbot, tmp_path)
+    done = []
+
+    view.expand_folders([root], on_complete=lambda: done.append("expand"))
+    view.expand_folders([root, path_of(root, "a")], on_complete=lambda: done.append("filter"), channel="filter")
+
+    qtbot.waitUntil(lambda: sorted(done) == ["expand", "filter"])
+    view.expand_folders([path_of(root, "a", "b")], on_complete=lambda: done.append("late expand"))
+    view.expand_folders([path_of(root, "a", "b")], on_complete=lambda: done.append("late filter"), channel="filter")
+    view.collapse_all()
+    for _ in range(50):
+        QtCore.QCoreApplication.processEvents()
+    assert sorted(done) == ["expand", "filter"]
+
+
+def placeholder_hidden(view, path):
+    index = view.model_.indexFromItem(view.model_.path_item_map[path])
+    assert not view.model_.index(0, 0, index).data(USER_ROLE_PATH)
+    return view.isRowHidden(0, index)
+
+
+def test_row_filter_hides_the_arrow_of_kept_folders_that_are_not_ancestors(qtbot, tmp_path):
+    view, root = make_view(qtbot, tmp_path)
+    view.expand_folders([root])
+    qtbot.waitUntil(lambda: path_of(root, "a") in view.model_.path_item_map)
+
+    view.apply_row_filter({root, path_of(root, "a")}, {root})
+    assert placeholder_hidden(view, path_of(root, "a"))
+
+    view.apply_row_filter({root, path_of(root, "a"), path_of(root, "a", "b")}, {root, path_of(root, "a")})
+    assert not placeholder_hidden(view, path_of(root, "a"))
+
+    view.apply_row_filter({root, path_of(root, "a")}, {root})
+    view.apply_row_filter(None)
+    assert not placeholder_hidden(view, path_of(root, "a"))

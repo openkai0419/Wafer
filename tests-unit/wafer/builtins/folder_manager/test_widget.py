@@ -5,7 +5,9 @@ import threading
 import pytest
 from PySide6 import QtCore
 
+from wafer.app.viewer.widgets.foldertree import USER_ROLE_PATH
 from wafer.builtins.filters import TextFilter
+from wafer.builtins.folder_manager import view as view_module
 from wafer.builtins.folder_manager import widget as widget_module
 from wafer.builtins.folder_manager.database import FolderSettings
 from wafer.builtins.folder_manager.rules import Condition, HighlightRule
@@ -1236,3 +1238,108 @@ def test_collapse_all_stops_expanding_and_collapses(qtbot, tmp_path, monkeypatch
     for _ in range(20):
         QtCore.QCoreApplication.processEvents()
     assert opened == []
+
+
+def settle(rounds=50):
+    for _ in range(rounds):
+        QtCore.QCoreApplication.processEvents()
+
+
+def matches_shown(panel):
+    return panel.found_matches is not None and panel.found_version == panel.matches_version and not panel.filtering and not panel.filter_timer.isActive()
+
+
+def placeholder_hidden(view, path):
+    index = view.model_.indexFromItem(view.model_.path_item_map[path])
+    assert view.model_.rowCount(index) == 1 and not view.model_.index(0, 0, index).data(USER_ROLE_PATH)
+    return view.isRowHidden(0, index)
+
+
+def test_matches_only_does_not_cancel_a_running_select(qtbot, tmp_path, monkeypatch, query_calls):
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    view = panel.view
+    monkeypatch.setattr(view_module, "EXPAND_RECURSIVE_BATCH_SIZE", 1)
+    real_expand = view.expand_folders
+    calls = []
+
+    def expand_then_toggle(folders, on_complete=None, **kwargs):
+        calls.append(kwargs.get("channel", "expand"))
+        real_expand(folders, on_complete=on_complete, **kwargs)
+        if calls == ["expand"]:
+            panel.set_matches_only(True)
+
+    monkeypatch.setattr(view, "expand_folders", expand_then_toggle)
+
+    panel.expand_to_matches(select=True)
+
+    qtbot.waitUntil(lambda: sorted(view.get_selected_paths()) == [f"{root}/a", f"{root}/c/x"], timeout=5000)
+    assert calls[0] == "expand" and widget_module.MATCHES_ONLY_CHANNEL in calls
+
+
+def test_matches_only_does_not_reopen_folders_after_an_expand_interrupts_it(qtbot, tmp_path, monkeypatch, query_calls):
+    monkeypatch.setattr(widget_module, "MATCHES_REFRESH_MS", 0)
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    view = panel.view
+    real_show = panel.show_matches
+
+    def show_then_expand(found):
+        real_show(found)
+        view.expand_folders([root])
+
+    monkeypatch.setattr(panel, "show_matches", show_then_expand)
+    panel.set_matches_only(True)
+    qtbot.waitUntil(lambda: matches_shown(panel) and is_expanded(view, f"{root}/c"), timeout=5000)
+    settle()
+    view.collapse(view.model_.indexFromItem(view.model_.path_item_map[f"{root}/c"]))
+    version = panel.matches_version
+
+    panel.recount(panel.rules)
+
+    qtbot.waitUntil(lambda: panel.found_version > version and matches_shown(panel), timeout=5000)
+    settle()
+    assert not is_expanded(view, f"{root}/c")
+
+
+def test_collapse_all_during_the_first_matches_only_scan_keeps_the_tree_closed(qtbot, tmp_path, monkeypatch, query_calls):
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    view = panel.view
+    monkeypatch.setattr(widget_module, "EXPAND_SLICE_SECONDS", -1)
+    monkeypatch.setattr(widget_module, "EXPAND_DEADLINE_CHECK", 1)
+    opened = []
+    monkeypatch.setattr(view, "expand_folders", lambda folders, **_: opened.append(list(folders)))
+    panel.set_matches_only(True)
+
+    panel.collapse_button.click()
+
+    qtbot.waitUntil(lambda: matches_shown(panel), timeout=5000)
+    assert opened == []
+    assert not is_expanded(view, root) and row_hidden(view, f"{root}/e")
+
+
+def test_matched_folders_with_unloaded_children_show_no_arrow(qtbot, tmp_path, query_calls):
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    view = panel.view
+    assert not placeholder_hidden(view, f"{root}/a")
+
+    panel.set_matches_only(True)
+
+    qtbot.waitUntil(lambda: f"{root}/c/x" in view.model_.path_item_map, timeout=5000)
+    qtbot.waitUntil(lambda: placeholder_hidden(view, f"{root}/a") and placeholder_hidden(view, f"{root}/c/x"), timeout=5000)
+    panel.set_matches_only(False)
+    assert not placeholder_hidden(view, f"{root}/a") and not placeholder_hidden(view, f"{root}/c/x")
+
+
+def test_switching_database_forgets_the_previous_matches(qtbot, tmp_path, query_calls):
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    panel.set_matches_only(True)
+    qtbot.waitUntil(lambda: matches_shown(panel), timeout=5000)
+    panel.set_matches_only(False)
+    other = make_folders(tmp_path / "other", {"": 0, "b": 0})
+    serve("other", [other])
+
+    panel.set_database("other")
+
+    assert panel.found_matches is None
+    qtbot.waitUntil(lambda: scanned(panel, [other]), timeout=5000)
+    panel.set_matches_only(True)
+    assert not row_hidden(panel.view, other)

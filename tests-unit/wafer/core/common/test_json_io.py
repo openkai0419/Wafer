@@ -54,3 +54,13 @@ def test_write_overwrites_existing_with_str_path(tmp_path):
     write_json_file(p, {"v": 1})
     write_json_file(p, {"v": 2})
     assert read_json_file(p) == {"v": 2}
+
+
+def test_a_failed_write_keeps_the_old_file_and_leaves_no_temp(tmp_path):
+    p = tmp_path / "data.json"
+    write_json_file(p, {"v": 1})
+
+    assert write_json_file(p, {"v": 2, "bad": object()}) is False
+
+    assert read_json_file(p) == {"v": 1}
+    assert [f.name for f in tmp_path.iterdir()] == ["data.json"]

@@ -1,6 +1,7 @@
 import hashlib
 import shutil
 import zipfile
+from pathlib import Path
 
 import pytest
 
@@ -219,6 +220,36 @@ class TestProcessApplyResults:
         stage.process_apply_results()
         stage.process_apply_results()
         assert notes == ["Updated to v2.0.0"]
+
+
+    def test_notification_goes_through_invoke(self, app_root, monkeypatch):
+        base = app_root / ".update"
+        base.mkdir()
+        (base / "failed.txt").write_text("boom", encoding="utf-8")
+        notes = []
+        deferred = []
+        monkeypatch.setattr(stage.Notifier, "error", staticmethod(lambda msg: notes.append(msg)))
+        stage.process_apply_results(deferred.append)
+        assert notes == []
+        deferred[0]()
+        assert notes == ["Update failed. Previous version was restored"]
+
+    def test_discard_logs_undeletable_files(self, app_root, monkeypatch):
+        locked = app_root / ".update" / "next" / "locked.bin"
+        locked.parent.mkdir(parents=True)
+        locked.write_bytes(b"x")
+        real_unlink = stage.os.unlink
+
+        def unlink(path, *args, **kwargs):
+            if Path(path) == locked:
+                raise PermissionError("in use")
+            real_unlink(path, *args, **kwargs)
+
+        warnings = []
+        monkeypatch.setattr(stage.os, "unlink", unlink)
+        monkeypatch.setattr(stage.AppLogger, "warning", staticmethod(lambda msg, **kwargs: warnings.append(msg)))
+        stage.discard_staged()
+        assert any("locked.bin" in msg for msg in warnings)
 
 
 class TestClaimResultFile:

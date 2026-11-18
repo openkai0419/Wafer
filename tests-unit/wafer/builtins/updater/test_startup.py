@@ -1,3 +1,5 @@
+import pytest
+
 from wafer.builtins.updater import startup
 from wafer.builtins.updater.service import UpdateCheckResult, UpdateInfo
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
@@ -42,6 +44,14 @@ class _MainWindow:
         self.slot_id = slot_id
         self._layout_manager = manager
         self._dispatcher = _Dispatcher()
+
+
+_real_post_apply_results = startup._post_apply_results
+
+
+@pytest.fixture(autouse=True)
+def _no_apply_results(monkeypatch):
+    monkeypatch.setattr(startup, "_post_apply_results", lambda: None)
 
 
 def _new_result(version="0.6.19", *, is_newer=True):
@@ -194,7 +204,6 @@ def test_startup_check_presents_for_webui(monkeypatch):
     monkeypatch.setattr(startup.state, "skipped_version", lambda: "")
     monkeypatch.setattr(startup.state, "record_latest_result", lambda version: None)
     monkeypatch.setattr(startup, "check_for_updates", lambda: _new_result())
-    monkeypatch.setattr(startup, "process_apply_results", lambda: None)
     monkeypatch.setattr(startup, "_resolve_dispatcher", lambda: _Dispatcher())
     widget = _Widget()
     monkeypatch.setattr(startup, "present_updater", lambda: widget)
@@ -231,3 +240,27 @@ def test_log_startup_update_check_silent_when_up_to_date(monkeypatch):
     startup.log_startup_update_check()
 
     assert logs == []
+
+
+def test_startup_check_processes_apply_results_off_the_caller(monkeypatch):
+    posted = []
+    calls = []
+
+    class _RecordingDispatcher(_Dispatcher):
+        def __init__(self, pool):
+            pass
+
+        def post(self, fn, priority=5):
+            posted.append(fn)
+
+    monkeypatch.setattr(startup, "_post_apply_results", _real_post_apply_results)
+    monkeypatch.setattr(startup, "_apply_dispatcher", None)
+    monkeypatch.setattr(startup, "Dispatcher", _RecordingDispatcher)
+    monkeypatch.setattr(startup.stage, "process_apply_results", lambda invoke=None: calls.append(invoke))
+    monkeypatch.setattr(startup.state, "is_auto_check_enabled", lambda: False)
+
+    startup.run_startup_update_check()
+
+    assert calls == []
+    posted[0]()
+    assert calls == [startup._apply_dispatcher.invoke]

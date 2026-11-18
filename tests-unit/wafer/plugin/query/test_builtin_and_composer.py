@@ -277,6 +277,16 @@ class TestDirectoryFilterExecution:
         assert all("sub_dir" not in p for p in paths)
         assert len(paths) == 7
 
+    def test_no_subfolders_keeps_members_in_folders_of_a_direct_archive(self, contained_db, composer):
+        db_path, archive, child_a, child_b, plain = contained_db
+        engine = FileSearchEngine(db_path)
+        entries = [(DirectoryFilter, {"directories": ["C:/archives"], "include_subfolders": False}, None)]
+        paths, _, _ = composer.execute(engine, entries, NaturalPathSort, True)
+        assert set(paths) == {archive, child_a, child_b}
+        entries = [(DirectoryFilter, {"directories": ["C:/"], "include_subfolders": False}, None)]
+        paths, _, _ = composer.execute(engine, entries, NaturalPathSort, True)
+        assert paths == []
+
 
 class TestContainedFilesFilterExecution:
     def test_contained_files_can_be_excluded(self, contained_db, composer):
@@ -715,8 +725,8 @@ class TestDirectoryFilterCondition:
 
     def test_no_subfolders_adds_a_slash_check(self):
         condition, bind = DirectoryFilter.build_path_condition({"directories": ["C:/data"], "include_subfolders": False}, np)
-        assert "instr(substr(path, ?), '/') = 0" in condition
-        assert bind == ["C:/data/", "C:/data0", len("C:/data/") + 1]
+        assert "instr(" in condition
+        assert bind == ["C:/data/", "C:/data0", len("C:/data/") + 1, len("C:/data/") + 1]
 
     def test_sibling_folders_with_longer_names_are_excluded(self, tmp_path, composer):
         db_path = str(tmp_path / "siblings.db")

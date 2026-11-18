@@ -80,6 +80,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.search_service = SearchService(lambda: self.database_path, parent=self)
         self.search_service.search_started.connect(self._on_search_started)
         self.search_service.search_finished.connect(self._on_search_finished)
+        self.search_service.search_failed.connect(self._hide_loading)
         UI.register_instance("SearchService", self.search_service)
         t.set_locale(app_settings.get("window/language", "en"))
         UI.register_instance("MainWindow", self)

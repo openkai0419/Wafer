@@ -317,3 +317,22 @@ class TestStoreMtime:
         store = WorkspaceStore(path=str(tmp_path / "ws.json"))
         store.save_ui_preset(UIPreset(name="x"))
         assert store.get_store_mtime() > 0.0
+
+
+class TestUnreadableStore:
+    def test_update_sets_the_unreadable_file_aside(self, tmp_path):
+        path = tmp_path / "ws.json"
+        path.write_text('{"ui_presets": {"keep": ', encoding="utf-8")
+        store = WorkspaceStore(path=str(path))
+
+        store.save_ui_preset(UIPreset(name="New"))
+
+        assert (tmp_path / "ws.json.broken").read_text(encoding="utf-8") == '{"ui_presets": {"keep": '
+        assert [p.name for p in store.list_ui_presets()] == ["New"]
+
+    def test_missing_store_is_not_set_aside(self, tmp_path):
+        store = WorkspaceStore(path=str(tmp_path / "ws.json"))
+
+        store.save_ui_preset(UIPreset(name="New"))
+
+        assert sorted(p.name for p in tmp_path.iterdir() if not p.name.endswith(".lock")) == ["ws.json"]

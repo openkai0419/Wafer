@@ -7,8 +7,10 @@ from datetime import datetime, UTC
 from typing import Any
 from collections.abc import Callable
 
+from ..common.atomic_file import retry_while_in_use
 from ..common.json_io import read_json_file, write_json_file
 from ..common.paths import resolve_data_path
+from ..logs import AppLogger
 from ..platform.process_lock import file_lock
 
 _STORE_FILENAME = "workspace.json"
@@ -197,7 +199,10 @@ class WorkspaceStore:
             return 0.0
 
     def _load_raw(self) -> dict[str, Any]:
-        data = read_json_file(self._path, default=None)
+        return self._with_defaults(read_json_file(self._path, default=None))
+
+    @staticmethod
+    def _with_defaults(data: Any) -> dict[str, Any]:
         if not isinstance(data, dict):
             return {k: (list(v) if isinstance(v, list) else dict(v)) for k, v in _EMPTY_RAW.items()}
         for k, v in _EMPTY_RAW.items():
@@ -211,9 +216,17 @@ class WorkspaceStore:
         with file_lock(self._lock_path):
             return self._load_raw()
 
+    def _set_aside_unreadable(self) -> None:
+        broken = self._path + ".broken"
+        retry_while_in_use(lambda: os.replace(self._path, broken))
+        AppLogger.warning(f"{self._path} could not be read; moved it to {broken} and started from empty presets and windows")
+
     def _locked_update(self, fn: Callable[[dict[str, Any]], Any]) -> Any:
         with file_lock(self._lock_path):
-            raw = self._load_raw()
+            data = read_json_file(self._path, default=None)
+            if not isinstance(data, dict) and os.path.exists(self._path):
+                self._set_aside_unreadable()
+            raw = self._with_defaults(data)
             result = fn(raw)
             self._save_raw(raw)
             return result

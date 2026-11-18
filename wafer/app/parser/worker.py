@@ -8,7 +8,7 @@ from ...core.ipc.node import Node
 from ...core.ipc.transport import BROKER_LOST_TIMEOUT
 from ...plugin.parser.handler import parser_resolver
 from ...plugin.parser.base import ParserResult, BaseSingletonParser
-from ..worker_lifecycle import PluginWorkerLifecycle
+from ..worker_lifecycle import PluginWorkerLifecycle, failed_results
 
 _SHUTDOWN_WAIT = 5
 
@@ -120,8 +120,7 @@ class ParserWorker:
                 for fut in not_done:
                     fut.cancel()
             results = [r for r in results_raw if r]
-            if not results:
-                return
+            results.extend(failed_results(paths, results))
             self._node.send_reliable(
                 "parse.result",
                 {"parser": self._status_name, "results": results},

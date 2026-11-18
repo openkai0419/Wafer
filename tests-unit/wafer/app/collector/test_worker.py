@@ -38,7 +38,7 @@ def test_all_registered_plugins_constructable(make_worker):
         assert worker._batch_timeout == collector_resolver.batch_timeout(name)
 
 
-def test_process_one_error_excludes_from_results(make_worker):
+def test_process_one_error_is_sent_as_failure(make_worker):
     from unittest.mock import MagicMock
 
     worker = make_worker()
@@ -51,8 +51,7 @@ def test_process_one_error_excludes_from_results(make_worker):
     worker._process_batch(["/nonexistent/test.jpg"], {"/nonexistent/test.jpg": [0.0, 0]}, "test_db")
     assert worker._node.send_reliable.called
     payload = worker._node.send_reliable.call_args[0][1]
-    results = payload["results"]
-    assert len(results) == 0
+    assert payload["results"] == [{"source": "/nonexistent/test.jpg", "status": False}]
 
 
 def test_process_batch_partial_failure(make_worker):
@@ -79,9 +78,8 @@ def test_process_batch_partial_failure(make_worker):
 
     assert worker._node.send_reliable.called
     payload = worker._node.send_reliable.call_args[0][1]
-    results = payload["results"]
-    assert len(results) == 2
-    assert all(r["status"] is True for r in results)
+    statuses = {r["source"]: r["status"] for r in payload["results"]}
+    assert statuses == {"/test/a.jpg": True, "/test/b.jpg": False, "/test/c.jpg": True}
 
 
 def test_process_batch_uses_db_from_argument(make_worker):
@@ -246,3 +244,31 @@ def test_process_batch_passes_source_key_unchanged(make_worker):
 
     assert received == [key]
     assert worker._node.send_reliable.call_args[0][1]["results"][0]["source"] == key
+
+
+def test_timed_out_and_empty_paths_are_sent_as_failures(make_worker):
+    import threading
+    from unittest.mock import MagicMock
+    from wafer.plugin.collector.base import CollectorResult
+
+    worker = make_worker()
+    worker._node = MagicMock()
+    worker._batch_timeout = 0.2
+    release = threading.Event()
+
+    def process(path, info):
+        if path == "/test/slow.jpg":
+            release.wait(5)
+        if path == "/test/empty.jpg":
+            return []
+        return CollectorResult(source=path, status=True)
+
+    worker._plugin.process = process
+    paths = ["/test/ok.jpg", "/test/slow.jpg", "/test/empty.jpg"]
+    try:
+        worker._process_batch(paths, {}, "test_db")
+    finally:
+        release.set()
+
+    statuses = {r["source"]: r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]}
+    assert statuses == {"/test/ok.jpg": True, "/test/slow.jpg": False, "/test/empty.jpg": False}

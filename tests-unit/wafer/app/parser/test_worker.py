@@ -140,3 +140,31 @@ def test_process_batch_passes_source_key_unchanged(make_worker):
 
     assert received == [key]
     assert worker._node.send_reliable.call_args[0][1]["results"][0]["source"] == key
+
+
+def test_failed_and_empty_results_are_sent_as_failures(make_worker):
+    from wafer.plugin.parser.base import ParserResult
+
+    worker = make_worker()
+
+    def process(path, file_info, metadata):
+        if path == "/raise.png":
+            raise RuntimeError("boom")
+        if path == "/none.png":
+            return None
+        return ParserResult(source=path, status=True)
+
+    worker._plugin.process = process
+    worker._process_batch(["/ok.png", "/raise.png", "/none.png"], {}, {}, "test_db")
+
+    statuses = {r["source"]: r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]}
+    assert statuses == {"/ok.png": True, "/raise.png": False, "/none.png": False}
+
+
+def test_batch_with_only_failures_is_still_sent(make_worker):
+    worker = make_worker()
+    worker._plugin.process = lambda path, file_info, metadata: None
+
+    worker._process_batch(["/none.png"], {}, {}, "test_db")
+
+    assert worker._node.send_reliable.call_args[0][1]["results"] == [{"source": "/none.png", "status": False}]

@@ -43,3 +43,8 @@ class PluginWorkerLifecycle:
     def stop(self):
         self.shutdown_plugin()
         self._executor.shutdown(wait=True, cancel_futures=True)
+
+
+def failed_results(paths, results) -> list[dict]:
+    reported = {r.get("source") for r in results}
+    return [{"source": p, "status": False} for p in paths if p not in reported]

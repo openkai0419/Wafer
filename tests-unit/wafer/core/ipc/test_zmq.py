@@ -407,6 +407,19 @@ class TestReconnection:
                 node.stop()
                 broker2.stop()
 
+    def test_a_failed_heartbeat_does_not_stop_the_node(self):
+        broker = Broker()
+        broker.start()
+        try:
+            with patch("wafer.core.ipc.node.read_broker_port", side_effect=[PermissionError("locked")] + [broker.port] * 1000):
+                node = Node("viewer")
+                node.start(broker.port)
+                assert node.wait_registered(timeout=5.0)
+                assert node._io_thread.is_alive()
+        finally:
+            node.stop()
+            broker.stop()
+
     def test_node_stays_connected_while_broker_alive(self):
         broker = Broker()
         broker.start()

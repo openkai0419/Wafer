@@ -379,7 +379,10 @@ class Node:
         while not self._stop.is_set():
             now = time.monotonic()
             if now >= next_tick:
-                self._heartbeat_tick()
+                try:
+                    self._heartbeat_tick()
+                except Exception as e:
+                    AppLogger.warning(f"node heartbeat failed, retrying next tick (node={self.node_id})", exc=e)
                 next_tick = now + HEARTBEAT_INTERVAL
                 if self._dealer is not registered_dealer:
                     poller = zmq.Poller()

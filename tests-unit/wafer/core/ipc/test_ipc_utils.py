@@ -46,3 +46,40 @@ def test_try_put_no_eviction_no_log():
     with patch("wafer.core.ipc.transport.debug_non_recursive") as log:
         try_put(q, "item", label="test")
         log.assert_not_called()
+
+
+def test_read_retries_while_the_file_is_being_replaced(monkeypatch):
+    write_broker_port(23456)
+    from pathlib import Path
+
+    real_read_text = Path.read_text
+    failures = iter([PermissionError("locked"), PermissionError("locked")])
+
+    def read_text(self, *args, **kwargs):
+        error = next(failures, None)
+        if error is not None:
+            raise error
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+    assert read_broker_port(timeout=1.0) == 23456
+
+
+def test_write_retries_while_a_reader_holds_the_file(monkeypatch):
+    from pathlib import Path
+
+    from wafer.core.ipc import transport
+
+    monkeypatch.setattr(transport, "PORT_FILE_REPLACE_RETRY_SEC", 0)
+    real_replace = Path.replace
+    failures = iter([PermissionError("in use"), PermissionError("in use")])
+
+    def replace(self, target):
+        error = next(failures, None)
+        if error is not None:
+            raise error
+        return real_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", replace)
+    write_broker_port(34567)
+    assert json.loads(transport._PORT_FILE.read_text())["port"] == 34567

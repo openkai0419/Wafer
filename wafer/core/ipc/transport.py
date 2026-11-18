@@ -30,6 +30,8 @@ RECONNECT_FORCE_INTERVAL = 5.0
 BROKER_LOST_TIMEOUT = 20
 ZMQ_SNDTIMEO_MS = 800
 ZMQ_RCVTIMEO_MS = 800
+PORT_FILE_REPLACE_RETRIES = 20
+PORT_FILE_REPLACE_RETRY_SEC = 0.05
 
 _PORT_FILE = Path(resolve_data_path("ipc/broker.json"))
 
@@ -98,6 +100,12 @@ def write_broker_port(port: int):
     _PORT_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = _PORT_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps({"port": port}))
+    for _ in range(PORT_FILE_REPLACE_RETRIES):
+        try:
+            tmp.replace(_PORT_FILE)
+            return
+        except PermissionError:
+            time.sleep(PORT_FILE_REPLACE_RETRY_SEC)
     tmp.replace(_PORT_FILE)
 
 
@@ -107,7 +115,7 @@ def read_broker_port(timeout: float = 5.0) -> int | None:
         try:
             data = json.loads(_PORT_FILE.read_text())
             return int(data["port"])
-        except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError):
+        except (OSError, KeyError, ValueError):
             if time.time() > end:
                 return None
             time.sleep(0.1)

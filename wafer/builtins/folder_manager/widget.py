@@ -19,7 +19,7 @@ from wafer.qt.commands.bridge import UI, ActionKit, Menu
 from wafer.qt.common.dispatcher import CancelSlot, Dispatcher
 from wafer.qt.common.dpi import dpix
 from wafer.qt.common.notifier import Notifier
-from wafer.qt.common.rate_limit import qt_debounce, qt_throttle
+from wafer.qt.common.rate_limit import qt_throttle
 from wafer.qt.common.thread import utility_pool
 from wafer.qt.widgets.database_box import DatabaseBox
 from wafer.qt.widgets.flow_layout import FlowLayout
@@ -89,6 +89,8 @@ class FolderManagerWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.dispatcher = Dispatcher(utility_pool, parent=self)
+        bridge = ViewerIpcBridge.instance()
+        self.follows_viewer = bridge is not None
         self.database_name = ""
         self.columns = dict(DEFAULT_COLUMNS)
         self.settings_slot = CancelSlot()
@@ -112,8 +114,8 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.apply_rules(load_rules())
         self.apply_columns(load_columns())
         app_settings.key_changed.connect(self.on_setting_changed)
+        QtCore.QCoreApplication.instance().aboutToQuit.connect(self.save_pending)
         UI.register_instance(INSTANCE_NAME, self)
-        bridge = ViewerIpcBridge.instance()
         if bridge is not None:
             bridge.db_content_updated.connect(self.on_db_content_updated)
             bridge.files_changed.connect(self.on_files_changed)
@@ -142,6 +144,15 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.rule_timer = QtCore.QTimer(self)
         self.rule_timer.setSingleShot(True)
         self.rule_timer.timeout.connect(self.recount_pending_rules)
+        self.rules_saver = self.save_timer(self.save_rules_now)
+        self.columns_saver = self.save_timer(self.save_columns_now)
+
+    def save_timer(self, save) -> QtCore.QTimer:
+        timer = QtCore.QTimer(self)
+        timer.setSingleShot(True)
+        timer.setInterval(SAVE_DELAY_MS)
+        timer.timeout.connect(save)
+        return timer
 
     def build_bar(self) -> QtWidgets.QWidget:
         self.bar = QtWidgets.QWidget()
@@ -174,11 +185,25 @@ class FolderManagerWidget(QtWidgets.QWidget):
         return self.rule_list.rules
 
     def apply_rules(self, rules: Sequence[HighlightRule]) -> None:
+        finished = {self.counted_keys.get(id(rule)): self.counts[id(rule)] for rule in self.rules if id(rule) in self.counts and id(rule) not in self.counting}
+        finished.pop(None, None)
         self.forget_counts()
         self.rule_list.set_rules(rules)
+        changed = []
+        for rule in self.rules:
+            key = self.count_key(rule)
+            if key in finished:
+                self.counts[id(rule)] = finished[key]
+                self.counted_keys[id(rule)] = key
+            else:
+                changed.append(rule)
         self.publish_counts()
-        self.stale_rules = True
-        self.flush_if_visible()
+        if not changed:
+            return
+        if self.isVisible():
+            self.recount(changed)
+        else:
+            self.stale_rules = True
 
     def apply_columns(self, columns: dict[str, bool]) -> None:
         for metric in METRICS:
@@ -186,17 +211,40 @@ class FolderManagerWidget(QtWidgets.QWidget):
 
     def on_setting_changed(self, key: str) -> None:
         if key == RULES_KEY:
+            self.rules_saver.stop()
             self.apply_rules(load_rules())
         elif key == COLUMNS_KEY:
+            self.columns_saver.stop()
             self.apply_columns(load_columns())
 
-    @qt_debounce(SAVE_DELAY_MS)
+    def reload_shared_settings(self) -> None:
+        self.save_pending()
+        rules = load_rules()
+        if [rule.to_dict() for rule in rules] != [rule.to_dict() for rule in self.rules]:
+            self.apply_rules(rules)
+        columns = load_columns()
+        if columns != self.columns:
+            self.apply_columns(columns)
+
     def save_rules_later(self) -> None:
+        self.rules_saver.start()
+
+    def save_columns_later(self) -> None:
+        self.columns_saver.start()
+
+    def save_rules_now(self) -> None:
+        self.rules_saver.stop()
         save_rules(self.rules)
 
-    @qt_debounce(SAVE_DELAY_MS)
-    def save_columns_later(self) -> None:
+    def save_columns_now(self) -> None:
+        self.columns_saver.stop()
         save_columns(self.columns)
+
+    def save_pending(self) -> None:
+        if self.rules_saver.isActive():
+            self.save_rules_now()
+        if self.columns_saver.isActive():
+            self.save_columns_now()
 
     def forget_counts(self) -> None:
         for slot in self.count_slots.values():
@@ -321,7 +369,18 @@ class FolderManagerWidget(QtWidgets.QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        if not self.follows_viewer:
+            self.reload_shared_settings()
         self.flush()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self.save_pending()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QtCore.QEvent.ActivationChange and not self.follows_viewer:
+            self.reload_shared_settings()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

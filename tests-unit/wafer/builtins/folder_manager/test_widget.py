@@ -75,7 +75,49 @@ def served_folders(monkeypatch):
 
 @pytest.fixture
 def immediate_save(monkeypatch):
-    monkeypatch.setattr(rate_limit.qt_debounce_manager, "debounce", lambda key, delay_ms, callback, *args, **kwargs: callback(*args, **kwargs))
+    monkeypatch.setattr(FolderManagerWidget, "save_rules_later", FolderManagerWidget.save_rules_now)
+    monkeypatch.setattr(FolderManagerWidget, "save_columns_later", FolderManagerWidget.save_columns_now)
+
+
+@pytest.fixture
+def saved_rules(monkeypatch):
+    saved = []
+    monkeypatch.setattr(widget_module, "save_rules", lambda rules: saved.append([rule.name for rule in rules]))
+    return saved
+
+
+@pytest.fixture
+def saved_columns(monkeypatch):
+    saved = []
+    monkeypatch.setattr(widget_module, "save_columns", lambda columns: saved.append(dict(columns)))
+    return saved
+
+
+class FakeBridge:
+    class Signal:
+        def connect(self, slot):
+            pass
+
+    def __init__(self):
+        self.db_content_updated = self.files_changed = self.folder_changed = self.Signal()
+
+
+def without_viewer(monkeypatch):
+    monkeypatch.setattr(widget_module.ViewerIpcBridge, "instance", staticmethod(lambda: None))
+
+
+def in_viewer(monkeypatch):
+    bridge = FakeBridge()
+    monkeypatch.setattr(widget_module.ViewerIpcBridge, "instance", staticmethod(lambda: bridge))
+
+
+@pytest.fixture(autouse=True)
+def viewer_bridge(monkeypatch):
+    in_viewer(monkeypatch)
+
+
+def activate(panel):
+    QtCore.QCoreApplication.sendEvent(panel, QtCore.QEvent(QtCore.QEvent.ActivationChange))
 
 
 @pytest.fixture
@@ -239,15 +281,113 @@ def test_rule_edits_are_saved_to_shared_settings(qtbot, immediate_save):
     assert load_columns()["all_folders"] is True and not panel.view.isColumnHidden(4)
 
 
-def test_rule_edits_are_saved_once_after_a_pause(qtbot, monkeypatch):
-    saved = []
-    monkeypatch.setattr(widget_module, "save_rules", lambda rules: saved.append([rule.name for rule in rules]))
+def test_rule_edits_are_saved_once_after_a_pause(qtbot, monkeypatch, saved_rules):
+    monkeypatch.setattr(widget_module, "SAVE_DELAY_MS", 0)
     panel = FolderManagerWidget()
     qtbot.addWidget(panel)
     for _ in range(3):
         panel.rule_list.rows[0].emit_edited()
-    assert saved == []
-    qtbot.waitUntil(lambda: saved == [["Mixed"]], timeout=2000)
+    assert saved_rules == []
+    qtbot.waitUntil(lambda: saved_rules == [["Mixed"]], timeout=2000)
+    QtCore.QCoreApplication.processEvents()
+    assert saved_rules == [["Mixed"]]
+
+
+def test_an_edit_right_before_closing_the_window_is_saved(qtbot, saved_rules, saved_columns):
+    from wafer.qt.layout.standalone import open_standalone
+
+    panel = open_standalone(FolderManagerWidget, "Folder Manager", "folder_manager_close_test")
+    qtbot.waitExposed(panel)
+    panel.add_rule_button.click()
+    panel.toggle_column("all_folders")
+    assert saved_rules == [] and saved_columns == []
+
+    panel.window().close()
+
+    assert saved_rules == [["Mixed", "Rule 1"]]
+    assert saved_columns and saved_columns[-1]["all_folders"] is True
+
+
+def test_pending_saves_are_written_when_the_app_quits(qtbot, saved_rules):
+    panel = FolderManagerWidget()
+    qtbot.addWidget(panel)
+    panel.add_rule_button.click()
+
+    QtCore.QCoreApplication.instance().aboutToQuit.emit()
+
+    assert saved_rules == [["Mixed", "Rule 1"]]
+    panel.save_pending()
+    assert saved_rules == [["Mixed", "Rule 1"]]
+
+
+def test_a_remote_change_cancels_the_pending_save(qtbot, saved_rules):
+    panel = FolderManagerWidget()
+    qtbot.addWidget(panel)
+    panel.add_rule_button.click()
+
+    app_settings.apply_remote({RULES_KEY: [rule_dict("Remote", "#378ADD")]})
+    panel.save_pending()
+
+    assert [rule.name for rule in panel.rules] == ["Remote"]
+    assert saved_rules == []
+
+
+def test_remote_changes_keep_the_counts_of_unchanged_queries(qtbot, tmp_path, query_calls):
+    root = make_folders(tmp_path / "root", {"a": 1})
+    query_calls.sources = [f"{root}/a/f0.png"]
+    panel = make_panel(qtbot)
+    panel.apply_rules([HighlightRule.from_dict(rule_dict("Dogs", "#1D9E75", bars=[text_bar("dog")])), HighlightRule.from_dict(rule_dict("Cats", "#D85A30", bars=[text_bar("cat")]))])
+    bind(qtbot, panel, [root])
+    qtbot.waitUntil(lambda: len(query_calls) == 2 and not panel.counting and len(panel.counts) == 2, timeout=5000)
+    dogs = panel.counts[id(panel.rules[0])]
+
+    app_settings.apply_remote({RULES_KEY: [rule_dict("Hounds", "#378ADD", bars=[text_bar("dog")]), rule_dict("Cats", "#D85A30", bars=[text_bar("kitten")])]})
+
+    hounds, cats = panel.rules
+    assert panel.counts[id(hounds)] is dogs
+    assert dict(panel.model.rule_counts[0][1]) == dogs
+    qtbot.waitUntil(lambda: len(query_calls) == 3 and not panel.counting and id(cats) in panel.counts, timeout=5000)
+    QtCore.QCoreApplication.processEvents()
+    assert query_calls[2] == ["kitten"] and len(query_calls) == 3
+
+
+def test_the_tray_window_rereads_shared_settings_when_activated(qtbot, monkeypatch):
+    without_viewer(monkeypatch)
+    panel = make_panel(qtbot)
+    app_settings.save_immediate(RULES_KEY, [rule_dict("FromViewer", "#378ADD")])
+    app_settings.save_immediate(COLUMNS_KEY, {"files": False})
+
+    activate(panel)
+
+    assert [rule.name for rule in panel.rules] == ["FromViewer"]
+    assert panel.view.isColumnHidden(1)
+    rules = list(panel.rules)
+    activate(panel)
+    assert all(a is b for a, b in zip(panel.rules, rules))
+    panel.close()
+
+
+def test_the_tray_window_saves_its_pending_edit_before_rereading(qtbot, monkeypatch):
+    without_viewer(monkeypatch)
+    panel = make_panel(qtbot)
+    panel.add_rule_button.click()
+
+    activate(panel)
+
+    assert [rule.name for rule in load_rules()] == ["Mixed", "Rule 1"]
+    assert [rule.name for rule in panel.rules] == ["Mixed", "Rule 1"]
+    panel.close()
+
+
+def test_a_viewer_panel_does_not_reread_on_activation(qtbot, monkeypatch):
+    in_viewer(monkeypatch)
+    panel = make_panel(qtbot)
+    app_settings.save_immediate(RULES_KEY, [rule_dict("Elsewhere", "#378ADD")])
+
+    activate(panel)
+
+    assert [rule.name for rule in panel.rules] == ["Mixed"]
+    panel.close()
 
 
 def test_remote_rule_changes_are_applied(qtbot, tmp_path, query_calls):

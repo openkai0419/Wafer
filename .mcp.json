@@ -2,7 +2,7 @@
   "mcpServers": {
     "wafer-debug": {
       "command": ".venv/Scripts/python.exe",
-      "args": ["-m", "debug.mcp_server"]
+      "args": ["-m", "debug.mcp_server", "--profile", "debug-tools"]
     }
   }
 }

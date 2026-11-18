@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -426,12 +427,44 @@ def test_cli_rebuild_template_replaces_the_current_template(tmp_path, monkeypatc
     assert built == [False]
 
 
+def test_cli_accepts_the_tooling_profile_before_or_after_the_command(tmp_path, monkeypatch):
+    checkout = make_checkout(tmp_path / "Repo")
+    events = []
+    monkeypatch.setattr(profile_setup, "stop_profile", lambda profile, timeout=15.0: events.append(profile))
+    monkeypatch.setattr(profile_setup, "ensure_profile", lambda c, *, fresh, on_progress: "debug-main")
+    monkeypatch.setattr(profile_setup, "launch_process", lambda c, profile: 99)
+
+    assert main(["--profile", "debug-tools", "launch", "--checkout", str(checkout)]) == 0
+    assert main(["launch", "--checkout", str(checkout), "--profile", "debug-tools"]) == 0
+    assert main(["stop", "debug-main", "--profile", "debug-tools"]) == 0
+    assert events == ["debug-main", "debug-main", "debug-main"]
+    with pytest.raises(SystemExit):
+        main(["launch", "--checkout", str(checkout), "--profile", "debug-main"])
+    assert "--profile debug-tools" in profile_setup._parser().format_help()
+
+
+def test_ensure_profile_works_from_the_tooling_profile(tmp_path, monkeypatch, app_data, sample):
+    from wafer.core.common.profile import current_profile
+
+    checkout = make_checkout(tmp_path / "Repo")
+    monkeypatch.setattr(profile_setup, "build_template", _fake_build)
+    monkeypatch.setattr(sys, "argv", ["-m", "--profile", "debug-tools"])
+    current_profile.cache_clear()
+    try:
+        assert current_profile() == "debug-tools"
+        assert ensure_profile(checkout, fresh=False, on_progress=lambda text: None) == "debug-main"
+    finally:
+        current_profile.cache_clear()
+    parents = SettingDB(str(profile_data_root("debug-main") / "dirs" / "sample.db")).get_all_parent_folders()
+    assert normalize_path(scratch_root("debug-main")) in parents
+
+
 def test_cli_reports_an_invalid_checkout(tmp_path):
     assert main(["launch", "--checkout", str(tmp_path / "missing")]) != 0
     assert main(["stop", "normal"]) != 0
 
 
-@pytest.mark.parametrize("name", ["main", "Main", "template-build"])
+@pytest.mark.parametrize("name", ["main", "Main", "template-build", "tools", "Tools"])
 def test_profile_name_for_rejects_reserved_worktree_names(tmp_path, name):
     main_root = make_checkout(tmp_path / "Repo")
     wt = make_checkout(main_root / ".claude" / "worktrees" / name)

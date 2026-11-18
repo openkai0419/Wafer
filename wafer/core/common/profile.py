@@ -4,6 +4,7 @@ from functools import lru_cache
 
 PROFILE_ARG = "--profile"
 PROFILE_PREFIX = "debug-"
+TOOLS_PROFILE = f"{PROFILE_PREFIX}tools"
 _PROFILE_PATTERN = re.compile(r"^debug-[A-Za-z0-9_-]+$")
 
 

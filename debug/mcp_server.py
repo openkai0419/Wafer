@@ -1,6 +1,8 @@
+import argparse
 import functools
 import json
 import re
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -12,6 +14,7 @@ from mcp.server.mcpserver import Image, MCPServer
 
 from debug import profile_setup
 from wafer.core.common.paths import profile_data_root
+from wafer.core.common.profile import PROFILE_ARG, TOOLS_PROFILE, current_profile
 from wafer.core.db.db_utils import open_readonly
 from wafer.core.ipc.node import Node
 from wafer.core.logs import AppLogger
@@ -42,6 +45,10 @@ class DebugError(Exception):
     pass
 
 
+class CallTimeout(DebugError):
+    pass
+
+
 def _role_of(cmdline: list[str]) -> str:
     if "--tray" in cmdline:
         return "tray"
@@ -62,6 +69,7 @@ class DebugSession:
         self.checkout: Path | None = None
         self._node: Node | None = None
         self._lock = threading.RLock()
+        self._launch_lock = threading.Lock()
 
     def launch(self, checkout: str, fresh: bool = False, on_progress: Callable[[str], None] | None = None) -> dict:
         path = Path(checkout)
@@ -74,13 +82,16 @@ class DebugSession:
             if on_progress is not None:
                 on_progress(message)
 
-        with self._lock:
-            self._close_node()
+        with self._launch_lock:
+            with self._lock:
+                self._close_node()
+                self.profile = None
             profile_setup.stop_profile(profile)
             profile_setup.ensure_profile(path, fresh=fresh, on_progress=report)
             pid = profile_setup.launch_process(path, profile)
-            self.profile, self.checkout = profile, path
-        viewer = self._wait_for_viewer(LAUNCH_TIMEOUT)
+            with self._lock:
+                self.profile, self.checkout = profile, path
+            viewer = self._wait_for_viewer(LAUNCH_TIMEOUT)
         AppLogger.info(f"[debug-mcp] {profile} is up ({viewer})")
         return {"profile": profile, "checkout": str(path), "pid": pid, "viewer": viewer, "processes": self._processes(), "progress": progress}
 
@@ -107,6 +118,7 @@ class DebugSession:
         path = Path(checkout) if checkout else self.checkout
         if path is None:
             raise DebugError("Pass checkout=... or call launch(checkout=...) first.")
+        profile_setup.main_root_of(path)
         progress: list[str] = []
 
         def report(message: str) -> None:
@@ -121,11 +133,11 @@ class DebugSession:
         deadline = time.monotonic() + timeout
         node = self._ensure_node()
         if not node.wait_registered(timeout=timeout):
-            raise DebugError(TIMEOUT_MESSAGE.format(timeout=timeout))
+            raise CallTimeout(TIMEOUT_MESSAGE.format(timeout=timeout))
         remaining = max(deadline - time.monotonic(), 0.0)
         reply = node.request(CALL_TOPIC, {"op": op, "args": args}, dst=f"{AGENT_ROLE}-{pid}", timeout=remaining)
         if reply is None:
-            raise DebugError(TIMEOUT_MESSAGE.format(timeout=timeout))
+            raise CallTimeout(TIMEOUT_MESSAGE.format(timeout=timeout))
         payload = reply.payload if isinstance(reply.payload, dict) else {}
         if not payload.get("ok"):
             raise DebugError(f"{op} failed: {payload.get('error') or 'the agent sent no result'}")
@@ -148,14 +160,17 @@ class DebugSession:
         fast_answers = 0
         while True:
             remaining = max(deadline - time.monotonic(), POLL_SECONDS)
-            idle = self.call("idle", {}, target, min(CALL_TIMEOUT, remaining))
-            main_thread_ms = float(idle["main_thread_ms"])
-            fast_answers = fast_answers + 1 if main_thread_ms < IDLE_MAIN_THREAD_MS else 0
+            try:
+                idle = self.call("idle", {}, target, min(CALL_TIMEOUT, remaining))
+            except CallTimeout:
+                idle = None
+            main_thread_ms = None if idle is None else float(idle["main_thread_ms"])
+            fast_answers = fast_answers + 1 if main_thread_ms is not None and main_thread_ms < IDLE_MAIN_THREAD_MS else 0
             collected = profile_setup._collected_source_count(profile_setup._sample_data_db(self.profile))
             if fast_answers >= IDLE_FAST_ANSWERS and collected:
-                return {"idle": True, "modal": idle["modal"], "waited": round(time.monotonic() - started, 2)}
+                return {"idle": True, "modal": idle["modal"], "waited": round(time.monotonic() - started, 1)}
             if time.monotonic() >= deadline:
-                raise DebugError(f"Still busy after {timeout}s: {'; '.join(self._busy_reasons(fast_answers, main_thread_ms, collected))}")
+                raise DebugError(f"Still busy after {timeout:g}s: {'; '.join(self._busy_reasons(fast_answers, main_thread_ms, collected))}")
             time.sleep(POLL_SECONDS)
 
     def tail_log(self, n: int, level: str) -> str:
@@ -191,9 +206,11 @@ class DebugSession:
                 kept.append(line)
         return kept
 
-    def _busy_reasons(self, fast_answers: int, main_thread_ms: float, collected: int) -> list[str]:
+    def _busy_reasons(self, fast_answers: int, main_thread_ms: float | None, collected: int) -> list[str]:
         reasons = []
-        if fast_answers < IDLE_FAST_ANSWERS:
+        if main_thread_ms is None:
+            reasons.append(f"main thread did not answer within {CALL_TIMEOUT:g}s")
+        elif fast_answers < IDLE_FAST_ANSWERS:
             reasons.append(f"main thread answered in {main_thread_ms:.0f} ms (needs < {IDLE_MAIN_THREAD_MS:.0f} ms twice in a row)")
         if not collected:
             pending = self._index_counts()["pending"]
@@ -240,7 +257,7 @@ class DebugSession:
                 raise DebugError(f"{self.profile} exited before its Viewer answered; see tail_log")
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise DebugError(f"The Viewer of {self.profile} did not answer within {timeout}s; see tail_log")
+                raise DebugError(f"The Viewer of {self.profile} did not answer within {timeout:g}s; see tail_log")
             if node.wait_registered(timeout=min(PING_TIMEOUT, remaining)):
                 for viewer in (p for p in processes if p["role"] == "viewer"):
                     reply = node.request(CALL_TOPIC, {"op": "ping", "args": {}}, dst=f"{AGENT_ROLE}-{viewer['pid']}", timeout=min(PING_TIMEOUT, remaining))
@@ -266,7 +283,12 @@ class DebugSession:
         state = profile_data_root(self.profile) / ".temp" / "webui.json"
         if not state.is_file():
             return ""
-        return str(json.loads(state.read_text(encoding="utf-8")).get("url", ""))
+        try:
+            data = json.loads(state.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            AppLogger.info(f"[debug-mcp] {state} is not readable yet, so the WebUI URL is not available yet: {e}")
+            return ""
+        return str(data.get("url", "")) if isinstance(data, dict) else ""
 
     def _index_counts(self) -> dict:
         db_path = profile_setup._sample_data_db(self.profile)
@@ -308,6 +330,9 @@ def build_server(session: DebugSession) -> MCPServer:
                 except DebugError as e:
                     AppLogger.info(f"[debug-mcp] {fn.__name__}: {e}")
                     return str(e)
+                except (ValueError, LookupError) as e:
+                    AppLogger.info(f"[debug-mcp] {fn.__name__} rejected its input: {type(e).__name__}: {e}")
+                    return f"{type(e).__name__}: {e}"
                 except Exception as e:
                     AppLogger.warning(f"[debug-mcp] {fn.__name__} failed: {type(e).__name__}: {e}", exc=e)
                     return f"{type(e).__name__}: {e}"
@@ -351,9 +376,9 @@ def build_server(session: DebugSession) -> MCPServer:
     def widget_tree(root: str | None = None, depth: int = 3, target: str | None = None) -> Any:
         return agent("widget_tree", target, root=root, depth=depth)
 
-    @tool(f"Read a Qt property of the widget called name. {TARGET_HELP}")
-    def get_property(name: str, prop: str, target: str | None = None) -> Any:
-        return agent("get_property", target, name=name, prop=prop)
+    @tool(f"Read the Qt property prop of a widget. {WIDGET_HELP} {TARGET_HELP}")
+    def get_property(widget: str, prop: str, target: str | None = None) -> Any:
+        return agent("get_property", target, name=widget, prop=prop)
 
     @tool("The last n lines of the newest log file of the launched profile; level keeps entries at or above DEBUG/INFO/WARNING/ERROR/CRITICAL.")
     def tail_log(n: int = 100, level: str = "") -> Any:
@@ -398,8 +423,21 @@ def build_server(session: DebugSession) -> MCPServer:
     return server
 
 
-def main() -> None:
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="python -m debug.mcp_server", description="MCP server (stdio) that launches and drives debug profiles of Wafer.")
+    parser.add_argument(
+        PROFILE_ARG,
+        required=True,
+        choices=[TOOLS_PROFILE],
+        help=f"Always {TOOLS_PROFILE}: keeps this server's own data and logs out of the normal Wafer's data folder.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    parse_args(sys.argv[1:] if argv is None else argv)
     AppLogger.set_role(LOG_ROLE)
+    AppLogger.info(f"[debug-mcp] {SERVER_NAME} serves on stdio (profile {current_profile()})")
     session = DebugSession()
     try:
         build_server(session).run("stdio")

@@ -18,6 +18,7 @@ from wafer.core.common.paths import (
 from wafer.core.common.profile import (
     PROFILE_ARG,
     PROFILE_PREFIX,
+    TOOLS_PROFILE,
     app_user_model_id,
     current_profile,
     profile_args,
@@ -214,3 +215,19 @@ def test_profile_sibling_with_same_prefix_is_rejected(monkeypatch, tmp_path, tmp
     assert profile_allows_folder(str(sample / "a"))
     assert not profile_allows_folder(str(tmp_path / "s2"))
     assert not profile_allows_folder(str(tmp_path / "s2" / "a"))
+
+
+def test_tools_profile_allows_the_scratch_of_every_debug_profile_only(monkeypatch, tmp_path, tmp_app_data):
+    monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(tmp_path / "s"))
+    _use_profile(monkeypatch, TOOLS_PROFILE)
+    assert profile_allows_folder(str(scratch_root("debug-task")))
+    assert profile_allows_folder(str(scratch_root("debug-other") / "a"))
+    assert profile_allows_folder(str(tmp_path / "s" / "a"))
+    assert not profile_allows_folder(str(profile_data_root("debug-task")))
+    assert not profile_allows_folder(str(profile_data_root("debug-task") / "data"))
+    assert not profile_allows_folder(str(debug_profiles_dir() / "_template" / "scratch"))
+    assert not profile_allows_folder(str(debug_profiles_dir() / "debug-task.partial" / "x"))
+    assert not profile_allows_folder(str(profile_data_root(None) / "scratch"))
+    assert not profile_allows_folder(str(tmp_path / "other"))
+    _use_profile(monkeypatch, "debug-task")
+    assert not profile_allows_folder(str(scratch_root("debug-other")))

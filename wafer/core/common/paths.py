@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from platformdirs import PlatformDirs
 from ...constants import APP_DATA_DIR_NAME
-from .profile import current_profile
+from .profile import PROFILE_PREFIX, TOOLS_PROFILE, current_profile
 
 DEBUG_PROFILES_DIR_NAME = f"{APP_DATA_DIR_NAME}-debug"
 
@@ -142,9 +142,20 @@ def _is_within(path: str, root: Path) -> bool:
     return target == base or target.startswith(child_prefix(base))
 
 
+def _is_in_any_profile_scratch(path: str) -> bool:
+    target = Path(_guard_key(path))
+    base = Path(_guard_key(debug_profiles_dir()))
+    if not target.is_relative_to(base):
+        return False
+    parts = target.relative_to(base).parts
+    return len(parts) >= 2 and parts[0].startswith(PROFILE_PREFIX) and parts[1] == os.path.normcase(scratch_root(parts[0]).name)
+
+
 def profile_allows_folder(path: str) -> bool:
     profile = current_profile()
     if profile is None:
+        return True
+    if profile == TOOLS_PROFILE and _is_in_any_profile_scratch(path):
         return True
     return _is_within(path, sample_root()) or _is_within(path, scratch_root(profile))
 

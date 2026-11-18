@@ -2,7 +2,9 @@ import asyncio
 import json
 import os
 import sqlite3
-import time
+import subprocess
+import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -10,7 +12,9 @@ import pytest
 import wafer.core.common.paths as paths
 from debug import mcp_server, profile_setup
 from debug.mcp_server import NO_RUNNING_MESSAGE, DebugError, DebugSession, build_server
-from wafer.core.common.paths import profile_data_root
+from wafer.core.common.paths import normalize_path, profile_data_root, resolve_data_path
+from wafer.core.common.profile import TOOLS_PROFILE, current_profile
+from wafer.core.logs import AppLogger
 from wafer.core.ipc.message import Message
 from wafer.core.platform.process import AppProcess
 
@@ -72,6 +76,30 @@ class FakeNode:
         return Message.build(topic, reply, src=dst, dst="debug-1")
 
 
+class FakeClock:
+    def __init__(self):
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    fake = FakeClock()
+    monkeypatch.setattr(mcp_server, "time", fake)
+    return fake
+
+
+def make_checkout(path: Path) -> Path:
+    (path / "wafer").mkdir(parents=True)
+    (path / "main.py").write_text("", encoding="utf-8")
+    return path
+
+
 def ok(result):
     return {"ok": True, "result": result, "error": ""}
 
@@ -120,7 +148,7 @@ def test_tools_without_running_profile_return_launch_hint(app_data, processes, n
         "screenshot": {},
         "get_state": {},
         "widget_tree": {},
-        "get_property": {"name": "grid", "prop": "count"},
+        "get_property": {"widget": "grid", "prop": "count"},
         "tail_log": {},
         "list_commands": {},
         "run_command": {"id": "file.open"},
@@ -198,7 +226,7 @@ def test_tools_map_arguments_to_agent_ops(app_data, processes, node):
     session = running_session(processes)
     server = build_server(session)
     calls = [
-        ("get_property", {"name": "grid", "prop": "count", "target": "viewer:40"}, "debug_agent-40", {"op": "get_property", "args": {"name": "grid", "prop": "count"}}),
+        ("get_property", {"widget": "grid", "prop": "count", "target": "viewer:40"}, "debug_agent-40", {"op": "get_property", "args": {"name": "grid", "prop": "count"}}),
         ("widget_tree", {"root": "panel", "depth": 2}, "debug_agent-20", {"op": "widget_tree", "args": {"root": "panel", "depth": 2}}),
         ("list_commands", {"filter": "file"}, "debug_agent-20", {"op": "list_commands", "args": {"filter": "file"}}),
         ("modal_input", {"field": "name", "value": "x"}, "debug_agent-20", {"op": "modal_input", "args": {"field": "name", "value": "x"}}),
@@ -225,8 +253,7 @@ def test_screenshot_returns_png_image(app_data, processes, node):
     assert node.instances[0].requests[0][1] == {"op": "screenshot", "args": {"target": "grid", "max_side": 800}}
 
 
-def test_run_command_reports_modal_title(app_data, processes, node, monkeypatch):
-    monkeypatch.setattr(mcp_server, "MODAL_WAIT_SECONDS", 0.05)
+def test_run_command_reports_modal_title(app_data, processes, node, clock):
     session = running_session(processes)
     modal_answers = iter([None, None, {"title": "Rename", "fields": []}])
 
@@ -239,10 +266,12 @@ def test_run_command_reports_modal_title(app_data, processes, node, monkeypatch)
     assert session.run_command("file.rename", {"name": "a"}, None) == {"started": True, "modal": "Rename"}
     assert node.instances[0].requests[0][1] == {"op": "run_command", "args": {"id": "file.rename", "args": {"name": "a"}}}
 
+    assert [r[1]["op"] for r in node.instances[0].requests] == ["run_command", "modal_state", "modal_state", "modal_state"]
+
     node.handler = staticmethod(lambda op, args, dst: ok({"started": True}) if op == "run_command" else ok(None))
-    started = time.monotonic()
+    started = clock.now
     assert session.run_command("view.refresh", None, None) == {"started": True, "modal": None}
-    assert time.monotonic() - started >= mcp_server.MODAL_WAIT_SECONDS
+    assert clock.now - started >= mcp_server.MODAL_WAIT_SECONDS
 
 
 def make_sample_db(profile: str, statuses: list[str], sources: int) -> Path:
@@ -424,9 +453,145 @@ def test_rebuild_template_uses_launched_checkout(tmp_path, app_data, processes, 
     session = DebugSession()
     server = build_server(session)
 
+    first, second = make_checkout(tmp_path / "a"), make_checkout(tmp_path / "b")
     assert "launch(checkout=...)" in tool_text(server, "rebuild_template")
-    result = json.loads(tool_text(server, "rebuild_template", {"checkout": str(tmp_path / "a")}))
+    result = json.loads(tool_text(server, "rebuild_template", {"checkout": str(first)}))
     assert result == {"template": str(tmp_path / "template"), "progress": ["Sample template abc built"]}
-    session.checkout = tmp_path / "b"
+    session.checkout = second
     tool_text(server, "rebuild_template")
-    assert built == [tmp_path / "a", tmp_path / "b"]
+    assert built == [first, second]
+
+    assert "Not a Wafer checkout" in tool_text(server, "rebuild_template", {"checkout": str(tmp_path / "elsewhere")})
+    assert built == [first, second]
+
+
+def test_wait_idle_keeps_polling_when_the_agent_does_not_answer(app_data, processes, node, clock):
+    session = running_session(processes)
+    make_sample_db(PROFILE, ["done"], 1)
+    answers = iter([None, None, None, ok({"modal": False, "main_thread_ms": 10.0}), ok({"modal": False, "main_thread_ms": 12.0})])
+    node.handler = staticmethod(lambda op, args, dst: next(answers))
+
+    result = session.wait_idle(30.0, None)
+
+    assert result["idle"] is True
+    assert len(node.instances[0].requests) == 5
+
+
+def test_wait_idle_reports_a_main_thread_that_never_answers(app_data, processes, node, clock):
+    session = running_session(processes)
+    make_sample_db(PROFILE, ["done"], 1)
+    node.handler = staticmethod(lambda op, args, dst: None)
+
+    text = tool_text(build_server(session), "wait_idle", {"timeout": 2})
+
+    assert text.startswith("Still busy after 2s: main thread did not answer")
+    assert len(node.instances[0].requests) > 1
+
+
+def test_tools_answer_while_launch_prepares_the_profile(tmp_path, app_data, processes, node, monkeypatch):
+    processes.append(FakeProcess(70, profile="debug-other"))
+    entered, release = threading.Event(), threading.Event()
+
+    def ensure(path, *, fresh, on_progress):
+        entered.set()
+        assert release.wait(10)
+        return PROFILE
+
+    def launch(path, profile):
+        processes.append(FakeProcess(20))
+        return 20
+
+    monkeypatch.setattr(profile_setup, "profile_name_for", lambda path: PROFILE)
+    monkeypatch.setattr(profile_setup, "stop_profile", lambda profile: None)
+    monkeypatch.setattr(profile_setup, "ensure_profile", ensure)
+    monkeypatch.setattr(profile_setup, "launch_process", launch)
+    session = DebugSession()
+    session.profile = "debug-other"
+    server = build_server(session)
+    launched = threading.Thread(target=lambda: session.launch(str(tmp_path)))
+    launched.start()
+    try:
+        assert entered.wait(10)
+        answers = []
+        probe = threading.Thread(target=lambda: answers.append(tool_text(server, "get_state")))
+        probe.start()
+        probe.join(5)
+        assert answers == [NO_RUNNING_MESSAGE]
+    finally:
+        release.set()
+        launched.join(10)
+    assert session.profile == PROFILE
+
+
+def test_expected_input_errors_are_logged_as_info_and_unexpected_ones_as_warnings(tmp_path, app_data, processes, node, monkeypatch):
+    logged = []
+    monkeypatch.setattr(AppLogger, "info", staticmethod(lambda text: logged.append(("info", text, None))))
+    monkeypatch.setattr(AppLogger, "warning", staticmethod(lambda text, *, exc=None: logged.append(("warning", text, exc))))
+    server = build_server(running_session(processes))
+
+    assert "Not a Wafer checkout" in tool_text(server, "launch", {"checkout": str(tmp_path / "elsewhere")})
+    assert [entry[0] for entry in logged] == ["info"]
+
+    def broken_stop(profile):
+        raise RuntimeError("boom")
+
+    logged.clear()
+    monkeypatch.setattr(profile_setup, "stop_profile", broken_stop)
+    assert tool_text(server, "stop") == "RuntimeError: boom"
+    assert [(entry[0], type(entry[2])) for entry in logged] == [("warning", RuntimeError)]
+
+
+def test_status_treats_an_unreadable_webui_state_as_no_url_yet(app_data, processes, node):
+    session = running_session(processes)
+    temp = profile_data_root(PROFILE) / ".temp"
+    temp.mkdir(parents=True)
+    (temp / "webui.json").write_text('{"url": "http://127.0.0.1:6', encoding="utf-8")
+
+    assert session.status()["webui_url"] == ""
+
+
+def test_server_argv_selects_the_tooling_profile(app_data, monkeypatch):
+    monkeypatch.setattr(sys, "argv", [mcp_server.__file__, "--profile", TOOLS_PROFILE])
+    current_profile.cache_clear()
+    try:
+        assert current_profile() == TOOLS_PROFILE
+        assert resolve_data_path(".log").startswith(normalize_path(app_data / "Wafer-debug" / TOOLS_PROFILE))
+    finally:
+        current_profile.cache_clear()
+    assert mcp_server.parse_args(["--profile", TOOLS_PROFILE]).profile == TOOLS_PROFILE
+    for argv in ([], ["--profile", "debug-main"]):
+        with pytest.raises(SystemExit):
+            mcp_server.parse_args(argv)
+
+
+def test_server_process_is_never_a_profile_process(monkeypatch):
+    class Proc:
+        pid = 5
+
+    server_cmdline = [sys.executable, "-m", "debug.mcp_server", "--profile", TOOLS_PROFILE]
+    wafer_cmdline = [sys.executable, "main.py", "--profile", TOOLS_PROFILE]
+    monkeypatch.setattr(AppProcess, "_iter_cmdlines", staticmethod(lambda: iter([(Proc(), server_cmdline)])))
+    assert AppProcess.list_profile_processes(TOOLS_PROFILE) == []
+    monkeypatch.setattr(AppProcess, "_iter_cmdlines", staticmethod(lambda: iter([(Proc(), wafer_cmdline)])))
+    assert len(AppProcess.list_profile_processes(TOOLS_PROFILE)) == 1
+
+
+@pytest.mark.timeout(180)
+def test_server_started_with_python_m_keeps_its_data_in_the_tooling_profile(tmp_path):
+    appdata = tmp_path / "appdata"
+    env = {**os.environ, "WIN_PD_OVERRIDE_LOCAL_APPDATA": str(appdata), "WIN_PD_OVERRIDE_APPDATA": str(appdata)}
+    root = Path(mcp_server.__file__).resolve().parent.parent
+    done = subprocess.run(
+        [sys.executable, "-m", "debug.mcp_server", "--profile", TOOLS_PROFILE],
+        cwd=root,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        timeout=150,
+    )
+
+    assert done.returncode == 0, done.stderr.decode(errors="replace")
+    assert done.stdout == b""
+    log_dir = appdata / "Wafer-debug" / TOOLS_PROFILE / ".log"
+    assert [p.name.startswith("debug_mcp_") for p in log_dir.glob("*.log")] == [True]
+    assert not (appdata / "Wafer").exists()

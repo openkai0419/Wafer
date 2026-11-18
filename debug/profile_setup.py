@@ -17,7 +17,7 @@ from wafer.core.common.paths import (
     sample_root,
     scratch_root,
 )
-from wafer.core.common.profile import PROFILE_ARG, PROFILE_PREFIX, validate_profile_name
+from wafer.core.common.profile import PROFILE_ARG, PROFILE_PREFIX, TOOLS_PROFILE, validate_profile_name
 from wafer.core.db.db_utils import open_readonly
 from wafer.core.db.setting_db import SettingDB
 from wafer.core.ipc.node import Node
@@ -49,6 +49,7 @@ STOP_POLL_SECONDS = 0.25
 RESERVED_WORKTREE_NAMES = {
     MAIN_PROFILE.removeprefix(PROFILE_PREFIX): "the main checkout's profile",
     TEMPLATE_BUILD_PROFILE.removeprefix(PROFILE_PREFIX): "the profile that builds the sample template",
+    TOOLS_PROFILE.removeprefix(PROFILE_PREFIX): "the profile the debug tooling (MCP server, this CLI) runs under",
 }
 
 Progress = Callable[[str], None]
@@ -347,19 +348,30 @@ def _rebuild_template(args: argparse.Namespace) -> None:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m debug.profile_setup", description="Prepare, launch and stop debug profiles of Wafer.")
+    tooling = argparse.ArgumentParser(add_help=False)
+    tooling.add_argument(
+        PROFILE_ARG,
+        choices=[TOOLS_PROFILE],
+        default=argparse.SUPPRESS,
+        help=f"Pass {PROFILE_ARG} {TOOLS_PROFILE} so this tool keeps its own logs in that profile instead of the normal Wafer's data folder.",
+    )
+    parser = argparse.ArgumentParser(
+        prog="python -m debug.profile_setup",
+        description=f"Prepare, launch and stop debug profiles of Wafer. Tooling that runs this CLI should pass {PROFILE_ARG} {TOOLS_PROFILE}.",
+        parents=[tooling],
+    )
     commands = parser.add_subparsers(dest="command", required=True)
-    launch = commands.add_parser("launch", help="Launch the checkout's debug profile, creating it from the sample template if needed.")
+    launch = commands.add_parser("launch", parents=[tooling], help="Launch the checkout's debug profile, creating it from the sample template if needed.")
     launch.add_argument("--checkout", type=Path, required=True)
     launch.add_argument("--fresh", action="store_true", help="Recreate the profile from the template.")
     launch.set_defaults(func=_launch)
-    stop = commands.add_parser("stop", help="Quit every process of a debug profile.")
+    stop = commands.add_parser("stop", parents=[tooling], help="Quit every process of a debug profile.")
     stop.add_argument("name")
     stop.set_defaults(func=_stop)
-    forget = commands.add_parser("forget", help="Stop a debug profile and delete its data.")
+    forget = commands.add_parser("forget", parents=[tooling], help="Stop a debug profile and delete its data.")
     forget.add_argument("name")
     forget.set_defaults(func=_forget)
-    rebuild = commands.add_parser("rebuild-template", help="Rebuild the sample template for the checkout's schema.")
+    rebuild = commands.add_parser("rebuild-template", parents=[tooling], help="Rebuild the sample template for the checkout's schema.")
     rebuild.add_argument("--checkout", type=Path, required=True)
     rebuild.set_defaults(func=_rebuild_template)
     return parser

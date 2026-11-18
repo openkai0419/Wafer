@@ -8,6 +8,7 @@ from ...builtins.log_panel import LogPanelPlugin
 from ...qt.commands.bridge import Command, Context, Menu, UI
 from ...core.lang.manager import t
 from ...qt.common.dpi import dpix
+from ...core.common.profile import current_profile, profile_label
 from ...core.logs import AppLogger
 
 
@@ -21,7 +22,7 @@ class WebUIWindow(QtWidgets.QWidget):
         super().__init__()
         self.server = server
         self._lock = lock
-        self.setWindowTitle("Wafer WebUI")
+        self.setWindowTitle(f"{profile_label(current_profile())}Wafer WebUI")
         self.resize(dpix(640), dpix(480))
         UI.register_instance("WebUIWindow", self)
         self.shutdown_requested.connect(self.close)

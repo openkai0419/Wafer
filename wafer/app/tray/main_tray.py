@@ -2,6 +2,7 @@ from PySide6 import QtCore, QtWidgets
 from ...core.profiling import profiler
 from ...core.logs import AppLogger
 from ...constants import APP_NAME
+from ...core.common.profile import current_profile, profile_label
 from ...qt.commands.bridge import Command, Context, Menu, UI
 from ...qt.commands.command.menu import MenuPath
 
@@ -31,7 +32,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
     def __init__(self, icon, parent=None):
         super().__init__(icon, parent)
         AppLogger.info("TRAY APP EXECUTED")
-        self.setToolTip(f"{APP_NAME}")
+        self.setToolTip(f"{profile_label(current_profile())}{APP_NAME}")
         self.show_state = False
         self.shutting_down = False
         self.restart_requested = False

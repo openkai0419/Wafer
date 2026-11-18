@@ -66,7 +66,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._folder_callout: CalloutOverlay | None = None
         if icon:
             self.setWindowIcon(icon)
-        self.setWindowTitle(APP_NAME)
+        self.setWindowTitle(window_title("", [], ""))
         self.resize(dpix(1000), dpix(700))
         self.database_name = None
         self.database_path = None

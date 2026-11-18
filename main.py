@@ -49,7 +49,8 @@ def set_app_user_model_id(app_id):
     if sys.platform == 'win32':
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
-set_app_user_model_id(APP_ID)
+from wafer.core.common.profile import app_user_model_id, current_profile
+set_app_user_model_id(app_user_model_id(APP_ID, current_profile()))
 
 
 def _load_plugins():
@@ -109,8 +110,12 @@ def _create_app(*, shared_opengl=True):
     from wafer.qt.common.app_icon import get_icon
     from wafer.qt.common.tooltip import install_instant_tooltips
 
+    from PySide6 import QtCore
+
     if shared_opengl:
         _enable_shared_opengl_contexts()
+    if current_profile() is not None:
+        QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_DontUseNativeDialogs, True)
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(__version__)

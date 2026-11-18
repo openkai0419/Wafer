@@ -16,9 +16,11 @@ from wafer.core.common.paths import (
 from wafer.core.common.profile import (
     PROFILE_ARG,
     PROFILE_PREFIX,
+    app_user_model_id,
     current_profile,
     profile_args,
     profile_from_args,
+    profile_label,
     validate_profile_name,
 )
 
@@ -128,3 +130,13 @@ def test_profile_allows_file_write_only_inside_scratch(monkeypatch, tmp_path):
     assert not profile_allows_file_write(str(tmp_path / "other.png"))
     _use_profile(monkeypatch, None)
     assert profile_allows_file_write(str(tmp_path / "other.png"))
+
+
+def test_profile_label():
+    assert profile_label(None) == ""
+    assert profile_label("debug-x") == "[debug-x] "
+
+
+def test_app_user_model_id():
+    assert app_user_model_id("Wafer.App", None) == "Wafer.App"
+    assert app_user_model_id("Wafer.App", "debug-x") == "Wafer.App.debug-x"

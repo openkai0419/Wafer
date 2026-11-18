@@ -26,5 +26,13 @@ def current_profile() -> str | None:
     return profile_from_args(sys.argv)
 
 
+def profile_label(profile: str | None) -> str:
+    return "" if profile is None else f"[{profile}] "
+
+
+def app_user_model_id(base: str, profile: str | None) -> str:
+    return base if profile is None else f"{base}.{profile}"
+
+
 def profile_args(profile: str | None) -> list[str]:
     return [] if profile is None else [PROFILE_ARG, profile]

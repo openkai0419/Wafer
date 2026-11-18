@@ -78,6 +78,10 @@ class CommandMenuBuilder:
     _action_groups: dict[str, QtGui.QActionGroup] = {}
     _menu_cache: dict[tuple, QtWidgets.QMenu] = {}
 
+    @classmethod
+    def clear_menu_cache(cls) -> None:
+        cls._menu_cache.clear()
+
     def _build_ctx(self, parent: QtWidgets.QWidget | None, cmd_id: str, args: dict[str, Any]) -> CommandContext | None:
         if parent is None:
             return None
@@ -647,7 +651,7 @@ class MenuBuilder:
             self._menu.setProperty(COMMAND_MENU_MARKER, True)
             self._builder._install_hotkey_alignment(self._menu)
             return self._build_resolved(plan.resolve_items(), selection_callback, allow_options_with_selection)
-        if selection_callback is not None:
+        if selection_callback is not None or self._ctx_parent is None:
             self._menu = StickyMenu(self._ctx_parent)
             self._menu.setProperty(COMMAND_MENU_MARKER, True)
             self._builder._install_hotkey_alignment(self._menu)
@@ -664,6 +668,7 @@ class MenuBuilder:
         self._builder._install_hotkey_alignment(self._menu)
         result = self._build_into(tokens, None, allow_options_with_selection)
         CommandMenuBuilder._menu_cache[cache_key] = result
+        parent.destroyed.connect(lambda *_: CommandMenuBuilder._menu_cache.pop(cache_key, None))
         return result
 
     @profiler.profile

@@ -237,3 +237,37 @@ class TestMenuBuilderCache:
         menu1 = builder.build(w1, [cmd_id])
         menu2 = builder.build(w2, [cmd_id])
         assert menu1 is not menu2
+
+    def test_applying_bindings_rebuilds_cached_menus(self, qtbot, tmp_path):
+        from wafer.qt.commands.binding.manager import BindingManager
+
+        cmd_id = _make_id("rebind")
+        _register_normal(cmd_id, "Rebind")
+        w = QtWidgets.QWidget()
+        qtbot.addWidget(w)
+        maker = MenuMaker()
+        first = MenuBuilder(maker, w).build(maker.menu([cmd_id]))
+        assert MenuBuilder(maker, w).build(maker.menu([cmd_id])) is first
+
+        BindingManager(str(tmp_path / "mouse.json"), str(tmp_path / "keys.json")).apply_registered()
+
+        assert MenuBuilder(maker, w).build(maker.menu([cmd_id])) is not first
+
+    def test_menu_without_parent_is_not_cached(self, qtbot):
+        cmd_id = _make_id("noparent")
+        _register_normal(cmd_id, "NoParent")
+        maker = MenuMaker()
+        for _ in range(3):
+            MenuBuilder(maker, None).build(maker.menu([cmd_id]))
+        assert CommandMenuBuilder._menu_cache == {}
+
+    def test_destroying_the_parent_drops_its_cached_menu(self, qtbot):
+        cmd_id = _make_id("destroyed")
+        _register_normal(cmd_id, "Destroyed")
+        w = QtWidgets.QWidget()
+        maker = MenuMaker()
+        MenuBuilder(maker, w).build(maker.menu([cmd_id]))
+        assert len(CommandMenuBuilder._menu_cache) == 1
+
+        w.deleteLater()
+        qtbot.waitUntil(lambda: CommandMenuBuilder._menu_cache == {}, timeout=2000)

@@ -74,6 +74,9 @@ class BindingManager:
                 w.set_physical_shortcut_bindings(store_physical)
 
     def apply_registered(self) -> None:
+        from ..command.menu_builder import CommandMenuBuilder
+
+        CommandMenuBuilder.clear_menu_cache()
         ws = list(self._widgets)
         self.apply_mouse_bindings(ws)
         self.apply_key_bindings(ws)

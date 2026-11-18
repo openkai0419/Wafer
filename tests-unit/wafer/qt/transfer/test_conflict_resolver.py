@@ -22,7 +22,7 @@ def test_file_apply_all_overwrite(monkeypatch, tmp_path):
 
     def ask(*args, **kwargs):
         calls["n"] += 1
-        return ("上書き", True)
+        return ("overwrite", True)
 
     monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(ask))
 
@@ -55,7 +55,7 @@ def test_file_apply_all_skip(monkeypatch, tmp_path):
 
     def ask(*args, **kwargs):
         calls["n"] += 1
-        return ("スキップ", True)
+        return ("skip", True)
 
     monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(ask))
 
@@ -87,7 +87,7 @@ def test_cancel_raises_paste_cancelled_error(monkeypatch, tmp_path):
     from wafer.qt.transfer import conflict_resolver as r
 
     def ask(*args, **kwargs):
-        return ("キャンセル", False)
+        return ("cancel", False)
 
     monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(ask))
 
@@ -112,11 +112,11 @@ def test_folder_conflict_merge_then_file_conflicts(monkeypatch, tmp_path):
 
     def folder_ask(*args, **kwargs):
         folder_calls["n"] += 1
-        return ("マージ", False)
+        return ("merge", False)
 
     def file_ask(*args, **kwargs):
         file_calls["n"] += 1
-        return ("上書き", True)
+        return ("overwrite", True)
 
     monkeypatch.setattr(r.FolderConflictDialog, "ask", staticmethod(folder_ask))
     monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(file_ask))
@@ -152,7 +152,7 @@ def test_same_path_apply_all_skip(monkeypatch, tmp_path):
 
     def ask(*args, **kwargs):
         calls["n"] += 1
-        return ("スキップ", True)
+        return ("skip", True)
 
     monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(ask))
 
@@ -179,7 +179,7 @@ def test_same_path_apply_all_rename(monkeypatch, tmp_path):
 
     def ask(*args, **kwargs):
         calls["n"] += 1
-        return ("別名で保存", True)
+        return ("rename", True)
 
     monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(ask))
 
@@ -205,7 +205,7 @@ def test_same_path_cancel_raises(monkeypatch, tmp_path):
     from wafer.qt.transfer import conflict_resolver as r
 
     def ask(*args, **kwargs):
-        return ("キャンセル", False)
+        return ("cancel", False)
 
     monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(ask))
 

@@ -11,6 +11,7 @@ from ...core.platform.file_operations import (
     scan_merge_conflicts,
 )
 from ...core.platform.path_utils import check_copy_conflict
+from ...core.lang.manager import t
 from ..widgets.dialogs import FileConflictDialog, FolderConflictDialog, SingleFileConflictDialog
 
 
@@ -138,7 +139,7 @@ class ConflictResolver:
             return
         name = str(getattr(src, "name", "") or "")
         _, apply_all = SingleFileConflictDialog.ask(
-            "コピー先がコピー元の中にあるためスキップします。",
+            t("Skipping: the destination is inside the source."),
             path=normalize_path(str(src)),
             name=name,
             op=self._op,
@@ -159,17 +160,16 @@ class ConflictResolver:
 
         name = str(getattr(src, "name", "") or "")
         src_path = normalize_path(str(src)) if src else ""
-        res, apply_all = FileConflictDialog.ask(
-            "同一パスです。別名で保存しますか?",
+        choice, apply_all = FileConflictDialog.ask(
+            t("Same path. Save with a new name?"),
             src_path=src_path,
             dst_path=src_path,
             src_name=name,
             op=self._op,
             show_apply_all=self._show_same_path_apply_all,
-            buttons=("別名で保存", "スキップ", "キャンセル"),
+            choices=("rename", "skip", "cancel"),
             parent=self._parent,
         )
-        choice = FileConflictDialog.parse_choice(res)
         if choice == "cancel":
             raise PasteCancelledError()
         if choice == "rename":
@@ -188,8 +188,8 @@ class ConflictResolver:
         if self._folder_apply_all is not None:
             return PasteDecision(mode=self._folder_apply_all)
 
-        res, apply_all = FolderConflictDialog.ask(
-            self._folder_message,
+        choice, apply_all = FolderConflictDialog.ask(
+            t(self._folder_message),
             src_path=normalize_path(str(src)),
             dst_path=normalize_path(str(dst)),
             src_name=src.name,
@@ -197,7 +197,6 @@ class ConflictResolver:
             show_apply_all=self._show_folder_apply_all,
             parent=self._parent,
         )
-        choice = FolderConflictDialog.parse_choice(res)
 
         if choice == "cancel":
             raise PasteCancelledError()
@@ -220,8 +219,8 @@ class ConflictResolver:
         if self._file_apply_all is not None:
             return PasteDecision(mode=self._file_apply_all)
 
-        res, apply_all = FileConflictDialog.ask(
-            "同名の項目が存在します。",
+        choice, apply_all = FileConflictDialog.ask(
+            t("An item with the same name already exists."),
             src_path=normalize_path(src_path) if src_path else "",
             dst_path=normalize_path(dst_path),
             src_name=name,
@@ -230,7 +229,6 @@ class ConflictResolver:
             show_apply_all=self._show_file_apply_all,
             parent=self._parent,
         )
-        choice = FileConflictDialog.parse_choice(res)
 
         if choice == "cancel":
             raise PasteCancelledError()

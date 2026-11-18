@@ -1,11 +1,71 @@
-def test_file_conflict_dialog_parse_choice():
-    from wafer.qt.widgets.dialogs import FileConflictDialog
+def _click(dialog, text):
+    from PySide6 import QtWidgets
 
-    assert FileConflictDialog.parse_choice(None) is None
-    assert FileConflictDialog.parse_choice("") is None
-    assert FileConflictDialog.parse_choice("キャンセル") == "cancel"
-    assert FileConflictDialog.parse_choice("別名で保存") == "rename"
-    assert FileConflictDialog.parse_choice("上書き") == "overwrite"
+    buttons = {b.text(): b for b in dialog.findChildren(QtWidgets.QPushButton)}
+    buttons[text].click()
+
+
+def test_file_conflict_dialog_returns_role_id_of_translated_button(qtbot, monkeypatch, tmp_path):
+    from wafer.qt.widgets import dialogs
+
+    monkeypatch.setattr(dialogs, "t", lambda s: f"<{s}>")
+    monkeypatch.setattr(dialogs, "_image_for_source", lambda *a: None)
+    dialog = dialogs.FileConflictDialog("msg", src_path=str(tmp_path / "a.txt"), dst_path=str(tmp_path / "b.txt"), choices=("rename", "skip", "cancel"))
+    qtbot.addWidget(dialog)
+    dialog.apply_all_checkbox.setChecked(True)
+    _click(dialog, "<Skip>")
+    assert (dialog.choice(), dialog.apply_all()) == ("skip", True)
+
+
+def test_folder_conflict_dialog_labels_go_through_t(qtbot, monkeypatch, tmp_path):
+    from PySide6 import QtWidgets
+    from wafer.qt.widgets import dialogs
+
+    monkeypatch.setattr(dialogs, "t", lambda s: f"<{s}>")
+    dialog = dialogs.FolderConflictDialog("msg", src_path=str(tmp_path / "a"), dst_path=str(tmp_path / "b"), op="move", show_apply_all=False)
+    qtbot.addWidget(dialog)
+    texts = {w.text() for w in dialog.findChildren(QtWidgets.QLabel)} | {b.text() for b in dialog.findChildren(QtWidgets.QPushButton)}
+    assert {"<Move Source>", "<Move Target>", "<Merge>", "<Rename>", "<Skip>", "<Cancel>"} <= texts
+    assert dialog.apply_all_checkbox is None
+    _click(dialog, "<Merge>")
+    assert dialog.choice() == "merge"
+    assert not dialog.apply_all()
+
+
+def test_conflict_dialog_closed_without_button_has_no_choice(qtbot, tmp_path, monkeypatch):
+    from wafer.qt.widgets import dialogs
+
+    monkeypatch.setattr(dialogs, "_image_for_source", lambda *a: None)
+    dialog = dialogs.SingleFileConflictDialog("msg", path=str(tmp_path / "a.txt"))
+    qtbot.addWidget(dialog)
+    dialog.reject()
+    assert dialog.choice() is None
+
+
+def test_file_conflict_dialog_loads_thumbnails_off_the_main_thread(qtbot, monkeypatch, tmp_path):
+    import threading
+
+    from PySide6 import QtWidgets
+    from PySide6.QtGui import QImage
+    from wafer.qt.widgets import dialogs
+
+    threads = []
+
+    def fake_image(path, data, size):
+        threads.append(threading.current_thread())
+        img = QImage(8, 6, QImage.Format_RGB32)
+        img.fill(0)
+        return img
+
+    def loaded():
+        return [lbl for lbl in dialog.findChildren(QtWidgets.QLabel) if lbl.width() == 8 and lbl.height() == 6]
+
+    monkeypatch.setattr(dialogs, "_image_for_source", fake_image)
+    dialog = dialogs.FileConflictDialog("msg", src_path=str(tmp_path / "a.png"), dst_path=str(tmp_path / "b.png"))
+    qtbot.addWidget(dialog)
+    qtbot.waitUntil(lambda: len(loaded()) == 2, timeout=5000)
+    assert len(threads) == 2
+    assert threading.main_thread() not in threads
 
 
 def test_drop_operation_dialog_normalizes_operation():

@@ -96,7 +96,7 @@ class ZoomPanImageView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         rect = self._image_rect()
         if rect is None or rect.isEmpty():
             return
-        rect = rect.adjusted(padding, padding, -padding, -padding)
+        rect = rect.adjusted(-padding, -padding, padding, padding)
         mode = mode or self._fit_mode
         viewport = self.viewport().rect()
         if viewport.isEmpty():

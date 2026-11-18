@@ -242,12 +242,8 @@ class LayoutManager(QtCore.QObject):
             win = entry.floating_window
             if win is None:
                 continue
-            try:
-                win.closed.disconnect(self._on_floating_closed)
-            except (RuntimeError, TypeError):
-                pass
             entry.floating_window = None
-            win.close()
+            win.force_close()
             closed += 1
         if closed:
             AppLogger.info(f"LayoutManager closed {closed} floating window(s) on shutdown")
@@ -331,11 +327,7 @@ class LayoutManager(QtCore.QObject):
             self._window.setUpdatesEnabled(True)
 
         for win in old_floating:
-            try:
-                win.closed.disconnect()
-            except RuntimeError:
-                pass
-            win.close()
+            win.force_close()
             win.deleteLater()
         for dock in old_docks:
             self._window.removeDockWidget(dock)
@@ -680,7 +672,7 @@ class LayoutManager(QtCore.QObject):
         if entry.floating_window:
             return
 
-        win = apply_floating(entry.name, self._ensure_widget(entry), state, self._window)
+        win = apply_floating(entry.name, self._ensure_widget(entry), state, self._window, closable=entry.closable)
         if entry.dock_widget:
             self._discard_dock_shell(entry)
         win.closed.connect(self._on_floating_closed)
@@ -694,11 +686,7 @@ class LayoutManager(QtCore.QObject):
         entry.floating_window = None
         if entry.widget and win.isAncestorOf(entry.widget):
             entry.widget.setParent(None)
-        try:
-            win.closed.disconnect()
-        except RuntimeError:
-            pass
-        win.close()
+        win.force_close()
         win.deleteLater()
 
     def _destroy_dock(self, entry: PanelEntry, *, remove_from_window: bool = False):
@@ -808,11 +796,7 @@ class LayoutManager(QtCore.QObject):
             entry.floating_window = None
             if entry.widget:
                 entry.widget.setParent(None)
-            try:
-                win.closed.disconnect()
-            except RuntimeError:
-                pass
-            win.close()
+            win.force_close()
             win.deleteLater()
         if entry.dock_widget:
             self._destroy_dock(entry, remove_from_window=True)
@@ -866,8 +850,6 @@ class LayoutManager(QtCore.QObject):
     def _on_floating_closed(self, name: str):
         entry = self._panels.get(name)
         if not entry or not entry.floating_window:
-            return
-        if not entry.closable:
             return
         entry.last_floating = capture_floating_state(entry.floating_window)
         self._cleanup_entry(entry)

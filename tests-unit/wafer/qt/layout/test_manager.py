@@ -1884,3 +1884,56 @@ class TestResetFloatingPositions:
 
         assert set(mgr._tree.docked_names()) == before_docked
         assert _get_splitter_sizes(mgr) == before_sizes
+
+
+class TestNonClosableFloatingWindow:
+    def test_close_button_keeps_the_window_open(self, layout_env):
+        mgr, win, panels = layout_env
+        mgr.register("toolbar", lambda: _make_panel("toolbar"), closable=False)
+        mgr.toggle_panel("toolbar")
+        _process()
+        floating = mgr._panels["toolbar"].floating_window
+
+        floating.close()
+        _process()
+
+        assert floating.isVisible()
+        assert mgr._panels["toolbar"].floating_window is floating
+        assert "toolbar" in mgr._tree.floating
+
+    def test_closable_floating_window_closes_to_dormant(self, layout_env):
+        mgr, win, panels = layout_env
+        mgr.register("extra", lambda: _make_panel("extra"))
+        mgr.toggle_panel("extra")
+        _process()
+
+        mgr._panels["extra"].floating_window.close()
+        _process()
+
+        assert mgr._panels["extra"].floating_window is None
+        assert "extra" in mgr.dormant_panels()
+
+    def test_shutdown_closes_non_closable_window(self, layout_env):
+        mgr, win, panels = layout_env
+        mgr.register("toolbar", lambda: _make_panel("toolbar"), closable=False)
+        mgr.toggle_panel("toolbar")
+        _process()
+        floating = mgr._panels["toolbar"].floating_window
+
+        mgr.close_floating_windows()
+        _process()
+
+        assert not floating.isVisible()
+        assert mgr._panels["toolbar"].floating_window is None
+
+    def test_unregister_closes_non_closable_window(self, layout_env):
+        mgr, win, panels = layout_env
+        mgr.register("toolbar", lambda: _make_panel("toolbar"), closable=False)
+        mgr.toggle_panel("toolbar")
+        _process()
+        floating = mgr._panels["toolbar"].floating_window
+
+        mgr.unregister("toolbar")
+        _process()
+
+        assert not floating.isVisible()

@@ -250,17 +250,20 @@ class MergeConflictItem:
     is_dir: bool
 
 
-def _scan_merge_recursive(src: Path, dst: Path, root: Path, out: list[MergeConflictItem]) -> None:
+def _scan_merge_recursive(src: Path, dst: Path, root: Path, out: list[MergeConflictItem], limit: int | None) -> None:
     try:
         entries = sorted(src.iterdir(), key=lambda e: (not e.is_dir(), e.name))
-    except OSError:
+    except OSError as e:
+        AppLogger.warning(f"merge scan skipped an unreadable folder: {src}", exc=e)
         return
     for entry in entries:
+        if limit is not None and len(out) >= limit:
+            return
         d = dst / entry.name
         if not d.exists() and not d.is_symlink():
             continue
         if entry.is_dir() and d.is_dir():
-            _scan_merge_recursive(entry, d, root, out)
+            _scan_merge_recursive(entry, d, root, out, limit)
         else:
             out.append(
                 MergeConflictItem(
@@ -272,10 +275,10 @@ def _scan_merge_recursive(src: Path, dst: Path, root: Path, out: list[MergeConfl
             )
 
 
-def scan_merge_conflicts(src_dir: Path, dst_dir: Path) -> list[MergeConflictItem]:
+def scan_merge_conflicts(src_dir: Path, dst_dir: Path, *, limit: int | None = None) -> list[MergeConflictItem]:
     out: list[MergeConflictItem] = []
     if src_dir.is_dir() and dst_dir.is_dir():
-        _scan_merge_recursive(src_dir, dst_dir, src_dir, out)
+        _scan_merge_recursive(src_dir, dst_dir, src_dir, out, limit)
     return out
 
 

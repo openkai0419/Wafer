@@ -297,3 +297,114 @@ def test_resolve_paste_plans_with_ui_empty():
 
     result = resolve_paste_plans_with_ui(plans=[], overwrite_mode="ask", parent=None)
     assert result == {}
+
+
+def _file_conflict(tmp_path, name="a.txt"):
+    src = tmp_path / name
+    src.write_text("x", encoding="utf-8")
+    dst_dir = tmp_path / "dst"
+    dst_dir.mkdir(exist_ok=True)
+    (dst_dir / name).write_text("old", encoding="utf-8")
+    return _make_plan(0, src, dst_dir / name)
+
+
+def _folder_conflict(tmp_path, files):
+    src = tmp_path / "folder"
+    dst = tmp_path / "dst" / "folder"
+    src.mkdir()
+    dst.mkdir(parents=True)
+    for name in files:
+        (src / name).write_text("new", encoding="utf-8")
+        (dst / name).write_text("old", encoding="utf-8")
+    return _make_plan(0, src, dst, is_dir=True)
+
+
+def test_closing_the_file_dialog_cancels_the_paste(monkeypatch, tmp_path):
+    import pytest
+    from wafer.core.platform.file_operations import PasteCancelledError
+    from wafer.qt.transfer import conflict_resolver as r
+
+    monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(lambda *a, **k: (None, False)))
+    resolver = r.ConflictResolver(op="copy", overwrite_mode="ask", parent=None, folder_message="")
+
+    with pytest.raises(PasteCancelledError):
+        resolver.resolve_plans([_file_conflict(tmp_path)])
+
+
+def test_closing_the_folder_dialog_cancels_the_paste(monkeypatch, tmp_path):
+    import pytest
+    from wafer.core.platform.file_operations import PasteCancelledError
+    from wafer.qt.transfer import conflict_resolver as r
+
+    monkeypatch.setattr(r.FolderConflictDialog, "ask", staticmethod(lambda *a, **k: (None, False)))
+    resolver = r.ConflictResolver(op="copy", overwrite_mode="ask", parent=None, folder_message="")
+
+    with pytest.raises(PasteCancelledError):
+        resolver.resolve_plans([_folder_conflict(tmp_path, ["a.txt"])])
+
+
+def test_closing_the_same_path_dialog_cancels_the_paste(monkeypatch, tmp_path):
+    import pytest
+    from wafer.core.platform.file_operations import PasteCancelledError
+    from wafer.qt.transfer import conflict_resolver as r
+
+    monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(lambda *a, **k: (None, False)))
+    src = tmp_path / "a.txt"
+    src.write_text("x", encoding="utf-8")
+    resolver = r.ConflictResolver(op="copy", overwrite_mode="ask", parent=None, folder_message="")
+
+    with pytest.raises(PasteCancelledError):
+        resolver.resolve_plans([_make_plan(0, src, src)])
+
+
+def _count_scans(monkeypatch, r):
+    scans = []
+    real = r.scan_merge_conflicts
+
+    def counting(src, dst, **kwargs):
+        found = real(src, dst, **kwargs)
+        scans.append((kwargs.get("limit"), len(found)))
+        return found
+
+    monkeypatch.setattr(r, "scan_merge_conflicts", counting)
+    return scans
+
+
+def test_folder_conflict_is_not_scanned_unless_asking(monkeypatch, tmp_path):
+    from wafer.qt.transfer import conflict_resolver as r
+
+    scans = _count_scans(monkeypatch, r)
+    resolver = r.ConflictResolver(op="copy", overwrite_mode="overwrite", parent=None, folder_message="")
+
+    decisions = resolver.resolve_plans([_folder_conflict(tmp_path, ["a.txt", "b.txt"])])
+
+    assert decisions[0].mode == "merge"
+    assert scans == []
+
+
+def test_folder_conflict_count_stops_early_and_full_scan_runs_once(monkeypatch, tmp_path):
+    from wafer.qt.transfer import conflict_resolver as r
+
+    scans = _count_scans(monkeypatch, r)
+    monkeypatch.setattr(r.FolderConflictDialog, "ask", staticmethod(lambda *a, **k: ("マージ", False)))
+    monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(lambda *a, **k: ("上書き", False)))
+    resolver = r.ConflictResolver(op="copy", overwrite_mode="ask", parent=None, folder_message="")
+
+    decisions = resolver.resolve_plans([_folder_conflict(tmp_path, ["a.txt", "b.txt", "c.txt"])])
+
+    assert scans == [(2, 2), (None, 3)]
+    assert sorted(decisions[0].merge_decisions) == ["a.txt", "b.txt", "c.txt"]
+
+
+def test_small_folder_conflict_is_scanned_once(monkeypatch, tmp_path):
+    from wafer.qt.transfer import conflict_resolver as r
+
+    scans = _count_scans(monkeypatch, r)
+    monkeypatch.setattr(r.FolderConflictDialog, "ask", staticmethod(lambda *a, **k: ("マージ", False)))
+    monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(lambda *a, **k: ("上書き", False)))
+    resolver = r.ConflictResolver(op="copy", overwrite_mode="ask", parent=None, folder_message="")
+
+    decisions = resolver.resolve_plans([_folder_conflict(tmp_path, ["a.txt"])])
+
+    assert scans == [(2, 1)]
+    assert list(decisions[0].merge_decisions) == ["a.txt"]

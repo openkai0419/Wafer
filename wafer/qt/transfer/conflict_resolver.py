@@ -77,13 +77,7 @@ class ConflictResolver:
         self._show_folder_apply_all = len(folder_conflicts) > 1
         self._show_same_path_apply_all = len(same_path_items) > 1
         self._show_subpath_apply_all = len(subpath_items) > 1
-        total_file_conflicts = len(file_conflicts)
-        for _, p in folder_conflicts:
-            src = getattr(p, "src", None)
-            dst = getattr(p, "dst_default", None)
-            if src and dst:
-                total_file_conflicts += len(scan_merge_conflicts(Path(src), Path(dst)))
-        self._show_file_apply_all = total_file_conflicts > 1
+        merge_scans = self._count_file_conflicts(file_conflicts, folder_conflicts)
 
         decisions: dict[int, PasteDecision] = {}
 
@@ -106,11 +100,9 @@ class ConflictResolver:
         pending_merge_files: list[tuple[int, MergeConflictItem]] = []
         for idx, p in folder_conflicts:
             dec = decisions.get(idx)
-            if dec and dec.mode == "merge":
-                src = Path(getattr(p, "src", ""))
-                dst = Path(getattr(p, "dst_default", ""))
-                for c in scan_merge_conflicts(src, dst):
-                    pending_merge_files.append((idx, c))
+            if self._overwrite_mode == "ask" and dec and dec.mode == "merge":
+                conflicts = merge_scans[idx] if idx in merge_scans else scan_merge_conflicts(Path(p.src), Path(p.dst_default))
+                pending_merge_files.extend((idx, c) for c in conflicts)
 
         for idx, p in file_conflicts:
             src = getattr(p, "src", None)
@@ -133,6 +125,22 @@ class ConflictResolver:
             parent_dec.merge_decisions[conflict.rel_path] = dec
 
         return decisions
+
+    def _count_file_conflicts(self, file_conflicts: list, folder_conflicts: list) -> dict[int, list[MergeConflictItem]]:
+        complete_scans: dict[int, list[MergeConflictItem]] = {}
+        if self._overwrite_mode != "ask":
+            return complete_scans
+        total = len(file_conflicts)
+        for idx, p in folder_conflicts:
+            if total > 1:
+                break
+            limit = 2 - total
+            found = scan_merge_conflicts(Path(p.src), Path(p.dst_default), limit=limit)
+            if len(found) < limit:
+                complete_scans[idx] = found
+            total += len(found)
+        self._show_file_apply_all = total > 1
+        return complete_scans
 
     def _notify_subpath(self, src) -> None:
         if self._subpath_apply_all:
@@ -170,7 +178,7 @@ class ConflictResolver:
             choices=("rename", "skip", "cancel"),
             parent=self._parent,
         )
-        if choice == "cancel":
+        if choice in (None, "cancel"):
             raise PasteCancelledError()
         if choice == "rename":
             if apply_all:
@@ -198,9 +206,9 @@ class ConflictResolver:
             parent=self._parent,
         )
 
-        if choice == "cancel":
+        if choice in (None, "cancel"):
             raise PasteCancelledError()
-        if choice is None or choice == "skip":
+        if choice == "skip":
             if apply_all:
                 self._folder_apply_all = "skip"
             return PasteDecision(mode="skip")
@@ -230,9 +238,9 @@ class ConflictResolver:
             parent=self._parent,
         )
 
-        if choice == "cancel":
+        if choice in (None, "cancel"):
             raise PasteCancelledError()
-        if choice is None or choice == "skip":
+        if choice == "skip":
             if apply_all:
                 self._file_apply_all = "skip"
             return PasteDecision(mode="skip")

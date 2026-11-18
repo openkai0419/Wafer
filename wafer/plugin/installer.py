@@ -236,6 +236,8 @@ def install_requirements(plugin_dir: str, extensions_dir: str, on_progress=None,
             _write_install_stamp(_stamp_path(plugin_dir, ".installed"), _requirements_hash(req_file))
             AppLogger.info(f"[Installer] Dependencies installed: {os.path.basename(plugin_dir)}")
             return True
+        except InstallerCancelled:
+            raise
         except Exception as e:
             AppLogger.warning(f"[Installer] Failed for {os.path.basename(plugin_dir)}: {e}", exc=e)
             return False
@@ -382,7 +384,10 @@ def run_post_install(
 
     from .loader import PluginLoader
 
-    plugins = PluginLoader.discover_extension(plugin_dir)
+    failed: list[str] = []
+    plugins = PluginLoader.discover_extension(plugin_dir, failed)
+    if failed:
+        AppLogger.warning(f"[Installer] {os.path.basename(plugin_dir)}: setup is not complete because these modules failed to import (see the log above): {', '.join(failed)}")
 
     pkg_dir = _packages_dir(extensions_dir)
     path_added = []
@@ -390,7 +395,7 @@ def run_post_install(
         sys.path.insert(0, pkg_dir)
         path_added.append(pkg_dir)
 
-    post_install_ok = True
+    post_install_ok = not failed
     has_hooks = has_post_install_hooks(plugins)
     if has_hooks and on_phase:
         on_phase("post_installing")

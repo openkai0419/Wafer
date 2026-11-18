@@ -20,7 +20,8 @@ from wafer.plugin.installer import (
     needs_post_install,
     needs_setup,
     has_post_install_hooks,
-    install_extension,
+    install_requirements_only,
+    run_post_install,
     _PACKAGES_DIR,
     _STAMPS_DIR,
     _PYTHON_VERSION_STAMP,
@@ -343,7 +344,7 @@ class TestHasPostInstallHooks:
             PRIORITY = 1
 
             @classmethod
-            def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None):
+            def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None, on_log=None):
                 pass
 
         assert has_post_install_hooks([("grid", WithHook)]) is True
@@ -362,7 +363,7 @@ class TestHasPostInstallHooks:
             PRIORITY = 2
 
             @classmethod
-            def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None):
+            def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None, on_log=None):
                 pass
 
         assert has_post_install_hooks([("a", Plain), ("b", WithHook)]) is True
@@ -374,29 +375,7 @@ class TestHasPostInstallHooks:
         assert has_post_install_hooks([("commands", CommandGroup)]) is False
 
 
-class TestInstallExtension:
-    def test_skips_when_no_install_needed(self, tmp_path):
-        ext_dir = tmp_path / "extensions"
-        plugin = ext_dir / "plugin"
-        plugin.mkdir(parents=True)
-        (plugin / "__init__.py").write_text("")
-
-        from wafer.plugin.registry import PluginBase
-
-        class SimplePlugin(PluginBase):
-            NAME = "simple"
-            EXTENSIONS = (".s",)
-            PRIORITY = 1
-
-        with patch("wafer.plugin.installer.needs_install", return_value=False), patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", SimplePlugin)]):
-            result = install_extension(str(plugin), str(ext_dir))
-
-        assert result.success is True
-        assert result.post_install_ok is True
-        assert len(result.plugins) == 1
-        stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
-        assert stamp.exists()
-
+class TestInstallRequirementsOnly:
     def test_install_failure_returns_false(self, tmp_path):
         ext_dir = tmp_path / "extensions"
         plugin = ext_dir / "plugin"
@@ -406,10 +385,59 @@ class TestInstallExtension:
             patch("wafer.plugin.installer.needs_install", return_value=True),
             patch("wafer.plugin.installer.install_requirements", return_value=False),
         ):
-            result = install_extension(str(plugin), str(ext_dir))
+            result = install_requirements_only(str(plugin), str(ext_dir))
 
         assert result.success is False
-        assert result.plugins == []
+        assert result.cancelled is False
+
+    def test_cancelled_before_pip(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+
+        with patch("wafer.plugin.installer.needs_install", return_value=True), patch("wafer.plugin.installer.install_requirements") as install:
+            result = install_requirements_only(str(plugin), str(ext_dir), is_cancelled=lambda: True)
+
+        install.assert_not_called()
+        assert result.success is False
+        assert result.cancelled is True
+
+    def test_cancel_during_pip_is_cancelled_not_failed(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+        (plugin / "requirements.txt").write_text("requests\n")
+        mock_ep = MagicMock()
+        mock_ep.pip_install.side_effect = InstallerCancelled("cancelled")
+
+        with patch("wafer.plugin.installer.EmbeddedPython", return_value=mock_ep):
+            result = install_requirements_only(str(plugin), str(ext_dir))
+
+        assert result.success is False
+        assert result.cancelled is True
+        assert not (ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.installed").exists()
+
+
+class TestRunPostInstall:
+    def test_no_hooks_writes_stamp(self, tmp_path):
+        ext_dir = tmp_path / "extensions"
+        plugin = ext_dir / "plugin"
+        plugin.mkdir(parents=True)
+
+        from wafer.plugin.registry import PluginBase
+
+        class SimplePlugin(PluginBase):
+            NAME = "simple"
+            EXTENSIONS = (".s",)
+            PRIORITY = 1
+
+        with patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", SimplePlugin)]):
+            result = run_post_install(str(plugin), str(ext_dir))
+
+        assert result.success is True
+        assert result.post_install_ok is True
+        assert result.plugins == [("grid", SimplePlugin)]
+        assert (ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed").exists()
 
     def test_post_install_hook_called(self, tmp_path):
         ext_dir = tmp_path / "extensions"
@@ -429,15 +457,13 @@ class TestInstallExtension:
             def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None, on_log=None):
                 calls.append(plugin_dir)
 
-        with patch("wafer.plugin.installer.needs_install", return_value=False), patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", HookPlugin)]):
-            result = install_extension(str(plugin), str(ext_dir))
+        with patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", HookPlugin)]):
+            result = run_post_install(str(plugin), str(ext_dir))
 
         assert result.success is True
         assert result.post_install_ok is True
-        assert len(calls) == 1
-        assert calls[0] == str(plugin)
-        stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
-        assert stamp.exists()
+        assert calls == [str(plugin)]
+        assert (ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed").exists()
 
     def test_post_install_failure_returns_false(self, tmp_path):
         ext_dir = tmp_path / "extensions"
@@ -452,41 +478,15 @@ class TestInstallExtension:
             PRIORITY = 1
 
             @classmethod
-            def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None):
+            def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None, on_log=None):
                 raise RuntimeError("boom")
 
-        with patch("wafer.plugin.installer.needs_install", return_value=False), patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", FailHook)]):
-            result = install_extension(str(plugin), str(ext_dir))
+        with patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", FailHook)]):
+            result = run_post_install(str(plugin), str(ext_dir))
 
         assert result.success is True
         assert result.post_install_ok is False
-        stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
-        assert not stamp.exists()
-
-    def test_cancellation_during_install(self, tmp_path):
-        ext_dir = tmp_path / "extensions"
-        plugin = ext_dir / "plugin"
-        plugin.mkdir(parents=True)
-
-        cancelled = False
-
-        def check():
-            return cancelled
-
-        with (
-            patch("wafer.plugin.installer.needs_install", return_value=True),
-            patch("wafer.plugin.installer.install_requirements", return_value=True),
-        ):
-            cancelled = True
-            result = install_extension(
-                str(plugin),
-                str(ext_dir),
-                is_cancelled=check,
-            )
-
-        assert result.success is False
-        assert result.cancelled is True
-        assert result.plugins == []
+        assert not (ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed").exists()
 
     def test_cancellation_during_post_install(self, tmp_path):
         ext_dir = tmp_path / "extensions"
@@ -501,40 +501,31 @@ class TestInstallExtension:
             PRIORITY = 1
 
             @classmethod
-            def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None):
+            def post_install(cls, plugin_dir, on_progress=None, is_cancelled=None, on_log=None):
                 raise InstallerCancelled("cancelled")
 
-        with patch("wafer.plugin.installer.needs_install", return_value=False), patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", CancelHook)]):
-            result = install_extension(str(plugin), str(ext_dir), is_cancelled=lambda: True)
+        with patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", CancelHook)]):
+            result = run_post_install(str(plugin), str(ext_dir))
 
         assert result.success is False
         assert result.cancelled is True
-        stamp = ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed"
-        assert not stamp.exists()
+        assert not (ext_dir / _PACKAGES_DIR / _STAMPS_DIR / "plugin.post_installed").exists()
 
-    def test_deferred_install_continues_discover_and_post_install(self, tmp_path):
+    def test_module_that_fails_to_import_keeps_setup_pending(self, tmp_path):
         ext_dir = tmp_path / "extensions"
-        plugin = ext_dir / "plugin"
+        plugin = ext_dir / "fxpa_broken_ext"
         plugin.mkdir(parents=True)
+        (plugin / "requirements.txt").write_text("")
+        (plugin / "__init__.py").write_text("")
+        (plugin / "grid.py").write_text("import nonexistent_mod_xyz\n")
+        try:
+            result = run_post_install(str(plugin), str(ext_dir))
+        finally:
+            for key in [k for k in sys.modules if k.startswith("_plugins_fxpa_broken_ext")]:
+                del sys.modules[key]
 
-        from wafer.plugin.registry import PluginBase
-
-        class DeferredPlugin(PluginBase):
-            NAME = "deferred"
-            EXTENSIONS = (".d",)
-            PRIORITY = 1
-
-        with (
-            patch("wafer.plugin.installer.needs_install", return_value=True),
-            patch("wafer.plugin.installer.install_requirements", return_value=True),
-            patch("wafer.plugin.loader.PluginLoader.discover_extension", return_value=[("grid", DeferredPlugin)]),
-        ):
-            result = install_extension(str(plugin), str(ext_dir))
-
-        assert result.success is True
-        assert result.post_install_ok is True
-        assert len(result.plugins) == 1
-        assert result.plugins[0][1] is DeferredPlugin
+        assert result.post_install_ok is False
+        assert needs_post_install(str(plugin)) is True
 
 
 class TestRestartScopeOf:

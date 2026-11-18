@@ -4,6 +4,7 @@ import shutil
 import sys
 import tempfile
 
+from wafer.core.logs import AppLogger
 from wafer.core.common.downloader import (
     safe_download,
     fetch_json,
@@ -24,19 +25,6 @@ _MAX_RELEASE_RESPONSE = 2 * 1024 * 1024
 _USER_AGENT = "wafer-video-plugin"
 
 _MANUAL_HINT = "Download libmpv-2.dll from https://sourceforge.net/projects/mpv-player-windows/files/libmpv/ and place it in extensions/video/lib/"
-
-
-def _log(msg, *, level="info", exc=None):
-    try:
-        from wafer.core.logs import AppLogger
-
-        fn = getattr(AppLogger, level, AppLogger.info)
-        if exc and level in ("error", "warning"):
-            fn(msg, exc=exc)
-        else:
-            fn(msg)
-    except (ImportError, AttributeError):
-        pass
 
 
 def _find_asset() -> tuple[str, str, str]:
@@ -78,16 +66,16 @@ def ensure_mpv_dll(version: str = ""):
         return True
     tmp = tempfile.mkdtemp()
     try:
-        _log(f"[video] Resolving latest mpv-dev asset via {_RELEASES_API_URL}")
+        AppLogger.info(f"[video] Resolving latest mpv-dev asset via {_RELEASES_API_URL}")
         url, expected, label = _find_asset()
-        _log(f"[video] Downloading mpv DLL: {label}")
+        AppLogger.info(f"[video] Downloading mpv DLL: {label}")
         archive = os.path.join(tmp, "mpv-dev.7z")
         safe_download(url, archive, allowed_hosts=_ALLOWED_HOSTS, expected_sha256=expected)
-        _log("[video] archive checksum verified")
+        AppLogger.info("[video] archive checksum verified")
         extract_7z_members(archive, _LIB_DIR, (_DLL_NAME,))
         write_lib_version(_LIB_DIR, version)
         _setup_dll_path()
-        _log("[video] mpv DLL installed successfully")
+        AppLogger.info("[video] mpv DLL installed successfully")
         return True
     except Exception as e:
         raise RuntimeError(f"Failed to acquire mpv DLL: {e}. {_MANUAL_HINT}") from e

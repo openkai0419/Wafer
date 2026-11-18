@@ -104,6 +104,49 @@ class TestCommandOptionStore:
         CommandOptionStore._instance = prev_inst
 
 
+class TestStoresSharingAFile:
+    def test_saving_keeps_options_another_viewer_saved(self, tmp_path):
+        path = tmp_path / "shared.json"
+        a = PersistentStore(path)
+        b = PersistentStore(path)
+        a._get_raw("x")
+        b._get_raw("y")
+        a._set_raw("x", {"v": 1})
+        assert a.commit()
+        b._set_raw("y", {"v": 2})
+        assert b.commit()
+        assert PersistentStore(path)._get_raw("x") == {"v": 1}
+        assert PersistentStore(path)._get_raw("y") == {"v": 2}
+
+    def test_saving_does_not_roll_back_a_newer_value_of_another_key(self, tmp_path):
+        path = tmp_path / "shared.json"
+        a = PersistentStore(path)
+        a._set_raw("x", {"v": 1})
+        a.commit()
+        b = PersistentStore(path)
+        b._get_raw("x")
+        a._set_raw("x", {"v": 2})
+        a.commit()
+        b._set_raw("y", {"v": 3})
+        b.commit()
+        assert PersistentStore(path)._get_raw("x") == {"v": 2}
+        assert b._get_raw("x") == {"v": 2}
+
+    def test_clear_removes_only_the_key_from_the_shared_file(self, tmp_path):
+        path = tmp_path / "shared.json"
+        a = PersistentStore(path)
+        b = PersistentStore(path)
+        a._get_raw("x")
+        b._set_raw("y", {"v": 2})
+        b.commit()
+        a._set_raw("x", {"v": 1})
+        a.commit()
+        a.clear("x")
+        fresh = PersistentStore(path)
+        assert fresh._get_raw("x") == {}
+        assert fresh._get_raw("y") == {"v": 2}
+
+
 class _FakeRegistry:
     def __init__(self, members: dict[str, dict]):
         self._members = members

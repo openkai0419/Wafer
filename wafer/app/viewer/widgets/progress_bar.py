@@ -1,5 +1,6 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 from ....qt.common.dpi import dpix
+from ....qt.theme import ThemeManager
 
 
 class HoverProxy(QtWidgets.QWidget):
@@ -42,7 +43,6 @@ class PopupWindow(QtWidgets.QWidget):
         super().__init__(*args, parent=parent, **kwargs)
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.ToolTip)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        self.setStyleSheet("background-color: white; border: 1px solid gray;")
 
 
 class TooltipPopup(PopupWindow):
@@ -51,7 +51,8 @@ class TooltipPopup(PopupWindow):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(dpix(8), dpix(4), dpix(8), dpix(4))
         self.label = QtWidgets.QLabel(text)
-        self.label.setStyleSheet(f"color: white; background: black; padding: {dpix(2)}px; border-radius: {dpix(3)}px;")
+        p = ThemeManager.instance().palette
+        self.label.setStyleSheet(f"color: {p.text_primary}; background: {p.bg_elevated}; border: 1px solid {p.border_default}; padding: {dpix(2)}px; border-radius: {dpix(3)}px;")
         layout.addWidget(self.label)
 
     def setText(self, text):
@@ -77,7 +78,6 @@ class ThinProgressBar(QtWidgets.QWidget):
         self._glow_offset = 0.0
         self._glow_timer = QtCore.QTimer(self)
         self._glow_timer.timeout.connect(self._updateGlow)
-        self._base_color = QtGui.QColor(0, 255, 0)
         self._tooltip = None
         self.setMouseTracking(True)
         QtCore.QTimer.singleShot(0, self._installHoverProxy)
@@ -156,15 +156,7 @@ class ThinProgressBar(QtWidgets.QWidget):
             self._glow_timer.stop()
         self.update()
 
-    def getBaseColor(self):
-        return self._base_color
-
-    def setBaseColor(self, color):
-        self._base_color = color
-        self.update()
-
     colorOpacity = QtCore.Property(float, getColorOpacity, setColorOpacity)
-    baseColor = QtCore.Property(QtGui.QColor, getBaseColor, setBaseColor)
 
     def paintEvent(self, event):
         if self._animated_value <= 0:
@@ -179,7 +171,7 @@ class ThinProgressBar(QtWidgets.QWidget):
         rect = self.rect()
         ratio = self._animated_value / self._maximum if self._maximum else 0
         bar_width = rect.width() * ratio
-        base_color = QtGui.QColor(self._base_color)
+        base_color = QtGui.QColor(ThemeManager.instance().palette.accent)
         base_color.setAlphaF(self._color_opacity)
         painter.setBrush(QtGui.QBrush(base_color))
         painter.setPen(QtCore.Qt.NoPen)
@@ -194,8 +186,10 @@ class ThinProgressBar(QtWidgets.QWidget):
         glow_width = max(dpix(10), int(bar_width * 0.4))
         glow_x = int((bar_width + glow_width) * self._glow_offset - glow_width)
         gradient = QtGui.QLinearGradient(glow_x, 0, glow_x + glow_width, 0)
-        glow_color = QtGui.QColor(255, 255, 255, int(180 * self._color_opacity))
-        transparent = QtGui.QColor(255, 255, 255, 0)
+        glow_color = QtGui.QColor(ThemeManager.instance().palette.accent_text)
+        transparent = QtGui.QColor(glow_color)
+        glow_color.setAlpha(int(180 * self._color_opacity))
+        transparent.setAlpha(0)
         gradient.setColorAt(0.0, transparent)
         gradient.setColorAt(0.3, glow_color)
         gradient.setColorAt(0.7, glow_color)

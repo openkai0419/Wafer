@@ -1,15 +1,21 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 from ....qt.common.dpi import dpix
+from ....qt.theme import ThemeManager
+
+
+def overlay_colors(level: str) -> tuple[QtGui.QColor, QtGui.QColor]:
+    palette = ThemeManager.instance().palette
+    if level == "error":
+        bg, text = QtGui.QColor(palette.error), QtGui.QColor(palette.accent_text)
+        bg.setAlpha(230)
+    else:
+        bg, text = QtGui.QColor(palette.bg_elevated), QtGui.QColor(palette.text_primary)
+        bg.setAlpha(210)
+    return bg, text
 
 
 class OverlayItem(QtWidgets.QWidget):
     dismissed = QtCore.Signal(object)
-
-    LEVEL_STYLES = {
-        "info": (QtGui.QColor(30, 30, 30, 210), QtGui.QColor(255, 255, 255)),
-        "warning": (QtGui.QColor(30, 30, 30, 210), QtGui.QColor(255, 255, 255)),
-        "error": (QtGui.QColor(120, 10, 10, 230), QtGui.QColor(255, 255, 255)),
-    }
 
     def __init__(self, text: str, level: str = "warning", duration: int = 3000, parent=None):
         super().__init__(parent)
@@ -19,7 +25,6 @@ class OverlayItem(QtWidgets.QWidget):
         self._label_prefix = {"error": "Error"}.get(level)
         self._display_text = f"{self._label_prefix}:\n{text}" if self._label_prefix else text
         self._level = level
-        self._bg_color, self._text_color = self.LEVEL_STYLES.get(level, self.LEVEL_STYLES["warning"])
         self._opacity = 1.0
         self._fade_anim = None
         self._padding = dpix(6)
@@ -65,11 +70,11 @@ class OverlayItem(QtWidgets.QWidget):
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         painter.setOpacity(self._opacity)
-        bg = QtGui.QColor(self._bg_color)
+        bg, text_color = overlay_colors(self._level)
         painter.setPen(QtCore.Qt.NoPen)
         painter.setBrush(bg)
         painter.drawRoundedRect(self.rect(), dpix(4), dpix(4))
-        painter.setPen(self._text_color)
+        painter.setPen(text_color)
         painter.drawText(self.rect(), QtCore.Qt.AlignCenter, self._display_text)
         painter.end()
 

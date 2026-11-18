@@ -6,6 +6,10 @@ from typing import Any
 
 from PySide6 import QtCore
 
+from wafer.core.logs import AppLogger
+from wafer.qt.common.dispatcher import Dispatcher
+from wafer.qt.common.thread import utility_pool
+
 from .map_view import MAX_IMAGE_SCALE, MIN_IMAGE_SCALE
 from .params import DEFAULT_SUBGROUP_SIZE, SUBGROUP_SIZE, Grouping, TrainParams, ViewParams, fitted, param_specs
 from .space import load_grouping, save_grouping
@@ -16,6 +20,7 @@ SELECTION_MODES = ("single", "group")
 DEFAULT_IMAGE_CAP = ViewParams().hover_size
 DEFAULT_SPACING = TrainParams().min_dist
 SPACING_RANGE = (0.0, 1.0)
+SAVE_DELAY_MS = 500
 
 
 def clamped_scale(scale) -> float:
@@ -135,7 +140,15 @@ class GroupingStore(QtCore.QObject):
     def __init__(self):
         super().__init__()
         self.lock = threading.Lock()
+        self.save_lock = threading.Lock()
         self.by_db: dict[str, Grouping] = {}
+        self.unsaved: set[str] = set()
+        self.dispatcher = Dispatcher(pool=utility_pool, parent=self)
+        self.save_timer = QtCore.QTimer(self)
+        self.save_timer.setSingleShot(True)
+        self.save_timer.setInterval(SAVE_DELAY_MS)
+        self.save_timer.timeout.connect(self.save_later)
+        QtCore.QCoreApplication.instance().aboutToQuit.connect(self.save_pending)
 
     def get(self, db_name: str) -> Grouping:
         with self.lock:
@@ -152,5 +165,26 @@ class GroupingStore(QtCore.QObject):
             return
         with self.lock:
             self.by_db[db_name] = grouping
-        save_grouping(db_name, grouping)
+        self.unsaved.add(db_name)
+        self.save_timer.start()
         self.changed.emit(db_name)
+
+    def take_unsaved(self) -> list[str]:
+        db_names, self.unsaved = sorted(self.unsaved), set()
+        return db_names
+
+    def save_later(self) -> None:
+        db_names = self.take_unsaved()
+        self.dispatcher.post(lambda: self.save(db_names))
+
+    def save_pending(self) -> None:
+        self.save_timer.stop()
+        self.save(self.take_unsaved())
+
+    def save(self, db_names: list[str]) -> None:
+        with self.save_lock:
+            for db_name in db_names:
+                try:
+                    save_grouping(db_name, self.get(db_name))
+                except Exception as e:
+                    AppLogger.warning(f"[Mapping] Saving the groups of {db_name} failed; they are kept until the app closes", exc=e)

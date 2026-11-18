@@ -50,6 +50,7 @@ def fresh_view_settings(monkeypatch):
 def fresh_grouping_store(monkeypatch):
     saved = {}
     monkeypatch.setattr(GroupingStore, "_instance", None)
+    monkeypatch.setattr(view_settings, "SAVE_DELAY_MS", 0)
     monkeypatch.setattr(view_settings, "load_grouping", lambda db_name: saved.get(db_name, Grouping()))
     monkeypatch.setattr(view_settings, "save_grouping", lambda db_name, grouping: saved.__setitem__(db_name, grouping))
     return saved

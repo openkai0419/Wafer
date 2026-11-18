@@ -549,7 +549,8 @@ def test_mapping_space_sets_the_base_groups_of_its_database(mapping, qtbot, fres
     previous = mapping.current_result()
     space.toolbar.sliders["size"].setValue(space.toolbar.sliders["size"].minimum())
     space.toolbar.fine_check.setChecked(True)
-    assert GroupingStore.instance().get("db") == Grouping(size=0.25, fine=1) == fresh_grouping_store["db"]
+    assert GroupingStore.instance().get("db") == Grouping(size=0.25, fine=1)
+    qtbot.waitUntil(lambda: fresh_grouping_store.get("db") == Grouping(size=0.25, fine=1))
     wait_for_new_result(qtbot, mapping, previous)
     assert mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}1/20"
     assert space.toolbar.slider_values["size"].text() == "\N{MULTIPLICATION SIGN}1/4"

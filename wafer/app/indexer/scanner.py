@@ -5,12 +5,12 @@ import stat
 import threading
 import time
 from pathlib import Path
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Sequence
 
 from ...core.db.db_utils import build_basic_entries, open_readonly
 from ...core.db.file_db import SOURCE_TRIGGER_KEYS
 from ...core.logs import AppLogger
-from ...core.common.paths import normalize_path
+from ...core.common.paths import child_prefix, normalize_path
 from ...core.profiling import profiler
 from .db_writer import DatabaseWriter
 from .receivers.parser_receiver import trigger_parser_pending
@@ -63,10 +63,10 @@ class DirectoryScanner:
             self._read_conn.close()
             self._read_conn = None
 
-    def request_scan(self, folders: list[str]):
+    def request_scan(self, folders: list[str], *, partial: bool = False):
         self._cancel_current()
         with self._request_lock:
-            self._request_queue.append(("rescan", folders))
+            self._request_queue.append(("rescan", (folders, partial)))
         self._request_event.set()
 
     def request_update(self, paths: list[str]):
@@ -120,7 +120,7 @@ class DirectoryScanner:
                     break
                 try:
                     if kind == "rescan":
-                        self._do_full_scan(data)
+                        self._do_full_scan(*data)
                     elif kind == "update":
                         self._do_update_files(data)
                     elif kind == "backfill":
@@ -134,27 +134,33 @@ class DirectoryScanner:
         return self._ignore_pattern_re is not None and self._ignore_pattern_re.match(path) is not None
 
     @profiler.profile
-    def _do_full_scan(self, root_paths: Sequence[str]):
-        AppLogger.info(f"[Scanner] Full scan: {len(root_paths)} folders")
+    def _do_full_scan(self, root_paths: Sequence[str], partial: bool = False):
+        AppLogger.info(f"[Scanner] Full scan: {len(root_paths)} folders{' (partial)' if partial else ''}")
         token = self._current_token
-        current_compare: dict[str, tuple] = {}
         file_info: dict[str, tuple] = {}
+        unreadable: list[str] = []
         self._progress.increment(0, 1)
         for path in root_paths:
             if token.is_cancelled:
                 return
-            for norm_p, info in self._scan_directory(path):
-                mtime, fsize, ctime = info
-                current_compare[norm_p] = (mtime, fsize)
-                file_info[norm_p] = (mtime, fsize, ctime)
+            file_info.update(self._scan_directory(path, unreadable))
         self._progress.increment(1, 0)
 
         if token.is_cancelled:
             return
 
         previous = self._load_existing_sources()
-        added_or_modified = [p for p in current_compare if p not in previous or current_compare[p] != previous[p]]
-        removed = [p for p in previous if p not in current_compare]
+        if partial:
+            in_roots = _under_any(normalize_path(p) for p in root_paths)
+            previous = {p: v for p, v in previous.items() if in_roots(p)}
+        added_or_modified = [p for p in file_info if p not in previous or file_info[p][:2] != previous[p]]
+        removed = [p for p in previous if p not in file_info]
+        if unreadable and removed:
+            in_unreadable = _under_any(unreadable)
+            kept = [p for p in removed if in_unreadable(p)]
+            if kept:
+                removed = [p for p in removed if not in_unreadable(p)]
+                AppLogger.warning(f"[Scanner] Kept {len(kept)} files under {len(unreadable)} unreadable folders (e.g. {unreadable[0]}); reconnect the drive or remove the folder from the database to update them")
         self._progress.increment(0, len(added_or_modified) + len(removed))
         AppLogger.info(f"[Scanner] added/modified: {len(added_or_modified)}, removed: {len(removed)}")
         self._progress.send_files_changed(modified=[p for p in added_or_modified if p in previous], removed=removed)
@@ -379,7 +385,7 @@ class DirectoryScanner:
             AppLogger.warning(f"[Scanner] Failed to load existing sources: {e}", exc=e)
         return result
 
-    def _scan_directory(self, root_path: str):
+    def _scan_directory(self, root_path: str, unreadable: list[str] | None = None):
         stack = [str(root_path)]
         while stack:
             current = stack.pop()
@@ -399,11 +405,19 @@ class DirectoryScanner:
                         elif entry.is_dir(follow_symlinks=False):
                             stack.append(entry.path)
                 self._progress.increment(1, 0)
-            except Exception as e:
-                AppLogger.debug(f"[Scanner] scan error: {current} ({e})")
+            except OSError as e:
+                AppLogger.warning(f"[Scanner] Cannot read folder: {full_path}", exc=e)
+                if unreadable is not None:
+                    unreadable.append(full_path)
                 self._progress.increment(1, 0)
 
 
 def _get_stat(stat_result):
     ctime = stat_result.st_birthtime if hasattr(stat_result, "st_birthtime") else stat_result.st_ctime
     return (stat_result.st_mtime, stat_result.st_size, ctime)
+
+
+def _under_any(folders: Iterable[str]) -> Callable[[str], bool]:
+    roots = set(folders)
+    children = tuple(child_prefix(root) for root in roots)
+    return lambda path: path in roots or path.startswith(children)

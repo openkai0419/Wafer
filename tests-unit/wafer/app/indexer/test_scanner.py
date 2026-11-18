@@ -224,12 +224,12 @@ def test_loop_survives_exception(tmp_path):
     original_full_scan = scanner._do_full_scan
     call_count = 0
 
-    def failing_scan(data):
+    def failing_scan(data, partial=False):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
             raise RuntimeError("simulated scan error")
-        original_full_scan(data)
+        original_full_scan(data, partial)
 
     scanner._do_full_scan = failing_scan
     scan_dir = tmp_path / "data"
@@ -388,4 +388,90 @@ def test_full_scan_reports_changed_and_removed_files_but_not_new_ones(tmp_path, 
 
     progress.send_files_changed.assert_called_once_with(modified=[edited], removed=[gone])
     assert new not in progress.send_files_changed.call_args.kwargs["modified"]
+    scanner.stop()
+
+
+def _scanner_with_sources(tmp_path, sources, collectors=None):
+    from wafer.core.db.file_db import FileDB
+
+    db_path = tmp_path / "test.db"
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+    db.upsert_basic_sources([(s, f"h{i}", 1, 0.0) for i, s in enumerate(sources)], [(s, s, 1.0) for s in sources])
+    db.close()
+    progress = MagicMock()
+    scanner = DirectoryScanner(db_path, MagicMock(), MagicMock(), progress, collectors)
+    scanner.start()
+    return scanner, progress
+
+
+def _removed(progress):
+    return set(progress.send_files_changed.call_args.kwargs["removed"])
+
+
+def test_partial_scan_removes_only_missing_files_under_scanned_roots(tmp_path):
+    a, b = tmp_path / "A", tmp_path / "B"
+    (a / "sub").mkdir(parents=True)
+    b.mkdir()
+    kept = normalize_path(str(a / "sub" / "a.png"))
+    (a / "sub" / "a.png").write_text("x")
+    gone = normalize_path(str(a / "sub" / "gone.png"))
+    sibling = normalize_path(str(a / "x.png"))
+    other_root = normalize_path(str(b / "b.png"))
+    scanner, progress = _scanner_with_sources(tmp_path, [kept, gone, sibling, other_root])
+
+    scanner._do_full_scan([str(a / "sub")], partial=True)
+
+    assert _removed(progress) == {gone}
+    scanner.stop()
+
+
+def test_full_scan_still_removes_sources_outside_registered_roots(tmp_path):
+    a = tmp_path / "A"
+    a.mkdir()
+    outside = normalize_path(str(tmp_path / "unregistered" / "c.png"))
+    scanner, progress = _scanner_with_sources(tmp_path, [outside])
+
+    scanner._do_full_scan([str(a)])
+
+    assert _removed(progress) == {outside}
+    scanner.stop()
+
+
+def test_full_scan_keeps_sources_under_unreadable_roots(tmp_path, monkeypatch):
+    a = tmp_path / "A"
+    a.mkdir()
+    gone = normalize_path(str(a / "gone.png"))
+    offline = normalize_path(str(tmp_path / "offline" / "b.png"))
+    scanner, progress = _scanner_with_sources(tmp_path, [gone, offline])
+    warnings = []
+    monkeypatch.setattr("wafer.app.indexer.scanner.AppLogger.warning", lambda message, exc=None: warnings.append(message))
+
+    scanner._do_full_scan([str(a), str(tmp_path / "offline")])
+
+    assert _removed(progress) == {gone}
+    assert any("offline" in w for w in warnings)
+    scanner.stop()
+
+
+def test_full_scan_keeps_sources_under_unreadable_subfolder(tmp_path, monkeypatch):
+    import os
+
+    a = tmp_path / "A"
+    (a / "locked").mkdir(parents=True)
+    locked_file = normalize_path(str(a / "locked" / "c.png"))
+    scanner, progress = _scanner_with_sources(tmp_path, [locked_file])
+    real_scandir = os.scandir
+
+    def fake_scandir(path):
+        if normalize_path(path) == normalize_path(str(a / "locked")):
+            raise PermissionError("denied")
+        return real_scandir(path)
+
+    monkeypatch.setattr("wafer.app.indexer.scanner.os.scandir", fake_scandir)
+
+    scanner._do_full_scan([str(a)])
+
+    assert _removed(progress) == set()
     scanner.stop()

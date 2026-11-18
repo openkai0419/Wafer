@@ -216,7 +216,7 @@ class TestOnRecollect:
         task.run()
         proc.writer.delete_source_trees.assert_called_once_with(["/dir"])
         task.on_complete()
-        proc.scanner.request_scan.assert_called_once_with(["/dir"])
+        proc.scanner.request_scan.assert_called_once_with(["/dir"], partial=True)
 
     @patch("wafer.app.indexer.main_indexer.Node")
     def test_forget_all(self, mock_node_cls):

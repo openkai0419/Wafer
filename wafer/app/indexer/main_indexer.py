@@ -326,7 +326,7 @@ class IndexerProcess:
             if scope_all:
                 self.rescan()
             elif prefixes and self.scanner:
-                self.scanner.request_scan(list(prefixes))
+                self.scanner.request_scan(list(prefixes), partial=True)
             elif sources and self.scanner:
                 self.scanner.request_update(list(sources))
             self._progress.send_event("update")

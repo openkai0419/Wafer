@@ -386,8 +386,8 @@ def test_folder_conflict_count_stops_early_and_full_scan_runs_once(monkeypatch, 
     from wafer.qt.transfer import conflict_resolver as r
 
     scans = _count_scans(monkeypatch, r)
-    monkeypatch.setattr(r.FolderConflictDialog, "ask", staticmethod(lambda *a, **k: ("マージ", False)))
-    monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(lambda *a, **k: ("上書き", False)))
+    monkeypatch.setattr(r.FolderConflictDialog, "ask", staticmethod(lambda *a, **k: ("merge", False)))
+    monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(lambda *a, **k: ("overwrite", False)))
     resolver = r.ConflictResolver(op="copy", overwrite_mode="ask", parent=None, folder_message="")
 
     decisions = resolver.resolve_plans([_folder_conflict(tmp_path, ["a.txt", "b.txt", "c.txt"])])
@@ -400,8 +400,8 @@ def test_small_folder_conflict_is_scanned_once(monkeypatch, tmp_path):
     from wafer.qt.transfer import conflict_resolver as r
 
     scans = _count_scans(monkeypatch, r)
-    monkeypatch.setattr(r.FolderConflictDialog, "ask", staticmethod(lambda *a, **k: ("マージ", False)))
-    monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(lambda *a, **k: ("上書き", False)))
+    monkeypatch.setattr(r.FolderConflictDialog, "ask", staticmethod(lambda *a, **k: ("merge", False)))
+    monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(lambda *a, **k: ("overwrite", False)))
     resolver = r.ConflictResolver(op="copy", overwrite_mode="ask", parent=None, folder_message="")
 
     decisions = resolver.resolve_plans([_folder_conflict(tmp_path, ["a.txt"])])

@@ -288,11 +288,12 @@ class PluginManagerWidget(QtWidgets.QWidget):
         return orders != self._initial_orders
 
     def _on_save(self):
-        if not self._collectors_tab.confirm_and_save():
+        collectors_changed = self._collectors_tab.has_changes()
+        if collectors_changed and not self._collectors_tab.confirm_and_save():
             return
         enabled_overrides = self._ext_tab.collect_enabled_overrides()
         orders = self._order_tab.get_orders()
-        has_changes = self._has_plugin_changes(enabled_overrides, orders) or self._collectors_tab.has_changes()
+        has_changes = self._has_plugin_changes(enabled_overrides, orders) or collectors_changed
         extensions_dir = get_plugin_dir()
         pending = installer_queue.has_pending_queue(extensions_dir)
         if not has_changes and not pending:
@@ -305,7 +306,7 @@ class PluginManagerWidget(QtWidgets.QWidget):
             scope |= restart_scope_from_plugins(changed_classes)
         if orders != self._initial_orders:
             scope |= RestartScope.VIEWER
-        if self._collectors_tab.has_changes():
+        if collectors_changed:
             scope |= RestartScope.TRAY
         if pending:
             scope |= RestartScope.ALL

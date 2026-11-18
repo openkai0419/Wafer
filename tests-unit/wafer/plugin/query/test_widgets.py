@@ -310,6 +310,35 @@ class TestKeySelectorPopupGroups:
         assert len(rebuilds) == 2
 
 
+class TestTextFilterKeyStoreBinding:
+    def test_rebinding_follows_only_the_new_store(self, qapp):
+        from wafer.plugin.query.widgets import KeyStore, TextFilterWidget
+
+        widget = TextFilterWidget()
+        old, new = KeyStore(), KeyStore()
+        widget.bind_key_store(old)
+        widget.bind_key_store(new)
+
+        old.set_data([("old_key", 1)])
+        assert "old_key" not in _catalog_keys()
+        new.set_data([("new_key", 1)])
+        assert "new_key" in _catalog_keys()
+
+    def test_rebinding_after_the_old_store_is_deleted(self, qapp):
+        import shiboken6
+        from wafer.plugin.query.widgets import KeyStore, TextFilterWidget
+
+        widget = TextFilterWidget()
+        old, new = KeyStore(), KeyStore()
+        widget.bind_key_store(old)
+        shiboken6.delete(old)
+        widget.bind_key_store(new)
+        widget.bind_key_store(None)
+
+        new.set_data([("new_key", 1)])
+        assert "new_key" not in _catalog_keys()
+
+
 def test_catalog_tree_groups_by_prefix_and_filters(qtbot):
     tree = KeyCatalogTree()
     qtbot.addWidget(tree)

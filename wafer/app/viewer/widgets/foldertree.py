@@ -284,17 +284,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
 
     def mimeData(self, indexes):
         mime = QtCore.QMimeData()
-        paths = []
-        seen_rows = set()
-        for idx in indexes:
-            if idx.column() != 0:
-                continue
-            if idx.row() in seen_rows:
-                continue
-            seen_rows.add(idx.row())
-            p = idx.data(USER_ROLE_PATH)
-            if p:
-                paths.append(p)
+        paths = dict.fromkeys(path for idx in indexes if idx.column() == 0 and (path := idx.data(USER_ROLE_PATH)))
         mime.setData(self._mime_type, "\n".join(paths).encode("utf-8"))
         return mime
 

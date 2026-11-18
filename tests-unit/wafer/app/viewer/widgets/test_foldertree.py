@@ -1557,6 +1557,21 @@ def test_reload_tree_scans_folders_off_the_main_thread(qtbot, tmp_path, monkeypa
     assert item_of(tree, tmp_path / "A" / "A1") is not None
 
 
+def test_drag_keeps_folders_on_the_same_row_of_different_parents(qtbot, tmp_path):
+    for parent in ("A", "B"):
+        (tmp_path / parent / "x").mkdir(parents=True)
+    tree = LazyFolderTreeView(roots=[str(tmp_path)], excluded=[])
+    qtbot.addWidget(tree)
+    tree.set_folders([str(tmp_path)])
+    indexes = [expand_to(qtbot, tree, tmp_path / parent / "x") for parent in ("A", "B")]
+    assert indexes[0].row() == indexes[1].row()
+
+    mime = tree.model_.mimeData(indexes + indexes)
+
+    paths = bytes(mime.data(tree.model_._mime_type)).decode("utf-8").split("\n")
+    assert paths == [normalize_path(tmp_path / "A" / "x"), normalize_path(tmp_path / "B" / "x")]
+
+
 def test_roots_follow_the_natural_folder_order_and_match_the_structure_check(qtbot, tmp_path):
     names = ["img10", "Beta", "img2", "alpha"]
     for name in names:

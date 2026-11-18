@@ -93,7 +93,7 @@ class _PluginRow(QtWidgets.QWidget):
             ext_text = ", ".join(extensions) if extensions else ""
             ext_tooltip = ""
         ext_label = ElidingLabel(ext_text, minimum_hint_width=dpix(40), horizontal_policy=QtWidgets.QSizePolicy.Expanding)
-        ext_label.setStyleSheet(f"color: #888; font-size: {dpix(11)}px;")
+        ext_label.setStyleSheet(f"color: {ThemeManager.instance().palette.text_muted}; font-size: {dpix(11)}px;")
         if ext_tooltip:
             ext_label.setToolTip(ext_tooltip)
 
@@ -159,7 +159,8 @@ class _ExtensionCard(QtWidgets.QFrame):
         self._name_label.setStyleSheet(f"font-weight: bold; font-size: {dpix(13)}px;")
 
         self._summary_label = QtWidgets.QLabel(summary)
-        self._summary_label.setStyleSheet(f"color: #888; font-size: {dpix(11)}px;")
+        palette = ThemeManager.instance().palette
+        self._summary_label.setStyleSheet(f"color: {palette.text_muted}; font-size: {dpix(11)}px;")
         self._summary_label.setWordWrap(True)
         self._summary_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         self._summary_label.setContentsMargins(0, 0, 0, 0)
@@ -187,12 +188,12 @@ class _ExtensionCard(QtWidgets.QFrame):
         self._progress.hide()
 
         self._detail_label = QtWidgets.QLabel()
-        self._detail_label.setStyleSheet(f"color: #999; font-size: {dpix(11)}px;")
+        self._detail_label.setStyleSheet(f"color: {palette.text_tertiary}; font-size: {dpix(11)}px;")
         self._detail_label.hide()
 
         self._log_toggle = QtWidgets.QLabel(f"\u25b6 {t('Show Log')}")
         self._log_toggle.setCursor(QtCore.Qt.PointingHandCursor)
-        accent = ThemeManager.instance().palette.accent
+        accent = palette.accent
         self._log_toggle.setStyleSheet(f"color: {accent}; font-size: {dpix(11)}px; padding: {dpix(1)}px 0;")
         self._log_toggle.mousePressEvent = lambda _: self._toggle_log()
         self._log_toggle.hide()
@@ -242,7 +243,6 @@ class _ExtensionCard(QtWidgets.QFrame):
 
         self._md_entries: list[tuple[QtWidgets.QLabel, MarkdownBrowser, str, bool]] = []
         if md_files:
-            accent = ThemeManager.instance().palette.accent
             for md_name in md_files:
                 md_path = os.path.join(folder_path, md_name)
                 toggle = QtWidgets.QLabel(f"\u25b6 {md_name}")

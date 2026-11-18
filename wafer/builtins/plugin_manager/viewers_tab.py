@@ -1,5 +1,6 @@
 from PySide6 import QtWidgets, QtCore
 from ...qt.common.dpi import dpix
+from ...qt.theme import ThemeManager
 from ...core.lang.manager import t
 from ...plugin.kinds import ORDERABLE_PLUGIN_KIND_KEYS, PLUGIN_KIND_COMMAND, PRIORITY_PLUGIN_KIND_KEYS, plugin_kind_label
 
@@ -12,7 +13,7 @@ class _ReorderList(QtWidgets.QListWidget):
         self.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.setMinimumHeight(dpix(80))
 
-        hint_style = f"color: rgba(128,128,128,0.6); font-size: {dpix(10)}px; font-weight: bold; background: transparent;"
+        hint_style = f"color: {ThemeManager.instance().palette.text_muted}; font-size: {dpix(10)}px; font-weight: bold; background: transparent;"
         self._high_hint = QtWidgets.QLabel("\u25b2 High", self)
         self._high_hint.setStyleSheet(hint_style)
         self._high_hint.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
@@ -77,7 +78,7 @@ class OrderTab(QtWidgets.QWidget):
         self._main_layout.setSpacing(dpix(8))
 
         desc = QtWidgets.QLabel(t("Drag to reorder · higher = preferred"))
-        desc.setStyleSheet(f"color: #888; font-size: {dpix(10)}px;")
+        desc.setStyleSheet(f"color: {ThemeManager.instance().palette.text_muted}; font-size: {dpix(10)}px;")
         self._main_layout.addWidget(desc)
 
         for key in REGISTRY_KEYS:

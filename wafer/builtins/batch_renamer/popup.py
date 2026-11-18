@@ -152,15 +152,14 @@ class ColumnSettingsPopup(PopupBase):
 
         def _trim_toggle(checked):
             tw.setVisible(checked)
-            if not checked:
-                post.trim_start = None
-                post.trim_end = None
+            post.trim_start = (tss.value() or None) if checked else None
+            post.trim_end = (tes.value() or None) if checked else None
             self.changed.emit()
             self._resize_and_clamp()
 
         tb.toggled.connect(_trim_toggle)
-        tss.valueChanged.connect(lambda v: (setattr(post, "trim_start", v), self.changed.emit()))
-        tes.valueChanged.connect(lambda v: (setattr(post, "trim_end", v), self.changed.emit()))
+        tss.valueChanged.connect(lambda v: (setattr(post, "trim_start", v or None), self.changed.emit()))
+        tes.valueChanged.connect(lambda v: (setattr(post, "trim_end", v or None), self.changed.emit()))
 
         has_repl = bool(post.find)
         rb = ToggleButton("Replace", has_repl)
@@ -188,9 +187,8 @@ class ColumnSettingsPopup(PopupBase):
 
         def _repl_toggle(checked):
             rw.setVisible(checked)
-            if not checked:
-                post.find = ""
-                post.replace = ""
+            post.find = find_e.text() if checked else ""
+            post.replace = repl_e.text() if checked else ""
             self.changed.emit()
             self._resize_and_clamp()
 
@@ -234,9 +232,8 @@ class ColumnSettingsPopup(PopupBase):
 
         def _ins_toggle(checked):
             iw.setVisible(checked)
-            if not checked:
-                post.prefix = ""
-                post.suffix = ""
+            post.prefix = pe.text() if checked else ""
+            post.suffix = se.text() if checked else ""
             self.changed.emit()
             self._resize_and_clamp()
 

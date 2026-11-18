@@ -102,3 +102,44 @@ class TestColumnSettingsPopup:
         config_w = popup.findChild(RenameConfigWidget)
         config_w.resequence_requested.emit()
         assert len(received) == 1
+
+
+class TestPostProcessToggles:
+    def _popup(self, qtbot):
+        col = RenameColumn(NameSource())
+        popup = ColumnSettingsPopup(col)
+        qtbot.addWidget(popup)
+        toggles = {b.text().split(" ", 1)[-1]: b for b in popup.findChildren(ToggleButton)}
+        return col.post, popup, toggles
+
+    def test_reenabling_replace_applies_the_shown_values(self, qtbot):
+        post, popup, toggles = self._popup(qtbot)
+        toggles["Replace"].setChecked(True)
+        find_e, repl_e = [e for e in popup.findChildren(QtWidgets.QLineEdit) if e.placeholderText() in ("Find", "Replace")]
+        find_e.setText("_")
+        repl_e.setText("-")
+        toggles["Replace"].setChecked(False)
+        assert (post.find, post.replace) == ("", "")
+        toggles["Replace"].setChecked(True)
+        assert (post.find, post.replace) == ("_", "-")
+
+    def test_reenabling_insert_applies_the_shown_values(self, qtbot):
+        post, popup, toggles = self._popup(qtbot)
+        toggles["Insert"].setChecked(True)
+        prefix_e = next(e for e in popup.findChildren(QtWidgets.QLineEdit) if e.placeholderText() == "prefix")
+        prefix_e.setText("x_")
+        toggles["Insert"].setChecked(False)
+        toggles["Insert"].setChecked(True)
+        assert post.prefix == "x_"
+
+    def test_trim_end_zero_keeps_the_whole_name(self, qtbot):
+        post, popup, toggles = self._popup(qtbot)
+        toggles["Trim"].setChecked(True)
+        start_s, end_s = popup.findChildren(QtWidgets.QSpinBox)[:2]
+        start_s.setValue(1)
+        end_s.setValue(2)
+        end_s.setValue(0)
+        assert post.apply("abcdef") == "bcdef"
+        toggles["Trim"].setChecked(False)
+        toggles["Trim"].setChecked(True)
+        assert (post.trim_start, post.trim_end) == (1, None)

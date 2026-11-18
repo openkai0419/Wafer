@@ -23,6 +23,7 @@ from .transport import (
     close_socket,
     drain_queue,
     port_file_for,
+    port_file_stamp,
     read_broker_port,
     resolve_profile,
     try_put,
@@ -57,6 +58,9 @@ class Node:
         self._ctx = zmq.Context.instance()
         self._dealer: zmq.Socket | None = None
         self._current_port: int = 0
+        self._connected_stamp: tuple[int, bytes] | None = None
+        self._left_foreign_broker = False
+        self._left_stamp: tuple[int, bytes] | None = None
         self._last_recv: float = 0.0
         self._last_connect_time: float = 0.0
         self._timing_lock = threading.Lock()
@@ -114,9 +118,10 @@ class Node:
     def start(self, port: int | None = None):
         if self._broker_lost_timeout is not None:
             self._unregistered_since = time.monotonic()
+        stamp = None if port is not None else port_file_stamp(self._port_file)
         target_port = port if port is not None else read_broker_port(port_file=self._port_file)
         if target_port:
-            self._connect(target_port)
+            self._connect(target_port, stamp)
         else:
             AppLogger.info(f"no broker announced in {self._port_file} yet, waiting for it (node={self.node_id})")
         self._io_thread = threading.Thread(target=self._io_loop, daemon=True)
@@ -256,12 +261,14 @@ class Node:
         sock.setsockopt(zmq.IDENTITY, self.node_id.encode("utf-8"))
         return sock
 
-    def _connect(self, port: int):
+    def _connect(self, port: int, stamp: tuple[int, bytes] | None = None):
         if self._dealer:
             close_socket(self._dealer)
         self._dealer = self._create_socket()
         self._dealer.connect(f"tcp://127.0.0.1:{port}")
         self._current_port = port
+        self._connected_stamp = stamp
+        self._left_foreign_broker = False
         with self._timing_lock:
             self._last_recv = time.monotonic()
             self._last_connect_time = time.monotonic()
@@ -272,7 +279,7 @@ class Node:
         if dealer is None:
             return False
         did_work = False
-        while True:
+        while self._dealer is dealer:
             try:
                 frames = dealer.recv_multipart(flags=zmq.NOBLOCK, copy=False)
             except (zmq.Again, zmq.ZMQError):
@@ -283,6 +290,7 @@ class Node:
                     self._last_recv = time.monotonic()
                 self._handle_received(msg)
             did_work = True
+        return did_work
 
     def _ensure_connection(self):
         # A plugin holding the GIL (a model load) stops this thread while messages wait in the socket.
@@ -295,21 +303,24 @@ class Node:
             AppLogger.warning(f"broker timeout (port={self._current_port}), attempting reconnect")
             self._registered.clear()
 
+        stamp = port_file_stamp(self._port_file)
+        if self._left_foreign_broker and stamp == self._left_stamp:
+            return
         new_port = read_broker_port(timeout=0.3, port_file=self._port_file)
         if not new_port:
             return
         if self._dealer is None:
             AppLogger.info(f"broker announced on port {new_port}, connecting (node={self.node_id})")
-            self._connect(new_port)
+            self._connect(new_port, stamp)
         elif new_port != self._current_port:
             AppLogger.info(f"broker port changed: {self._current_port} -> {new_port}")
-            self._connect(new_port)
+            self._connect(new_port, stamp)
         else:
             with self._timing_lock:
                 should_reconnect = time.monotonic() - self._last_connect_time > RECONNECT_FORCE_INTERVAL
             if should_reconnect:
                 AppLogger.info(f"forcing reconnect on same port {new_port}")
-                self._connect(new_port)
+                self._connect(new_port, stamp)
 
     def _send_to_broker(self, topic: str, payload: Any = None) -> bool:
         dealer = self._dealer
@@ -323,19 +334,23 @@ class Node:
             AppLogger.debug(f"send_to_broker failed ({topic}): {e}")
             return False
 
+    def _register_payload(self) -> dict[str, Any]:
+        return {
+            "role": self.role,
+            "db": self.db,
+            "session_id": self.session_id,
+            "app": APP_ID,
+            "profile": self.profile or "",
+        }
+
     def _heartbeat_tick(self):
         self._ensure_connection()
+        if self._dealer is None:
+            return
         if self._registered.is_set():
             self._send_to_broker("mgmt.heartbeat")
         else:
-            ok = self._send_to_broker(
-                "mgmt.register",
-                {
-                    "role": self.role,
-                    "db": self.db,
-                    "session_id": self.session_id,
-                },
-            )
+            ok = self._send_to_broker("mgmt.register", self._register_payload())
             if not ok and not self._register_warned:
                 AppLogger.warning(f"broker unreachable, retrying registration (node={self.node_id})")
                 self._register_warned = True
@@ -349,15 +364,10 @@ class Node:
                 try_put(q, msg, f"node.reply:{msg.topic}")
                 return
 
-        if msg.topic == "mgmt.registered":
+        if msg.topic in ("mgmt.registered", "mgmt.rejected"):
             payload = msg.payload if isinstance(msg.payload, dict) else {}
-            if payload.get("app") != APP_ID or payload.get("profile") != (self.profile or ""):
-                if not self._foreign_broker_warned:
-                    AppLogger.warning(
-                        f"port {self._current_port} answered as app={payload.get('app')!r} profile={payload.get('profile')!r}, "
-                        f"not this Wafer's broker (profile={self.profile or '-'}); staying unregistered until {self._port_file} names the right one (node={self.node_id})"
-                    )
-                    self._foreign_broker_warned = True
+            if msg.topic == "mgmt.rejected" or payload.get("app") != APP_ID or payload.get("profile") != (self.profile or ""):
+                self._leave_foreign_broker(payload)
                 return
             self._viewer_id = payload.get("viewer_id")
             self._registered.set()
@@ -372,6 +382,21 @@ class Node:
             return
 
         self._call_handler(msg)
+
+    def _leave_foreign_broker(self, payload: dict):
+        if not self._foreign_broker_warned:
+            AppLogger.warning(
+                f"{self.node_id}: the broker on port {self._current_port} is app={payload.get('app')!r} profile={payload.get('profile')!r}, "
+                f"not this Wafer's (profile={self.profile or '-'}); disconnected until {self._port_file} is rewritten"
+            )
+            self._foreign_broker_warned = True
+        self._registered.clear()
+        if self._dealer is not None:
+            close_socket(self._dealer)
+        self._dealer = None
+        self._current_port = 0
+        self._left_foreign_broker = True
+        self._left_stamp = self._connected_stamp
 
     def _check_broker_lost(self, now: float) -> bool:
         if self._broker_lost_timeout is None:
@@ -427,6 +452,9 @@ class Node:
 
             if events.get(dealer) == zmq.POLLIN:
                 did_work = self._drain_inbound()
+            if self._dealer is not dealer or not self._registered.is_set():
+                idle_streak, poll_ms = adaptive_poll(did_work, idle_streak)
+                continue
 
             batch, sentinel = drain_queue(self._out_q, self._sentinel)
             for i, frames in enumerate(batch):

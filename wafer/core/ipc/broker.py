@@ -7,12 +7,14 @@ from typing import Any
 
 import zmq
 
-from ..logs import AppLogger
+from ..logs import AppLogger, debug_non_recursive
 from .transport import (
     APP_ID,
     BROKER_QUEUE_MAX,
     CURRENT_PROFILE,
     DEFAULT_PORT,
+    EPHEMERAL_PORT_END,
+    EPHEMERAL_PORT_MIN,
     HEARTBEAT_TIMEOUT,
     POLL_BASE_MS,
     Priority,
@@ -98,6 +100,7 @@ class Broker:
         self._peers: dict[bytes, _PeerInfo] = {}
         self._by_role: dict[str, set[bytes]] = {}
         self._by_node_id: dict[str, bytes] = {}
+        self._refused: set[bytes] = set()
         self._lock = threading.RLock()
         self._viewer_ids: dict[bytes, int] = {}
         self._restore_debounce: threading.Timer | None = None
@@ -117,7 +120,14 @@ class Broker:
                 return bind_port
             except zmq.ZMQError as e:
                 AppLogger.info(f"Broker port {bind_port} unavailable ({e}), binding a free port")
-        return self._router.bind_to_random_port("tcp://127.0.0.1")
+        return self._bind_free_port()
+
+    def _bind_free_port(self) -> int:
+        try:
+            return self._router.bind_to_random_port("tcp://127.0.0.1", min_port=DEFAULT_PORT + 1, max_port=EPHEMERAL_PORT_END)
+        except zmq.ZMQBindError as e:
+            AppLogger.info(f"no free broker port above {DEFAULT_PORT} ({e}), trying below it")
+            return self._router.bind_to_random_port("tcp://127.0.0.1", min_port=EPHEMERAL_PORT_MIN, max_port=DEFAULT_PORT)
 
     def start(self):
         AppLogger.info(f"Broker bound: tcp://127.0.0.1:{self.port} profile={self.profile or '-'}")
@@ -218,6 +228,11 @@ class Broker:
 
         if topic == "mgmt.register":
             payload = msg.payload if isinstance(msg.payload, dict) else {}
+            if payload.get("app") != APP_ID or payload.get("profile") != (self.profile or ""):
+                self._refuse(ident, msg, payload)
+                return
+            with self._lock:
+                self._refused.discard(ident)
             role = payload.get("role", "")
             db_raw = payload.get("db", "")
             session_id = payload.get("session_id", "")
@@ -259,6 +274,14 @@ class Broker:
             try_put(self._direct_q, (ident, reply.to_frames()), "broker.count_reply")
             return
 
+        with self._lock:
+            known = ident in self._peers
+        if not known:
+            debug_non_recursive(f"broker: dropped {topic} from unregistered {msg.source}")
+            reply = Message.build("mgmt.not_registered", src="broker", dst=msg.source)
+            try_put(self._direct_q, (ident, reply.to_frames()), "broker.not_registered")
+            return
+
         exclude = ident if topic != "dev.log" else None
         targets = self._resolve_targets(msg, sender_ident=exclude)
         if not targets:
@@ -283,6 +306,18 @@ class Broker:
         else:
             for t in targets:
                 try_put(self._mid_q, (t, frames), f"broker.mid:{topic}")
+
+    def _refuse(self, ident: bytes, msg: Message, payload: dict):
+        with self._lock:
+            first = ident not in self._refused
+            self._refused.add(ident)
+        if first:
+            AppLogger.warning(
+                f"refused {msg.source}: it is app={payload.get('app')!r} profile={payload.get('profile')!r}, "
+                f"this broker serves app={APP_ID!r} profile={self.profile or ''!r}; it belongs to another Wafer"
+            )
+        reply = msg.reply({"status": "rejected", "app": APP_ID, "profile": self.profile or ""}, topic="mgmt.rejected")
+        try_put(self._direct_q, (ident, reply.to_frames()), "broker.rejected")
 
     def _deliver_batch(self, items, did_work):
         for ident, frames in items:

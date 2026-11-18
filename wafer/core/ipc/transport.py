@@ -25,6 +25,8 @@ NODE_TIMEOUT = 5
 POLL_BASE_MS = 10
 POLL_MAX_MS = 50
 DEFAULT_PORT = 57556
+EPHEMERAL_PORT_MIN = 49152
+EPHEMERAL_PORT_END = 65536
 BROKER_QUEUE_MAX = 1000
 NODE_QUEUE_MAX = 200
 RECONNECT_FORCE_INTERVAL = 5.0
@@ -134,6 +136,13 @@ def read_broker_port(timeout: float = 5.0, *, port_file: Path | None = None) -> 
             if time.time() > end:
                 return None
             time.sleep(0.1)
+
+
+def port_file_stamp(port_file: Path) -> tuple[int, bytes] | None:
+    try:
+        return port_file.stat().st_mtime_ns, port_file.read_bytes()
+    except FileNotFoundError:
+        return None
 
 
 def remove_broker_port(*, port_file: Path | None = None):

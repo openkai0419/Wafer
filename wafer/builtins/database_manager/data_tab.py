@@ -264,6 +264,7 @@ class DataTab(QtWidgets.QWidget):
         self._poll_cancel = CancelSlot()
         self._raw_rows: list[tuple[str, str, int, int, str, str, bool]] = []
         self._initial_loaded = False
+        self._load_requested = False
         self.destroyed.connect(lambda: (self._load_cancel.renew(), self._poll_cancel.renew()))
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -320,8 +321,6 @@ class DataTab(QtWidgets.QWidget):
         self._connect_bridge()
         self._update_summary()
 
-        self._load_async(priority=5)
-
     def _connect_bridge(self):
         from ...app.viewer.ipc_bridge import ViewerIpcBridge
 
@@ -340,7 +339,11 @@ class DataTab(QtWidgets.QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        if self._dirty and self._initial_loaded:
+        if not self._load_requested:
+            self._load_requested = True
+            self._dirty = False
+            self._load_async(priority=5)
+        elif self._dirty and self._initial_loaded:
             self._dirty = False
             self._poll()
 

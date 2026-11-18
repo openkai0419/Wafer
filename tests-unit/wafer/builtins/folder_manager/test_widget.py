@@ -1008,8 +1008,13 @@ def test_add_and_remove_rule_updates_the_model(qtbot):
     assert [rule.name for rule, _counts in panel.model.rule_counts] == ["Mixed"]
 
 
-def test_panel_bar_stays_one_row(qtbot):
+def test_bar_stays_one_row_with_the_new_buttons(qtbot):
     panel = make_panel(qtbot)
+    assert panel.matches_button.isCheckable() and not panel.matches_button.text()
+    assert not panel.collapse_button.text()
+    bar_widgets = [panel.flow.itemAt(n).widget() for n in range(panel.flow.count())]
+    assert bar_widgets.index(panel.matches_button) == bar_widgets.index(panel.select_button) + 1
+    assert bar_widgets.index(panel.collapse_button) == bar_widgets.index(panel.matches_button) + 1
     panel.scanning = True
     panel.update_status()
     row = panel.flow.single_line_size()
@@ -1127,3 +1132,107 @@ def test_expand_to_matches_without_matches_tells_the_user(qtbot, tmp_path, monke
 def test_panel_registers_itself_for_commands(qtbot):
     panel = make_panel(qtbot)
     assert panel in InstanceRegistry.instance().get_all(widget_module.INSTANCE_NAME)
+
+
+def row_hidden(view, path):
+    index = view.model_.indexFromItem(view.model_.path_item_map[path])
+    return view.isRowHidden(index.row(), index.parent())
+
+
+def is_expanded(view, path):
+    item = view.model_.path_item_map.get(path)
+    return item is not None and view.isExpanded(view.model_.indexFromItem(item))
+
+
+def expanded_paths(view):
+    return {path for path in view.model_.path_item_map if is_expanded(view, path)}
+
+
+def hidden_paths(view):
+    return {path for path in view.model_.path_item_map if row_hidden(view, path)}
+
+
+def matches_only_panel(qtbot, tmp_path, query_calls, sources=("a", "c/x")):
+    root = make_folders(tmp_path / "root", {"": 0, "a": 1, "a/s": 0, "c": 0, "c/x": 1, "c/x/s": 0, "e": 0})
+    query_calls.sources = [f"{root}/{folder}/f0.png" for folder in sources]
+    panel = make_panel(qtbot)
+    bind(qtbot, panel, [root])
+    qtbot.waitUntil(lambda: bool(panel.model.badges(f"{root}/{sources[-1]}")), timeout=5000)
+    panel.view.expand_folders([root])
+    qtbot.waitUntil(lambda: is_expanded(panel.view, root) and f"{root}/e" in panel.model.path_item_map, timeout=5000)
+    return panel, root
+
+
+def test_matches_only_hides_rows_without_badges_and_keeps_selection(qtbot, tmp_path, query_calls):
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    view = panel.view
+    view.select_folders([f"{root}/e", f"{root}/a"])
+    current = view.current_path()
+    items = dict(view.model_.path_item_map)
+
+    panel.matches_button.click()
+
+    assert panel.matches_only and panel.matches_button.isChecked()
+    qtbot.waitUntil(lambda: row_hidden(view, f"{root}/e"), timeout=5000)
+    qtbot.waitUntil(lambda: f"{root}/c/x" in view.model_.path_item_map and is_expanded(view, f"{root}/c"), timeout=5000)
+    assert not any(row_hidden(view, path) for path in (root, f"{root}/a", f"{root}/c", f"{root}/c/x"))
+    assert sorted(view.get_selected_paths()) == [f"{root}/a", f"{root}/e"]
+    assert view.current_path() == current
+    assert all(view.model_.path_item_map[path] is item for path, item in items.items())
+
+
+def test_matches_only_off_restores_every_row(qtbot, tmp_path, query_calls):
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    view = panel.view
+    panel.set_matches_only(True)
+    qtbot.waitUntil(lambda: f"{root}/c/x" in view.model_.path_item_map and row_hidden(view, f"{root}/e"), timeout=5000)
+    view.expand_folders([f"{root}/c/x"])
+    qtbot.waitUntil(lambda: f"{root}/c/x/s" in view.model_.path_item_map, timeout=5000)
+    assert row_hidden(view, f"{root}/c/x/s")
+    view.select_folders([f"{root}/c/x/s"])
+    expanded = expanded_paths(view)
+
+    panel.set_matches_only(False)
+
+    assert not panel.matches_only and not panel.matches_button.isChecked()
+    assert hidden_paths(view) == set()
+    assert expanded_paths(view) == expanded
+    assert view.get_selected_paths() == [f"{root}/c/x/s"]
+
+    panel.set_matches_only(True)
+
+    assert hidden_paths(view) == {f"{root}/e", f"{root}/c/x/s"}
+    assert expanded_paths(view) == expanded
+    panel.set_matches_only(False)
+    assert hidden_paths(view) == set()
+
+
+def test_matches_only_follows_new_counts(qtbot, tmp_path, monkeypatch, query_calls):
+    monkeypatch.setattr(widget_module, "MATCHES_REFRESH_MS", 0)
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls, sources=("a",))
+    view = panel.view
+    panel.set_matches_only(True)
+    qtbot.waitUntil(lambda: row_hidden(view, f"{root}/c"), timeout=5000)
+
+    query_calls.sources = [f"{root}/a/f0.png", f"{root}/c/x/f0.png"]
+    panel.recount(panel.rules)
+
+    qtbot.waitUntil(lambda: not row_hidden(view, f"{root}/c"), timeout=5000)
+    qtbot.waitUntil(lambda: f"{root}/c/x" in view.model_.path_item_map and is_expanded(view, f"{root}/c"), timeout=5000)
+    assert not row_hidden(view, f"{root}/c/x") and row_hidden(view, f"{root}/e")
+
+
+def test_collapse_all_stops_expanding_and_collapses(qtbot, tmp_path, monkeypatch, query_calls):
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    monkeypatch.setattr(widget_module, "EXPAND_SLICE_SECONDS", -1)
+    monkeypatch.setattr(widget_module, "EXPAND_DEADLINE_CHECK", 1)
+    opened = []
+    monkeypatch.setattr(panel.view, "expand_folders", lambda folders, **_: opened.append(list(folders)))
+    panel.expand_to_matches()
+
+    panel.collapse_button.click()
+
+    assert not is_expanded(panel.view, root)
+    for _ in range(20):
+        QtCore.QCoreApplication.processEvents()
+    assert opened == []

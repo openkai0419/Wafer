@@ -1,4 +1,4 @@
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence, Set as AbstractSet
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -20,7 +20,7 @@ RULE_FILE_ACTIONS = (
     ("cut_all", "{rule} · Cut all files below", "file.cut", True),
     ("copy_all", "{rule} · Copy all files below", "file.copy", True),
 )
-MATCH_COMMANDS = ("folder_manager.expand_matches", "folder_manager.select_matches")
+PANEL_COMMANDS = ("folder_manager.expand_matches", "folder_manager.select_matches", "folder_manager.matches_only", "folder_manager.collapse_all")
 DISK_METRICS = ("folders", "all_folders")
 COUNT_SAMPLE = "99,999,999"
 UNSCANNED = object()
@@ -199,6 +199,9 @@ class FolderManagerTreeView(LazyFolderTreeView):
         self.show_in_tree_available: Callable[[], bool] = lambda: False
         self.hidden_columns: set[int] = set()
         self.expand_serial = 0
+        self.row_filter: AbstractSet[str] | None = None
+        self.hidden_paths: set[str] = set()
+        self.following_rows = False
         self.setHeaderHidden(False)
         self.setItemDelegateForColumn(0, BadgeDelegate(self.model_.badges, self))
         self.count_delegate = CountDelegate(self.model_.disk_text, self)
@@ -207,6 +210,7 @@ class FolderManagerTreeView(LazyFolderTreeView):
         self.header().setStretchLastSection(False)
         self.model_.columnsInserted.connect(self.on_columns_inserted)
         self.model_.stats_changed.connect(self.on_stats_changed)
+        self.model_.modelReset.connect(self.on_model_reset)
         self.apply_header()
         self.header_ready = True
 
@@ -258,7 +262,7 @@ class FolderManagerTreeView(LazyFolderTreeView):
         if not path:
             return
         show_in_tree = ["ft.show_in_tree"] if self.show_in_tree_available() else []
-        items = [*show_in_tree, *MATCH_COMMANDS, "-", *folder_items(normalize_path(path))]
+        items = [*show_in_tree, *PANEL_COMMANDS, "-", *folder_items(normalize_path(path))]
         files_items = [n for n, item in enumerate(items) if item.startswith("Files in Folder/")]
         if files_items:
             items[files_items[-1] + 1 : files_items[-1] + 1] = self.rule_file_actions()
@@ -302,16 +306,81 @@ class FolderManagerTreeView(LazyFolderTreeView):
         self.expand_serial += 1
         serial = self.expand_serial
 
-        def expand_chunk(number: int) -> None:
+        def load_chunk(number: int) -> None:
             if serial != self.expand_serial:
                 return
             if number >= len(chunks):
                 if on_complete is not None:
                     on_complete()
                 return
-            self.expand_paths_async(chunks[number], on_complete=lambda: expand_chunk(number + 1))
+            self.load_paths_async(chunks[number], lambda: open_chunk(number), skip_loaded=True)
 
-        expand_chunk(0)
+        def open_chunk(number: int) -> None:
+            if serial == self.expand_serial:
+                self._expand_loaded_paths(chunks[number])
+                load_chunk(number + 1)
+
+        load_chunk(0)
+
+    def collapse_all(self) -> None:
+        self.expand_serial += 1
+        self.collapseAll()
+
+    def apply_row_filter(self, keep: AbstractSet[str] | None) -> None:
+        hidden, self.hidden_paths = self.hidden_paths, set()
+        self.row_filter = keep
+        self.follow_inserted_rows(keep is not None)
+        for path in hidden if keep is None else hidden & keep:
+            self.show_path(path)
+        if keep is None:
+            return
+        self.hidden_paths = hidden - keep
+        model = self.model_
+        parents = [model.invisibleRootItem()]
+        while parents:
+            parent = parents.pop()
+            parent_index = model.indexFromItem(parent)
+            for row in range(parent.rowCount()):
+                child = parent.child(row)
+                path = child.data(USER_ROLE_PATH)
+                if not path:
+                    continue
+                if path in keep:
+                    parents.append(child)
+                elif path not in self.hidden_paths:
+                    self.hide_row(row, parent_index, path)
+
+    def follow_inserted_rows(self, follow: bool) -> None:
+        if follow == self.following_rows:
+            return
+        self.following_rows = follow
+        if follow:
+            self.model_.rowsInserted.connect(self.on_rows_inserted)
+        else:
+            self.model_.rowsInserted.disconnect(self.on_rows_inserted)
+
+    def on_rows_inserted(self, parent: QtCore.QModelIndex, first: int, last: int) -> None:
+        keep = self.row_filter
+        if parent.isValid() and parent.data(USER_ROLE_PATH) not in keep:
+            return
+        model = self.model_
+        for row in range(first, last + 1):
+            path = model.index(row, 0, parent).data(USER_ROLE_PATH)
+            if path and path not in keep:
+                self.hide_row(row, parent, path)
+
+    def hide_row(self, row: int, parent: QtCore.QModelIndex, path: str) -> None:
+        self.setRowHidden(row, parent, True)
+        self.hidden_paths.add(path)
+
+    def show_path(self, path: str) -> None:
+        item = self.model_.path_item_map.get(path)
+        if self.model_._is_valid_item(item):
+            index = self.model_.indexFromItem(item)
+            self.setRowHidden(index.row(), index.parent(), False)
+
+    def on_model_reset(self) -> None:
+        self.hidden_paths.clear()
 
     def select_folders(self, paths: Sequence[str]) -> None:
         model = self.model_

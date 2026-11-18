@@ -23,6 +23,9 @@ def text_filter():
     return TextFilter
 
 
+MENU_HEAD = ["folder_manager.expand_matches", "folder_manager.select_matches", "folder_manager.matches_only", "folder_manager.collapse_all"]
+
+
 def make_view(qtbot, tmp_path):
     root = tmp_path / "root"
     (root / "a" / "b" / "c").mkdir(parents=True)
@@ -191,7 +194,7 @@ def test_context_menu_lists_rule_actions_only_for_rules_with_query(qtbot, tmp_pa
     view.show_context_menu(view.visualRect(index).center())
 
     items = seen["items"]
-    assert items[:4] == ["ft.show_in_tree", "folder_manager.expand_matches", "folder_manager.select_matches", "-"]
+    assert items[:6] == ["ft.show_in_tree", *MENU_HEAD, "-"]
     assert "Files in Folder/ft.files.cut_all" in items
     assert not any("ignore" in str(i) or "remove_from_view" in str(i) for i in items)
     actions = [i for i in items if not isinstance(i, str)]
@@ -267,7 +270,7 @@ def test_context_menu_for_a_vanished_folder_offers_only_safe_items(qtbot, tmp_pa
 
     view.show_context_menu(view.visualRect(index).center())
 
-    assert seen["items"] == ["ft.show_in_tree", "folder_manager.expand_matches", "folder_manager.select_matches", "-", "file.copy_path", "-"]
+    assert seen["items"] == ["ft.show_in_tree", *MENU_HEAD, "-", "file.copy_path", "-"]
     view.close()
 
 
@@ -285,11 +288,11 @@ def test_context_menu_shows_show_in_tree_only_for_the_window_database(qtbot, tmp
     assert view.show_in_tree_available() is False
 
     open_menu_on_first_row(view)
-    assert seen["items"][:3] == ["folder_manager.expand_matches", "folder_manager.select_matches", "-"]
+    assert seen["items"][:5] == [*MENU_HEAD, "-"]
 
     view.show_in_tree_available = lambda: True
     open_menu_on_first_row(view)
-    assert seen["items"][:3] == ["ft.show_in_tree", "folder_manager.expand_matches", "folder_manager.select_matches"]
+    assert seen["items"][:5] == ["ft.show_in_tree", *MENU_HEAD]
     view.close()
 
 
@@ -346,8 +349,8 @@ def test_expand_folders_opens_folders_in_batches(qtbot, tmp_path, monkeypatch):
     view.selectionModel().select(selected, QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows)
     view.selectionModel().setCurrentIndex(selected, QtCore.QItemSelectionModel.NoUpdate)
     calls = []
-    original = view.expand_paths_async
-    monkeypatch.setattr(view, "expand_paths_async", lambda paths, on_complete=None: (calls.append(list(paths)), original(paths, on_complete=on_complete)))
+    original = view.load_paths_async
+    monkeypatch.setattr(view, "load_paths_async", lambda paths, on_loaded, **kwargs: (calls.append(list(paths)), original(paths, on_loaded, **kwargs)))
     scrolled = []
     monkeypatch.setattr(view, "scrollTo", lambda *args: scrolled.append(args))
     target = path_of(root, "a", "b", "c")
@@ -370,7 +373,7 @@ def test_expand_folders_opens_folders_in_batches(qtbot, tmp_path, monkeypatch):
 def test_expand_folders_without_folders_does_nothing(qtbot, tmp_path, monkeypatch):
     view, _root = make_view(qtbot, tmp_path)
     calls = []
-    monkeypatch.setattr(view, "expand_paths_async", lambda paths, on_complete=None: calls.append(paths))
+    monkeypatch.setattr(view, "load_paths_async", lambda paths, on_loaded, **kwargs: calls.append(paths))
 
     view.expand_folders([])
 
@@ -627,3 +630,74 @@ def test_select_folders_selects_loaded_folders_and_skips_unknown_ones(qtbot, tmp
     assert view.current_path() == path_of(root, "d")
     assert len(scrolled) == 1
     assert loaded == []
+
+
+def row_hidden(view, path):
+    index = view.model_.indexFromItem(view.model_.path_item_map[path])
+    return view.isRowHidden(index.row(), index.parent())
+
+
+def test_row_filter_hides_loaded_rows_and_restores_only_those(qtbot, tmp_path):
+    view, root = make_view(qtbot, tmp_path)
+    view.expand_folders([root])
+    qtbot.waitUntil(lambda: path_of(root, "d") in view.model_.path_item_map)
+
+    view.apply_row_filter({root, path_of(root, "a")})
+
+    assert row_hidden(view, path_of(root, "d"))
+    assert not row_hidden(view, root) and not row_hidden(view, path_of(root, "a"))
+
+    view.apply_row_filter({root, path_of(root, "d")})
+
+    assert row_hidden(view, path_of(root, "a")) and not row_hidden(view, path_of(root, "d"))
+
+    view.apply_row_filter(None)
+
+    assert not row_hidden(view, path_of(root, "a")) and not row_hidden(view, path_of(root, "d"))
+
+
+def test_rows_loaded_while_filtered_are_hidden(qtbot, tmp_path):
+    view, root = make_view(qtbot, tmp_path)
+    view.apply_row_filter({root, path_of(root, "a"), path_of(root, "a", "b")})
+
+    view.expand_folders([root, path_of(root, "a")])
+
+    qtbot.waitUntil(lambda: path_of(root, "a", "b") in view.model_.path_item_map)
+    assert row_hidden(view, path_of(root, "d"))
+    assert not row_hidden(view, path_of(root, "a")) and not row_hidden(view, path_of(root, "a", "b"))
+
+    view.apply_row_filter(None)
+    view.expand_folders([path_of(root, "a", "b")])
+    qtbot.waitUntil(lambda: path_of(root, "a", "b", "c") in view.model_.path_item_map)
+    assert not row_hidden(view, path_of(root, "a", "b", "c")) and not row_hidden(view, path_of(root, "d"))
+
+
+def test_reloading_the_folders_keeps_filtering_the_new_rows(qtbot, tmp_path):
+    view, root = make_view(qtbot, tmp_path)
+    view.apply_row_filter({path_of(root, "x")})
+
+    view.set_folders([root])
+
+    assert row_hidden(view, root)
+    view.apply_row_filter(None)
+    assert not row_hidden(view, root)
+
+
+def test_collapse_all_stops_expanding_and_collapses(qtbot, tmp_path, monkeypatch):
+    monkeypatch.setattr(view_module, "EXPAND_RECURSIVE_BATCH_SIZE", 1)
+    view, root = make_view(qtbot, tmp_path)
+    view.expand_folders([root])
+    qtbot.waitUntil(lambda: view.isExpanded(view.model_.index(0, 0)))
+    loaded = []
+    original = view.load_paths_async
+    monkeypatch.setattr(view, "load_paths_async", lambda paths, on_loaded, **kwargs: original(paths, lambda: (on_loaded(), loaded.append(list(paths))), **kwargs))
+
+    view.expand_folders([path_of(root, "a"), path_of(root, "a", "b")])
+    view.collapse_all()
+
+    assert not view.isExpanded(view.model_.index(0, 0))
+    qtbot.waitUntil(lambda: bool(loaded))
+    for _ in range(20):
+        QtCore.QCoreApplication.processEvents()
+    assert loaded == [[path_of(root, "a")]]
+    assert not any(view.isExpanded(view.model_.indexFromItem(item)) for item in view.model_.path_item_map.values())

@@ -1,7 +1,8 @@
 import json
 import os
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from itertools import chain
 
 from PySide6 import QtCore, QtWidgets
@@ -39,6 +40,7 @@ REFRESH_INTERVAL_MS = 3000
 REFRESH_IDLE_MS = 1000
 EXPAND_SLICE_SECONDS = 0.015
 EXPAND_DEADLINE_CHECK = 256
+MATCHES_REFRESH_MS = 1000
 DISPOSE_BATCH = 20000
 
 
@@ -57,6 +59,13 @@ def outermost(paths: Iterable[str]) -> list[str]:
         if not any(is_under(path, other) for other in kept):
             kept.append(path)
     return kept
+
+
+@dataclass(frozen=True)
+class MatchScan:
+    matches: list[str]
+    folders: list[str]
+    visible: frozenset[str]
 
 
 class RulesArea(QtWidgets.QScrollArea):
@@ -111,6 +120,14 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.stale_parents: set[str] = set()
         self.relisting: set[str] = set()
         self.expand_serial = 0
+        self.matches_only = False
+        self.matches_version = 0
+        self.filter_serial = 0
+        self.filtering = False
+        self.found_matches: MatchScan | None = None
+        self.found_version = -1
+        self.shown_visible: frozenset[str] = frozenset()
+        self.opened_folders: frozenset[str] = frozenset()
         self.build_ui()
         self.apply_rules(load_rules())
         self.apply_columns(load_columns())
@@ -137,6 +154,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.view.set_rules_source(lambda: self.rules)
         self.view.show_in_tree_available = self.host_shows_database
         self.model.paths_changed.connect(self.on_paths_changed)
+        self.view.folders_set.connect(self.on_folders_set)
         layout.addWidget(self.view, 1)
         self.stats_timer = QtCore.QTimer(self)
         self.stats_timer.setSingleShot(True)
@@ -145,6 +163,9 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.rule_timer = QtCore.QTimer(self)
         self.rule_timer.setSingleShot(True)
         self.rule_timer.timeout.connect(self.recount_pending_rules)
+        self.filter_timer = QtCore.QTimer(self)
+        self.filter_timer.setSingleShot(True)
+        self.filter_timer.timeout.connect(self.refilter)
         self.rules_saver = self.save_timer(self.save_rules_now)
         self.columns_saver = self.save_timer(self.save_columns_now)
 
@@ -167,13 +188,28 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.expand_button.clicked.connect(lambda: self.expand_to_matches())
         self.select_button = tool_button("check", t("Open the tree to every folder a rule marks and select them (only under the selected folders, if any)"), t("Select matches"))
         self.select_button.clicked.connect(lambda: self.expand_to_matches(select=True))
+        self.matches_button = tool_button("query", t("Show only folders a rule marks"))
+        self.matches_button.setCheckable(True)
+        self.matches_button.toggled.connect(self.set_matches_only)
+        self.collapse_button = tool_button("chevron_right", t("Collapse all"))
+        self.collapse_button.clicked.connect(self.collapse_all)
         self.columns_button = tool_button("gear", t("Columns"))
         self.columns_button.clicked.connect(self.show_column_menu)
         self.refresh_button = tool_button("refresh", t("Scan again"))
         self.refresh_button.clicked.connect(self.refresh)
         self.add_rule_button = tool_button("plus", t("Add rule"), t("Add rule"))
         self.add_rule_button.clicked.connect(self.add_rule)
-        for widget in (self.db_box, self.status_label, self.expand_button, self.select_button, self.columns_button, self.refresh_button, self.add_rule_button):
+        for widget in (
+            self.db_box,
+            self.status_label,
+            self.expand_button,
+            self.select_button,
+            self.matches_button,
+            self.collapse_button,
+            self.columns_button,
+            self.refresh_button,
+            self.add_rule_button,
+        ):
             self.flow.addWidget(widget)
         return self.bar
 
@@ -564,6 +600,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
     def refresh_stats(self) -> None:
         self.model.refresh_stats()
         self.update_status()
+        self.on_matches_changed()
 
     def update_status(self) -> None:
         self.status_label.setText(t("Scanning… {count}", count=f"{self.scanned:,}"))
@@ -658,16 +695,14 @@ class FolderManagerWidget(QtWidgets.QWidget):
     def publish_counts(self) -> None:
         self.model.rule_counts = [(rule, self.counts.get(id(rule), {})) for rule in self.rules]
         self.model.refresh_stats()
+        self.on_matches_changed()
 
-    def expand_to_matches(self, select: bool = False) -> None:
-        self.expand_serial += 1
-        serial = self.expand_serial
+    def scan_matches(self, scopes: Sequence[str], is_current: Callable[[], bool], on_found: Callable[[MatchScan], None]) -> None:
         disk = self.model.disk
         lists = [list(disk.nodes)] if disk is not None else []
         lists.extend(list(counts) for _rule, counts in self.model.rule_counts)
         candidates = chain.from_iterable(lists)
         roots = [normalize_path(root) for root in self.model.roots or ()]
-        scopes = outermost(normalize_path(path) for path in self.view.get_selected_paths())
         prefixes = tuple(child_prefix(scope) for scope in scopes)
         seen: set[str] = set()
         matches: list[str] = []
@@ -676,7 +711,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
             return not scopes or path in scopes or path.startswith(prefixes)
 
         def scan_slice() -> None:
-            if serial != self.expand_serial:
+            if not is_current():
                 return
             deadline = time.perf_counter() + EXPAND_SLICE_SECONDS
             model = self.model
@@ -689,26 +724,97 @@ class FolderManagerWidget(QtWidgets.QWidget):
                 if number % EXPAND_DEADLINE_CHECK == 0 and time.perf_counter() >= deadline:
                     QtCore.QTimer.singleShot(0, scan_slice)
                     return
-            if not matches:
-                Notifier.info(t("No matching folders"))
-                return
-            self.dispatcher.post(lambda: find_folders())
+            self.dispatcher.post(find_folders)
 
         def find_folders() -> None:
             folders = folders_to_open(matches, roots)
-            self.dispatcher.invoke(lambda: self.open_folders(serial, folders, matches if select else None))
+            found = MatchScan(matches, folders, frozenset(chain(matches, folders)))
+            self.dispatcher.invoke(lambda: deliver(found))
+
+        def deliver(found: MatchScan) -> None:
+            if is_current():
+                on_found(found)
 
         scan_slice()
 
-    def open_folders(self, serial: int, folders: list[str], selection: list[str] | None = None) -> None:
-        if serial != self.expand_serial:
+    def expand_to_matches(self, select: bool = False) -> None:
+        self.expand_serial += 1
+        serial = self.expand_serial
+        scopes = outermost(normalize_path(path) for path in self.view.get_selected_paths())
+        self.scan_matches(scopes, lambda: serial == self.expand_serial, lambda found: self.open_matches(serial, found, select))
+
+    def open_matches(self, serial: int, found: MatchScan, select: bool) -> None:
+        if not found.matches:
+            Notifier.info(t("No matching folders"))
             return
 
         def select_matches() -> None:
-            if selection is not None and serial == self.expand_serial:
-                self.view.select_folders(selection)
+            if select and serial == self.expand_serial:
+                self.view.select_folders(found.matches)
 
-        self.view.expand_folders(folders, on_complete=select_matches)
+        self.view.expand_folders(found.folders, on_complete=select_matches)
+
+    def collapse_all(self) -> None:
+        self.expand_serial += 1
+        self.opened_folders = self.shown_visible
+        self.view.collapse_all()
+
+    def set_matches_only(self, on: bool) -> None:
+        if on == self.matches_only:
+            return
+        self.matches_only = on
+        self.matches_button.setChecked(on)
+        self.filter_serial += 1
+        self.filtering = False
+        self.opened_folders = frozenset()
+        if not on:
+            self.filter_timer.stop()
+            self.shown_visible = frozenset()
+            self.view.apply_row_filter(None)
+            return
+        if self.found_matches is not None:
+            self.show_matches(self.found_matches)
+        if self.found_version != self.matches_version:
+            self.refilter()
+
+    def on_matches_changed(self) -> None:
+        self.matches_version += 1
+        self.schedule_refilter()
+
+    def schedule_refilter(self) -> None:
+        if self.matches_only and not self.filtering and not self.filter_timer.isActive():
+            self.filter_timer.start(MATCHES_REFRESH_MS)
+
+    def refilter(self) -> None:
+        if self.filtering or not self.matches_only:
+            return
+        self.filter_timer.stop()
+        self.filtering = True
+        serial = self.filter_serial
+        version = self.matches_version
+        self.scan_matches([], lambda: serial == self.filter_serial, lambda found: self.on_filter_scanned(version, found))
+
+    def on_filter_scanned(self, version: int, found: MatchScan) -> None:
+        self.filtering = False
+        self.found_matches = found
+        self.found_version = version
+        self.show_matches(found)
+        if version != self.matches_version:
+            self.schedule_refilter()
+
+    def show_matches(self, found: MatchScan) -> None:
+        self.shown_visible = found.visible
+        self.view.apply_row_filter(found.visible)
+        pending = [folder for folder in found.folders if folder not in self.opened_folders]
+        if pending:
+            self.view.expand_folders(pending, on_complete=lambda: self.on_folders_opened(pending))
+
+    def on_folders_opened(self, folders: list[str]) -> None:
+        if self.matches_only:
+            self.opened_folders = self.opened_folders.union(folders)
+
+    def on_folders_set(self) -> None:
+        self.opened_folders = frozenset()
 
 
 class FolderManagerPlugin(BasePanelPlugin):

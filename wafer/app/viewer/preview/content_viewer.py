@@ -12,7 +12,6 @@ class ContentViewerWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._stack = QtWidgets.QStackedWidget(self)
-        self._stack.setMinimumSize(dpix(200), dpix(200))
 
         self._placeholder = QtWidgets.QLabel()
         self._placeholder.setAlignment(QtCore.Qt.AlignCenter)

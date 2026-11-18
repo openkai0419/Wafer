@@ -276,21 +276,27 @@ class SpaceModel:
 
     def features(self, entries: list[dict[str, PathValue]], encoded: list[dict] | None = None, cancelled=lambda: False) -> tuple[np.ndarray, np.ndarray]:
         encoded = encoded if encoded is not None else [{} for _ in self.encoders]
-        parts = []
+        columns = []
         has_value = np.zeros(len(entries), dtype=bool)
-        for feature, encoder, reducer, known in zip(self.preset.features, self.encoders, self.reducers, encoded):
+        for feature, encoder in zip(self.preset.features, self.encoders):
             encoder_cls = ENCODERS[feature.encoder]
             inputs = [feature_input(entry, feature.key, encoder_cls) for entry in entries]
             present = encoder.present(inputs)
-            batches = []
-            for begin in range(0, len(inputs), PLACE_BATCH):
-                if cancelled():
-                    raise MapError("Cancelled")
-                batches.append(encode_once(encoder, reducer, inputs[begin : begin + PLACE_BATCH], known))
-            parts.append((np.vstack(batches) if batches else np.zeros((0, 0), dtype=np.float32), present))
+            columns.append((inputs, present))
             has_value |= present
         rows = np.flatnonzero(has_value)
-        return rows, projection.apply_block_scales([(dense[rows], present[rows]) for dense, present in parts], self.scales)
+        if rows.size == 0:
+            return rows, np.zeros((0, 0), dtype=np.float32)
+        parts = []
+        for (inputs, present), encoder, reducer, known in zip(columns, self.encoders, self.reducers, encoded):
+            valued = [inputs[row] for row in rows.tolist()]
+            batches = []
+            for begin in range(0, len(valued), PLACE_BATCH):
+                if cancelled():
+                    raise MapError("Cancelled")
+                batches.append(encode_once(encoder, reducer, valued[begin : begin + PLACE_BATCH], known))
+            parts.append((np.vstack(batches), present[rows]))
+        return rows, projection.apply_block_scales(parts, self.scales)
 
     def place(self, entries: list[dict[str, PathValue]], encoded: list[dict] | None = None) -> np.ndarray:
         output = np.full((len(entries), SPACE_COLUMNS), np.nan, dtype=np.float32)

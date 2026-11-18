@@ -4,6 +4,7 @@ import sys
 import threading
 import psutil
 from ...constants import TRAY_LOCK_NAME
+from ..common.profile import PROFILE_ARG, PROFILE_PREFIX, current_profile, profile_args, profile_from_args
 from ..logs import AppLogger
 from .process_lock import SafeProcessLock
 
@@ -113,6 +114,22 @@ def kill_with_parent(pid: int) -> bool:
     return True
 
 
+def _split_profile(args):
+    profile = profile_from_args(list(args))
+    if profile is None:
+        return None, list(args)
+    index = list(args).index(PROFILE_ARG)
+    return profile, list(args[:index]) + list(args[index + 2:])
+
+
+def _is_main_script(arg):
+    return os.path.basename(arg) == "main.py"
+
+
+def _main_script_of(cmdline):
+    return next((arg for arg in cmdline if _is_main_script(arg)), None)
+
+
 class ProcessMatcher:
     def __init__(self, cmd_list):
         if not cmd_list:
@@ -122,7 +139,8 @@ class ProcessMatcher:
         self.exe_stems = {self._stem(cmd_list[0]), self._stem(self.exe_path)}
         self.script_path = self._normalize_path(cmd_list[1]) if len(cmd_list) > 1 else None
         self.script_stems = {self._stem(cmd_list[1]), self._stem(self.script_path)} if len(cmd_list) > 1 else set()
-        self.args_set = set(cmd_list[2:])
+        self.profile, own_args = _split_profile(cmd_list[2:])
+        self.args_set = set(own_args)
 
     def find_by_args_subset(self, exclude_args=None):
         return list(self._iter_matches(compare="subset", exclude_args=exclude_args))
@@ -155,9 +173,16 @@ class ProcessMatcher:
                 if self.script_path is not None:
                     if len(pcmd) < 2 or self._stem(pcmd[1]) not in self.script_stems or not self._same_executable(pcmd[1], self.script_path):
                         continue
-                    proc_args_set = set(pcmd[2:])
+                    proc_args = pcmd[2:]
                 else:
-                    proc_args_set = set(pcmd[1:])
+                    proc_args = pcmd[1:]
+                try:
+                    proc_profile, proc_args = _split_profile(proc_args)
+                except ValueError:
+                    continue
+                if proc_profile != self.profile:
+                    continue
+                proc_args_set = set(proc_args)
                 if exclude_args and not exclude_args.isdisjoint(proc_args_set):
                     continue
                 if compare == "subset":
@@ -337,11 +362,16 @@ class AppProcess:
         base_exe = getattr(sys, "_base_executable", None)
         if base_exe and AppProcess._in_venv() and os.path.normcase(base_exe) != os.path.normcase(exe):
             exe = base_exe
-        return [exe, MAIN_SCRIPT]
+        return [exe, MAIN_SCRIPT, *profile_args(current_profile())]
 
     @staticmethod
     def new_main(*args, extra_env=None, **popen_kwargs):
-        cmd = AppProcess.base_command() + list(args)
+        proc = AppProcess.spawn(AppProcess.base_command() + list(args), extra_env=extra_env, **popen_kwargs)
+        AppLogger.info(f"new_main: spawned pid={proc.pid} args={list(args)}")
+        return proc
+
+    @staticmethod
+    def spawn(cmd, *, extra_env=None, **popen_kwargs):
         env = os.environ.copy()
         if AppProcess._in_venv():
             env["__PYVENV_LAUNCHER__"] = sys.executable
@@ -357,9 +387,49 @@ class AppProcess:
             flags = _windows_no_window_flags(flags)
             popen_kwargs["creationflags"] = flags
             popen_kwargs.setdefault("close_fds", True)
-        proc = subprocess.Popen(cmd, env=env, **popen_kwargs)
-        AppLogger.info(f"new_main: spawned pid={proc.pid} args={list(args)}")
-        return proc
+        return subprocess.Popen(cmd, env=env, **popen_kwargs)
+
+    @staticmethod
+    def _iter_cmdlines():
+        for p in psutil.process_iter(["pid", "cmdline"]):
+            try:
+                cmdline = p.info.get("cmdline") or []
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            if cmdline:
+                yield p, cmdline
+
+    @classmethod
+    def list_profile_processes(cls, profile):
+        procs = []
+        for p, cmdline in cls._iter_cmdlines():
+            if _main_script_of(cmdline) is None:
+                continue
+            try:
+                if profile_from_args(cmdline) == profile:
+                    procs.append(p)
+            except ValueError:
+                continue
+        return procs
+
+    @classmethod
+    def list_debug_processes_sharing(cls, packages_dir):
+        target = ProcessMatcher._normalize_path(packages_dir)
+        procs = []
+        for p, cmdline in cls._iter_cmdlines():
+            script = _main_script_of(cmdline)
+            if script is None:
+                continue
+            try:
+                profile = profile_from_args(cmdline)
+            except ValueError:
+                continue
+            if profile is None or not profile.startswith(PROFILE_PREFIX):
+                continue
+            packages = os.path.join(os.path.dirname(script), "extensions", ".packages")
+            if ProcessMatcher._normalize_path(packages) == target:
+                procs.append(p)
+        return procs
 
 
 def run_external(cmd, timeout=None, capture_output=False, check=False, **popen_kwargs) -> subprocess.CompletedProcess:

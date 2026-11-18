@@ -132,9 +132,13 @@ def scratch_root(profile: str) -> Path:
     return profile_data_root(profile) / "scratch"
 
 
+def _guard_key(path) -> str:
+    return os.path.normcase(normalize_path(os.path.realpath(path))).replace("\\", "/")
+
+
 def _is_within(path: str, root: Path) -> bool:
-    target = normalize_path(path)
-    base = normalize_path(root)
+    target = _guard_key(path)
+    base = _guard_key(root)
     return target == base or target.startswith(child_prefix(base))
 
 

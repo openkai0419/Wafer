@@ -1,3 +1,5 @@
+import os
+import subprocess
 import sys
 
 import pytest
@@ -140,3 +142,49 @@ def test_profile_label():
 def test_app_user_model_id():
     assert app_user_model_id("Wafer.App", None) == "Wafer.App"
     assert app_user_model_id("Wafer.App", "debug-x") == "Wafer.App.debug-x"
+
+
+def _make_link(link, target):
+    if sys.platform == "win32":
+        done = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True, text=True)
+        if done.returncode != 0:
+            pytest.skip("cannot create a junction")
+        return
+    try:
+        os.symlink(target, link, target_is_directory=True)
+    except OSError:
+        pytest.skip("cannot create a symlink")
+
+
+def test_profile_allows_path_through_link_into_sample(monkeypatch, tmp_path):
+    sample = tmp_path / "s"
+    sample.mkdir()
+    link = tmp_path / "via"
+    _make_link(link, sample)
+    monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(sample))
+    _use_profile(monkeypatch, "debug-t4")
+    assert profile_allows_folder(str(link / "x"))
+    assert not profile_allows_file_write(str(link / "x"))
+
+
+def test_profile_rejects_link_inside_scratch_pointing_elsewhere(monkeypatch, tmp_path):
+    monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(tmp_path / "s"))
+    _use_profile(monkeypatch, "debug-t5")
+    scratch = scratch_root("debug-t5")
+    scratch.mkdir(parents=True, exist_ok=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = scratch / "escape"
+    _make_link(link, outside)
+    assert not profile_allows_file_write(str(link / "a.png"))
+    assert not profile_allows_folder(str(link))
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="case-insensitive file system")
+def test_profile_allows_different_case_on_windows(monkeypatch, tmp_path):
+    sample = tmp_path / "Sample"
+    sample.mkdir()
+    monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(sample))
+    _use_profile(monkeypatch, "debug-t6")
+    assert profile_allows_folder(str(tmp_path / "SAMPLE" / "a"))
+    assert not profile_allows_folder(str(tmp_path / "SAMPLE2"))

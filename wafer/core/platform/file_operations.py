@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Literal
 from collections.abc import Callable
 
 from ..logs import AppLogger
-from ..common.paths import safe_exists, safe_is_dir
+from ..common.paths import profile_allows_file_write, safe_exists, safe_is_dir
 from ..common.virtual_paths import is_virtual_path
 from .path_utils import check_copy_conflict, is_http_url, unique_path
 
@@ -166,6 +166,14 @@ def _operation_name(action: Literal["copy", "cut"]) -> str:
 
 def _is_virtual_operation_path(path: str | Path | None) -> bool:
     return bool(path and is_virtual_path(str(path)))
+
+
+def _profile_refusal(action: str, paths: list[str | Path]) -> str | None:
+    for p in paths:
+        if not profile_allows_file_write(str(p)):
+            AppLogger.warning(f"[{action}] refused outside the debug profile scratch area: {p}")
+            return str(p)
+    return None
 
 
 def count_operation_units(src: Path, dst: Path, action: Literal["copy", "cut"], cancel_check: CancelCheck | None = None) -> int:
@@ -344,6 +352,9 @@ class FileExecutor:
             return OperationResult(action="unknown", src="", dst="", status="error", error=f"unknown mode: {decision.mode}")
         if final_dst.is_dir():
             final_dst = Path(unique_path(final_dst.parent, final_dst.name))
+        if _profile_refusal("save", [final_dst]):
+            self._advance()
+            return OperationResult(action="save", src="(remote)", dst=str(final_dst), status="error", error="refused by debug profile")
         result = _save_remote_item(plan.parsed_item, str(final_dst))
         self._advance()
         return result
@@ -369,6 +380,9 @@ class FileExecutor:
         if _is_virtual_operation_path(final_dst):
             AppLogger.warning(f"[{_operation_name(action)}] virtual destination rejected: {src} -> {final_dst} (file ops must target source files)")
             return OperationResult(action=_operation_name(action), src=str(src), dst=str(final_dst), status="skipped", error="virtual path rejected")
+        guarded = [final_dst, src] if action == "cut" else [final_dst]
+        if _profile_refusal(_operation_name(action), guarded):
+            return OperationResult(action=_operation_name(action), src=str(src), dst=str(final_dst), status="error", error="refused by debug profile")
 
         conflict = check_copy_conflict(src, final_dst)
         if conflict == "same_path":
@@ -562,10 +576,16 @@ def delete_to_trash(paths: list[str | Path]) -> list[OperationResult]:
         AppLogger.warning(f"[delete] duplicate sources dropped: {len(raw)} -> {len(norm)}")
     if not norm:
         return []
+    refused = {p for p in norm if not profile_allows_file_write(p)}
+    for p in norm:
+        if p in refused:
+            AppLogger.warning(f"[delete] refused outside the debug profile scratch area: {p}")
     from send2trash import send2trash
 
-    existing = [p for p in norm if os.path.lexists(p)]
+    existing = [p for p in norm if p not in refused and os.path.lexists(p)]
     results = {p: OperationResult(action="delete", src=p, dst="", status="skipped") for p in norm}
+    for p in refused:
+        results[p] = OperationResult(action="delete", src=p, dst="", status="error", error="refused by debug profile")
     AppLogger.info(f"Deleting {len(existing)} files")
     try:
         if existing:

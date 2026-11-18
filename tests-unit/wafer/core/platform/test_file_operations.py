@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
+
+import pytest
 
 from wafer.core.common.virtual_paths import build_virtual_path
 
@@ -685,3 +688,85 @@ def test_binary_drop_skip_and_rename(tmp_path):
     assert renamed.status == "ok"
     assert (tmp_path / "image.png").read_bytes() == b"old"
     assert Path(renamed.dst).read_bytes() == b"new"
+
+
+@pytest.fixture
+def debug_profile(monkeypatch, tmp_path):
+    from wafer.core.common.paths import scratch_root
+    from wafer.core.common.profile import current_profile
+
+    sample = tmp_path / "sample"
+    sample.mkdir()
+    monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(sample))
+    monkeypatch.setattr(sys, "argv", ["main.py", "--profile", "debug-fo"])
+    current_profile.cache_clear()
+    scratch = scratch_root("debug-fo")
+    scratch.mkdir(parents=True, exist_ok=True)
+    yield sample, scratch
+    current_profile.cache_clear()
+
+
+def test_delete_to_trash_refuses_sample_in_profile(debug_profile):
+    from wafer.core.platform.file_operations import delete_to_trash
+
+    sample, _ = debug_profile
+    target = sample / "keep.txt"
+    target.write_text("x", encoding="utf-8")
+    results = delete_to_trash([target])
+    assert [r.status for r in results] == ["error"]
+    assert target.exists()
+
+
+def test_paste_into_scratch_is_allowed_in_profile(debug_profile):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
+
+    sample, scratch = debug_profile
+    src = sample / "a.txt"
+    src.write_text("x", encoding="utf-8")
+    dst = scratch / "a.txt"
+    plan = PastePlanItem(index=0, src=src, is_dir=False, action="copy", dst_default=dst, conflict=False, suggested_dst=None)
+    results = FileExecutor().execute_plans([plan], {0: PasteDecision(mode="overwrite")})
+    assert results[0].status == "ok"
+    assert dst.read_text(encoding="utf-8") == "x"
+
+
+def test_paste_outside_scratch_is_refused_in_profile(debug_profile, tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
+
+    sample, scratch = debug_profile
+    src = scratch / "a.txt"
+    src.write_text("x", encoding="utf-8")
+    copy_dst = sample / "copied.txt"
+    cut_plan = PastePlanItem(index=1, src=sample / "b.txt", is_dir=False, action="cut", dst_default=scratch / "b.txt", conflict=False, suggested_dst=None)
+    (sample / "b.txt").write_text("y", encoding="utf-8")
+    copy_plan = PastePlanItem(index=0, src=src, is_dir=False, action="copy", dst_default=copy_dst, conflict=False, suggested_dst=None)
+    results = FileExecutor().execute_plans([copy_plan, cut_plan], {0: PasteDecision(mode="overwrite"), 1: PasteDecision(mode="overwrite")})
+    assert [r.status for r in results] == ["error", "error"]
+    assert not copy_dst.exists()
+    assert (sample / "b.txt").exists()
+
+
+def test_file_operations_unchanged_without_profile(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
+
+    src = tmp_path / "a.txt"
+    src.write_text("x", encoding="utf-8")
+    plan = PastePlanItem(index=0, src=src, is_dir=False, action="copy", dst_default=tmp_path / "b.txt", conflict=False, suggested_dst=None)
+    assert FileExecutor().execute_plans([plan], {0: PasteDecision(mode="overwrite")})[0].status == "ok"
+
+
+def test_remote_drop_outside_scratch_is_refused_in_profile(debug_profile, monkeypatch):
+    import requests
+
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    sample, scratch = debug_profile
+    monkeypatch.setattr(requests.Session, "get", lambda self, url, **kw: _FakeResponse(200, [b"new"]))
+
+    refused = FileExecutor().execute_one(_remote_plan(sample, "https://example.com/image.png"), PasteDecision(mode="overwrite"))
+    allowed = FileExecutor().execute_one(_remote_plan(scratch, "https://example.com/image.png"), PasteDecision(mode="overwrite"))
+
+    assert refused.status == "error"
+    assert not (sample / "image.png").exists()
+    assert allowed.status == "ok"
+    assert (scratch / "image.png").read_bytes() == b"new"

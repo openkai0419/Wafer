@@ -1,6 +1,6 @@
 import contextlib
 import json
-from ..common.paths import normalize_path
+from ..common.paths import normalize_path, profile_allows_folder
 from ..common.helpers import try_json_loads
 from ..profiling import profiler
 from ..logs import AppLogger
@@ -131,6 +131,9 @@ class SettingDB:
 
     @profiler.profile
     def add_parent_folder(self, path):
+        if not profile_allows_folder(path):
+            AppLogger.warning(f"Parent folder refused outside the debug profile sample data: {path}")
+            return False
         return self._add_entry("parent_folders", path)
 
     @profiler.profile

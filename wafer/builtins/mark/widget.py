@@ -94,8 +94,7 @@ class _MarkSettingsPopup(PopupBase):
         self.or_radio.setChecked(True)
         self.mode_group.addButton(self.or_radio)
         self.mode_group.addButton(self.and_radio)
-        self.or_radio.toggled.connect(lambda _c: self.changed.emit())
-        self.and_radio.toggled.connect(lambda _c: self.changed.emit())
+        self.mode_group.buttonToggled.connect(self._on_mode_toggled)
         mode_row.addWidget(self.or_radio)
         mode_row.addWidget(self.and_radio)
         mode_row.addStretch()
@@ -111,9 +110,13 @@ class _MarkSettingsPopup(PopupBase):
 
     def set_mode(self, mode: str):
         radio = self.and_radio if str(mode).upper() == "AND" else self.or_radio
-        radio.blockSignals(True)
+        self.mode_group.blockSignals(True)
         radio.setChecked(True)
-        radio.blockSignals(False)
+        self.mode_group.blockSignals(False)
+
+    def _on_mode_toggled(self, _button, checked: bool):
+        if checked:
+            self.changed.emit()
 
     def overlay_visible(self) -> bool:
         return self.overlay_check.isChecked()
@@ -143,7 +146,7 @@ class MarkFilterWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._buttons: dict[str, _MarkButton] = {}
-        self._key_store = None
+        self._key_store_connection = None
         self._build_ui()
         MarkRegistry.instance().changed.connect(self._sync_buttons)
         self._restore_state()
@@ -183,16 +186,12 @@ class MarkFilterWidget(QtWidgets.QWidget):
             self._popup.show_below(self._option_btn, align=QtCore.Qt.AlignRight)
 
     def bind_key_store(self, key_store):
-        prev = self._key_store
-        if prev is not None:
-            try:
-                prev.updated.disconnect(self._on_key_store_updated)
-            except (TypeError, RuntimeError):
-                pass
-        self._key_store = key_store
+        if self._key_store_connection is not None:
+            QtCore.QObject.disconnect(self._key_store_connection)
+            self._key_store_connection = None
         if key_store is None:
             return
-        key_store.updated.connect(self._on_key_store_updated)
+        self._key_store_connection = key_store.updated.connect(self._on_key_store_updated)
         if key_store.data:
             self._on_key_store_updated(key_store.data)
 

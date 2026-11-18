@@ -68,3 +68,38 @@ def test_mark_filter_widget_syncs_overlay_controls(qtbot):
 
     assert widget._popup.overlay_check.isChecked() is False
     assert widget._popup.radius_spin.value() == 22
+
+
+def test_switching_match_mode_emits_changed_once(qtbot):
+    from wafer.builtins.mark.widget import MarkFilterWidget
+
+    widget = MarkFilterWidget()
+    qtbot.addWidget(widget)
+    emitted = []
+    widget.changed.connect(lambda: emitted.append(True))
+
+    widget._popup.and_radio.setChecked(True)
+    assert len(emitted) == 1
+    widget.write_params({"mark_ids": [], "mode": "OR"})
+    assert len(emitted) == 1
+    assert widget.read_params()["mode"] == "OR"
+
+
+def test_rebinding_key_store_stops_listening_to_the_old_one(qtbot):
+    from PySide6 import QtCore
+    from wafer.builtins.mark.widget import MarkFilterWidget
+
+    class _Store(QtCore.QObject):
+        updated = QtCore.Signal(list)
+        data = []
+
+    widget = MarkFilterWidget()
+    qtbot.addWidget(widget)
+    calls = []
+    widget._on_key_store_updated = calls.append
+    old, new = _Store(), _Store()
+    widget.bind_key_store(old)
+    widget.bind_key_store(new)
+    old.updated.emit([("a", 1)])
+    new.updated.emit([("b", 2)])
+    assert calls == [[("b", 2)]]

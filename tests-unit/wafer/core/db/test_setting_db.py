@@ -109,3 +109,12 @@ def test_enabled_collectors_roundtrip(setting_db):
 def test_enabled_collectors_invalid_type(setting_db):
     setting_db.set_setting("enabled_collectors", "not_a_list")
     assert setting_db.get_enabled_collectors() is None
+
+
+@pytest.mark.parametrize("name", ["Photos #1.db", "a%41b.db"])
+def test_reads_a_database_whose_name_has_uri_characters(tmp_path, name):
+    db = SettingDB(str(tmp_path / name))
+    db.add_parent_folder("C:/photos")
+
+    assert db.get_all_parent_folders() == ["C:/photos"]
+    assert sorted(p.name for p in tmp_path.iterdir() if p.suffix == ".db") == [name]

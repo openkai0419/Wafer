@@ -1,11 +1,10 @@
 import contextlib
 import json
-import sqlite3
 from ..common.paths import normalize_path
 from ..common.helpers import try_json_loads
 from ..profiling import profiler
 from ..logs import AppLogger
-from .db_utils import connect_with_retry
+from .db_utils import connect_with_retry, open_readonly
 
 _ENTRY_TABLE_COLUMNS = {
     "parent_folders": "path",
@@ -23,8 +22,7 @@ class SettingDB:
     @contextlib.contextmanager
     def _conn(self, read_only: bool = False):
         if read_only:
-            uri = f"file:{self.db_name}?mode=ro"
-            con = sqlite3.connect(uri, uri=True, isolation_level=None)
+            con = open_readonly(self.db_name)
             try:
                 yield con
             finally:

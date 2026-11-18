@@ -400,3 +400,15 @@ class TestKeyPathQueries:
         sqls, params = key_path_queries(["file_hash"], lambda column: ([], []))
         assert sqls == ["SELECT i.path AS path FROM sources AS s JOIN files AS i ON i.source = s.source"]
         assert params == []
+
+
+@pytest.mark.parametrize("name", ["Photos #1.db", "a%41b.db"])
+def test_engine_opens_a_database_whose_name_has_uri_characters(tmp_path, name):
+    db = FileDB(tmp_path / name)
+    db.start()
+    db.initialize_database()
+    db.close()
+    engine = FileSearchEngine(tmp_path / name)
+
+    assert engine._connect_if_needed() is True
+    engine.close()

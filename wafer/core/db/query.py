@@ -6,7 +6,7 @@ import sqlite3
 import threading
 
 from ...constants import VIRTUAL_PATH_SEPARATOR
-from .db_utils import apply_read_pragmas
+from .db_utils import open_readonly
 from .key_value import SCOPE_ALL, SCOPE_META_INFO, SCOPE_TAG, iter_data_scopes, key_prefix_lookup_sql
 from ..common.paths import normalize_path
 from ..common.virtual_paths import build_virtual_path, is_virtual_path, split_virtual_path
@@ -155,7 +155,7 @@ class FileSearchEngine:
         try:
             if not os.path.exists(self.db_path):
                 return False
-            conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True, check_same_thread=False)
+            conn = open_readonly(self.db_path)
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
             required = ("meta_info", "tags", "files", "files_full")
@@ -165,7 +165,6 @@ class FileSearchEngine:
                     AppLogger.warning(f"Required table/view '{name}' not found in DB.")
                     conn.close()
                     return False
-            apply_read_pragmas(conn)
             self.conn = conn
             return True
         except sqlite3.OperationalError as e:

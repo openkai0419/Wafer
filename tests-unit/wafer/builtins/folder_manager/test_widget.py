@@ -1379,3 +1379,123 @@ def test_switching_database_forgets_the_previous_matches(qtbot, tmp_path, query_
     qtbot.waitUntil(lambda: scanned(panel, [other]), timeout=5000)
     panel.set_matches_only(True)
     assert not row_hidden(panel.view, other)
+
+
+def track_loads(monkeypatch, view):
+    loads = []
+    done = []
+    real_load = view.load_paths_async
+
+    def load(paths, on_loaded, **kwargs):
+        loads.append(list(paths))
+        real_load(paths, lambda: (done.append(paths), on_loaded()), **kwargs)
+
+    monkeypatch.setattr(view, "load_paths_async", load)
+    return loads, lambda: len(done) == len(loads)
+
+
+def stop_right_after_matches_open(monkeypatch, panel, stop):
+    monkeypatch.setattr(view_module, "EXPAND_RECURSIVE_BATCH_SIZE", 1)
+    real_show = panel.show_matches
+    opened = []
+
+    def show_then_stop(found):
+        real_show(found)
+        opened.append(found.folders)
+        stop()
+
+    monkeypatch.setattr(panel, "show_matches", show_then_stop)
+    return opened
+
+
+def test_turning_matches_only_off_stops_opening_its_folders(qtbot, tmp_path, monkeypatch, query_calls):
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    view = panel.view
+    loads, loaded = track_loads(monkeypatch, view)
+    opened = stop_right_after_matches_open(monkeypatch, panel, lambda: panel.set_matches_only(False))
+
+    panel.set_matches_only(True)
+
+    qtbot.waitUntil(lambda: bool(opened) and loaded(), timeout=5000)
+    settle()
+    assert loaded()
+    assert opened == [[root, f"{root}/c"]]
+    assert not is_expanded(view, f"{root}/c")
+
+
+def test_switching_database_stops_opening_the_previous_folders(qtbot, tmp_path, monkeypatch, query_calls):
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    view = panel.view
+    other = make_folders(tmp_path / "other", {"": 0, "b": 0})
+    serve("other", [other])
+    loads, loaded = track_loads(monkeypatch, view)
+    opened = stop_right_after_matches_open(monkeypatch, panel, lambda: panel.set_database("other"))
+
+    panel.set_matches_only(True)
+
+    qtbot.waitUntil(lambda: bool(opened) and scanned(panel, [other]) and loaded(), timeout=5000)
+    settle()
+    assert not any(path.startswith(f"{root}/") for paths in loads for path in paths)
+
+
+def test_a_matches_scan_of_the_previous_database_is_dropped(qtbot, tmp_path, monkeypatch, query_calls):
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    other = make_folders(tmp_path / "other", {"": 0, "b": 0})
+    serve("other", [other])
+    release = gate()
+    started = gate()
+    real_folders_to_open = widget_module.folders_to_open
+
+    def held_folders_to_open(paths, roots):
+        started.set()
+        release.wait(5)
+        return real_folders_to_open(paths, roots)
+
+    monkeypatch.setattr(widget_module, "folders_to_open", held_folders_to_open)
+    delivered = []
+    real_scanned = panel.on_filter_scanned
+    monkeypatch.setattr(panel, "on_filter_scanned", lambda version, collapses, found: (delivered.append(found), real_scanned(version, collapses, found)))
+    panel.set_matches_only(True)
+    qtbot.waitUntil(started.is_set, timeout=5000)
+
+    panel.set_database("other")
+
+    assert not panel.filtering
+    release.set()
+    qtbot.waitUntil(lambda: scanned(panel, [other]) and matches_shown(panel), timeout=5000)
+    settle()
+    assert not any(path.startswith(root) for found in delivered for path in found.visible)
+
+
+def rename_folder(view, path, new_name):
+    item = view.model_.path_item_map[path]
+    new_path = normalize_path(os.path.join(os.path.dirname(path), new_name))
+    os.rename(path, new_path)
+    item.setText(new_name)
+    view.model_._update_item_path_recursive(item, path, new_path)
+    return new_path
+
+
+def test_a_folder_renamed_while_matches_only_is_on_shows_its_arrow_again_when_off(qtbot, tmp_path, query_calls):
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    view = panel.view
+    panel.set_matches_only(True)
+    qtbot.waitUntil(lambda: placeholder_hidden(view, f"{root}/a"), timeout=5000)
+    renamed = rename_folder(view, f"{root}/a", "a2")
+
+    panel.set_matches_only(False)
+
+    assert not placeholder_hidden(view, renamed)
+
+
+def test_a_hidden_folder_under_a_renamed_folder_shows_again_when_off(qtbot, tmp_path, query_calls):
+    (tmp_path / "root" / "c" / "y").mkdir(parents=True)
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    view = panel.view
+    panel.set_matches_only(True)
+    qtbot.waitUntil(lambda: f"{root}/c/y" in view.model_.path_item_map and row_hidden(view, f"{root}/c/y"), timeout=5000)
+    renamed = rename_folder(view, f"{root}/c", "c2")
+
+    panel.set_matches_only(False)
+
+    assert not row_hidden(view, f"{renamed}/y")

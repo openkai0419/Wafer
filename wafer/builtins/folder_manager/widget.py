@@ -367,6 +367,9 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.stale_disk = False
         self.stale_parents.clear()
         self.expand_serial += 1
+        self.filter_serial += 1
+        self.filtering = False
+        self.view.stop_expanding()
         self.stats_timer.stop()
         disk = self.model.disk
         self.model.disk = None
@@ -776,6 +779,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.opened_folders = self.opening_folders = frozenset()
         if not on:
             self.filter_timer.stop()
+            self.view.stop_expanding(MATCHES_ONLY_CHANNEL)
             self.view.apply_row_filter(None)
             return
         if self.found_matches is not None:

@@ -742,3 +742,17 @@ def test_row_filter_hides_the_arrow_of_kept_folders_that_are_not_ancestors(qtbot
     view.apply_row_filter({root, path_of(root, "a")}, {root})
     view.apply_row_filter(None)
     assert not placeholder_hidden(view, path_of(root, "a"))
+
+
+def test_stopping_one_expand_channel_keeps_the_other_running(qtbot, tmp_path):
+    view, root = make_view(qtbot, tmp_path)
+    done = []
+    view.expand_folders([root, path_of(root, "a")], on_complete=lambda: done.append("expand"))
+    view.expand_folders([root, path_of(root, "a")], on_complete=lambda: done.append("filter"), channel="filter")
+
+    view.stop_expanding("filter")
+
+    qtbot.waitUntil(lambda: done == ["expand"])
+    for _ in range(50):
+        QtCore.QCoreApplication.processEvents()
+    assert done == ["expand"]

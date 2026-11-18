@@ -1,4 +1,5 @@
 from collections.abc import Callable, Iterable, Sequence, Set as AbstractSet
+from itertools import chain
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -202,8 +203,8 @@ class FolderManagerTreeView(LazyFolderTreeView):
         self.expand_serials: dict[str, int] = {}
         self.row_filter: AbstractSet[str] | None = None
         self.filter_ancestors: AbstractSet[str] = frozenset()
-        self.hidden_paths: set[str] = set()
-        self.hidden_placeholders: set[str] = set()
+        self.hidden_rows: set[QtCore.QPersistentModelIndex] = set()
+        self.hidden_placeholders: set[QtCore.QPersistentModelIndex] = set()
         self.following_rows = False
         self.setHeaderHidden(False)
         self.setItemDelegateForColumn(0, BadgeDelegate(self.model_.badges, self))
@@ -330,43 +331,40 @@ class FolderManagerTreeView(LazyFolderTreeView):
 
         load_chunk(0)
 
+    def stop_expanding(self, channel: str | None = None) -> None:
+        for name in [channel] if channel is not None else list(self.expand_serials):
+            self.expand_serials[name] = self.expand_serials.get(name, 0) + 1
+
     def collapse_all(self) -> None:
-        for channel in self.expand_serials:
-            self.expand_serials[channel] += 1
+        self.stop_expanding()
         self.collapseAll()
 
     def apply_row_filter(self, keep: AbstractSet[str] | None, ancestors: AbstractSet[str] = frozenset()) -> None:
-        hidden, self.hidden_paths = self.hidden_paths, set()
+        hidden, self.hidden_rows = self.hidden_rows, set()
         placeholders, self.hidden_placeholders = self.hidden_placeholders, set()
         self.row_filter = keep
         self.filter_ancestors = ancestors
         self.follow_inserted_rows(keep is not None)
-        for path in hidden if keep is None else hidden & keep:
-            self.show_path(path)
         if keep is not None:
-            self.hidden_paths = hidden - keep
-            self.hide_rows_outside(keep, ancestors, placeholders)
-        for path in placeholders - self.hidden_placeholders:
-            self.show_placeholder(path)
+            self.hide_rows_outside(keep, ancestors)
+        for row in chain(hidden - self.hidden_rows, placeholders - self.hidden_placeholders):
+            self.show_row(row)
 
-    def hide_rows_outside(self, keep: AbstractSet[str], ancestors: AbstractSet[str], hidden_placeholders: AbstractSet[str]) -> None:
+    def hide_rows_outside(self, keep: AbstractSet[str], ancestors: AbstractSet[str]) -> None:
         model = self.model_
         parents: list[tuple[QtGui.QStandardItem, str | None]] = [(model.invisibleRootItem(), None)]
         while parents:
             parent, parent_path = parents.pop()
             parent_index = model.indexFromItem(parent)
             for row in range(parent.rowCount()):
-                child = parent.child(row)
-                path = child.data(USER_ROLE_PATH)
+                path = parent.child(row).data(USER_ROLE_PATH)
                 if not path:
                     if parent_path is not None and parent_path not in ancestors:
-                        if parent_path not in hidden_placeholders:
-                            self.setRowHidden(row, parent_index, True)
-                        self.hidden_placeholders.add(parent_path)
+                        self.hide_placeholder(row, parent_index)
                 elif path in keep:
-                    parents.append((child, path))
-                elif path not in self.hidden_paths:
-                    self.hide_row(row, parent_index, path)
+                    parents.append((parent.child(row), path))
+                else:
+                    self.hide_row(row, parent_index)
 
     def follow_inserted_rows(self, follow: bool) -> None:
         if follow == self.following_rows:
@@ -388,34 +386,29 @@ class FolderManagerTreeView(LazyFolderTreeView):
             if not path:
                 continue
             if path not in keep:
-                self.hide_row(row, parent, path)
+                self.hide_row(row, parent)
             elif path not in self.filter_ancestors and self.has_placeholder(index):
-                self.setRowHidden(0, index, True)
-                self.hidden_placeholders.add(path)
+                self.hide_placeholder(0, index)
 
-    def hide_row(self, row: int, parent: QtCore.QModelIndex, path: str) -> None:
-        self.setRowHidden(row, parent, True)
-        self.hidden_paths.add(path)
+    def hide_row(self, row: int, parent: QtCore.QModelIndex) -> None:
+        if not self.isRowHidden(row, parent):
+            self.setRowHidden(row, parent, True)
+        self.hidden_rows.add(QtCore.QPersistentModelIndex(self.model_.index(row, 0, parent)))
 
-    def item_index(self, path: str) -> QtCore.QModelIndex | None:
-        item = self.model_.path_item_map.get(path)
-        return self.model_.indexFromItem(item) if self.model_._is_valid_item(item) else None
+    def hide_placeholder(self, row: int, parent: QtCore.QModelIndex) -> None:
+        if not self.isRowHidden(row, parent):
+            self.setRowHidden(row, parent, True)
+        self.hidden_placeholders.add(QtCore.QPersistentModelIndex(self.model_.index(row, 0, parent)))
 
-    def show_path(self, path: str) -> None:
-        index = self.item_index(path)
-        if index is not None:
-            self.setRowHidden(index.row(), index.parent(), False)
+    def show_row(self, row: QtCore.QPersistentModelIndex) -> None:
+        if row.isValid():
+            self.setRowHidden(row.row(), row.parent(), False)
 
     def has_placeholder(self, index: QtCore.QModelIndex) -> bool:
         return self.model_.rowCount(index) > 0 and not self.model_.index(0, 0, index).data(USER_ROLE_PATH)
 
-    def show_placeholder(self, path: str) -> None:
-        index = self.item_index(path)
-        if index is not None and self.has_placeholder(index):
-            self.setRowHidden(0, index, False)
-
     def on_model_reset(self) -> None:
-        self.hidden_paths.clear()
+        self.hidden_rows.clear()
         self.hidden_placeholders.clear()
 
     def select_folders(self, paths: Sequence[str]) -> None:

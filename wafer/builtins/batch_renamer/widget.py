@@ -157,6 +157,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._stack.setCurrentWidget(self._empty_page)
 
         self.setAcceptDrops(True)
+        self.destroyed.connect(lambda: self._cancel_all_pending())
 
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
         mime = event.mimeData()
@@ -770,7 +771,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
             overlay.update()
 
     def hideEvent(self, event):
-        self._cancel_all_pending()
         BatchRenameWidget._saved_state = self._serialise_columns()
         super().hideEvent(event)
 

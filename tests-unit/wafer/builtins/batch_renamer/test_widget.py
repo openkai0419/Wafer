@@ -25,6 +25,7 @@ from wafer.builtins.rename_sources import (
 from wafer.builtins.batch_renamer.widget import BatchRenamerPlugin
 from wafer.core.db.file_db import FileDB
 from wafer.qt.common.dpi import dpix
+from wafer.qt.common.dispatcher import CancelToken
 
 
 @pytest.fixture(autouse=True)
@@ -771,14 +772,27 @@ class TestProgressiveThumbnailLoading:
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_close_cancels_thumbnail_loading(self, mock_init, qtbot, tmp_files):
+    def test_hide_keeps_loading(self, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.show()
         dlg.set_files(tmp_files)
-        with patch.object(dlg._thumbs, "cancel_all", wraps=dlg._thumbs.cancel_all) as spy:
-            dlg.close()
-        spy.assert_called()
+        dlg._init_cancel = init_cancel = CancelToken()
+        with patch.object(dlg._thumbs, "cancel_all") as spy:
+            dlg.hide()
+        spy.assert_not_called()
+        assert not init_cancel.is_cancelled()
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_destroy_cancels_loading(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg._init_cancel = init_cancel = CancelToken()
+        dlg.destroyed.emit()
+        assert init_cancel.is_cancelled()
+        dlg.close()
 
 
 class TestSegTableSelectionSync:

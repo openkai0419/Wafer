@@ -10,6 +10,8 @@ from ...common.dpi import dpix
 from ...common.icon_engine import themed_icon
 from .state import CommandOptionStore
 
+QT_INT_MAX = 2147483647
+
 
 class CommandOptionsDialog(QtWidgets.QDialog):
     def __init__(self, command_class: type, parent=None, execute_callback: Callable[[dict[str, Any]], None] | None = None, binding_mode: bool = False, auto_required: bool = False):
@@ -93,7 +95,7 @@ class CommandOptionsDialog(QtWidgets.QDialog):
             if param.min_value is not None:
                 w.setMinimum(int(param.min_value))
             else:
-                w.setMinimum(int(min(0, v)))
+                w.setMinimum(max(-QT_INT_MAX, min(0, v)))
             if param.max_value is not None:
                 w.setMaximum(int(param.max_value))
             else:
@@ -165,7 +167,7 @@ class CommandOptionsDialog(QtWidgets.QDialog):
             return 999
         sq = a * a
         digits = len(str(int(sq)))
-        return max(999, (10 ** (digits + 1)) - 1)
+        return min(QT_INT_MAX, max(999, (10 ** (digits + 1)) - 1))
 
     @staticmethod
     def _infer_float_step(v: float) -> tuple[float, int]:

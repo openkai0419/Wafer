@@ -509,6 +509,7 @@ class IndexerProcess:
 
     def delete(self):
         AppLogger.info(f"indexer delete: {self.db_name}")
+        self.zmq.send("db.deleting", self.db_name, dst="ALL")
         self._stop_components()
         if self.setting_db:
             delete_database_files(self.setting_db.db_name, force=True)

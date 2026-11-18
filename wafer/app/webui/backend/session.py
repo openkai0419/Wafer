@@ -78,6 +78,8 @@ class QueryService:
         self._key_stale: set[str] = set()
         self._key_version: dict[str, int] = {}
         self._key_retry_after: dict[str, float] = {}
+        self._released: set[str] = set()
+        self._closing: set[asyncio.Task] = set()
         self.composer = SearchComposer()
         register_builtin_query_plugins()
 
@@ -88,7 +90,7 @@ class QueryService:
     def db(self, name: str) -> DbService:
         service = self._dbs.get(name)
         if service is None:
-            if name not in self.list_dbs():
+            if name in self._released or name not in self.list_dbs():
                 raise KeyError(name)
             service = DbService(name)
             self._dbs[name] = service
@@ -185,6 +187,33 @@ class QueryService:
         self._sessions.move_to_end(query_id)
         return session
 
+    def release_db(self, name: str):
+        self._released.add(name)
+        for query_id in [k for k, s in self._sessions.items() if s.db == name]:
+            del self._sessions[query_id]
+        task = self._key_tasks.pop(name, None)
+        if task is not None and not task.done():
+            task.cancel()
+        for cache in (self._key_cache, self._key_version, self._key_retry_after):
+            cache.pop(name, None)
+        self._key_stale.discard(name)
+        service = self._dbs.pop(name, None)
+        if service is not None:
+            AppLogger.info(f"WebUI closing db {name} for deletion")
+            task = asyncio.get_running_loop().create_task(self.close_service(service))
+            self._closing.add(task)
+            task.add_done_callback(self._closing.discard)
+
+    def restore_db(self, name: str):
+        self._released.discard(name)
+
+    @staticmethod
+    async def close_service(service: DbService):
+        try:
+            await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(None, service.close), timeout=DB_CLOSE_TIMEOUT)
+        except TimeoutError:
+            AppLogger.warning(f"WebUI db close timed out for {service.name}, a background scan may still be running")
+
     async def close(self):
         for task in self._key_tasks.values():
             if not task.done():
@@ -194,13 +223,11 @@ class QueryService:
         self._key_stale.clear()
         self._key_version.clear()
         self._key_retry_after.clear()
-        loop = asyncio.get_running_loop()
         for service in self._dbs.values():
-            try:
-                await asyncio.wait_for(loop.run_in_executor(None, service.close), timeout=DB_CLOSE_TIMEOUT)
-            except TimeoutError:
-                AppLogger.warning(f"WebUI db close timed out for {service.name}, a background scan may still be running")
+            await self.close_service(service)
         self._dbs.clear()
+        if self._closing:
+            await asyncio.gather(*self._closing)
         self._sessions.clear()
 
 

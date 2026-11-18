@@ -15,7 +15,7 @@ routes = web.RouteTableDef()
 
 
 class EventHub:
-    def __init__(self, on_app_shutdown=None, on_dev_log=None, on_db_changed=None, session_id: str = ""):
+    def __init__(self, on_app_shutdown=None, on_dev_log=None, on_db_changed=None, on_db_deleting=None, on_db_deleted=None, session_id: str = ""):
         self.session_id = session_id
         self.clients: set[web.WebSocketResponse] = set()
         self.loop: asyncio.AbstractEventLoop | None = None
@@ -24,6 +24,8 @@ class EventHub:
         self.on_app_shutdown = on_app_shutdown
         self.on_dev_log = on_dev_log
         self.on_db_changed = on_db_changed
+        self.on_db_deleting = on_db_deleting
+        self.on_db_deleted = on_db_deleted
 
     def start_node(self):
         self.loop = asyncio.get_running_loop()
@@ -35,6 +37,8 @@ class EventHub:
             node.subscribe("app.shutdown", self._on_shutdown_message)
         if self.on_dev_log is not None:
             node.subscribe("dev.log", self._relay_dev_log)
+        if self.on_db_deleting is not None:
+            node.subscribe("db.deleting", self._on_db_deleting)
         node.start()
         self.node = node
         AppLogger.set_node(node)
@@ -51,10 +55,17 @@ class EventHub:
         self.on_app_shutdown()
         return True
 
+    def _on_db_deleting(self, msg):
+        if self.loop is not None:
+            self.loop.call_soon_threadsafe(self.on_db_deleting, msg.db or "")
+        return True
+
     def make_relay(self, topic: str):
         def handler(msg):
             if self.on_db_changed is not None and topic in DB_CHANGE_TOPICS and self.loop is not None:
                 self.loop.call_soon_threadsafe(self.on_db_changed, msg.db or "")
+            if self.on_db_deleted is not None and topic == "db.deleted" and self.loop is not None:
+                self.loop.call_soon_threadsafe(self.on_db_deleted, msg.db or "")
             payload = msg.payload
             if not isinstance(payload, (str, int, float, bool, list, dict, type(None))):
                 payload = str(payload)

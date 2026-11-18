@@ -48,3 +48,29 @@ def test_closed_client_removed(client, app):
         return len(hub.clients)
 
     assert client.loop.run_until_complete(scenario()) == 0
+
+
+def test_db_deleting_releases_the_db_and_db_deleted_restores_it():
+    from wafer.app.webui.backend.events import EventHub
+
+    calls = []
+
+    async def scenario():
+        hub = EventHub(on_db_deleting=lambda name: calls.append(("release", name)), on_db_deleted=lambda name: calls.append(("restore", name)))
+        hub.loop = asyncio.get_running_loop()
+        assert hub._on_db_deleting(SimpleNamespace(payload="foo", db="foo")) is True
+        hub.make_relay("db.deleted")(SimpleNamespace(payload="foo", db="foo"))
+        while len(calls) < 2:
+            await asyncio.sleep(0.01)
+
+    asyncio.run(asyncio.wait_for(scenario(), timeout=5))
+    assert calls == [("release", "foo"), ("restore", "foo")]
+
+
+def test_server_wires_db_deleting_to_the_query_service(app):
+    from wafer.app.webui.backend.session import QUERY_SERVICE
+
+    hub = app[EVENT_HUB]
+    service = app[QUERY_SERVICE]
+    assert hub.on_db_deleting == service.release_db
+    assert hub.on_db_deleted == service.restore_db

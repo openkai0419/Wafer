@@ -123,7 +123,15 @@ def create_app(with_events: bool = True, on_app_shutdown=None, on_dev_log=None, 
     app[ALLOWED_HOSTS] = tuple(allowed_hosts)
     app[QUERY_SERVICE] = QueryService()
     app[MEDIA_EXECUTOR] = ThreadPoolExecutor(max_workers=4, thread_name_prefix="webmedia")
-    app[EVENT_HUB] = EventHub(on_app_shutdown=on_app_shutdown, on_dev_log=on_dev_log, on_db_changed=app[QUERY_SERVICE].invalidate_keys, session_id=session_id)
+    query_service = app[QUERY_SERVICE]
+    app[EVENT_HUB] = EventHub(
+        on_app_shutdown=on_app_shutdown,
+        on_dev_log=on_dev_log,
+        on_db_changed=query_service.invalidate_keys,
+        on_db_deleting=query_service.release_db,
+        on_db_deleted=query_service.restore_db,
+        session_id=session_id,
+    )
     app.router.add_get("/", index)
     app.router.add_get("/favicon.ico", favicon)
     app.add_routes(api.routes)

@@ -61,6 +61,20 @@ class TestDelete:
     @patch("wafer.app.indexer.main_indexer.remove_orphan_databases")
     @patch("wafer.app.indexer.main_indexer.delete_database_files")
     @patch("wafer.app.indexer.main_indexer.Node")
+    def test_delete_announces_db_deleting_before_removing_files(self, mock_node_cls, mock_del_files, mock_orphan):
+        node = MagicMock()
+        mock_node_cls.return_value = node
+        order = []
+        node.send.side_effect = lambda topic, *a, **kw: topic != "dev.log" and order.append((topic, kw.get("dst")))
+        mock_del_files.side_effect = lambda *a, **kw: order.append(("delete_files", None))
+        proc = IndexerProcess("test")
+        proc.setting_db = None
+        proc.delete()
+        assert order[:2] == [("db.deleting", "ALL"), ("delete_files", None)]
+
+    @patch("wafer.app.indexer.main_indexer.remove_orphan_databases")
+    @patch("wafer.app.indexer.main_indexer.delete_database_files")
+    @patch("wafer.app.indexer.main_indexer.Node")
     def test_delete_with_setting_db_none(self, mock_node_cls, mock_del_files, mock_orphan):
         node = MagicMock()
         mock_node_cls.return_value = node

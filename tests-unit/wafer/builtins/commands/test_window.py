@@ -239,6 +239,7 @@ class TestWindowRestartCommands:
                 "",
                 (),
                 {
+                    "tray_pid": staticmethod(lambda: None),
                     "terminate_cmd": staticmethod(lambda *a, **kw: calls.append(("terminate", a))),
                     "new_main": staticmethod(lambda *a: calls.append(("new_main", a))),
                 },
@@ -247,6 +248,30 @@ class TestWindowRestartCommands:
         window_commands.restart_tray(_Ctx())
         assert ("terminate", ("--tray",)) in calls
         assert ("new_main", ("--tray",)) in calls
+
+    def test_restart_tray_terminates_the_lock_owner_without_scanning_processes(self, monkeypatch):
+        calls = []
+        no_scan = staticmethod(lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not scan every process")))
+        monkeypatch.setattr(window_commands.installer_queue, "has_pending_queue", lambda _dir: False)
+        monkeypatch.setattr(window_commands.AppProcess, "tray_pid", staticmethod(lambda: 4321))
+        monkeypatch.setattr(window_commands.AppProcess, "terminate_cmd", no_scan)
+        monkeypatch.setattr(window_commands.AppProcess, "get_by_args_subset", no_scan)
+        monkeypatch.setattr(window_commands.psutil, "Process", lambda pid: ("proc", pid))
+        monkeypatch.setattr(window_commands.AppProcess, "terminate_and_wait", staticmethod(lambda procs: calls.append(("terminate", procs))))
+        monkeypatch.setattr(window_commands.AppProcess, "new_main", staticmethod(lambda *a: calls.append(("new_main", a))))
+
+        window_commands.restart_tray(_Ctx())
+
+        assert calls == [("terminate", [("proc", 4321)]), ("new_main", ("--tray",))]
+
+    def test_close_all_sends_to_the_lock_owner_without_scanning_processes(self, monkeypatch):
+        monkeypatch.setattr(window_commands.AppProcess, "tray_pid", staticmethod(lambda: 4321))
+        monkeypatch.setattr(window_commands.AppProcess, "get_by_args_subset", staticmethod(lambda *a: (_ for _ in ()).throw(AssertionError("must not scan every process"))))
+
+        win = MagicMock()
+        window_commands.close_all(_Ctx(MainWindow=win))
+
+        win._node.send.assert_called_once_with("app.quit_all", dst="tray")
 
     def test_restart_tray_from_the_tray_does_not_terminate_itself(self, monkeypatch):
         monkeypatch.setattr("wafer.builtins.commands.window.installer_queue.has_pending_queue", lambda _dir: False)

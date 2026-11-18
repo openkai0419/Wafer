@@ -1,5 +1,7 @@
 import webbrowser
 
+import psutil
+
 from ...qt.commands.bridge import ActionKit
 from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...app.webui.instance import WebUILock, replace_webui
@@ -49,8 +51,23 @@ def restart_tray(ctx):
     if tray:
         tray.restart_self()
         return
-    AppProcess.terminate_cmd("--tray", wait=True)
+    _terminate_tray()
     AppProcess.new_main("--tray")
+
+
+def _terminate_tray():
+    pid = AppProcess.tray_pid()
+    if pid is None:
+        AppProcess.terminate_cmd("--tray", wait=True)
+        return
+    try:
+        AppProcess.terminate_and_wait([psutil.Process(pid)])
+    except psutil.NoSuchProcess:
+        AppLogger.info(f"restart_tray: tray {pid} already exited")
+
+
+def _tray_running():
+    return AppProcess.tray_pid() is not None or bool(AppProcess.get_by_args_subset("--tray"))
 
 
 def restart_viewer(ctx):
@@ -92,7 +109,7 @@ def _shutdown_via_tray(ctx, *, then_restart):
         return True
     host = _host(ctx)
     node = getattr(host, "_node", None) if host else None
-    if node and AppProcess.get_by_args_subset("--tray"):
+    if node and _tray_running():
         node.send("app.restart_all" if then_restart else "app.quit_all", dst="tray")
         return True
     return False

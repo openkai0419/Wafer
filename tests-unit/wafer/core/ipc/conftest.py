@@ -5,6 +5,7 @@ import pytest
 def _isolate_broker_port(tmp_path, monkeypatch):
     port_file = tmp_path / "ipc" / "broker.json"
     monkeypatch.setattr("wafer.core.ipc.transport._PORT_FILE", port_file)
+    monkeypatch.setattr("wafer.core.ipc.transport.profile_data_root", lambda profile: tmp_path / "profiles" / str(profile))
 
 
 @pytest.fixture

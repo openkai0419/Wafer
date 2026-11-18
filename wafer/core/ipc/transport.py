@@ -9,7 +9,8 @@ from typing import Any
 import zmq
 
 from ..logs import debug_non_recursive
-from ..common.paths import resolve_data_path
+from ..common.paths import profile_data_root, resolve_data_path
+from ..common.profile import current_profile
 
 
 class Priority:
@@ -32,8 +33,20 @@ ZMQ_SNDTIMEO_MS = 800
 ZMQ_RCVTIMEO_MS = 800
 PORT_FILE_REPLACE_RETRIES = 20
 PORT_FILE_REPLACE_RETRY_SEC = 0.05
+APP_ID = "wafer"
 
 _PORT_FILE = Path(resolve_data_path("ipc/broker.json"))
+CURRENT_PROFILE = object()
+
+
+def resolve_profile(profile: str | None | object) -> str | None:
+    return current_profile() if profile is CURRENT_PROFILE else profile
+
+
+def port_file_for(profile: str | None) -> Path:
+    if profile == current_profile():
+        return _PORT_FILE
+    return profile_data_root(profile) / "ipc" / "broker.json"
 
 
 def tune_socket(sock: zmq.Socket) -> None:
@@ -96,24 +109,26 @@ def adaptive_poll(did_work: bool, idle_streak: int) -> tuple[int, int]:
     return idle_streak, min(POLL_BASE_MS + idle_streak, POLL_MAX_MS)
 
 
-def write_broker_port(port: int):
-    _PORT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = _PORT_FILE.with_suffix(".tmp")
+def write_broker_port(port: int, *, port_file: Path | None = None):
+    path = port_file if port_file is not None else _PORT_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps({"port": port}))
     for _ in range(PORT_FILE_REPLACE_RETRIES):
         try:
-            tmp.replace(_PORT_FILE)
+            tmp.replace(path)
             return
         except PermissionError:
             time.sleep(PORT_FILE_REPLACE_RETRY_SEC)
-    tmp.replace(_PORT_FILE)
+    tmp.replace(path)
 
 
-def read_broker_port(timeout: float = 5.0) -> int | None:
+def read_broker_port(timeout: float = 5.0, *, port_file: Path | None = None) -> int | None:
+    path = port_file if port_file is not None else _PORT_FILE
     end = time.time() + timeout
     while True:
         try:
-            data = json.loads(_PORT_FILE.read_text())
+            data = json.loads(path.read_text())
             return int(data["port"])
         except (OSError, KeyError, ValueError):
             if time.time() > end:
@@ -121,9 +136,10 @@ def read_broker_port(timeout: float = 5.0) -> int | None:
             time.sleep(0.1)
 
 
-def remove_broker_port():
+def remove_broker_port(*, port_file: Path | None = None):
+    path = port_file if port_file is not None else _PORT_FILE
     try:
-        _PORT_FILE.unlink(missing_ok=True)
+        path.unlink(missing_ok=True)
     except Exception as e:
         from ..logs import AppLogger
 

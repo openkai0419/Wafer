@@ -11,7 +11,8 @@ import zmq
 
 from ..logs import AppLogger
 from .transport import (
-    DEFAULT_PORT,
+    APP_ID,
+    CURRENT_PROFILE,
     HEARTBEAT_INTERVAL,
     NODE_QUEUE_MAX,
     NODE_TIMEOUT,
@@ -21,7 +22,9 @@ from .transport import (
     adaptive_poll,
     close_socket,
     drain_queue,
+    port_file_for,
     read_broker_port,
+    resolve_profile,
     try_put,
     tune_socket,
 )
@@ -32,9 +35,20 @@ _OUTBOX_POLL = 30.0
 
 
 class Node:
-    def __init__(self, role: str, db: str | list[str] = "", *, consumer: bool = False, outbox_poll: float | None = _OUTBOX_POLL, broker_lost_timeout: float | None = None):
+    def __init__(
+        self,
+        role: str,
+        db: str | list[str] = "",
+        *,
+        consumer: bool = False,
+        outbox_poll: float | None = _OUTBOX_POLL,
+        broker_lost_timeout: float | None = None,
+        profile: str | None | object = CURRENT_PROFILE,
+    ):
         self.role = role
         self.db = db
+        self.profile = resolve_profile(profile)
+        self._port_file = port_file_for(self.profile)
         self.node_id = f"{role}-{os.getpid()}"
         self.session_id: str = ""
         self._handlers: dict[str, Callable[[Message], bool]] = {}
@@ -58,6 +72,7 @@ class Node:
         self._unregistered_since: float | None = None
         self._broker_lost_callback: Callable[[], None] | None = None
         self._register_warned = False
+        self._foreign_broker_warned = False
         self._outbox: OutboxStore | None = None
         self._outbox_open_lock = threading.Lock()
         self._outbox_event = threading.Event()
@@ -99,8 +114,11 @@ class Node:
     def start(self, port: int | None = None):
         if self._broker_lost_timeout is not None:
             self._unregistered_since = time.monotonic()
-        target_port = port if port is not None else (read_broker_port() or DEFAULT_PORT)
-        self._connect(target_port)
+        target_port = port if port is not None else read_broker_port(port_file=self._port_file)
+        if target_port:
+            self._connect(target_port)
+        else:
+            AppLogger.info(f"no broker announced in {self._port_file} yet, waiting for it (node={self.node_id})")
         self._io_thread = threading.Thread(target=self._io_loop, daemon=True)
         self._io_thread.start()
         if self._outbox_thread:
@@ -250,10 +268,13 @@ class Node:
         self._registered.clear()
 
     def _drain_inbound(self) -> bool:
+        dealer = self._dealer
+        if dealer is None:
+            return False
         did_work = False
         while True:
             try:
-                frames = self._dealer.recv_multipart(flags=zmq.NOBLOCK, copy=False)
+                frames = dealer.recv_multipart(flags=zmq.NOBLOCK, copy=False)
             except (zmq.Again, zmq.ZMQError):
                 return did_work
             msg = Message.from_frames([bytes(f) for f in frames])
@@ -274,10 +295,13 @@ class Node:
             AppLogger.warning(f"broker timeout (port={self._current_port}), attempting reconnect")
             self._registered.clear()
 
-        new_port = read_broker_port(timeout=0.3)
+        new_port = read_broker_port(timeout=0.3, port_file=self._port_file)
         if not new_port:
             return
-        if new_port != self._current_port:
+        if self._dealer is None:
+            AppLogger.info(f"broker announced on port {new_port}, connecting (node={self.node_id})")
+            self._connect(new_port)
+        elif new_port != self._current_port:
             AppLogger.info(f"broker port changed: {self._current_port} -> {new_port}")
             self._connect(new_port)
         else:
@@ -288,9 +312,12 @@ class Node:
                 self._connect(new_port)
 
     def _send_to_broker(self, topic: str, payload: Any = None) -> bool:
+        dealer = self._dealer
+        if dealer is None:
+            return False
         msg = Message.build(topic, payload, src=self.node_id, dst="broker")
         try:
-            self._dealer.send_multipart(list(msg.to_frames()), copy=False)
+            dealer.send_multipart(list(msg.to_frames()), copy=False)
             return True
         except Exception as e:
             AppLogger.debug(f"send_to_broker failed ({topic}): {e}")
@@ -323,11 +350,20 @@ class Node:
                 return
 
         if msg.topic == "mgmt.registered":
-            if isinstance(msg.payload, dict):
-                self._viewer_id = msg.payload.get("viewer_id")
+            payload = msg.payload if isinstance(msg.payload, dict) else {}
+            if payload.get("app") != APP_ID or payload.get("profile") != (self.profile or ""):
+                if not self._foreign_broker_warned:
+                    AppLogger.warning(
+                        f"port {self._current_port} answered as app={payload.get('app')!r} profile={payload.get('profile')!r}, "
+                        f"not this Wafer's broker (profile={self.profile or '-'}); staying unregistered until {self._port_file} names the right one (node={self.node_id})"
+                    )
+                    self._foreign_broker_warned = True
+                return
+            self._viewer_id = payload.get("viewer_id")
             self._registered.set()
             self._unregistered_since = None
             self._register_warned = False
+            self._foreign_broker_warned = False
             AppLogger.info(f"registered as {self.node_id}, viewer_id={self._viewer_id}")
             return
 
@@ -359,8 +395,7 @@ class Node:
 
     def _io_loop(self):
         poller = zmq.Poller()
-        registered_dealer = self._dealer
-        poller.register(registered_dealer, zmq.POLLIN)
+        dealer: zmq.Socket | None = None
         idle_streak, poll_ms = 0, POLL_BASE_MS
         next_tick = 0.0
 
@@ -372,12 +407,16 @@ class Node:
                 except Exception as e:
                     AppLogger.warning(f"node heartbeat failed, retrying next tick (node={self.node_id})", exc=e)
                 next_tick = now + HEARTBEAT_INTERVAL
-                if self._dealer is not registered_dealer:
-                    poller = zmq.Poller()
-                    registered_dealer = self._dealer
-                    poller.register(registered_dealer, zmq.POLLIN)
                 if self._check_broker_lost(now):
                     break
+            if self._dealer is not dealer:
+                dealer = self._dealer
+                poller = zmq.Poller()
+                if dealer is not None:
+                    poller.register(dealer, zmq.POLLIN)
+            if dealer is None:
+                self._stop.wait(max(0.0, next_tick - time.monotonic()))
+                continue
 
             try:
                 events = dict(poller.poll(poll_ms))
@@ -386,13 +425,13 @@ class Node:
                 break
             did_work = False
 
-            if events.get(self._dealer) == zmq.POLLIN:
+            if events.get(dealer) == zmq.POLLIN:
                 did_work = self._drain_inbound()
 
             batch, sentinel = drain_queue(self._out_q, self._sentinel)
             for i, frames in enumerate(batch):
                 try:
-                    self._dealer.send_multipart(list(frames), copy=False)
+                    dealer.send_multipart(list(frames), copy=False)
                     did_work = True
                 except zmq.Again:
                     for remaining in batch[i:]:
@@ -405,5 +444,6 @@ class Node:
 
             idle_streak, poll_ms = adaptive_poll(did_work, idle_streak)
 
-        self._send_to_broker("mgmt.unregister")
-        close_socket(self._dealer)
+        if self._dealer is not None:
+            self._send_to_broker("mgmt.unregister")
+            close_socket(self._dealer)

@@ -9,7 +9,9 @@ import zmq
 
 from ..logs import AppLogger
 from .transport import (
+    APP_ID,
     BROKER_QUEUE_MAX,
+    CURRENT_PROFILE,
     DEFAULT_PORT,
     HEARTBEAT_TIMEOUT,
     POLL_BASE_MS,
@@ -17,7 +19,9 @@ from .transport import (
     adaptive_poll,
     close_socket,
     drain_queue,
+    port_file_for,
     remove_broker_port,
+    resolve_profile,
     try_put,
     tune_socket,
     write_broker_port,
@@ -70,7 +74,9 @@ class _CoalescingQueue:
 
 
 class Broker:
-    def __init__(self, port: int | None = None):
+    def __init__(self, port: int | None = None, *, profile: str | None | object = CURRENT_PROFILE):
+        self.profile = resolve_profile(profile)
+        self._port_file = port_file_for(self.profile)
         self._ctx = zmq.Context.instance()
         self._router = self._ctx.socket(zmq.ROUTER)
         tune_socket(self._router)
@@ -79,12 +85,7 @@ class Broker:
         except (zmq.ZMQError, AttributeError):
             pass
 
-        bind_port = port or DEFAULT_PORT
-        try:
-            self._router.bind(f"tcp://127.0.0.1:{bind_port}")
-            self.port = bind_port
-        except zmq.ZMQError:
-            self.port = self._router.bind_to_random_port("tcp://127.0.0.1")
+        self.port = self._bind(port)
 
         self._stop = threading.Event()
         self._direct_q: Queue = Queue(maxsize=BROKER_QUEUE_MAX)
@@ -108,9 +109,19 @@ class Broker:
         self._io_thread = threading.Thread(target=self._io_loop, daemon=True)
         self._prune_thread = threading.Thread(target=self._reaper_loop, daemon=True)
 
+    def _bind(self, port: int | None) -> int:
+        if self.profile is None:
+            bind_port = port or DEFAULT_PORT
+            try:
+                self._router.bind(f"tcp://127.0.0.1:{bind_port}")
+                return bind_port
+            except zmq.ZMQError as e:
+                AppLogger.info(f"Broker port {bind_port} unavailable ({e}), binding a free port")
+        return self._router.bind_to_random_port("tcp://127.0.0.1")
+
     def start(self):
-        AppLogger.info(f"Broker bound: tcp://127.0.0.1:{self.port}")
-        write_broker_port(self.port)
+        AppLogger.info(f"Broker bound: tcp://127.0.0.1:{self.port} profile={self.profile or '-'}")
+        write_broker_port(self.port, port_file=self._port_file)
         self._io_thread.start()
         self._prune_thread.start()
 
@@ -122,7 +133,7 @@ class Broker:
         self._io_thread.join(timeout=2.0)
         self._prune_thread.join(timeout=2.0)
         close_socket(self._router)
-        remove_broker_port()
+        remove_broker_port(port_file=self._port_file)
 
     def dispatch(self, msg: Message):
         targets = self._resolve_targets(msg, sender_ident=None)
@@ -218,7 +229,7 @@ class Broker:
             else:
                 db_set = set()
             viewer_id = self._register_peer(ident, role, db_set, node_id, session_id)
-            reply_payload = {"status": "ok", "node_id": node_id}
+            reply_payload = {"status": "ok", "node_id": node_id, "app": APP_ID, "profile": self.profile or ""}
             if viewer_id is not None:
                 reply_payload["viewer_id"] = viewer_id
             reply = msg.reply(reply_payload, topic="mgmt.registered")

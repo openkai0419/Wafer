@@ -41,7 +41,7 @@ def test_gives_up_on_replace_and_keeps_the_old_file(tmp_path, monkeypatch):
         raise PermissionError("in use")
 
     monkeypatch.setattr(atomic_file.os, "replace", held)
-    monkeypatch.setattr(atomic_file, "_REPLACE_TIMEOUT", 0.0)
+    monkeypatch.setattr(atomic_file, "_IN_USE_TIMEOUT", 0.0)
     with pytest.raises(PermissionError):
         write_text_atomic(path, "new")
 

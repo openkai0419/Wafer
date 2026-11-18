@@ -3,22 +3,25 @@ from __future__ import annotations
 import os
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import TypeVar
 
-_REPLACE_TIMEOUT = 1.0
-_REPLACE_RETRY = 0.01
+_IN_USE_TIMEOUT = 1.0
+_IN_USE_RETRY = 0.01
+
+T = TypeVar("T")
 
 
-def _replace(src: str, dst: str) -> None:
-    deadline = time.monotonic() + _REPLACE_TIMEOUT
+def retry_while_in_use(fn: Callable[[], T]) -> T:
+    deadline = time.monotonic() + _IN_USE_TIMEOUT
     while True:
         try:
-            os.replace(src, dst)
-            return
+            return fn()
         except PermissionError:
             if time.monotonic() >= deadline:
                 raise
-            time.sleep(_REPLACE_RETRY)
+            time.sleep(_IN_USE_RETRY)
 
 
 def write_text_atomic(path: str | Path, text: str) -> None:
@@ -30,7 +33,7 @@ def write_text_atomic(path: str | Path, text: str) -> None:
             f.write(text)
             f.flush()
             os.fsync(f.fileno())
-        _replace(temp, path)
+        retry_while_in_use(lambda: os.replace(temp, path))
     except BaseException:
         if os.path.exists(temp):
             os.remove(temp)

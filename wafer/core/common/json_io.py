@@ -6,7 +6,12 @@ import json
 
 from ..logs import AppLogger
 from ..profiling import profiler
-from .atomic_file import write_text_atomic
+from .atomic_file import retry_while_in_use, write_text_atomic
+
+
+def _load(p: Path) -> Any:
+    with p.open("r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 @profiler.profile
@@ -15,8 +20,7 @@ def read_json_file(path: str | Path, default: Any = None) -> Any:
         p = Path(path)
         if not p.exists():
             return default
-        with p.open("r", encoding="utf-8") as f:
-            return json.load(f)
+        return retry_while_in_use(lambda: _load(p))
     except Exception as e:
         AppLogger.warning(f"read_json_file failed: {path}", exc=e)
         return default

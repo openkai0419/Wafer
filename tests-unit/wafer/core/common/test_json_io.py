@@ -64,3 +64,23 @@ def test_a_failed_write_keeps_the_old_file_and_leaves_no_temp(tmp_path):
 
     assert read_json_file(p) == {"v": 1}
     assert [f.name for f in tmp_path.iterdir()] == ["data.json"]
+
+
+def test_read_retries_while_the_file_is_being_replaced(tmp_path, monkeypatch):
+    from wafer.core.common import json_io
+
+    p = tmp_path / "data.json"
+    write_json_file(p, {"v": 1})
+    real_load = json_io._load
+    calls = []
+
+    def flaky_load(path):
+        calls.append(path)
+        if len(calls) < 3:
+            raise PermissionError("being replaced")
+        return real_load(path)
+
+    monkeypatch.setattr(json_io, "_load", flaky_load)
+
+    assert read_json_file(p) == {"v": 1}
+    assert len(calls) == 3

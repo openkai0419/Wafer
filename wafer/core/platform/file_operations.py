@@ -9,6 +9,7 @@ from collections.abc import Callable
 
 from ..logs import AppLogger
 from ..common.paths import profile_allows_file_write, safe_exists, safe_is_dir
+from ..common.profile import current_profile
 from ..common.virtual_paths import is_virtual_path
 from .path_utils import check_copy_conflict, is_http_url, unique_path
 
@@ -168,12 +169,12 @@ def _is_virtual_operation_path(path: str | Path | None) -> bool:
     return bool(path and is_virtual_path(str(path)))
 
 
-def _profile_refusal(action: str, paths: list[str | Path]) -> str | None:
+def _profile_refusal(action: str, paths: list[str | Path]) -> bool:
     for p in paths:
         if not profile_allows_file_write(str(p)):
             AppLogger.warning(f"[{action}] refused outside the debug profile scratch area: {p}")
-            return str(p)
-    return None
+            return True
+    return False
 
 
 def count_operation_units(src: Path, dst: Path, action: Literal["copy", "cut"], cancel_check: CancelCheck | None = None) -> int:
@@ -576,7 +577,8 @@ def delete_to_trash(paths: list[str | Path]) -> list[OperationResult]:
         AppLogger.warning(f"[delete] duplicate sources dropped: {len(raw)} -> {len(norm)}")
     if not norm:
         return []
-    refused = {p for p in norm if not profile_allows_file_write(p)}
+    guarded = current_profile() is not None
+    refused = {p for p in norm if guarded and not profile_allows_file_write(p)}
     for p in norm:
         if p in refused:
             AppLogger.warning(f"[delete] refused outside the debug profile scratch area: {p}")

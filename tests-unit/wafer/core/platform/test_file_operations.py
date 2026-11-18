@@ -692,9 +692,18 @@ def test_binary_drop_skip_and_rename(tmp_path):
 
 @pytest.fixture
 def debug_profile(monkeypatch, tmp_path):
+    import wafer.core.common.paths as paths
     from wafer.core.common.paths import scratch_root
     from wafer.core.common.profile import current_profile
 
+    root = str(tmp_path / "appdata")
+
+    class _TmpPlatformDirs:
+        def __init__(self, appname=None):
+            self.user_data_dir = root
+            self.user_config_dir = root
+
+    monkeypatch.setattr(paths, "PlatformDirs", _TmpPlatformDirs)
     sample = tmp_path / "sample"
     sample.mkdir()
     monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(sample))

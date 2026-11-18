@@ -144,6 +144,21 @@ def test_app_user_model_id():
     assert app_user_model_id("Wafer.App", "debug-x") == "Wafer.App.debug-x"
 
 
+@pytest.fixture
+def tmp_app_data(monkeypatch, tmp_path):
+    import wafer.core.common.paths as paths
+
+    root = str(tmp_path / "appdata")
+
+    class _TmpPlatformDirs:
+        def __init__(self, appname=None):
+            self.user_data_dir = root
+            self.user_config_dir = root
+
+    monkeypatch.setattr(paths, "PlatformDirs", _TmpPlatformDirs)
+    return tmp_path / "appdata"
+
+
 def _make_link(link, target):
     if sys.platform == "win32":
         done = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True, text=True)
@@ -156,7 +171,7 @@ def _make_link(link, target):
         pytest.skip("cannot create a symlink")
 
 
-def test_profile_allows_path_through_link_into_sample(monkeypatch, tmp_path):
+def test_profile_allows_path_through_link_into_sample(monkeypatch, tmp_path, tmp_app_data):
     sample = tmp_path / "s"
     sample.mkdir()
     link = tmp_path / "via"
@@ -167,7 +182,7 @@ def test_profile_allows_path_through_link_into_sample(monkeypatch, tmp_path):
     assert not profile_allows_file_write(str(link / "x"))
 
 
-def test_profile_rejects_link_inside_scratch_pointing_elsewhere(monkeypatch, tmp_path):
+def test_profile_rejects_link_inside_scratch_pointing_elsewhere(monkeypatch, tmp_path, tmp_app_data):
     monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(tmp_path / "s"))
     _use_profile(monkeypatch, "debug-t5")
     scratch = scratch_root("debug-t5")
@@ -181,10 +196,21 @@ def test_profile_rejects_link_inside_scratch_pointing_elsewhere(monkeypatch, tmp
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="case-insensitive file system")
-def test_profile_allows_different_case_on_windows(monkeypatch, tmp_path):
+def test_profile_allows_different_case_on_windows(monkeypatch, tmp_path, tmp_app_data):
     sample = tmp_path / "Sample"
     sample.mkdir()
     monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(sample))
     _use_profile(monkeypatch, "debug-t6")
     assert profile_allows_folder(str(tmp_path / "SAMPLE" / "a"))
     assert not profile_allows_folder(str(tmp_path / "SAMPLE2"))
+
+
+def test_profile_sibling_with_same_prefix_is_rejected(monkeypatch, tmp_path, tmp_app_data):
+    sample = tmp_path / "s"
+    sample.mkdir()
+    (tmp_path / "s2").mkdir()
+    monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(sample))
+    _use_profile(monkeypatch, "debug-t7")
+    assert profile_allows_folder(str(sample / "a"))
+    assert not profile_allows_folder(str(tmp_path / "s2"))
+    assert not profile_allows_folder(str(tmp_path / "s2" / "a"))

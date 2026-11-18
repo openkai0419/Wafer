@@ -78,15 +78,18 @@ def test_file_hash_is_included(tmp_path):
     assert values["file_hash"] == PathValue("hash-0")
 
 
-def test_keys_filter_limits_meta_and_tags_but_keeps_standard(tmp_path):
+def test_keys_filter_limits_every_value_to_the_keys(tmp_path):
     values = fetch_path_values(_make_db(tmp_path), ["c:/0.jpg"], keys=["wd14.tags"])["c:/0.jpg"]
-    assert "wd14.tags" in values and "exif.width" not in values and "rating" not in values
-    assert {"path", "name", "size", "file_hash"} <= set(values)
+    assert set(values) == {"wd14.tags"}
 
 
-def test_empty_keys_returns_only_standard(tmp_path):
-    values = fetch_path_values(_make_db(tmp_path), ["c:/0.jpg"], keys=[])["c:/0.jpg"]
-    assert set(values) == {"path", "name", "size", "modified", "created", "collected", "file_hash"}
+def test_standard_keys_are_read_only_when_asked_for(tmp_path):
+    values = fetch_path_values(_make_db(tmp_path), ["c:/0.jpg"], keys=["size", "file_hash", "wd14.tags"])["c:/0.jpg"]
+    assert set(values) == {"size", "file_hash", "wd14.tags"} and values["size"] == PathValue("100", 100.0)
+
+
+def test_empty_keys_returns_nothing(tmp_path):
+    assert fetch_path_values(_make_db(tmp_path), ["c:/0.jpg"], keys=[]) == {}
 
 
 def test_too_many_keys_reads_everything(tmp_path, monkeypatch):

@@ -6,23 +6,12 @@ from ...qt.common.pixmap import PixmapFactory
 from ...qt.common.thread import utility_pool
 from ...plugin.imageloader.handler import image_loader_resolver
 from ...plugin.viewer.base import MultiWidgetViewerPlugin, ViewerContext
+from ...core.common.signal import Signal
 from ...core.logs import AppLogger
 from ...core.profiling import profiler
 from .widget import ImageDisplayWidget
 
 _IMAGE_SPREAD_DIRECTIONS = {"left-to-right", "right-to-left", "top-to-bottom", "bottom-to-top"}
-
-
-class CallbackSignal:
-    def __init__(self):
-        self._callbacks = []
-
-    def connect(self, callback):
-        self._callbacks.append(callback)
-
-    def emit(self):
-        for callback in tuple(self._callbacks):
-            callback()
 
 
 class ImageViewer(MultiWidgetViewerPlugin):
@@ -34,7 +23,7 @@ class ImageViewer(MultiWidgetViewerPlugin):
 
     def __init__(self):
         MultiWidgetViewerPlugin.__init__(self)
-        self.settingsChanged = CallbackSignal()
+        self.settingsChanged = Signal()
         self._dispatcher = Dispatcher(utility_pool)
         self._render_cancel = CancelSlot()
         self._image_cache = shared_image_cache()

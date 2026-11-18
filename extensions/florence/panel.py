@@ -12,6 +12,7 @@ from wafer.qt.common.notifier import Notifier
 from wafer.core.common.paths import list_setting_db_names
 from wafer.core.lang.manager import t
 from wafer.qt.common.dispatcher import Dispatcher
+from wafer.qt.common.thread import utility_pool
 from .settings import TAG_MAP, florence_config
 
 _DST = "collector-florence"
@@ -38,7 +39,7 @@ class FlorenceSettingsWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._settings = florence_config.load()
-        self._dispatcher = Dispatcher()
+        self._dispatcher = Dispatcher(utility_pool, parent=self)
         self._preview_result.connect(self._on_preview_result)
         self._device_result.connect(self._on_device_result)
 

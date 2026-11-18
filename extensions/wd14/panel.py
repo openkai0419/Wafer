@@ -15,6 +15,7 @@ from wafer.qt.common.notifier import Notifier
 from wafer.core.common.paths import list_setting_db_names
 from wafer.core.lang.manager import t
 from wafer.qt.common.dispatcher import Dispatcher
+from wafer.qt.common.thread import utility_pool
 from wafer.qt.meta.searchable import build_highlight_ctx, highlight_html
 from ._downloader import DEFAULT_MODEL
 from ._models import CATEGORIES, NAMED_CATEGORIES, list_models
@@ -70,7 +71,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._settings = wd14_config.load()
-        self._dispatcher = Dispatcher()
+        self._dispatcher = Dispatcher(utility_pool, parent=self)
         self._preview_result.connect(self._on_preview_result)
         self._device_result.connect(self._on_device_result)
 

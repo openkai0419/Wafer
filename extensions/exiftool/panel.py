@@ -12,6 +12,7 @@ from wafer.core.logs import AppLogger
 from wafer.qt.common.notifier import Notifier
 from wafer.core.lang.manager import t
 from wafer.qt.common.dispatcher import Dispatcher, CancelSlot
+from wafer.qt.common.thread import utility_pool
 from wafer.qt.common.icon_engine import themed_icon
 from wafer.qt.common.image import numpy_to_qimage
 from wafer.plugin.imageloader.handler import image_loader_resolver
@@ -58,7 +59,7 @@ class _ContainImageLabel(QtWidgets.QLabel):
 class ExifSettingsWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._dispatcher = Dispatcher()
+        self._dispatcher = Dispatcher(utility_pool, parent=self)
         self._cancel = CancelSlot()
         self._meta: dict[str, str] = {}
         self._pending: dict[str, bool] = {}

@@ -1,6 +1,6 @@
+import copy
 import json
 import os
-import time
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from itertools import chain
@@ -30,7 +30,7 @@ from .rule_editor import METRIC_LABELS, RuleList, tool_button
 from .rules import METRICS, HighlightRule, new_rule
 from .shared_settings import COLUMNS_KEY, DEFAULT_COLUMNS, RULES_KEY, load_columns, load_last_database, load_rules, save_columns, save_last_database, save_rules
 from .stats import DiskTree, count_sources_by_folder, list_folder, walk_disk
-from .view import FolderManagerTreeView, folders_to_open
+from .view import FolderManagerTreeView, folders_to_open, rule_badges
 
 INSTANCE_NAME = "FolderManager"
 RULE_EDIT_DELAY_MS = 400
@@ -38,8 +38,7 @@ SAVE_DELAY_MS = 300
 STATS_REFRESH_MS = 100
 REFRESH_INTERVAL_MS = 3000
 REFRESH_IDLE_MS = 1000
-EXPAND_SLICE_SECONDS = 0.015
-EXPAND_DEADLINE_CHECK = 256
+MATCH_CANCEL_CHECK = 4096
 MATCHES_REFRESH_MS = 1000
 MATCHES_ONLY_CHANNEL = "matches_only"
 DISPOSE_BATCH = 20000
@@ -62,8 +61,38 @@ def outermost(paths: Iterable[str]) -> list[str]:
     return kept
 
 
+RuleCounts = list[tuple[HighlightRule, dict[str, tuple[int, int]]]]
+
+
 def counted_folders(rule: HighlightRule, counts: dict[str, tuple[int, int]]) -> Iterator[str]:
     return (path for path, (files, all_files) in counts.items() if rule.counts_allow(files, all_files))
+
+
+def needs_files(rule_counts: RuleCounts) -> bool:
+    return all(rule.needs_files() for rule, _counts in rule_counts)
+
+
+def match_candidates(rule_counts: RuleCounts, disk_folders: Sequence[str]) -> Iterable[str]:
+    if needs_files(rule_counts):
+        return chain.from_iterable(counted_folders(rule, counts) for rule, counts in rule_counts)
+    return chain(disk_folders, *(counts for _rule, counts in rule_counts))
+
+
+def find_matches(rule_counts: RuleCounts, disk: DiskTree | None, disk_folders: Sequence[str], scopes: Sequence[str], cancel) -> list[str]:
+    prefixes = tuple(child_prefix(scope) for scope in scopes)
+    seen: set[str] = set()
+    matches: list[str] = []
+    for number, path in enumerate(match_candidates(rule_counts, disk_folders)):
+        if number % MATCH_CANCEL_CHECK == 0 and cancel.is_cancelled():
+            return []
+        if path in seen:
+            continue
+        seen.add(path)
+        if scopes and path not in scopes and not path.startswith(prefixes):
+            continue
+        if any(rule_badges(rule_counts, path, disk.values(path) if disk is not None else None)):
+            matches.append(path)
+    return matches
 
 
 @dataclass(frozen=True)
@@ -125,10 +154,10 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.stale_rules = False
         self.stale_parents: set[str] = set()
         self.relisting: set[str] = set()
-        self.expand_serial = 0
+        self.expand_slot = CancelSlot()
         self.matches_only = False
         self.matches_version = 0
-        self.filter_serial = 0
+        self.filter_slot = CancelSlot()
         self.filtering = False
         self.found_matches: MatchScan | None = None
         self.found_version = -1
@@ -370,8 +399,8 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.relisting = set()
         self.stale_disk = False
         self.stale_parents.clear()
-        self.expand_serial += 1
-        self.filter_serial += 1
+        self.expand_slot.cancel()
+        self.filter_slot.cancel()
         self.filtering = False
         self.view.stop_expanding()
         self.stats_timer.stop()
@@ -709,72 +738,45 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.model.refresh_stats()
         self.on_matches_changed()
 
-    def match_candidates(self) -> Iterable[str]:
-        judged = [(rule, counts) for rule, counts in self.model.rule_counts if rule.enabled and rule.conditions]
-        if all(rule.needs_files() for rule, _counts in judged):
-            return chain.from_iterable(counted_folders(rule, counts) for rule, counts in judged)
+    def scan_matches(self, scopes: Sequence[str], token, on_found: Callable[[MatchScan], None]) -> None:
+        rule_counts = [(copy.deepcopy(rule), counts) for rule, counts in self.model.rule_counts if rule.enabled and rule.conditions]
         disk = self.model.disk
-        lists = [list(disk.nodes)] if disk is not None else []
-        lists.extend(list(counts) for _rule, counts in judged)
-        return chain.from_iterable(lists)
-
-    def scan_matches(self, scopes: Sequence[str], is_current: Callable[[], bool], on_found: Callable[[MatchScan], None]) -> None:
-        candidates = self.match_candidates()
+        disk_folders = list(disk.nodes) if disk is not None and not needs_files(rule_counts) else []
         roots = [normalize_path(root) for root in self.model.roots or ()]
-        prefixes = tuple(child_prefix(scope) for scope in scopes)
-        seen: set[str] = set()
-        matches: list[str] = []
 
-        def in_scope(path: str) -> bool:
-            return not scopes or path in scopes or path.startswith(prefixes)
-
-        def scan_slice() -> None:
-            if not is_current():
+        def task() -> None:
+            matches = find_matches(rule_counts, disk, disk_folders, scopes, token)
+            if token.is_cancelled():
                 return
-            deadline = time.perf_counter() + EXPAND_SLICE_SECONDS
-            model = self.model
-            for number, path in enumerate(candidates):
-                if path not in seen:
-                    seen.add(path)
-                    current = model.disk
-                    if in_scope(path) and model.badges_for(path, current.values(path) if current is not None else None):
-                        matches.append(path)
-                if number % EXPAND_DEADLINE_CHECK == 0 and time.perf_counter() >= deadline:
-                    QtCore.QTimer.singleShot(0, scan_slice)
-                    return
-            self.dispatcher.post(find_folders)
-
-        def find_folders() -> None:
             folders = folders_to_open(matches, roots)
             ancestors = frozenset(folders)
             found = MatchScan(matches, folders, ancestors.union(matches), ancestors)
             self.dispatcher.invoke(lambda: deliver(found))
 
         def deliver(found: MatchScan) -> None:
-            if is_current():
+            if not token.is_cancelled():
                 on_found(found)
 
-        scan_slice()
+        self.dispatcher.post(task, cancel=token)
 
     def expand_to_matches(self, select: bool = False) -> None:
-        self.expand_serial += 1
-        serial = self.expand_serial
+        token = self.expand_slot.renew()
         scopes = outermost(normalize_path(path) for path in self.view.get_selected_paths())
-        self.scan_matches(scopes, lambda: serial == self.expand_serial, lambda found: self.open_matches(serial, found, select))
+        self.scan_matches(scopes, token, lambda found: self.open_matches(token, found, select))
 
-    def open_matches(self, serial: int, found: MatchScan, select: bool) -> None:
+    def open_matches(self, token, found: MatchScan, select: bool) -> None:
         if not found.matches:
             Notifier.info(t("No matching folders"))
             return
 
         def select_matches() -> None:
-            if select and serial == self.expand_serial:
+            if select and not token.is_cancelled():
                 self.view.select_folders(found.matches)
 
         self.view.expand_folders(found.folders, on_complete=select_matches)
 
     def collapse_all(self) -> None:
-        self.expand_serial += 1
+        self.expand_slot.cancel()
         self.collapses += 1
         self.opening_folders = frozenset()
         self.view.collapse_all()
@@ -784,7 +786,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
             return
         self.matches_only = on
         self.matches_button.setChecked(on)
-        self.filter_serial += 1
+        self.filter_slot.cancel()
         self.filtering = False
         self.opened_folders = self.opening_folders = frozenset()
         if not on:
@@ -810,10 +812,9 @@ class FolderManagerWidget(QtWidgets.QWidget):
             return
         self.filter_timer.stop()
         self.filtering = True
-        serial = self.filter_serial
         version = self.matches_version
         collapses = self.collapses
-        self.scan_matches([], lambda: serial == self.filter_serial, lambda found: self.on_filter_scanned(version, collapses, found))
+        self.scan_matches([], self.filter_slot.renew(), lambda found: self.on_filter_scanned(version, collapses, found))
 
     def on_filter_scanned(self, version: int, collapses: int, found: MatchScan) -> None:
         self.filtering = False

@@ -992,17 +992,17 @@ def test_expand_to_matches_collects_badged_folders(qtbot, tmp_path, monkeypatch,
     assert expanded == [[root]]
 
 
-def test_expand_to_matches_scans_in_slices_and_finds_ancestors_off_the_main_thread(qtbot, tmp_path, monkeypatch, query_calls):
+def test_expand_to_matches_judges_and_finds_ancestors_off_the_main_thread(qtbot, tmp_path, monkeypatch, query_calls):
     root = make_folders(tmp_path / "root", {"": 1, "a": 1, "a/b": 1, "a/b/c": 1, "a/b/c/d": 0})
     query_calls.sources = [f"{root}/f0.png", f"{root}/a/f0.png", f"{root}/a/b/f0.png", f"{root}/a/b/c/f0.png"]
     panel = make_panel(qtbot)
     bind(qtbot, panel, [root])
     qtbot.waitUntil(lambda: bool(panel.model.badges(f"{root}/a/b/c")), timeout=5000)
-    monkeypatch.setattr(widget_module, "EXPAND_SLICE_SECONDS", -1)
-    monkeypatch.setattr(widget_module, "EXPAND_DEADLINE_CHECK", 1)
     threads = []
     real_folders_to_open = widget_module.folders_to_open
     monkeypatch.setattr(widget_module, "folders_to_open", lambda *args: threads.append(threading.current_thread()) or real_folders_to_open(*args))
+    real_rule_badges = widget_module.rule_badges
+    monkeypatch.setattr(widget_module, "rule_badges", lambda *args: threads.append(threading.current_thread()) or real_rule_badges(*args))
     expanded = []
     monkeypatch.setattr(panel.view, "expand_folders", lambda folders, **_: expanded.append(list(folders)))
     panel.view.hide()
@@ -1262,8 +1262,6 @@ def test_matches_only_follows_new_counts(qtbot, tmp_path, monkeypatch, query_cal
 
 def test_collapse_all_stops_expanding_and_collapses(qtbot, tmp_path, monkeypatch, query_calls):
     panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
-    monkeypatch.setattr(widget_module, "EXPAND_SLICE_SECONDS", -1)
-    monkeypatch.setattr(widget_module, "EXPAND_DEADLINE_CHECK", 1)
     opened = []
     monkeypatch.setattr(panel.view, "expand_folders", lambda folders, **_: opened.append(list(folders)))
     panel.expand_to_matches()
@@ -1339,8 +1337,6 @@ def test_matches_only_does_not_reopen_folders_after_an_expand_interrupts_it(qtbo
 def test_collapse_all_during_the_first_matches_only_scan_keeps_the_tree_closed(qtbot, tmp_path, monkeypatch, query_calls):
     panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
     view = panel.view
-    monkeypatch.setattr(widget_module, "EXPAND_SLICE_SECONDS", -1)
-    monkeypatch.setattr(widget_module, "EXPAND_DEADLINE_CHECK", 1)
     opened = []
     monkeypatch.setattr(view, "expand_folders", lambda folders, **_: opened.append(list(folders)))
     panel.set_matches_only(True)
@@ -1501,23 +1497,39 @@ def test_a_hidden_folder_under_a_renamed_folder_shows_again_when_off(qtbot, tmp_
     assert not row_hidden(view, f"{renamed}/y")
 
 
+def judged_paths(monkeypatch):
+    judged = []
+    real_rule_badges = widget_module.rule_badges
+
+    def rule_badges(rule_counts, path, values):
+        judged.append(path)
+        return real_rule_badges(rule_counts, path, values)
+
+    monkeypatch.setattr(widget_module, "rule_badges", rule_badges)
+    return judged
+
+
 def test_matches_only_judges_only_counted_folders_when_every_rule_needs_files(qtbot, tmp_path, monkeypatch, query_calls):
     panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    judged = judged_paths(monkeypatch)
 
-    assert sorted(panel.match_candidates()) == [f"{root}/a", f"{root}/c/x"]
     panel.set_matches_only(True)
+
     qtbot.waitUntil(lambda: matches_shown(panel), timeout=5000)
     assert sorted(panel.found_matches.matches) == [f"{root}/a", f"{root}/c/x"]
+    assert sorted(judged) == [f"{root}/a", f"{root}/c/x"]
 
 
 def test_matches_only_judges_every_folder_when_a_rule_can_match_without_files(qtbot, tmp_path, monkeypatch, query_calls):
     panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
     panel.apply_rules([HighlightRule.from_dict(rule_dict("Empty", "#378ADD", conditions=(("files", "==", 0), ("folders", "==", 0))))])
+    judged = judged_paths(monkeypatch)
 
-    assert f"{root}/e" in set(panel.match_candidates())
     panel.set_matches_only(True)
+
     qtbot.waitUntil(lambda: matches_shown(panel), timeout=5000)
     assert f"{root}/e" in panel.found_matches.matches
+    assert f"{root}/e" in judged
 
 
 def test_matches_only_waits_for_a_full_scan_to_end_before_judging_again(qtbot, tmp_path, monkeypatch, query_calls):

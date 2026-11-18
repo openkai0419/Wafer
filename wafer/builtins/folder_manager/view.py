@@ -1,4 +1,4 @@
-from collections.abc import Callable, Iterable, Sequence, Set as AbstractSet
+from collections.abc import Callable, Iterable, Iterator, Sequence, Set as AbstractSet
 from itertools import chain
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -28,6 +28,19 @@ COUNT_SAMPLE = "99,999,999"
 UNSCANNED = object()
 
 Badge = tuple[str, str | None]
+
+
+def rule_badges(rule_counts: Iterable[tuple[HighlightRule, dict[str, tuple[int, int]]]], path: str, values: FolderValues | None) -> Iterator[Badge]:
+    unknown = set(DISK_METRICS) if values is None else {metric for metric in DISK_METRICS if getattr(values, metric) < 0}
+    folders, all_folders = (values.folders, values.all_folders) if values is not None else (0, 0)
+    for rule, counts in rule_counts:
+        if not rule.enabled:
+            continue
+        if unknown and any(condition.metric in unknown for condition in rule.conditions):
+            continue
+        direct, total = counts.get(path, (0, 0))
+        if rule.matches(FolderValues(direct, total, folders, all_folders)):
+            yield rule.color, str(direct) if rule.shows_count() else None
 
 
 class FolderStatsModel(LazyFolderTreeModel):
@@ -77,18 +90,7 @@ class FolderStatsModel(LazyFolderTreeModel):
         return self.badges_for(path, self.disk_values(path))
 
     def badges_for(self, path: str, values: FolderValues | None) -> list[Badge]:
-        unknown = set(DISK_METRICS) if values is None else {metric for metric in DISK_METRICS if getattr(values, metric) < 0}
-        folders, all_folders = (values.folders, values.all_folders) if values is not None else (0, 0)
-        found = []
-        for rule, counts in self.rule_counts:
-            if not rule.enabled:
-                continue
-            if unknown and any(condition.metric in unknown for condition in rule.conditions):
-                continue
-            direct, total = counts.get(path, (0, 0))
-            if rule.matches(FolderValues(direct, total, folders, all_folders)):
-                found.append((rule.color, str(direct) if rule.shows_count() else None))
-        return found
+        return list(rule_badges(self.rule_counts, path, values))
 
     def _rename_item(self, item, new_name):
         old_path = normalize_path(item.data(USER_ROLE_PATH))

@@ -28,7 +28,10 @@ from wafer.core.platform.process_lock import file_lock
 MAIN_PROFILE = f"{PROFILE_PREFIX}main"
 TEMPLATE_BUILD_PROFILE = f"{PROFILE_PREFIX}template-build"
 TEMPLATE_DIR_NAME = "_template"
-TEMPLATE_STAGING_SUFFIX = ".partial"
+STAGING_SUFFIX = ".partial"
+TRASH_SUFFIX = ".trash"
+PROFILE_READY_MARKER = ".profile-ready"
+PROFILE_LOCK_TIMEOUT = 300.0
 TEMPLATE_EXCLUDED = frozenset({".temp", ".log", "ipc"})
 TEMPLATE_INDEX_TIMEOUT = 1800.0
 TEMPLATE_LOCK_TIMEOUT = TEMPLATE_INDEX_TIMEOUT + 300.0
@@ -43,6 +46,10 @@ INDEX_SETTLE_SECONDS = 5.0
 INDEX_POLL_SECONDS = 1.0
 STOP_REGISTER_SECONDS = 5.0
 STOP_POLL_SECONDS = 0.25
+RESERVED_WORKTREE_NAMES = {
+    MAIN_PROFILE.removeprefix(PROFILE_PREFIX): "the main checkout's profile",
+    TEMPLATE_BUILD_PROFILE.removeprefix(PROFILE_PREFIX): "the profile that builds the sample template",
+}
 
 Progress = Callable[[str], None]
 
@@ -78,6 +85,9 @@ def profile_name_for(checkout: Path) -> str:
     main = main_root_of(path)
     if _same_name(str(path), str(main)):
         return MAIN_PROFILE
+    for reserved, used_by in RESERVED_WORKTREE_NAMES.items():
+        if path.name.casefold() == reserved.casefold():
+            raise ValueError(f"Worktree name {path.name!r} is reserved: {PROFILE_PREFIX}{reserved} is {used_by}")
     return validate_profile_name(f"{PROFILE_PREFIX}{path.name}")
 
 
@@ -205,12 +215,31 @@ def stop_profile(profile: str, timeout: float = 15.0) -> None:
     AppLogger.info(f"Stopped {profile}")
 
 
+def _profile_lock(profile: str) -> str:
+    return str(debug_profiles_dir() / f"{validate_profile_name(profile)}.lock")
+
+
+def _sweep_trash(path: Path) -> None:
+    for leftover in path.parent.glob(f"{glob.escape(path.name)}{TRASH_SUFFIX}-*"):
+        try:
+            shutil.rmtree(leftover)
+        except OSError as exc:
+            AppLogger.warning(f"Could not delete {leftover} yet; nothing uses it: {exc}")
+
+
+def _discard(path: Path) -> None:
+    trash = path.with_name(f"{path.name}{TRASH_SUFFIX}-{os.getpid()}-{time.time_ns()}")
+    path.rename(trash)
+    _sweep_trash(path)
+    AppLogger.info(f"Deleted {path}")
+
+
 def forget_profile(profile: str) -> None:
-    stop_profile(profile)
-    for root in {profile_data_root(profile), profile_config_root(profile)}:
-        if root.exists():
-            shutil.rmtree(root)
-            AppLogger.info(f"Deleted {root}")
+    with file_lock(_profile_lock(profile), timeout=PROFILE_LOCK_TIMEOUT):
+        stop_profile(profile)
+        for root in {profile_data_root(profile), profile_config_root(profile)}:
+            if root.exists():
+                _discard(root)
 
 
 def _runtime_state_ignorer(root: Path) -> Callable[[str, list[str]], set[str]]:
@@ -234,7 +263,7 @@ def build_template(checkout: Path, *, on_progress: Progress) -> Path:
         root = profile_data_root(TEMPLATE_BUILD_PROFILE)
         stop_profile(TEMPLATE_BUILD_PROFILE)
         if root.exists():
-            shutil.rmtree(root)
+            _discard(root)
         sample_db_setup(root)
         on_progress(f"Building sample template {digest}: indexing the sample takes a few minutes")
         try:
@@ -242,12 +271,12 @@ def build_template(checkout: Path, *, on_progress: Progress) -> Path:
             wait_indexed(TEMPLATE_BUILD_PROFILE, timeout=TEMPLATE_INDEX_TIMEOUT)
         finally:
             stop_profile(TEMPLATE_BUILD_PROFILE)
-        staging = target.with_name(f"{digest}{TEMPLATE_STAGING_SUFFIX}")
+        staging = target.with_name(f"{digest}{STAGING_SUFFIX}")
         if staging.exists():
-            shutil.rmtree(staging)
+            _discard(staging)
         shutil.copytree(root, staging, ignore=_runtime_state_ignorer(root))
         staging.rename(target)
-        shutil.rmtree(root)
+        _discard(root)
     on_progress(f"Sample template {digest} built")
     return target
 
@@ -257,19 +286,19 @@ def rebuild_template(checkout: Path, *, on_progress: Progress) -> Path:
     target = template_dir(digest)
     with file_lock(_template_lock(digest), timeout=TEMPLATE_LOCK_TIMEOUT):
         if target.exists():
-            shutil.rmtree(target)
-            AppLogger.info(f"Deleted sample template {target}")
+            _discard(target)
     return build_template(checkout, on_progress=on_progress)
 
 
-def _prepare_scratch(profile: str, root: Path) -> None:
+def _prepare_scratch(profile: str, staging: Path) -> None:
     scratch = scratch_root(profile)
-    scratch.mkdir(parents=True, exist_ok=True)
+    staged_scratch = staging / scratch.relative_to(profile_data_root(profile))
+    staged_scratch.mkdir(parents=True, exist_ok=True)
     source = sample_root() / SCRATCH_SOURCE
     images = sorted((p for p in source.iterdir() if p.is_file()), key=lambda p: p.name)[:SCRATCH_IMAGE_COUNT]
     for image in images:
-        shutil.copy2(image, scratch / image.name)
-    _add_parent_folder(SettingDB(str(_sample_settings_db(root))), scratch)
+        shutil.copy2(image, staged_scratch / image.name)
+    _add_parent_folder(SettingDB(str(_sample_settings_db(staging))), scratch)
     AppLogger.info(f"{profile}: copied {len(images)} sample images into {scratch}")
 
 
@@ -279,14 +308,20 @@ def ensure_profile(checkout: Path, *, fresh: bool, on_progress: Progress) -> str
     if not template.is_dir():
         template = build_template(checkout, on_progress=on_progress)
     root = profile_data_root(profile)
-    if not fresh and _sample_settings_db(root).is_file():
-        return profile
-    if root.exists():
-        stop_profile(profile)
-        shutil.rmtree(root)
-    on_progress(f"Creating {profile} from sample template {template.name}")
-    shutil.copytree(template, root)
-    _prepare_scratch(profile, root)
+    with file_lock(_profile_lock(profile), timeout=PROFILE_LOCK_TIMEOUT):
+        if not fresh and (root / PROFILE_READY_MARKER).is_file():
+            return profile
+        on_progress(f"Creating {profile} from sample template {template.name}")
+        staging = root.with_name(f"{root.name}{STAGING_SUFFIX}")
+        if staging.exists():
+            _discard(staging)
+        shutil.copytree(template, staging)
+        _prepare_scratch(profile, staging)
+        (staging / PROFILE_READY_MARKER).write_text(template.name, encoding="utf-8")
+        if root.exists():
+            stop_profile(profile)
+            _discard(root)
+        staging.rename(root)
     return profile
 
 

@@ -1,6 +1,7 @@
 import os
 import sqlite3
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from PIL import Image
@@ -24,6 +25,7 @@ from wafer.core.common.paths import normalize_path, profile_data_root, scratch_r
 from wafer.core.db.path_scope import compile_ignore_patterns, path_in_scope
 from wafer.core.db.setting_db import SettingDB
 from wafer.core.platform.process import AppProcess
+from wafer.core.platform.process_lock import file_lock
 
 
 def make_checkout(path: Path) -> Path:
@@ -427,3 +429,174 @@ def test_cli_rebuild_template_replaces_the_current_template(tmp_path, monkeypatc
 def test_cli_reports_an_invalid_checkout(tmp_path):
     assert main(["launch", "--checkout", str(tmp_path / "missing")]) != 0
     assert main(["stop", "normal"]) != 0
+
+
+@pytest.mark.parametrize("name", ["main", "Main", "template-build"])
+def test_profile_name_for_rejects_reserved_worktree_names(tmp_path, name):
+    main_root = make_checkout(tmp_path / "Repo")
+    wt = make_checkout(main_root / ".claude" / "worktrees" / name)
+    with pytest.raises(ValueError, match="reserved"):
+        profile_name_for(wt)
+
+
+def test_sample_db_setup_prunes_ignored_folders_from_the_scan(tmp_path, monkeypatch, sample):
+    import wafer.app.indexer.scanner as scanner_module
+    from wafer.app.indexer.scanner import DirectoryScanner
+    from wafer.core.db.file_db import FileDB
+
+    root = tmp_path / "profile"
+    sample_db_setup(root)
+    parents, ignores, patterns = SettingDB(str(root / "dirs" / "sample.db")).get_all_folder_settings()
+    db_path = tmp_path / "file.db"
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+    db.close()
+    scanner = DirectoryScanner(db_path, MagicMock(), MagicMock(), MagicMock(), None)
+    scanner.set_exclusions(ignores, patterns)
+    scanned = []
+    real_scandir = os.scandir
+
+    def recording_scandir(path):
+        scanned.append(normalize_path(path))
+        return real_scandir(path)
+
+    monkeypatch.setattr(scanner_module.os, "scandir", recording_scandir)
+    found = {path for path, _ in scanner._scan_directory(parents[0])}
+
+    assert normalize_path(sample / "coco") in scanned
+    assert not any("/coco/train2017" in path or "/coco/unlabeled2017" in path for path in scanned)
+    assert normalize_path(sample / "coco" / "val2017" / "000000000000.jpg") in found
+    assert normalize_path(sample / "elephant.gif") in found
+    assert normalize_path(sample / "coco" / "val2017.zip") not in found
+
+
+def _fake_build(checkout, *, on_progress):
+    target = profile_setup.template_dir(schema_hash(checkout))
+    _fake_template(target)
+    return target
+
+
+def _fail_prepare(profile, staging):
+    raise OSError("disk full")
+
+
+def test_interrupted_ensure_profile_is_rebuilt_by_the_next_launch(tmp_path, monkeypatch, app_data, sample):
+    checkout = make_checkout(tmp_path / "Repo")
+    monkeypatch.setattr(profile_setup, "build_template", _fake_build)
+    real_prepare = profile_setup._prepare_scratch
+    monkeypatch.setattr(profile_setup, "_prepare_scratch", _fail_prepare)
+    with pytest.raises(OSError):
+        ensure_profile(checkout, fresh=False, on_progress=lambda text: None)
+
+    monkeypatch.setattr(profile_setup, "_prepare_scratch", real_prepare)
+    assert ensure_profile(checkout, fresh=False, on_progress=lambda text: None) == "debug-main"
+    root = profile_data_root("debug-main")
+    scratch = scratch_root("debug-main")
+    assert len(list(scratch.iterdir())) == 24
+    assert SettingDB(str(root / "dirs" / "sample.db")).get_all_parent_folders() == [normalize_path(sample), normalize_path(scratch)]
+
+
+def test_interrupted_fresh_ensure_profile_keeps_the_previous_profile(tmp_path, monkeypatch, app_data, sample):
+    checkout = make_checkout(tmp_path / "Repo")
+    monkeypatch.setattr(profile_setup, "build_template", _fake_build)
+    monkeypatch.setattr(profile_setup, "stop_profile", lambda profile, timeout=15.0: None)
+    ensure_profile(checkout, fresh=False, on_progress=lambda text: None)
+    root = profile_data_root("debug-main")
+    (root / "settings.ini").write_text("in use", encoding="utf-8")
+
+    monkeypatch.setattr(profile_setup, "_prepare_scratch", _fail_prepare)
+    with pytest.raises(OSError):
+        ensure_profile(checkout, fresh=True, on_progress=lambda text: None)
+
+    assert (root / "settings.ini").read_text(encoding="utf-8") == "in use"
+    assert len(list(scratch_root("debug-main").iterdir())) == 24
+    assert ensure_profile(checkout, fresh=False, on_progress=lambda text: None) == "debug-main"
+    assert (root / "settings.ini").read_text(encoding="utf-8") == "in use"
+
+
+def test_fresh_ensure_profile_keeps_a_profile_it_cannot_move_away(tmp_path, monkeypatch, app_data, sample):
+    checkout = make_checkout(tmp_path / "Repo")
+    monkeypatch.setattr(profile_setup, "build_template", _fake_build)
+    monkeypatch.setattr(profile_setup, "stop_profile", lambda profile, timeout=15.0: None)
+    ensure_profile(checkout, fresh=False, on_progress=lambda text: None)
+    root = profile_data_root("debug-main")
+    (root / "settings.ini").write_text("in use", encoding="utf-8")
+    real_rename = Path.rename
+
+    def held_rename(self, target):
+        if self == root:
+            raise PermissionError("a file in the profile is open")
+        return real_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", held_rename)
+    with pytest.raises(PermissionError):
+        ensure_profile(checkout, fresh=True, on_progress=lambda text: None)
+
+    monkeypatch.setattr(Path, "rename", real_rename)
+    assert (root / "settings.ini").read_text(encoding="utf-8") == "in use"
+    assert ensure_profile(checkout, fresh=False, on_progress=lambda text: None) == "debug-main"
+    assert (root / "settings.ini").read_text(encoding="utf-8") == "in use"
+
+
+def test_ensure_profile_waits_for_another_session_preparing_the_profile(tmp_path, monkeypatch, app_data, sample):
+    checkout = make_checkout(tmp_path / "Repo")
+    monkeypatch.setattr(profile_setup, "build_template", _fake_build)
+    monkeypatch.setattr(profile_setup, "PROFILE_LOCK_TIMEOUT", 0.2)
+    with file_lock(str(app_data / "Wafer-debug" / "debug-main.lock")):
+        with pytest.raises(TimeoutError):
+            ensure_profile(checkout, fresh=False, on_progress=lambda text: None)
+    assert not profile_data_root("debug-main").exists()
+
+
+def _write_template(target: Path):
+    (target / "data").mkdir(parents=True)
+    for name in ("a.bin", "b.bin", "c.bin"):
+        (target / "data" / name).write_bytes(b"x")
+
+
+def test_rebuild_template_never_leaves_a_half_deleted_template(tmp_path, monkeypatch, app_data):
+    checkout = make_checkout(tmp_path / "Repo")
+    target = profile_setup.template_dir(schema_hash(checkout))
+    _write_template(target)
+
+    def partial_rmtree(path, *args, **kwargs):
+        next(Path(path).rglob("*.bin")).unlink()
+        raise PermissionError("a file is open in another session")
+
+    built = []
+
+    def fake_build(c, *, on_progress):
+        built.append(target.exists())
+        return target
+
+    monkeypatch.setattr(profile_setup, "build_template", fake_build)
+    monkeypatch.setattr(profile_setup.shutil, "rmtree", partial_rmtree)
+
+    profile_setup.rebuild_template(checkout, on_progress=lambda text: None)
+
+    assert built == [False]
+    assert not target.exists()
+
+
+def test_rebuild_template_keeps_the_template_it_cannot_move_away(tmp_path, monkeypatch, app_data):
+    checkout = make_checkout(tmp_path / "Repo")
+    target = profile_setup.template_dir(schema_hash(checkout))
+    _write_template(target)
+    real_rename = Path.rename
+
+    def held_rename(self, new):
+        if self == target:
+            raise PermissionError("a file in the template is open")
+        return real_rename(self, new)
+
+    def must_not_build(c, *, on_progress):
+        raise AssertionError("must not rebuild while the old template is still in place")
+
+    monkeypatch.setattr(Path, "rename", held_rename)
+    monkeypatch.setattr(profile_setup, "build_template", must_not_build)
+
+    with pytest.raises(PermissionError):
+        profile_setup.rebuild_template(checkout, on_progress=lambda text: None)
+
+    assert sorted(p.name for p in (target / "data").iterdir()) == ["a.bin", "b.bin", "c.bin"]

@@ -73,12 +73,13 @@ class TestSlotRenamed:
 
 
 class TestSearchResultDiffCheck:
-    def _make_win(self, last_paths=None):
+    def _make_win(self, last_paths=None, last_aspects=None):
         with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
             from wafer.app.viewer.mainwindow import MainWindow
 
             win = MainWindow.__new__(MainWindow)
             win._last_paths = last_paths
+            win._last_aspects = last_aspects
             win._folder_changed = False
             win.grid_view = MagicMock()
             win.file_model = MagicMock()
@@ -96,7 +97,7 @@ class TestSearchResultDiffCheck:
 
     def test_skip_when_paths_unchanged(self):
         paths = ["a.png", "b.png"]
-        win = self._make_win(last_paths=paths)
+        win = self._make_win(last_paths=paths, last_aspects=[1.0, 1.5])
         win._on_search_finished(paths, ["a.png", "b.png"], [1.0, 1.5])
         win.grid_view.set_paths.assert_not_called()
         win.grid_view.layout_ready.emit.assert_called_once_with()
@@ -108,6 +109,14 @@ class TestSearchResultDiffCheck:
         win._on_search_finished(new_paths, new_paths, [1.0, 1.5])
         win.grid_view.set_paths.assert_called_once()
         assert win._last_paths is new_paths
+
+    def test_new_aspects_of_the_same_paths_update_only_the_grid(self):
+        paths = ["a.png", "b.png"]
+        win = self._make_win(last_paths=paths, last_aspects=[1.0, 1.0])
+        win._on_search_finished(paths, paths, [1.0, 1.5])
+        win.grid_view.set_paths.assert_called_once_with(paths, paths, [1.0, 1.5], keep_scroll=True)
+        win.file_list_provider.on_search_results.assert_not_called()
+        assert win._last_aspects == [1.0, 1.5]
 
     def test_first_search_always_updates(self):
         win = self._make_win(last_paths=None)

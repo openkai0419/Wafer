@@ -73,6 +73,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setting_db = None
         self.window_state = WindowStateController(self)
         self._last_paths = None
+        self._last_aspects = None
         self._folder_changed = False
         self._dispatcher = Dispatcher(utility_pool)
         self._db_reload_cancel: CancelToken | None = None
@@ -785,12 +786,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self.search_service.get("include_contained_files", True),
         )
         self.grid_overlay_host.reload()
-        if paths == self._last_paths:
+        paths_changed = paths != self._last_paths
+        if not paths_changed and aspects == self._last_aspects:
             self.grid_view.layout_ready.emit()
             return
         self._last_paths = paths
+        self._last_aspects = aspects
         self.grid_view.set_paths(paths, sources, aspects, keep_scroll=keep_scroll)
-        self.file_list_provider.on_search_results(paths, sources)
+        if paths_changed:
+            self.file_list_provider.on_search_results(paths, sources)
 
     def _restore_from_slot(self, entry: WindowSlot, skip_window_state=False, on_complete=None):
         def after_path():

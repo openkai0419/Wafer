@@ -112,7 +112,7 @@ def test_color_widget_clears_selection_on_peer_widgets(qapp):
         assert first.has_selection() is False
         assert second.has_selection() is True
     finally:
-        registry.get_one = original_get_one
+        del registry.get_one
 
 
 def test_color_widget_swatch_click_selects_row_and_changes_color(color_widget):

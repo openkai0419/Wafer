@@ -380,27 +380,35 @@ class FileDB:
 
         backup_names = {name: f"__old__{name}" for name in ordered_tables}
         self.conn.execute("PRAGMA foreign_keys=OFF")
+        isolation_level = self.conn.isolation_level
+        self.conn.isolation_level = None
         try:
-            for name in reversed(ordered_tables):
-                backup_name = backup_names[name]
-                self.conn.execute(f"DROP TABLE IF EXISTS {_quote_identifier(backup_name)}")
-                self.conn.execute(f"ALTER TABLE {_quote_identifier(name)} RENAME TO {_quote_identifier(backup_name)}")
+            self.conn.execute("BEGIN")
+            try:
+                for name in reversed(ordered_tables):
+                    backup_name = backup_names[name]
+                    self.conn.execute(f"DROP TABLE IF EXISTS {_quote_identifier(backup_name)}")
+                    self.conn.execute(f"ALTER TABLE {_quote_identifier(name)} RENAME TO {_quote_identifier(backup_name)}")
 
-            for _, _, sql in _TABLES:
-                self.conn.execute(sql)
+                for _, _, sql in _TABLES:
+                    self.conn.execute(sql)
 
-            for name in ordered_tables:
-                backup_name = backup_names[name]
-                columns = [column for column in _table_columns(self.conn, backup_name) if column in set(_table_columns(self.conn, name))]
-                if columns:
-                    columns_sql = ", ".join(_quote_identifier(column) for column in columns)
-                    self.conn.execute(f"INSERT INTO {_quote_identifier(name)} ({columns_sql}) SELECT {columns_sql} FROM {_quote_identifier(backup_name)}")
+                for name in ordered_tables:
+                    backup_name = backup_names[name]
+                    columns = [column for column in _table_columns(self.conn, backup_name) if column in set(_table_columns(self.conn, name))]
+                    if columns:
+                        columns_sql = ", ".join(_quote_identifier(column) for column in columns)
+                        self.conn.execute(f"INSERT INTO {_quote_identifier(name)} ({columns_sql}) SELECT {columns_sql} FROM {_quote_identifier(backup_name)}")
 
-            for name in reversed(ordered_tables):
-                self.conn.execute(f"DROP TABLE IF EXISTS {_quote_identifier(backup_names[name])}")
+                for name in reversed(ordered_tables):
+                    self.conn.execute(f"DROP TABLE IF EXISTS {_quote_identifier(backup_names[name])}")
 
-            self.conn.commit()
+                self.conn.execute("COMMIT")
+            except BaseException:
+                self.conn.execute("ROLLBACK")
+                raise
         finally:
+            self.conn.isolation_level = isolation_level
             self.conn.execute("PRAGMA foreign_keys=ON")
 
     @profiler.profile

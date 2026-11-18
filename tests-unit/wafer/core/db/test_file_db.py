@@ -1085,3 +1085,28 @@ def test_get_trigger_metadata_empty(tmp_path):
     meta = db.get_trigger_metadata(["src1"], ())
     assert meta == {}
     db.close()
+
+
+def test_failed_schema_recreate_keeps_the_old_tables(tmp_path):
+    import pytest
+
+    path = tmp_path / "test.db"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE hash_index (file_hash TEXT PRIMARY KEY)")
+    conn.execute("CREATE TABLE sources (source TEXT PRIMARY KEY, file_hash TEXT, size INTEGER, modified REAL, created REAL, collected REAL)")
+    conn.execute("INSERT INTO sources (source, file_hash) VALUES ('src1', NULL)")
+    conn.commit()
+    conn.close()
+
+    db = FileDB(path)
+    db.start()
+    with pytest.raises(sqlite3.IntegrityError):
+        db.initialize_database()
+    db.close()
+
+    conn = sqlite3.connect(path)
+    tables = sorted(r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'"))
+    rows = conn.execute("SELECT source FROM sources").fetchall()
+    conn.close()
+    assert tables == ["hash_index", "sources"]
+    assert rows == [("src1",)]

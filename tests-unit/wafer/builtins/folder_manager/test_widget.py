@@ -556,7 +556,7 @@ def test_set_database_reads_its_folder_settings_and_scans(qtbot, tmp_path, query
     assert all(thread is not threading.main_thread() for _name, thread in served_folders)
     assert panel.database_name == "main"
     assert panel.database_path() == data_db_path("main")
-    assert panel.view.database_path == data_db_path("main")
+    assert panel.view.database_name == "main"
     assert panel.db_box.currentText() == "main"
     assert load_last_database() == "main"
     assert panel.model.disk.values(root) == FolderValues(1, 3, 1, 1)

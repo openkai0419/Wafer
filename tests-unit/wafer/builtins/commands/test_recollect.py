@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from wafer.qt.commands.command.core import CommandRegistry
 from wafer.builtins.commands.recollect import FileRecollectCommands, _folder_prefixes
 from wafer.core.common.paths import normalize_path
@@ -39,3 +41,37 @@ def test_reset_all_fans_out_over_registered_collectors(monkeypatch):
     recollect_cmds.db_reset_all({}, delete=True)
     assert [c["collector"] for c in calls] == ["exif", "novelai", "wd14"]
     assert all(c["delete"] for c in calls)
+
+
+class PanelContext:
+    def __init__(self, extras, window_database):
+        self.extras = extras
+        self.window = SimpleNamespace(database_name=window_database)
+
+    def get(self, key, default=None):
+        return self.extras.get(key, default)
+
+    def get_instance(self, name):
+        return self.window if name == "MainWindow" else None
+
+
+def test_folder_recollect_uses_the_database_the_context_names(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(recollect_cmds.ConfirmDialog, "ask", staticmethod(lambda *a, **k: k["buttons"][0]))
+    monkeypatch.setattr(recollect_cmds.Recollect, "forget", staticmethod(lambda **kw: calls.append(kw) or 1))
+    ctx = PanelContext({"path": str(tmp_path), "database_name": "panel_db"}, window_database="window_db")
+
+    recollect_cmds.folder_forget(ctx)
+
+    assert [call["db_scope"] for call in calls] == ["panel_db"]
+
+
+def test_recollect_falls_back_to_the_window_database(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(recollect_cmds.ConfirmDialog, "ask", staticmethod(lambda *a, **k: k["buttons"][0]))
+    monkeypatch.setattr(recollect_cmds.Recollect, "forget", staticmethod(lambda **kw: calls.append(kw) or 1))
+    ctx = PanelContext({"path": str(tmp_path)}, window_database="window_db")
+
+    recollect_cmds.folder_forget(ctx)
+
+    assert [call["db_scope"] for call in calls] == ["window_db"]

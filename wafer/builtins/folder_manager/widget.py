@@ -336,7 +336,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
     def set_database(self, name: str) -> None:
         if name != self.database_name:
             self.database_name = name
-            self.view.database_path = self.database_path()
+            self.view.database_name = name
             if name:
                 save_last_database(name)
             self.clear_folders()

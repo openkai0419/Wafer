@@ -12,7 +12,7 @@ from wafer.builtins.folder_manager import view as view_module
 from wafer.builtins.folder_manager.rules import Condition, HighlightRule
 from wafer.builtins.folder_manager.stats import DiskTree
 from wafer.builtins.folder_manager.view import BadgeDelegate, FolderManagerTreeView, FolderStatsModel
-from wafer.core.common.paths import normalize_path
+from wafer.core.common.paths import data_db_path, normalize_path
 from wafer.plugin.query.handler import filter_registry
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 
@@ -289,10 +289,12 @@ def test_context_menu_shows_show_in_tree_only_for_the_window_database(qtbot, tmp
 
     open_menu_on_first_row(view)
     assert seen["items"][:5] == [*MENU_HEAD, "-"]
+    assert "file.select_path" not in seen["items"]
 
     view.show_in_tree_available = lambda: True
     open_menu_on_first_row(view)
     assert seen["items"][:5] == ["ft.show_in_tree", *MENU_HEAD]
+    assert "file.select_path" in seen["items"]
     view.close()
 
 
@@ -300,8 +302,8 @@ def test_context_carries_the_panel_database(qtbot, tmp_path):
     from wafer.qt.commands.bridge import Context
 
     view, root = make_view(qtbot, tmp_path)
-    assert view.database_path is None
-    view.database_path = "D:/data/main.db"
+    assert view.database_name == ""
+    view.database_name = "main"
     view.resize(480, 240)
     view.show()
     index = view.model_.index(0, 0)
@@ -309,7 +311,8 @@ def test_context_carries_the_panel_database(qtbot, tmp_path):
 
     context = view.extend_context(ctx, None, source="menu")
 
-    assert context["database_path"] == "D:/data/main.db"
+    assert context["database_name"] == "main"
+    assert context["database_path"] == data_db_path("main")
     assert context["path"] == root
     view.close()
 

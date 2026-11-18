@@ -4,7 +4,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.app.viewer.widgets.foldertree import EXPAND_RECURSIVE_BATCH_SIZE, USER_ROLE_PATH, LazyFolderTreeModel, LazyFolderTreeView
 from wafer.builtins.commands.foldertree import folder_items, run_on_folder_files
-from wafer.core.common.paths import child_prefix, normalize_path, parent_folder
+from wafer.core.common.paths import child_prefix, data_db_path, normalize_path, parent_folder
 from wafer.core.lang.manager import t
 from wafer.qt.commands.bridge import ActionKit, Context, Menu
 from wafer.qt.common.dpi import dpix
@@ -21,6 +21,7 @@ RULE_FILE_ACTIONS = (
     ("copy_all", "{rule} · Copy all files below", "file.copy", True),
 )
 PANEL_COMMANDS = ("folder_manager.expand_matches", "folder_manager.select_matches", "folder_manager.matches_only", "folder_manager.collapse_all")
+WINDOW_TREE_COMMANDS = ("file.select_path",)
 DISK_METRICS = ("folders", "all_folders")
 COUNT_SAMPLE = "99,999,999"
 UNSCANNED = object()
@@ -195,7 +196,7 @@ class FolderManagerTreeView(LazyFolderTreeView):
     def __init__(self, roots=None, excluded=None, ignore_pattern_re=None):
         super().__init__(roots, excluded, ignore_pattern_re, instance_name="FolderManagerTree")
         self.rules_source: Callable[[], list[HighlightRule]] = list
-        self.database_path: str | None = None
+        self.database_name = ""
         self.show_in_tree_available: Callable[[], bool] = lambda: False
         self.hidden_columns: set[int] = set()
         self.expand_serials: dict[str, int] = {}
@@ -254,7 +255,8 @@ class FolderManagerTreeView(LazyFolderTreeView):
         self.rules_source = rules
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
-        return {**super().extend_context(ctx, cmd, event, key, source), "database_path": self.database_path}
+        database_path = data_db_path(self.database_name) if self.database_name else None
+        return {**super().extend_context(ctx, cmd, event, key, source), "database_name": self.database_name, "database_path": database_path}
 
     def show_context_menu(self, position):
         gp = self.viewport().mapToGlobal(position)
@@ -263,8 +265,9 @@ class FolderManagerTreeView(LazyFolderTreeView):
         path = ctx.get("path")
         if not path:
             return
-        show_in_tree = ["ft.show_in_tree"] if self.show_in_tree_available() else []
-        items = [*show_in_tree, *PANEL_COMMANDS, "-", *folder_items(normalize_path(path))]
+        in_window_tree = self.show_in_tree_available()
+        file_items = [item for item in folder_items(normalize_path(path)) if in_window_tree or item not in WINDOW_TREE_COMMANDS]
+        items = [*(["ft.show_in_tree"] if in_window_tree else []), *PANEL_COMMANDS, "-", *file_items]
         files_items = [n for n, item in enumerate(items) if item.startswith("Files in Folder/")]
         if files_items:
             items[files_items[-1] + 1 : files_items[-1] + 1] = self.rule_file_actions()

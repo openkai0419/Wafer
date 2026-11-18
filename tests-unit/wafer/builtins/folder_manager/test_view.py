@@ -843,3 +843,83 @@ def test_rows_removed_while_turning_the_filter_off_leave_nothing_hidden(qtbot, m
 
     qtbot.waitUntil(lambda: not view.filter_running)
     assert hidden_children(view, top) == []
+
+
+def test_a_worker_diff_touches_only_its_rows_without_walking(qtbot, monkeypatch):
+    view, top = flat_view(qtbot)
+    keep, ancestors = frozenset({"r", "r/c3"}), frozenset({"r"})
+    view.apply_row_filter(keep, ancestors)
+    new_keep = frozenset({"r", "r/c4"})
+    change = view_module.row_filter_change(keep, ancestors, new_keep, ancestors)
+    real_set_hidden = view.setRowHidden
+    touched = []
+    monkeypatch.setattr(view, "setRowHidden", lambda row, parent, hide: (touched.append((row, hide)), real_set_hidden(row, parent, hide)))
+    walked = []
+    monkeypatch.setattr(view, "filtered_rows", lambda parents: walked.append(parents) or iter(()))
+
+    view.apply_row_filter(new_keep, ancestors, change)
+
+    assert not view.filter_running
+    assert sorted(touched) == [(3, True), (4, False)]
+    assert walked == []
+
+
+def test_an_unchanged_worker_diff_only_takes_the_new_sets(qtbot, monkeypatch):
+    view, top = flat_view(qtbot)
+    keep, ancestors = frozenset({"r", "r/c3"}), frozenset({"r"})
+    view.apply_row_filter(keep, ancestors)
+    same, same_ancestors = frozenset(set(keep)), frozenset(set(ancestors))
+    change = view_module.row_filter_change(keep, ancestors, same, same_ancestors)
+    jobs = []
+    monkeypatch.setattr(view, "run_row_filter", jobs.append)
+
+    view.apply_row_filter(same, same_ancestors, change)
+
+    assert jobs == []
+    assert view.row_filter is same and view.filter_ancestors is same_ancestors
+
+
+def test_a_stale_worker_diff_falls_back_to_a_full_pass(qtbot):
+    view, top = flat_view(qtbot)
+    view.apply_row_filter(frozenset({"r", "r/c3"}), frozenset({"r"}))
+    stale = view_module.row_filter_change(frozenset({"r", "r/c5"}), frozenset({"r"}), frozenset({"r", "r/c4"}), frozenset({"r"}))
+
+    view.apply_row_filter(frozenset({"r", "r/c4"}), frozenset({"r"}), stale)
+
+    qtbot.waitUntil(lambda: not view.filter_running)
+    assert hidden_children(view, top) == [f"r/c{n}" for n in range(20) if n != 4]
+
+
+def test_a_folder_renamed_out_of_the_filter_is_hidden_by_the_next_diff(qtbot):
+    view, top = flat_view(qtbot)
+    keep, ancestors = frozenset({"r", "r/c3"}), frozenset({"r"})
+    view.apply_row_filter(keep, ancestors)
+    item = top.child(3)
+    view.model_.path_item_map.pop("r/c3")
+    item.setData("r/renamed", USER_ROLE_PATH)
+    view.model_.path_item_map["r/renamed"] = item
+    view.model_.paths_changed.emit(["r"])
+    new_keep = frozenset({"r", "r/c4"})
+
+    view.apply_row_filter(new_keep, ancestors, view_module.row_filter_change(keep, ancestors, new_keep, ancestors))
+
+    qtbot.waitUntil(lambda: not view.filter_running)
+    assert set(hidden_children(view, top)) == {f"r/c{n}" for n in range(20) if n not in (3, 4)} | {"r/renamed"}
+
+
+def test_sorting_while_the_filter_runs_leaves_no_row_unfiltered(qtbot, monkeypatch):
+    view, top = flat_view(qtbot)
+    for number in range(20):
+        top.child(number).setText(f"{99 - number:02d}")
+    slice_every_row(monkeypatch)
+    keep = frozenset({"r", "r/c3", "r/c15"})
+
+    view.apply_row_filter(keep, frozenset({"r"}))
+    for _ in range(3):
+        QtCore.QCoreApplication.processEvents()
+    assert view.filter_running
+    view.model_.sort(0, QtCore.Qt.AscendingOrder)
+
+    qtbot.waitUntil(lambda: not view.filter_running)
+    rows = [top.child(row).data(USER_ROLE_PATH) for row in range(top.rowCount())]
+    assert hidden_children(view, top) == [path for path in rows if path not in keep]

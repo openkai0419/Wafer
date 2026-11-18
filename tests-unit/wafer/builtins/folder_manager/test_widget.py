@@ -1685,3 +1685,35 @@ def test_matches_only_keeps_following_after_a_judge_fails(qtbot, tmp_path, monke
 
     qtbot.waitUntil(lambda: matches_shown(panel), timeout=5000)
     assert sorted(panel.found_matches.matches) == [f"{root}/a", f"{root}/c/x"]
+
+
+def test_an_unchanged_judge_hands_the_view_no_row_work(qtbot, tmp_path, monkeypatch, query_calls):
+    monkeypatch.setattr(widget_module, "MATCHES_REFRESH_MS", 0)
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    panel.set_matches_only(True)
+    qtbot.waitUntil(lambda: matches_shown(panel) and not panel.view.filter_running, timeout=5000)
+    version = panel.found_version
+    jobs = []
+    monkeypatch.setattr(panel.view, "run_row_filter", jobs.append)
+
+    panel.recount(panel.rules)
+
+    qtbot.waitUntil(lambda: panel.found_version > version and matches_shown(panel), timeout=5000)
+    assert jobs == []
+    assert panel.view.row_filter is panel.found_matches.visible
+
+
+def test_collapse_all_drops_a_waiting_expand(qtbot, tmp_path, monkeypatch, query_calls):
+    expand_layout(tmp_path, query_calls)
+    panel = make_panel(qtbot)
+    expanded = []
+    monkeypatch.setattr(panel.view, "expand_folders", lambda folders, **kwargs: expanded.append(list(folders)))
+    panel.set_database("test")
+    panel.expand_to_matches(select=True)
+
+    panel.collapse_all()
+
+    assert panel.pending_select is None
+    qtbot.waitUntil(lambda: panel.model.disk is not None and panel.model.disk.finished and not panel.scanning and not panel.counting, timeout=5000)
+    settle()
+    assert expanded == []

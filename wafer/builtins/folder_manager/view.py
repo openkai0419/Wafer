@@ -1,5 +1,6 @@
 import time
 from collections.abc import Callable, Iterable, Iterator, Sequence, Set as AbstractSet
+from dataclasses import dataclass
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -175,6 +176,27 @@ class BadgeDelegate(QtWidgets.QStyledItemDelegate):
         painter.restore()
 
 
+@dataclass(frozen=True)
+class RowFilterChange:
+    base: AbstractSet[str]
+    base_ancestors: AbstractSet[str]
+    left: list[str]
+    entered: list[str]
+    leaves: list[str]
+
+    @property
+    def unchanged(self) -> bool:
+        return not (self.left or self.entered or self.leaves)
+
+
+def row_filter_change(base: AbstractSet[str], base_ancestors: AbstractSet[str], keep: AbstractSet[str], ancestors: AbstractSet[str]) -> RowFilterChange:
+    left = [path for path in base if path not in keep]
+    entered = [path for path in keep if path not in base]
+    became_ancestors = [path for path in ancestors if path not in base_ancestors and path in base]
+    became_leaves = [path for path in base_ancestors if path not in ancestors and path in keep]
+    return RowFilterChange(base, base_ancestors, left, entered, became_ancestors + became_leaves)
+
+
 def ancestors_within_roots(path: str, roots: Sequence[str]) -> list[str]:
     root = max((r for r in roots if path.startswith(child_prefix(r))), key=len, default=None)
     if root is None:
@@ -213,6 +235,7 @@ class FolderManagerTreeView(LazyFolderTreeView):
         self.filter_job = 0
         self.filter_slice = 0
         self.filter_running = False
+        self.dirty_parents: set[str] = set()
         self.setHeaderHidden(False)
         self.setItemDelegateForColumn(0, BadgeDelegate(self.model_.badges, self))
         self.count_delegate = CountDelegate(self.model_.disk_text, self)
@@ -221,6 +244,8 @@ class FolderManagerTreeView(LazyFolderTreeView):
         self.header().setStretchLastSection(False)
         self.model_.columnsInserted.connect(self.on_columns_inserted)
         self.model_.stats_changed.connect(self.on_stats_changed)
+        self.model_.paths_changed.connect(self.on_paths_changed)
+        self.model_.layoutChanged.connect(self.restart_row_filter)
         self.apply_header()
         self.header_ready = True
 
@@ -345,16 +370,25 @@ class FolderManagerTreeView(LazyFolderTreeView):
         self.stop_expanding()
         self.collapseAll()
 
-    def apply_row_filter(self, keep: AbstractSet[str] | None, ancestors: AbstractSet[str] = frozenset()) -> None:
-        if keep == self.row_filter and (keep is None or ancestors == self.filter_ancestors):
+    def apply_row_filter(self, keep: AbstractSet[str] | None, ancestors: AbstractSet[str] = frozenset(), change: RowFilterChange | None = None) -> None:
+        if keep is self.row_filter and (keep is None or ancestors is self.filter_ancestors):
             return
-        previous, previous_ancestors = self.row_filter, self.filter_ancestors
+        applies = change is not None and keep is not None and not self.filter_running and change.base is self.row_filter and change.base_ancestors is self.filter_ancestors
         self.row_filter = keep
         self.filter_ancestors = ancestors
         self.follow_inserted_rows(keep is not None)
-        if keep is not None and previous is not None and not self.filter_running:
-            self.run_row_filter(self.changed_rows(previous, previous_ancestors))
-        else:
+        dirty, self.dirty_parents = self.dirty_parents, set()
+        if not applies:
+            self.run_row_filter(self.filtered_rows([None]))
+        elif not change.unchanged or dirty:
+            self.run_row_filter(self.changed_rows(change, dirty))
+
+    def on_paths_changed(self, paths: Sequence[str]) -> None:
+        if self.row_filter is not None:
+            self.dirty_parents.update(paths)
+
+    def restart_row_filter(self) -> None:
+        if self.filter_running:
             self.run_row_filter(self.filtered_rows([None]))
 
     def run_row_filter(self, steps: Iterator[None]) -> None:
@@ -413,24 +447,26 @@ class FolderManagerTreeView(LazyFolderTreeView):
                 row += 1
                 yield
 
-    def changed_rows(self, previous: AbstractSet[str], previous_ancestors: AbstractSet[str]) -> Iterator[None]:
+    def changed_rows(self, change: RowFilterChange, dirty_parents: AbstractSet[str]) -> Iterator[None]:
         keep, ancestors = self.row_filter, self.filter_ancestors
-        for path in previous - keep:
+        for path in change.left:
             self.set_path_hidden(path, True)
             yield
-        added = keep - previous
-        for path in added:
+        for path in change.entered:
             index = self.set_path_hidden(path, False)
             if index is not None and self.model_.rowCount(index):
                 yield from self.filtered_rows([QtCore.QPersistentModelIndex(index)])
             yield
-        for path in ((previous - previous_ancestors) ^ (keep - ancestors)) - added:
+        for path in change.leaves:
             index = self.item_index(path) if path in keep else None
             if index is not None and self.has_placeholder(index):
                 hide = path not in ancestors
                 if self.isRowHidden(0, index) != hide:
                     self.setRowHidden(0, index, hide)
             yield
+        if dirty_parents:
+            parents = (self.item_index(path) for path in dirty_parents)
+            yield from self.filtered_rows([QtCore.QPersistentModelIndex(index) for index in parents if index is not None])
 
     def item_index(self, path: str) -> QtCore.QModelIndex | None:
         item = self.model_.path_item_map.get(path)

@@ -1,7 +1,7 @@
 import copy
 import json
 import os
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence, Set as AbstractSet
 from dataclasses import dataclass
 from itertools import chain
 
@@ -30,7 +30,7 @@ from .rule_editor import METRIC_LABELS, RuleList, tool_button
 from .rules import METRICS, HighlightRule, new_rule
 from .shared_settings import COLUMNS_KEY, DEFAULT_COLUMNS, RULES_KEY, load_columns, load_last_database, load_rules, save_columns, save_last_database, save_rules
 from .stats import DiskTree, count_sources_by_folder, list_folder, walk_disk
-from .view import FolderManagerTreeView, folders_to_open, rule_badges
+from .view import FolderManagerTreeView, RowFilterChange, folders_to_open, row_filter_change, rule_badges
 
 INSTANCE_NAME = "FolderManager"
 RULE_EDIT_DELAY_MS = 400
@@ -102,6 +102,7 @@ class MatchScan:
     folders: list[str]
     visible: frozenset[str]
     ancestors: frozenset[str]
+    change: RowFilterChange | None = None
 
 
 class RulesArea(QtWidgets.QScrollArea):
@@ -759,7 +760,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.model.refresh_stats()
         self.on_matches_changed()
 
-    def scan_matches(self, scopes: Sequence[str], token, on_found: Callable[[MatchScan | None], None]) -> None:
+    def scan_matches(self, scopes: Sequence[str], token, on_found: Callable[[MatchScan | None], None], base: tuple[AbstractSet[str], AbstractSet[str]] | None = None) -> None:
         rule_counts = [(copy.deepcopy(rule), counts) for rule, counts in self.model.rule_counts if rule.enabled and rule.conditions]
         disk = self.model.disk
         disk_folders = list(disk.nodes) if disk is not None and not needs_files(rule_counts) else []
@@ -773,7 +774,9 @@ class FolderManagerWidget(QtWidgets.QWidget):
                     return
                 folders = folders_to_open(matches, roots)
                 ancestors = frozenset(folders)
-                found = MatchScan(matches, folders, ancestors.union(matches), ancestors)
+                visible = ancestors.union(matches)
+                change = row_filter_change(*base, visible, ancestors) if base is not None else None
+                found = MatchScan(matches, folders, visible, ancestors, change)
             finally:
                 self.dispatcher.invoke(lambda: deliver(found))
 
@@ -819,6 +822,9 @@ class FolderManagerWidget(QtWidgets.QWidget):
 
     def collapse_all(self) -> None:
         self.expand_slot.cancel()
+        if self.pending_select is not None:
+            self.pending_select = None
+            self.update_status()
         self.collapses += 1
         self.opening_folders = frozenset()
         self.view.collapse_all()
@@ -856,7 +862,9 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.filtering = True
         version = self.matches_version
         collapses = self.collapses
-        self.scan_matches([], self.filter_slot.renew(), lambda found: self.on_filter_scanned(version, collapses, found))
+        view = self.view
+        base = (view.row_filter, view.filter_ancestors) if view.row_filter is not None else None
+        self.scan_matches([], self.filter_slot.renew(), lambda found: self.on_filter_scanned(version, collapses, found), base)
 
     def on_filter_scanned(self, version: int, collapses: int, found: MatchScan | None) -> None:
         self.filtering = False
@@ -871,7 +879,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
             self.schedule_refilter()
 
     def show_matches(self, found: MatchScan) -> None:
-        self.view.apply_row_filter(found.visible, found.ancestors)
+        self.view.apply_row_filter(found.visible, found.ancestors, found.change)
         pending = [folder for folder in found.folders if folder not in self.opened_folders or folder in self.opening_folders]
         if not pending:
             return

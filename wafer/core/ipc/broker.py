@@ -137,7 +137,6 @@ class Broker:
     def _register_peer(self, ident: bytes, role: str, db_set: set[str], node_id: str, session_id: str = "") -> int | None:
         with self._lock:
             old = self._peers.get(ident)
-            old_session_id = old.session_id if old else ""
             if old:
                 self._by_role.get(old.role, set()).discard(ident)
                 self._by_node_id.pop(old.node_id, None)
@@ -158,10 +157,7 @@ class Broker:
                         vid += 1
                     self._viewer_ids[ident] = vid
                     viewer_id = vid
-                if old_session_id and old_session_id != session_id:
-                    self._sync_active_slots()
-                else:
-                    self._on_viewer_connected(session_id)
+                self._on_viewer_connected(session_id)
             elif role == "webui" and session_id:
                 self._on_webui_connected()
             AppLogger.info(f"peer added: {node_id} role={role} db={db_set} session={session_id}")
@@ -443,12 +439,3 @@ class Broker:
                 self._record_restore_webui(store, webui_connected)
         except Exception as e:
             AppLogger.warning(f"_debounce_fire failed: {e}", exc=e)
-
-    def _sync_active_slots(self):
-        try:
-            active = self.active_viewer_slot_ids()
-            store = self._get_workspace_store()
-            store.set_active_slot_ids(active)
-            store.set_restore_slot_ids(list(active))
-        except Exception as e:
-            AppLogger.warning(f"_sync_active_slots failed: {e}", exc=e)

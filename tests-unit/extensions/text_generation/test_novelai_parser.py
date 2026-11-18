@@ -103,7 +103,8 @@ class TestNovelAiImageParser:
         monkeypatch.setattr(novelai_parser.AppLogger, "debug", logs.append)
         infotext = "1girl, solo\nNegative prompt: lowres\nSteps: 28, Sampler: Euler a"
         result = self.parser.process("img.jpg", (100, 1.0), {"exiftool.ExifIFD:UserComment": infotext})
-        assert result.status is False
+        assert result.status is True
+        assert result.meta_info is None
         assert logs == []
 
     def test_broken_json_logs_path_without_raw(self, monkeypatch):
@@ -116,10 +117,11 @@ class TestNovelAiImageParser:
         assert "img.png" in logs[0]
         assert "secret prompt text" not in logs[0]
 
-    def test_json_non_dict_rejected(self):
+    def test_json_non_dict_is_not_novelai(self):
         for raw in ("[1, 2, 3]", '"just a string"'):
             result = self.parser.process("img.png", (100, 1.0), {"exiftool.PNG:Comment": raw})
-            assert result.status is False
+            assert result.status is True
+            assert result.meta_info is None
 
     def test_missing_key(self):
         assert self.parser.process("img.png", (100, 1.0), {}) is None

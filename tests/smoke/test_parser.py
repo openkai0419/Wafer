@@ -106,7 +106,7 @@ class TestSmokeParser:
 
                 paths = ["/fake/img.png"]
                 file_info = {"/fake/img.png": (1.0, 100, "hash456")}
-                metadata = {"/fake/img.png": {"exiftool.PNG:Comment": "not valid json"}}
+                metadata = {"/fake/img.png": {"exiftool.PNG:Comment": "{not valid json"}}
 
                 worker._process_batch(paths, file_info, metadata, "testdb")
 
@@ -131,10 +131,11 @@ class TestSmokeParser:
         assert result.meta_info == {"seed": "42", "model": "nai-v3"}
         assert result.delete_meta_keys == ["exiftool.PNG:Comment"]
 
-    def test_plugin_fail_on_non_json(self):
+    def test_plugin_skips_non_json(self):
         plugin = parser_resolver.registry.instance("novelai")
         result = plugin.process("/fake/image.png", (1.0, 100), {"exiftool.PNG:Comment": "plain text"})
-        assert result.status is False
+        assert result.status is True
+        assert result.meta_info is None
 
     def test_plugin_fail_on_missing_key(self):
         plugin = parser_resolver.registry.instance("novelai")
@@ -202,11 +203,12 @@ class TestSmokeWebUiParser:
         assert result.meta_info["Seed"] == "12345"
         assert result.delete_meta_keys == ["exiftool.PNG:Parameters"]
 
-    def test_plugin_fail_on_novelai_json(self):
+    def test_plugin_skips_novelai_json(self):
         plugin = parser_resolver.registry.instance("webui")
         data = json.dumps({"prompt": "a cat", "steps": 28})
         result = plugin.process("/fake/image.png", (1.0, 100), {"exiftool.ExifIFD:UserComment": data})
-        assert result.status is False
+        assert result.status is True
+        assert result.meta_info is None
 
     def test_plugin_fail_on_missing_key(self):
         plugin = parser_resolver.registry.instance("webui")

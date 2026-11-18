@@ -6,6 +6,7 @@ from ..logs import AppLogger
 
 HASH_EMPTY = "z"
 HASH_FAILED = "f"
+FULL_HASH_LENGTH = 64
 
 
 def fast_signature_hash(path: str, size=None, part_bytes=256) -> str:

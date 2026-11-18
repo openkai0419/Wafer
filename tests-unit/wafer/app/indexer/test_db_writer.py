@@ -145,3 +145,22 @@ def test_delete_sources_does_not_retrigger_unique_hashes(writer, monkeypatch):
     writer.delete_sources(["src2"])
 
     assert triggered == {}
+
+
+def test_infer_moved_sources_matches_full_hash_sources(writer, tmp_path):
+    from wafer.core.common.hashes import full_hash
+
+    old_path = tmp_path / "old.jpg"
+    other = tmp_path / "other.jpg"
+    new_dir = tmp_path / "sub"
+    new_dir.mkdir()
+    new_path = new_dir / "old.jpg"
+    old_path.write_bytes(b"same-content" * 128)
+    other.write_bytes(b"x" * 10)
+    old_norm = normalize_path(str(old_path))
+    writer.upsert_sources([(old_norm, full_hash(str(old_path)), old_path.stat().st_size, 1.0)], [(old_norm, old_norm, 1.0)])
+    old_path.rename(new_path)
+
+    pairs = writer.infer_moved_sources([str(old_path)], [str(new_path), str(other)])
+
+    assert pairs == [(old_norm, normalize_path(str(new_path)))]

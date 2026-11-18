@@ -103,6 +103,19 @@ def test_find_by_args_subset_matches_windows_case_and_separator(monkeypatch):
     assert [p.pid for p in matcher.find_by_args_subset()] == [4321]
 
 
+def test_unrelated_processes_skip_the_file_system_checks(monkeypatch):
+    exe = r"C:\App\python\wafer-pythonw.exe"
+    script = r"C:\App\main.py"
+    matcher = ProcessMatcher([exe, script])
+    others = [_FakeProc(pid, [rf"C:\Windows\proc{pid}.exe", "--flag"]) for pid in range(100)]
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: [*others, _FakeProc(4321, [exe, script, "--viewer"])])
+    checked = []
+    real_same_executable = ProcessMatcher._same_executable
+    monkeypatch.setattr(ProcessMatcher, "_same_executable", staticmethod(lambda path, expected: checked.append(path) or real_same_executable(path, expected)))
+    assert [p.pid for p in matcher.find_by_args_subset()] == [4321]
+    assert checked == [exe, script]
+
+
 def test_list_viewers_captures_relative_root_and_excludes_workers(monkeypatch):
     # End-to-end guard for the reported bug: a dev root viewer launched with a
     # relative "main.py" must be enumerated by list_viewers(), while tray and

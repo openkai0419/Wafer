@@ -119,7 +119,9 @@ class ProcessMatcher:
             raise ValueError("cmd_list must not be empty")
         self._raw_cmd = list(cmd_list)
         self.exe_path = self._normalize_path(cmd_list[0])
+        self.exe_stems = {self._stem(cmd_list[0]), self._stem(self.exe_path)}
         self.script_path = self._normalize_path(cmd_list[1]) if len(cmd_list) > 1 else None
+        self.script_stems = {self._stem(cmd_list[1]), self._stem(self.script_path)} if len(cmd_list) > 1 else set()
         self.args_set = set(cmd_list[2:])
 
     def find_by_args_subset(self, exclude_args=None):
@@ -148,10 +150,10 @@ class ProcessMatcher:
                 pcmd = p.info.get("cmdline") or []
                 if not pcmd:
                     continue
-                if not self._same_executable(pcmd[0], self.exe_path):
+                if self._stem(pcmd[0]) not in self.exe_stems or not self._same_executable(pcmd[0], self.exe_path):
                     continue
                 if self.script_path is not None:
-                    if len(pcmd) < 2 or not self._same_executable(pcmd[1], self.script_path):
+                    if len(pcmd) < 2 or self._stem(pcmd[1]) not in self.script_stems or not self._same_executable(pcmd[1], self.script_path):
                         continue
                     proc_args_set = set(pcmd[2:])
                 else:
@@ -168,6 +170,10 @@ class ProcessMatcher:
                     raise ValueError(f"unknown compare mode: {compare}")
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
+
+    @staticmethod
+    def _stem(path):
+        return os.path.normcase(os.path.splitext(os.path.basename(path))[0])
 
     @staticmethod
     def _normalize_path(path):

@@ -221,7 +221,7 @@ class CommandOptionsDialog(QtWidgets.QDialog):
             if callable(self._execute_callback):
                 self._execute_callback(values)
         except Exception as e:
-            AppLogger.warning(f"Failed to execute command from dialog: {e}")
+            AppLogger.warning("Failed to execute command from dialog", exc=e)
 
     def _on_reset_defaults(self):
         for param in self.command_class.meta.params:
@@ -250,7 +250,7 @@ class CommandOptionsDialog(QtWidgets.QDialog):
             if callable(self._execute_callback):
                 self._execute_callback(values)
         except Exception as e:
-            AppLogger.warning(f"Failed to execute command from dialog: {e}")
+            AppLogger.warning("Failed to execute command from dialog", exc=e)
             return
         self._did_save = True
         self.accept()

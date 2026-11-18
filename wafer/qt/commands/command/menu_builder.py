@@ -362,7 +362,7 @@ class CommandMenuBuilder:
             payload = CommandPayload(name, {})
             callback(payload)
         except Exception as e:
-            AppLogger.warning(f"Failed to execute selection callback for '{name}': {e}")
+            AppLogger.warning(f"Failed to execute selection callback for '{name}'", exc=e)
 
     def _get_action_checked(self, action: MenuAction) -> bool:
         return bool(action.checked()) if action.checked is not None else False
@@ -496,7 +496,7 @@ class CommandMenuBuilder:
         try:
             call_with_matching_args(action.func, {"ctx": ctx, "checked": checked})
         except Exception as e:
-            AppLogger.warning(f"Failed to execute menu action '{action.path}': {e}", exc=e)
+            AppLogger.warning(f"Failed to execute menu action '{action.path}'", exc=e)
 
     def _show_options_and_close_menu(self, command_name: str, parent: QtWidgets.QWidget, menu: QtWidgets.QMenu, selection_callback: Callable[[Any], None] | None = None):
         menu.close()
@@ -531,7 +531,7 @@ class CommandMenuBuilder:
                 try:
                     selection_callback(CommandPayload(command_name, options))
                 except Exception as e:
-                    AppLogger.warning(f"Failed to call selection callback for '{command_name}': {e}")
+                    AppLogger.warning(f"Failed to call selection callback for '{command_name}'", exc=e)
         else:
             if not callable(selection_callback):
                 return
@@ -555,7 +555,7 @@ class CommandMenuBuilder:
         try:
             Command.invoke(name, ctx=ctx, parent=parent)
         except Exception as e:
-            AppLogger.warning(f"Failed to execute command '{name}': {e}")
+            AppLogger.warning(f"Failed to execute command '{name}'", exc=e)
 
     @profiler.profile
     def _get_or_create_submenu_chain(self, root_menu: QtWidgets.QMenu, cache: dict[str, QtWidgets.QMenu], parts: list[str], parent: QtWidgets.QWidget) -> QtWidgets.QMenu:

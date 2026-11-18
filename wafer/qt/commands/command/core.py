@@ -65,7 +65,7 @@ class CommandParam:
             try:
                 return value in self.resolve_choices()
             except Exception as e:
-                AppLogger.warning(f"choices_fn failed for param '{self.name}': {e}")
+                AppLogger.warning(f"choices_fn failed for param '{self.name}'", exc=e)
                 return True
         return True
 

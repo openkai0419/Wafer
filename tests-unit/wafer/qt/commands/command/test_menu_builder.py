@@ -89,3 +89,16 @@ def test_a_header_action_needs_a_display_and_takes_no_func_or_checked(extra):
 
     with pytest.raises(ValueError):
         MenuMaker._action_to_resolved(ActionKit.Action(path="Sub/:inline.head", **extra))
+
+
+def test_a_failing_command_is_logged_with_its_traceback(qtbot, monkeypatch):
+    def boom(ctx):
+        raise AttributeError("boom")
+
+    register_command_defs([CommandMeta(id="exec_fail", display="exec_fail", func=boom)])
+    warnings = []
+    monkeypatch.setattr("wafer.qt.commands.command.menu_builder.AppLogger.warning", lambda msg, *a, **k: warnings.append(k.get("exc")))
+
+    CommandMenuBuilder.instance()._execute("exec_fail")
+
+    assert len(warnings) == 1 and isinstance(warnings[0], AttributeError)

@@ -2,7 +2,6 @@ from unittest.mock import MagicMock
 from PySide6 import QtWidgets
 
 from wafer.qt.commands.binding.editors_common import BindingEditorBase, DraftOverlay
-from wafer.qt.commands.binding.store_base import resolve_for_widget
 from wafer.qt.commands.binding.common import WidgetRef
 from wafer.qt.commands.command.payload import CommandPayload
 
@@ -49,44 +48,6 @@ class TestMergedData:
         editor._draft.update("k1", {"*": _pay("updated")})
         result = editor._merged_data()
         assert result["k1"]["*"].id == "updated"
-
-
-class TestApplyToWidgets:
-    def test_applies_bindings_via_setter(self, qtbot):
-        wref = _make_widget("viewer")
-        store = _make_store()
-        editor = BindingEditorBase.__new__(BindingEditorBase)
-        editor.widgets = [wref]
-        editor._store = store
-        editor._draft = DraftOverlay()
-        data = {"k1": {"*": _pay("cmd1"), "viewer": _pay("cmd2")}}
-        editor._apply_to_widgets(data, "set_shortcut_bindings")
-        wref.widget.set_shortcut_bindings.assert_called_once()
-        applied = wref.widget.set_shortcut_bindings.call_args[0][0]
-        assert applied["k1"].id == "cmd2"
-
-    def test_skips_widget_without_setter(self, qtbot):
-        w = MagicMock(spec=[])
-        wref = WidgetRef(name="viewer", widget=w)
-        store = _make_store()
-        editor = BindingEditorBase.__new__(BindingEditorBase)
-        editor.widgets = [wref]
-        editor._store = store
-        editor._draft = DraftOverlay()
-        data = {"k1": {"*": _pay("cmd1")}}
-        editor._apply_to_widgets(data, "set_shortcut_bindings")
-
-    def test_resolves_global_for_unscoped_widget(self, qtbot):
-        wref = _make_widget("folder")
-        store = _make_store()
-        editor = BindingEditorBase.__new__(BindingEditorBase)
-        editor.widgets = [wref]
-        editor._store = store
-        editor._draft = DraftOverlay()
-        data = {"k1": {"*": _pay("global_cmd")}}
-        editor._apply_to_widgets(data, "set_mouse_bindings")
-        applied = wref.widget.set_mouse_bindings.call_args[0][0]
-        assert applied["k1"].id == "global_cmd"
 
 
 class TestSaveStore:

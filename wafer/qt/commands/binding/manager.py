@@ -68,9 +68,9 @@ class BindingManager:
                     store_physical[seq.to_tuple()] = cmd
                 else:
                     store_logical[seq] = cmd
-            if store_logical and hasattr(w, "set_shortcut_bindings"):
+            if hasattr(w, "set_shortcut_bindings"):
                 w.set_shortcut_bindings(store_logical)
-            if store_physical and hasattr(w, "set_physical_shortcut_bindings"):
+            if hasattr(w, "set_physical_shortcut_bindings"):
                 w.set_physical_shortcut_bindings(store_physical)
 
     def apply_registered(self) -> None:

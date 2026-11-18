@@ -169,7 +169,7 @@ def test_digit_key_bindings_are_logical_keys(qtbot):
         assert set(w.logical_bindings or {}) == {one, two}
         assert w.logical_bindings[one].to_dict() == payload_one.to_dict()
         assert w.logical_bindings[two].to_dict() == payload_two.to_dict()
-        assert w.physical_bindings is None
+        assert w.physical_bindings == {}
     finally:
         store.set_all(old)
 
@@ -186,8 +186,27 @@ def test_sc_key_bindings_are_physical_keys(qtbot):
 
         BindingManager().apply_key_bindings([w])
 
-        assert w.logical_bindings is None
+        assert w.logical_bindings == {}
         assert set(w.physical_bindings or {}) == {("SC2",)}
         assert w.physical_bindings[("SC2",)].to_dict() == payload.to_dict()
+    finally:
+        store.set_all(old)
+
+
+def test_removing_the_last_physical_binding_clears_it_on_the_widget(qtbot):
+    store = KeyBindingStore.instance()
+    old = store.get_all()
+    try:
+        store.set_all({Key("SC30"): {"*": CommandPayload("mark.toggle")}})
+        w = _WKeyRoute()
+        qtbot.addWidget(w)
+        BindingManager().apply_key_bindings([w])
+        assert set(w.physical_bindings) == {("SC30",)}
+
+        store.set_all({})
+        BindingManager().apply_key_bindings([w])
+
+        assert w.physical_bindings == {}
+        assert w.logical_bindings == {}
     finally:
         store.set_all(old)

@@ -12,7 +12,7 @@ from ..command.maker import MenuMaker
 from ..command.menu_builder import MenuBuilder
 from ..bridge import ActionKit, Menu
 from .common import WidgetRef
-from .store_base import BindingStoreBase, resolve_for_widget
+from .store_base import BindingStoreBase
 from ....core.lang.manager import t
 
 K = TypeVar("K")
@@ -118,13 +118,6 @@ class BindingEditorBase(QtWidgets.QDialog):
 
     def _merged_data(self) -> dict:
         return self._draft.merge(self._store.get_all())
-
-    def _apply_to_widgets(self, data: dict, setter_attr: str) -> None:
-        for wref in self.widgets:
-            bindings = resolve_for_widget(data, wref.name)
-            setter = getattr(wref.widget, setter_attr, None)
-            if callable(setter):
-                setter(bindings)
 
     def _save_store(self, path: str) -> None:
         try:

@@ -10,6 +10,7 @@ from ...command.menu_builder import MenuBuilder
 from .store import MouseBindingStore
 from ...command.payload import CommandPayload
 from ..common import WidgetRef
+from ..manager import BindingManager
 from .....core.logs import AppLogger
 from ..editors_common import BindingEditorBase, ScopedPayloadSectionBase, clear_layout
 
@@ -165,12 +166,10 @@ class MouseBindingEditor(BindingEditorBase):
 
     def _apply(self):
         self._save_current_sections_to_draft()
-        data = self._merged_data()
-        self._store.set_all(data)
-        self._apply_to_widgets(data, "set_mouse_bindings")
-        from ..manager import BindingManager
-
-        self._save_store(BindingManager.instance().mouse_bindings_path())
+        self._store.set_all(self._merged_data())
+        manager = BindingManager.instance()
+        manager.apply_registered()
+        self._save_store(manager.mouse_bindings_path())
         self.accept()
 
     def _reset_to_defaults(self):

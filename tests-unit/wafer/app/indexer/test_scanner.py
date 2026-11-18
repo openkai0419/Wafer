@@ -1,4 +1,7 @@
+import sys
 from unittest.mock import MagicMock
+
+import pytest
 
 from wafer.app.indexer.scanner import DirectoryScanner
 from wafer.core.common.paths import normalize_path
@@ -475,3 +478,18 @@ def test_full_scan_keeps_sources_under_unreadable_subfolder(tmp_path, monkeypatc
 
     assert _removed(progress) == set()
     scanner.stop()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions")
+def test_scan_directory_does_not_follow_junctions(tmp_path):
+    import _winapi
+
+    scanner, *_ = _make_scanner(tmp_path)
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "f.png").write_text("x")
+    _winapi.CreateJunction(str(root), str(root / "loop"))
+
+    results = dict(scanner._scan_directory(str(root)))
+
+    assert list(results) == [normalize_path(str(root / "f.png"))]

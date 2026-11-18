@@ -402,7 +402,7 @@ class DirectoryScanner:
                             if self._is_excluded(file_path):
                                 continue
                             yield (file_path, _get_stat(entry.stat()))
-                        elif entry.is_dir(follow_symlinks=False):
+                        elif entry.is_dir(follow_symlinks=False) and not _is_junction(entry):
                             stack.append(entry.path)
                 self._progress.increment(1, 0)
             except OSError as e:
@@ -415,6 +415,10 @@ class DirectoryScanner:
 def _get_stat(stat_result):
     ctime = stat_result.st_birthtime if hasattr(stat_result, "st_birthtime") else stat_result.st_ctime
     return (stat_result.st_mtime, stat_result.st_size, ctime)
+
+
+def _is_junction(entry: os.DirEntry) -> bool:
+    return getattr(entry.stat(follow_symlinks=False), "st_reparse_tag", 0) == stat.IO_REPARSE_TAG_MOUNT_POINT
 
 
 def _under_any(folders: Iterable[str]) -> Callable[[str], bool]:

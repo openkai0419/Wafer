@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from collections import OrderedDict
 from collections.abc import Iterable
 
@@ -8,6 +7,7 @@ import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
+from wafer.core.common.virtual_paths import display_name
 from wafer.qt.commands.bridge import ActionKit
 from wafer.qt.common.dpi import dpix
 
@@ -54,7 +54,7 @@ class FileListModel(QtCore.QAbstractListModel):
         row = int(self.order[index.row()])
         path = self.paths[row]
         if role == Qt.DisplayRole:
-            return os.path.basename(path.split("::")[-1])
+            return display_name(path)
         if role == Qt.ToolTipRole:
             return path
         if role == Qt.DecorationRole:

@@ -179,3 +179,12 @@ def test_a_smaller_cache_limit_picks_smaller_thumbnails(qtbot, monkeypatch):
     host.set_cache_limit(88)
     host.map_thumbnails(paths, 512)
     assert host.thumbs.size == 128
+
+
+def test_hover_title_is_the_unescaped_name_inside_an_archive(qtbot, monkeypatch):
+    host = make_host(qtbot)
+    shown = []
+    monkeypatch.setattr(host.preview, "show_image", lambda pixmap, title, *args: shown.append(title))
+    host.show_hover("c:/a.zip::dir/50%25.png", QtCore.QPoint(300, 300))
+    host.show_hover("c:/dir/b.png", QtCore.QPoint(300, 300))
+    assert shown == ["50%.png", "b.png"]

@@ -1144,3 +1144,22 @@ class TestSelectionAnchorOnRelayout:
 
         assert gv.items.last_selected_index() == 4
         assert gv.items.selected_indices() == {4, 6}
+
+
+class TestAnimatedScroll:
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_animated_scrolls_reuse_one_animation(self, mock_resolver, qtbot):
+        from wafer.app.viewer.grid.grid_view import GridView
+
+        gv = GridView(MagicMock())
+        qtbot.addWidget(gv)
+        bar = gv._primary_bar()
+        bar.setRange(0, 10000)
+        before = len(gv.findChildren(QtCore.QPropertyAnimation))
+
+        for target in (500, 1500, 3000, 200):
+            gv._scroll_to(target, animated=True)
+
+        assert len(gv.findChildren(QtCore.QPropertyAnimation)) - before == 1
+        assert gv._scroll_anim.endValue() == 200
+        gv._scroll_anim.stop()

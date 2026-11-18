@@ -628,15 +628,15 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if not animated or distance < 2:
             bar.setValue(target)
             return
-        if self._scroll_anim is not None:
-            self._scroll_anim.stop()
-        duration = min(int(40 * math.log2(distance + 1)) + 2, 500)
-        anim = QtCore.QPropertyAnimation(bar, b"value", self)
-        anim.setDuration(duration)
+        if self._scroll_anim is None:
+            self._scroll_anim = QtCore.QPropertyAnimation(bar, b"value", self)
+            self._scroll_anim.setEasingCurve(QtCore.QEasingCurve.OutQuad)
+        anim = self._scroll_anim
+        anim.stop()
+        anim.setTargetObject(bar)
+        anim.setDuration(min(int(40 * math.log2(distance + 1)) + 2, 500))
         anim.setStartValue(bar.value())
         anim.setEndValue(target)
-        anim.setEasingCurve(QtCore.QEasingCurve.OutQuad)
-        self._scroll_anim = anim
         anim.start()
 
     @profiler.profile

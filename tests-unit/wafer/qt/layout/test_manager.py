@@ -1886,6 +1886,28 @@ class TestResetFloatingPositions:
         assert _get_splitter_sizes(mgr) == before_sizes
 
 
+class TestSingleDockedPanel:
+    def test_only_docked_panel_regains_width_after_collapse(self, qtbot):
+        win = QtWidgets.QMainWindow()
+        win.resize(800, 600)
+        qtbot.addWidget(win)
+        win.show()
+        qtbot.waitExposed(win)
+        mgr = LayoutManager(win)
+        mgr.register("grid", lambda: _make_panel("grid"))
+        mgr.restore_state({"mode": MODE_LOCKED, "tree": {"root": {"type": "leaf", "panel": "grid"}, "floating": {}}})
+        _process(10)
+
+        mgr.toggle_panel("grid")
+        _process()
+        assert _get_splitter_sizes(mgr) == [0]
+
+        mgr.toggle_panel("grid")
+        _process()
+        assert _get_splitter_sizes(mgr)[0] > 0
+        assert mgr.is_panel_visible("grid")
+
+
 class TestNonClosableFloatingWindow:
     def test_close_button_keeps_the_window_open(self, layout_env):
         mgr, win, panels = layout_env

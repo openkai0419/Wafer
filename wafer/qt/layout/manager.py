@@ -772,6 +772,8 @@ class LayoutManager(QtCore.QObject):
             return
         if isinstance(self._tree.root, SplitNode):
             self._sync_node_to_splitter(self._tree.root, self._root_splitter)
+        elif self._tree.root.panel_name not in self._tree.collapsed and self._root_splitter.count():
+            self._root_splitter.setSizes([max(1, self._root_splitter.width())])
 
     def _sync_node_to_splitter(
         self,

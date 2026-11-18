@@ -3,8 +3,10 @@ import { getAspects, getItems, postQuery, ApiError } from './api.js';
 let nextClientId = 1;
 
 export class QueryClient {
-  constructor() {
+  constructor(onExpired = () => {}) {
     this.id = nextClientId++;
+    this.onExpired = onExpired;
+    this.expired = false;
     this.db = '';
     this.filters = [];
     this.sort = 'name';
@@ -24,23 +26,23 @@ export class QueryClient {
     return result;
   }
 
-  async _withRetry(fn) {
+  async _expireOn404(request) {
     try {
-      return await fn(this.queryId);
+      return await request;
     } catch (e) {
-      if (!(e instanceof ApiError) || e.status !== 404) throw e;
-      const result = await postQuery(this.db, this.filters, this.sort, this.ascending);
-      this.queryId = result.query_id;
-      this.total = result.total;
-      return fn(this.queryId);
+      if (e instanceof ApiError && e.status === 404 && !this.expired) {
+        this.expired = true;
+        this.onExpired(this);
+      }
+      throw e;
     }
   }
 
   items(offset, limit) {
-    return this._withRetry((queryId) => getItems(queryId, offset, limit));
+    return this._expireOn404(getItems(this.queryId, offset, limit));
   }
 
   aspects() {
-    return this._withRetry((queryId) => getAspects(queryId));
+    return this._expireOn404(getAspects(this.queryId));
   }
 }

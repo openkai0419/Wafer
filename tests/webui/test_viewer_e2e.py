@@ -79,15 +79,31 @@ def test_viewer_select_folder(ready_page):
     page.wait_for_function("document.querySelector('#status').textContent.startsWith('1 ')")
 
 
-def test_viewer_next_survives_backend_session_loss(ready_page, webui_query_service):
-    page = ready_page
+def test_an_expired_query_reruns_the_search_once(page, webui_base_url, webui_query_service):
+    def without_the_second(route):
+        if "limit=1&" in route.request.url or route.request.url.endswith("limit=1"):
+            route.continue_()
+            return
+        response = route.fetch()
+        data = response.json()
+        data["items"] = [item for item in data["items"] if item["i"] != 1]
+        route.fulfill(response=response, json=data)
+
+    page.route("**/api/query/*/items*", without_the_second)
+    page.goto(webui_base_url)
+    page.wait_for_selector("#grid-canvas .cell")
     _open_first(page)
     page.wait_for_function("document.querySelector('#viewer-caption').textContent.startsWith('1/')")
+    posts = []
+    page.on("request", lambda request: posts.append(request.url) if request.method == "POST" and request.url.endswith("/api/query") else None)
 
     webui_query_service._sessions.clear()
 
     page.click("#viewer-next")
-    page.wait_for_function("document.querySelector('#viewer-caption').textContent.startsWith('2/')")
+    page.wait_for_selector("#viewer", state="hidden")
+    page.wait_for_function("document.querySelector('#status').textContent.endsWith(' files')")
+    page.wait_for_selector("#grid-canvas .cell")
+    assert len(posts) == 1
 
 
 def test_meta_panel_groups_keys_by_prefix(ready_page):

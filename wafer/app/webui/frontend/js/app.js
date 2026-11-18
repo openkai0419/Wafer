@@ -110,7 +110,9 @@ async function runQuery(force = false) {
   status.textContent = 'searching...';
   loadBar.classList.add('busy');
   try {
-    const client = new QueryClient();
+    const client = new QueryClient((expired) => {
+      if (expired === grid.client) runQuery(true);
+    });
     const result = await client.run(state.db, filters, state.sort, state.ascending);
     if (token !== queryToken) return;
     const aspects = await client.aspects();

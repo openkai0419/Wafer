@@ -56,6 +56,16 @@ def test_color_picker_widget_hex_invalid_resets():
     assert w.color().name() == "#112233"
 
 
+def test_color_picker_widget_hex_follows_the_alpha_placeholder_order():
+    _ensure_app()
+    from wafer.qt.widgets.color_picker import ColorPickerWidget
+
+    w = ColorPickerWidget(initial="#000000", with_alpha=True)
+    assert w._hex_edit.placeholderText() == "#AARRGGBB"
+    w._hex_edit.setText("#80FF0000")
+    w._on_hex_changed()
+    assert w.color().getRgb() == (255, 0, 0, 128)
+
 def test_recent_colors_add_dedup_and_limit(tmp_path, monkeypatch):
     _ensure_app()
     store = {}

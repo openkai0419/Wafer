@@ -564,26 +564,20 @@ class MainWindow(QtWidgets.QMainWindow):
     @QtCore.Slot()
     def _reload_folderlist_now(self):
         AppLogger.debug("[RUNNING] reload_folderlist")
-        if self.setting_db:
-            roots, excluded, ignore_patterns = self.setting_db.get_all_folder_settings()
-            ignore_pattern_re = compile_ignore_patterns(ignore_patterns)
-            if self.folder_view.is_structure_current(roots, excluded, ignore_pattern_re):
-                if roots:
-                    self._dismiss_folder_callout()
-                return
-            if self.folder_view.defer_reload_if_editing(self._reload_folderlist_now, strong=True):
-                return
-            scroll_state = self.folder_view.capture_scroll_state()
-            state = self.folder_view.get_state()
-            self.folder_view.set_folders(roots, excluded, ignore_pattern_re)
-            self.folder_view.set_state(state, scroll_to_selection=False)
-            self.folder_view.restore_scroll_state(scroll_state)
-            if roots:
-                self._dismiss_folder_callout()
-        else:
-            if self.folder_view.defer_reload_if_editing(self.folder_view.reload_tree):
-                return
+        setting_db = self.setting_db
+        if not setting_db:
             self.folder_view.reload_tree()
+            return
+
+        def load_settings():
+            roots, excluded, ignore_patterns = setting_db.get_all_folder_settings()
+            return roots, excluded, compile_ignore_patterns(ignore_patterns)
+
+        self.folder_view.reload_folders_async(load_settings, on_complete=self._on_folderlist_reloaded)
+
+    def _on_folderlist_reloaded(self, roots):
+        if roots:
+            self._dismiss_folder_callout()
 
     @QtCore.Slot()
     @qt_debounce(1000)

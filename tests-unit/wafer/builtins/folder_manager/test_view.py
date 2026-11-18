@@ -6,7 +6,7 @@ import pytest
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.app.viewer.widgets import foldertree as foldertree_module
-from wafer.app.viewer.widgets.foldertree import USER_ROLE_PATH, LazyFolderTreeView
+from wafer.app.viewer.widgets.foldertree import USER_ROLE_PATH, LazyFolderTreeView, _collect_segments_for_paths
 from wafer.builtins.filters import TextFilter
 from wafer.builtins.folder_manager import view as view_module
 from wafer.builtins.folder_manager.rules import Condition, HighlightRule
@@ -43,6 +43,19 @@ def cell_text(view, column, row=0):
 
 def path_of(root, *parts):
     return normalize_path("/".join([root, *parts]))
+
+
+def expand_to(qtbot, view, path):
+    done = []
+    view.expand_paths_async(_collect_segments_for_paths([path], view.model_.roots), on_complete=lambda: done.append(True))
+    qtbot.waitUntil(lambda: bool(done), timeout=3000)
+    return view.model_.indexFromItem(view.model_.path_item_map[path])
+
+
+def reload_and_wait(qtbot, view):
+    done = []
+    view.reload_folders_async(on_complete=done.append)
+    qtbot.waitUntil(lambda: bool(done), timeout=3000)
 
 
 def rule(name, color, *conditions, enabled=True, bars=None):
@@ -428,7 +441,7 @@ def test_hidden_columns_and_layout_survive_reload(qtbot, tmp_path):
 
     view.set_folders([root])
     assert view.isColumnHidden(4)
-    view.reload_tree()
+    reload_and_wait(qtbot, view)
     assert view.isColumnHidden(4)
     assert not view.isColumnHidden(1)
     assert view.header().sectionResizeMode(0) == QtWidgets.QHeaderView.Stretch
@@ -444,39 +457,30 @@ def fake_paste_ok(monkeypatch):
 def test_rename_emits_parent_folder(qtbot, tmp_path, monkeypatch):
     fake_paste_ok(monkeypatch)
     view, root = make_view(qtbot, tmp_path)
-    view.expand_path(path_of(root, "a"))
+    b_index = expand_to(qtbot, view, path_of(root, "a", "b"))
     with qtbot.waitSignal(view.model_.paths_changed) as blocker:
-        assert view.rename_path(path_of(root, "a", "b"), "renamed")
+        assert view.model_.setData(b_index, "renamed")
     assert blocker.args == [[path_of(root, "a")]]
 
 
 def test_rename_to_same_name_does_not_emit(qtbot, tmp_path, monkeypatch):
     fake_paste_ok(monkeypatch)
     view, root = make_view(qtbot, tmp_path)
-    view.expand_path(root)
+    a_index = expand_to(qtbot, view, path_of(root, "a"))
     emitted = []
     view.model_.paths_changed.connect(emitted.append)
-    assert view.rename_path(path_of(root, "a"), "a")
+    assert view.model_.setData(a_index, "a")
     assert emitted == []
 
 
 def test_failed_rename_does_not_emit(qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr(foldertree_module, "execute_paste_plans_with_ui", lambda plans, **kwargs: [])
     view, root = make_view(qtbot, tmp_path)
-    view.expand_path(root)
+    a_index = expand_to(qtbot, view, path_of(root, "a"))
     emitted = []
     view.model_.paths_changed.connect(emitted.append)
-    assert not view.rename_path(path_of(root, "a"), "x")
+    assert not view.model_.setData(a_index, "x")
     assert emitted == []
-
-
-def test_move_emits_source_and_destination_parents(qtbot, tmp_path, monkeypatch):
-    fake_paste_ok(monkeypatch)
-    view, root = make_view(qtbot, tmp_path)
-    view.expand_path(path_of(root, "a"))
-    with qtbot.waitSignal(view.model_.paths_changed) as blocker:
-        assert view.move_paths([path_of(root, "a", "b")], path_of(root, "d"))
-    assert blocker.args == [[path_of(root, "a"), path_of(root, "d")]]
 
 
 def test_badge_delegate_paints_without_error(qtbot, tmp_path):
@@ -579,7 +583,7 @@ def test_count_columns_have_a_fixed_width_that_fits_large_counts(qtbot, tmp_path
         assert view.columnWidth(column) >= view.fontMetrics().horizontalAdvance("99,999,999")
         assert view.columnWidth(column) >= header.fontMetrics().horizontalAdvance(label)
     width = view.columnWidth(1)
-    view.reload_tree()
+    reload_and_wait(qtbot, view)
     assert view.columnWidth(1) == width
 
 
@@ -603,7 +607,7 @@ def test_counts_are_not_measured_row_by_row(qtbot, tmp_path, monkeypatch):
     original = FolderStatsModel.data
     monkeypatch.setattr(FolderStatsModel, "data", lambda self, index, role=QtCore.Qt.DisplayRole: (calls.append(index.column()), original(self, index, role))[1])
 
-    view.expand_path(normalized)
+    expand_to(qtbot, view, normalized)
     for _ in range(5):
         view.model_.refresh_stats()
     QtWidgets.QApplication.processEvents()
@@ -651,8 +655,6 @@ def test_select_folders_selects_loaded_folders_and_skips_unknown_ones(qtbot, tmp
     view, root = make_view(qtbot, tmp_path)
     view.expand_folders([root])
     qtbot.waitUntil(lambda: path_of(root, "d") in view.model_.path_item_map)
-    loaded = []
-    monkeypatch.setattr(view.model_, "load_children", lambda item: loaded.append(item))
     scrolled = []
     monkeypatch.setattr(view, "scrollTo", lambda *args: scrolled.append(args))
 
@@ -661,7 +663,6 @@ def test_select_folders_selects_loaded_folders_and_skips_unknown_ones(qtbot, tmp
     assert sorted(view.get_selected_paths()) == [path_of(root, "a"), path_of(root, "d")]
     assert view.current_path() == path_of(root, "d")
     assert len(scrolled) == 1
-    assert loaded == []
 
 
 def row_hidden(view, path):

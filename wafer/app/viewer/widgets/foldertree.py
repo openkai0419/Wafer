@@ -1,14 +1,16 @@
+import bisect
 import os
 import threading
 import time
 from collections import deque
 from pathlib import Path
-from natsort import natsorted
+from typing import NamedTuple
+from natsort import natsort_keygen
 from PySide6 import QtCore, QtGui, QtWidgets
 from ....core.common.paths import normalize_path
 from ....core.profiling import profiler
 from ....core.logs import AppLogger
-from ....qt.common.dispatcher import Dispatcher, CancelToken
+from ....qt.common.dispatcher import Dispatcher, CancelSlot, CancelToken
 from ....qt.common.thread import utility_pool
 from ....qt.commands.bridge import UI, Context
 from ....qt.commands.binding.common import TEXT_ENTRY_TYPES as INLINE_EDITOR_TYPES
@@ -16,6 +18,37 @@ from ....qt.transfer.dragparser import MimeDataParser
 from ....core.platform.file_operations import PastePlanItem
 from ....core.platform.path_utils import unique_path
 from ....qt.transfer.paste import execute_paste_plans_with_ui, drop_files_with_ui, resolve_drop_operation_with_ui
+
+FOLDER_SORT_KEY = natsort_keygen(key=lambda path: (os.path.basename(path) or path).lower())
+
+
+class FolderStructure(NamedTuple):
+    roots: tuple[str, ...]
+    excluded: frozenset[str]
+    ignore_pattern: str | None
+    loaded_children: dict[str, tuple[str, ...]]
+
+
+def _is_hidden_folder(path, excluded, ignore_pattern_re):
+    return path in excluded or (ignore_pattern_re is not None and ignore_pattern_re.match(path) is not None)
+
+
+def visible_roots(roots, excluded, ignore_pattern_re=None):
+    visible = (root for root in dict.fromkeys(normalize_path(r) for r in roots) if not _is_hidden_folder(root, excluded, ignore_pattern_re))
+    return tuple(sorted(visible, key=FOLDER_SORT_KEY))
+
+
+def scan_roots(roots, excluded, ignore_pattern_re=None):
+    return [(root, _has_subfolders_bg(root, excluded, ignore_pattern_re)) for root in visible_roots(roots, excluded, ignore_pattern_re)]
+
+
+def structure_is_current(structure, roots, excluded, ignore_pattern_re=None):
+    excluded = frozenset(normalize_path(path) for path in excluded or ())
+    if structure.roots != visible_roots(roots, excluded, ignore_pattern_re) or structure.excluded != excluded:
+        return False
+    if structure.ignore_pattern != (ignore_pattern_re.pattern if ignore_pattern_re is not None else None):
+        return False
+    return all(_scan_child_paths(path, excluded, ignore_pattern_re) == children for path, children in structure.loaded_children.items())
 
 
 def _scan_children(path, excluded, ignore_pattern_re=None):
@@ -26,18 +59,16 @@ def _scan_children(path, excluded, ignore_pattern_re=None):
 def _scan_child_paths(path, excluded, ignore_pattern_re=None):
     children = []
     try:
-        for entry in natsorted(os.scandir(path), key=lambda e: e.name.lower()):
-            if not entry.is_dir(follow_symlinks=False):
-                continue
-            full = normalize_path(entry.path)
-            if full in excluded:
-                continue
-            if ignore_pattern_re is not None and ignore_pattern_re.match(full):
-                continue
-            children.append(full)
+        with os.scandir(path) as it:
+            for entry in it:
+                if not entry.is_dir(follow_symlinks=False):
+                    continue
+                full = normalize_path(entry.path)
+                if not _is_hidden_folder(full, excluded, ignore_pattern_re):
+                    children.append(full)
     except OSError as e:
-        AppLogger.debug(f"_scan_children failed for {path}: {e}")
-    return tuple(children)
+        AppLogger.warning(f"Cannot list the folders in {path}: {e}")
+    return tuple(sorted(children, key=FOLDER_SORT_KEY))
 
 
 def _collect_segments_for_paths(paths, roots):
@@ -73,21 +104,14 @@ def _has_subfolders_bg(path, excluded, ignore_pattern_re=None):
     try:
         with os.scandir(path) as it:
             for entry in it:
-                if entry.is_dir(follow_symlinks=False):
-                    full = normalize_path(entry.path)
-                    if full in excluded:
-                        continue
-                    if ignore_pattern_re is not None and ignore_pattern_re.match(full):
-                        continue
+                if entry.is_dir(follow_symlinks=False) and not _is_hidden_folder(normalize_path(entry.path), excluded, ignore_pattern_re):
                     return True
         return False
-    except OSError:
+    except PermissionError:
         return False
-
-
-def _folder_sort_key(path):
-    label = os.path.basename(path) or path
-    return (label.casefold(), path.casefold())
+    except OSError as e:
+        AppLogger.warning(f"Cannot check the folders in {path}: {e}")
+        return False
 
 
 FOLDER_ICON = QtGui.QIcon.fromTheme("folder")
@@ -134,7 +158,6 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         self.ignore_pattern_re = ignore_pattern_re
         self.reset_header()
         self.path_item_map = {}
-        self.path_item_trie = {}
         self._mime_type = "application/x-foldertree-paths"
         self._dispatcher = Dispatcher(utility_pool, parent=self)
         self._pending_expands: dict[str, CancelToken] = {}
@@ -148,67 +171,10 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
     def clear_cache(self):
         self.cancel_pending_expands()
         self.path_item_map.clear()
-        self.path_item_trie.clear()
-
-    @profiler.profile
-    def _remove_from_trie(self, path):
-        parts = path.split(os.sep)
-        node = self.path_item_trie
-        stack = []
-        for part in parts:
-            if part not in node:
-                return
-            stack.append((node, part))
-            node = node[part]
-        if "__item__" in node:
-            del node["__item__"]
-        for parent, key in reversed(stack):
-            if not parent[key]:
-                del parent[key]
-            else:
-                break
 
     @profiler.profile
     def _add_item(self, path, item):
-        norm_path = normalize_path(path)
-        self.path_item_map[norm_path] = item
-        self._insert_into_trie(norm_path, item)
-
-    @profiler.profile
-    def _insert_into_trie(self, path, item):
-        parts = path.split(os.sep)
-        node = self.path_item_trie
-        for part in parts:
-            node = node.setdefault(part, {})
-        node["__item__"] = item
-
-    @profiler.profile
-    def _remove_from_maps_recursive(self, base_path):
-        base_path = normalize_path(base_path)
-        parts = base_path.split(os.sep)
-        node = self.path_item_trie
-        stack = []
-        for part in parts:
-            if part not in node:
-                self.path_item_map.pop(base_path, None)
-                return
-            stack.append((node, part))
-            node = node[part]
-        self._clear_subtree_map(node, base_path)
-        if stack:
-            parent, key = stack[-1]
-            del parent[key]
-            for parent, key in reversed(stack[:-1]):
-                if not parent.get(key):
-                    del parent[key]
-                else:
-                    break
-
-    def _clear_subtree_map(self, node, prefix):
-        self.path_item_map.pop(prefix, None)
-        for key, child in list(node.items()):
-            if key != "__item__":
-                self._clear_subtree_map(child, prefix + os.sep + key)
+        self.path_item_map[normalize_path(path)] = item
 
     @profiler.profile
     def _update_item_path_recursive(self, item, old_base, new_base):
@@ -218,7 +184,6 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         relative = os.path.relpath(old_item_path, old_base)
         new_item_path = normalize_path(os.path.join(new_base, "." if relative == "." else relative))
         self.path_item_map.pop(old_item_path, None)
-        self._remove_from_trie(old_item_path)
         item.setData(new_item_path, USER_ROLE_PATH)
         self._add_item(new_item_path, item)
         for i in range(item.rowCount()):
@@ -264,58 +229,6 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
                 pass
         return True
 
-    @profiler.profile
-    def _move_item(self, item, new_parent_item):
-        old_path = normalize_path(item.data(USER_ROLE_PATH))
-        new_parent_path = normalize_path(new_parent_item.data(USER_ROLE_PATH)) if new_parent_item is not self.invisibleRootItem() else None
-        if new_parent_item is self.invisibleRootItem():
-            return False
-        dest_path = normalize_path(os.path.join(new_parent_path, os.path.basename(old_path)))
-        if dest_path == old_path:
-            return True
-
-        conflict = os.path.exists(dest_path)
-        plan = [
-            PastePlanItem(
-                index=0,
-                src=Path(old_path),
-                is_dir=True,
-                action="cut",
-                dst_default=Path(dest_path),
-                conflict=conflict,
-                suggested_dst=Path(unique_path(new_parent_path, os.path.basename(old_path))) if conflict else None,
-            )
-        ]
-        parent_w = self.parent() or QtWidgets.QApplication.activeWindow()
-        res = execute_paste_plans_with_ui(plans=plan, overwrite_mode="ask", parent=parent_w)
-        if not res or res[0].status != "ok":
-            return False
-
-        src_parent = item.parent() or self.invisibleRootItem()
-        row = item.row()
-        taken = src_parent.takeRow(row)
-        if not taken:
-            self._request_reload_tree()
-            return True
-
-        final_dst = normalize_path(res[0].dst or dest_path)
-        if not new_parent_item.hasChildren() or (new_parent_item.rowCount() == 1 and not new_parent_item.child(0).data(USER_ROLE_PATH)):
-            new_parent_item.removeRows(0, new_parent_item.rowCount())
-        new_parent_item.appendRow(taken)
-        moved_item = new_parent_item.child(new_parent_item.rowCount() - 1)
-        self._update_item_path_recursive(moved_item, old_path, final_dst)
-        return True
-
-    @profiler.profile
-    def _get_from_trie(self, path):
-        parts = path.split(os.sep)
-        node = self.path_item_trie
-        for part in parts:
-            node = node.get(part)
-            if node is None:
-                return None
-        return node.get("__item__")
-
     def reset_header(self):
         self.setHorizontalHeaderLabels(["Folders", *self.EXTRA_COLUMNS])
 
@@ -330,19 +243,22 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
     @profiler.profile
     def _build_roots(self, roots):
         self.roots = roots
-        for root in roots:
-            root = normalize_path(root)
-            if root in self.excluded:
-                continue
-            if self.ignore_pattern_re is not None and self.ignore_pattern_re.match(root):
-                continue
-            row = self.make_row(root)
-            item = row[0]
-            if _has_subfolders_bg(root, self.excluded, self.ignore_pattern_re):
-                item.setChild(0, QtGui.QStandardItem())
-            self.appendRow(row)
-            self._add_item(root, item)
-        self.sort(0, QtCore.Qt.AscendingOrder)
+        self.append_roots(scan_roots(roots, self.excluded, self.ignore_pattern_re))
+
+    def append_roots(self, root_entries):
+        for root, has_subfolders in root_entries:
+            self.insert_root(root, has_subfolders)
+
+    def insert_root(self, path, has_subfolders):
+        row = self.make_row(path)
+        if has_subfolders:
+            row[0].setChild(0, QtGui.QStandardItem())
+        root_paths = [item.data(USER_ROLE_PATH) for item in iter_root_items(self)]
+        self.insertRow(bisect.bisect_right(root_paths, FOLDER_SORT_KEY(path), key=FOLDER_SORT_KEY), row)
+        self._add_item(path, row[0])
+
+    def children_loaded(self, item):
+        return self._is_valid_item(item) and item.hasChildren() and bool(item.child(0).data(USER_ROLE_PATH))
 
     def flags(self, index):
         default = super().flags(index)
@@ -356,10 +272,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
     def _request_reload_tree(self):
         p = self.parent()
         if p is not None and hasattr(p, "reload_tree"):
-            try:
-                p.reload_tree()
-            except Exception as e:
-                AppLogger.debug(f"_request_reload_tree failed: {e}")
+            p.reload_tree()
 
     def mimeTypes(self):
         return [self._mime_type]
@@ -480,20 +393,11 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
     def has_subfolders(self, path):
         return _has_subfolders_bg(path, self.excluded, self.ignore_pattern_re)
 
-    @profiler.profile
-    def load_children(self, parent_item):
-        if parent_item.hasChildren() and parent_item.child(0).data(USER_ROLE_PATH):
-            return
-        parent_item.removeRows(0, parent_item.rowCount())
-        path = parent_item.data(USER_ROLE_PATH)
-        children = _scan_children(path, self.excluded, self.ignore_pattern_re)
-        self._apply_children(parent_item, path, children)
-
     def request_expand(self, item):
         path = item.data(USER_ROLE_PATH)
         if not path:
             return
-        if item.hasChildren() and item.child(0).data(USER_ROLE_PATH):
+        if self.children_loaded(item):
             return
         if path in self._pending_expands:
             return
@@ -533,54 +437,6 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         except RuntimeError:
             return False
 
-    @profiler.profile
-    def find_item_by_path(self, path):
-        path = normalize_path(path)
-        item = self.path_item_map.get(path)
-        if self._is_valid_item(item):
-            return item
-        elif item:
-            self.path_item_map.pop(path, None)
-        trie_item = self._get_from_trie(path)
-        if self._is_valid_item(trie_item):
-            return trie_item
-        self._remove_from_trie(path)
-        for root_item in iter_root_items(self):
-            root_path = normalize_path(root_item.data(USER_ROLE_PATH))
-            if not path.startswith(root_path):
-                continue
-            item = root_item
-            current_path = root_path
-            self.load_children(item)
-            try:
-                rel = os.path.relpath(path, root_path)
-            except ValueError:
-                continue
-            if rel == "." or rel == "":
-                self._add_item(path, item)
-                return item
-            rel_parts = rel.split(os.sep)
-            for part in rel_parts:
-                current_path = normalize_path(os.path.join(current_path, part))
-                match = None
-                for j in range(item.rowCount()):
-                    child = item.child(j)
-                    if normalize_path(child.data(USER_ROLE_PATH)) == current_path:
-                        match = child
-                        break
-                if match is None:
-                    return None
-                item = match
-                self.load_children(item)
-            self._add_item(path, item)
-            return item
-        return None
-
-    @profiler.profile
-    def find_index_by_path(self, path):
-        item = self.find_item_by_path(path)
-        return self.indexFromItem(item) if item else None
-
 
 class LazyFolderTreeView(QtWidgets.QTreeView):
     MODEL_CLASS = LazyFolderTreeModel
@@ -612,6 +468,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self.setDefaultDropAction(QtCore.Qt.MoveAction)
         self._programmatic_expand = 0
         self._recursive_expand_jobs = {}
+        self._reload_cancel = CancelSlot()
         self._scroll_restore_serial = 0
         self._pending_reload_local_callback = None
         self._pending_reload_strong_callback = None
@@ -834,29 +691,79 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         serial = self._scroll_restore_serial
 
         def apply_scroll():
-            try:
-                if serial != self._scroll_restore_serial:
-                    return
-                bar = self.verticalScrollBar()
-                value = max(0, min(saved_value, int(bar.maximum())))
-                bar.setValue(value)
-            except Exception as e:
-                AppLogger.debug(f"Failed to restore scroll state: {e}")
+            if serial != self._scroll_restore_serial:
+                return
+            bar = self.verticalScrollBar()
+            bar.setValue(max(0, min(saved_value, bar.maximum())))
 
-        QtCore.QTimer.singleShot(0, apply_scroll)
+        QtCore.QTimer.singleShot(0, self, apply_scroll)
 
     def set_folders(self, roots, excluded=None, ignore_pattern_re=None):
         roots = [normalize_path(r) for r in roots]
         excluded = set(normalize_path(e) for e in excluded or [])
-        self._cancel_recursive_expand_jobs()
-        self.model_.clear()
-        self.model_.clear_cache()
-        self.model_.roots = roots
-        self.model_.excluded = excluded
-        self.model_.ignore_pattern_re = ignore_pattern_re
-        self.model_.reset_header()
-        self.model_._build_roots(roots)
+        self._reset_folders(roots, excluded, ignore_pattern_re, scan_roots(roots, excluded, ignore_pattern_re))
         self.folders_set.emit()
+
+    def _reset_folders(self, roots, excluded, ignore_pattern_re, root_entries):
+        self._reload_cancel.cancel()
+        self._cancel_recursive_expand_jobs()
+        model = self.model_
+        model.clear()
+        model.clear_cache()
+        model.roots = roots
+        model.excluded = excluded
+        model.ignore_pattern_re = ignore_pattern_re
+        model.reset_header()
+        model.append_roots(root_entries)
+
+    def reload_folders_async(self, load_settings=None, on_complete=None):
+        cancel = self._reload_cancel.renew()
+        model = self.model_
+        current_settings = (list(model.roots or ()), set(model.excluded), model.ignore_pattern_re)
+        structure = self.structure_snapshot() if load_settings is not None else None
+        expanded, selected = self.get_state()
+        wanted = [*expanded, *selected]
+        dispatcher = model._dispatcher
+
+        def task():
+            roots, excluded, ignore_pattern_re = load_settings() if load_settings is not None else current_settings
+            roots = [normalize_path(r) for r in roots]
+            excluded = set(normalize_path(e) for e in excluded or [])
+            if structure is not None and structure_is_current(structure, roots, excluded, ignore_pattern_re):
+                dispatcher.invoke(lambda: self._finish_reload(cancel, roots, on_complete))
+                return
+            root_entries = scan_roots(roots, excluded, ignore_pattern_re)
+            segments = _collect_segments_for_paths(wanted, [root for root, _has_subfolders in root_entries])
+            children_map = {seg: _scan_children(seg, excluded, ignore_pattern_re) for seg in segments if not cancel.is_cancelled()}
+            dispatcher.invoke(lambda: self._apply_reload(cancel, (roots, excluded, ignore_pattern_re), root_entries, children_map, load_settings, on_complete))
+
+        dispatcher.post(task, priority=8, cancel=cancel)
+
+    def _finish_reload(self, cancel, roots, on_complete):
+        if not cancel.is_cancelled() and on_complete is not None:
+            on_complete(roots)
+
+    def _apply_reload(self, cancel, settings, root_entries, children_map, load_settings, on_complete):
+        if cancel.is_cancelled():
+            return
+        if self.defer_reload_if_editing(lambda: self.reload_folders_async(load_settings, on_complete), strong=load_settings is not None):
+            return
+        expanded, selected = self.get_state()
+        needed = _collect_segments_for_paths([*expanded, *selected], [root for root, _has_subfolders in root_entries])
+        if any(seg not in children_map for seg in needed):
+            self.reload_folders_async(load_settings, on_complete)
+            return
+        scroll_state = self.capture_scroll_state()
+        roots = settings[0]
+        self._reset_folders(*settings, root_entries)
+        self._apply_children_map(children_map)
+        self._expand_loaded_paths(expanded)
+        self._select_loaded_paths(selected, scroll=False)
+        self.restore_scroll_state(scroll_state)
+        if load_settings is not None:
+            self.folders_set.emit()
+        if on_complete is not None:
+            on_complete(roots)
 
     def _iter_inline_editors(self):
         seen = set()
@@ -918,17 +825,6 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         if callback is not None:
             callback()
 
-    def _sorted_root_paths(self, roots, excluded, ignore_pattern_re=None):
-        visible = []
-        for root in roots:
-            root = normalize_path(root)
-            if root in excluded:
-                continue
-            if ignore_pattern_re is not None and ignore_pattern_re.match(root):
-                continue
-            visible.append(root)
-        return tuple(sorted(visible, key=_folder_sort_key))
-
     def _child_paths_state(self, item):
         if item.rowCount() == 1:
             placeholder = item.child(0)
@@ -942,76 +838,26 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
                 child_paths.append(normalize_path(child_path))
         return tuple(child_paths)
 
-    def _iter_structure_items(self):
-        roots = [item for item in iter_root_items(self.model_) if self.model_._is_valid_item(item)]
-        stack = list(reversed(roots))
+    def structure_snapshot(self):
+        model = self.model_
+        root_items = [item for item in iter_root_items(model) if item.data(USER_ROLE_PATH)]
+        loaded_children = {}
+        stack = list(root_items)
         while stack:
             item = stack.pop()
             path = item.data(USER_ROLE_PATH)
-            if not path:
+            child_paths = self._child_paths_state(item) if path else None
+            if child_paths is None:
                 continue
-            yield item
-            child_state = self._child_paths_state(item)
-            if child_state is None:
-                continue
-            children = []
-            for i in range(item.rowCount()):
-                child = item.child(i)
-                if child is not None and child.data(USER_ROLE_PATH):
-                    children.append(child)
-            stack.extend(reversed(children))
-
-    def is_structure_current(self, roots, excluded=None, ignore_pattern_re=None):
-        normalized_roots = [normalize_path(root) for root in roots]
-        normalized_excluded = set(normalize_path(path) for path in excluded or [])
-        current_roots = tuple(normalize_path(item.data(USER_ROLE_PATH)) for item in iter_root_items(self.model_) if item.data(USER_ROLE_PATH))
-        if current_roots != self._sorted_root_paths(normalized_roots, normalized_excluded, ignore_pattern_re):
-            return False
-        current_excluded = tuple(sorted(normalize_path(path) for path in self.model_.excluded))
-        if current_excluded != tuple(sorted(normalized_excluded)):
-            return False
-        current_pattern = self.model_.ignore_pattern_re.pattern if self.model_.ignore_pattern_re is not None else None
-        new_pattern = ignore_pattern_re.pattern if ignore_pattern_re is not None else None
-        if current_pattern != new_pattern:
-            return False
-        for item in self._iter_structure_items():
-            path = normalize_path(item.data(USER_ROLE_PATH))
-            child_state = self._child_paths_state(item)
-            if child_state is None:
-                continue
-            fresh_child_paths = _scan_child_paths(path, normalized_excluded, ignore_pattern_re)
-            if child_state != fresh_child_paths:
-                return False
-        return True
+            loaded_children[normalize_path(path)] = child_paths
+            stack.extend(item.child(i) for i in range(item.rowCount()))
+        pattern = model.ignore_pattern_re.pattern if model.ignore_pattern_re is not None else None
+        roots = tuple(normalize_path(item.data(USER_ROLE_PATH)) for item in root_items)
+        return FolderStructure(roots, frozenset(model.excluded), pattern, loaded_children)
 
     @property
     def roots(self):
         return self.model_.roots
-
-    @profiler.profile
-    def expand_path(self, path):
-        path = normalize_path(path)
-        parts = path.split(os.sep)
-        current_item = None
-        current_path = ""
-        self._programmatic_expand += 1
-        try:
-            for part in parts:
-                current_path = normalize_path(os.path.join(current_path, part))
-                item = self.model_.find_item_by_path(current_path)
-                if not self.model_._is_valid_item(item):
-                    AppLogger.debug(f"[FolderTree.expand_path] item not found at: {current_path} (target: {path})")
-                    return None
-                index = self.model_.indexFromItem(item)
-                if not index.isValid():
-                    AppLogger.debug(f"[FolderTree.expand_path] invalid index at: {current_path} (target: {path})")
-                    return None
-                self.model_.load_children(item)
-                self.expand(index)
-                current_item = item
-        finally:
-            self._programmatic_expand -= 1
-        return self.model_.indexFromItem(current_item) if current_item else None
 
     @profiler.profile
     def on_expanded(self, index):
@@ -1043,33 +889,6 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         if expanded:
             AppLogger.debug(f"[FolderTree.get_state] paths={expanded}")
         return (expanded, selected)
-
-    @profiler.profile
-    def set_state(self, states, scroll_to_selection=True):
-        try:
-            expanded, selected = states
-        except (ValueError, TypeError):
-            return
-        AppLogger.debug(f"[FolderTree.set_state] restoring expanded={len(expanded)} selected={len(selected)}")
-        selmodel = self.selectionModel()
-        selmodel.clearSelection()
-        to_select = []
-        for path in expanded:
-            index = self.expand_path(path)
-            if index and index.isValid():
-                self.model_.load_children(self.model_.itemFromIndex(index))
-            else:
-                AppLogger.debug(f"[FolderTree.set_state] expand FAILED: {path}")
-        for path in selected:
-            index = self.model_.find_index_by_path(path)
-            if index and index.isValid():
-                to_select.append(index)
-        for idx in to_select:
-            selmodel.select(idx, QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows)
-        if to_select:
-            selmodel.setCurrentIndex(to_select[0], QtCore.QItemSelectionModel.NoUpdate)
-            if scroll_to_selection:
-                self.scrollTo(to_select[0], QtWidgets.QAbstractItemView.PositionAtCenter)
 
     def set_state_async(self, states, on_complete=None):
         try:
@@ -1112,7 +931,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         roots = [normalize_path(r) for r in model.roots]
         segments = _collect_segments_for_paths(paths, roots)
         if skip_loaded:
-            segments = [seg for seg in segments if not self._children_loaded(seg)]
+            segments = [seg for seg in segments if not model.children_loaded(model.path_item_map.get(seg))]
         excluded = set(model.excluded)
         ignore_pattern_re = model.ignore_pattern_re
         dispatcher = model._dispatcher
@@ -1123,48 +942,49 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
         dispatcher.post(task, priority=8)
 
-    def _children_loaded(self, path):
-        item = self.model_.path_item_map.get(path)
-        return self.model_._is_valid_item(item) and item.hasChildren() and bool(item.child(0).data(USER_ROLE_PATH))
-
-    def _apply_loaded_children(self, children_map, on_loaded):
+    def _apply_children_map(self, children_map):
         model = self.model_
         for seg_path, children in children_map.items():
             item = model.path_item_map.get(seg_path)
-            if not model._is_valid_item(item) or self._children_loaded(seg_path):
-                continue
-            model._apply_children(item, seg_path, children)
+            if model._is_valid_item(item) and not model.children_loaded(item):
+                model._apply_children(item, seg_path, children)
+
+    def _apply_loaded_children(self, children_map, on_loaded):
+        self._apply_children_map(children_map)
         on_loaded()
 
+    def _loaded_index(self, path):
+        item = self.model_.path_item_map.get(path)
+        if not self.model_._is_valid_item(item):
+            return None
+        index = self.model_.indexFromItem(item)
+        return index if index.isValid() else None
+
     def _expand_loaded_paths(self, paths):
-        model = self.model_
         self._programmatic_expand += 1
         try:
             for path in paths:
-                item = model.path_item_map.get(path)
-                if model._is_valid_item(item):
-                    index = model.indexFromItem(item)
-                    if index.isValid():
-                        self.expand(index)
+                index = self._loaded_index(path)
+                if index is not None:
+                    self.expand(index)
         finally:
             self._programmatic_expand -= 1
 
-    def _select_loaded_paths(self, paths):
-        model = self.model_
-        selmodel = self.selectionModel()
-        selmodel.clearSelection()
-        to_select = []
-        for path in paths:
-            item = model.path_item_map.get(path)
-            if model._is_valid_item(item):
-                index = model.indexFromItem(item)
-                if index and index.isValid():
-                    to_select.append(index)
-        for idx in to_select:
-            selmodel.select(idx, QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows)
-        if to_select:
-            selmodel.setCurrentIndex(to_select[0], QtCore.QItemSelectionModel.NoUpdate)
-            self.scrollTo(to_select[0], QtWidgets.QAbstractItemView.PositionAtCenter)
+    def _select_indexes(self, indexes, current):
+        selection = QtCore.QItemSelection()
+        for index in indexes:
+            selection.select(index, index)
+        sel_model = self.selectionModel()
+        sel_model.select(selection, QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows)
+        if current is not None:
+            sel_model.setCurrentIndex(current, QtCore.QItemSelectionModel.NoUpdate)
+
+    def _select_loaded_paths(self, paths, scroll=True):
+        to_select = [index for index in map(self._loaded_index, paths) if index is not None]
+        first = to_select[0] if to_select else None
+        self._select_indexes(to_select, first)
+        if first is not None and scroll:
+            self.scrollTo(first, QtWidgets.QAbstractItemView.PositionAtCenter)
 
     @profiler.profile
     def expand_and_select_path(self, path, on_complete=None, emit_selected=True, expand_target=True):
@@ -1180,17 +1000,13 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self.load_paths_async(normalized, lambda: self._apply_expand_and_select(normalized, on_complete, emit_selected, expand_target))
 
     def _apply_expand_and_select(self, paths, on_complete, emit_selected, expand_target):
-        model = self.model_
         to_select = []
         self._programmatic_expand += 1
         try:
             for path in paths:
-                item = model.path_item_map.get(path)
-                if not model._is_valid_item(item):
+                index = self._loaded_index(path)
+                if index is None:
                     AppLogger.debug(f"[FolderTree.expand_and_select_paths] not found: {path}")
-                    continue
-                index = model.indexFromItem(item)
-                if not index.isValid():
                     continue
                 parents = []
                 parent = index.parent()
@@ -1204,14 +1020,10 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
                 to_select.append(index)
         finally:
             self._programmatic_expand -= 1
-        sel_model = self.selectionModel()
-        sel_model.clearSelection()
-        for idx in to_select:
-            sel_model.select(idx, QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows)
-        if to_select:
-            last = to_select[-1]
-            sel_model.setCurrentIndex(last, QtCore.QItemSelectionModel.NoUpdate)
-            QtCore.QTimer.singleShot(0, lambda: self.scrollTo(last, QtWidgets.QAbstractItemView.PositionAtCenter))
+        last = to_select[-1] if to_select else None
+        self._select_indexes(to_select, last)
+        if last is not None:
+            QtCore.QTimer.singleShot(0, self, lambda: self.scrollTo(last, QtWidgets.QAbstractItemView.PositionAtCenter))
             if emit_selected:
                 self.folder_selected.emit()
         if on_complete:
@@ -1225,21 +1037,8 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         for item in iter_root_items(self.model_):
             if item.data(USER_ROLE_PATH) == path:
                 return
-        row = self.model_.make_row(path)
-        item = row[0]
-        if self.model_.has_subfolders(path):
-            item.setChild(0, QtGui.QStandardItem())
         self.model_.roots.append(path)
-        self.model_.appendRow(row)
-        self.model_._add_item(path, item)
-        self.model_.sort(0, QtCore.Qt.AscendingOrder)
-
-    @profiler.profile
-    def rename_path(self, path, new_name):
-        item = self.model_.find_item_by_path(path)
-        if not self.model_._is_valid_item(item):
-            return False
-        return self.model_._rename_item(item, new_name)
+        self.model_.insert_root(path, self.model_.has_subfolders(path))
 
     @profiler.profile
     def remove_root(self, path):
@@ -1273,37 +1072,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
     def reload_tree(self):
         if self.defer_reload_if_editing(self.reload_tree):
             return
-        self._cancel_recursive_expand_jobs()
-        scroll_state = self.capture_scroll_state()
-        state = self.get_state()
-        roots = [item.data(USER_ROLE_PATH) for item in iter_root_items(self.model_)]
-        self.model_.clear()
-        self.model_.clear_cache()
-        self.model_.reset_header()
-        self.model_._build_roots(roots)
-        self.set_state(state, scroll_to_selection=False)
-        self.restore_scroll_state(scroll_state)
-
-    @profiler.profile
-    def move_paths(self, src_paths, dest_dir):
-        dest_dir = normalize_path(dest_dir)
-        parent_item = self.model_.find_item_by_path(dest_dir)
-        if not self.model_._is_valid_item(parent_item):
-            return False
-        moved_all = True
-        for p in src_paths:
-            item = self.model_.find_item_by_path(p)
-            if not self.model_._is_valid_item(item):
-                moved_all = False
-                continue
-            if normalize_path(dest_dir).startswith(normalize_path(p) + os.sep):
-                moved_all = False
-                continue
-            ok = self.model_._move_item(item, parent_item)
-            moved_all = moved_all and ok
-        if moved_all:
-            self.model_.sort(0, QtCore.Qt.AscendingOrder)
-        return moved_all
+        self.reload_folders_async()
 
     def dragEnterEvent(self, event):
         md = event.mimeData()
@@ -1541,7 +1310,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         item = model.path_item_map.get(normalize_path(seg_path))
         if not model._is_valid_item(item):
             return
-        if not (item.hasChildren() and item.child(0).data(USER_ROLE_PATH)):
+        if not model.children_loaded(item):
             model._apply_children(item, seg_path, children, clear_pending=False)
         item = model.path_item_map.get(normalize_path(seg_path))
         if not model._is_valid_item(item):
@@ -1585,10 +1354,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         path = index.data(USER_ROLE_PATH)
         if not path:
             return None
-        sel_model = self.selectionModel()
-        sel_model.clearSelection()
-        sel_model.select(index, QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows)
-        sel_model.setCurrentIndex(index, QtCore.QItemSelectionModel.NoUpdate)
+        self._select_indexes([index], index)
         self.scrollTo(index, QtWidgets.QAbstractItemView.PositionAtCenter)
         if trigger_search:
             self.folder_selected.emit()
@@ -1640,80 +1406,66 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         if not idx.isValid():
             return None
         item = self.model_.itemFromIndex(idx)
-        if item is None:
+        if item is None or not item.rowCount():
             return None
-        self.model_.load_children(item)
-        self._programmatic_expand += 1
-        try:
-            self.expand(idx)
-        finally:
-            self._programmatic_expand -= 1
-        if item.rowCount() > 0:
-            child = item.child(0)
-            if child:
-                child_index = self.model_.indexFromItem(child)
-                return self._select_index_for_navigation(child_index, trigger_search=trigger_search)
+        if self.model_.children_loaded(item):
+            return self._select_first_child(item, trigger_search)
+        path = normalize_path(item.data(USER_ROLE_PATH))
+        self.load_paths_async([path], lambda: self._select_first_child(self.model_.path_item_map.get(path), trigger_search), skip_loaded=True)
         return None
 
-    @staticmethod
-    def _list_subdirs(path, excluded, ignore_pattern_re=None):
+    def _select_first_child(self, item, trigger_search):
+        if not self.model_.children_loaded(item):
+            return None
+        self._programmatic_expand += 1
         try:
-            entries = []
-            for entry in os.scandir(path):
-                if entry.is_dir(follow_symlinks=False):
-                    full = normalize_path(entry.path)
-                    if full in excluded:
-                        continue
-                    if ignore_pattern_re is not None and ignore_pattern_re.match(full):
-                        continue
-                    entries.append(full)
-            return natsorted(entries, key=lambda p: os.path.basename(p).lower())
-        except (PermissionError, OSError):
-            return []
+            self.expand(self.model_.indexFromItem(item))
+        finally:
+            self._programmatic_expand -= 1
+        return self._select_index_for_navigation(self.model_.indexFromItem(item.child(0)), trigger_search=trigger_search)
+
+    def _root_paths(self):
+        return [path for item in iter_root_items(self.model_) if (path := item.data(USER_ROLE_PATH))]
 
     @staticmethod
     def _deepest_last(path, excluded, ignore_pattern_re=None):
         while True:
-            children = LazyFolderTreeView._list_subdirs(path, excluded, ignore_pattern_re)
+            children = _scan_child_paths(path, excluded, ignore_pattern_re)
             if not children:
                 return path
             path = children[-1]
 
     @profiler.profile
     def navigate_next_dfs(self, trigger_search=True) -> str | None:
+        sorted_roots = self._root_paths()
         current = self.current_path()
         if not current:
-            sorted_roots = natsorted(self.model_.roots, key=lambda p: os.path.basename(p).lower())
             return self._select_path_for_navigation(sorted_roots[0], trigger_search=trigger_search) if sorted_roots else None
 
         current = normalize_path(current)
         excluded = self.model_.excluded
         ignore_pattern_re = self.model_.ignore_pattern_re
-        sorted_roots = natsorted([normalize_path(r) for r in self.model_.roots], key=lambda p: os.path.basename(p).lower())
         roots_set = set(sorted_roots)
 
-        children = self._list_subdirs(current, excluded, ignore_pattern_re)
+        children = _scan_child_paths(current, excluded, ignore_pattern_re)
         if children:
             return self._select_path_for_navigation(children[0], trigger_search=trigger_search)
 
         path = current
         while True:
             if path in roots_set:
-                try:
-                    idx = sorted_roots.index(path)
-                    if idx + 1 < len(sorted_roots):
-                        return self._select_path_for_navigation(sorted_roots[idx + 1], trigger_search=trigger_search)
-                except ValueError:
-                    pass
+                idx = sorted_roots.index(path)
+                if idx + 1 < len(sorted_roots):
+                    return self._select_path_for_navigation(sorted_roots[idx + 1], trigger_search=trigger_search)
                 return None
             parent = normalize_path(os.path.dirname(path))
-            siblings = self._list_subdirs(parent, excluded, ignore_pattern_re)
-            try:
+            if parent == path:
+                return None
+            siblings = _scan_child_paths(parent, excluded, ignore_pattern_re)
+            if path in siblings:
                 idx = siblings.index(path)
                 if idx + 1 < len(siblings):
                     return self._select_path_for_navigation(siblings[idx + 1], trigger_search=trigger_search)
-            except ValueError:
-                pass
             path = parent
 
     @profiler.profile
@@ -1725,24 +1477,18 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         current = normalize_path(current)
         excluded = self.model_.excluded
         ignore_pattern_re = self.model_.ignore_pattern_re
-        sorted_roots = natsorted([normalize_path(r) for r in self.model_.roots], key=lambda p: os.path.basename(p).lower())
-        roots_set = set(sorted_roots)
+        sorted_roots = self._root_paths()
 
-        if current in roots_set:
-            try:
-                idx = sorted_roots.index(current)
-                if idx > 0:
-                    return self._select_path_for_navigation(self._deepest_last(sorted_roots[idx - 1], excluded, ignore_pattern_re), trigger_search=trigger_search)
-            except ValueError:
-                pass
+        if current in sorted_roots:
+            idx = sorted_roots.index(current)
+            if idx > 0:
+                return self._select_path_for_navigation(self._deepest_last(sorted_roots[idx - 1], excluded, ignore_pattern_re), trigger_search=trigger_search)
             return None
 
         parent = normalize_path(os.path.dirname(current))
-        siblings = self._list_subdirs(parent, excluded, ignore_pattern_re)
-        try:
+        siblings = _scan_child_paths(parent, excluded, ignore_pattern_re)
+        if current in siblings:
             idx = siblings.index(current)
             if idx > 0:
                 return self._select_path_for_navigation(self._deepest_last(siblings[idx - 1], excluded, ignore_pattern_re), trigger_search=trigger_search)
-        except ValueError:
-            pass
         return self._select_path_for_navigation(parent, trigger_search=trigger_search)

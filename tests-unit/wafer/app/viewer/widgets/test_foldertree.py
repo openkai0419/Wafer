@@ -10,9 +10,34 @@ from wafer.app.viewer.widgets.foldertree import (
     _scan_children,
     _has_subfolders_bg,
     _collect_segments_for_paths,
+    structure_is_current,
 )
 from wafer.core.common.paths import normalize_path
 from wafer.core.db.path_scope import compile_ignore_patterns
+
+
+def item_of(tree, path):
+    return tree.model_.path_item_map.get(normalize_path(path))
+
+
+def index_of(tree, path):
+    item = item_of(tree, path)
+    return tree.model_.indexFromItem(item) if item is not None else None
+
+
+def expand_to(qtbot, tree, path):
+    roots = [normalize_path(r) for r in tree.model_.roots]
+    done = []
+    tree.expand_paths_async(_collect_segments_for_paths([normalize_path(path)], roots), on_complete=lambda: done.append(True))
+    qtbot.waitUntil(lambda: bool(done), timeout=3000)
+    return index_of(tree, path)
+
+
+def reload_and_wait(qtbot, tree, load_settings=None):
+    done = []
+    tree.reload_folders_async(load_settings, on_complete=done.append)
+    qtbot.waitUntil(lambda: bool(done), timeout=3000)
+    return done[0]
 
 
 def create_fs_tree(base):
@@ -22,32 +47,18 @@ def create_fs_tree(base):
         pass
 
 
-def test_rename_and_move(qtbot):
-    tmpdir = tempfile.mkdtemp()
-    try:
-        create_fs_tree(tmpdir)
-        tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
-        qtbot.addWidget(tree)
-        tree.model_._build_roots([tmpdir])
-        tree.expand_path(os.path.join(tmpdir, "A"))
+def test_inline_rename_moves_the_folder_and_its_item(qtbot, tmp_path):
+    create_fs_tree(str(tmp_path))
+    tree = LazyFolderTreeView(roots=[str(tmp_path)], excluded=[])
+    qtbot.addWidget(tree)
+    tree.model_._build_roots([str(tmp_path)])
+    a_index = expand_to(qtbot, tree, tmp_path / "A")
 
-        # Rename folder A -> A_renamed
-        a_path = os.path.join(tmpdir, "A")
-        assert os.path.isdir(a_path)
-        assert tree.rename_path(a_path, "A_renamed") is True
-        a_new = os.path.join(tmpdir, "A_renamed")
-        assert os.path.isdir(a_new)
-        assert tree.model_.find_item_by_path(a_new) is not None
+    assert tree.model_.setData(a_index, "A_renamed") is True
 
-        # Move A_renamed under B
-        b_path = os.path.join(tmpdir, "B")
-        assert tree.move_paths([a_new], b_path) is True
-        moved_path = os.path.join(b_path, "A_renamed")
-        assert os.path.isdir(moved_path)
-        assert tree.model_.find_item_by_path(moved_path) is not None
-
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+    assert (tmp_path / "A_renamed").is_dir()
+    assert item_of(tree, tmp_path / "A_renamed" / "A1") is not None
+    assert item_of(tree, tmp_path / "A") is None
 
 
 def test_set_state_preserves_multi_selection(qtbot):
@@ -65,7 +76,9 @@ def test_set_state_preserves_multi_selection(qtbot):
         path_y = os.path.join(tmpdir, "Y").replace("\\", "/")
         path_z = os.path.join(tmpdir, "Z").replace("\\", "/")
 
-        tree.set_state(([root_norm], [path_x, path_y, path_z]))
+        done = []
+        tree.set_state_async(([root_norm], [path_x, path_y, path_z]), on_complete=lambda: done.append(True))
+        qtbot.waitUntil(lambda: bool(done), timeout=3000)
         selected = tree.get_selected_paths()
         assert sorted(selected) == sorted([path_x, path_y, path_z])
 
@@ -86,7 +99,7 @@ def test_reload_tree_preserves_scroll_value(qtbot):
         tree.show()
         tree.model_._build_roots([tmpdir])
 
-        tree.expand_path(normalize_path(tmpdir))
+        expand_to(qtbot, tree, normalize_path(tmpdir))
         bar = tree.verticalScrollBar()
         qtbot.waitUntil(lambda: bar.maximum() > 0, timeout=3000)
 
@@ -94,7 +107,7 @@ def test_reload_tree_preserves_scroll_value(qtbot):
         bar.setValue(target)
         qtbot.waitUntil(lambda: bar.value() == target, timeout=3000)
 
-        tree.reload_tree()
+        reload_and_wait(qtbot, tree)
 
         qtbot.waitUntil(lambda: abs(tree.verticalScrollBar().value() - target) <= 1, timeout=3000)
     finally:
@@ -112,7 +125,7 @@ def test_restore_scroll_state_clamps_to_maximum(qtbot):
         tree.show()
         tree.model_._build_roots([tmpdir])
 
-        tree.expand_path(normalize_path(tmpdir))
+        expand_to(qtbot, tree, normalize_path(tmpdir))
         bar = tree.verticalScrollBar()
         qtbot.waitUntil(lambda: bar.maximum() > 0, timeout=3000)
 
@@ -208,8 +221,8 @@ def test_foldertree_model_accepts_internal_copy_drop(qtbot, tmp_path):
     tree = LazyFolderTreeView(roots=[str(root)], excluded=[])
     qtbot.addWidget(tree)
     tree.model_._build_roots([str(root)])
-    tree.expand_path(str(dst))
-    dst_index = tree.model_.find_index_by_path(str(dst))
+    expand_to(qtbot, tree, str(dst))
+    dst_index = index_of(tree, str(dst))
     mime = QtCore.QMimeData()
     mime.setData(tree.model_._mime_type, str(src).encode("utf-8"))
 
@@ -225,8 +238,8 @@ def test_foldertree_internal_drop_uses_selected_copy_operation(qtbot, tmp_path, 
     tree = LazyFolderTreeView(roots=[str(root)], excluded=[])
     qtbot.addWidget(tree)
     tree.model_._build_roots([str(root)])
-    tree.expand_path(str(dst))
-    dst_index = tree.model_.find_index_by_path(str(dst))
+    expand_to(qtbot, tree, str(dst))
+    dst_index = index_of(tree, str(dst))
     mime = QtCore.QMimeData()
     mime.setData(tree.model_._mime_type, str(src).encode("utf-8"))
     captured = {}
@@ -245,7 +258,7 @@ def test_foldertree_external_drop_uses_ask_operation(qtbot, tmp_path, monkeypatc
     tree = LazyFolderTreeView(roots=[str(root)], excluded=[])
     qtbot.addWidget(tree)
     tree.model_._build_roots([str(root)])
-    root_index = tree.model_.find_index_by_path(str(root))
+    root_index = index_of(tree, str(root))
     mime = QtCore.QMimeData()
     mime.setUrls([QtCore.QUrl.fromLocalFile(str(src))])
     captured = {}
@@ -268,7 +281,7 @@ def make_drop_tree(qtbot, tmp_path):
     tree.resize(360, 240)
     tree.show()
     tree.model_._build_roots([str(root)])
-    tree.expand_path(str(root))
+    expand_to(qtbot, tree, str(root))
     QtWidgets.QApplication.processEvents()
     mime = QtCore.QMimeData()
     mime.setUrls([QtCore.QUrl.fromLocalFile(str(source))])
@@ -277,7 +290,7 @@ def make_drop_tree(qtbot, tmp_path):
 
 def test_foldertree_drop_target_resolver_uses_direct_hit(qtbot, tmp_path):
     tree, root, mime = make_drop_tree(qtbot, tmp_path)
-    target_index = tree.model_.find_index_by_path(str(root / "A"))
+    target_index = index_of(tree, str(root / "A"))
     rect = tree.visualRect(target_index)
 
     resolved = tree._resolve_drop_target_index(rect.center(), mime, QtCore.Qt.DropAction.CopyAction)
@@ -287,7 +300,7 @@ def test_foldertree_drop_target_resolver_uses_direct_hit(qtbot, tmp_path):
 
 def test_foldertree_drop_target_resolver_uses_nearest_visible_folder(qtbot, tmp_path):
     tree, root, mime = make_drop_tree(qtbot, tmp_path)
-    target_index = tree.model_.find_index_by_path(str(root / "B"))
+    target_index = index_of(tree, str(root / "B"))
     rect = tree.visualRect(target_index)
     gap_pos = QtCore.QPoint(tree.viewport().rect().center().x(), min(tree.viewport().rect().bottom(), rect.bottom() + rect.height()))
 
@@ -298,7 +311,7 @@ def test_foldertree_drop_target_resolver_uses_nearest_visible_folder(qtbot, tmp_
 
 def test_foldertree_drop_target_resolver_ignores_model_drop_validation_during_preview(qtbot, tmp_path, monkeypatch):
     tree, root, mime = make_drop_tree(qtbot, tmp_path)
-    a_index = tree.model_.find_index_by_path(str(root / "A"))
+    a_index = index_of(tree, str(root / "A"))
     original = tree.model_.canDropMimeData
 
     def can_drop_only_on_b(data, action, row, column, parent):
@@ -313,7 +326,7 @@ def test_foldertree_drop_target_resolver_ignores_model_drop_validation_during_pr
 
 def test_foldertree_drop_target_resolver_does_not_call_isdir_during_preview(qtbot, tmp_path, monkeypatch):
     tree, root, mime = make_drop_tree(qtbot, tmp_path)
-    target_index = tree.model_.find_index_by_path(str(root / "A"))
+    target_index = index_of(tree, str(root / "A"))
     rect = tree.visualRect(target_index)
 
     def fail_isdir(_path):
@@ -341,7 +354,7 @@ def test_foldertree_drop_action_for_event_rejects_unsupported_action(qtbot, tmp_
 
 def test_foldertree_drop_on_gap_calls_model_drop_on_nearest_target(qtbot, tmp_path, monkeypatch):
     tree, root, mime = make_drop_tree(qtbot, tmp_path)
-    target_index = tree.model_.find_index_by_path(str(root / "B"))
+    target_index = index_of(tree, str(root / "B"))
     rect = tree.visualRect(target_index)
     gap_pos = QtCore.QPoint(tree.viewport().rect().center().x(), min(tree.viewport().rect().bottom(), rect.bottom() + rect.height()))
     captured = {}
@@ -364,7 +377,7 @@ def test_foldertree_drop_on_gap_calls_model_drop_on_nearest_target(qtbot, tmp_pa
 
 def test_foldertree_drop_event_clears_preview_before_model_drop(qtbot, tmp_path, monkeypatch):
     tree, root, mime = make_drop_tree(qtbot, tmp_path)
-    target_index = tree.model_.find_index_by_path(str(root / "B"))
+    target_index = index_of(tree, str(root / "B"))
     rect = tree.visualRect(target_index)
     gap_pos = QtCore.QPoint(tree.viewport().rect().center().x(), min(tree.viewport().rect().bottom(), rect.bottom() + rect.height()))
     calls = []
@@ -409,7 +422,7 @@ def test_foldertree_drop_event_clears_preview_before_model_drop(qtbot, tmp_path,
 
 def test_foldertree_drop_event_ignores_unsupported_action(qtbot, tmp_path, monkeypatch):
     tree, root, mime = make_drop_tree(qtbot, tmp_path)
-    target_index = tree.model_.find_index_by_path(str(root / "B"))
+    target_index = index_of(tree, str(root / "B"))
     rect = tree.visualRect(target_index)
     gap_pos = QtCore.QPoint(tree.viewport().rect().center().x(), min(tree.viewport().rect().bottom(), rect.bottom() + rect.height()))
     called = []
@@ -447,7 +460,7 @@ def test_foldertree_model_rejects_drop_when_target_path_is_not_directory(qtbot, 
     tree = LazyFolderTreeView(roots=[str(root)], excluded=[])
     qtbot.addWidget(tree)
     tree.model_._build_roots([str(root)])
-    dst_index = tree.model_.find_index_by_path(str(dst))
+    dst_index = expand_to(qtbot, tree, str(dst))
     mime = QtCore.QMimeData()
     mime.setUrls([QtCore.QUrl.fromLocalFile(str(src))])
     dst.rmdir()
@@ -543,8 +556,8 @@ def test_set_state_async_filters_ignore_pattern(qtbot, qapp):
             time.sleep(0.01)
 
         assert done, "set_state_async did not complete"
-        assert tree.model_.find_item_by_path(os.path.join(tmpdir, "keep")) is not None
-        assert tree.model_.find_item_by_path(os.path.join(tmpdir, "cache_dir")) is None
+        assert item_of(tree, os.path.join(tmpdir, "keep")) is not None
+        assert item_of(tree, os.path.join(tmpdir, "cache_dir")) is None
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -557,7 +570,7 @@ def test_programmatic_expand_suppresses_request_expand(qtbot):
         qtbot.addWidget(tree)
         tree.model_._build_roots([tmpdir])
 
-        tree.expand_path(normalize_path(os.path.join(tmpdir, "A", "A1")))
+        expand_to(qtbot, tree, normalize_path(os.path.join(tmpdir, "A", "A1")))
         assert tree.model_._pending_expands == {}
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -573,10 +586,10 @@ def test_reload_tree_preserves_expansion(qtbot):
         tree.model_._build_roots([tmpdir])
 
         deep_path = normalize_path(os.path.join(tmpdir, "A", "A1", "deep"))
-        tree.expand_path(deep_path)
+        expand_to(qtbot, tree, deep_path)
 
         expanded_before, _ = tree.get_state()
-        tree.reload_tree()
+        reload_and_wait(qtbot, tree)
 
         assert tree.model_._pending_expands == {}
 
@@ -594,9 +607,9 @@ def test_structure_current_true_when_realized_tree_matches(qtbot):
         tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
         qtbot.addWidget(tree)
         tree.model_._build_roots([tmpdir])
-        tree.expand_path(normalize_path(tmpdir))
+        expand_to(qtbot, tree, normalize_path(tmpdir))
 
-        assert tree.is_structure_current([tmpdir], []) is True
+        assert structure_is_current(tree.structure_snapshot(), [tmpdir], []) is True
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -611,12 +624,12 @@ def test_structure_current_detects_loaded_child_rename_and_order_change(qtbot):
         tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
         qtbot.addWidget(tree)
         tree.model_._build_roots([tmpdir])
-        tree.expand_path(normalize_path(tmpdir))
+        expand_to(qtbot, tree, normalize_path(tmpdir))
 
         renamed_b = os.path.join(tmpdir, "B01")
         os.rename(original_b, renamed_b)
 
-        assert tree.is_structure_current([tmpdir], []) is False
+        assert structure_is_current(tree.structure_snapshot(), [tmpdir], []) is False
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -629,11 +642,11 @@ def test_structure_current_skips_placeholder_only_descendants(qtbot):
         tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
         qtbot.addWidget(tree)
         tree.model_._build_roots([tmpdir])
-        tree.expand_path(normalize_path(tmpdir))
+        expand_to(qtbot, tree, normalize_path(tmpdir))
 
         os.makedirs(os.path.join(parent, "child2"), exist_ok=True)
 
-        assert tree.is_structure_current([tmpdir], []) is True
+        assert structure_is_current(tree.structure_snapshot(), [tmpdir], []) is True
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -647,7 +660,7 @@ def test_structure_current_detects_excluded_change(qtbot):
         qtbot.addWidget(tree)
         tree.model_._build_roots([tmpdir])
 
-        assert tree.is_structure_current([tmpdir], [excluded]) is False
+        assert structure_is_current(tree.structure_snapshot(), [tmpdir], [excluded]) is False
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -660,11 +673,11 @@ def test_structure_current_uses_lightweight_scan(qtbot, monkeypatch):
         tree = LazyFolderTreeView(roots=[tmpdir], excluded=[])
         qtbot.addWidget(tree)
         tree.model_._build_roots([tmpdir])
-        tree.expand_path(normalize_path(tmpdir))
+        expand_to(qtbot, tree, normalize_path(tmpdir))
 
         monkeypatch.setattr(foldertree_module, "_has_subfolders_bg", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("_has_subfolders_bg should not be used by is_structure_current")))
 
-        assert tree.is_structure_current([tmpdir], []) is True
+        assert structure_is_current(tree.structure_snapshot(), [tmpdir], []) is True
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -742,8 +755,8 @@ def test_is_editing_detects_live_inline_editor_when_view_state_is_not_editing(qt
         qtbot.addWidget(tree)
         tree.show()
         tree.model_._build_roots([tmpdir])
-        tree.expand_path(normalize_path(tmpdir))
-        index = tree.model_.find_index_by_path(normalize_path(os.path.join(tmpdir, "A")))
+        expand_to(qtbot, tree, normalize_path(tmpdir))
+        index = index_of(tree, normalize_path(os.path.join(tmpdir, "A")))
 
         tree.openPersistentEditor(index)
         qtbot.waitUntil(lambda: tree.findChild(QtWidgets.QLineEdit) is not None, timeout=3000)
@@ -804,7 +817,7 @@ def test_user_expand_triggers_request_expand(qtbot, qapp):
         root_item = tree.model_.item(0)
         root_index = tree.model_.indexFromItem(root_item)
         a_item = None
-        tree.model_.load_children(root_item)
+        expand_to(qtbot, tree, tmpdir)
         for i in range(root_item.rowCount()):
             child = root_item.child(i)
             if child and "A" in (child.text() or ""):
@@ -822,7 +835,7 @@ def test_user_expand_triggers_request_expand(qtbot, qapp):
             time.sleep(0.01)
 
         a_child_path = normalize_path(os.path.join(tmpdir, "A", "child"))
-        child_item = tree.model_.find_item_by_path(a_child_path)
+        child_item = item_of(tree, a_child_path)
         assert child_item is not None
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -889,8 +902,8 @@ def test_expand_and_select_paths_filters_ignore_pattern(qtbot):
         tree.expand_and_select_paths([path_a], on_complete=lambda: done.append(True))
         qtbot.waitUntil(lambda: bool(done), timeout=3000)
 
-        assert tree.model_.find_item_by_path(normalize_path(path_a)) is not None
-        assert tree.model_.find_item_by_path(normalize_path(os.path.join(tmpdir, "cache_dir"))) is None
+        assert item_of(tree, normalize_path(path_a)) is not None
+        assert item_of(tree, normalize_path(os.path.join(tmpdir, "cache_dir"))) is None
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -904,10 +917,10 @@ def test_navigate_next_folder_emits_after_selection(qtbot):
         qtbot.addWidget(tree)
         tree.model_._build_roots([tmpdir])
 
-        tree.expand_path(tmpdir)
+        expand_to(qtbot, tree, tmpdir)
         path_a = normalize_path(os.path.join(tmpdir, "A"))
         path_b = normalize_path(os.path.join(tmpdir, "B"))
-        tree.setCurrentIndex(tree.model_.find_index_by_path(path_a))
+        tree.setCurrentIndex(index_of(tree, path_a))
         emitted = []
         tree.folder_selected.connect(lambda: emitted.append(list(tree.get_selected_paths())))
 
@@ -928,10 +941,10 @@ def test_navigate_next_folder_can_skip_search_emit(qtbot):
         qtbot.addWidget(tree)
         tree.model_._build_roots([tmpdir])
 
-        tree.expand_path(tmpdir)
+        expand_to(qtbot, tree, tmpdir)
         path_a = normalize_path(os.path.join(tmpdir, "A"))
         path_b = normalize_path(os.path.join(tmpdir, "B"))
-        tree.setCurrentIndex(tree.model_.find_index_by_path(path_a))
+        tree.setCurrentIndex(index_of(tree, path_a))
         emitted = []
         done = []
         tree.folder_selected.connect(lambda: emitted.append(True))
@@ -955,13 +968,13 @@ def test_navigate_next_prev_folder_stay_with_siblings(qtbot):
         qtbot.addWidget(tree)
         tree.model_._build_roots([tmpdir])
 
-        tree.expand_path(tmpdir)
         path_a = normalize_path(os.path.join(tmpdir, "A"))
         path_a1 = normalize_path(os.path.join(tmpdir, "A", "A1"))
         path_b = normalize_path(os.path.join(tmpdir, "B"))
-        a_index = tree.model_.find_index_by_path(path_a)
-        a1_index = tree.model_.find_index_by_path(path_a1)
-        b_index = tree.model_.find_index_by_path(path_b)
+        expand_to(qtbot, tree, path_a1)
+        a_index = index_of(tree, path_a)
+        a1_index = index_of(tree, path_a1)
+        b_index = index_of(tree, path_b)
 
         tree.collapse(a_index)
         tree.setCurrentIndex(a_index)
@@ -988,9 +1001,9 @@ def test_navigate_parent_selects_parent_without_expanding(qtbot):
 
         path_a = normalize_path(os.path.join(tmpdir, "A"))
         path_a1 = normalize_path(os.path.join(tmpdir, "A", "A1"))
-        tree.expand_path(path_a1)
-        a_index = tree.model_.find_index_by_path(path_a)
-        a1_index = tree.model_.find_index_by_path(path_a1)
+        expand_to(qtbot, tree, path_a1)
+        a_index = index_of(tree, path_a)
+        a1_index = index_of(tree, path_a1)
         tree.collapse(a_index)
         tree.setCurrentIndex(a1_index)
 
@@ -1011,9 +1024,9 @@ def test_navigate_parent_can_collapse_selected_parent(qtbot):
 
         path_a = normalize_path(os.path.join(tmpdir, "A"))
         path_a1 = normalize_path(os.path.join(tmpdir, "A", "A1"))
-        tree.expand_path(path_a1)
-        a_index = tree.model_.find_index_by_path(path_a)
-        a1_index = tree.model_.find_index_by_path(path_a1)
+        expand_to(qtbot, tree, path_a1)
+        a_index = index_of(tree, path_a)
+        a1_index = index_of(tree, path_a1)
         tree._programmatic_expand += 1
         try:
             tree.expand(a_index)
@@ -1037,15 +1050,16 @@ def test_navigate_child_expands_current_only(qtbot):
         qtbot.addWidget(tree)
         tree.model_._build_roots([tmpdir])
 
-        tree.expand_path(tmpdir)
+        expand_to(qtbot, tree, tmpdir)
         path_a = normalize_path(os.path.join(tmpdir, "A"))
         path_a1 = normalize_path(os.path.join(tmpdir, "A", "A1"))
-        a_index = tree.model_.find_index_by_path(path_a)
+        a_index = index_of(tree, path_a)
         tree.collapse(a_index)
         tree.setCurrentIndex(a_index)
 
-        assert tree.navigate_child() == path_a1
-        a1_index = tree.model_.find_index_by_path(path_a1)
+        assert tree.navigate_child() is None
+        qtbot.waitUntil(lambda: tree.get_selected_paths() == [path_a1], timeout=3000)
+        a1_index = index_of(tree, path_a1)
         assert tree.get_selected_paths() == [path_a1]
         assert tree.isExpanded(a_index)
         assert not tree.isExpanded(a1_index)
@@ -1062,19 +1076,19 @@ def test_navigate_next_dfs_does_not_expand_target(qtbot):
         qtbot.addWidget(tree)
         tree.model_._build_roots([tmpdir])
 
-        root_index = tree.expand_path(tmpdir)
+        root_index = expand_to(qtbot, tree, tmpdir)
         tree.setCurrentIndex(root_index)
         path_a = normalize_path(os.path.join(tmpdir, "A"))
         path_a1 = normalize_path(os.path.join(tmpdir, "A", "A1"))
 
         assert tree.navigate_next_dfs() == path_a
         qtbot.waitUntil(lambda: tree.get_selected_paths() == [path_a], timeout=3000)
-        a_index = tree.model_.find_index_by_path(path_a)
+        a_index = index_of(tree, path_a)
         assert not tree.isExpanded(a_index)
 
         assert tree.navigate_next_dfs() == path_a1
         qtbot.waitUntil(lambda: tree.get_selected_paths() == [path_a1], timeout=3000)
-        a1_index = tree.model_.find_index_by_path(path_a1)
+        a1_index = index_of(tree, path_a1)
         assert tree.isExpanded(a_index)
         assert not tree.isExpanded(a1_index)
     finally:
@@ -1091,7 +1105,7 @@ def test_navigate_next_dfs_skips_ignore_pattern_folder(qtbot):
         qtbot.addWidget(tree)
         tree.model_._build_roots([tmpdir])
 
-        root_index = tree.expand_path(tmpdir)
+        root_index = expand_to(qtbot, tree, tmpdir)
         tree.setCurrentIndex(root_index)
         path_keep = normalize_path(os.path.join(tmpdir, "keep"))
 
@@ -1112,7 +1126,8 @@ def test_navigate_prev_dfs_skips_ignore_pattern_folder(qtbot):
         tree.model_._build_roots([tmpdir])
 
         path_b = normalize_path(os.path.join(tmpdir, "B"))
-        b_index = tree.model_.indexFromItem(tree.model_.find_item_by_path(path_b))
+        expand_to(qtbot, tree, tmpdir)
+        b_index = index_of(tree, path_b)
         tree.setCurrentIndex(b_index)
         path_a_keep = normalize_path(os.path.join(tmpdir, "A", "keep"))
 
@@ -1160,14 +1175,14 @@ def test_expand_recursive_drains_entries_by_timer(qtbot, monkeypatch, tmp_path):
     monkeypatch.setattr(LazyFolderTreeView, "_drain_recursive_expand", drain)
     monkeypatch.setattr(LazyFolderTreeView, "_apply_recursive_expand_entry", apply_entry)
 
-    root_index = tree.model_.indexFromItem(tree.model_.find_item_by_path(root))
+    root_index = index_of(tree, root)
     tree.expand_recursive(root_index)
     qtbot.waitUntil(lambda: root not in tree.model_._pending_expands, timeout=3000)
 
     assert len(drains) >= 2
     assert applied[:3] == [root, path_a, path_b]
-    assert tree.model_.find_item_by_path(path_a1) is not None
-    assert tree.model_.find_item_by_path(path_b1) is not None
+    assert item_of(tree, path_a1) is not None
+    assert item_of(tree, path_b1) is not None
 
 
 def test_expand_recursive_filters_ignore_pattern(qtbot, tmp_path):
@@ -1181,13 +1196,13 @@ def test_expand_recursive_filters_ignore_pattern(qtbot, tmp_path):
     qtbot.addWidget(tree)
     tree.model_._build_roots([root])
 
-    root_index = tree.model_.indexFromItem(tree.model_.find_item_by_path(root))
+    root_index = index_of(tree, root)
     tree.expand_recursive(root_index)
     qtbot.waitUntil(lambda: root not in tree.model_._pending_expands, timeout=3000)
 
-    assert tree.model_.find_item_by_path(path_a) is not None
-    assert tree.model_.find_item_by_path(os.path.join(root, "A", "keep")) is not None
-    assert tree.model_.find_item_by_path(os.path.join(root, "A", "cache_dir")) is None
+    assert item_of(tree, path_a) is not None
+    assert item_of(tree, os.path.join(root, "A", "keep")) is not None
+    assert item_of(tree, os.path.join(root, "A", "cache_dir")) is None
 
 
 def test_expand_recursive_cancel_clears_job(qtbot, monkeypatch, tmp_path):
@@ -1203,7 +1218,7 @@ def test_expand_recursive_cancel_clears_job(qtbot, monkeypatch, tmp_path):
     monkeypatch.setattr(foldertree_module, "_scan_children", scan_children)
     monkeypatch.setattr(foldertree_module, "EXPAND_RECURSIVE_DRAIN_MS", 0.0)
 
-    root_index = tree.model_.indexFromItem(tree.model_.find_item_by_path(root))
+    root_index = index_of(tree, root)
     tree.expand_recursive(root_index)
     qtbot.waitUntil(lambda: root in tree._recursive_expand_jobs, timeout=3000)
     tree._cancel_recursive_expand_jobs()
@@ -1231,7 +1246,7 @@ def test_cancel_expand_recursive_cancels_active_job(qtbot, monkeypatch, tmp_path
     tree.model_._build_roots([root])
     monkeypatch.setattr(foldertree_module, "_scan_children", scan_children)
 
-    root_index = tree.model_.indexFromItem(tree.model_.find_item_by_path(root))
+    root_index = index_of(tree, root)
     tree.expand(root_index)
     tree.expand_recursive(root_index)
     qtbot.waitUntil(lambda: started.is_set() and root in tree.model_._pending_expands, timeout=3000)
@@ -1288,7 +1303,7 @@ def test_extra_columns_add_non_editable_cells(qtbot, tmp_path):
 
     assert model.columnCount() == 2
     assert [model.headerData(c, QtCore.Qt.Horizontal) for c in range(2)] == ["Folders", "A"]
-    root_index = model.find_index_by_path(str(root))
+    root_index = index_of(tree, str(root))
     extra = root_index.siblingAtColumn(1)
     assert extra.isValid()
     extra_flags = model.flags(extra)
@@ -1304,26 +1319,16 @@ def test_extra_columns_follow_children_added_roots_and_reload(qtbot, tmp_path):
     other_root = tmp_path / "other"
     other_root.mkdir()
 
-    tree.expand_path(str(root / "A"))
+    expand_to(qtbot, tree, str(root / "A"))
     tree.add_root(str(other_root))
     for path in (root / "A", root / "A" / "A1", other_root):
-        index = model.find_index_by_path(str(path))
+        index = index_of(tree, str(path))
         assert index.siblingAtColumn(1).isValid(), path
 
-    tree.reload_tree()
+    reload_and_wait(qtbot, tree)
     assert model.columnCount() == 2
     assert model.headerData(1, QtCore.Qt.Horizontal) == "A"
-    assert model.find_index_by_path(str(root / "A")).siblingAtColumn(1).isValid()
-
-
-def test_extra_columns_move_with_their_folder(qtbot, tmp_path):
-    tree, root = make_extra_columns_tree(qtbot, tmp_path)
-    tree.expand_path(str(root))
-    tree.expand_path(str(root / "B"))
-
-    assert tree.move_paths([str(root / "A")], str(root / "B")) is True
-    moved = tree.model_.find_index_by_path(str(root / "B" / "A"))
-    assert moved.siblingAtColumn(1).isValid()
+    assert index_of(tree, str(root / "A")).siblingAtColumn(1).isValid()
 
 
 def test_set_folders_emits_folders_set(qtbot, tmp_path):
@@ -1339,12 +1344,12 @@ def test_default_tree_keeps_one_column(qtbot, tmp_path):
     tree = LazyFolderTreeView(roots=[str(tmp_path)], excluded=[])
     qtbot.addWidget(tree)
     tree.set_folders([str(tmp_path)])
-    tree.expand_path(str(tmp_path))
+    expand_to(qtbot, tree, str(tmp_path))
 
     assert tree.model_.columnCount() == 1
     assert tree.isHeaderHidden()
-    assert tree.model_.find_index_by_path(str(tmp_path / "A")).siblingAtColumn(1).isValid() is False
-    tree.reload_tree()
+    assert index_of(tree, str(tmp_path / "A")).siblingAtColumn(1).isValid() is False
+    reload_and_wait(qtbot, tree)
     assert tree.model_.columnCount() == 1
 
 
@@ -1363,7 +1368,7 @@ def show_extra_columns_tree(qtbot, tmp_path):
     tree, root = make_extra_columns_tree(qtbot, tmp_path)
     tree.resize(480, 240)
     tree.show()
-    tree.expand_path(str(root))
+    expand_to(qtbot, tree, str(root))
     QtWidgets.QApplication.processEvents()
     return tree, root
 
@@ -1372,23 +1377,24 @@ def test_navigation_from_an_extra_cell_uses_its_folder(qtbot, tmp_path):
     tree, root = show_extra_columns_tree(qtbot, tmp_path)
     model = tree.model_
     try:
-        a_extra = model.find_index_by_path(str(root / "A")).siblingAtColumn(1)
+        a_extra = index_of(tree, str(root / "A")).siblingAtColumn(1)
         tree.setCurrentIndex(a_extra)
         assert tree.currentIndex().column() == 1
         assert tree.current_path() == normalize_path(str(root / "A"))
 
         emitted = []
         tree.current_path_changed.connect(emitted.append)
-        assert tree.navigate_child(trigger_search=False) == normalize_path(str(root / "A" / "A1"))
+        tree.navigate_child(trigger_search=False)
+        qtbot.waitUntil(lambda: emitted == [normalize_path(str(root / "A" / "A1"))], timeout=3000)
         assert model.itemFromIndex(a_extra).rowCount() == 0
         assert all(p.startswith(normalize_path(str(root))) for p in model.path_item_map)
         assert emitted == [normalize_path(str(root / "A" / "A1"))]
 
-        tree.setCurrentIndex(model.find_index_by_path(str(root / "A")).siblingAtColumn(1))
+        tree.setCurrentIndex(index_of(tree, str(root / "A")).siblingAtColumn(1))
         assert tree.navigate_next_folder(trigger_search=False) == normalize_path(str(root / "B"))
-        tree.setCurrentIndex(model.find_index_by_path(str(root / "B")).siblingAtColumn(1))
+        tree.setCurrentIndex(index_of(tree, str(root / "B")).siblingAtColumn(1))
         assert tree.navigate_prev_folder(trigger_search=False) == normalize_path(str(root / "A"))
-        tree.setCurrentIndex(model.find_index_by_path(str(root / "A")).siblingAtColumn(1))
+        tree.setCurrentIndex(index_of(tree, str(root / "A")).siblingAtColumn(1))
         assert tree.navigate_parent(trigger_search=False) == normalize_path(str(root))
     finally:
         tree.close()
@@ -1399,7 +1405,7 @@ def test_context_on_an_extra_cell_resolves_its_folder(qtbot, tmp_path, monkeypat
 
     tree, root = show_extra_columns_tree(qtbot, tmp_path)
     try:
-        a_extra = tree.model_.find_index_by_path(str(root / "A")).siblingAtColumn(1)
+        a_extra = index_of(tree, str(root / "A")).siblingAtColumn(1)
         pos = tree.visualRect(a_extra).center()
         assert tree.indexAt(pos).column() == 1
         captured = {}
@@ -1436,7 +1442,7 @@ def is_expanded(tree, path):
 
 def test_expand_paths_async_expands_without_touching_selection_or_scroll(qtbot, tmp_path):
     tree, root = make_deep_tree(qtbot, tmp_path)
-    z = tree.model_.find_index_by_path(f"{root}/z")
+    z = expand_to(qtbot, tree, f"{root}/z")
     tree.selectionModel().select(z, QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows)
     tree.selectionModel().setCurrentIndex(z, QtCore.QItemSelectionModel.NoUpdate)
     scrolled = []
@@ -1462,7 +1468,7 @@ def test_expand_paths_async_empty_completes_immediately(qtbot, tmp_path):
 
 def test_load_paths_async_skips_loaded_folders_only_when_asked(qtbot, tmp_path, monkeypatch):
     tree, root = make_deep_tree(qtbot, tmp_path)
-    tree.model_.find_item_by_path(f"{root}/a")
+    expand_to(qtbot, tree, f"{root}/a")
     scanned = []
     original = foldertree_module._scan_children
     monkeypatch.setattr(foldertree_module, "_scan_children", lambda path, *args: (scanned.append(path), original(path, *args))[1])
@@ -1480,7 +1486,7 @@ def test_load_paths_async_skips_loaded_folders_only_when_asked(qtbot, tmp_path, 
 
 def test_set_state_async_fills_a_tree_reloaded_before_apply(qtbot, tmp_path):
     tree, root = make_deep_tree(qtbot, tmp_path)
-    tree.model_.find_item_by_path(f"{root}/a")
+    expand_to(qtbot, tree, f"{root}/a")
     done = []
 
     tree.set_state_async(([root, f"{root}/a"], [f"{root}/a/b"]), on_complete=lambda: done.append(True))
@@ -1493,7 +1499,7 @@ def test_set_state_async_fills_a_tree_reloaded_before_apply(qtbot, tmp_path):
 
 def test_expand_and_select_paths_fills_a_tree_reloaded_before_apply(qtbot, tmp_path):
     tree, root = make_deep_tree(qtbot, tmp_path)
-    tree.model_.find_item_by_path(f"{root}/a")
+    expand_to(qtbot, tree, root)
     done = []
 
     tree.expand_and_select_paths([f"{root}/a/b"], on_complete=lambda: done.append(True), emit_selected=False)
@@ -1502,3 +1508,62 @@ def test_expand_and_select_paths_fills_a_tree_reloaded_before_apply(qtbot, tmp_p
     qtbot.waitUntil(lambda: bool(done))
     assert is_expanded(tree, f"{root}/a")
     assert tree.get_selected_paths() == [f"{root}/a/b"]
+
+
+def root_labels(tree):
+    return [item.text() for item in foldertree_module.iter_root_items(tree.model_)]
+
+
+def child_labels(tree, path):
+    item = item_of(tree, path)
+    return [item.child(i).text() for i in range(item.rowCount())]
+
+
+def test_reload_tree_scans_folders_off_the_main_thread(qtbot, tmp_path, monkeypatch):
+    create_fs_tree(str(tmp_path))
+    tree = LazyFolderTreeView(roots=[str(tmp_path)], excluded=[])
+    qtbot.addWidget(tree)
+    tree.set_folders([str(tmp_path)])
+    expand_to(qtbot, tree, tmp_path / "A")
+    on_main = []
+    for name in ("_scan_child_paths", "_has_subfolders_bg"):
+        original = getattr(foldertree_module, name)
+        monkeypatch.setattr(foldertree_module, name, lambda *args, _original=original: (on_main.append(threading.current_thread() is threading.main_thread()), _original(*args))[1])
+
+    tree.reload_tree()
+    assert on_main == []
+    reload_and_wait(qtbot, tree)
+
+    assert on_main and not any(on_main)
+    assert item_of(tree, tmp_path / "A" / "A1") is not None
+
+
+def test_roots_follow_the_natural_folder_order_and_match_the_structure_check(qtbot, tmp_path):
+    names = ["img10", "Beta", "img2", "alpha"]
+    for name in names:
+        (tmp_path / name).mkdir()
+    roots = [str(tmp_path / name) for name in names]
+    tree = LazyFolderTreeView(roots=roots, excluded=[])
+    qtbot.addWidget(tree)
+
+    tree.set_folders(roots)
+
+    assert root_labels(tree) == ["alpha", "Beta", "img2", "img10"]
+    assert structure_is_current(tree.structure_snapshot(), roots, []) is True
+
+
+def test_add_root_keeps_the_natural_order_of_loaded_children(qtbot, tmp_path):
+    root = tmp_path / "root"
+    for name in ("b", "A", "c10", "c9"):
+        (root / name).mkdir(parents=True)
+    other = tmp_path / "Other"
+    other.mkdir()
+    tree = LazyFolderTreeView(roots=[str(root)], excluded=[])
+    qtbot.addWidget(tree)
+    tree.set_folders([str(root)])
+    expand_to(qtbot, tree, root)
+
+    tree.add_root(str(other))
+
+    assert root_labels(tree) == ["Other", "root"]
+    assert child_labels(tree, root) == ["A", "b", "c9", "c10"]

@@ -267,51 +267,37 @@ class TestReloadFolderList:
             win.setting_db = MagicMock()
             win.setting_db.get_all_folder_settings.return_value = (["/root"], ["/ignored"], [])
             win.folder_view = MagicMock()
-            win.folder_view.is_structure_current.return_value = False
-            win.folder_view.defer_reload_if_editing.return_value = False
-            win.folder_view.capture_scroll_state.return_value = {"value": 37, "maximum": 120}
-            win.folder_view.get_state.return_value = (["/root"], ["/root/A"])
             win._dismiss_folder_callout = MagicMock()
             return win, MainWindow
 
-    def test_restore_scroll_after_rebuild_without_selection_scroll(self):
+    def test_reload_reads_settings_off_the_main_thread_and_hands_them_to_the_tree(self):
         win, MainWindow = self._make_win()
 
         MainWindow._reload_folderlist_now(win)
 
-        assert win.folder_view.method_calls == [
-            call.is_structure_current(["/root"], ["/ignored"], None),
-            call.defer_reload_if_editing(ANY, strong=True),
-            call.capture_scroll_state(),
-            call.get_state(),
-            call.set_folders(["/root"], ["/ignored"], None),
-            call.set_state((["/root"], ["/root/A"]), scroll_to_selection=False),
-            call.restore_scroll_state({"value": 37, "maximum": 120}),
-        ]
+        win.setting_db.get_all_folder_settings.assert_not_called()
+        load_settings = win.folder_view.reload_folders_async.call_args.args[0]
+        assert load_settings() == (["/root"], ["/ignored"], None)
+        on_complete = win.folder_view.reload_folders_async.call_args.kwargs["on_complete"]
+        on_complete(["/root"])
         win._dismiss_folder_callout.assert_called_once()
 
-    def test_skip_rebuild_when_structure_is_current(self):
+    def test_the_callout_stays_while_there_are_no_roots(self):
         win, MainWindow = self._make_win()
-        win.folder_view.is_structure_current.return_value = True
 
         MainWindow._reload_folderlist_now(win)
+        win.folder_view.reload_folders_async.call_args.kwargs["on_complete"]([])
 
-        win.folder_view.is_structure_current.assert_called_once_with(["/root"], ["/ignored"], None)
-        win.folder_view.capture_scroll_state.assert_not_called()
-        win.folder_view.set_folders.assert_not_called()
-        win._dismiss_folder_callout.assert_called_once()
-
-    def test_defer_rebuild_while_editing(self):
-        win, MainWindow = self._make_win()
-        win.folder_view.defer_reload_if_editing.return_value = True
-
-        MainWindow._reload_folderlist_now(win)
-
-        win.folder_view.is_structure_current.assert_called_once_with(["/root"], ["/ignored"], None)
-        win.folder_view.defer_reload_if_editing.assert_called_once_with(ANY, strong=True)
-        win.folder_view.capture_scroll_state.assert_not_called()
-        win.folder_view.set_folders.assert_not_called()
         win._dismiss_folder_callout.assert_not_called()
+
+    def test_without_a_setting_db_the_tree_reloads_itself(self):
+        win, MainWindow = self._make_win()
+        win.setting_db = None
+
+        MainWindow._reload_folderlist_now(win)
+
+        win.folder_view.reload_tree.assert_called_once_with()
+        win.folder_view.reload_folders_async.assert_not_called()
 
 
 class TestPanelLayoutReset:

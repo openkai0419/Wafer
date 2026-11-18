@@ -106,17 +106,6 @@ class FolderStatsModel(LazyFolderTreeModel):
             self.paths_changed.emit([parent_folder(old_path)])
         return renamed
 
-    def _move_item(self, item, new_parent_item):
-        old_path = normalize_path(item.data(USER_ROLE_PATH))
-        moved = super()._move_item(item, new_parent_item)
-        if not moved:
-            return moved
-        new_parent = normalize_path(new_parent_item.data(USER_ROLE_PATH))
-        old_parent = parent_folder(old_path)
-        if new_parent != old_parent:
-            self.paths_changed.emit([old_parent, new_parent])
-        return moved
-
 
 class CountDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self, text_for: Callable[[str | None, int], str], parent=None):

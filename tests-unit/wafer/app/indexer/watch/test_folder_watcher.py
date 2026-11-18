@@ -30,6 +30,21 @@ def test_deleted_event_marks_folder_dirty_even_when_not_directory():
     assert inbox.empty()
 
 
+def test_deleted_folder_under_dotted_parent_marks_folder_dirty():
+    from wafer.app.indexer.watch.folder_watcher import _FileEventHandler
+
+    inbox = queue.Queue()
+    handler = _FileEventHandler(inbox)
+
+    handler.on_deleted(_FakeFsEvent("D:/Photos/2024.01/child", False))
+    handler.on_deleted(_FakeFsEvent("D:/Photos/2024.01/a.png", False))
+
+    assert inbox.get_nowait() == ("folder", "D:/Photos/2024.01/child")
+    assert inbox.get_nowait() == ("deleted", "D:/Photos/2024.01/child")
+    assert inbox.get_nowait() == ("deleted", "D:/Photos/2024.01/a.png")
+    assert inbox.empty()
+
+
 def _make_watcher():
     from wafer.app.indexer.watch.folder_watcher import FolderWatcher
     from wafer.app.indexer.watch.path_scope import normalize_prefixes

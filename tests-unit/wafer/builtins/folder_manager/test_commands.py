@@ -85,12 +85,11 @@ def test_commands_are_available_in_the_viewer_and_the_tray():
 def test_matches_only_command_toggles_and_reports_checked(qtbot, monkeypatch):
     FolderManagerCommands.register()
     panel = FakePanel()
-    registry = InstanceRegistry.instance()
-    monkeypatch.setattr(registry, "get_one", lambda name: None)
+    monkeypatch.setattr(InstanceRegistry, "get_one", lambda self, name: None)
     assert CommandRegistry.instance().get_command("folder_manager.matches_only").meta.checkable
     assert Command.get_checked("folder_manager.matches_only") is False
 
-    monkeypatch.setattr(registry, "get_one", lambda name: panel if name == "FolderManager" else None)
+    monkeypatch.setattr(InstanceRegistry, "get_one", lambda self, name: panel if name == "FolderManager" else None)
     toggle_matches_only(FakeCtx(panel))
     assert panel.matches_only is True
     assert Command.get_checked("folder_manager.matches_only") is True

@@ -633,7 +633,7 @@ def test_choosing_a_database_in_the_box_switches_to_it(qtbot, tmp_path, query_ca
 
 
 def test_panel_without_databases_stays_empty(qtbot, monkeypatch, query_calls, served_folders):
-    monkeypatch.setattr(InstanceRegistry.instance(), "get_host_window", lambda: None)
+    monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: None)
     monkeypatch.setattr(widget_module, "list_data_db_names", lambda: [])
     panel = FolderManagerPlugin().create_widget()
     qtbot.addWidget(panel)
@@ -1079,7 +1079,7 @@ def test_plugin_opens_standalone_and_starts_on_the_host_database(qtbot, monkeypa
     assert FolderManagerPlugin.STANDALONE_AVAILABLE is True
     assert FolderManagerPlugin.STANDALONE_SIZE == (720, 900)
     assert "save_ui_state" not in vars(FolderManagerPlugin) and "restore_ui_state" not in vars(FolderManagerPlugin)
-    monkeypatch.setattr(InstanceRegistry.instance(), "get_host_window", lambda: HostWindow("b"))
+    monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: HostWindow("b"))
     monkeypatch.setattr(widget_module, "list_data_db_names", lambda: ["a", "b"])
     save_last_database("a")
 
@@ -1091,7 +1091,7 @@ def test_plugin_opens_standalone_and_starts_on_the_host_database(qtbot, monkeypa
 
 
 def test_plugin_without_host_starts_on_the_last_database(qtbot, monkeypatch):
-    monkeypatch.setattr(InstanceRegistry.instance(), "get_host_window", lambda: None)
+    monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: None)
     monkeypatch.setattr(widget_module, "list_data_db_names", lambda: ["a", "b"])
     save_last_database("b")
 
@@ -1102,7 +1102,7 @@ def test_plugin_without_host_starts_on_the_last_database(qtbot, monkeypatch):
 
 
 def test_plugin_without_host_or_last_database_starts_on_the_first(qtbot, monkeypatch):
-    monkeypatch.setattr(InstanceRegistry.instance(), "get_host_window", lambda: None)
+    monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: None)
     monkeypatch.setattr(widget_module, "list_data_db_names", lambda: ["a", "b"])
 
     widget = FolderManagerPlugin().create_widget()
@@ -1113,14 +1113,14 @@ def test_plugin_without_host_or_last_database_starts_on_the_first(qtbot, monkeyp
 
 def test_show_in_tree_is_offered_only_when_the_window_shows_the_panel_database(qtbot, monkeypatch):
     host = HostWindow("main")
-    monkeypatch.setattr(InstanceRegistry.instance(), "get_host_window", lambda: host)
+    monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: host)
     panel = FolderManagerWidget()
     qtbot.addWidget(panel)
     panel.set_database("main")
     assert panel.view.show_in_tree_available()
     host.database_name = "other"
     assert not panel.view.show_in_tree_available()
-    monkeypatch.setattr(InstanceRegistry.instance(), "get_host_window", lambda: None)
+    monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: None)
     assert not panel.view.show_in_tree_available()
 
 

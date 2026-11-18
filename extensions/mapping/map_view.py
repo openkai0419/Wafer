@@ -626,12 +626,14 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if rows.size == 0:
             return
         indexes = (self.color_ids[rows] << 2) | self.selected[rows].astype(np.int64) | (self.outliers[rows].astype(np.int64) << 1)
-        kinds, slots = np.unique(indexes, return_inverse=True)
+        used = np.zeros(int(indexes.max()) + 1, dtype=bool)
+        used[indexes] = True
+        kinds, slots = np.flatnonzero(used), (np.cumsum(used) - 1)[indexes]
         side = self.sprite_pixels()
         atlas, cells = self.sprite_atlas(kinds.tolist(), side)
         fragments = np.empty((rows.size, 10), dtype=np.float64)
         fragments[:, :2] = np.floor(projection.pixels(self.positions[rows]) - side / 2 + 0.5) + side / 2
-        fragments[:, 2:4] = cells[slots.ravel()]
+        fragments[:, 2:4] = cells[slots]
         fragments[:, 4:6] = side
         fragments[:, 6:8] = 1.0
         fragments[:, 8] = 0.0

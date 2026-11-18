@@ -381,7 +381,10 @@ class FileViewerController(QtCore.QObject):
         @profiler.profile
         def task():
             engine = FileSearchEngine(dbpath)
-            result = _format_meta(engine, path, dbpath)
+            try:
+                result = _format_meta(engine, path, dbpath)
+            finally:
+                engine.close()
             if cancel.is_cancelled():
                 return
             self._dispatcher.invoke(lambda: callback(cancel, path, result))

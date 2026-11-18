@@ -449,6 +449,18 @@ class TestPathChangedClear:
         assert w._pending_meta is None
         assert w._pending_content is None
 
+    def test_fetch_meta_closes_its_engine(self, qtbot, monkeypatch):
+        w, model, _cv, _mv = self._make_controller(qtbot)
+        model._dbpath_getter = lambda: "missing.db"
+        closed = []
+        monkeypatch.setattr("wafer.app.viewer.preview.file_viewer.FileSearchEngine.close", lambda self: closed.append(self))
+        monkeypatch.setattr(w._dispatcher, "post", lambda fn, **kwargs: fn())
+        monkeypatch.setattr(w._dispatcher, "invoke", lambda fn: None)
+
+        w._fetch_meta("a.png", lambda *a: None)
+
+        assert len(closed) == 1
+
 
 class _StubWidgetPlugin(WidgetViewerPlugin):
     NAME = "stub_widget"

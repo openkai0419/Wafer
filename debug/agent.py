@@ -73,9 +73,10 @@ class DebugAgent(QtCore.QObject):
                 raise LookupError(f"unknown debug op {op!r}")
             if not isinstance(args, dict):
                 raise TypeError(f"args of {op!r} must be a dict, not {type(args).__name__}")
-            reply = {"ok": True, "result": handler(**args), "error": ""}
-            msgpack.packb(reply, use_bin_type=True)
-            return reply
+            result = handler(**args)
+            if not isinstance(result, bytes):
+                msgpack.packb(result, use_bin_type=True)
+            return {"ok": True, "result": result, "error": ""}
         except Exception as e:
             AppLogger.warning(f"[debug] op {op!r} failed: {type(e).__name__}: {e}", exc=e)
             return {"ok": False, "result": None, "error": f"{type(e).__name__}: {e}"}
@@ -97,7 +98,7 @@ class DebugAgent(QtCore.QObject):
             self._pending[key] = (msg, time.perf_counter())
         try:
             QtCore.QMetaObject.invokeMethod(self, "_run_call", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(int, key))
-        except RuntimeError as e:
+        except Exception as e:
             with self._pending_lock:
                 self._pending.pop(key, None)
             AppLogger.warning("[debug] could not hand a debug.call over to the GUI thread", exc=e)

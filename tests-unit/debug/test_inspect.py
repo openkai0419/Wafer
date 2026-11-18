@@ -2,7 +2,7 @@ import sys
 import types
 
 import pytest
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from debug import inspect
 from wafer.qt.commands.command.core import CommandMeta, CommandParam, CommandRegistry, create_command_from_meta
@@ -111,12 +111,97 @@ def test_unknown_target_raises(qtbot, window):
         inspect.screenshot("no-such-widget")
 
 
+def test_screenshot_downscales_to_max_side(qtbot, window):
+    window.resize(400, 300)
+    qtbot.waitUntil(lambda: window.width() == 400)
+    image = QtGui.QImage.fromData(inspect.screenshot(None, max_side=100))
+    assert (image.width(), image.height()) == (100, 75)
+
+
+def test_screenshot_does_not_upscale_a_small_widget(qtbot, window):
+    edit = window.findChild(QtWidgets.QLineEdit)
+    image = QtGui.QImage.fromData(inspect.screenshot("query"))
+    assert image.width() == edit.grab().width()
+
+
+def test_screenshot_rejects_a_non_positive_max_side(qtbot, window):
+    with pytest.raises(ValueError):
+        inspect.screenshot(None, max_side=0)
+
+
 def test_click_by_button_text(qtbot, window):
     clicked = []
     window.findChild(QtWidgets.QPushButton).clicked.connect(lambda: clicked.append(True))
     result = inspect.click("Go")
-    assert result["class"] == "QPushButton"
+    assert result["class"] == "QPushButton" and result["deferred"] is True
+    assert clicked == []
     qtbot.waitUntil(lambda: clicked == [True])
+
+
+def test_inputs_behind_a_modal_are_blocked(qtbot, window):
+    clicked = []
+    window.findChild(QtWidgets.QPushButton).clicked.connect(lambda: clicked.append(True))
+    dialog = make_rename_dialog()
+    errors = []
+
+    def attempt():
+        for action in (lambda: inspect.click("Go"), lambda: inspect.type_text("Search", "x"), lambda: inspect.key("query", "A")):
+            try:
+                action()
+            except LookupError as e:
+                errors.append(str(e))
+        inspect.modal_click("Cancel")
+
+    QtCore.QTimer.singleShot(0, attempt)
+    assert dialog.exec() == 0
+    assert len(errors) == 3 and all("blocked by modal 'Rename'" in error for error in errors)
+    assert clicked == []
+    assert window.findChild(QtWidgets.QLineEdit).text() == ""
+
+
+def test_click_inside_the_modal_is_allowed(qtbot, window):
+    dialog = make_rename_dialog()
+    results = []
+    QtCore.QTimer.singleShot(0, lambda: results.append(inspect.click("OK")))
+    assert dialog.exec() == 1
+    assert results[0]["deferred"] is True
+
+
+def test_modal_input_toggles_a_checkbox_after_replying(qtbot):
+    dialog = make_rename_dialog()
+    checkbox = QtWidgets.QCheckBox("Enabled")
+    dialog.layout().insertRow(0, checkbox)
+    seen = []
+
+    def drive():
+        seen.append(inspect.modal_input("Enabled", "true"))
+        seen.append(checkbox.isChecked())
+        inspect.modal_click("OK")
+
+    QtCore.QTimer.singleShot(0, drive)
+    assert dialog.exec() == 1
+    assert seen[0]["deferred"] is True and seen[1] is False
+    assert checkbox.isChecked()
+
+
+@pytest.fixture
+def twins(qtbot, window):
+    layout = window.layout()
+    for widget in (QtWidgets.QLabel("Same"), QtWidgets.QPushButton("Same"), QtWidgets.QPushButton("Twin"), QtWidgets.QPushButton("Twin")):
+        layout.addWidget(widget)
+    qtbot.waitUntil(lambda: all(w.isVisible() for w in window.findChildren(QtWidgets.QPushButton)))
+    return window
+
+
+def test_text_matching_several_widgets_is_ambiguous(qtbot, twins):
+    with pytest.raises(inspect.AmbiguousTargetError, match="QLabel.*QPushButton"):
+        inspect.get_property("Same", "text")
+    with pytest.raises(inspect.AmbiguousTargetError, match="Twin"):
+        inspect.click("Twin")
+
+
+def test_click_prefers_a_button_over_a_label_with_the_same_text(qtbot, twins):
+    assert inspect.click("Same")["class"] == "QPushButton"
 
 
 def test_type_text_and_key(qtbot, window):

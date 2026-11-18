@@ -14,18 +14,29 @@ from wafer.qt.commands.command.core import CommandRegistry
 MAIN_WINDOW_MODULE = "wafer.app.viewer.mainwindow"
 TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 DEFAULT_TREE_DEPTH = 3
+DEFAULT_SCREENSHOT_SIDE = 1600
+FIELD_TYPES = (QtWidgets.QLineEdit, QtWidgets.QComboBox, QtWidgets.QAbstractSpinBox, QtWidgets.QPlainTextEdit, QtWidgets.QTextEdit)
+
+
+class AmbiguousTargetError(LookupError):
+    pass
 
 
 def active_modal() -> QtWidgets.QWidget | None:
     return QtWidgets.QApplication.activeModalWidget() or QtWidgets.QApplication.activePopupWidget()
 
 
-def screenshot(target: str | None = None) -> bytes:
+def screenshot(target: str | None = None, max_side: int | None = DEFAULT_SCREENSHOT_SIDE) -> bytes:
+    if max_side is not None and max_side <= 0:
+        raise ValueError(f"max_side must be positive, not {max_side}")
     widget = _default_window() if target is None else find_widget(target)
+    pixmap = widget.grab()
+    if max_side is not None and max(pixmap.width(), pixmap.height()) > max_side:
+        pixmap = pixmap.scaled(max_side, max_side, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
     data = QtCore.QByteArray()
     buffer = QtCore.QBuffer(data)
     buffer.open(QtCore.QIODevice.WriteOnly)
-    if not widget.grab().save(buffer, "PNG"):
+    if not pixmap.save(buffer, "PNG"):
         raise RuntimeError(f"could not encode a screenshot of {_label(widget)} as PNG")
     buffer.close()
     return bytes(data.data())
@@ -104,7 +115,14 @@ def modal_state() -> dict | None:
 
 
 def modal_input(field: str, value: str) -> dict:
-    widget = _input_widget(find_widget(field, [_require_modal()]))
+    _require_modal()
+    widget = _input_widget(find_widget(field, _blocking_roots(), FIELD_TYPES))
+    if isinstance(widget, QtWidgets.QAbstractButton) and widget.isCheckable():
+        _require_enabled(widget.isEnabled(), field)
+        if widget.isChecked() != (value.strip().lower() in TRUE_VALUES):
+            _later(widget, widget.click, f"modal_input {field!r}")
+            return {**_describe(widget), "deferred": True}
+        return _describe(widget)
     _enter_value(widget, value)
     return _describe(widget)
 
@@ -118,27 +136,27 @@ def modal_click(text: str) -> dict:
             raise LookupError(f"the open menu has no item {text!r}")
         _require_enabled(action.isEnabled(), text)
         _later(modal, lambda: _trigger_menu_action(modal, action), f"modal_click {text!r}")
-        return {"class": "QAction", "object_name": action.objectName(), "text": action.text()}
+        return {"class": "QAction", "object_name": action.objectName(), "text": action.text(), "deferred": True}
     button = next((w for w in _visible_widgets(modal) if isinstance(w, QtWidgets.QAbstractButton) and _plain_text(w.text()) == wanted), None)
     if button is None:
         raise LookupError(f"the modal {modal.windowTitle()!r} has no button {text!r}")
     _require_enabled(button.isEnabled(), text)
     _later(button, button.click, f"modal_click {text!r}")
-    return _describe(button)
+    return {**_describe(button), "deferred": True}
 
 
 def click(target: str) -> dict:
-    widget = find_widget(target)
+    widget = _reachable_widget(target, (QtWidgets.QAbstractButton,))
     _require_enabled(widget.isEnabled(), target)
     if isinstance(widget, QtWidgets.QAbstractButton):
         _later(widget, widget.click, f"click {target!r}")
     else:
         _later(widget, lambda: QTest.mouseClick(widget, QtCore.Qt.LeftButton), f"click {target!r}")
-    return _describe(widget)
+    return {**_describe(widget), "deferred": True}
 
 
 def type_text(target: str, text: str) -> dict:
-    widget = _text_receiver(_input_widget(find_widget(target)))
+    widget = _text_receiver(_input_widget(_reachable_widget(target, FIELD_TYPES)))
     widget.setFocus()
     QTest.keyClicks(widget, text)
     return _describe(widget)
@@ -148,21 +166,72 @@ def key(target: str | None, sequence: str) -> dict:
     keys = QtGui.QKeySequence(sequence)
     if keys.isEmpty():
         raise ValueError(f"{sequence!r} is not a key sequence")
-    widget = _key_receiver() if target is None else find_widget(target)
+    widget = _key_receiver() if target is None else _reachable_widget(target, FIELD_TYPES)
     _later(widget, lambda: QTest.keySequence(widget, keys), f"key {sequence!r}")
-    return _describe(widget)
+    return {**_describe(widget), "deferred": True}
 
 
-def find_widget(target: str, roots: list[QtWidgets.QWidget] | None = None) -> QtWidgets.QWidget:
-    candidates = [w for root in (roots if roots is not None else _search_roots()) for w in _visible_widgets(root)]
-    for widget in candidates:
-        if widget.objectName() == target:
-            return widget
+def find_widget(target: str, roots: list[QtWidgets.QWidget] | None = None, prefer: tuple[type, ...] = ()) -> QtWidgets.QWidget:
+    roots = _search_roots() if roots is None else roots
+    for root in roots:
+        for widget in _visible_widgets(root):
+            if widget.objectName() == target:
+                return widget
     wanted = _plain_text(target)
-    for widget in candidates:
-        if wanted in _texts(widget):
-            return widget
+    for root in roots:
+        matches = [w for w in _visible_widgets(root) if wanted in _texts(w)]
+        if matches:
+            return _single_match(target, matches, prefer)
     raise LookupError(f"no visible widget has the objectName or text {target!r}")
+
+
+def _single_match(target: str, matches: list[QtWidgets.QWidget], prefer: tuple[type, ...]) -> QtWidgets.QWidget:
+    if len(matches) > 1 and prefer:
+        matches = [w for w in matches if isinstance(w, prefer)] or matches
+    if len(matches) > 1:
+        names = ", ".join(f"{type(w).__name__} {w.objectName()!r}" for w in matches)
+        raise AmbiguousTargetError(f"the text {target!r} matches more than one widget ({names}); use an objectName")
+    return matches[0]
+
+
+def _reachable_widget(target: str, prefer: tuple[type, ...]) -> QtWidgets.QWidget:
+    roots = _blocking_roots()
+    if not roots:
+        return find_widget(target, prefer=prefer)
+    try:
+        return find_widget(target, roots, prefer)
+    except AmbiguousTargetError:
+        raise
+    except LookupError as missing:
+        if not _exists(target):
+            raise
+        raise LookupError(f"{target!r} is blocked by {_blocker_name(roots)}") from missing
+
+
+def _blocking_roots() -> list[QtWidgets.QWidget]:
+    app = QtWidgets.QApplication
+    return [w for w in (app.activePopupWidget(), app.activeModalWidget()) if w is not None]
+
+
+def _blocker_name(roots: list[QtWidgets.QWidget]) -> str:
+    modal = QtWidgets.QApplication.activeModalWidget()
+    if modal is not None:
+        return f"modal {modal.windowTitle() or type(modal).__name__!r}"
+    return f"popup {type(roots[0]).__name__}"
+
+
+def _exists(target: str) -> bool:
+    wanted = _plain_text(target)
+    return any(w.objectName() == target or wanted in _texts(w) for root in _search_roots() for w in _visible_widgets(root))
+
+
+def _inside(widget: QtWidgets.QWidget, roots: list[QtWidgets.QWidget]) -> bool:
+    current = widget
+    while current is not None:
+        if current in roots:
+            return True
+        current = current.parentWidget()
+    return False
 
 
 def _search_roots() -> list[QtWidgets.QWidget]:
@@ -264,7 +333,11 @@ def _text_receiver(widget: QtWidgets.QWidget) -> QtWidgets.QWidget:
 
 
 def _key_receiver() -> QtWidgets.QWidget:
-    widget = QtWidgets.QApplication.focusWidget() or active_modal() or QtWidgets.QApplication.activeWindow()
+    roots = _blocking_roots()
+    focus = QtWidgets.QApplication.focusWidget()
+    if roots:
+        return focus if focus is not None and _inside(focus, roots) else roots[0]
+    widget = focus or QtWidgets.QApplication.activeWindow()
     if widget is None:
         raise LookupError("no widget has the keyboard focus")
     return widget
@@ -277,10 +350,6 @@ def _enter_value(widget: QtWidgets.QWidget, value: str) -> None:
             items = [widget.itemText(i) for i in range(widget.count())]
             raise ValueError(f"{value!r} is not one of {items}")
         widget.setCurrentIndex(index)
-        return
-    if isinstance(widget, QtWidgets.QAbstractButton) and widget.isCheckable():
-        if widget.isChecked() != (value.strip().lower() in TRUE_VALUES):
-            widget.click()
         return
     receiver = _text_receiver(widget)
     if not isinstance(receiver, (QtWidgets.QLineEdit, QtWidgets.QAbstractSpinBox, QtWidgets.QPlainTextEdit, QtWidgets.QTextEdit)):
@@ -296,7 +365,7 @@ def _enter_value(widget: QtWidgets.QWidget, value: str) -> None:
 def _is_field(widget: QtWidgets.QWidget) -> bool:
     if isinstance(widget, QtWidgets.QLineEdit):
         return not isinstance(widget.parentWidget(), (QtWidgets.QComboBox, QtWidgets.QAbstractSpinBox))
-    return isinstance(widget, (QtWidgets.QComboBox, QtWidgets.QAbstractSpinBox, QtWidgets.QPlainTextEdit, QtWidgets.QTextEdit))
+    return isinstance(widget, FIELD_TYPES)
 
 
 def _field_state(widget: QtWidgets.QWidget) -> dict:

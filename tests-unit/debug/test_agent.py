@@ -3,11 +3,13 @@ import sys
 import threading
 
 import pytest
+from PySide6 import QtCore, QtWidgets
 
 import wafer.core.common.paths as paths
 from debug.agent import AGENT_ROLE, CALL_TOPIC, DebugAgent, attach
 from wafer.core.common.profile import current_profile
 from wafer.core.ipc.broker import Broker
+from wafer.core.ipc.message import Message
 from wafer.core.ipc.node import Node
 from wafer.core.logs import AppLogger
 
@@ -49,6 +51,35 @@ def test_bad_arguments_are_an_error(agent, monkeypatch):
     monkeypatch.setattr(AppLogger, "warning", lambda text, exc=None: None)
     reply = agent.call("modal_click", {"label": "OK"})
     assert reply["ok"] is False and reply["error"].startswith("TypeError: ")
+
+
+def test_screenshot_result_is_png_bytes(agent, qtbot):
+    window = QtWidgets.QWidget()
+    window.resize(200, 100)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitExposed(window)
+    try:
+        reply = agent.call("screenshot", {"target": None, "max_side": 50})
+    finally:
+        window.close()
+    assert reply["ok"] is True and reply["result"][:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_failed_hand_over_still_replies(agent, monkeypatch):
+    def refuse(*args):
+        raise ValueError("no GUI thread")
+
+    warnings = []
+    replies = []
+    monkeypatch.setattr(QtCore.QMetaObject, "invokeMethod", refuse)
+    monkeypatch.setattr(AppLogger, "warning", lambda text, exc=None: warnings.append(exc))
+    monkeypatch.setattr(agent.node, "enqueue", replies.append)
+    request = Message.build(CALL_TOPIC, {"op": "ping", "args": {}}, src="debug-1", dst=agent.node.node_id, rid="r1")
+    assert agent._on_call(request) is True
+    assert len(replies) == 1 and replies[0].request_id == "r1"
+    assert replies[0].payload == {"ok": False, "result": None, "error": "ValueError: no GUI thread"}
+    assert isinstance(warnings[0], ValueError)
 
 
 def test_idle_reports_modal_and_main_thread_latency(agent):

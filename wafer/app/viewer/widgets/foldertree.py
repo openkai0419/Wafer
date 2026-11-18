@@ -406,9 +406,15 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
             if cancel.is_cancelled():
                 self._dispatcher.invoke(lambda: self._pending_expands.pop(path, None))
                 return
-            self._dispatcher.invoke(lambda: self._apply_children(item, path, children))
+            self._dispatcher.invoke(lambda: self._apply_expanded_children(item, path, children))
 
         self._dispatcher.post(task)
+
+    def _apply_expanded_children(self, item, path, children):
+        if self.children_loaded(item):
+            self._pending_expands.pop(path, None)
+            return
+        self._apply_children(item, path, children)
 
     def _apply_children(self, item, path, children, clear_pending=True):
         if clear_pending:

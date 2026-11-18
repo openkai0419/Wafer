@@ -1601,3 +1601,19 @@ def test_add_root_keeps_the_natural_order_of_loaded_children(qtbot, tmp_path):
 
     assert root_labels(tree) == ["Other", "root"]
     assert child_labels(tree, root) == ["A", "b", "c9", "c10"]
+
+
+def test_late_expand_result_keeps_children_loaded_meanwhile(qtbot, tmp_path):
+    create_fs_tree(str(tmp_path))
+    tree = LazyFolderTreeView(roots=[str(tmp_path)], excluded=[])
+    qtbot.addWidget(tree)
+    tree.set_folders([str(tmp_path)])
+    root = normalize_path(tmp_path)
+    expand_to(qtbot, tree, tmp_path / "A")
+    a_item = item_of(tree, tmp_path / "A")
+    root_item = item_of(tree, root)
+
+    tree.model_._apply_expanded_children(root_item, root, [(normalize_path(tmp_path / "A"), False)])
+
+    assert item_of(tree, tmp_path / "A") is a_item
+    assert child_labels(tree, root) == ["A", "B"]

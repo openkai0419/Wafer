@@ -58,16 +58,19 @@ class OptimizedJustifiedLayoutCalculator(BaseLayoutCalculator):
                 last_item = is_last and j == cn
                 for i in range(j - 1, i_lo - 1, -1):
                     dpi = dp[i]
+                    if dpi == INF:
+                        continue
                     if dpi >= best:
                         break
                     le = pj - prefix[cs + i]
                     if le <= 0:
                         continue
                     total_sp = spacing * (j - i - 1)
-                    if le > container - total_sp + container * 0.5:
+                    single = i == j - 1
+                    if not single and le > container - total_sp + container * 0.5:
                         break
                     sc = (container - total_sp) / le
-                    if sc < 0.1:
+                    if not single and sc < 0.1:
                         break
                     r = sc - 1.0
                     if last_item and r > 0:

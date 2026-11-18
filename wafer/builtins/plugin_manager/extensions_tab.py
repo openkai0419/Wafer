@@ -621,9 +621,6 @@ class ExtensionsTab(QtWidgets.QWidget):
                     result[cls.NAME] = card.folder_name
         return result
 
-    def cancel_pending(self):
-        pass
-
     def revert(self, enabled_overrides: dict[str, bool]):
         self._enabled_overrides = dict(enabled_overrides)
         for card in self._cards.values():

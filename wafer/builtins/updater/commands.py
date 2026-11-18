@@ -9,7 +9,7 @@ def check_for_updates(ctx):
 
     widget = present_updater()
     if widget is not None and hasattr(widget, "check_now"):
-        widget.check_now(explicit=True)
+        widget.check_now()
 
 
 class UpdateCommands(ActionKit.MenuBase):

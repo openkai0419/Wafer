@@ -198,7 +198,7 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
         self._check_btn = _button("refresh", t("Check for updates"))
         self._check_btn.setObjectName("secondary_update_btn")
         self._check_btn.setFixedWidth(dpix(28))
-        self._check_btn.clicked.connect(lambda: self.check_now(explicit=True))
+        self._check_btn.clicked.connect(lambda: self.check_now())
 
         button_row = QtWidgets.QHBoxLayout()
         button_row.setSpacing(dpix(6))
@@ -252,9 +252,9 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
         if self._info is not None or self._check_in_progress or self._refresh_requested:
             return
         self._refresh_requested = True
-        self.check_now(explicit=False)
+        self.check_now()
 
-    def check_now(self, *, explicit: bool = True) -> None:
+    def check_now(self) -> None:
         if self._check_in_progress:
             return
         self._check_in_progress = True
@@ -267,11 +267,11 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
 
         def task():
             result = check_for_updates()
-            self._dispatcher.invoke(lambda: self.apply_check_result(result, explicit=explicit))
+            self._dispatcher.invoke(lambda: self.apply_check_result(result))
 
         self._dispatcher.post(task, priority=5)
 
-    def apply_check_result(self, result: UpdateCheckResult, *, explicit: bool = False) -> None:
+    def apply_check_result(self, result: UpdateCheckResult) -> None:
         self._result = result
         self._check_in_progress = False
         self._check_btn.setEnabled(True)
@@ -289,9 +289,9 @@ class UpdateNotifierWidget(QtWidgets.QWidget):
             self._update_action_buttons()
             return
 
-        self.set_update_info(result.info, explicit=explicit)
+        self.set_update_info(result.info)
 
-    def set_update_info(self, info: UpdateInfo, *, explicit: bool = False, record_state: bool = True) -> None:
+    def set_update_info(self, info: UpdateInfo, *, record_state: bool = True) -> None:
         self._info = info
         self._check_in_progress = False
         self._refresh_requested = True

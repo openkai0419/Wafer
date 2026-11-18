@@ -406,10 +406,6 @@ class PluginManagerWidget(QtWidgets.QWidget):
     def _on_db_updated(self, db: str):
         self._collectors_dirty = True
 
-    def closeEvent(self, event):
-        self._ext_tab.cancel_pending()
-        super().closeEvent(event)
-
     def add_tab(self, widget, title: str):
         self._tabs.addTab(widget, title)
 

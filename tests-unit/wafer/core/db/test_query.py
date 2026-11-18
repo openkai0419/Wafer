@@ -265,6 +265,19 @@ class TestGetKvKeysByPrefix:
         assert sorted(result[np("C:/m/img_0.jpg")]) == ["blue", "red"]
         assert result[np("C:/m/img_1.jpg")] == ["red"]
 
+    def test_prefix_is_literal_and_case_sensitive(self, tmp_path):
+        db_path = str(tmp_path / "prefix.db")
+        db = FileDB(db_path)
+        db.start()
+        db.initialize_database()
+        path = "C:/m/a.jpg"
+        db.upsert_basic_sources([(path, "h", 100, 1.0)], [(path, path, 1.0)])
+        db.upsert_collection_results([], [], [(path, "my_tag.a", "1", None), (path, "myXtag.b", "1", None), (path, "MY_TAG.c", "1", None), (path, "my%tag.d", "1", None)], [])
+        db.close()
+        engine = FileSearchEngine(db_path)
+        assert engine.get_kv_keys_by_prefix("tag", "my_tag.") == {np(path): ["a"]}
+        assert engine.get_kv_keys_by_prefix("tag", "my%tag.") == {np(path): ["d"]}
+
 
 def test_fetch_runs_sql_with_params(populated_db):
     engine = FileSearchEngine(populated_db)

@@ -6,7 +6,7 @@ import sqlite3
 import threading
 
 from ...constants import VIRTUAL_PATH_SEPARATOR
-from .db_utils import open_readonly
+from .db_utils import escape_like, open_readonly
 from .key_value import SCOPE_ALL, SCOPE_META_INFO, SCOPE_TAG, iter_data_scopes, key_prefix_lookup_sql
 from ..common.paths import normalize_path
 from ..common.virtual_paths import build_virtual_path, is_virtual_path, split_virtual_path
@@ -201,12 +201,14 @@ class FileSearchEngine:
         if scope not in (SCOPE_TAG, SCOPE_META_INFO, SCOPE_ALL):
             return result
         cur = self.conn.cursor()
-        like_pattern = f"{key_prefix}%"
+        like_pattern = f"{escape_like(key_prefix)}%"
 
         def _consume(rows):
             for row in rows:
                 key = row["key"]
-                suffix = key[len(key_prefix) :] if key else ""
+                if not key or not key.startswith(key_prefix):
+                    continue
+                suffix = key[len(key_prefix) :]
                 if not suffix:
                     continue
                 values = result.setdefault(row["path"], [])

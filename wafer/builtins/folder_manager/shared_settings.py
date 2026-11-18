@@ -21,8 +21,11 @@ def write(key: str, value) -> None:
 
 
 def load_rules() -> list[HighlightRule]:
-    saved = read(RULES_KEY, list)
+    saved = read(RULES_KEY, None)
     if saved is None:
+        return default_rules()
+    if not isinstance(saved, list) or (saved and not any(isinstance(data, dict) for data in saved)):
+        AppLogger.warning(f"[FolderManager] saved rules are not readable, showing the default rules: {saved!r}")
         return default_rules()
     rules = []
     for data in saved:

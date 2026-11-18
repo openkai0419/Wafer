@@ -90,3 +90,16 @@ def test_save_rules_emits_committed():
     finally:
         app_settings.committed.disconnect(sent.append)
     assert [list(update) for update in sent] == [[RULES_KEY]]
+
+
+@pytest.mark.parametrize("raw", ["not json", "{broken", "a, b", "5"])
+def test_unreadable_rules_fall_back_to_the_default_rules_with_a_warning(monkeypatch, raw):
+    app_settings.settings.setValue(RULES_KEY, raw)
+    app_settings.settings.sync()
+    warnings = []
+    monkeypatch.setattr(shared_settings.AppLogger, "warning", lambda message: warnings.append(message))
+
+    loaded = load_rules()
+
+    assert [r.to_dict() for r in loaded] == [r.to_dict() for r in default_rules()]
+    assert len(warnings) == 1

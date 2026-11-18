@@ -118,8 +118,8 @@ def ensure_exiftool(version: str = ""):
         AppLogger.warning("[exiftool] exiftool.exe found but exiftool.pl missing — removing broken install")
         try:
             os.remove(_EXIFTOOL_PATH)
-        except OSError:
-            pass
+        except OSError as e:
+            AppLogger.warning(f"[exiftool] Could not remove the broken exiftool.exe, close programs using it: {e}", exc=e)
     if platform.system() != "Windows":
         if shutil.which("exiftool"):
             return True

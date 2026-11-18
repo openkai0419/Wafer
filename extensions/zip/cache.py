@@ -127,7 +127,7 @@ class ZipCache:
         with self._lock:
             entries: list[tuple[float, int, Path]] = []
             dirs: list[Path] = []
-            for dirpath, _dirnames, filenames in os.walk(self.root, onerror=lambda _e: None):
+            for dirpath, _dirnames, filenames in os.walk(self.root, onerror=lambda e: AppLogger.debug(f"[zip_cache] sweep could not list {e.filename} ({e})")):
                 base = Path(dirpath)
                 if base != self.root:
                     dirs.append(base)
@@ -135,7 +135,10 @@ class ZipCache:
                     path = base / name
                     try:
                         st = path.stat()
-                    except OSError:
+                    except FileNotFoundError:
+                        continue
+                    except OSError as e:
+                        AppLogger.debug(f"[zip_cache] stat failed: {path} ({e})")
                         continue
                     if st.st_mtime < cutoff:
                         try:
@@ -166,8 +169,11 @@ class ZipCache:
             for path in sorted(dirs, reverse=True):
                 try:
                     path.rmdir()
-                except OSError:
-                    pass
+                except FileNotFoundError:
+                    continue
+                except OSError as e:
+                    if e.errno != errno.ENOTEMPTY:
+                        AppLogger.debug(f"[zip_cache] rmdir failed: {path} ({e})")
         if idle_removed or lru_removed:
             AppLogger.info(f"[zip_cache] sweep removed idle={idle_removed} lru={lru_removed}")
         return idle_removed, lru_removed

@@ -648,8 +648,8 @@ class VideoViewerWidget(QWidget, ActionKit.UIMixin):
                     self._paused_by_background = False
                     self._player.pause = False
                     self._update_play_button()
-        except SystemError:
-            return
+        except SystemError as e:
+            AppLogger.debug(f"mpv background pause update failed: {e}")
 
     def cleanup(self):
         self._pos_timer.stop()

@@ -122,6 +122,21 @@ class TestEnsureExiftool:
         with pytest.raises(RuntimeError, match="Install exiftool via package manager"):
             ensure_exiftool()
 
+    def test_logs_when_broken_install_cannot_be_removed(self, monkeypatch, tmp_path):
+        exe = tmp_path / "exiftool.exe"
+        exe.write_bytes(b"")
+        monkeypatch.setattr("extensions.exiftool._downloader._EXIFTOOL_PATH", str(exe))
+        monkeypatch.setattr("extensions.exiftool._downloader._EXIFTOOL_PL", str(tmp_path / "exiftool_files" / "exiftool.pl"))
+        monkeypatch.setattr("extensions.exiftool._downloader.os.remove", lambda _path: (_ for _ in ()).throw(PermissionError("in use")))
+        monkeypatch.setattr("extensions.exiftool._downloader.platform.system", lambda: "Linux")
+        monkeypatch.setattr("extensions.exiftool._downloader.shutil.which", lambda _: "/usr/bin/exiftool")
+        warnings = []
+        monkeypatch.setattr("extensions.exiftool._downloader.AppLogger.warning", lambda text, *, exc=None: warnings.append(exc))
+        from extensions.exiftool._downloader import ensure_exiftool
+
+        assert ensure_exiftool() is True
+        assert any(isinstance(exc, PermissionError) for exc in warnings)
+
     def test_non_windows_succeeds_with_system_exiftool(self, monkeypatch, tmp_path):
         monkeypatch.setattr(
             "extensions.exiftool._downloader._EXIFTOOL_PATH",

@@ -1,5 +1,7 @@
 import pytest
 
+from wafer.core.common.profile import current_profile
+from wafer.core.logs import AppLogger
 from wafer.core.platform.process_lock import file_lock
 from wafer.plugin import installer_queue
 
@@ -51,3 +53,21 @@ def test_dequeue_last_entry_clears_the_queue(ext_dir):
     assert installer_queue.dequeue(ext_dir, "ext_a")
     assert not installer_queue.has_pending_queue(ext_dir)
     assert not installer_queue.dequeue(ext_dir, "ext_a")
+
+
+def test_enqueue_adds_entry_without_profile(tmp_path):
+    installer_queue.enqueue(str(tmp_path), "ext_a", str(tmp_path / "ext_a"))
+    assert installer_queue.queued_names(str(tmp_path)) == {"ext_a"}
+
+
+def test_enqueue_is_refused_in_profile(tmp_path, monkeypatch):
+    warnings = []
+    monkeypatch.setattr("sys.argv", ["main.py", "--profile", "debug-a"])
+    monkeypatch.setattr(AppLogger, "warning", staticmethod(lambda msg, *a, **k: warnings.append(msg)))
+    current_profile.cache_clear()
+    try:
+        installer_queue.enqueue(str(tmp_path), "ext_a", str(tmp_path / "ext_a"))
+    finally:
+        current_profile.cache_clear()
+    assert installer_queue.queued_names(str(tmp_path)) == set()
+    assert warnings == ["Extensions cannot be installed from a debug profile"]

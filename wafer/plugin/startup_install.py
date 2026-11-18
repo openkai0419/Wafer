@@ -1,6 +1,7 @@
 import os
 import time
 
+from ..core.common.profile import current_profile
 from ..core.logs import AppLogger
 from ..qt.common.notifier import Notifier
 from ..core.platform.process_lock import SafeProcessLock
@@ -10,6 +11,9 @@ from .installer import cleanup_legacy_dirs, install_requirements_only, run_post_
 
 
 def run_pending_installs(extensions_dir: str) -> bool:
+    if current_profile() is not None:
+        AppLogger.info("[StartupInstall] Skipped: a debug profile never installs extensions")
+        return False
     cleanup_legacy_dirs(extensions_dir)
     if not installer_queue.has_pending_queue(extensions_dir):
         clear_status()
@@ -23,7 +27,7 @@ def run_pending_installs(extensions_dir: str) -> bool:
     clear_cancel()
     writer = InstallStatusWriter(total=len(entries))
     AppLogger.info(f"[StartupInstall] Processing {len(entries)} queued install(s)")
-    _terminate_conflicting_processes()
+    _terminate_conflicting_processes(extensions_dir)
     started_at = time.monotonic()
     processed, failed, cancelled = _execute_installs(extensions_dir, entries, writer)
     installer_queue.remove_entries(extensions_dir, [name for name, _ in processed] + [name for name, _ in failed])
@@ -142,13 +146,17 @@ def _notify_result(processed: list, failed: list, cancelled: list) -> None:
         Notifier.info(msg)
 
 
-def _terminate_conflicting_processes() -> None:
+def _terminate_conflicting_processes(extensions_dir: str) -> None:
     from ..core.platform.process import AppProcess
 
     waiter_pid = SafeProcessLock.read_owner_pid(INSTALL_WAITER_LOCK_NAME)
-    targets = [p for p in AppProcess.list_app(exclude_self=True) if p.pid != waiter_pid]
+    app_targets = [p for p in AppProcess.list_app(exclude_self=True) if p.pid != waiter_pid]
+    debug_targets = [p for p in AppProcess.list_debug_processes_sharing(os.path.join(extensions_dir, ".packages")) if p.pid != waiter_pid]
+    targets = app_targets + debug_targets
     if not targets:
         return
     names = ", ".join(f"pid={p.pid}" for p in targets)
-    AppLogger.info(f"[StartupInstall] terminating {len(targets)} app process(es) before install (waiter={waiter_pid}): {names}")
+    AppLogger.info(
+        f"[StartupInstall] terminating {len(targets)} app process(es) ({len(debug_targets)} debug) before install (waiter={waiter_pid}): {names}"
+    )
     AppProcess.terminate_and_wait(targets)

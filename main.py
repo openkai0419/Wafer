@@ -85,6 +85,11 @@ def _ensure_tray_unless_pending():
 
 
 def _sync_explorer_menu():
+    from wafer.core.common.profile import current_profile
+
+    if current_profile() is not None:
+        AppLogger.info('Explorer menu sync skipped: a debug profile leaves the shared entry alone')
+        return
     from wafer.core.platform import explorer_menu
 
     try:

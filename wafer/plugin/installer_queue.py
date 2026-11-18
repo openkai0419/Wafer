@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass, asdict
 
 from ..core.common.json_io import write_json_file
+from ..core.common.profile import current_profile
 from ..core.logs import AppLogger
 from ..core.platform.process_lock import file_lock
 
@@ -49,6 +50,9 @@ def _write(extensions_dir: str, entries: list[QueueEntry]) -> bool:
 
 
 def enqueue(extensions_dir: str, name: str, plugin_dir: str) -> None:
+    if current_profile() is not None:
+        AppLogger.warning("Extensions cannot be installed from a debug profile")
+        return
     with _lock(extensions_dir):
         entries = _read(extensions_dir)
         entries = [e for e in entries if e.name != name]

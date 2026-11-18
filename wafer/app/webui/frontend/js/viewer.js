@@ -195,7 +195,7 @@ export class Viewer {
   advance(token) {
     if (!this.slideshow || token !== this.token || this.swipe.active) return;
     const next = this.index + 1 >= this.total ? 0 : this.index + 1;
-    this.open(next);
+    this.open(next, this.knownItem(next));
   }
 
   setQuery(client, total) {
@@ -294,7 +294,8 @@ export class Viewer {
   }
 
   step(delta) {
-    this.open(this.index + delta);
+    const index = this.index + delta;
+    this.open(index, this.knownItem(index));
   }
 
   close() {

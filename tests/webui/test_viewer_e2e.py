@@ -79,6 +79,20 @@ def test_viewer_select_folder(ready_page):
     page.wait_for_function("document.querySelector('#status').textContent.startsWith('1 ')")
 
 
+def test_viewer_next_uses_the_item_the_grid_already_has(ready_page):
+    page = ready_page
+    _open_first(page)
+    page.wait_for_function("document.querySelector('#viewer-caption').textContent.startsWith('1/')")
+    fetched = []
+    page.on("request", lambda request: fetched.append(request.url) if "/items" in request.url else None)
+
+    page.keyboard.press("ArrowRight")
+    page.wait_for_function("document.querySelector('#viewer-caption').textContent.startsWith('2/')")
+    page.click("#viewer-next")
+    page.wait_for_function("document.querySelector('#viewer-caption').textContent.startsWith('3/')")
+    assert fetched == []
+
+
 def test_an_expired_query_reruns_the_search_once(page, webui_base_url, webui_query_service):
     def without_the_second(route):
         if "limit=1&" in route.request.url or route.request.url.endswith("limit=1"):

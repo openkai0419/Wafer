@@ -1,7 +1,6 @@
 import argparse
 import atexit
 import faulthandler
-import io
 import os
 import signal
 import sys
@@ -13,9 +12,9 @@ os.environ.setdefault('OPENBLAS_NUM_THREADS', '4')
 import setproctitle
 
 if sys.stdout is None:
-    sys.stdout = io.StringIO()
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
 if sys.stderr is None:
-    sys.stderr = io.StringIO()
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
 
 from wafer.core.common.paths import list_setting_db_names, resolve_data_path
 from wafer.core.platform.process_lock import SafeProcessLock

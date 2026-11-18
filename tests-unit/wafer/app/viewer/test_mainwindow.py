@@ -220,7 +220,8 @@ class TestSupersededDbReload:
 
     def apply(self, win, call_index):
         task = win._dispatcher.post.call_args_list[call_index].args[0]
-        with patch("wafer.app.viewer.mainwindow.SettingDB"):
+        with patch("wafer.app.viewer.mainwindow.SettingDB") as setting_db:
+            setting_db.return_value.get_all_folder_settings.return_value = ([], [], [])
             task()
         win._dispatcher.invoke.call_args_list[-1].args[0]()
 

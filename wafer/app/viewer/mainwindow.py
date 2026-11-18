@@ -183,9 +183,8 @@ class MainWindow(QtWidgets.QMainWindow):
         def task():
             try:
                 sdb = SettingDB(db_path)
-                roots = sdb.get_all_parent_folders()
-                excluded = sdb.get_all_ignore_folders()
-                ignore_pattern_re = compile_ignore_patterns(sdb.get_all_ignore_patterns())
+                roots, excluded, ignore_patterns = sdb.get_all_folder_settings()
+                ignore_pattern_re = compile_ignore_patterns(ignore_patterns)
                 if cancel.is_cancelled():
                     return
                 self._dispatcher.invoke(lambda: self._apply_db_reload(sdb, roots, excluded, ignore_pattern_re, cancel, refresh))

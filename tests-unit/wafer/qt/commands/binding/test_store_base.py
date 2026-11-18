@@ -299,3 +299,11 @@ class TestBindingStoreBaseSaveLoad:
         store = _TestStore.instance()
         loaded = store.load_from_file(str(p))
         assert loaded is False
+
+    def test_failed_load_falls_back_to_the_seed(self, tmp_path, monkeypatch):
+        store = _TestStore.instance()
+        seed = {KeySequence(["A"]): {"*": CommandPayload("cmd.seed", {})}}
+        monkeypatch.setattr(store, "_seed_data", lambda: {k: dict(v) for k, v in seed.items()})
+        store.set_all({KeySequence(["B"]): {"*": CommandPayload("cmd.stale", {})}})
+        assert store.load_from_file(str(tmp_path / "missing.json")) is False
+        assert set(store.get_all()) == {KeySequence(["A"])}

@@ -108,26 +108,7 @@ class Settings:
 
     def _activate(self, *, mouse_preset: str | None = None, key_preset: str | None = None) -> BindingManager:
         set_presets(mouse=mouse_preset, key=key_preset)
-        mouse_ok, key_ok = self._load_bindings()
-        if not mouse_ok:
-            from .binding.mouse.store import MouseBindingStore
-
-            store = MouseBindingStore.instance()
-            store._data = store._seed_data()
-        if not key_ok:
-            from .binding.key.store import KeyBindingStore
-
-            store = KeyBindingStore.instance()
-            store._data = store._seed_data()
         return BindingManager.activate()
-
-    def _load_bindings(self) -> tuple[bool, bool]:
-        from .binding.key.store import KeyBindingStore
-        from .binding.mouse.store import MouseBindingStore
-
-        mouse_ok = MouseBindingStore.instance().load_from_file(self.mouse_bindings)
-        key_ok = KeyBindingStore.instance().load_from_file(self.key_bindings)
-        return mouse_ok, key_ok
 
     def _commit(self) -> None:
         BindingManager.instance().save()

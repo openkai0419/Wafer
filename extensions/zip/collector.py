@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import zipfile
+from collections.abc import Callable
+from contextlib import closing
+from pathlib import PurePosixPath
+from typing import BinaryIO
+
+from PIL import Image
 
 from wafer.plugin import BaseSingletonCollector, CollectorResult
-from wafer.plugin.imageloader.handler import image_loader_resolver
 from wafer.core.logs import AppLogger
 from wafer.core.common.virtual_paths import build_virtual_path
 
-from .archive import ZipEntry, list_entries
+from .archive import ZipEntry, ZipMemberRecord, get_archive_index, list_entries, open_member_records
 from .cache import zip_cache
-
-_ASPECT_PROBE_SIZE = 512
 
 
 class ZipCollectorPlugin(BaseSingletonCollector):
@@ -38,30 +41,28 @@ class ZipCollectorPlugin(BaseSingletonCollector):
         entries = readable
 
         results = [CollectorResult(source=path, status=True, meta_info={"entries": len(entries)})]
-        for entry in entries:
-            logical_path = build_virtual_path(path, entry.member)
-            aspect = self._probe_aspect(path, entry, logical_path)
-            results.append(
-                CollectorResult(
-                    source=path,
-                    path=logical_path,
-                    name=entry.name,
-                    status=True,
-                    aspect=aspect,
+        image_extensions = Image.registered_extensions()
+        with open_member_records(path, get_archive_index(path).metadata_encoding) as open_member:
+            for entry in entries:
+                logical_path = build_virtual_path(path, entry.member)
+                is_image = PurePosixPath(entry.name).suffix.lower() in image_extensions
+                aspect = self._probe_aspect(open_member, entry, logical_path) if is_image else 1.0
+                results.append(
+                    CollectorResult(
+                        source=path,
+                        path=logical_path,
+                        name=entry.name,
+                        status=True,
+                        aspect=aspect,
+                    )
                 )
-            )
         return results
 
-    def _probe_aspect(self, source: str, entry: ZipEntry, logical_path: str) -> float:
+    def _probe_aspect(self, open_member: Callable[[ZipMemberRecord], BinaryIO], entry: ZipEntry, logical_path: str) -> float:
         try:
-            if entry.record:
-                real_path = zip_cache.materialize_member(source, entry.record, purpose="aspect", name=entry.name)
-            else:
-                real_path = zip_cache.materialize(logical_path, purpose="aspect")
-            image = image_loader_resolver.load_pil(real_path, size=_ASPECT_PROBE_SIZE)
-            if image is None or image.height <= 0:
-                return 1.0
-            return max(image.width / image.height, 0.001)
+            with closing(open_member(entry.record)) as src, Image.open(src) as image:
+                width, height = image.size
         except Exception as e:
             AppLogger.warning(f"[zip] Aspect probe failed: {logical_path} ({e})", exc=e)
             return 1.0
+        return max(width / height, 0.001) if height > 0 else 1.0

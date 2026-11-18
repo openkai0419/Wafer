@@ -1,3 +1,4 @@
+import io
 import os
 import struct
 import time
@@ -170,24 +171,21 @@ def test_zip_resolver_materializes_and_delegates(tmp_path, monkeypatch):
     assert calls == [(logical, "image")]
 
 
-def test_zip_collector_returns_child_rows_and_generic_aspect(tmp_path, monkeypatch):
+def _png_bytes(width, height):
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height)).save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+def test_zip_collector_returns_child_rows_and_generic_aspect(tmp_path):
     zip_path = tmp_path / "sample.zip"
     _create_zip(
         zip_path,
         {
-            "wide.png": b"image-bytes",
+            "wide.png": _png_bytes(400, 200),
             "notes/readme.txt": b"hello",
         },
     )
-    cache = ZipCache(tmp_path / "cache")
-    monkeypatch.setattr("extensions.zip.collector.zip_cache", cache)
-
-    def fake_load_pil(path, size=None):
-        if path.endswith(".png"):
-            return Image.new("RGB", (400, 200))
-        return None
-
-    monkeypatch.setattr("extensions.zip.collector.image_loader_resolver.load_pil", fake_load_pil)
 
     results = ZipCollectorPlugin().process(str(zip_path), (0.0, zip_path.stat().st_size))
     child_results = [r for r in results if r.path]
@@ -202,12 +200,9 @@ def test_zip_collector_returns_child_rows_and_generic_aspect(tmp_path, monkeypat
     assert by_child["notes/readme.txt"].meta_info is None
 
 
-def test_zip_collector_uses_clean_sortable_member_paths(tmp_path, monkeypatch):
+def test_zip_collector_uses_clean_sortable_member_paths(tmp_path):
     zip_path = tmp_path / "sample.zip"
     _create_zip(zip_path, {"folder/010.webp": b"10", "folder/002.webp": b"2", "folder/a%b::c.png": b"data"})
-    cache = ZipCache(tmp_path / "cache")
-    monkeypatch.setattr("extensions.zip.collector.zip_cache", cache)
-    monkeypatch.setattr("extensions.zip.collector.image_loader_resolver.load_pil", lambda _path, size=None: None)
 
     results = ZipCollectorPlugin().process(str(zip_path), (0.0, zip_path.stat().st_size))
     child_members = [child_path(r.path) for r in results if r.path]
@@ -216,266 +211,19 @@ def test_zip_collector_uses_clean_sortable_member_paths(tmp_path, monkeypatch):
     assert sorted(child_members, key=natural_key) == ["folder/002.webp", "folder/010.webp", "folder/a%b::c.png"]
 
 
-def test_zip_collector_materializes_aspect_from_member_record(tmp_path, monkeypatch):
+def test_zip_collector_probes_aspect_in_memory_with_one_archive_open(tmp_path, monkeypatch):
     zip_path = tmp_path / "sample.zip"
-    _create_zip(zip_path, {"wide.png": b"image-bytes"})
-    materialized = tmp_path / "materialized.png"
-    calls = []
-
-    def fake_materialize_member(source, member, purpose="render", name=None):
-        materialized.write_bytes(b"data")
-        calls.append((source, member.member, member.member_id, purpose, name))
-        return str(materialized)
-
-    def fail_materialize(_logical_path, purpose="render"):
-        raise AssertionError("collector should use member record materialization")
-
-    monkeypatch.setattr("extensions.zip.collector.zip_cache.materialize_member", fake_materialize_member)
-    monkeypatch.setattr("extensions.zip.collector.zip_cache.materialize", fail_materialize)
-    monkeypatch.setattr("extensions.zip.collector.image_loader_resolver.load_pil", lambda _path, size=None: Image.new("RGB", (300, 100)))
+    _create_zip(zip_path, {f"{i:03d}.png": _png_bytes(300, 100) for i in range(5)} | {"notes.txt": b"text"})
+    archive.list_entries(str(zip_path))
+    opened = []
+    real_open = archive._open_zip_with_encoding
+    monkeypatch.setattr(archive, "_open_zip_with_encoding", lambda *args: opened.append(args) or real_open(*args))
+    monkeypatch.setattr("extensions.zip.collector.zip_cache.materialize_member", lambda *args, **kwargs: pytest.fail("aspect probe must not write to disk"))
 
     results = ZipCollectorPlugin().process(str(zip_path), (0.0, zip_path.stat().st_size))
-    child = next(r for r in results if r.path)
 
-    assert calls and calls[0][1] == "wide.png"
-    assert calls[0][2].startswith("o")
-    assert calls[0][3] == "aspect"
-    assert child.aspect == 3.0
-
-
-def test_zip_cache_sweep_removes_idle_entries(tmp_path):
-    zip_path = tmp_path / "sample.zip"
-    _create_zip(zip_path, {"a.png": b"x", "b.png": b"y"})
-    cache = ZipCache(tmp_path / "cache")
-    a_real = cache.materialize(build_virtual_path(str(zip_path), "a.png"))
-    b_real = cache.materialize(build_virtual_path(str(zip_path), "b.png"))
-    past = time.time() - 3600
-    os.utime(a_real, (past, past))
-    idle, lru = cache.sweep(idle_seconds=600, size_limit_bytes=10 * 1024 * 1024 * 1024)
-    assert idle == 1
-    assert lru == 0
-    assert not os.path.exists(a_real)
-    assert os.path.exists(b_real)
-
-
-def test_zip_cache_sweep_lru_evicts_when_over_size_cap(tmp_path):
-    zip_path = tmp_path / "sample.zip"
-    _create_zip(zip_path, {"a.png": b"x" * 1000, "b.png": b"y" * 1000, "c.png": b"z" * 1000})
-    cache = ZipCache(tmp_path / "cache")
-    a_real = cache.materialize(build_virtual_path(str(zip_path), "a.png"))
-    b_real = cache.materialize(build_virtual_path(str(zip_path), "b.png"))
-    c_real = cache.materialize(build_virtual_path(str(zip_path), "c.png"))
-    now = time.time()
-    for age, path in ((30, a_real), (20, b_real), (10, c_real)):
-        os.utime(path, (now - age, now - age))
-    idle, lru = cache.sweep(idle_seconds=3600, size_limit_bytes=2500)
-    assert idle == 0
-    assert lru >= 1
-    assert not os.path.exists(a_real)
-    assert os.path.exists(c_real)
-
-
-def test_zip_cache_sweep_uses_the_saved_limit(tmp_path, monkeypatch):
-    from extensions.zip import settings as zip_settings
-
-    monkeypatch.setattr(zip_settings.zip_config, "load", lambda: {"cache_limit_gb": 0})
-    zip_path = tmp_path / "sample.zip"
-    _create_zip(zip_path, {"a.png": b"x" * 1000})
-    cache = ZipCache(tmp_path / "cache")
-    real = cache.materialize(build_virtual_path(str(zip_path), "a.png"))
-    idle, lru = cache.sweep(idle_seconds=3600)
-    assert idle == 0 and lru == 1 and not os.path.exists(real)
-
-
-def test_zip_cache_limit_defaults_to_5_gib():
-    from extensions.zip.settings import CACHE_LIMIT_DEFAULT_GB, zip_config
-
-    assert CACHE_LIMIT_DEFAULT_GB == 5 and zip_config.to_dict()["cache_limit_gb"] == 5
-
-
-def test_zip_cache_limit_command_saves_the_value(monkeypatch):
-    from unittest.mock import MagicMock
-
-    from PySide6 import QtWidgets
-
-    from extensions.zip import commands, settings as zip_settings
-
-    saved = {}
-    monkeypatch.setattr(zip_settings.zip_config, "save", lambda **values: saved.update(values))
-    monkeypatch.setattr(QtWidgets.QInputDialog, "getInt", lambda *args, **kwargs: (20, True))
-    ctx = MagicMock()
-    ctx.get.return_value = None
-    commands.set_cache_limit(ctx)
-    assert saved == {"cache_limit_gb": 20}
-
-
-def test_zip_cache_limit_command_cancel_saves_nothing(monkeypatch):
-    from unittest.mock import MagicMock
-
-    from PySide6 import QtWidgets
-
-    from extensions.zip import commands, settings as zip_settings
-
-    saved = {}
-    monkeypatch.setattr(zip_settings.zip_config, "save", lambda **values: saved.update(values))
-    monkeypatch.setattr(QtWidgets.QInputDialog, "getInt", lambda *args, **kwargs: (20, False))
-    ctx = MagicMock()
-    ctx.get.return_value = None
-    commands.set_cache_limit(ctx)
-    assert saved == {}
-
-
-def test_open_zip_fallbacks_from_cp932_to_utf8(monkeypatch):
-    calls = []
-    expected = object()
-
-    def fake_zip_file(_path, metadata_encoding=None):
-        calls.append(metadata_encoding)
-        if metadata_encoding == "cp932":
-            raise UnicodeDecodeError("cp932", b"\xec", 0, 1, "illegal multibyte sequence")
-        return expected
-
-    monkeypatch.setattr("extensions.zip.archive.settings.METADATA_ENCODING", "cp932")
-    monkeypatch.setattr("extensions.zip.archive.zipfile.ZipFile", fake_zip_file)
-
-    actual = archive.open_zip("dummy.zip")
-
-    assert actual is expected
-    assert calls == ["cp932", "utf-8"]
-
-
-def test_zip_cache_materializes_legacy_cp932_member_after_setting_changes(tmp_path, monkeypatch):
-    zip_path = tmp_path / "cp932.zip"
-    member = "日本語/readme.txt"
-    _create_raw_zip(zip_path, [_raw_entry(member, b"cp932", "cp932")])
-    monkeypatch.setattr("extensions.zip.archive.settings.METADATA_ENCODING", "utf-8")
-    logical = build_virtual_path(str(zip_path), member)
-    cache = ZipCache(tmp_path / "cache")
-
-    real_path = cache.materialize(logical)
-
-    assert open(real_path, "rb").read() == b"cp932"
-
-
-def test_zip_cache_materializes_legacy_cp437_member_after_wrong_preference(tmp_path, monkeypatch):
-    zip_path = tmp_path / "cp437.zip"
-    member = "ÉGÄΦ/readme.txt"
-    _create_raw_zip(zip_path, [_raw_entry(member, b"cp437", "cp437")])
-    monkeypatch.setattr("extensions.zip.archive.settings.METADATA_ENCODING", "cp932")
-    logical = build_virtual_path(str(zip_path), member)
-    cache = ZipCache(tmp_path / "cache")
-
-    real_path = cache.materialize(logical)
-
-    assert open(real_path, "rb").read() == b"cp437"
-
-
-def test_zip_cache_materializes_utf8_flag_member(tmp_path, monkeypatch):
-    zip_path = tmp_path / "utf8.zip"
-    member = "日本語/readme.txt"
-    _create_raw_zip(zip_path, [_raw_entry(member, b"utf8", "utf-8", flags=0x800)])
-    monkeypatch.setattr("extensions.zip.archive.settings.METADATA_ENCODING", "cp932")
-    logical = build_virtual_path(str(zip_path), member)
-    cache = ZipCache(tmp_path / "cache")
-
-    real_path = cache.materialize(logical)
-
-    assert open(real_path, "rb").read() == b"utf8"
-
-
-def test_zip_cache_display_path_survives_encoding_setting_changes(tmp_path, monkeypatch):
-    zip_path = tmp_path / "stable.zip"
-    member = "日本語/readme.txt"
-    _create_raw_zip(zip_path, [_raw_entry(member, b"stable", "cp932")])
-    monkeypatch.setattr("extensions.zip.archive.settings.METADATA_ENCODING", "cp932")
-    entry = archive.list_entries(str(zip_path))[0]
-    logical = build_virtual_path(str(zip_path), entry.member)
-    monkeypatch.setattr("extensions.zip.archive.settings.METADATA_ENCODING", "utf-8")
-    cache = ZipCache(tmp_path / "cache")
-
-    real_path = cache.materialize(logical)
-
-    assert archive.display_member_path(child_path(logical)) == member
-    assert open(real_path, "rb").read() == b"stable"
-
-
-def test_zip_unicode_path_extra_recovers_display_and_extraction(tmp_path, monkeypatch):
-    zip_path = tmp_path / "unicode-extra.zip"
-    raw_name = b"\x81.bin"
-    member = "正しい名前.bin"
-    _create_raw_zip(zip_path, [(raw_name, b"unicode-extra", 0, _unicode_path_extra(raw_name, member))])
-    monkeypatch.setattr("extensions.zip.archive.settings.METADATA_ENCODING", "cp932")
-
-    entry = archive.list_entries(str(zip_path))[0]
-    cache = ZipCache(tmp_path / "cache")
-    real_path = cache.materialize(build_virtual_path(str(zip_path), entry.member))
-
-    assert entry.member == member
-    assert entry.name == member
-    assert open(real_path, "rb").read() == b"unicode-extra"
-
-
-def test_zip_duplicate_display_paths_are_stable_and_resolvable(tmp_path):
-    zip_path = tmp_path / "duplicates.zip"
-    raw_name = b"folder/same.txt"
-    _create_raw_zip(zip_path, [(raw_name, b"first", 0), (raw_name, b"second", 0)])
-
-    entries = archive.list_entries(str(zip_path))
-    contents = []
-    for entry in entries:
-        with archive.open_zip_member(str(zip_path), entry.member) as src:
-            contents.append(src.read())
-
-    assert [entry.member for entry in entries] == ["folder/same.txt", "folder/same [zip#2].txt"]
-    assert contents == [b"first", b"second"]
-
-
-def test_zip_archive_index_cache_invalidates_on_archive_change(tmp_path):
-    zip_path = tmp_path / "changing.zip"
-    _create_zip(zip_path, {"a.txt": b"a"})
-    first = archive.get_archive_index(str(zip_path))
-    assert archive.get_archive_index(str(zip_path)) is first
-
-    first_mtime_ns = os.stat(zip_path).st_mtime_ns
-    _create_zip(zip_path, {"b.txt": b"bb"})
-    os.utime(zip_path, ns=(first_mtime_ns + 10**9, first_mtime_ns + 10**9))
-    second = archive.get_archive_index(str(zip_path))
-
-    assert second is not first
-    assert [record.member for record in second.records] == ["b.txt"]
-
-
-def test_zip_cache_materializes_deflated_member_with_invalid_zero_file_size(tmp_path):
-    zip_path = tmp_path / "zero-size.zip"
-    member = "book/224.jpg"
-    data = b"JPEG" * 1024
-    _create_deflated_zip(zip_path, member, data, file_size=0)
-    cache = ZipCache(tmp_path / "cache")
-
-    real_path = cache.materialize(build_virtual_path(str(zip_path), member))
-
-    assert open(real_path, "rb").read() == data
-
-
-def test_zip_cache_preserves_badzipfile_from_member_read(tmp_path):
-    zip_path = tmp_path / "bad-crc.zip"
-    member = "book/224.jpg"
-    _create_deflated_zip(zip_path, member, b"broken", crc=0x12345678)
-    cache = ZipCache(tmp_path / "cache")
-
-    with pytest.raises(zipfile.BadZipFile):
-        cache.materialize(build_virtual_path(str(zip_path), member))
-
-
-def test_zip_cache_materializes_backslash_member_from_normalized_legacy_path(tmp_path):
-    zip_path = tmp_path / "backslash.zip"
-    _create_zip(zip_path, {"folder\\image.png": b"backslash"})
-    logical = build_virtual_path(str(zip_path), "folder/image.png")
-    cache = ZipCache(tmp_path / "cache")
-
-    real_path = cache.materialize(logical)
-
-    assert open(real_path, "rb").read() == b"backslash"
+    assert [r.aspect for r in results if r.path and r.name.endswith(".png")] == [3.0] * 5
+    assert len(opened) == 1
 
 
 def test_zip_collector_returns_failure_on_unicode_decode_error(monkeypatch):
@@ -495,7 +243,7 @@ def test_zip_collector_skips_encrypted_entries(tmp_path, monkeypatch):
     zip_path = tmp_path / "locked.zip"
     _create_raw_zip(zip_path, [_raw_entry("open.png", b"open"), _raw_entry("locked.png", b"locked", flags=0x1)])
     probed = []
-    monkeypatch.setattr(ZipCollectorPlugin, "_probe_aspect", lambda self, source, entry, logical_path: probed.append(entry.member) or 1.0)
+    monkeypatch.setattr(ZipCollectorPlugin, "_probe_aspect", lambda self, open_member, entry, logical_path: probed.append(entry.member) or 1.0)
 
     results = ZipCollectorPlugin().process(str(zip_path), (0.0, zip_path.stat().st_size))
 

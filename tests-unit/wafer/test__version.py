@@ -1,6 +1,15 @@
 import subprocess
 
+import pytest
+
 from wafer import _version
+
+
+@pytest.fixture(autouse=True)
+def app_root(tmp_path, monkeypatch):
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr(_version, "get_app_root_dir", lambda: tmp_path)
+    return tmp_path
 
 
 def _fake_describe(result):
@@ -26,3 +35,25 @@ def test_a_release_tag_is_the_version(monkeypatch):
 def test_commits_after_a_tag_become_a_dev_version(monkeypatch):
     monkeypatch.setattr(_version.subprocess, "check_output", _fake_describe("v1.2.3-4-gabc1234\n"))
     assert _version.get_version() == "1.2.3.dev4+gabc1234"
+
+
+def test_git_runs_in_the_app_root_not_the_working_folder(monkeypatch, app_root):
+    seen = {}
+
+    def check_output(cmd, **kwargs):
+        seen["cwd"] = kwargs.get("cwd")
+        return "v1.2.3\n"
+
+    monkeypatch.setattr(_version.subprocess, "check_output", check_output)
+    assert _version.get_version() == "1.2.3"
+    assert seen["cwd"] == app_root
+
+
+def test_an_app_root_without_git_uses_the_bundled_version_without_running_git(monkeypatch, app_root):
+    (app_root / ".git").rmdir()
+
+    def check_output(cmd, **kwargs):
+        raise AssertionError("git must not run")
+
+    monkeypatch.setattr(_version.subprocess, "check_output", check_output)
+    assert _version.get_version() == _version.FALLBACK_VERSION

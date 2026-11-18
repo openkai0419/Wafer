@@ -5,6 +5,7 @@ import subprocess
 import sys
 
 from . import _dev
+from .core.common.paths import get_app_root_dir
 
 FALLBACK_VERSION = "0.7.3.dev1+g1d36add"
 
@@ -13,9 +14,13 @@ GIT_DESCRIBE_TIMEOUT = 5
 
 
 def get_version() -> str:
+    root = get_app_root_dir()
+    if not (root / ".git").exists():
+        return FALLBACK_VERSION
     try:
         out = subprocess.check_output(
             ["git", "describe", "--tags", "--always"],
+            cwd=root,
             stderr=subprocess.DEVNULL,
             text=True,
             timeout=GIT_DESCRIBE_TIMEOUT,

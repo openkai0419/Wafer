@@ -2,6 +2,9 @@ import os
 from pathlib import Path
 from platformdirs import PlatformDirs
 from ...constants import APP_DATA_DIR_NAME
+from .profile import current_profile
+
+DEBUG_PROFILES_DIR_NAME = f"{APP_DATA_DIR_NAME}-debug"
 
 
 def normalize_path(p):
@@ -104,9 +107,53 @@ def _resolve_app_path(relative_path, base_dir):
     return path
 
 
+def profile_data_root(profile: str | None) -> Path:
+    base = Path(PlatformDirs(appname=None).user_data_dir)
+    return base / APP_DATA_DIR_NAME if profile is None else base / DEBUG_PROFILES_DIR_NAME / profile
+
+
+def profile_config_root(profile: str | None) -> Path:
+    base = Path(PlatformDirs(appname=None).user_config_dir)
+    return base / APP_DATA_DIR_NAME if profile is None else base / DEBUG_PROFILES_DIR_NAME / profile
+
+
+def debug_profiles_dir() -> Path:
+    return Path(PlatformDirs(appname=None).user_data_dir) / DEBUG_PROFILES_DIR_NAME
+
+
+def sample_root() -> Path:
+    override = os.environ.get("WAFER_DEBUG_SAMPLE_ROOT")
+    if override:
+        return Path(override)
+    return Path(os.path.realpath(get_app_root_dir() / ".sample"))
+
+
+def scratch_root(profile: str) -> Path:
+    return profile_data_root(profile) / "scratch"
+
+
+def _is_within(path: str, root: Path) -> bool:
+    target = normalize_path(path)
+    base = normalize_path(root)
+    return target == base or target.startswith(child_prefix(base))
+
+
+def profile_allows_folder(path: str) -> bool:
+    profile = current_profile()
+    if profile is None:
+        return True
+    return _is_within(path, sample_root()) or _is_within(path, scratch_root(profile))
+
+
+def profile_allows_file_write(path: str) -> bool:
+    profile = current_profile()
+    if profile is None:
+        return True
+    return _is_within(path, scratch_root(profile))
+
+
 def resolve_data_path(relative_path):
-    dirs = PlatformDirs(appname=None)
-    base_dir = Path(dirs.user_data_dir) / APP_DATA_DIR_NAME
+    base_dir = profile_data_root(current_profile())
     return normalize_path(_resolve_app_path(relative_path, base_dir))
 
 
@@ -119,8 +166,7 @@ def resolve_temp_path(relative_path):
 
 
 def resolve_config_path(relative_path):
-    dirs = PlatformDirs(appname=None)
-    base_dir = Path(dirs.user_config_dir) / APP_DATA_DIR_NAME
+    base_dir = profile_config_root(current_profile())
     return normalize_path(_resolve_app_path(relative_path, base_dir))
 
 

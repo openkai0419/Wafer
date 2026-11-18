@@ -245,7 +245,7 @@ class FolderWatcher:
                 self._observer.stop()
                 self._observer.join()
             except Exception as e:
-                AppLogger.debug(f"observer stop: {e}")
+                AppLogger.warning("[Watcher] Observer stop failed", exc=e)
             self._observer = None
 
     def _loop(self):

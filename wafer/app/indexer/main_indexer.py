@@ -548,4 +548,4 @@ class IndexerProcess:
         try:
             self.zmq.stop()
         except Exception as e:
-            AppLogger.debug(f"zmq.stop failed: {e}")
+            AppLogger.warning(f"[Indexer] zmq.stop failed: {self.db_name}", exc=e)

@@ -119,8 +119,8 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         try:
             self._node.stop()
         except Exception as e:
-            AppLogger.debug(f"TrayApp.node.stop failed: {e}")
+            AppLogger.warning("[Tray] Node stop failed", exc=e)
         try:
             self.broker.stop()
         except Exception as e:
-            AppLogger.debug(f"TrayApp.broker.stop failed: {e}")
+            AppLogger.warning("[Tray] Broker stop failed", exc=e)

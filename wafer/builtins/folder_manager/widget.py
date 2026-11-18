@@ -100,6 +100,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.counts: dict[int, dict[str, tuple[int, int]]] = {}
         self.counted_keys: dict[int, str | None] = {}
         self.pending_rule_ids: set[int] = set()
+        self.stale_rule_ids: set[int] = set()
         self.counting: dict[int, tuple] = {}
         self.recount_after: set[int] = set()
         self.scanning = False
@@ -203,7 +204,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         if self.isVisible():
             self.recount(changed)
         else:
-            self.stale_rules = True
+            self.stale_rule_ids.update(map(id, changed))
 
     def apply_columns(self, columns: dict[str, bool]) -> None:
         for metric in METRICS:
@@ -253,6 +254,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.counts.clear()
         self.counted_keys.clear()
         self.pending_rule_ids.clear()
+        self.stale_rule_ids.clear()
         self.counting.clear()
         self.recount_after.clear()
         self.rule_timer.stop()
@@ -410,7 +412,11 @@ class FolderManagerWidget(QtWidgets.QWidget):
             self.relist_parents(parents)
         if self.stale_rules:
             self.stale_rules = False
+            self.stale_rule_ids.clear()
             self.recount(self.rules)
+        elif self.stale_rule_ids:
+            stale, self.stale_rule_ids = self.stale_rule_ids, set()
+            self.recount([rule for rule in self.rules if id(rule) in stale])
 
     def refresh(self) -> None:
         self.set_database(self.database_name)

@@ -351,6 +351,66 @@ def test_remote_changes_keep_the_counts_of_unchanged_queries(qtbot, tmp_path, qu
     assert query_calls[2] == ["kitten"] and len(query_calls) == 3
 
 
+def count_dogs_and_cats(qtbot, tmp_path, query_calls):
+    root = make_folders(tmp_path / "root", {"a": 1})
+    query_calls.sources = [f"{root}/a/f0.png"]
+    app_settings.save_immediate(RULES_KEY, [rule_dict("Dogs", "#1D9E75", bars=[text_bar("dog")]), rule_dict("Cats", "#D85A30", bars=[text_bar("cat")])])
+    panel = make_panel(qtbot)
+    bind(qtbot, panel, [root])
+    qtbot.waitUntil(lambda: len(query_calls) == 2 and not panel.counting and len(panel.counts) == 2, timeout=5000)
+    return panel, panel.counts[id(panel.rules[0])]
+
+
+def changed_cats():
+    return [rule_dict("Dogs", "#1D9E75", bars=[text_bar("dog")]), rule_dict("Cats", "#D85A30", bars=[text_bar("kitten")])]
+
+
+def test_a_hidden_panel_recounts_only_the_changed_rules_when_shown(qtbot, tmp_path, query_calls):
+    panel, dogs = count_dogs_and_cats(qtbot, tmp_path, query_calls)
+    panel.hide()
+
+    app_settings.apply_remote({RULES_KEY: changed_cats()})
+    QtCore.QCoreApplication.processEvents()
+    assert len(query_calls) == 2
+    panel.show()
+
+    qtbot.waitUntil(lambda: len(query_calls) == 3 and not panel.counting and id(panel.rules[1]) in panel.counts, timeout=5000)
+    QtCore.QCoreApplication.processEvents()
+    assert query_calls[2:] == [["kitten"]]
+    assert panel.counts[id(panel.rules[0])] is dogs
+    panel.close()
+
+
+def test_a_hidden_panel_still_recounts_everything_after_the_database_changes(qtbot, tmp_path, query_calls):
+    panel, _dogs = count_dogs_and_cats(qtbot, tmp_path, query_calls)
+    panel.hide()
+
+    app_settings.apply_remote({RULES_KEY: changed_cats()})
+    panel.on_db_content_updated("")
+    panel.show()
+
+    qtbot.waitUntil(lambda: len(query_calls) == 4 and not panel.counting, timeout=5000)
+    QtCore.QCoreApplication.processEvents()
+    assert sorted(query_calls[2:]) == [["dog"], ["kitten"]]
+    panel.close()
+
+
+def test_the_tray_window_keeps_unchanged_counts_when_shown_again(qtbot, tmp_path, monkeypatch, query_calls):
+    without_viewer(monkeypatch)
+    panel, dogs = count_dogs_and_cats(qtbot, tmp_path, query_calls)
+    panel.hide()
+
+    app_settings.save_immediate(RULES_KEY, changed_cats())
+    panel.show()
+
+    assert [rule.bars[0]["params"]["keywords"] for rule in panel.rules] == ["dog", "kitten"]
+    assert panel.counts[id(panel.rules[0])] is dogs
+    qtbot.waitUntil(lambda: len(query_calls) == 3 and not panel.counting and id(panel.rules[1]) in panel.counts, timeout=5000)
+    QtCore.QCoreApplication.processEvents()
+    assert query_calls[2:] == [["kitten"]]
+    panel.close()
+
+
 def test_the_tray_window_rereads_shared_settings_when_activated(qtbot, monkeypatch):
     without_viewer(monkeypatch)
     panel = make_panel(qtbot)

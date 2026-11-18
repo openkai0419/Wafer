@@ -94,7 +94,7 @@ class TestColumn:
 
         col = _Column("ui", "UI")
         qtbot.addWidget(col)
-        col.populate([("p1", "A", "#fff")])
+        col.populate([("p1", "A", "")])
         item = col.findChild(_PresetItem)
         assert item._mode_provider is None
         assert not hasattr(item, "_dot")
@@ -118,6 +118,14 @@ class TestColumn:
         assert col.findChild(_PresetItem) is None
         labels = [w for w in col.findChildren(QtWidgets.QLabel) if w.text() and "(" in w.text()]
         assert any("empty" in l.text().lower() or "(" in l.text() for l in labels)
+
+    def test_populate_passes_the_updated_time(self, qtbot):
+        from wafer.app.viewer.widgets.workspace_toolbar import _Column, _PresetItem
+
+        col = _Column("path", "Path")
+        qtbot.addWidget(col)
+        col.populate([("p1", "A", "2026-04-27T10:00:00+00:00")])
+        assert col.findChild(_PresetItem).updated_at == "2026-04-27T10:00:00+00:00"
 
     def test_save_signal_emits_kind(self, qtbot):
         from wafer.app.viewer.widgets.workspace_toolbar import _Column
@@ -146,7 +154,7 @@ class TestColumn:
 
         col = _Column("ui", "UI")
         qtbot.addWidget(col)
-        col.populate([("p1", "A", "", "2026-04-27T10:00:00+00:00")])
+        col.populate([("p1", "A", "2026-04-27T10:00:00+00:00")])
         captured = []
         col.overwrite_requested.connect(lambda k, pid: captured.append((k, pid)))
         item = col.findChild(_PresetItem)

@@ -531,33 +531,29 @@ def delete_to_trash(paths: list[str | Path]) -> list[OperationResult]:
         AppLogger.warning(f"[delete] duplicate sources dropped: {len(raw)} -> {len(norm)}")
     if not norm:
         return []
-    AppLogger.info(f"Deleting {len(norm)} files")
-    results: list[OperationResult] = []
-    try:
-        import send2trash as _s2t
+    from send2trash import send2trash
 
-        for p in norm:
-            if not os.path.exists(p):
-                results.append(OperationResult(action="delete", src=p, dst="", status="skipped"))
-                continue
-            try:
-                _s2t.send2trash(p)
-                results.append(OperationResult(action="delete", src=p, dst="", status="ok"))
-            except Exception as e:
-                AppLogger.warning(f"send2trash failed: {p}", exc=e)
-                if os.path.isfile(p):
-                    os.remove(p)
-                    results.append(OperationResult(action="delete", src=p, dst="", status="ok"))
-                else:
-                    results.append(OperationResult(action="delete", src=p, dst="", status="error", error=f"send2trash failed for folder: {p}"))
-    except ImportError:
-        for p in norm:
-            if not os.path.exists(p):
-                results.append(OperationResult(action="delete", src=p, dst="", status="skipped"))
-                continue
-            if os.path.isfile(p):
-                os.remove(p)
-                results.append(OperationResult(action="delete", src=p, dst="", status="ok"))
-            else:
-                results.append(OperationResult(action="delete", src=p, dst="", status="error", error=f"Cannot delete folder without send2trash: {p}"))
-    return results
+    existing = [p for p in norm if os.path.lexists(p)]
+    results = {p: OperationResult(action="delete", src=p, dst="", status="skipped") for p in norm}
+    AppLogger.info(f"Deleting {len(existing)} files")
+    try:
+        if existing:
+            send2trash(existing)
+        for p in existing:
+            results[p] = OperationResult(action="delete", src=p, dst="", status="ok")
+    except Exception as e:
+        AppLogger.warning(f"send2trash failed for {len(existing)} items; retrying one by one", exc=e)
+        for p in existing:
+            results[p] = _trash_one(send2trash, p)
+    return [results[p] for p in norm]
+
+
+def _trash_one(send2trash, path: str) -> OperationResult:
+    if not os.path.lexists(path):
+        return OperationResult(action="delete", src=path, dst="", status="ok")
+    try:
+        send2trash(path)
+        return OperationResult(action="delete", src=path, dst="", status="ok")
+    except Exception as e:
+        AppLogger.warning(f"Could not move to the Recycle Bin, so it was not deleted: {path}", exc=e)
+        return OperationResult(action="delete", src=path, dst="", status="error", error=repr(e))

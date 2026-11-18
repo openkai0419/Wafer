@@ -99,7 +99,12 @@ def test_file_commands_reject_virtual_source():
     assert file_mod._ctx_sources(_Ctx(sources=[logical])) == []
 
 
-def test_delete_files_send2trash_failure_falls_back(tmp_path, monkeypatch):
+def _wait_file_cmd_pool(qtbot):
+    assert file_mod._file_cmd_pool.pool.waitForDone(5000)
+    qtbot.wait(50)
+
+
+def test_delete_files_keeps_the_file_when_trash_fails(tmp_path, monkeypatch, qtbot):
     p = tmp_path / "a.txt"
     p.write_text("x", encoding="utf-8")
     monkeypatch.setattr(
@@ -109,11 +114,17 @@ def test_delete_files_send2trash_failure_falls_back(tmp_path, monkeypatch):
     )
     dummy = SimpleNamespace(send2trash=lambda *_a, **_k: (_ for _ in ()).throw(OSError("boom")))
     monkeypatch.setitem(sys.modules, "send2trash", dummy)
+    warnings: list = []
+    monkeypatch.setattr(file_mod.Notifier, "warning", staticmethod(warnings.append))
     file_mod.delete_files(_Ctx(path=str(p)))
-    assert not p.exists()
+    _wait_file_cmd_pool(qtbot)
+    assert p.exists()
+    assert warnings == ["Delete failed: a.txt"]
 
 
-def test_delete_files_calls_delete_to_trash(tmp_path, monkeypatch):
+def test_delete_files_runs_delete_to_trash_off_the_main_thread(tmp_path, monkeypatch, qtbot):
+    import threading
+
     p = tmp_path / "a.txt"
     p.write_text("x", encoding="utf-8")
     monkeypatch.setattr(
@@ -123,14 +134,51 @@ def test_delete_files_calls_delete_to_trash(tmp_path, monkeypatch):
     )
     from wafer.core.platform.file_operations import OperationResult
 
-    called_with: list = []
-    monkeypatch.setattr(
-        file_mod,
-        "delete_to_trash",
-        lambda paths: (called_with.extend(paths), [OperationResult(action="delete", src=str(p), dst="", status="ok")])[1],
-    )
+    calls: list = []
+
+    def fake_delete(paths):
+        calls.append((list(paths), threading.current_thread()))
+        return [OperationResult(action="delete", src=str(p), dst="", status="ok")]
+
+    monkeypatch.setattr(file_mod, "delete_to_trash", fake_delete)
     file_mod.delete_files(_Ctx(path=str(p)))
-    assert str(p) in called_with
+    _wait_file_cmd_pool(qtbot)
+    assert calls and calls[0][0] == [str(p)]
+    assert calls[0][1] is not threading.main_thread()
+
+
+def test_count_delete_targets_stops_when_cancelled(tmp_path):
+    from wafer.qt.common.dispatcher import CancelToken
+
+    folder = tmp_path / "folder"
+    (folder / "sub").mkdir(parents=True)
+    (folder / "a.txt").write_text("x", encoding="utf-8")
+    (folder / "sub" / "b.txt").write_text("x", encoding="utf-8")
+    (tmp_path / "c.txt").write_text("x", encoding="utf-8")
+
+    assert file_mod._count_delete_targets([str(folder), str(tmp_path / "c.txt")], CancelToken()) == (3, True)
+    assert file_mod._count_delete_targets([str(tmp_path / "c.txt")], CancelToken()) == (1, False)
+    cancelled = CancelToken()
+    cancelled.cancel()
+    assert file_mod._count_delete_targets([str(folder)], cancelled) is None
+
+
+def test_confirm_delete_cancels_counting_when_the_dialog_closes(tmp_path, monkeypatch):
+    tokens: list = []
+
+    class RecordingToken(file_mod.CancelToken):
+        def __init__(self):
+            super().__init__()
+            tokens.append(self)
+
+    monkeypatch.setattr(file_mod, "CancelToken", RecordingToken)
+    monkeypatch.setattr(
+        file_mod.ThumbnailConfirmDialog,
+        "exec",
+        lambda self: setattr(self, "result_text", "Cancel"),
+    )
+    assert file_mod._confirm_delete(_Ctx(path=str(tmp_path)), [str(tmp_path)]) is False
+    assert tokens and tokens[0].is_cancelled()
 
 
 def test_show_in_explorer_ignores_missing_path():

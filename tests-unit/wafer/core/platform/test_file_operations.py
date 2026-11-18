@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from wafer.core.common.virtual_paths import build_virtual_path
@@ -139,74 +140,81 @@ def test_file_executor_copy_dir_subpath_is_skipped(tmp_path):
     assert res and res[0].status == "skipped"
 
 
-def test_delete_to_trash_with_send2trash(tmp_path, monkeypatch):
+def _fake_send2trash(monkeypatch, fn):
+    import sys
+    import types
+
+    monkeypatch.setitem(sys.modules, "send2trash", types.SimpleNamespace(send2trash=fn))
+
+
+def test_delete_to_trash_sends_all_paths_in_one_call(tmp_path, monkeypatch):
     from wafer.core.platform.file_operations import delete_to_trash
 
     a = tmp_path / "a.txt"
     a.write_text("x", encoding="utf-8")
     b = tmp_path / "b.txt"
     b.write_text("y", encoding="utf-8")
+    calls: list = []
+    _fake_send2trash(monkeypatch, calls.append)
 
-    trashed: list[str] = []
-    import types
+    results = delete_to_trash([str(a), str(b), str(tmp_path / "gone.txt")])
 
-    fake = types.SimpleNamespace(send2trash=lambda p: trashed.append(p))
-    monkeypatch.setitem(__import__("sys").modules, "send2trash", fake)
-    results = delete_to_trash([str(a), str(b)])
-    assert len(results) == 2
-    assert all(r.status == "ok" for r in results)
-    assert len(trashed) == 2
+    assert calls == [[str(a), str(b)]]
+    assert [r.status for r in results] == ["ok", "ok", "skipped"]
 
 
-def test_delete_to_trash_send2trash_fallback(tmp_path, monkeypatch):
+def test_delete_to_trash_never_deletes_permanently(tmp_path, monkeypatch):
     from wafer.core.platform.file_operations import delete_to_trash
 
     f = tmp_path / "a.txt"
     f.write_text("x", encoding="utf-8")
-    import types
 
-    fake = types.SimpleNamespace(send2trash=lambda *_a, **_k: (_ for _ in ()).throw(OSError("boom")))
-    monkeypatch.setitem(__import__("sys").modules, "send2trash", fake)
+    def refuse(_paths):
+        raise OSError("boom")
+
+    _fake_send2trash(monkeypatch, refuse)
     results = delete_to_trash([str(f)])
-    assert results[0].status == "ok"
-    assert not f.exists()
+    assert results[0].status == "error"
+    assert f.exists()
 
 
-def test_delete_to_trash_folder_fallback_fails(tmp_path, monkeypatch):
+def test_delete_to_trash_retries_one_by_one_and_continues_after_a_locked_file(tmp_path, monkeypatch):
+    from wafer.core.platform.file_operations import delete_to_trash
+
+    files = [tmp_path / f"f{i}.txt" for i in range(4)]
+    for f in files:
+        f.write_text("x", encoding="utf-8")
+    locked = str(files[1])
+
+    def send(paths):
+        if isinstance(paths, list):
+            os.remove(paths[0])
+            raise PermissionError("in use")
+        if paths == locked:
+            raise PermissionError("in use")
+        os.remove(paths)
+
+    _fake_send2trash(monkeypatch, send)
+    results = delete_to_trash([str(f) for f in files])
+
+    assert [r.status for r in results] == ["ok", "error", "ok", "ok"]
+    assert [f.exists() for f in files] == [False, True, False, False]
+
+
+def test_delete_to_trash_folder_failure_keeps_folder(tmp_path, monkeypatch):
     from wafer.core.platform.file_operations import delete_to_trash
 
     d = tmp_path / "folder"
     d.mkdir()
     (d / "child.txt").write_text("x", encoding="utf-8")
-    import types
 
-    fake = types.SimpleNamespace(send2trash=lambda *_a, **_k: (_ for _ in ()).throw(OSError("boom")))
-    monkeypatch.setitem(__import__("sys").modules, "send2trash", fake)
+    def refuse(_paths):
+        raise OSError("boom")
+
+    _fake_send2trash(monkeypatch, refuse)
     results = delete_to_trash([str(d)])
     assert results[0].status == "error"
     assert d.exists()
-
-
-def test_delete_to_trash_no_send2trash_file(tmp_path, monkeypatch):
-    from wafer.core.platform.file_operations import delete_to_trash
-
-    f = tmp_path / "a.txt"
-    f.write_text("x", encoding="utf-8")
-    monkeypatch.setitem(__import__("sys").modules, "send2trash", None)
-    monkeypatch.delitem(__import__("sys").modules, "send2trash")
-    import builtins
-
-    _real_import = builtins.__import__
-
-    def _no_s2t(name, *a, **k):
-        if name == "send2trash":
-            raise ImportError("no send2trash")
-        return _real_import(name, *a, **k)
-
-    monkeypatch.setattr(builtins, "__import__", _no_s2t)
-    results = delete_to_trash([str(f)])
-    assert results[0].status == "ok"
-    assert not f.exists()
 
 
 def test_delete_to_trash_missing_file(tmp_path):

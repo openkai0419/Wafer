@@ -1499,3 +1499,46 @@ def test_a_hidden_folder_under_a_renamed_folder_shows_again_when_off(qtbot, tmp_
     panel.set_matches_only(False)
 
     assert not row_hidden(view, f"{renamed}/y")
+
+
+def test_matches_only_judges_only_counted_folders_when_every_rule_needs_files(qtbot, tmp_path, monkeypatch, query_calls):
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+
+    assert sorted(panel.match_candidates()) == [f"{root}/a", f"{root}/c/x"]
+    panel.set_matches_only(True)
+    qtbot.waitUntil(lambda: matches_shown(panel), timeout=5000)
+    assert sorted(panel.found_matches.matches) == [f"{root}/a", f"{root}/c/x"]
+
+
+def test_matches_only_judges_every_folder_when_a_rule_can_match_without_files(qtbot, tmp_path, monkeypatch, query_calls):
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    panel.apply_rules([HighlightRule.from_dict(rule_dict("Empty", "#378ADD", conditions=(("files", "==", 0), ("folders", "==", 0))))])
+
+    assert f"{root}/e" in set(panel.match_candidates())
+    panel.set_matches_only(True)
+    qtbot.waitUntil(lambda: matches_shown(panel), timeout=5000)
+    assert f"{root}/e" in panel.found_matches.matches
+
+
+def test_matches_only_waits_for_a_full_scan_to_end_before_judging_again(qtbot, tmp_path, monkeypatch, query_calls):
+    monkeypatch.setattr(widget_module, "MATCHES_REFRESH_MS", 0)
+    panel, root = matches_only_panel(qtbot, tmp_path, query_calls)
+    panel.set_matches_only(True)
+    qtbot.waitUntil(lambda: matches_shown(panel), timeout=5000)
+    scans = []
+    real_scan = panel.scan_matches
+    monkeypatch.setattr(panel, "scan_matches", lambda *args: (scans.append(panel.scanning), real_scan(*args)))
+    release, delivered = gated_walk(monkeypatch, [root])
+
+    panel.refresh()
+
+    qtbot.waitUntil(delivered.is_set, timeout=5000)
+    qtbot.waitUntil(lambda: panel.scanned > 0, timeout=5000)
+    for _ in range(3):
+        panel.refresh_stats()
+        settle()
+    assert scans == []
+    release.set()
+    qtbot.waitUntil(lambda: scanned(panel, [root]) and matches_shown(panel), timeout=5000)
+    settle()
+    assert scans == [False]

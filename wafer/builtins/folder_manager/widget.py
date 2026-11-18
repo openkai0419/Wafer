@@ -1,7 +1,7 @@
 import json
 import os
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from itertools import chain
 
@@ -60,6 +60,10 @@ def outermost(paths: Iterable[str]) -> list[str]:
         if not any(is_under(path, other) for other in kept):
             kept.append(path)
     return kept
+
+
+def counted_folders(rule: HighlightRule, counts: dict[str, tuple[int, int]]) -> Iterator[str]:
+    return (path for path, (files, all_files) in counts.items() if rule.counts_allow(files, all_files))
 
 
 @dataclass(frozen=True)
@@ -705,11 +709,17 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.model.refresh_stats()
         self.on_matches_changed()
 
-    def scan_matches(self, scopes: Sequence[str], is_current: Callable[[], bool], on_found: Callable[[MatchScan], None]) -> None:
+    def match_candidates(self) -> Iterable[str]:
+        judged = [(rule, counts) for rule, counts in self.model.rule_counts if rule.enabled and rule.conditions]
+        if all(rule.needs_files() for rule, _counts in judged):
+            return chain.from_iterable(counted_folders(rule, counts) for rule, counts in judged)
         disk = self.model.disk
         lists = [list(disk.nodes)] if disk is not None else []
-        lists.extend(list(counts) for _rule, counts in self.model.rule_counts)
-        candidates = chain.from_iterable(lists)
+        lists.extend(list(counts) for _rule, counts in judged)
+        return chain.from_iterable(lists)
+
+    def scan_matches(self, scopes: Sequence[str], is_current: Callable[[], bool], on_found: Callable[[MatchScan], None]) -> None:
+        candidates = self.match_candidates()
         roots = [normalize_path(root) for root in self.model.roots or ()]
         prefixes = tuple(child_prefix(scope) for scope in scopes)
         seen: set[str] = set()
@@ -792,7 +802,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.schedule_refilter()
 
     def schedule_refilter(self) -> None:
-        if self.matches_only and not self.filtering and not self.filter_timer.isActive():
+        if self.matches_only and not self.filtering and not self.full_scan_running() and not self.filter_timer.isActive():
             self.filter_timer.start(MATCHES_REFRESH_MS)
 
     def refilter(self) -> None:

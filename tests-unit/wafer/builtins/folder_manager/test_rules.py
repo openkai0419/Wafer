@@ -156,3 +156,17 @@ def test_new_rule_takes_next_free_name_and_color():
 def test_new_rule_reuses_first_color_when_all_are_used():
     existing = [HighlightRule(f"Rule {i + 1}", color) for i, color in enumerate(RULE_COLORS)]
     assert new_rule(existing).color == RULE_COLORS[0]
+
+
+def test_a_rule_needs_files_only_when_its_count_conditions_fail_at_zero():
+    assert HighlightRule("A", "#000000", conditions=[Condition("files", ">=", 1), Condition("folders", "<=", 0)]).needs_files()
+    assert HighlightRule("B", "#000000", conditions=[Condition("all_files", "==", 3)]).needs_files()
+    assert not HighlightRule("C", "#000000", conditions=[Condition("files", "<=", 5)]).needs_files()
+    assert not HighlightRule("D", "#000000", conditions=[Condition("folders", ">=", 1)]).needs_files()
+
+
+def test_counts_allow_checks_only_the_count_conditions():
+    rule = HighlightRule("A", "#000000", conditions=[Condition("files", ">=", 2), Condition("all_files", "<=", 10), Condition("folders", ">=", 5)])
+    assert rule.counts_allow(2, 10)
+    assert not rule.counts_allow(1, 10)
+    assert not rule.counts_allow(2, 11)

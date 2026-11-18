@@ -43,6 +43,13 @@ class HighlightRule:
     def shows_count(self) -> bool:
         return any(condition.metric in COUNT_METRICS for condition in self.conditions)
 
+    def counts_allow(self, files: int, all_files: int) -> bool:
+        values = FolderValues(files, all_files, 0, 0)
+        return all(condition.holds(values) for condition in self.conditions if condition.metric in COUNT_METRICS)
+
+    def needs_files(self) -> bool:
+        return not self.counts_allow(0, 0)
+
     def filter_entries(self) -> list[tuple]:
         entries = []
         for bar in self.bars:

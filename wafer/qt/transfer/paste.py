@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import struct
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Literal
 from collections.abc import Callable
 
@@ -33,6 +33,8 @@ from ...core.platform.file_operations import (
 
 DROP_OPERATION_SETTING_KEY = "file/drop_operation"
 DropOperation = Literal["copy", "move", "ask"]
+
+_paste_dispatcher = Dispatcher(utility_pool)
 
 
 def normalize_drop_operation(value: object, default: Literal["copy", "move"] = "copy") -> Literal["copy", "move"]:
@@ -92,20 +94,15 @@ class ClipboardFilePaster:
             return None
         try:
             raw = bytes(md.data(fmt)).decode("utf-8", errors="replace")
-            lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
-            if not lines:
-                return None
-            action: Literal["copy", "cut"] = "cut" if lines[0].lower() == "cut" else "copy"
-            paths: list[Path] = []
-            for ln in lines[1:]:
-                url = QtCore.QUrl(ln)
-                if url.isLocalFile():
-                    p = Path(url.toLocalFile())
-                    if p.exists():
-                        paths.append(p)
-            return (action, paths) if paths else None
-        except (OSError, RuntimeError, UnicodeDecodeError):
+        except (RuntimeError, UnicodeDecodeError) as e:
+            AppLogger.warning(f"clipboard {fmt} decode failed", exc=e)
             return None
+        lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+        if not lines:
+            return None
+        action: Literal["copy", "cut"] = "cut" if lines[0].lower() == "cut" else "copy"
+        paths = [Path(QtCore.QUrl(ln).toLocalFile()) for ln in lines[1:] if QtCore.QUrl(ln).isLocalFile()]
+        return (action, paths) if paths else None
 
     def _parse_uri_list_text(self, text: str) -> list[Path]:
         paths: list[Path] = []
@@ -113,14 +110,9 @@ class ClipboardFilePaster:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            try:
-                url = QtCore.QUrl(line)
-                if url.isLocalFile():
-                    p = Path(url.toLocalFile())
-                    if p.exists():
-                        paths.append(p)
-            except (OSError, ValueError) as e:
-                AppLogger.warning(f"_parse_uri_list_text failed: {line}", exc=e)
+            url = QtCore.QUrl(line)
+            if url.isLocalFile():
+                paths.append(Path(url.toLocalFile()))
         return paths
 
     def _parse_plain_text_paths(self, text: str) -> list[Path]:
@@ -130,12 +122,9 @@ class ClipboardFilePaster:
         cand.extend(re.findall(r'(?:(?:[A-Za-z]:)?[\\/][^\s"\'<>|]+)', text))
         paths: list[Path] = []
         for s in cand:
-            try:
-                p = Path(s)
-                if p.exists():
-                    paths.append(p)
-            except (OSError, ValueError) as e:
-                AppLogger.warning(f"_parse_plain_text_paths failed: {s}", exc=e)
+            win = PureWindowsPath(s)
+            if win.drive and win.root:
+                paths.append(Path(s))
         return list(dict.fromkeys(paths))
 
     def collect_clipboard_files(self) -> CutCopy | None:
@@ -150,11 +139,7 @@ class ClipboardFilePaster:
 
         paths: list[Path] = []
         if md.hasUrls():
-            for url in md.urls():
-                if url.isLocalFile():
-                    p = Path(url.toLocalFile())
-                    if safe_exists(p):
-                        paths.append(p)
+            paths = [Path(url.toLocalFile()) for url in md.urls() if url.isLocalFile()]
         if not paths and md.hasFormat("text/uri-list"):
             try:
                 text = bytes(md.data("text/uri-list")).decode("utf-8", errors="replace")
@@ -170,38 +155,27 @@ class ClipboardFilePaster:
         action = self._extract_windows_drop_effect(md) or "copy"
         return (action, paths)
 
-    def build_paste_plan(self, destination_dir: Path | str) -> list[PastePlanItem]:
+    @staticmethod
+    def build_paste_plan(destination_dir: Path | str, extracted: CutCopy) -> list[PastePlanItem]:
         if _reject_virtual_destination(destination_dir, "paste"):
             return []
         dest_dir = Path(destination_dir)
         dest_dir.mkdir(parents=True, exist_ok=True)
 
-        extracted = self.collect_clipboard_files()
-        if not extracted:
-            return []
-
         action, paths = extracted
-        unique_paths: list[Path] = []
-        seen: set[str] = set()
-        for src in paths:
-            key = str(src)
-            if key in seen:
-                continue
-            seen.add(key)
-            unique_paths.append(src)
+        unique_paths = [src for src in dict.fromkeys(paths) if safe_exists(src)]
         if len(unique_paths) != len(paths):
-            AppLogger.warning(f"[paste] duplicate sources dropped: {len(paths)} -> {len(unique_paths)}")
+            AppLogger.warning(f"[paste] missing or duplicate sources dropped: {len(paths)} -> {len(unique_paths)}")
         plan: list[PastePlanItem] = []
         for i, src in enumerate(unique_paths):
             dst_default = dest_dir / src.name
             conflict = safe_exists(dst_default)
             suggested = Path(unique_path(dest_dir, src.name)) if conflict else None
-            is_dir = safe_is_dir(src)
             plan.append(
                 PastePlanItem(
                     index=i,
                     src=src,
-                    is_dir=is_dir,
+                    is_dir=safe_is_dir(src),
                     action=action,
                     dst_default=dst_default,
                     conflict=conflict,
@@ -415,18 +389,27 @@ def paste_clipboard_files(
     overwrite_mode: str = "ask",
     parent: object | None = None,
     folder_message: str = "Folder with the same name already exists. Proceed?",
-) -> list[OperationResult]:
+) -> None:
     if _reject_virtual_destination(destination_dir, "paste"):
-        return []
-    plans = ClipboardFilePaster().build_paste_plan(destination_dir)
-    if not plans:
-        return []
-    op = "move" if plans[0].action == "cut" else "copy"
-    try:
-        decisions = _resolve_conflicts_with_ui(plans=plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
-    except PasteCancelledError:
-        return []
-    return _execute_plans(plans, decisions, parent, op)
+        return
+    extracted = ClipboardFilePaster().collect_clipboard_files()
+    if not extracted:
+        return
+
+    def resolve_and_execute(plans: list[PastePlanItem]):
+        op = "move" if plans[0].action == "cut" else "copy"
+        try:
+            decisions = _resolve_conflicts_with_ui(plans=plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
+        except PasteCancelledError:
+            return
+        _execute_plans(plans, decisions, parent, op)
+
+    def build_in_background():
+        plans = ClipboardFilePaster.build_paste_plan(destination_dir, extracted)
+        if plans:
+            _paste_dispatcher.invoke(lambda: resolve_and_execute(plans))
+
+    _paste_dispatcher.post(build_in_background)
 
 
 def execute_paste_plans_with_ui(

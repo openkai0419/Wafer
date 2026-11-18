@@ -380,3 +380,50 @@ class TestCancelAndFailure:
         assert [r.status for r in results] == ["ok", "error", "ok"]
         assert "in use" in results[1].error
 
+
+class TestClipboardPaste:
+    def test_text_keeps_only_absolute_paths_and_leaves_existence_to_the_plan(self, qapp, monkeypatch, tmp_path):
+        from wafer.qt.transfer.paste import ClipboardFilePaster
+
+        (tmp_path / "README.md").write_text("x", encoding="utf-8")
+        (tmp_path / "extensions").mkdir()
+        monkeypatch.chdir(tmp_path)
+        paster = object.__new__(ClipboardFilePaster)
+        text = "\n".join(["README.md", "extensions", ".", "C:/__wafer_missing__/a.png", r"\\host\share\b.png", "D:relative.png"])
+
+        paths = paster._parse_plain_text_paths(text)
+
+        assert [str(p).replace("\\", "/") for p in paths] == ["C:/__wafer_missing__/a.png", "//host/share/b.png"]
+
+    def test_plan_drops_sources_that_do_not_exist(self, tmp_path):
+        from wafer.qt.transfer.paste import ClipboardFilePaster
+
+        real = tmp_path / "a.txt"
+        real.write_text("x", encoding="utf-8")
+
+        plans = ClipboardFilePaster.build_paste_plan(tmp_path / "dst", ("copy", [real, tmp_path / "missing.txt", real]))
+
+        assert [p.src for p in plans] == [real]
+
+    def test_paste_builds_the_plan_off_the_main_thread_and_copies(self, qapp, monkeypatch, tmp_path):
+        from wafer.qt.transfer import paste
+
+        src = tmp_path / "a.txt"
+        src.write_text("x", encoding="utf-8")
+        dst_dir = tmp_path / "dst"
+        threads = []
+        real_build = paste.ClipboardFilePaster.build_paste_plan
+
+        def recording_build(destination_dir, extracted):
+            threads.append(threading.current_thread())
+            return real_build(destination_dir, extracted)
+
+        monkeypatch.setattr(paste.ClipboardFilePaster, "__init__", lambda self: None)
+        monkeypatch.setattr(paste.ClipboardFilePaster, "collect_clipboard_files", lambda self: ("copy", [src]))
+        monkeypatch.setattr(paste.ClipboardFilePaster, "build_paste_plan", staticmethod(recording_build))
+
+        paste.paste_clipboard_files(dst_dir, overwrite_mode="skip")
+        _process_events_until(lambda: (dst_dir / "a.txt").exists())
+
+        assert (dst_dir / "a.txt").read_text(encoding="utf-8") == "x"
+        assert threads and threads[0] is not threading.main_thread()

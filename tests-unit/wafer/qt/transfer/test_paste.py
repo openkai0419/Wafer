@@ -58,16 +58,17 @@ def test_paste_clipboard_files_rejects_virtual_destination(monkeypatch, tmp_path
     monkeypatch.setattr(paste, "ClipboardFilePaster", FailingPaster)
     virtual_dir = build_virtual_path(str(tmp_path / "archive.zip"), "folder")
 
-    assert paste.paste_clipboard_files(virtual_dir) == []
+    assert paste.paste_clipboard_files(virtual_dir) is None
 
 
 def test_clipboard_file_paster_build_plan_rejects_virtual_destination(tmp_path):
     from wafer.qt.transfer.paste import ClipboardFilePaster
 
-    paster = object.__new__(ClipboardFilePaster)
+    src = tmp_path / "a.txt"
+    src.write_text("x", encoding="utf-8")
     virtual_dir = build_virtual_path(str(tmp_path / "archive.zip"), "folder")
 
-    assert paster.build_paste_plan(virtual_dir) == []
+    assert ClipboardFilePaster.build_paste_plan(virtual_dir, ("copy", [src])) == []
 
 
 def test_execute_paste_plans_with_ui_rejects_virtual_plan(monkeypatch, tmp_path):

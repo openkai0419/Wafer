@@ -1,16 +1,16 @@
+from wafer.builtins.commands.panel import open_panel as show_panel
 from wafer.core.lang.manager import t
 from wafer.plugin import CommandMeta, MenuGroup, MenuPath
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
-from wafer.qt.common.notifier import Notifier
 
-from .widget import INSTANCE_NAME
+from .widget import INSTANCE_NAME, FolderManagerPlugin
 
 
 def open_panel(ctx):
     widget = ctx.get_instance(INSTANCE_NAME)
-    if widget is None:
-        Notifier.info(t("Open Folder Manager first"))
-    return widget
+    if widget is not None and widget.isVisible():
+        return widget
+    return show_panel(name=FolderManagerPlugin.DISPLAY_NAME, toggle=False)
 
 
 def expand_matches(ctx):

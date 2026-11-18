@@ -39,6 +39,7 @@ STATS_REFRESH_MS = 100
 REFRESH_INTERVAL_MS = 3000
 REFRESH_IDLE_MS = 1000
 MATCH_CANCEL_CHECK = 4096
+NOTICE_MS = 4000
 MATCHES_REFRESH_MS = 1000
 MATCHES_ONLY_CHANNEL = "matches_only"
 DISPOSE_BATCH = 20000
@@ -164,6 +165,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.opened_folders: frozenset[str] = frozenset()
         self.opening_folders: frozenset[str] = frozenset()
         self.collapses = 0
+        self.notice = ""
         self.build_ui()
         self.apply_rules(load_rules())
         self.apply_columns(load_columns())
@@ -189,6 +191,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.view = FolderManagerTreeView()
         self.view.set_rules_source(lambda: self.rules)
         self.view.show_in_tree_available = self.host_shows_database
+        self.view.notify = self.notify
         self.model.paths_changed.connect(self.on_paths_changed)
         self.view.folders_set.connect(self.on_folders_set)
         layout.addWidget(self.view, 1)
@@ -202,6 +205,9 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.filter_timer = QtCore.QTimer(self)
         self.filter_timer.setSingleShot(True)
         self.filter_timer.timeout.connect(self.refilter)
+        self.notice_timer = QtCore.QTimer(self)
+        self.notice_timer.setSingleShot(True)
+        self.notice_timer.timeout.connect(self.clear_notice)
         self.rules_saver = self.save_timer(self.save_rules_now)
         self.columns_saver = self.save_timer(self.save_columns_now)
 
@@ -644,8 +650,19 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.on_matches_changed()
 
     def update_status(self) -> None:
-        self.status_label.setText(t("Scanning… {count}", count=f"{self.scanned:,}"))
-        self.status_label.setVisible(self.scanning)
+        text = t("Scanning… {count}", count=f"{self.scanned:,}") if self.scanning else self.notice
+        self.status_label.setText(text)
+        self.status_label.setVisible(bool(text))
+
+    def notify(self, text: str) -> None:
+        Notifier.info(text)
+        self.notice = text
+        self.notice_timer.start(NOTICE_MS)
+        self.update_status()
+
+    def clear_notice(self) -> None:
+        self.notice = ""
+        self.update_status()
 
     def add_rule(self) -> None:
         rule = new_rule(self.rules)
@@ -766,7 +783,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
 
     def open_matches(self, token, found: MatchScan, select: bool) -> None:
         if not found.matches:
-            Notifier.info(t("No matching folders"))
+            self.notify(t("No matching folders"))
             return
 
         def select_matches() -> None:

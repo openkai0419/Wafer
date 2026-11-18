@@ -429,3 +429,26 @@ def test_context_menu_contains_files_in_folder(qtbot, tmp_path, monkeypatch):
     qtbot.addWidget(tree)
     show_context_menu(_FakeCtx(path=str(tmp_path), widget=tree))
     assert "Files in Folder/ft.files.cut_all" in seen["items"]
+
+
+def test_files_in_folder_tells_the_panel_that_asked(qtbot, monkeypatch, tmp_path):
+    calls = _capture(monkeypatch, [])
+    timers = capture_notice_timer(monkeypatch)
+    release = threading.Event()
+    real_sources = foldertree_module.folder_sources
+    monkeypatch.setattr(foldertree_module, "folder_sources", lambda *args: release.wait(5) and real_sources(*args))
+    told = []
+
+    class PanelCtx(_FilesCtx):
+        def get(self, key):
+            if key == "notify":
+                return told.append
+            return super().get(key)
+
+    run_on_folder_files(PanelCtx([str(tmp_path)]), "file.cut", True)
+    timers[0][1]()
+    release.set()
+
+    qtbot.waitUntil(lambda: len(told) == 2, timeout=3000)
+    assert told == ["Collecting files…", "No files"]
+    assert calls["notices"] == []

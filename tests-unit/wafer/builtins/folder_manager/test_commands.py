@@ -16,9 +16,13 @@ class FakeCtx:
 
 
 class FakePanel:
-    def __init__(self):
+    def __init__(self, visible=True):
         self.calls = []
         self.matches_only = False
+        self.visible = visible
+
+    def isVisible(self):
+        return self.visible
 
     def expand_to_matches(self, select=False):
         self.calls.append(select)
@@ -48,13 +52,30 @@ def test_commands_run_on_the_open_panel():
     assert ctx.asked == ["FolderManager", "FolderManager"]
 
 
-def test_commands_without_the_panel_tell_the_user(monkeypatch):
-    notices = []
-    monkeypatch.setattr(commands_module.Notifier, "info", lambda text, *args, **kwargs: notices.append(text))
+def opened_panels(monkeypatch, panel):
+    opened = []
+    monkeypatch.setattr(commands_module, "show_panel", lambda name="", *, toggle=True: opened.append((name, toggle)) or panel)
+    return opened
+
+
+def test_commands_open_the_panel_when_it_is_not_open_and_then_act(monkeypatch):
+    panel = FakePanel()
+    opened = opened_panels(monkeypatch, panel)
 
     expand_matches(FakeCtx(None))
+    toggle_matches_only(FakeCtx(None))
+    collapse_all(FakeCtx(FakePanel(visible=False)))
 
-    assert len(notices) == 1
+    assert opened == [("Folder Manager", False)] * 3
+    assert panel.calls == [False, "collapse"] and panel.matches_only
+
+
+def test_commands_do_nothing_when_the_panel_cannot_be_opened(monkeypatch):
+    opened = opened_panels(monkeypatch, None)
+
+    select_matches(FakeCtx(None))
+
+    assert opened == [("Folder Manager", False)]
 
 
 def test_commands_are_available_in_the_viewer_and_the_tray():
@@ -86,13 +107,3 @@ def test_collapse_all_command_runs_on_the_open_panel():
     collapse_all(FakeCtx(panel))
 
     assert panel.calls == ["collapse"]
-
-
-def test_matches_only_and_collapse_without_the_panel_tell_the_user(monkeypatch):
-    notices = []
-    monkeypatch.setattr(commands_module.Notifier, "info", lambda text, *args, **kwargs: notices.append(text))
-
-    toggle_matches_only(FakeCtx(None))
-    collapse_all(FakeCtx(None))
-
-    assert len(notices) == 2

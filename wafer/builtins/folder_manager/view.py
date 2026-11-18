@@ -9,6 +9,7 @@ from wafer.core.common.paths import child_prefix, data_db_path, normalize_path, 
 from wafer.core.lang.manager import t
 from wafer.qt.commands.bridge import ActionKit, Context, Menu
 from wafer.qt.common.dpi import dpix
+from wafer.qt.common.notifier import Notifier
 
 from .rules import METRICS, HighlightRule
 from .stats import DiskTree, FolderValues
@@ -201,6 +202,7 @@ class FolderManagerTreeView(LazyFolderTreeView):
         self.rules_source: Callable[[], list[HighlightRule]] = list
         self.database_name = ""
         self.show_in_tree_available: Callable[[], bool] = lambda: False
+        self.notify: Callable[[str], None] = Notifier.info
         self.hidden_columns: set[int] = set()
         self.expand_serials: dict[str, int] = {}
         self.row_filter: AbstractSet[str] | None = None
@@ -259,7 +261,7 @@ class FolderManagerTreeView(LazyFolderTreeView):
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
         database_path = data_db_path(self.database_name) if self.database_name else None
-        return {**super().extend_context(ctx, cmd, event, key, source), "database_name": self.database_name, "database_path": database_path}
+        return {**super().extend_context(ctx, cmd, event, key, source), "database_name": self.database_name, "database_path": database_path, "notify": self.notify}
 
     def show_context_menu(self, position):
         gp = self.viewport().mapToGlobal(position)

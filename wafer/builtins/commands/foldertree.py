@@ -1,4 +1,5 @@
 import os
+from collections.abc import Callable
 
 from PySide6 import QtCore, QtWidgets
 
@@ -121,6 +122,7 @@ def run_on_folder_files(ctx, command_id: str, recursive: bool) -> None:
     if not folders or not db_path:
         return
     filter_entries = list(ctx.get("filter_entries") or ())
+    notify = ctx.get("notify") or Notifier.info
     dispatcher = _files_dispatcher()
     collecting = [True]
 
@@ -130,11 +132,11 @@ def run_on_folder_files(ctx, command_id: str, recursive: bool) -> None:
 
     def finish(sources: list[str]) -> None:
         collecting[0] = False
-        _apply_to_sources(command_id, sources)
+        _apply_to_sources(command_id, sources, notify)
 
     def notice() -> None:
         if collecting[0]:
-            Notifier.info("Collecting files…")
+            notify("Collecting files…")
 
     dispatcher.post(work)
     QtCore.QTimer.singleShot(COLLECTING_NOTICE_MS, notice)
@@ -144,9 +146,9 @@ def folder_items(path: str) -> list:
     return folder_file_items() if os.path.isdir(path) else ["file.copy_path", "-"]
 
 
-def _apply_to_sources(command_id: str, sources: list[str]) -> None:
+def _apply_to_sources(command_id: str, sources: list[str], notify: Callable[[str], None]) -> None:
     if not sources:
-        Notifier.info("No files")
+        notify("No files")
         return
     Command.invoke(command_id, extras={"sources": sources, "paths": sources})
 

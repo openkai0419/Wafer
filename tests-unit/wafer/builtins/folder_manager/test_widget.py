@@ -1165,6 +1165,33 @@ def test_expand_to_matches_without_matches_tells_the_user(qtbot, tmp_path, monke
 
     qtbot.waitUntil(lambda: bool(notices), timeout=5000)
     assert expanded == []
+    assert notices == ["No matching folders"]
+    assert panel.status_label.isVisible() and panel.status_label.text() == "No matching folders"
+
+
+def test_panel_notices_show_in_the_bar_for_a_while(qtbot, monkeypatch):
+    notices = []
+    monkeypatch.setattr(widget_module.Notifier, "info", lambda text, *args, **kwargs: notices.append(text))
+    monkeypatch.setattr(widget_module, "NOTICE_MS", 10)
+    panel = make_panel(qtbot)
+
+    panel.notify("No files")
+
+    assert notices == ["No files"]
+    assert panel.status_label.isVisible() and panel.status_label.text() == "No files"
+    qtbot.waitUntil(lambda: not panel.status_label.isVisible(), timeout=5000)
+
+
+def test_the_panel_context_routes_notices_to_the_panel(qtbot, tmp_path, query_calls):
+    from wafer.qt.commands.bridge import Context
+
+    root = make_folders(tmp_path / "root", {"a": 0})
+    panel = make_panel(qtbot)
+    bind(qtbot, panel, [root])
+    view = panel.view
+    ctx = Context.create_menu_context(view, view.binding_scope(), pos=view.visualRect(view.model_.index(0, 0)).center())
+
+    assert view.extend_context(ctx, None, source="menu")["notify"] == panel.notify
 
 
 def test_panel_registers_itself_for_commands(qtbot):

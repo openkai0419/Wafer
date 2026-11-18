@@ -787,3 +787,42 @@ class TestUnavailableFilters:
         container.apply_bars([{"filter": "text", "params": {"keywords": "x"}}])
 
         assert [bar["filter"] for bar in container.get_bars()] == ["text"]
+
+
+def run_tasks_inline(container):
+    posted = []
+    dispatcher = patch.object(container, "_dispatcher").start()
+    dispatcher.post.side_effect = lambda task, priority=6, cancel=None: posted.append(task)
+    dispatcher.invoke.side_effect = lambda fn: fn()
+    return posted
+
+
+class TestKeyLoadCompletion:
+    def teardown_method(self):
+        patch.stopall()
+
+    def test_failed_key_load_still_completes_and_can_be_retried(self, qapp):
+        container = SearchContainer()
+        posted = run_tasks_inline(container)
+        done = []
+        with patch("wafer.app.viewer.widgets.search_container.SearchComposer.list_all_keys", side_effect=RuntimeError("db is locked")):
+            container.run_folder_worker("dummy.db", ["/a"], on_complete=lambda: done.append(True))
+            posted.pop()()
+
+        assert done == [True]
+        container.run_folder_worker("dummy.db", ["/a"])
+        assert len(posted) == 1
+
+    def test_replaced_key_load_completes_with_the_newer_one(self, qapp):
+        container = SearchContainer()
+        posted = run_tasks_inline(container)
+        done = []
+        with patch("wafer.app.viewer.widgets.search_container.SearchComposer.list_all_keys", return_value=[("prompt", 1)]):
+            container.run_folder_worker("dummy.db", ["/a"], on_complete=lambda: done.append("restore"))
+            container.run_folder_worker("dummy.db", ["/b"])
+            first, second = posted
+            first()
+            assert done == []
+            second()
+
+        assert done == ["restore"]

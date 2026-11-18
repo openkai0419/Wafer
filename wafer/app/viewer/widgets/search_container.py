@@ -154,6 +154,7 @@ class SearchContainer(QtWidgets.QWidget):
         self._key_cancel = CancelSlot()
         self._key_store = KeyStore(self)
         self._last_paths = object()
+        self._key_waiters = []
         self._rows: list[FilterRow] = []
         self._unavailable_bars: list[tuple[int, dict]] = []
         self._sort_name = "none"
@@ -502,27 +503,36 @@ class SearchContainer(QtWidgets.QWidget):
             return
         self._last_paths = key
         cancel = self._key_cancel.renew()
+        if on_complete:
+            self._key_waiters.append(on_complete)
 
         def task():
-            engine = FileSearchEngine(dbname)
-            composer = SearchComposer()
             entries = []
             if paths:
                 entries.append((DirectoryFilter, {"directories": paths, "include_subfolders": include_subfolders}, None))
             if not include_contained_files:
                 entries.append((ContainedFilesFilter, {"include": False}, None))
-            results = composer.list_all_keys(engine, entries, sort_by_freq=True)
-            if cancel.is_cancelled():
-                return
-
-            def apply():
-                self._key_store.set_data(results)
-                if on_complete:
-                    on_complete()
-
-            self._dispatcher.invoke(apply)
+            try:
+                results = SearchComposer().list_all_keys(FileSearchEngine(dbname), entries, sort_by_freq=True)
+            except Exception as exc:
+                AppLogger.error(f"Failed to load the filter keys of {dbname}", exc=exc)
+                results = None
+            if not cancel.is_cancelled():
+                self._dispatcher.invoke(lambda: self._finish_key_load(cancel, key, results))
 
         self._dispatcher.post(task, priority=6, cancel=cancel)
+
+    def _finish_key_load(self, cancel, key, results):
+        if cancel.is_cancelled():
+            return
+        if results is None:
+            if self._last_paths == key:
+                self._last_paths = object()
+        else:
+            self._key_store.set_data(results)
+        waiters, self._key_waiters = self._key_waiters, []
+        for on_complete in waiters:
+            on_complete()
 
     def get_primary_row(self) -> FilterRow | None:
         return self._rows[0] if self._rows else None

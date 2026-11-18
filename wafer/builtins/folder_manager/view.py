@@ -1,5 +1,5 @@
+import time
 from collections.abc import Callable, Iterable, Iterator, Sequence, Set as AbstractSet
-from itertools import chain
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -27,6 +27,8 @@ WINDOW_TREE_COMMANDS = ("file.select_path",)
 DISK_METRICS = ("folders", "all_folders")
 COUNT_SAMPLE = "99,999,999"
 UNSCANNED = object()
+ROW_FILTER_SLICE_SECONDS = 0.015
+ROW_FILTER_DEADLINE_CHECK = 128
 
 Badge = tuple[str, str | None]
 
@@ -207,9 +209,10 @@ class FolderManagerTreeView(LazyFolderTreeView):
         self.expand_serials: dict[str, int] = {}
         self.row_filter: AbstractSet[str] | None = None
         self.filter_ancestors: AbstractSet[str] = frozenset()
-        self.hidden_rows: set[QtCore.QPersistentModelIndex] = set()
-        self.hidden_placeholders: set[QtCore.QPersistentModelIndex] = set()
         self.following_rows = False
+        self.filter_job = 0
+        self.filter_slice = 0
+        self.filter_running = False
         self.setHeaderHidden(False)
         self.setItemDelegateForColumn(0, BadgeDelegate(self.model_.badges, self))
         self.count_delegate = CountDelegate(self.model_.disk_text, self)
@@ -218,7 +221,6 @@ class FolderManagerTreeView(LazyFolderTreeView):
         self.header().setStretchLastSection(False)
         self.model_.columnsInserted.connect(self.on_columns_inserted)
         self.model_.stats_changed.connect(self.on_stats_changed)
-        self.model_.modelReset.connect(self.on_model_reset)
         self.apply_header()
         self.header_ready = True
 
@@ -344,31 +346,101 @@ class FolderManagerTreeView(LazyFolderTreeView):
         self.collapseAll()
 
     def apply_row_filter(self, keep: AbstractSet[str] | None, ancestors: AbstractSet[str] = frozenset()) -> None:
-        hidden, self.hidden_rows = self.hidden_rows, set()
-        placeholders, self.hidden_placeholders = self.hidden_placeholders, set()
+        if keep == self.row_filter and (keep is None or ancestors == self.filter_ancestors):
+            return
+        previous, previous_ancestors = self.row_filter, self.filter_ancestors
         self.row_filter = keep
         self.filter_ancestors = ancestors
         self.follow_inserted_rows(keep is not None)
-        if keep is not None:
-            self.hide_rows_outside(keep, ancestors)
-        for row in chain(hidden - self.hidden_rows, placeholders - self.hidden_placeholders):
-            self.show_row(row)
+        if keep is not None and previous is not None and not self.filter_running:
+            self.run_row_filter(self.changed_rows(previous, previous_ancestors))
+        else:
+            self.run_row_filter(self.filtered_rows([None]))
 
-    def hide_rows_outside(self, keep: AbstractSet[str], ancestors: AbstractSet[str]) -> None:
+    def run_row_filter(self, steps: Iterator[None]) -> None:
+        self.filter_job += 1
+        job = self.filter_job
+        self.filter_running = True
+
+        def run_slice() -> None:
+            if job != self.filter_job:
+                return
+            self.filter_slice += 1
+            deadline = time.perf_counter() + ROW_FILTER_SLICE_SECONDS
+            for number, _step in enumerate(steps):
+                if number and number % ROW_FILTER_DEADLINE_CHECK == 0 and time.perf_counter() >= deadline:
+                    QtCore.QTimer.singleShot(0, run_slice)
+                    return
+            self.filter_running = False
+
+        run_slice()
+
+    def filtered_rows(self, parents: list[QtCore.QPersistentModelIndex | None]) -> Iterator[None]:
+        keep, ancestors = self.row_filter, self.filter_ancestors
         model = self.model_
-        parents: list[tuple[QtGui.QStandardItem, str | None]] = [(model.invisibleRootItem(), None)]
         while parents:
-            parent, parent_path = parents.pop()
-            parent_index = model.indexFromItem(parent)
-            for row in range(parent.rowCount()):
-                path = parent.child(row).data(USER_ROLE_PATH)
+            parent_ref = parents.pop()
+            seen_slice = -1
+            row = 0
+            checkpoint = None
+            while True:
+                if seen_slice != self.filter_slice:
+                    seen_slice = self.filter_slice
+                    if parent_ref is None:
+                        parent_index, parent = QtCore.QModelIndex(), model.invisibleRootItem()
+                    elif parent_ref.isValid():
+                        parent_index = model.index(parent_ref.row(), 0, parent_ref.parent())
+                        parent = model.itemFromIndex(parent_index)
+                    else:
+                        break
+                    if checkpoint is not None:
+                        row = checkpoint.row() if checkpoint.isValid() else 0
+                    hide_placeholder = keep is not None and parent_ref is not None and parent.data(USER_ROLE_PATH) not in ancestors
+                if row >= parent.rowCount():
+                    break
+                child = parent.child(row)
+                if row % ROW_FILTER_DEADLINE_CHECK == 0:
+                    checkpoint = QtCore.QPersistentModelIndex(child.index())
+                path = child.data(USER_ROLE_PATH)
                 if not path:
-                    if parent_path is not None and parent_path not in ancestors:
-                        self.hide_placeholder(row, parent_index)
-                elif path in keep:
-                    parents.append((parent.child(row), path))
+                    hide = hide_placeholder
                 else:
-                    self.hide_row(row, parent_index)
+                    hide = keep is not None and path not in keep
+                    if not hide and child.rowCount():
+                        parents.append(QtCore.QPersistentModelIndex(child.index()))
+                if self.isRowHidden(row, parent_index) != hide:
+                    self.setRowHidden(row, parent_index, hide)
+                row += 1
+                yield
+
+    def changed_rows(self, previous: AbstractSet[str], previous_ancestors: AbstractSet[str]) -> Iterator[None]:
+        keep, ancestors = self.row_filter, self.filter_ancestors
+        for path in previous - keep:
+            self.set_path_hidden(path, True)
+            yield
+        added = keep - previous
+        for path in added:
+            index = self.set_path_hidden(path, False)
+            if index is not None and self.model_.rowCount(index):
+                yield from self.filtered_rows([QtCore.QPersistentModelIndex(index)])
+            yield
+        for path in ((previous - previous_ancestors) ^ (keep - ancestors)) - added:
+            index = self.item_index(path) if path in keep else None
+            if index is not None and self.has_placeholder(index):
+                hide = path not in ancestors
+                if self.isRowHidden(0, index) != hide:
+                    self.setRowHidden(0, index, hide)
+            yield
+
+    def item_index(self, path: str) -> QtCore.QModelIndex | None:
+        item = self.model_.path_item_map.get(path)
+        return self.model_.indexFromItem(item) if self.model_._is_valid_item(item) else None
+
+    def set_path_hidden(self, path: str, hide: bool) -> QtCore.QModelIndex | None:
+        index = self.item_index(path)
+        if index is not None and self.isRowHidden(index.row(), index.parent()) != hide:
+            self.setRowHidden(index.row(), index.parent(), hide)
+        return index
 
     def follow_inserted_rows(self, follow: bool) -> None:
         if follow == self.following_rows:
@@ -390,30 +462,12 @@ class FolderManagerTreeView(LazyFolderTreeView):
             if not path:
                 continue
             if path not in keep:
-                self.hide_row(row, parent)
+                self.setRowHidden(row, parent, True)
             elif path not in self.filter_ancestors and self.has_placeholder(index):
-                self.hide_placeholder(0, index)
-
-    def hide_row(self, row: int, parent: QtCore.QModelIndex) -> None:
-        if not self.isRowHidden(row, parent):
-            self.setRowHidden(row, parent, True)
-        self.hidden_rows.add(QtCore.QPersistentModelIndex(self.model_.index(row, 0, parent)))
-
-    def hide_placeholder(self, row: int, parent: QtCore.QModelIndex) -> None:
-        if not self.isRowHidden(row, parent):
-            self.setRowHidden(row, parent, True)
-        self.hidden_placeholders.add(QtCore.QPersistentModelIndex(self.model_.index(row, 0, parent)))
-
-    def show_row(self, row: QtCore.QPersistentModelIndex) -> None:
-        if row.isValid():
-            self.setRowHidden(row.row(), row.parent(), False)
+                self.setRowHidden(0, index, True)
 
     def has_placeholder(self, index: QtCore.QModelIndex) -> bool:
         return self.model_.rowCount(index) > 0 and not self.model_.index(0, 0, index).data(USER_ROLE_PATH)
-
-    def on_model_reset(self) -> None:
-        self.hidden_rows.clear()
-        self.hidden_placeholders.clear()
 
     def select_folders(self, paths: Sequence[str]) -> None:
         model = self.model_

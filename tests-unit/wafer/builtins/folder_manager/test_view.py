@@ -756,3 +756,90 @@ def test_stopping_one_expand_channel_keeps_the_other_running(qtbot, tmp_path):
     for _ in range(50):
         QtCore.QCoreApplication.processEvents()
     assert done == ["expand"]
+
+
+def flat_view(qtbot, children=20):
+    view = FolderManagerTreeView()
+    qtbot.addWidget(view)
+    model = view.model_
+    top = QtGui.QStandardItem("r")
+    top.setData("r", USER_ROLE_PATH)
+    model.path_item_map["r"] = top
+    for number in range(children):
+        path = f"r/c{number}"
+        item = QtGui.QStandardItem(path)
+        item.setData(path, USER_ROLE_PATH)
+        model.path_item_map[path] = item
+        top.appendRow(item)
+    model.invisibleRootItem().appendRow(top)
+    return view, top
+
+
+def hidden_children(view, top):
+    parent = top.index()
+    return [top.child(row).data(USER_ROLE_PATH) for row in range(top.rowCount()) if view.isRowHidden(row, parent)]
+
+
+def slice_every_row(monkeypatch):
+    monkeypatch.setattr(view_module, "ROW_FILTER_SLICE_SECONDS", -1)
+    monkeypatch.setattr(view_module, "ROW_FILTER_DEADLINE_CHECK", 2)
+
+
+def test_row_filter_is_applied_in_slices(qtbot, monkeypatch):
+    view, top = flat_view(qtbot)
+    slice_every_row(monkeypatch)
+
+    view.apply_row_filter(frozenset({"r", "r/c3"}))
+
+    assert view.filter_running and 0 < len(hidden_children(view, top)) < 19
+    qtbot.waitUntil(lambda: not view.filter_running)
+    assert hidden_children(view, top) == [f"r/c{n}" for n in range(20) if n != 3]
+
+    view.apply_row_filter(None)
+
+    assert view.filter_running
+    qtbot.waitUntil(lambda: not view.filter_running)
+    assert hidden_children(view, top) == []
+
+
+def test_reapplying_an_equal_row_filter_touches_nothing(qtbot, monkeypatch):
+    view, top = flat_view(qtbot)
+    view.apply_row_filter(frozenset({"r", "r/c3"}), frozenset({"r"}))
+    assert not view.filter_running
+    touched = []
+    monkeypatch.setattr(view, "setRowHidden", lambda *args: touched.append(args))
+
+    view.apply_row_filter(frozenset({"r", "r/c3"}), frozenset({"r"}))
+    view.apply_row_filter(None)
+    view.apply_row_filter(None)
+
+    assert not view.filter_running
+    assert len(touched) == 19
+
+
+def test_a_changed_row_filter_touches_only_the_rows_that_change(qtbot, monkeypatch):
+    view, top = flat_view(qtbot)
+    view.apply_row_filter(frozenset({"r", "r/c3"}), frozenset({"r"}))
+    real_set_hidden = view.setRowHidden
+    touched = []
+    monkeypatch.setattr(view, "setRowHidden", lambda row, parent, hide: (touched.append((row, hide)), real_set_hidden(row, parent, hide)))
+
+    view.apply_row_filter(frozenset({"r", "r/c4"}), frozenset({"r"}))
+
+    assert not view.filter_running
+    assert sorted(touched) == [(3, True), (4, False)]
+    assert hidden_children(view, top) == [f"r/c{n}" for n in range(20) if n != 4]
+
+
+def test_rows_removed_while_turning_the_filter_off_leave_nothing_hidden(qtbot, monkeypatch):
+    view, top = flat_view(qtbot, children=40)
+    view.apply_row_filter(frozenset({"r"}))
+    slice_every_row(monkeypatch)
+
+    view.apply_row_filter(None)
+    QtCore.QCoreApplication.processEvents()
+    assert view.filter_running and hidden_children(view, top)
+    top.removeRows(0, 5)
+
+    qtbot.waitUntil(lambda: not view.filter_running)
+    assert hidden_children(view, top) == []

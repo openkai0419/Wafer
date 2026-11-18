@@ -111,6 +111,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
 
         self.rects = LayoutData.empty()
         self.last_selections = []
+        self._last_anchor_path = None
         self._restore_scroll_path = None
         self._pending_scroll_index = None
         self._update_scroll = None
@@ -382,7 +383,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             widget = self._additional_widgets.get(i)
             if widget is not None:
                 self._notifier.select(i, widget)
-        self.last_selections = self.items.selected_paths()
+        self.last_selections = []
         self._overlay.update()
 
     def _scene_view_rect(self):
@@ -455,6 +456,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self.layout_ready.emit()
             return
         self.last_selections = self.items.selected_paths()
+        self._last_anchor_path = self.items.last_selected_path()
         self._restore_scroll_path = None
         if keep_scroll:
             bar = self._primary_bar()
@@ -717,13 +719,13 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self._update_visible_items()
         self.layout_ready.emit()
         if self.last_selections:
-            indexes = [i for i in (self.items.index_of_path(p) for p in self.last_selections) if i is not None]
-            if indexes:
-                with self.items.selection_noemit():
-                    self.items.set_selected(indexes, last=-1)
-            else:
-                with self.items.selection_noemit():
-                    self.items.clear_selection()
+            anchor = self.items.index_of_path(self._last_anchor_path)
+            indexes = [i for i in (self.items.index_of_path(p) for p in self.last_selections) if i is not None and i != anchor]
+            if anchor is not None:
+                indexes.append(anchor)
+            with self.items.selection_noemit():
+                self.items.set_selected(indexes, last=-1)
+            self.last_selections = []
         self._prev_selection_set = set(self.items.selected_indices())
         if self._restore_raw_scroll_if_needed():
             if was_scrolling:

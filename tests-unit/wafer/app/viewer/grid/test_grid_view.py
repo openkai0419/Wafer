@@ -1096,3 +1096,51 @@ class TestGridActive:
 
         splitter.setSizes([500, 500])
         qtbot.waitUntil(lambda: gv._active is True and bool(gv.visible_indices))
+
+
+class TestSelectionAnchorOnRelayout:
+    @pytest.fixture(autouse=True)
+    def _import(self, qtbot):
+        from wafer.app.viewer.grid.grid_view import GridView
+
+        self.GridView = GridView
+
+    def _make_layout(self, n):
+        from wafer.plugin.layout.calc import LayoutData
+
+        return LayoutData([QtCore.QRectF(0, i * 100, 800, 100) for i in range(n)], n * 100, True)
+
+    def _prepare(self, qtbot, paths):
+        gv = self.GridView(MagicMock())
+        qtbot.addWidget(gv)
+        gv._pipeline.schedule_render = MagicMock()
+        gv._pipeline.request_layout = MagicMock()
+        gv.items.set_items(paths, paths, [1.0] * len(paths))
+        gv._on_layout_ready(self._make_layout(len(paths)))
+        return gv
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_relayout_keeps_the_anchor(self, mock_resolver, qtbot):
+        paths = [f"/img/{i}.png" for i in range(12)]
+        gv = self._prepare(qtbot, paths)
+        gv.items.toggle_selection(5)
+        gv.items.toggle_selection(3)
+
+        gv._on_layout_ready(self._make_layout(12))
+
+        assert gv.items.last_selected_index() == 3
+        assert gv.items.selected_indices() == {3, 5}
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_new_paths_keep_the_anchor_at_its_new_index(self, mock_resolver, qtbot):
+        paths = [f"/img/{i}.png" for i in range(12)]
+        gv = self._prepare(qtbot, paths)
+        gv.items.toggle_selection(5)
+        gv.items.toggle_selection(3)
+        new_paths = ["/img/new.png"] + paths
+
+        gv.set_paths(new_paths, new_paths, [1.0] * len(new_paths))
+        gv._on_layout_ready(self._make_layout(len(new_paths)))
+
+        assert gv.items.last_selected_index() == 4
+        assert gv.items.selected_indices() == {4, 6}

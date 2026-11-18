@@ -40,7 +40,7 @@ class ProgressAggregator:
 
     def send_event(self, topic, value=""):
         try:
-            self._node.send_coalesced(topic, value, dst="viewer", db=self.db_name)
+            self._node.send_coalesced(topic, value, dst="ALL", db=self.db_name)
         except Exception as e:
             AppLogger.warning(f"[notify {topic} failed] {e}")
 
@@ -55,7 +55,7 @@ class ProgressAggregator:
 
     def _send_progress(self):
         try:
-            self._node.send_coalesced("maximum", self.maximum, dst="viewer", db=self.db_name)
-            self._node.send_coalesced("progress", self.current, dst="viewer", db=self.db_name)
+            self._node.send_coalesced("maximum", self.maximum, dst="ALL", db=self.db_name)
+            self._node.send_coalesced("progress", self.current, dst="ALL", db=self.db_name)
         except Exception as e:
             AppLogger.warning(f"[progress notify failed] {e}")

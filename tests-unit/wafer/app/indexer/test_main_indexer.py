@@ -42,7 +42,7 @@ class TestDelete:
         proc.setting_db = MagicMock()
         proc.setting_db.db_name = "test_setting.db"
         proc.delete()
-        node.send.assert_called_with("db.deleted", "test", dst="viewer")
+        node.send.assert_called_with("db.deleted", "test", dst="ALL")
         assert stop.is_set()
 
     @patch("wafer.app.indexer.main_indexer.remove_orphan_databases")
@@ -68,7 +68,7 @@ class TestDelete:
         proc.setting_db = None
         proc.delete()
         mock_del_files.assert_called_once()
-        node.send.assert_called_with("db.deleted", "test", dst="viewer")
+        node.send.assert_called_with("db.deleted", "test", dst="ALL")
 
 
 class TestPeriodicBackfill:
@@ -372,7 +372,7 @@ class TestOnKvConvertScope:
                 "upserted": 2,
                 "source_deleted": 1,
             },
-            dst="viewer",
+            dst="ALL",
         )
 
 

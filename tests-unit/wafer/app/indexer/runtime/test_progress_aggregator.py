@@ -85,8 +85,14 @@ def test_send_event_uses_coalesced():
     method, args, kwargs = node.sent[0]
     assert method == "send_coalesced"
     assert args == ("update", "")
-    assert kwargs["dst"] == "viewer"
+    assert kwargs["dst"] == "ALL"
     assert kwargs["db"] == "testdb"
+
+
+def test_progress_reaches_every_role():
+    node = _StubNode()
+    ProgressAggregator("testdb", node).increment(0, 5)
+    assert [(args[0], kwargs["dst"]) for _, args, kwargs in node.sent] == [("maximum", "ALL"), ("progress", "ALL")]
 
 
 def test_send_files_changed_sends_paths_without_coalescing():

@@ -151,7 +151,7 @@ class IndexerProcess:
         self.setting_watcher.start()
 
         if is_new:
-            self.zmq.send("db.created", self.db_name, dst="viewer")
+            self.zmq.send("db.created", self.db_name, dst="ALL")
 
     def _register_periodic_tasks(self, collector_names=(), parser_names=()):
         self.scheduler.set_idle_base_delay(self._child_idle_delay(collector_names, parser_names))
@@ -441,7 +441,7 @@ class IndexerProcess:
                     "request_id": request_id,
                     "db": self.db_name,
                 },
-                dst="viewer",
+                dst="ALL",
             )
             self._progress.send_event("update")
 
@@ -492,7 +492,7 @@ class IndexerProcess:
                     "upserted": int(data.get("upserted") or 0),
                     "source_deleted": int(data.get("source_deleted") or 0),
                 },
-                dst="viewer",
+                dst="ALL",
             )
             if self._progress is not None:
                 self._progress.send_event("update")
@@ -514,7 +514,7 @@ class IndexerProcess:
             delete_database_files(self.setting_db.db_name, force=True)
         delete_database_files(data_db_path(self.db_name), force=True)
         remove_orphan_databases()
-        self.zmq.send("db.deleted", self.db_name, dst="viewer")
+        self.zmq.send("db.deleted", self.db_name, dst="ALL")
         self._stop_zmq()
         self.stopped = True
         if self._stop_event:

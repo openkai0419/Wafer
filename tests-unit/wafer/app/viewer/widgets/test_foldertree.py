@@ -1557,6 +1557,23 @@ def test_reload_tree_scans_folders_off_the_main_thread(qtbot, tmp_path, monkeypa
     assert item_of(tree, tmp_path / "A" / "A1") is not None
 
 
+def test_destroying_the_view_cancels_its_background_work(qtbot, tmp_path):
+    import shiboken6
+
+    create_fs_tree(str(tmp_path))
+    tree = LazyFolderTreeView(roots=[str(tmp_path)], excluded=[])
+    tree.set_folders([str(tmp_path)])
+    job_token = foldertree_module.CancelToken()
+    tree._recursive_expand_jobs["job"] = foldertree_module.RecursiveExpandJob("job", job_token)
+    expand_token = foldertree_module.CancelToken()
+    tree.model_._pending_expands["expand"] = expand_token
+
+    shiboken6.delete(tree)
+
+    assert job_token.is_cancelled()
+    assert expand_token.is_cancelled()
+
+
 def test_drag_keeps_folders_on_the_same_row_of_different_parents(qtbot, tmp_path):
     for parent in ("A", "B"):
         (tmp_path / parent / "x").mkdir(parents=True)

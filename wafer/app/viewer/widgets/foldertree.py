@@ -3,6 +3,7 @@ import os
 import threading
 import time
 from collections import deque
+from functools import partial
 from pathlib import Path
 from typing import NamedTuple
 from natsort import natsort_keygen
@@ -133,6 +134,12 @@ class RecursiveExpandJob:
         self.condition = threading.Condition()
         self.scanned = False
         self.scheduled = False
+
+
+def cancel_tree_work(reload_cancel, jobs, pending_expands):
+    reload_cancel.cancel()
+    for token in [*(job.token for job in list(jobs.values())), *list(pending_expands.values())]:
+        token.cancel()
 
 
 @profiler.profile
@@ -482,6 +489,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
 
         self.viewport().setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.viewport().customContextMenuRequested.connect(self.show_context_menu)
+        self.destroyed.connect(partial(cancel_tree_work, self._reload_cancel, self._recursive_expand_jobs, self.model_._pending_expands))
 
     def binding_scope(self) -> str:
         return self.BINDING_SCOPE

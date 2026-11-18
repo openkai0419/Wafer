@@ -45,9 +45,14 @@ def test_conditions_are_anded_and_support_all_operators():
     assert not rule.matches(FolderValues(5, 8, 0, 0))
 
 
-def test_folder_only_rule_has_no_count():
-    assert not HighlightRule("x", "#000", conditions=[Condition("folders", ">=", 1)]).shows_count()
-    assert HighlightRule("x", "#000", conditions=[Condition("all_files", ">=", 1)]).shows_count()
+def test_badge_count_follows_the_file_metric_in_the_conditions():
+    def count_metric(*conditions):
+        return HighlightRule("x", "#000", conditions=[Condition(*condition) for condition in conditions]).count_metric()
+
+    assert count_metric(("folders", ">=", 1)) is None
+    assert count_metric(("files", ">=", 1), ("folders", ">=", 1)) == "files"
+    assert count_metric(("all_files", ">=", 1)) == "all_files"
+    assert count_metric(("files", "<=", 5), ("all_files", ">=", 1)) == "all_files"
 
 
 def test_rule_round_trips_through_dict():

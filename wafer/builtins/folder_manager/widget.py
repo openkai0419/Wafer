@@ -701,7 +701,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
 
     @staticmethod
     def count_key(rule: HighlightRule) -> str | None:
-        if not rule.enabled or not rule.shows_count():
+        if not rule.enabled or rule.count_metric() is None:
             return None
         return json.dumps(rule.bars, sort_keys=True, default=str)
 

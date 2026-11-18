@@ -44,8 +44,10 @@ def rule_badges(rule_counts: Iterable[tuple[HighlightRule, dict[str, tuple[int, 
         if unknown and any(condition.metric in unknown for condition in rule.conditions):
             continue
         direct, total = counts.get(path, (0, 0))
-        if rule.matches(FolderValues(direct, total, folders, all_folders)):
-            yield rule.color, str(direct) if rule.shows_count() else None
+        rule_values = FolderValues(direct, total, folders, all_folders)
+        if rule.matches(rule_values):
+            metric = rule.count_metric()
+            yield rule.color, None if metric is None else str(getattr(rule_values, metric))
 
 
 class FolderStatsModel(LazyFolderTreeModel):

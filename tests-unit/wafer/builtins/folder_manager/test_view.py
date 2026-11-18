@@ -122,8 +122,16 @@ def test_badges_follow_rule_order_and_only_matching_rules(qtbot):
     last = rule("Last", "#444444", ("all_files", ">=", 5))
     model.rule_counts = [(last, {folder: (2, 5)}), (off, {folder: (2, 5)}), (miss, {folder: (2, 5)}), (first, {folder: (2, 5)})]
 
-    assert model.badges(folder) == [("#444444", "2"), ("#111111", "2")]
+    assert model.badges(folder) == [("#444444", "5"), ("#111111", "2")]
     assert model.badges("D:/other") == []
+
+
+def test_all_files_rule_badge_counts_everything_below_even_without_direct_files(qtbot):
+    model = FolderStatsModel([], [])
+    big = rule("Big", "#111111", ("all_files", ">=", 1001))
+    model.rule_counts = [(big, {"D:/x": (0, 1200)})]
+
+    assert model.badges("D:/x") == [("#111111", "1200")]
 
 
 def test_folder_only_rule_badge_has_no_number(qtbot):

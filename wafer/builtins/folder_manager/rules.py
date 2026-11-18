@@ -40,8 +40,9 @@ class HighlightRule:
     def matches(self, values: FolderValues) -> bool:
         return bool(self.conditions) and all(condition.holds(values) for condition in self.conditions)
 
-    def shows_count(self) -> bool:
-        return any(condition.metric in COUNT_METRICS for condition in self.conditions)
+    def count_metric(self) -> str | None:
+        used = {condition.metric for condition in self.conditions}
+        return next((metric for metric in reversed(COUNT_METRICS) if metric in used), None)
 
     def counts_allow(self, files: int, all_files: int) -> bool:
         values = FolderValues(files, all_files, 0, 0)

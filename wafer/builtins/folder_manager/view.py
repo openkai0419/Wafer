@@ -195,6 +195,8 @@ class FolderManagerTreeView(LazyFolderTreeView):
     def __init__(self, roots=None, excluded=None, ignore_pattern_re=None):
         super().__init__(roots, excluded, ignore_pattern_re, instance_name="FolderManagerTree")
         self.rules_source: Callable[[], list[HighlightRule]] = list
+        self.database_path: str | None = None
+        self.show_in_tree_available: Callable[[], bool] = lambda: False
         self.hidden_columns: set[int] = set()
         self.expand_serial = 0
         self.setHeaderHidden(False)
@@ -245,6 +247,9 @@ class FolderManagerTreeView(LazyFolderTreeView):
     def set_rules_source(self, rules: Callable[[], list[HighlightRule]]) -> None:
         self.rules_source = rules
 
+    def extend_context(self, ctx, cmd, event=None, key=None, source=None):
+        return {**super().extend_context(ctx, cmd, event, key, source), "database_path": self.database_path}
+
     def show_context_menu(self, position):
         gp = self.viewport().mapToGlobal(position)
         ctx = Context.create_menu_context(self, self.binding_scope(), pos=position, global_pos=gp)
@@ -252,7 +257,8 @@ class FolderManagerTreeView(LazyFolderTreeView):
         path = ctx.get("path")
         if not path:
             return
-        items = ["ft.show_in_tree", *MATCH_COMMANDS, "-", *folder_items(normalize_path(path))]
+        show_in_tree = ["ft.show_in_tree"] if self.show_in_tree_available() else []
+        items = [*show_in_tree, *MATCH_COMMANDS, "-", *folder_items(normalize_path(path))]
         files_items = [n for n, item in enumerate(items) if item.startswith("Files in Folder/")]
         if files_items:
             items[files_items[-1] + 1 : files_items[-1] + 1] = self.rule_file_actions()

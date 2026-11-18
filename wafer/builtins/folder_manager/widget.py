@@ -1,37 +1,39 @@
 import json
 import os
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from itertools import chain
 
 from PySide6 import QtCore, QtWidgets
 
 from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
-from wafer.app.viewer.widgets.foldertree import LazyFolderTreeView
 from wafer.builtins.commands.folder_files import query_sources
-from wafer.core.common.paths import child_prefix, data_db_path, normalize_path, parent_folder
+from wafer.core.common.paths import child_prefix, data_db_path, list_data_db_names, normalize_path, parent_folder
 from wafer.core.common.virtual_paths import source_path
 from wafer.core.db.path_scope import is_under
 from wafer.core.lang.manager import t
-from wafer.core.logs import AppLogger
+from wafer.core.store.settings import app_settings
 from wafer.plugin.panel.base import BasePanelPlugin
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 from wafer.qt.commands.bridge import UI, ActionKit, Menu
 from wafer.qt.common.dispatcher import CancelSlot, Dispatcher
 from wafer.qt.common.dpi import dpix
 from wafer.qt.common.notifier import Notifier
-from wafer.qt.common.rate_limit import qt_throttle
+from wafer.qt.common.rate_limit import qt_debounce, qt_throttle
 from wafer.qt.common.thread import utility_pool
+from wafer.qt.widgets.database_box import DatabaseBox
 from wafer.qt.widgets.flow_layout import FlowLayout
 
+from .database import FolderSettings, initial_database, read_folder_settings
 from .rule_editor import METRIC_LABELS, RuleList, tool_button
-from .rules import METRICS, HighlightRule, default_rules, new_rule
-from .shared_settings import DEFAULT_COLUMNS
+from .rules import METRICS, HighlightRule, new_rule
+from .shared_settings import COLUMNS_KEY, DEFAULT_COLUMNS, RULES_KEY, load_columns, load_last_database, load_rules, save_columns, save_last_database, save_rules
 from .stats import DiskTree, count_sources_by_folder, list_folder, walk_disk
 from .view import FolderManagerTreeView, folders_to_open
 
 INSTANCE_NAME = "FolderManager"
 RULE_EDIT_DELAY_MS = 400
+SAVE_DELAY_MS = 300
 STATS_REFRESH_MS = 100
 REFRESH_INTERVAL_MS = 3000
 REFRESH_IDLE_MS = 1000
@@ -87,9 +89,9 @@ class FolderManagerWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.dispatcher = Dispatcher(utility_pool, parent=self)
-        self.source_tree: LazyFolderTreeView | None = None
-        self.db_path_getter: Callable[[], str | None] | None = None
+        self.database_name = ""
         self.columns = dict(DEFAULT_COLUMNS)
+        self.settings_slot = CancelSlot()
         self.disk_slot = CancelSlot()
         self.relist_slot = CancelSlot()
         self.count_slots: dict[int, CancelSlot] = {}
@@ -101,14 +103,15 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.scanning = False
         self.scanned = 0
         self.walk_roots: list[str] | None = None
-        self.stale_tree = False
         self.stale_disk = False
         self.stale_rules = False
         self.stale_parents: set[str] = set()
         self.relisting: set[str] = set()
         self.expand_serial = 0
         self.build_ui()
-        self.restore_state({})
+        self.apply_rules(load_rules())
+        self.apply_columns(load_columns())
+        app_settings.key_changed.connect(self.on_setting_changed)
         UI.register_instance(INSTANCE_NAME, self)
         bridge = ViewerIpcBridge.instance()
         if bridge is not None:
@@ -124,11 +127,12 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.rule_list = RuleList()
         self.rule_list.rule_edited.connect(self.on_rule_edited)
         self.rule_list.rule_removed.connect(self.on_rule_removed)
-        self.rule_list.order_changed.connect(self.publish_counts)
+        self.rule_list.order_changed.connect(self.on_order_changed)
         self.rules_area = RulesArea(self.rule_list)
         layout.addWidget(self.rules_area)
         self.view = FolderManagerTreeView()
         self.view.set_rules_source(lambda: self.rules)
+        self.view.show_in_tree_available = self.host_shows_database
         self.model.paths_changed.connect(self.on_paths_changed)
         layout.addWidget(self.view, 1)
         self.stats_timer = QtCore.QTimer(self)
@@ -142,6 +146,9 @@ class FolderManagerWidget(QtWidgets.QWidget):
     def build_bar(self) -> QtWidgets.QWidget:
         self.bar = QtWidgets.QWidget()
         self.flow = FlowLayout(self.bar, margin=dpix(2), spacing=dpix(4))
+        self.db_box = DatabaseBox()
+        self.db_box.setToolTip(t("Database"))
+        self.db_box.currentTextChanged.connect(self.set_database)
         self.status_label = QtWidgets.QLabel()
         self.status_label.hide()
         self.expand_button = tool_button("chevron_down", t("Open the tree to every folder a rule marks (only under the selected folders, if any)"), t("Expand to matches"))
@@ -154,7 +161,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.refresh_button.clicked.connect(self.refresh)
         self.add_rule_button = tool_button("plus", t("Add rule"), t("Add rule"))
         self.add_rule_button.clicked.connect(self.add_rule)
-        for widget in (self.status_label, self.expand_button, self.select_button, self.columns_button, self.refresh_button, self.add_rule_button):
+        for widget in (self.db_box, self.status_label, self.expand_button, self.select_button, self.columns_button, self.refresh_button, self.add_rule_button):
             self.flow.addWidget(widget)
         return self.bar
 
@@ -166,22 +173,32 @@ class FolderManagerWidget(QtWidgets.QWidget):
     def rules(self) -> list[HighlightRule]:
         return self.rule_list.rules
 
-    def save_state(self) -> dict:
-        return {"rules": [rule.to_dict() for rule in self.rules], "columns": dict(self.columns)}
+    def apply_rules(self, rules: Sequence[HighlightRule]) -> None:
+        self.forget_counts()
+        self.rule_list.set_rules(rules)
+        self.publish_counts()
+        self.stale_rules = True
+        self.flush_if_visible()
 
-    def restore_state(self, state: dict) -> None:
-        saved_rules = state.get("rules")
-        if saved_rules is not None and not isinstance(saved_rules, list):
-            AppLogger.warning(f"[FolderManager] saved rules are not a list, starting from the default rules: {saved_rules!r}")
-            saved_rules = None
-        rules = []
-        for data in saved_rules or []:
-            try:
-                rules.append(HighlightRule.from_dict(data))
-            except (KeyError, TypeError, AttributeError) as exc:
-                AppLogger.warning(f"[FolderManager] skipped a saved rule that could not be read: {data!r} ({exc!r})")
-        if saved_rules is None:
-            rules = default_rules()
+    def apply_columns(self, columns: dict[str, bool]) -> None:
+        for metric in METRICS:
+            self.set_column_visible(metric, columns[metric])
+
+    def on_setting_changed(self, key: str) -> None:
+        if key == RULES_KEY:
+            self.apply_rules(load_rules())
+        elif key == COLUMNS_KEY:
+            self.apply_columns(load_columns())
+
+    @qt_debounce(SAVE_DELAY_MS)
+    def save_rules_later(self) -> None:
+        save_rules(self.rules)
+
+    @qt_debounce(SAVE_DELAY_MS)
+    def save_columns_later(self) -> None:
+        save_columns(self.columns)
+
+    def forget_counts(self) -> None:
         for slot in self.count_slots.values():
             slot.cancel()
         self.count_slots.clear()
@@ -191,20 +208,14 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.counting.clear()
         self.recount_after.clear()
         self.rule_timer.stop()
-        self.rule_list.set_rules(rules)
-        saved_columns = state.get("columns", {})
-        if not isinstance(saved_columns, dict):
-            AppLogger.warning(f"[FolderManager] saved columns are not readable, showing the default columns: {saved_columns!r}")
-            saved_columns = {}
-        for metric in METRICS:
-            self.set_column_visible(metric, bool(saved_columns.get(metric, DEFAULT_COLUMNS[metric])))
-        self.publish_counts()
-        self.stale_rules = True
-        self.flush_if_visible()
 
     def set_column_visible(self, metric: str, visible: bool) -> None:
         self.columns[metric] = visible
         self.view.set_column_visible(METRICS.index(metric) + 1, visible)
+
+    def toggle_column(self, metric: str) -> None:
+        self.set_column_visible(metric, not self.columns[metric])
+        self.save_columns_later()
 
     def column_menu_items(self) -> list:
         uid = f"{id(self):x}"
@@ -215,7 +226,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
                     path=f"inline.folder_manager.{uid}.column.{metric}",
                     display=METRIC_LABELS[metric],
                     checked=lambda metric=metric: self.columns[metric],
-                    func=lambda ctx, metric=metric: self.set_column_visible(metric, not self.columns[metric]),
+                    func=lambda ctx, metric=metric: self.toggle_column(metric),
                 )
                 for metric in METRICS
             ),
@@ -226,27 +237,74 @@ class FolderManagerWidget(QtWidgets.QWidget):
         if spec is not None:
             spec.exec(self.columns_button.mapToGlobal(QtCore.QPoint(0, self.columns_button.height())))
 
-    def bind_folder_tree(self, tree: LazyFolderTreeView, db_path_getter: Callable[[], str | None]) -> None:
-        self.source_tree = tree
-        self.db_path_getter = db_path_getter
-        tree.folders_set.connect(self.on_folders_set)
-        self.stale_tree = True
+    def database_path(self) -> str | None:
+        return data_db_path(self.database_name) if self.database_name else None
+
+    def host_shows_database(self) -> bool:
+        host = InstanceRegistry.instance().get_host_window()
+        return host is not None and bool(self.database_name) and getattr(host, "database_name", None) == self.database_name
+
+    def set_database(self, name: str) -> None:
+        if name != self.database_name:
+            self.database_name = name
+            self.view.database_path = self.database_path()
+            if name:
+                save_last_database(name)
+            self.clear_folders()
+        self.db_box.show_quietly(name)
+        token = self.settings_slot.renew()
+        if not name:
+            return
+
+        def task():
+            settings = read_folder_settings(name)
+            if not token.is_cancelled():
+                self.dispatcher.invoke(lambda: self.apply_loaded_settings(token, settings))
+
+        self.dispatcher.post(task, cancel=token)
+
+    def apply_loaded_settings(self, token, settings: FolderSettings) -> None:
+        if not token.is_cancelled():
+            self.apply_folder_settings(settings)
+
+    def clear_folders(self) -> None:
+        self.disk_slot.cancel()
+        self.relist_slot.cancel()
+        self.forget_counts()
+        self.scanning = False
+        self.scanned = 0
+        self.walk_roots = None
+        self.relisting = set()
+        self.stale_disk = False
+        self.stale_parents.clear()
+        self.expand_serial += 1
+        self.stats_timer.stop()
+        disk = self.model.disk
+        self.model.disk = None
+        if disk is not None:
+            self.dispatcher.post(disk.clear)
+        self.view.set_folders([])
+        self.publish_counts()
+        self.update_status()
+
+    def apply_folder_settings(self, settings: FolderSettings) -> None:
+        model = self.model
+        current_pattern = model.ignore_pattern_re.pattern if model.ignore_pattern_re is not None else None
+        new_pattern = settings.ignore_pattern_re.pattern if settings.ignore_pattern_re is not None else None
+        if (settings.roots, settings.excluded, new_pattern) != (list(model.roots or ()), set(model.excluded or ()), current_pattern):
+            state = self.view.get_state()
+            self.view.set_folders(settings.roots, settings.excluded, settings.ignore_pattern_re)
+            self.view.set_state_async(state)
+        self.stale_disk = True
+        self.stale_rules = True
         self.flush_if_visible()
 
     def is_my_db(self, db: str) -> bool:
-        if not db:
-            return True
-        db_path = self.db_path_getter() if self.db_path_getter is not None else None
-        return bool(db_path) and normalize_path(data_db_path(db)) == normalize_path(db_path)
-
-    def on_folders_set(self) -> None:
-        self.stale_tree = True
-        self.flush_if_visible()
+        return not db or db == self.database_name
 
     def on_folder_changed(self, db: str) -> None:
         if self.is_my_db(db):
-            self.stale_tree = True
-            self.flush_later_if_visible()
+            self.set_database(self.database_name)
 
     def on_db_content_updated(self, db: str) -> None:
         if self.is_my_db(db):
@@ -282,10 +340,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.flush_if_visible()
 
     def flush(self) -> None:
-        if self.stale_tree:
-            self.stale_tree = False
-            self.sync_from_tree()
-        if self.source_tree is None:
+        if not self.database_name:
             return
         if self.stale_disk:
             self.stale_disk = False
@@ -298,27 +353,8 @@ class FolderManagerWidget(QtWidgets.QWidget):
             self.stale_rules = False
             self.recount(self.rules)
 
-    def sync_from_tree(self) -> None:
-        if self.source_tree is None:
-            return
-        source = self.source_tree.model_
-        roots = [normalize_path(root) for root in source.roots or ()]
-        excluded = {normalize_path(path) for path in source.excluded or ()}
-        pattern = source.ignore_pattern_re
-        model = self.model
-        current_pattern = model.ignore_pattern_re.pattern if model.ignore_pattern_re is not None else None
-        new_pattern = pattern.pattern if pattern is not None else None
-        if (roots, excluded, new_pattern) != (list(model.roots or ()), set(model.excluded or ()), current_pattern):
-            state = self.view.get_state()
-            self.view.set_folders(roots, excluded, pattern)
-            self.view.set_state_async(state)
-        self.stale_disk = True
-        self.stale_rules = True
-
     def refresh(self) -> None:
-        self.stale_disk = True
-        self.stale_rules = True
-        self.flush()
+        self.set_database(self.database_name)
 
     def under_roots(self, path: str) -> bool:
         return any(is_under(path, root) for root in self.model.roots or ())
@@ -473,6 +509,11 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.rule_list.append_row(rule)
         self.publish_counts()
         self.recount([rule])
+        self.save_rules_later()
+
+    def on_order_changed(self) -> None:
+        self.publish_counts()
+        self.save_rules_later()
 
     def on_rule_removed(self, rule: HighlightRule) -> None:
         slot = self.count_slots.pop(id(rule), None)
@@ -484,12 +525,14 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.counting.pop(id(rule), None)
         self.recount_after.discard(id(rule))
         self.publish_counts()
+        self.save_rules_later()
 
     def on_rule_edited(self, rule: HighlightRule) -> None:
         if self.count_key(rule) != self.counted_keys.get(id(rule)):
             self.pending_rule_ids.add(id(rule))
             self.rule_timer.start(RULE_EDIT_DELAY_MS)
         self.publish_counts()
+        self.save_rules_later()
 
     def recount_pending_rules(self) -> None:
         pending, self.pending_rule_ids = self.pending_rule_ids, set()
@@ -502,7 +545,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         return json.dumps(rule.bars, sort_keys=True, default=str)
 
     def recount(self, rules: Sequence[HighlightRule]) -> None:
-        db_path = self.db_path_getter() if self.db_path_getter is not None else None
+        db_path = self.database_path()
         roots = list(self.model.roots or ())
         for rule in rules:
             rule_id = id(rule)
@@ -609,42 +652,11 @@ class FolderManagerPlugin(BasePanelPlugin):
     PRIORITY = 0
     SOURCE = "Builtin"
     DEFAULT_ENABLED = True
-    STANDALONE_AVAILABLE = False
-
-    def __init__(self):
-        self.widget: FolderManagerWidget | None = None
-        self.state: dict = {}
-
-    def save_ui_state(self) -> dict:
-        if self.widget is not None:
-            try:
-                self.state = self.widget.save_state()
-            except RuntimeError as exc:
-                AppLogger.warning("[FolderManager] save_state failed", exc=exc)
-        return dict(self.state)
-
-    def restore_ui_state(self, state: dict) -> None:
-        self.state = dict(state)
-        if self.widget is not None:
-            try:
-                self.widget.restore_state(self.state)
-            except RuntimeError as exc:
-                AppLogger.warning("[FolderManager] restore_state failed", exc=exc)
+    STANDALONE_AVAILABLE = True
+    STANDALONE_SIZE = (720, 900)
 
     def create_widget(self) -> FolderManagerWidget:
         widget = FolderManagerWidget()
-        self.widget = widget
-        widget.destroyed.connect(lambda *_: self.forget(widget))
-        if self.state:
-            widget.restore_state(self.state)
         host = InstanceRegistry.instance().get_host_window()
-        tree = getattr(host, "folder_view", None)
-        if tree is None:
-            AppLogger.warning("[FolderManager] no folder tree is available, the panel stays empty")
-        else:
-            widget.bind_folder_tree(tree, lambda: host.database_path)
+        widget.set_database(initial_database(getattr(host, "database_name", None), load_last_database(), list_data_db_names()))
         return widget
-
-    def forget(self, widget: FolderManagerWidget) -> None:
-        if self.widget is widget:
-            self.widget = None

@@ -173,6 +173,7 @@ def test_context_menu_lists_rule_actions_only_for_rules_with_query(qtbot, tmp_pa
     calls = []
     monkeypatch.setattr(view_module, "run_on_folder_files", lambda ctx, command_id, recursive: calls.append((ctx.get("filter_entries"), ctx.get("paths"), command_id, recursive)))
     view, root = make_view(qtbot, tmp_path)
+    view.show_in_tree_available = lambda: True
     view.resize(480, 240)
     view.show()
     bar = {"filter": "text", "params": {"q": "cat"}, "op": "and", "enabled": True}
@@ -255,6 +256,7 @@ def test_rule_actions_keep_empty_and_duplicate_names_distinct(qtbot, tmp_path, t
 def test_context_menu_for_a_vanished_folder_offers_only_safe_items(qtbot, tmp_path, monkeypatch, text_filter):
     seen = capture_menu(monkeypatch)
     view, root = make_view(qtbot, tmp_path)
+    view.show_in_tree_available = lambda: True
     view.resize(480, 240)
     view.show()
     bar = {"filter": "text", "params": {"keys": ["Comment"], "keywords": "cat"}, "op": None, "enabled": True}
@@ -266,6 +268,46 @@ def test_context_menu_for_a_vanished_folder_offers_only_safe_items(qtbot, tmp_pa
     view.show_context_menu(view.visualRect(index).center())
 
     assert seen["items"] == ["ft.show_in_tree", "folder_manager.expand_matches", "folder_manager.select_matches", "-", "file.copy_path", "-"]
+    view.close()
+
+
+def open_menu_on_first_row(view):
+    view.resize(480, 240)
+    view.show()
+    index = view.model_.index(0, 0)
+    view.selectionModel().select(index, QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows)
+    view.show_context_menu(view.visualRect(index).center())
+
+
+def test_context_menu_shows_show_in_tree_only_for_the_window_database(qtbot, tmp_path, monkeypatch):
+    seen = capture_menu(monkeypatch)
+    view, _root = make_view(qtbot, tmp_path)
+    assert view.show_in_tree_available() is False
+
+    open_menu_on_first_row(view)
+    assert seen["items"][:3] == ["folder_manager.expand_matches", "folder_manager.select_matches", "-"]
+
+    view.show_in_tree_available = lambda: True
+    open_menu_on_first_row(view)
+    assert seen["items"][:3] == ["ft.show_in_tree", "folder_manager.expand_matches", "folder_manager.select_matches"]
+    view.close()
+
+
+def test_context_carries_the_panel_database(qtbot, tmp_path):
+    from wafer.qt.commands.bridge import Context
+
+    view, root = make_view(qtbot, tmp_path)
+    assert view.database_path is None
+    view.database_path = "D:/data/main.db"
+    view.resize(480, 240)
+    view.show()
+    index = view.model_.index(0, 0)
+    ctx = Context.create_menu_context(view, view.binding_scope(), pos=view.visualRect(index).center())
+
+    context = view.extend_context(ctx, None, source="menu")
+
+    assert context["database_path"] == "D:/data/main.db"
+    assert context["path"] == root
     view.close()
 
 

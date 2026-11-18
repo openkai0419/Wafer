@@ -5,14 +5,16 @@ import threading
 import pytest
 from PySide6 import QtCore
 
-from wafer.app.viewer.widgets.foldertree import LazyFolderTreeView
 from wafer.builtins.filters import TextFilter
 from wafer.builtins.folder_manager import widget as widget_module
+from wafer.builtins.folder_manager.database import FolderSettings
 from wafer.builtins.folder_manager.rules import Condition, HighlightRule
 from wafer.builtins.folder_manager.rule_editor import describe_rule
+from wafer.builtins.folder_manager.shared_settings import COLUMNS_KEY, DATABASE_KEY, RULES_KEY, load_columns, load_last_database, load_rules, save_last_database
 from wafer.builtins.folder_manager.stats import DiskTree, FolderValues
 from wafer.builtins.folder_manager.widget import FolderManagerPlugin, FolderManagerWidget
-from wafer.core.common.paths import normalize_path
+from wafer.core.common.paths import data_db_path, normalize_path
+from wafer.core.store.settings import app_settings
 from wafer.plugin.query.handler import filter_registry
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 from wafer.qt.commands.bridge import Menu
@@ -21,10 +23,67 @@ from wafer.qt.common.dpi import dpix
 
 DEFAULT_COLUMNS = {"files": True, "all_files": True, "folders": True, "all_folders": False}
 REAL_FINISH = DiskTree.finish
+SERVED: dict[str, FolderSettings] = {}
+GATES: list[threading.Event] = []
 
 
 class QueryLog(list):
     sources: list[str] = []
+
+
+def clear_shared_settings() -> None:
+    app_settings.discard()
+    for key in (RULES_KEY, COLUMNS_KEY, DATABASE_KEY):
+        app_settings.settings.remove(key)
+    app_settings.settings.sync()
+
+
+@pytest.fixture(autouse=True)
+def clean_shared_settings():
+    clear_shared_settings()
+    yield
+    clear_shared_settings()
+
+
+@pytest.fixture(autouse=True)
+def release_gates():
+    yield
+    for event in GATES:
+        event.set()
+    GATES.clear()
+
+
+def gate() -> threading.Event:
+    event = threading.Event()
+    GATES.append(event)
+    return event
+
+
+@pytest.fixture(autouse=True)
+def served_folders(monkeypatch):
+    SERVED.clear()
+    reads = []
+
+    def read(name):
+        reads.append((name, threading.current_thread()))
+        return SERVED.get(name, FolderSettings([], set(), None))
+
+    monkeypatch.setattr(widget_module, "read_folder_settings", read)
+    yield reads
+    SERVED.clear()
+
+
+@pytest.fixture
+def immediate_save(monkeypatch):
+    monkeypatch.setattr(rate_limit.qt_debounce_manager, "debounce", lambda key, delay_ms, callback, *args, **kwargs: callback(*args, **kwargs))
+
+
+@pytest.fixture
+def committed():
+    sent = []
+    app_settings.committed.connect(sent.append)
+    yield sent
+    app_settings.committed.disconnect(sent.append)
 
 
 @pytest.fixture
@@ -73,18 +132,19 @@ def make_panel(qtbot, width=600, height=500):
     return panel
 
 
-def make_tree(qtbot):
-    tree = LazyFolderTreeView(instance_name="FolderManagerTestSourceTree")
-    qtbot.addWidget(tree)
-    return tree
+def serve(name, roots, excluded=None, pattern=None):
+    SERVED[name] = FolderSettings(list(roots), set(excluded or ()), pattern)
+
+
+def scanned(panel, roots):
+    disk = panel.model.disk
+    return list(panel.model.roots or ()) == list(roots) and disk is not None and disk.finished and not panel.scanning
 
 
 def bind(qtbot, panel, roots):
-    tree = make_tree(qtbot)
-    panel.bind_folder_tree(tree, lambda: "test.db")
-    tree.set_folders(roots)
-    qtbot.waitUntil(lambda: panel.model.disk is not None and panel.model.disk.finished and not panel.scanning, timeout=5000)
-    return tree
+    serve("test", roots)
+    panel.set_database("test")
+    qtbot.waitUntil(lambda: scanned(panel, roots), timeout=5000)
 
 
 @pytest.fixture
@@ -106,8 +166,8 @@ def finished_on_main(threads):
 
 def gated_walk(monkeypatch, gated_roots):
     real_walk = widget_module.walk_disk
-    release = threading.Event()
-    delivered = threading.Event()
+    release = gate()
+    delivered = gate()
 
     def walk(roots, excluded, ignore_pattern_re, cancel, on_batch, batch_size=256):
         if list(roots) != gated_roots:
@@ -140,48 +200,86 @@ def text_bar(text):
     return {"filter": "text", "params": {"keywords": text}, "op": None, "enabled": True}
 
 
-def test_state_round_trip_keeps_rules_and_columns(qtbot):
-    state = {
-        "rules": [
-            rule_dict("Mixed", "#1D9E75", conditions=(("files", ">=", 1), ("folders", ">=", 1))),
-            rule_dict("Cats", "#D85A30", bars=[text_bar("cat")], conditions=(("all_files", "<=", 3),), enabled=False),
-        ],
-        "columns": {"files": False, "all_files": True, "folders": True, "all_folders": True},
-    }
+def test_a_fresh_panel_starts_with_mixed_and_default_columns(qtbot):
     panel = FolderManagerWidget()
     qtbot.addWidget(panel)
-    panel.restore_state(state)
-    assert panel.save_state() == state
+    assert [rule.name for rule in panel.rules] == ["Mixed"]
+    assert panel.columns == DEFAULT_COLUMNS
+    assert [panel.view.isColumnHidden(column) for column in (1, 2, 3, 4)] == [False, False, False, True]
+    assert not hasattr(panel, "save_state") and not hasattr(panel, "restore_state")
+
+
+def test_a_new_panel_reads_the_shared_rules_and_columns(qtbot):
+    app_settings.save_immediate(RULES_KEY, [rule_dict("Cats", "#D85A30", bars=[text_bar("cat")])])
+    app_settings.save_immediate(COLUMNS_KEY, {"files": False, "all_folders": True})
+    panel = FolderManagerWidget()
+    qtbot.addWidget(panel)
+    assert [rule.name for rule in panel.rules] == ["Cats"]
     assert panel.view.isColumnHidden(1) and not panel.view.isColumnHidden(4)
 
-    other = FolderManagerWidget()
-    qtbot.addWidget(other)
-    other.restore_state(panel.save_state())
-    assert other.save_state() == state
-    assert [rule.name for rule in other.rules] == ["Mixed", "Cats"]
 
-
-def test_empty_state_starts_with_mixed_and_default_columns(qtbot):
+def test_rule_edits_are_saved_to_shared_settings(qtbot, immediate_save):
     panel = FolderManagerWidget()
     qtbot.addWidget(panel)
-    panel.restore_state({})
-    assert [rule.name for rule in panel.rules] == ["Mixed"]
-    assert panel.save_state()["columns"] == DEFAULT_COLUMNS
-    assert [panel.view.isColumnHidden(column) for column in (1, 2, 3, 4)] == [False, False, False, True]
+
+    panel.add_rule_button.click()
+    assert [rule.name for rule in load_rules()] == ["Mixed", "Rule 1"]
+
+    panel.rules[1].name = "Renamed"
+    panel.rule_list.rows[1].emit_edited()
+    assert [rule.name for rule in load_rules()] == ["Mixed", "Renamed"]
+
+    panel.rule_list.move_rule(1, 0)
+    assert [rule.name for rule in load_rules()] == ["Renamed", "Mixed"]
+
+    panel.rule_list.rows[0].remove_button.click()
+    assert [rule.name for rule in load_rules()] == ["Mixed"]
+
+    panel.toggle_column("all_folders")
+    assert load_columns()["all_folders"] is True and not panel.view.isColumnHidden(4)
 
 
-def test_restore_skips_malformed_rules_and_keeps_a_deliberate_empty_list(qtbot):
+def test_rule_edits_are_saved_once_after_a_pause(qtbot, monkeypatch):
+    saved = []
+    monkeypatch.setattr(widget_module, "save_rules", lambda rules: saved.append([rule.name for rule in rules]))
     panel = FolderManagerWidget()
     qtbot.addWidget(panel)
-    panel.restore_state({"rules": [{"color": "#000000"}, rule_dict("Kept", "#378ADD")]})
-    assert [rule.name for rule in panel.rules] == ["Kept"]
-    panel.restore_state({"rules": []})
-    assert panel.rules == []
-    panel.restore_state({"rules": [{"name": "Odd", "color": "#000", "bars": ["text", {"filter": "text", "params": "x"}]}], "columns": "all"})
-    assert [rule.name for rule in panel.rules] == ["Odd"] and panel.rules[0].bars == []
-    assert panel.save_state()["columns"] == DEFAULT_COLUMNS
-    panel.restore_state({"rules": "Mixed"})
-    assert [rule.name for rule in panel.rules] == ["Mixed"]
+    for _ in range(3):
+        panel.rule_list.rows[0].emit_edited()
+    assert saved == []
+    qtbot.waitUntil(lambda: saved == [["Mixed"]], timeout=2000)
+
+
+def test_remote_rule_changes_are_applied(qtbot, tmp_path, query_calls):
+    root = make_folders(tmp_path / "root", {"a": 1})
+    panel = make_panel(qtbot)
+    bind(qtbot, panel, [root])
+    qtbot.waitUntil(lambda: len(query_calls) == 1 and not panel.counting, timeout=5000)
+
+    app_settings.apply_remote({RULES_KEY: [rule_dict("Dogs", "#378ADD", bars=[text_bar("dog")])], COLUMNS_KEY: {"files": False, "all_folders": True}})
+
+    assert [rule.name for rule in panel.rules] == ["Dogs"]
+    assert [rule.name for rule, _counts in panel.model.rule_counts] == ["Dogs"]
+    assert panel.view.isColumnHidden(1) and not panel.view.isColumnHidden(4)
+    qtbot.waitUntil(lambda: query_calls[-1:] == [["dog"]] and not panel.counting, timeout=5000)
+    assert id(panel.rules[0]) in panel.counts
+
+
+def test_own_changes_are_not_echoed(qtbot, immediate_save, committed):
+    panel = FolderManagerWidget()
+    qtbot.addWidget(panel)
+
+    panel.add_rule_button.click()
+    rules = list(panel.rules)
+    QtCore.QCoreApplication.processEvents()
+    assert [list(update) for update in committed] == [[RULES_KEY]]
+    assert panel.rules == rules and all(a is b for a, b in zip(panel.rules, rules))
+
+    committed.clear()
+    app_settings.apply_remote({RULES_KEY: [rule_dict("Remote", "#378ADD")], COLUMNS_KEY: {"files": False}})
+    QtCore.QCoreApplication.processEvents()
+    assert [rule.name for rule in panel.rules] == ["Remote"]
+    assert committed == []
 
 
 def test_summary_of_an_empty_query_reads_every_file():
@@ -208,41 +306,140 @@ def test_scan_fills_disk_counts(qtbot, tmp_path, query_calls):
     assert panel.model.disk_text(root, 2) == "7"
 
 
-def test_switching_folders_discards_the_running_scan(qtbot, tmp_path, monkeypatch, query_calls):
+def test_set_database_reads_its_folder_settings_and_scans(qtbot, tmp_path, query_calls, served_folders):
+    root = make_folders(tmp_path / "root", {"": 1, "a": 2, "skip": 4})
+    serve("main", [root], excluded=[f"{root}/skip"])
+    panel = make_panel(qtbot)
+
+    panel.set_database("main")
+
+    qtbot.waitUntil(lambda: scanned(panel, [root]), timeout=5000)
+    assert [name for name, _thread in served_folders] == ["main"]
+    assert all(thread is not threading.main_thread() for _name, thread in served_folders)
+    assert panel.database_name == "main"
+    assert panel.database_path() == data_db_path("main")
+    assert panel.view.database_path == data_db_path("main")
+    assert panel.db_box.currentText() == "main"
+    assert load_last_database() == "main"
+    assert panel.model.disk.values(root) == FolderValues(1, 3, 1, 1)
+    qtbot.waitUntil(lambda: len(query_calls) == 1, timeout=5000)
+
+
+def test_switching_database_discards_the_previous_scan_and_counts(qtbot, tmp_path, monkeypatch, query_calls):
     first = make_folders(tmp_path / "first", {"": 1, "x": 1})
     second = make_folders(tmp_path / "second", {"": 2, "y": 1})
+    serve("first", [first])
+    serve("second", [second])
+    query_calls.sources = [f"{first}/f0.png", f"{second}/f0.png", f"{second}/f1.png"]
     real_walk = widget_module.walk_disk
-    release = threading.Event()
-    delivered = threading.Event()
+    real_count = widget_module.count_sources_by_folder
+    release = gate()
+    walk_started = gate()
+    walk_done = gate()
+    count_started = gate()
+    count_done = gate()
 
     def slow_walk(roots, excluded, ignore_pattern_re, cancel, on_batch, batch_size=256):
         if list(roots) == [first]:
+            walk_started.set()
             release.wait(5)
             on_batch([(first, [f"{first}/x"], 1), (f"{first}/x", [], 1)])
-            delivered.set()
+            walk_done.set()
             return
         real_walk(roots, excluded, ignore_pattern_re, cancel, on_batch, batch_size)
 
+    def slow_count(sources, roots, cancel):
+        if list(roots) == [first]:
+            count_started.set()
+            release.wait(5)
+            counts = real_count(sources, roots, cancel)
+            count_done.set()
+            return counts
+        return real_count(sources, roots, cancel)
+
     monkeypatch.setattr(widget_module, "walk_disk", slow_walk)
+    monkeypatch.setattr(widget_module, "count_sources_by_folder", slow_count)
     panel = make_panel(qtbot)
-    tree = make_tree(qtbot)
-    panel.bind_folder_tree(tree, lambda: "test.db")
-    tree.set_folders([first])
-    qtbot.waitUntil(lambda: panel.scanning)
-    tree.set_folders([second])
-    qtbot.waitUntil(lambda: panel.model.disk.finished and not panel.scanning, timeout=5000)
+    rule = panel.rules[0]
+    panel.set_database("first")
+    qtbot.waitUntil(lambda: walk_started.is_set() and count_started.is_set(), timeout=5000)
+
+    panel.set_database("second")
+    assert panel.model.disk is None and panel.counts == {}
+
+    qtbot.waitUntil(lambda: scanned(panel, [second]) and id(rule) in panel.counts, timeout=5000)
     release.set()
-    qtbot.waitUntil(delivered.is_set, timeout=5000)
+    qtbot.waitUntil(lambda: walk_done.is_set() and count_done.is_set(), timeout=5000)
+    QtCore.QCoreApplication.processEvents()
     QtCore.QCoreApplication.processEvents()
     assert set(panel.model.disk.nodes) == {second, f"{second}/y"}
-    assert panel.model.disk.finished
     assert panel.model.disk.values(second) == FolderValues(2, 3, 1, 1)
+    assert set(panel.counts[id(rule)]) == {second}
+    assert panel.database_name == "second" and load_last_database() == "second"
+
+
+def test_choosing_a_database_in_the_box_switches_to_it(qtbot, tmp_path, query_calls):
+    first = make_folders(tmp_path / "first", {"": 1})
+    second = make_folders(tmp_path / "second", {"": 2})
+    serve("first", [first])
+    serve("second", [second])
+    panel = make_panel(qtbot)
+    panel.set_database("first")
+    qtbot.waitUntil(lambda: scanned(panel, [first]), timeout=5000)
+    panel.db_box.addItem("second")
+
+    panel.db_box.setCurrentText("second")
+
+    qtbot.waitUntil(lambda: scanned(panel, [second]), timeout=5000)
+    assert panel.database_name == "second"
+
+
+def test_panel_without_databases_stays_empty(qtbot, monkeypatch, query_calls, served_folders):
+    monkeypatch.setattr(InstanceRegistry.instance(), "get_host_window", lambda: None)
+    monkeypatch.setattr(widget_module, "list_data_db_names", lambda: [])
+    panel = FolderManagerPlugin().create_widget()
+    qtbot.addWidget(panel)
+    panel.show()
+    qtbot.waitExposed(panel)
+
+    panel.refresh()
+    panel.on_db_content_updated("")
+    QtCore.QCoreApplication.processEvents()
+
+    assert panel.database_name == "" and panel.database_path() is None
+    assert panel.db_box.currentText() == ""
+    assert served_folders == [] and query_calls == []
+    assert panel.model.disk is None and not panel.scanning
+    assert panel.model.rowCount() == 0
+    panel.close()
+
+
+def test_notifications_follow_the_panel_database(qtbot, tmp_path, query_calls, immediate_flush, served_folders):
+    root = make_folders(tmp_path / "root", {"a": 1})
+    other = make_folders(tmp_path / "other", {"b": 1})
+    panel = make_panel(qtbot)
+    bind(qtbot, panel, [root])
+    qtbot.waitUntil(lambda: len(query_calls) == 1 and not panel.counting, timeout=5000)
+
+    panel.on_db_content_updated("some_other_db")
+    panel.on_folder_changed("some_other_db")
+    panel.on_files_changed("some_other_db", {"modified": [f"{root}/a/f0.png"], "removed": []})
+    QtCore.QCoreApplication.processEvents()
+    assert len(query_calls) == 1 and len(served_folders) == 1 and not panel.stale_parents
+
+    panel.on_db_content_updated("test")
+    qtbot.waitUntil(lambda: len(query_calls) == 2, timeout=5000)
+
+    serve("test", [other])
+    panel.on_folder_changed("test")
+    qtbot.waitUntil(lambda: scanned(panel, [other]), timeout=5000)
+    assert len(served_folders) == 2
 
 
 def test_editing_one_rule_recounts_only_that_rule(qtbot, tmp_path, query_calls):
     root = make_folders(tmp_path / "root", {"": 1})
     panel = make_panel(qtbot)
-    panel.restore_state({"rules": [rule_dict("One", "#1D9E75", bars=[text_bar("dog")]), rule_dict("Two", "#D85A30", bars=[text_bar("cat")])]})
+    panel.apply_rules([HighlightRule.from_dict(rule_dict("One", "#1D9E75", bars=[text_bar("dog")])), HighlightRule.from_dict(rule_dict("Two", "#D85A30", bars=[text_bar("cat")]))])
     bind(qtbot, panel, [root])
     qtbot.waitUntil(lambda: len(query_calls) == 2, timeout=5000)
     assert sorted(query_calls) == [["cat"], ["dog"]]
@@ -276,7 +473,7 @@ def test_full_scan_totals_are_computed_off_the_main_thread_and_swapped_in(qtbot,
 
     panel.refresh()
     assert panel.model.disk is first and first.values(root) == FolderValues(1, 4, 1, 2)
-    qtbot.waitUntil(lambda: not panel.scanning, timeout=5000)
+    qtbot.waitUntil(lambda: panel.model.disk is not first and not panel.scanning, timeout=5000)
     assert panel.model.disk is not first and panel.model.disk.finished
     assert panel.model.disk.values(root) == FolderValues(1, 4, 1, 2)
     assert finished_on_main(finish_threads) == []
@@ -306,9 +503,8 @@ def test_the_first_scan_shows_direct_counts_while_walking(qtbot, tmp_path, monke
     root = make_folders(tmp_path / "root", {"": 3, "a": 2})
     release, delivered = gated_walk(monkeypatch, [root])
     panel = make_panel(qtbot)
-    tree = make_tree(qtbot)
-    panel.bind_folder_tree(tree, lambda: "test.db")
-    tree.set_folders([root])
+    serve("test", [root])
+    panel.set_database("test")
     qtbot.waitUntil(lambda: panel.model.disk is not None and panel.model.disk.values(root) is not None, timeout=5000)
     assert panel.model.disk.values(root) == FolderValues(3, -1, 1, -1)
     release.set()
@@ -380,25 +576,13 @@ def test_parents_on_the_current_drive_root_stay_on_that_drive(qtbot):
     assert panel.nearest_known(f"{root}a/b") is None
 
 
-def test_notifications_for_another_db_are_ignored(qtbot, tmp_path, query_calls, immediate_flush):
-    root = make_folders(tmp_path / "root", {"a": 1})
-    panel = make_panel(qtbot)
-    bind(qtbot, panel, [root])
-    qtbot.waitUntil(lambda: len(query_calls) == 1, timeout=5000)
-    panel.on_db_content_updated("some_other_db")
-    QtCore.QCoreApplication.processEvents()
-    assert len(query_calls) == 1
-    panel.on_db_content_updated("")
-    qtbot.waitUntil(lambda: len(query_calls) == 2, timeout=5000)
-
-
 def test_updates_during_a_count_queue_one_more_count(qtbot, tmp_path, monkeypatch, query_calls, immediate_flush):
     root = make_folders(tmp_path / "root", {"a": 1})
     panel = make_panel(qtbot)
     bind(qtbot, panel, [root])
     qtbot.waitUntil(lambda: len(query_calls) == 1 and not panel.counting, timeout=5000)
-    started = threading.Event()
-    release = threading.Event()
+    started = gate()
+    release = gate()
     tokens = []
     real_count = widget_module.count_sources_by_folder
 
@@ -427,8 +611,8 @@ def test_editing_a_rule_restarts_its_running_count(qtbot, tmp_path, monkeypatch,
     panel = make_panel(qtbot)
     bind(qtbot, panel, [root])
     qtbot.waitUntil(lambda: len(query_calls) == 1 and not panel.counting, timeout=5000)
-    started = threading.Event()
-    release = threading.Event()
+    started = gate()
+    release = gate()
     tokens = []
     real_count = widget_module.count_sources_by_folder
 
@@ -467,9 +651,9 @@ def test_hidden_panel_waits_until_shown(qtbot, tmp_path, query_calls):
     root = make_folders(tmp_path / "root", {"a": 1})
     panel = FolderManagerWidget()
     qtbot.addWidget(panel)
-    tree = make_tree(qtbot)
-    panel.bind_folder_tree(tree, lambda: "test.db")
-    tree.set_folders([root])
+    serve("test", [root])
+    panel.set_database("test")
+    qtbot.waitUntil(lambda: panel.model.roots == [root], timeout=5000)
     QtCore.QCoreApplication.processEvents()
     assert panel.model.disk is None and query_calls == []
     panel.show()
@@ -525,8 +709,8 @@ def test_a_second_change_keeps_the_parents_of_the_first(qtbot, tmp_path, monkeyp
     bind(qtbot, panel, [root])
     disk = panel.model.disk
     real_list = widget_module.list_folder
-    entered = threading.Event()
-    release = threading.Event()
+    entered = gate()
+    release = gate()
 
     def list_folder(path, *args):
         if path == f"{root}/a" and not entered.is_set():
@@ -604,7 +788,7 @@ def test_column_menu_toggles_columns(qtbot):
     qtbot.addWidget(panel)
     panel.set_column_visible("all_folders", True)
     panel.set_column_visible("files", False)
-    assert panel.save_state()["columns"] == {"files": False, "all_files": True, "folders": True, "all_folders": True}
+    assert panel.columns == {"files": False, "all_files": True, "folders": True, "all_folders": True}
     assert panel.view.isColumnHidden(1) and not panel.view.isColumnHidden(4)
     assert len([item for item in panel.column_menu_items() if not isinstance(item, str)]) == 4
     assert Menu.session(panel).menu(panel.column_menu_items()).build() is not None
@@ -642,38 +826,57 @@ def test_panel_can_be_made_short(qtbot):
 
 
 class HostWindow:
-    def __init__(self, folder_view, database_path):
-        self.folder_view = folder_view
-        self.database_path = database_path
+    def __init__(self, database_name):
+        self.database_name = database_name
 
 
-def test_plugin_keeps_state_until_the_widget_exists(qtbot):
-    plugin = FolderManagerPlugin()
-    plugin.restore_ui_state({"rules": [], "columns": {"files": False}})
-    widget = plugin.create_widget()
+def test_plugin_opens_standalone_and_starts_on_the_host_database(qtbot, monkeypatch):
+    assert FolderManagerPlugin.STANDALONE_AVAILABLE is True
+    assert FolderManagerPlugin.STANDALONE_SIZE == (720, 900)
+    assert "save_ui_state" not in vars(FolderManagerPlugin) and "restore_ui_state" not in vars(FolderManagerPlugin)
+    monkeypatch.setattr(InstanceRegistry.instance(), "get_host_window", lambda: HostWindow("b"))
+    monkeypatch.setattr(widget_module, "list_data_db_names", lambda: ["a", "b"])
+    save_last_database("a")
+
+    widget = FolderManagerPlugin().create_widget()
     qtbot.addWidget(widget)
-    assert widget.rules == []
-    assert widget.columns["files"] is False
-    assert plugin.save_ui_state()["columns"]["files"] is False
+
+    assert widget.database_name == "b"
+    assert widget.db_box.currentText() == "b"
 
 
-def test_plugin_without_host_window_creates_unbound_widget(qtbot, monkeypatch):
+def test_plugin_without_host_starts_on_the_last_database(qtbot, monkeypatch):
     monkeypatch.setattr(InstanceRegistry.instance(), "get_host_window", lambda: None)
+    monkeypatch.setattr(widget_module, "list_data_db_names", lambda: ["a", "b"])
+    save_last_database("b")
+
     widget = FolderManagerPlugin().create_widget()
     qtbot.addWidget(widget)
-    assert widget.source_tree is None
+
+    assert widget.database_name == "b"
 
 
-def test_plugin_binds_host_folder_tree_and_db_path(qtbot, monkeypatch):
-    tree = make_tree(qtbot)
-    host = HostWindow(tree, "db.sqlite")
+def test_plugin_without_host_or_last_database_starts_on_the_first(qtbot, monkeypatch):
+    monkeypatch.setattr(InstanceRegistry.instance(), "get_host_window", lambda: None)
+    monkeypatch.setattr(widget_module, "list_data_db_names", lambda: ["a", "b"])
+
+    widget = FolderManagerPlugin().create_widget()
+    qtbot.addWidget(widget)
+
+    assert widget.database_name == "a"
+
+
+def test_show_in_tree_is_offered_only_when_the_window_shows_the_panel_database(qtbot, monkeypatch):
+    host = HostWindow("main")
     monkeypatch.setattr(InstanceRegistry.instance(), "get_host_window", lambda: host)
-    widget = FolderManagerPlugin().create_widget()
-    qtbot.addWidget(widget)
-    assert widget.source_tree is tree
-    assert widget.db_path_getter() == "db.sqlite"
-    host.database_path = "other.sqlite"
-    assert widget.db_path_getter() == "other.sqlite"
+    panel = FolderManagerWidget()
+    qtbot.addWidget(panel)
+    panel.set_database("main")
+    assert panel.view.show_in_tree_available()
+    host.database_name = "other"
+    assert not panel.view.show_in_tree_available()
+    monkeypatch.setattr(InstanceRegistry.instance(), "get_host_window", lambda: None)
+    assert not panel.view.show_in_tree_available()
 
 
 def test_expand_to_matches_only_looks_under_the_selected_folders(qtbot, tmp_path, monkeypatch, query_calls):

@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtWidgets
 
 from ....qt.common.dpi import dpix
+from ....core.logs import AppLogger
 from ....core.profiling import profiler
 from ....core.db.query import FileSearchEngine
 from ....plugin.query.composer import SearchComposer
@@ -154,6 +155,7 @@ class SearchContainer(QtWidgets.QWidget):
         self._key_store = KeyStore(self)
         self._last_paths = object()
         self._rows: list[FilterRow] = []
+        self._unavailable_bars: list[tuple[int, dict]] = []
         self._sort_name = "none"
         self._ascending = False
         self._tools_host = None
@@ -540,6 +542,8 @@ class SearchContainer(QtWidgets.QWidget):
                     "enabled": row.is_enabled(),
                 }
             )
+        for index, bar in self._unavailable_bars:
+            bars.insert(min(index, len(bars)), dict(bar))
         return bars
 
     def save_state(self) -> dict:
@@ -560,9 +564,14 @@ class SearchContainer(QtWidgets.QWidget):
                 row.setParent(None)
                 row.deleteLater()
             self._rows.clear()
-        for rd in bars or []:
-            filter_cls = filter_registry.get(rd.get("filter", "text"))
+            self._unavailable_bars.clear()
+        start = len(self._rows) + len(self._unavailable_bars)
+        for offset, rd in enumerate(bars or []):
+            name = rd.get("filter", "text")
+            filter_cls = filter_registry.get(name)
             if not filter_cls:
+                AppLogger.warning(f"Filter '{name}' is not available, so it is kept in the Workspace but not applied. Enable its extension to use it.")
+                self._unavailable_bars.append((start + offset, dict(rd)))
                 continue
             self._insert_row(len(self._rows), filter_cls, emit=False, params=rd.get("params") or {}, op=rd.get("op"), enabled=rd.get("enabled", True))
         self._update_op_visibility()

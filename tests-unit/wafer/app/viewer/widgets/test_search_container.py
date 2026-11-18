@@ -759,3 +759,31 @@ class TestAppliedRows:
 
         assert len(container._rows) == 1
         assert changed == [True]
+
+
+class TestUnavailableFilters:
+    def test_bars_of_unavailable_filters_survive_a_round_trip(self, qapp):
+        container = SearchContainer()
+        missing = {"filter": "not_installed", "params": {"value": 3}, "op": "OR", "enabled": True}
+        bars = [
+            {"filter": "text", "params": {"keywords": "first"}, "op": None, "enabled": True},
+            missing,
+            {"filter": "text", "params": {"keywords": "last"}, "op": "AND", "enabled": False},
+        ]
+
+        with patch("wafer.app.viewer.widgets.search_container.AppLogger.warning") as warning:
+            container.apply_bars(bars)
+
+        warning.assert_called_once()
+        assert len(container._rows) == 2
+        saved = container.get_bars()
+        assert [bar["filter"] for bar in saved] == ["text", "not_installed", "text"]
+        assert saved[1] == missing
+
+    def test_replacing_the_bars_drops_unavailable_ones(self, qapp):
+        container = SearchContainer()
+        container.apply_bars([{"filter": "not_installed", "params": {}}])
+
+        container.apply_bars([{"filter": "text", "params": {"keywords": "x"}}])
+
+        assert [bar["filter"] for bar in container.get_bars()] == ["text"]

@@ -1,5 +1,4 @@
 import threading
-import time
 
 from PySide6.QtCore import Qt, Slot, Signal, QObject, QRect, QTimer
 from PySide6.QtGui import QImage, QPainter, QCursor
@@ -256,8 +255,14 @@ class MpvGLOverlay(QOpenGLWidget):
             self.player.terminate()
             self.player = None
 
+    def dispose(self):
+        self.makeCurrent()
+        self.cleanup()
+        self.doneCurrent()
+        self.deleteLater()
 
-_IDLE_TIMEOUT = 60.0
+
+_IDLE_TIMEOUT_MS = 60_000
 
 
 class PlaybackSlotManager:
@@ -288,9 +293,10 @@ class PlaybackSlotManager:
         self._pending_hover_path = None
         self._appear_queue: list[tuple] = []
         self._appear_flushing = False
-        self._last_activity: float = 0.0
-        self._idle_timer: threading.Timer | None = None
-        self._idle_timer_lock = threading.Lock()
+        self._idle_timer = QTimer()
+        self._idle_timer.setSingleShot(True)
+        self._idle_timer.setInterval(_IDLE_TIMEOUT_MS)
+        self._idle_timer.timeout.connect(self._check_idle)
         self._cooled_down = False
         self._debounce_key = f"PlaybackSlotManager.hover.{id(self)}"
         if self._mpv_available:
@@ -380,36 +386,10 @@ class PlaybackSlotManager:
                 return True
         return any(v is overlay for v in self._appeared.values())
 
-    def _cancel_timer(self, timer: threading.Timer | None, wait: bool = False):
-        if timer is None:
-            return
-        timer.cancel()
-        if wait and timer.is_alive() and timer is not threading.current_thread():
-            timer.join(timeout=_IDLE_TIMEOUT + 1.0)
-
-    def _replace_idle_timer(self) -> threading.Timer | None:
-        timer = threading.Timer(_IDLE_TIMEOUT, self._check_idle)
-        timer.daemon = True
-        with self._idle_timer_lock:
-            previous = self._idle_timer
-            self._idle_timer = timer
-            timer.start()
-        return previous
-
-    def _cancel_idle_timer(self, wait: bool = False):
-        with self._idle_timer_lock:
-            timer = self._idle_timer
-            self._idle_timer = None
-        self._cancel_timer(timer, wait=wait)
-
     def _touch(self):
-        self._last_activity = time.monotonic()
-        previous = self._replace_idle_timer()
-        self._cancel_timer(previous, wait=True)
+        self._idle_timer.start()
 
     def _check_idle(self):
-        if time.monotonic() - self._last_activity < _IDLE_TIMEOUT:
-            return
         if any(True for _ in self._iter_active_overlays()):
             self._touch()
             return
@@ -419,7 +399,7 @@ class PlaybackSlotManager:
         if self._warm_cancel:
             self._warm_cancel.cancel()
         for overlay in self._pool:
-            overlay.cleanup()
+            overlay.dispose()
         self._pool.clear()
         for player in self._player_pool:
             player.terminate()
@@ -637,7 +617,7 @@ class PlaybackSlotManager:
 
     @profiler.profile
     def cleanup(self):
-        self._cancel_idle_timer(wait=True)
+        self._idle_timer.stop()
         if self._warm_cancel:
             self._warm_cancel.cancel()
         self._cancel_pending()

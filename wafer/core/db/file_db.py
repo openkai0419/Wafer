@@ -925,8 +925,7 @@ class FileDB:
     def _delete_collection_cur(self, cur, collector: str | None, sources: Sequence[str] | None, prefixes: Sequence[str] | None, *, drop_status: bool) -> tuple[int, int, int]:
         key_clause, key_arg = "", []
         if collector:
-            escaped = collector.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            key_clause, key_arg = " AND key LIKE ? ESCAPE '\\'", [f"{escaped}.%"]
+            key_clause, key_arg = " AND key LIKE ? ESCAPE '\\'", [f"{escape_like(collector)}.%"]
         child_clause = "source_extension = ?" if collector else "source_extension IS NOT NULL"
         child_arg = [collector] if collector else []
         cs_clause = " AND collector = ?" if collector else ""

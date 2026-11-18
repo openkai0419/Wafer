@@ -158,14 +158,23 @@ class FlorenceSettingsWidget(QtWidgets.QWidget):
     def _set_preview_path(self, path: str):
         self._current_path = path
         self._preview_btn.setEnabled(True)
+        self._dispatcher.post(lambda: self._load_preview_thumb(path))
+        self._on_preview_clicked()
+
+    def _load_preview_thumb(self, path: str):
         arr = image_loader_resolver.load(path, 512)
-        if arr is not None:
-            self._original_pixmap = QtGui.QPixmap.fromImage(numpy_to_qimage(arr))
-            self._update_thumb()
-        else:
+        qimage = numpy_to_qimage(arr) if arr is not None else None
+        self._dispatcher.invoke(lambda: self._show_preview_thumb(path, qimage))
+
+    def _show_preview_thumb(self, path: str, qimage: QtGui.QImage | None):
+        if path != self._current_path:
+            return
+        if qimage is None:
             self._original_pixmap = None
             self._thumb_label.setText(t("(no preview)"))
-        self._on_preview_clicked()
+            return
+        self._original_pixmap = QtGui.QPixmap.fromImage(qimage)
+        self._update_thumb()
 
     def _update_thumb(self):
         if self._original_pixmap is None:

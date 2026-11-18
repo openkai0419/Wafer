@@ -118,3 +118,27 @@ class TestPreviewDisplay:
         assert "highres" in output
         assert "pixai-tagger-v1.0" in w._output_group.title()
         assert "123" in w._output_group.title()
+
+
+class TestPreviewThumbnail:
+    def test_dropped_image_decodes_off_the_main_thread(self, qtbot, monkeypatch):
+        import threading
+
+        import numpy as np
+
+        from wafer.qt.common.thread import utility_pool
+
+        w = make_widget(qtbot)
+        threads = []
+
+        def fake_load(path, size):
+            threads.append(threading.current_thread())
+            return np.zeros((8, 16, 3), dtype=np.uint8)
+
+        monkeypatch.setattr("extensions.wd14.panel.image_loader_resolver.load", fake_load)
+        monkeypatch.setattr(w, "_on_preview_clicked", lambda: None)
+        w._set_preview_path("/a.png")
+        qtbot.waitUntil(lambda: w._original_pixmap is not None, timeout=5000)
+        assert w._dispatcher._pool is utility_pool
+        assert threads and threads[0] is not threading.main_thread()
+        assert w._original_pixmap.width() == 16

@@ -89,15 +89,9 @@ class GridPipeline(QtCore.QObject):
         cancel = CancelToken()
         self._active[index] = cancel
 
-        if plugin is not None:
-            if is_virtual_path(path):
-                self._dispatch_resolve(index, path, size, cancel)
-            elif isinstance(plugin, _WidgetGridPlugin):
-                plan = RenderPlan(source=path, path=path, resolved_path=path, handler=plugin)
-                self._dispatch_widget_render(index, plan, size, plugin, cancel)
-            else:
-                plan = RenderPlan(source=path, path=path, resolved_path=path, handler=plugin)
-                self._dispatch_image_load(index, plan, size, cancel)
+        if plugin is not None and not is_virtual_path(path):
+            plan = RenderPlan(source=path, path=path, resolved_path=path, handler=plugin)
+            self._dispatch_widget_render(index, plan, size, plugin, cancel)
         else:
             self._dispatch_resolve(index, path, size, cancel)
 
@@ -133,23 +127,6 @@ class GridPipeline(QtCore.QObject):
             plugin.render(widget, plan.resolved_path, size)
         if plugin.REQUIRE_THUMBNAIL:
             self._dispatch_thumbnail(index, plan, size, plugin, cancel)
-
-    def _dispatch_image_load(self, index, plan: RenderPlan, size, cancel):
-        path = plan.path
-        fkey = fullsize_key(path)
-        cached = self._cache.get_if_sufficient(fkey, size)
-        if cached is None:
-            cached = self._cache.get_if_sufficient(path, size)
-        if cached is not None:
-            widget = self._widget_lookup(index)
-            if widget is not None:
-                widget.set_image(cached, path)
-            return
-        self._render_dispatcher.post(
-            lambda: self._load_image(index, plan, size, grid_resolver.load, cancel),
-            priority=100,
-            cancel=cancel,
-        )
 
     def _load_image(self, index, plan: RenderPlan, size, load_fn, cancel):
         path = plan.path

@@ -182,7 +182,6 @@ class ShortcutManager(QtCore.QObject):
             QtCore.QEvent.KeyRelease,
             QtCore.QEvent.FocusOut,
             QtCore.QEvent.Hide,
-            QtCore.QEvent.WindowDeactivate,
         ):
             return False
         if not isinstance(obj, QtWidgets.QWidget):
@@ -249,9 +248,9 @@ class ShortcutManager(QtCore.QObject):
             if payload is not None and not suppress_commands:
                 self._exec(wid, payload, e)
             return False
-        if et in (QtCore.QEvent.FocusOut, QtCore.QEvent.Hide, QtCore.QEvent.WindowDeactivate):
+        target = self._widget_refs.get(wid)
+        if target is None or obj is target or obj.isAncestorOf(target):
             self._reset_states()
-            return False
         return False
 
     def _exec(self, wid: int, payload: CommandPayload, event: QtGui.QKeyEvent | None = None):

@@ -82,15 +82,7 @@ class KeyFilter:
 
     @classmethod
     def set_keys(cls, prefix: str, mode: str, keys: Iterable[str]) -> None:
-        if mode not in (MODE_BLACKLIST, MODE_WHITELIST):
-            mode = MODE_BLACKLIST
-        with _lock:
-            filters = dict(_config.load().get("filters") or {})
-            filters[prefix] = {"mode": mode, "keys": sorted(set(keys))}
-            _config.save(filters=filters)
-        cls.reload()
-        cls._broadcast_reload()
-        cls._notify(prefix)
+        cls._update(prefix, lambda _mode, _keys: (mode, keys))
 
     @classmethod
     def set_key_enabled(cls, prefix: str, key: str, enabled: bool) -> None:
@@ -100,15 +92,31 @@ class KeyFilter:
     def apply_key_states(cls, prefix: str, states: dict[str, bool]) -> None:
         if not states:
             return
-        mode, keys = cls.get(prefix)
-        in_set = mode == MODE_WHITELIST
-        new_keys = set(keys)
-        for key, enabled in states.items():
-            if enabled == in_set:
-                new_keys.add(key)
-            else:
-                new_keys.discard(key)
-        cls.set_keys(prefix, mode, new_keys)
+
+        def apply(mode: str, keys: frozenset[str]) -> tuple[str, set[str]]:
+            in_set = mode == MODE_WHITELIST
+            new_keys = set(keys)
+            for key, enabled in states.items():
+                if enabled == in_set:
+                    new_keys.add(key)
+                else:
+                    new_keys.discard(key)
+            return mode, new_keys
+
+        cls._update(prefix, apply)
+
+    @classmethod
+    def _update(cls, prefix: str, change: Callable[[str, frozenset[str]], tuple[str, Iterable[str]]]) -> None:
+        with _lock:
+            filters = dict(_config.load().get("filters") or {})
+            mode, keys = change(*_normalize(filters).get(prefix, (MODE_BLACKLIST, frozenset())))
+            if mode not in (MODE_BLACKLIST, MODE_WHITELIST):
+                mode = MODE_BLACKLIST
+            filters[prefix] = {"mode": mode, "keys": sorted(set(keys))}
+            _config.save(filters=filters)
+            cls._cache = _normalize(filters)
+        cls._broadcast_reload()
+        cls._notify(prefix)
 
     @classmethod
     def read_sort(cls) -> tuple[int, bool]:

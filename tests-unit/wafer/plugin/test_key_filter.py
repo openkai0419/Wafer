@@ -162,3 +162,15 @@ class TestReload:
         KeyFilter._cache = None
         KeyFilter.reload()
         assert KeyFilter.get("exif") == (MODE_WHITELIST, frozenset({"a"}))
+
+
+class TestOtherProcessWrites:
+    def test_apply_key_states_keeps_keys_another_viewer_blocked(self):
+        KeyFilter.get("exif")
+        from wafer.plugin.config import PluginConfig
+
+        PluginConfig("key_filter", {"filters": {}}).save(filters={"exif": {"mode": MODE_BLACKLIST, "keys": ["other_viewer"]}})
+        KeyFilter.apply_key_states("exif", {"mine": False})
+
+        KeyFilter.reload()
+        assert KeyFilter.get("exif") == (MODE_BLACKLIST, frozenset({"other_viewer", "mine"}))

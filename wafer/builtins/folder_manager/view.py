@@ -311,6 +311,8 @@ class FolderManagerTreeView(LazyFolderTreeView):
             spec.exec()
 
     def rule_file_actions(self) -> list:
+        if not self.database_name:
+            return []
         actions = []
         labels = set()
         for number, rule in enumerate(self.rules_source()):
@@ -334,10 +336,8 @@ class FolderManagerTreeView(LazyFolderTreeView):
         return actions
 
     def run_rule_file_action(self, ctx, entries: list[tuple], command_id: str, recursive: bool) -> None:
-        if not self.database_name:
-            return
         db_path = data_db_path(self.database_name)
-        run_on_folder_files(ctx, command_id, lambda folders: query_folder_sources(db_path, folders, recursive, entries))
+        run_on_folder_files(ctx, command_id, lambda folders, cancel: query_folder_sources(db_path, folders, recursive, entries))
 
     def expand_folders(self, folders: Sequence[str], on_complete: Callable[[], None] | None = None, channel: str = "expand") -> None:
         batch_size = EXPAND_RECURSIVE_BATCH_SIZE

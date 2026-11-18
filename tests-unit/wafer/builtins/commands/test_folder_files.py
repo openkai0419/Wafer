@@ -170,4 +170,46 @@ def test_disk_files_of_a_missing_folder_are_empty_and_logged(tmp_path, monkeypat
     warnings = []
     monkeypatch.setattr(folder_files_module.AppLogger, "warning", warnings.append)
     assert disk_files([str(tmp_path / "gone")], recursive=True) == []
-    assert len(warnings) == 1
+    assert len(warnings) == 1 and "no longer exists" in warnings[0]
+
+
+def test_disk_files_skip_a_broken_folder_symlink(tmp_path):
+    root = write_files(tmp_path / "root", "a.png")
+    gone = tmp_path / "gone"
+    gone.mkdir()
+    try:
+        os.symlink(gone, root / "broken_link", target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlinks need privileges here: {exc}")
+    gone.rmdir()
+    assert sorted(disk_files([str(root)], recursive=True)) == norm(root / "a.png")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="junctions are a Windows feature")
+def test_disk_files_skip_a_broken_junction(tmp_path):
+    root = write_files(tmp_path / "root", "a.png")
+    gone = tmp_path / "gone"
+    gone.mkdir()
+    make_junction(root / "junction", gone)
+    gone.rmdir()
+    assert sorted(disk_files([str(root)], recursive=True)) == norm(root / "a.png")
+
+
+class CancelAfter:
+    def __init__(self, checks):
+        self.checks = checks
+
+    def is_cancelled(self):
+        self.checks -= 1
+        return self.checks < 0
+
+
+def test_a_cancelled_disk_walk_stops_and_returns_nothing(tmp_path, monkeypatch):
+    root = write_files(tmp_path / "root", "a.png", *(f"sub{n}/b.png" for n in range(5)))
+    listed = []
+    real_scandir = os.scandir
+    monkeypatch.setattr(folder_files_module.os, "scandir", lambda path: listed.append(path) or real_scandir(path))
+
+    assert disk_files([str(root)], recursive=True, cancel=CancelAfter(1)) == []
+    assert len(listed) == 1
+    assert len(disk_files([str(root)], recursive=True, cancel=CancelAfter(100))) == 6

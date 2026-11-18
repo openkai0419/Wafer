@@ -220,7 +220,7 @@ def test_context_menu_separates_disk_files_from_each_rule_with_a_query(qtbot, tm
         ctx = Context.create_menu_context(view, view.binding_scope(), extras={"paths": [root]})
         action.func(ctx)
     assert [(paths, command_id) for paths, command_id, _collect in runs] == [([root], "file.cut"), ([root], "file.copy"), ([root], "file.cut"), ([root], "file.copy")]
-    assert [collect([root]) for _paths, _command_id, collect in runs] == [["hit.png"]] * 4
+    assert [collect([root], None) for _paths, _command_id, collect in runs] == [["hit.png"]] * 4
     entries = queried.filter_entries()
     assert queried_calls == [(data_db_path("main"), [root], recursive, entries) for recursive in (False, False, True, True)]
     view.close()
@@ -234,6 +234,7 @@ def test_rule_names_never_reach_translation(qtbot, tmp_path, monkeypatch, text_f
     original_t = menu_builder.t
     monkeypatch.setattr(menu_builder, "t", lambda text, **kwargs: (translated.append(text), original_t(text, **kwargs))[1])
     view, _root = make_view(qtbot, tmp_path)
+    view.database_name = "main"
     bar = {"filter": "text", "params": {"q": "cat"}, "op": "and", "enabled": True}
     view.set_rules_source(lambda: [rule("Secret Rule Name", "#111111", ("files", ">=", 1), bars=[bar])])
 
@@ -249,6 +250,7 @@ def test_rule_names_never_reach_translation(qtbot, tmp_path, monkeypatch, text_f
 
 def test_rule_actions_keep_empty_and_duplicate_names_distinct(qtbot, tmp_path, text_filter):
     view, _root = make_view(qtbot, tmp_path)
+    view.database_name = "main"
     bar = {"filter": "text", "params": {"q": "cat"}, "op": "and", "enabled": True}
     view.set_rules_source(
         lambda: [
@@ -324,6 +326,16 @@ def test_context_carries_the_panel_database(qtbot, tmp_path):
     assert "database_path" not in context
     assert context["path"] == root
     view.close()
+
+
+def test_rule_rows_need_the_panel_database(qtbot, tmp_path, text_filter):
+    view, _root = make_view(qtbot, tmp_path)
+    bar = {"filter": "text", "params": {"q": "cat"}, "op": "and", "enabled": True}
+    view.set_rules_source(lambda: [rule("Cats", "#111111", ("files", ">=", 1), bars=[bar])])
+
+    assert view.rule_file_actions() == []
+    view.database_name = "main"
+    assert len(view.rule_file_actions()) == 6
 
 
 def test_rules_whose_query_matches_every_file_add_no_actions(qtbot, tmp_path, text_filter):

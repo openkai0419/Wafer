@@ -1,6 +1,7 @@
 import os
 import stat
 from collections.abc import Sequence
+from typing import Protocol
 
 from wafer.builtins.filters import DirectoryFilter
 from wafer.builtins.sorts import NoSort
@@ -9,6 +10,10 @@ from wafer.core.db.db_utils import open_readonly
 from wafer.core.db.query import ALL_PATHS_SQL, FileSearchEngine
 from wafer.core.logs import AppLogger
 from wafer.plugin.query.composer import SearchComposer
+
+
+class Cancellable(Protocol):
+    def is_cancelled(self) -> bool: ...
 
 
 def narrows(filter_entries: Sequence[tuple]) -> bool:
@@ -55,15 +60,17 @@ def query_folder_sources(db_path: str, folders: Sequence[str], recursive: bool, 
     return [source for source in sources if source[: source.rfind("/") + 1] in prefixes]
 
 
-def is_real_folder(entry: os.DirEntry) -> bool:
-    return entry.is_dir(follow_symlinks=False) and getattr(entry.stat(follow_symlinks=False), "st_reparse_tag", 0) != stat.IO_REPARSE_TAG_MOUNT_POINT
+def is_junction(entry: os.DirEntry) -> bool:
+    return getattr(entry.stat(follow_symlinks=False), "st_reparse_tag", 0) == stat.IO_REPARSE_TAG_MOUNT_POINT
 
 
-def disk_files(folders: Sequence[str], recursive: bool) -> list[str]:
+def disk_files(folders: Sequence[str], recursive: bool, cancel: Cancellable | None = None) -> list[str]:
     found: dict[str, None] = {}
     pending = list(dict.fromkeys(normalize_path(folder) for folder in folders))
     walked: set[str] = set()
     while pending:
+        if cancel is not None and cancel.is_cancelled():
+            return []
         folder = pending.pop()
         if folder in walked:
             continue
@@ -71,10 +78,15 @@ def disk_files(folders: Sequence[str], recursive: bool) -> list[str]:
         try:
             with os.scandir(folder) as entries:
                 for entry in entries:
-                    if not entry.is_dir():
+                    if entry.is_symlink():
+                        if entry.is_file():
+                            found[normalize_path(entry.path)] = None
+                    elif not entry.is_dir(follow_symlinks=False):
                         found[normalize_path(entry.path)] = None
-                    elif recursive and is_real_folder(entry):
+                    elif recursive and not is_junction(entry):
                         pending.append(normalize_path(entry.path))
+        except FileNotFoundError:
+            AppLogger.warning(f"[Files in Folder] Skipped a folder that no longer exists: {normalize_path(folder)}")
         except OSError as exc:
-            AppLogger.warning(f"[Files in Folder] Skipped a folder that cannot be read: {normalize_path(folder)} ({exc})")
+            AppLogger.warning(f"[Files in Folder] Skipped a folder that could not be listed: {normalize_path(folder)} ({exc})")
     return list(found)

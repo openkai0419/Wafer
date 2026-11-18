@@ -274,7 +274,7 @@ class _FilesCtx(_FakeCtx):
 def _capture(monkeypatch, sources):
     calls = {"sources": [], "invoke": [], "notices": []}
 
-    def fake_disk_files(folders, recursive):
+    def fake_disk_files(folders, recursive, cancel=None):
         calls["sources"].append((list(folders), recursive))
         return list(sources)
 
@@ -305,6 +305,7 @@ def test_files_in_folder_commands_are_available_everywhere():
     assert [path for path in command_paths(FolderFilesCommands) if path in files] == files
     assert not set(files) & set(command_paths(FolderTreeCommands))
     assert "ft.show_in_tree" in command_paths(FolderTreeCommands)
+    assert command_paths(FolderFilesCommands)[0] == ":All files on disk"
     assert FolderTreeCommands.SCOPE != "*"
 
 
@@ -345,11 +346,45 @@ def test_direct_passes_recursive_false(qtbot, monkeypatch, tmp_path):
 def test_folder_files_are_collected_off_the_main_thread(qtbot, monkeypatch, tmp_path):
     calls = _capture(monkeypatch, [])
     threads = []
-    run_on_folder_files(_FilesCtx([str(tmp_path)]), "file.cut", lambda folders: threads.append((threading.current_thread(), folders)) or ["x.png"])
+    run_on_folder_files(_FilesCtx([str(tmp_path)]), "file.cut", lambda folders, cancel: threads.append((threading.current_thread(), folders)) or ["x.png"])
     qtbot.waitUntil(lambda: bool(calls["invoke"]), timeout=3000)
     assert threads[0][0] is not threading.main_thread()
     assert threads[0][1] == [normalize_path(str(tmp_path))]
     assert calls["invoke"] == [("file.cut", {"sources": ["x.png"], "paths": ["x.png"]})]
+
+
+def test_a_new_request_cancels_the_one_still_collecting(qtbot, monkeypatch, tmp_path):
+    calls = _capture(monkeypatch, [])
+    timers = capture_notice_timer(monkeypatch)
+    started, release = threading.Event(), threading.Event()
+    tokens = []
+
+    def slow(folders, cancel):
+        tokens.append(cancel)
+        started.set()
+        release.wait(5)
+        return ["old.png"]
+
+    run_on_folder_files(_FilesCtx([str(tmp_path)]), "file.cut", slow)
+    assert started.wait(5)
+    run_on_folder_files(_FilesCtx([str(tmp_path)]), "file.copy", lambda folders, cancel: ["new.png"])
+    qtbot.waitUntil(lambda: bool(calls["invoke"]), timeout=3000)
+    assert tokens[0].is_cancelled()
+    timers[0][1]()
+    release.set()
+    for _ in range(50):
+        qtbot.wait(10)
+    assert calls["invoke"] == [("file.copy", {"sources": ["new.png"], "paths": ["new.png"]})]
+    assert calls["notices"] == []
+
+
+def test_disk_requests_hand_their_cancel_token_to_the_walk(qtbot, monkeypatch, tmp_path):
+    seen = []
+    monkeypatch.setattr(foldertree_module, "disk_files", lambda folders, recursive, cancel=None: seen.append(cancel) or [])
+    monkeypatch.setattr(foldertree_module.Notifier, "info", lambda text: None)
+    run_on_disk_files(_FilesCtx([str(tmp_path)]), "file.cut", True)
+    qtbot.waitUntil(lambda: bool(seen), timeout=3000)
+    assert callable(getattr(seen[0], "is_cancelled", None)) and not seen[0].is_cancelled()
 
 
 def test_no_files_shows_notice_and_skips_command(qtbot, monkeypatch, tmp_path):

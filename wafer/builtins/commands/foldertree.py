@@ -7,7 +7,7 @@ from ...qt.commands.bridge import ActionKit, Command, Menu
 from ...core.lang.manager import t
 from ...core.common.paths import normalize_path
 from ...core.logs import AppLogger
-from ...qt.common.dispatcher import Dispatcher
+from ...qt.common.dispatcher import CancelSlot, CancelToken, Dispatcher
 from ...qt.common.notifier import Notifier
 from ...qt.common.thread import utility_pool
 from ...qt.widgets.dialogs import ConfirmDialog
@@ -116,32 +116,38 @@ def _files_dispatcher() -> Dispatcher:
     return _dispatcher
 
 
-def run_on_folder_files(ctx, command_id: str, collect: Callable[[list[str]], list[str]]) -> None:
+_files_slot = CancelSlot()
+
+
+def run_on_folder_files(ctx, command_id: str, collect: Callable[[list[str], CancelToken], list[str]]) -> None:
     folders = _ctx_normalized_paths(ctx)
     if not folders:
         return
     notify = ctx.get("notify") or Notifier.info
     dispatcher = _files_dispatcher()
+    token = _files_slot.renew()
     collecting = [True]
 
     def work():
-        sources = collect(folders)
-        dispatcher.invoke(lambda: finish(sources))
+        sources = collect(folders, token)
+        if not token.is_cancelled():
+            dispatcher.invoke(lambda: finish(sources))
 
     def finish(sources: list[str]) -> None:
         collecting[0] = False
-        _apply_to_sources(command_id, sources, notify)
+        if not token.is_cancelled():
+            _apply_to_sources(command_id, sources, notify)
 
     def notice() -> None:
-        if collecting[0]:
+        if collecting[0] and not token.is_cancelled():
             notify("Collecting files…")
 
-    dispatcher.post(work)
+    dispatcher.post(work, cancel=token)
     QtCore.QTimer.singleShot(COLLECTING_NOTICE_MS, notice)
 
 
 def run_on_disk_files(ctx, command_id: str, recursive: bool) -> None:
-    run_on_folder_files(ctx, command_id, lambda folders: disk_files(folders, recursive))
+    run_on_folder_files(ctx, command_id, lambda folders, cancel: disk_files(folders, recursive, cancel))
 
 
 def folder_items(path: str) -> list:
@@ -353,7 +359,7 @@ class FolderFilesCommands(ActionKit.MenuBase):
     @classmethod
     def commands(cls):
         return [
-            ":Files in Folder",
+            ":All files on disk",
             ActionKit.Command(path="ft.files.cut_direct", display="Cut direct files", func=cut_direct_files),
             ActionKit.Command(path="ft.files.copy_direct", display="Copy direct files", func=copy_direct_files),
             ActionKit.Command(path="ft.files.cut_all", display="Cut all files below", func=cut_all_files),

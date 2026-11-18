@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore
 
+from .....core.logs import AppLogger
 from .runtime import KeyNameResolver, KeySpec
 from .sequence import KeySequence
 
@@ -33,10 +34,10 @@ class ComboParser:
         return tuple(xs)
 
     def from_sequence(self, seq: KeySequence) -> KeyCombo:
-        tokens: list[int] = []
-        for key_name in seq.to_tuple():
-            tokens.append(self._resolver.to_key_code(self._resolver.normalize_token(key_name)))
-        xs = [t for t in tokens if t]
+        xs = [self._resolver.to_key_code(name) for name in seq.to_tuple()]
+        if not all(xs):
+            AppLogger.warning(f"Key binding ignored, unknown key name in '{seq}'. Reassign it in Key Bindings.")
+            return tuple()
         return self._validate(xs)
 
     def from_string(self, s: str) -> KeyCombo:

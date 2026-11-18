@@ -257,11 +257,11 @@ class KeyNameResolver:
         return key in self._allowed_keys
 
     def key_name(self, key: int, pretty: bool = False) -> str:
-        name = QtGui.QKeySequence(key).toString().replace("Ctrl+", "Control").replace("Meta+", "Meta")
-        if "+" in name:
-            name = name.split("+")[-1]
-        if pretty and name in self._pretty_names:
-            return self._pretty_names[name]
+        name = QtGui.QKeySequence(key).toString()
+        if pretty:
+            return self._pretty_names.get(name, name)
+        if key in self._allowed_keys and self.to_key_code(name) != key:
+            return QtCore.Qt.Key(key).name.removeprefix("Key_")
         return name
 
     def format_keys(self, keys: list[int], sep: str = "+", pretty: bool = False) -> str:

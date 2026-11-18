@@ -547,6 +547,50 @@ def test_list_debug_processes_sharing_matches_packages_realpath(fake_procs, tmp_
     assert _pids(AppProcess.list_debug_processes_sharing(str(packages))) == [1, 4]
 
 
+def test_list_debug_processes_sharing_resolves_relative_script_against_process_cwd(fake_procs, tmp_path, monkeypatch):
+    checkout = tmp_path / "a"
+    (checkout / "extensions" / ".packages").mkdir(parents=True)
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    monkeypatch.chdir(other)
+    fake_procs([[EXE, "main.py", "--profile", "debug-a"], [EXE, "main.py", "--profile", "debug-b"], [EXE, "main.py", "--profile", "debug-c"]])
+    procs = psutil.process_iter()
+    procs[0].cwd = lambda: str(checkout)
+    procs[1].cwd = lambda: str(other)
+
+    def denied():
+        raise psutil.AccessDenied(3)
+
+    procs[2].cwd = denied
+    assert _pids(AppProcess.list_debug_processes_sharing(str(checkout / "extensions" / ".packages"))) == [1]
+
+
+def test_list_debug_processes_sharing_skips_process_gone_while_reading_cwd(fake_procs, tmp_path):
+    (tmp_path / "extensions" / ".packages").mkdir(parents=True)
+    fake_procs([[EXE, "main.py", "--profile", "debug-a"]])
+    proc = psutil.process_iter()[0]
+
+    def gone():
+        raise psutil.NoSuchProcess(1)
+
+    proc.cwd = gone
+    assert AppProcess.list_debug_processes_sharing(str(tmp_path / "extensions" / ".packages")) == []
+
+
+def test_main_script_name_is_case_insensitive_on_windows(fake_procs):
+    fake_procs([[EXE, MAIN.replace("main.py", "Main.py"), "--profile", "debug-a"], [EXE, MAIN.replace("main.py", "MAIN.PY"), "--profile", "debug-a"]])
+    expected = [1, 2] if os.name == "nt" else []
+    assert _pids(AppProcess.list_profile_processes("debug-a")) == expected
+
+
+def test_list_profile_processes_rejects_invalid_profile(fake_procs):
+    fake_procs([[EXE, MAIN, "--tray"]])
+    with pytest.raises(ValueError):
+        AppProcess.list_profile_processes(None)
+    with pytest.raises(ValueError):
+        AppProcess.list_profile_processes("bad name")
+
+
 def test_base_command_carries_current_profile(monkeypatch):
     from wafer.core.common.profile import current_profile
 

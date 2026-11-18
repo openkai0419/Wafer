@@ -4,7 +4,7 @@ import sys
 import threading
 import psutil
 from ...constants import TRAY_LOCK_NAME
-from ..common.profile import PROFILE_ARG, PROFILE_PREFIX, current_profile, profile_args, profile_from_args
+from ..common.profile import PROFILE_ARG, PROFILE_PREFIX, current_profile, profile_args, profile_from_args, validate_profile_name
 from ..logs import AppLogger
 from .process_lock import SafeProcessLock
 
@@ -123,7 +123,7 @@ def _split_profile(args):
 
 
 def _is_main_script(arg):
-    return os.path.basename(arg) == "main.py"
+    return os.path.normcase(os.path.basename(arg)) == os.path.normcase("main.py")
 
 
 def _main_script_of(cmdline):
@@ -401,6 +401,7 @@ class AppProcess:
 
     @classmethod
     def list_profile_processes(cls, profile):
+        validate_profile_name(profile)
         procs = []
         for p, cmdline in cls._iter_cmdlines():
             if _main_script_of(cmdline) is None:
@@ -426,6 +427,11 @@ class AppProcess:
                 continue
             if profile is None or not profile.startswith(PROFILE_PREFIX):
                 continue
+            if not os.path.isabs(script):
+                try:
+                    script = os.path.join(p.cwd(), script)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
             packages = os.path.join(os.path.dirname(script), "extensions", ".packages")
             if ProcessMatcher._normalize_path(packages) == target:
                 procs.append(p)

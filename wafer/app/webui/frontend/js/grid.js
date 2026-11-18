@@ -164,7 +164,7 @@ export class Grid {
     } catch (e) {
       console.error(e);
     } finally {
-      this.pending.delete(page);
+      if (client === this.client) this.pending.delete(page);
     }
   }
 

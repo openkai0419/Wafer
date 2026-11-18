@@ -30,10 +30,6 @@ def test_resolve_plan_widget_plugin():
     assert plan.handler.NAME == Stub.NAME
 
 
-def test_is_widget_plugin_image():
-    assert viewer_resolver.is_widget_plugin("photo.jpg")
-
-
 def test_viewer_plugins_includes_registered(qtbot):
     plugins = viewer_resolver.viewer_plugins()
     for name, inst in plugins.items():

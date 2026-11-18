@@ -324,20 +324,6 @@ def has_post_install_hooks(plugins: list[tuple[str, type]]) -> bool:
     return any(hasattr(cls, "post_install") and cls.post_install.__func__ is not PluginBase.post_install.__func__ for _, cls in plugins)
 
 
-def install_extension(
-    plugin_dir: str,
-    extensions_dir: str,
-    on_progress=None,
-    is_cancelled=None,
-    on_phase=None,
-    on_log=None,
-) -> InstallResult:
-    result = install_requirements_only(plugin_dir, extensions_dir, on_progress=on_progress, is_cancelled=is_cancelled, on_phase=on_phase, on_log=on_log)
-    if not result.success or result.cancelled:
-        return result
-    return run_post_install(plugin_dir, extensions_dir, on_progress=on_progress, is_cancelled=is_cancelled, on_phase=on_phase, on_log=on_log, base_result=result)
-
-
 def install_requirements_only(
     plugin_dir: str,
     extensions_dir: str,
@@ -373,9 +359,8 @@ def run_post_install(
     is_cancelled=None,
     on_phase=None,
     on_log=None,
-    base_result: InstallResult | None = None,
 ) -> InstallResult:
-    result = base_result or InstallResult(success=True)
+    result = InstallResult(success=True)
 
     if is_cancelled and is_cancelled():
         result.cancelled = True

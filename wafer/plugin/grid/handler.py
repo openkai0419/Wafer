@@ -51,9 +51,6 @@ class GridResolver:
                 return plan
         raise LookupError(f"no grid plugin resolved: {path}")
 
-    def is_widget_plugin(self, path: str) -> bool:
-        return isinstance(self.resolve_plan(path).handler, WidgetGridPlugin)
-
     @profiler.profile
     def load(self, path: str, size: QtCore.QSize | None = None, *, enlarge: bool = True) -> QtGui.QImage | None:
         from ..imageloader.handler import image_loader_resolver

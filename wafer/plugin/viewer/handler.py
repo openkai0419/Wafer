@@ -28,9 +28,6 @@ class ViewerResolver:
                 return plan
         raise LookupError(f"no viewer plugin resolved: {path}")
 
-    def is_widget_plugin(self, path: str) -> bool:
-        return isinstance(self.resolve_plan(path).handler, WidgetViewerPlugin)
-
     def viewer_plugins(self) -> dict[str, WidgetViewerPlugin]:
         result = {}
         for p in self.registry.list_all():

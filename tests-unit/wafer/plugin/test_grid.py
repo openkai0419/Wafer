@@ -47,11 +47,6 @@ def test_image_loader_load_nonexistent():
     assert result is None
 
 
-def test_is_widget_plugin_image():
-    assert not grid_resolver.is_widget_plugin("photo.jpg")
-    assert not grid_resolver.is_widget_plugin("file.xyz")
-
-
 def test_load_thumbnail_api(tmp_path):
     from wafer.plugin.grid.handler import load_thumbnail
 
@@ -294,18 +289,6 @@ class TestWidgetNotifier:
         notifier, plugin = self._make_notifier()
         notifier.on_thumb_loaded(99, MagicMock(), MagicMock())
         plugin.on_thumb_loaded.assert_not_called()
-
-
-def test_imageloader_resolve_instance_by_path():
-    instance = image_loader_resolver.registry.resolve_instance("photo.jpg")
-    assert instance is not None
-    assert isinstance(instance, BaseImageLoader)
-
-
-def test_imageloader_resolve_instance_unknown():
-    from wafer.builtins.imageloader import SystemImageLoader
-
-    assert isinstance(image_loader_resolver.registry.resolve_instance("file.xyz"), SystemImageLoader)
 
 
 def test_resolve_chain_returns_priority_sorted():

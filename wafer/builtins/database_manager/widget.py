@@ -12,6 +12,7 @@ from ...core.common.paths import (
 from ...qt.theme import ThemeManager
 from ...core.lang.manager import t
 from ...core.db.setting_db import SettingDB
+from ...core.db.db_utils import delete_database_files
 from ..commands.database import create_database
 from ...qt.widgets.dialogs import ConfirmDialog, InputDialog
 from ...qt.common.dispatcher import Dispatcher
@@ -115,6 +116,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         self._dispatcher = Dispatcher(utility_pool)
         self._initial_paths: dict[str, tuple[list[str], list[str], list[str]]] = {}
         self._did_auto_select_current_db = False
+        self._deleted_db_names: set[str] = set()
 
         self._db_list = QtWidgets.QListWidget()
         self._db_list.setMinimumHeight(dpix(60))
@@ -246,7 +248,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         current = self._db_list.currentItem()
         current_name = current.text() if current else None
         self._db_list.clear()
-        names = list_setting_db_names()
+        names = [name for name in list_setting_db_names() if name not in self._deleted_db_names]
         for name in names:
             self._db_list.addItem(name)
         if current_name and current_name in names:
@@ -280,6 +282,7 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
             create_database(text)
 
             def _on_done():
+                self._deleted_db_names.discard(text)
                 self._refresh_db_list()
                 self._initial_paths[text] = ([], [], [])
                 items = self._db_list.findItems(text, QtCore.Qt.MatchExactly)
@@ -311,30 +314,29 @@ class DatabaseManagerWidget(QtWidgets.QWidget):
         node = InstanceRegistry.instance().resolve_node()
         if node:
             node.send_reliable("db.delete", db_name, dst="indexer", db=db_name)
-            self._initial_paths.pop(db_name, None)
-            AppLogger.info(f"[DatabaseManager] Deleted database: {db_name}")
-            self._refresh_db_list()
-        else:
+            self._forget_database(db_name)
+            return
 
-            def _remove_db_files():
-                import os
+        def _remove_db_files():
+            deleted = all([delete_database_files(data_db_path(db_name)), delete_database_files(setting_db_path(db_name))])
+            self._dispatcher.invoke(lambda: self._on_files_deleted(db_name, deleted))
 
-                for path in (data_db_path(db_name), setting_db_path(db_name)):
-                    if os.path.isfile(path):
-                        os.remove(path)
-                    for suffix in ("-wal", "-shm"):
-                        wal = path + suffix
-                        if os.path.isfile(wal):
-                            os.remove(wal)
+        self._dispatcher.post(_remove_db_files)
 
-                def _on_done():
-                    self._initial_paths.pop(db_name, None)
-                    AppLogger.info(f"[DatabaseManager] Deleted database: {db_name}")
-                    self._refresh_db_list()
+    def _on_files_deleted(self, db_name: str, deleted: bool):
+        if deleted:
+            self._forget_database(db_name)
+            return
+        AppLogger.warning(f"[DatabaseManager] Could not delete database {db_name}. Close the apps using it and try again.")
+        Notifier.warning(t("Could not delete database {name}", name=db_name))
+        self._refresh_db_list()
 
-                self._dispatcher.invoke(_on_done)
-
-            self._dispatcher.post(_remove_db_files)
+    def _forget_database(self, db_name: str):
+        self._deleted_db_names.add(db_name)
+        self._initial_paths.pop(db_name, None)
+        self._detail_widget.forget(db_name)
+        AppLogger.info(f"[DatabaseManager] Deleted database: {db_name}")
+        self._refresh_db_list()
 
     def has_changes(self) -> bool:
         return self._detail_widget.has_changes(self._initial_paths)
@@ -500,6 +502,11 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
         for pattern in ignore_patterns:
             self._ignore_pattern_list.addItem(pattern)
 
+    def forget(self, db_name: str):
+        self._buffers.pop(db_name, None)
+        if self._db_name == db_name:
+            self._db_name = None
+
     def has_changes(self, initial_paths: dict[str, tuple[list[str], list[str], list[str]]]) -> bool:
         self._save_current_to_buffer()
         for name, (buf_src, buf_ign, buf_ign_patterns) in self._buffers.items():
@@ -510,9 +517,13 @@ class _DatabaseDetailWidget(QtWidgets.QWidget):
 
     def commit(self, initial_paths: dict[str, tuple[list[str], list[str], list[str]]]) -> list[str]:
         self._save_current_to_buffer()
+        existing = set(list_setting_db_names())
         changed = []
         for name, (buf_src, buf_ign, buf_ign_patterns) in self._buffers.items():
             initial = initial_paths.get(name, ([], [], []))
+            if name not in existing:
+                AppLogger.warning(f"[DatabaseManager] Skipped saving paths for {name}: the database no longer exists")
+                continue
             if buf_src == initial[0] and buf_ign == initial[1] and buf_ign_patterns == initial[2]:
                 continue
             sdb = SettingDB(setting_db_path(name))

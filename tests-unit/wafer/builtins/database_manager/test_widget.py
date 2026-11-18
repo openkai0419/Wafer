@@ -164,6 +164,51 @@ class TestDatabaseManagerWidget:
 
         qtbot.waitUntil(lambda: not db_file.exists() and not setting_file.exists(), timeout=3000)
 
+    def _deletable_widget(self, qtbot, tmp_path, monkeypatch, node):
+        names = ["keep", "del_me"]
+        monkeypatch.setattr("wafer.builtins.database_manager.widget.list_setting_db_names", lambda: [n for n in names if (tmp_path / f"{n}.db").exists()])
+        monkeypatch.setattr("wafer.builtins.database_manager.widget.setting_db_path", lambda name: str(tmp_path / f"{name}.db"))
+        monkeypatch.setattr("wafer.builtins.database_manager.widget.data_db_path", lambda name: str(tmp_path / f"data_{name}.db"))
+        monkeypatch.setattr("wafer.builtins.database_manager.widget.ConfirmDialog.ask", staticmethod(lambda *a, **kw: "Delete"))
+        monkeypatch.setattr("wafer.qt.common.dispatcher.Dispatcher.post", lambda self, fn, **kw: fn())
+        monkeypatch.setattr("wafer.qt.common.dispatcher.Dispatcher.invoke", lambda self, fn: fn())
+        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
+
+        monkeypatch.setattr(InstanceRegistry.instance(), "resolve_node", lambda: node)
+        for name in names:
+            SettingDB(str(tmp_path / f"{name}.db")).add_parent_folder(f"/src/{name}")
+        from wafer.builtins.database_manager.widget import DatabaseManagerWidget
+
+        dlg = DatabaseManagerWidget()
+        qtbot.addWidget(dlg)
+        dlg._db_list.setCurrentRow(1)
+        return dlg
+
+    def test_deleted_database_is_not_recreated_on_save(self, qtbot, tmp_path, monkeypatch):
+        dlg = self._deletable_widget(qtbot, tmp_path, monkeypatch, MagicMock())
+        assert dlg._detail_widget._db_name == "del_me"
+
+        dlg._delete_database()
+        items = [dlg._db_list.item(i).text() for i in range(dlg._db_list.count())]
+        assert items == ["keep"]
+        (tmp_path / "del_me.db").unlink()
+
+        assert not dlg.has_changes()
+        dlg._on_save()
+        assert not (tmp_path / "del_me.db").exists()
+
+    def test_delete_failure_is_reported(self, qtbot, tmp_path, monkeypatch):
+        dlg = self._deletable_widget(qtbot, tmp_path, monkeypatch, None)
+        warnings = []
+        monkeypatch.setattr("wafer.builtins.database_manager.widget.delete_database_files", lambda path: False)
+        monkeypatch.setattr("wafer.builtins.database_manager.widget.Notifier.warning", warnings.append)
+
+        dlg._delete_database()
+
+        assert len(warnings) == 1
+        items = [dlg._db_list.item(i).text() for i in range(dlg._db_list.count())]
+        assert items == ["keep", "del_me"]
+
 
 class TestDatabaseDetailWidget:
     def test_add_source_folder(self, qtbot, tmp_path, monkeypatch):
@@ -487,6 +532,7 @@ class TestDatabaseDetailWidget:
             "wafer.builtins.database_manager.widget.setting_db_path",
             lambda name: sdb_path,
         )
+        monkeypatch.setattr("wafer.builtins.database_manager.widget.list_setting_db_names", lambda: ["test"])
         monkeypatch.setattr(
             "wafer.builtins.database_manager.widget.QtWidgets.QFileDialog.getExistingDirectory",
             staticmethod(lambda *a, **kw: new_folder),
@@ -502,6 +548,18 @@ class TestDatabaseDetailWidget:
         changed = widget.commit(initial)
         assert changed == ["test"]
         assert len(sdb.get_all_parent_folders()) == 1
+
+    def test_commit_skips_database_that_no_longer_exists(self, qtbot, tmp_path, monkeypatch):
+        monkeypatch.setattr("wafer.builtins.database_manager.widget.setting_db_path", lambda name: str(tmp_path / f"{name}.db"))
+        monkeypatch.setattr("wafer.builtins.database_manager.widget.list_setting_db_names", lambda: [])
+        from wafer.builtins.database_manager.widget import _DatabaseDetailWidget
+
+        widget = _DatabaseDetailWidget()
+        qtbot.addWidget(widget)
+        widget._buffers["gone"] = (["/src"], [], [])
+
+        assert widget.commit({}) == []
+        assert not (tmp_path / "gone.db").exists()
 
     def test_commit_skips_unchanged(self, qtbot, tmp_path, monkeypatch):
         sdb_path = str(tmp_path / "test.db")

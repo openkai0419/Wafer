@@ -122,6 +122,7 @@ class FlorenceCollector(BaseSingletonCollector):
         new_variant = self._settings.get("model_variant")
         self._hash_cache.clear()
         self._pixel_cache.clear()
+        self._engine_failed = False
         if old_variant != new_variant:
             with self._engine_lock:
                 self._engine = None

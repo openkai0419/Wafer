@@ -130,10 +130,9 @@ class _PluginRow(QtWidgets.QWidget):
 
     @staticmethod
     def _toggle_panel(panel_name: str):
-        from ...qt.commands.bridge import Command
+        from ..commands.panel import open_panel
 
-        slug = panel_name.lower().replace(" ", "_")
-        Command.run(f"panel.toggle_{slug}")
+        open_panel(name=panel_name, toggle=True)
 
 
 _BADGE_CONFIG: dict[ExtensionBadge, tuple[str, str | None]] = {

@@ -439,6 +439,16 @@ class TestPluginRowPanelButton:
         finally:
             panel_registry._plugins.pop("tp", None)
 
+    def test_toggle_panel_opens_by_display_name(self, monkeypatch):
+        from wafer.builtins.plugin_manager.extensions_tab import _PluginRow
+
+        calls = []
+        monkeypatch.setattr("wafer.builtins.commands.panel.open_panel", lambda ctx=None, name="", *, toggle=True: calls.append((name, toggle)))
+
+        _PluginRow._toggle_panel("My Panel")
+
+        assert calls == [("My Panel", True)]
+
     def test_panel_button_disabled_when_not_registered(self, qtbot):
         from wafer.builtins.plugin_manager.extensions_tab import _PluginRow
 

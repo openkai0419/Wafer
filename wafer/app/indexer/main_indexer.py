@@ -49,6 +49,7 @@ class IndexerProcess:
         self.parser_receiver = None
         self._progress = None
         self.parser_names: list[str] = []
+        self.stopped = False
         self.zmq = Node("indexer", db=name, consumer=True, broker_lost_timeout=BROKER_LOST_TIMEOUT)
         self.zmq.subscribe("cleanup", lambda msg: self.cleanup() or True)
         self.zmq.subscribe("rescan", lambda msg: self.rescan() or True)
@@ -515,10 +516,14 @@ class IndexerProcess:
         remove_orphan_databases()
         self.zmq.send("db.deleted", self.db_name, dst="viewer")
         self._stop_zmq()
+        self.stopped = True
         if self._stop_event:
             self._stop_event.set()
 
     def stop(self):
+        if self.stopped:
+            return
+        self.stopped = True
         AppLogger.info(f"indexer stop: {self.db_name}")
         self._stop_components()
         self._stop_zmq()

@@ -1104,6 +1104,25 @@ def test_find_sources_with_trigger_keys_from_tags(tmp_path):
     db.close()
 
 
+def test_find_sources_with_trigger_keys_returns_the_archive_for_its_entries(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    archive = "c:/a.zip"
+    entry = build_virtual_path(archive, "x.png")
+    db.upsert_basic_sources(
+        [(archive, "hash_zip", 100, 1.0)],
+        [(archive, archive, 1.0), (entry, archive, 1.0)],
+        [(entry, "exif.parameters", "steps:20", None)],
+    )
+    db.upsert_collection_results([], [], [(archive, "wd14.general", "cat", None)], [])
+
+    assert db.find_sources_with_trigger_keys(("exif.parameters", "wd14.general"), "sd_meta") == [archive]
+    db.insert_pending_collection([archive], ["sd_meta"])
+    assert db.find_sources_with_trigger_keys(("exif.parameters", "wd14.general"), "sd_meta") == []
+    db.close()
+
+
 def test_get_trigger_metadata(tmp_path):
     db = _setup_db_for_parser(tmp_path)
     meta = db.get_trigger_metadata(["src1", "src2"], ("exif.parameters",))

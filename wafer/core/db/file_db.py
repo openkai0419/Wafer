@@ -1292,18 +1292,18 @@ class FileDB:
             if meta_keys:
                 placeholders = ",".join(["?"] * len(meta_keys))
                 cur.execute(
-                    f"""SELECT DISTINCT mi.path FROM meta_info mi
+                    f"""SELECT i.source FROM meta_info mi
+                    JOIN files i ON i.path = mi.path
                     WHERE mi.key IN ({placeholders})
-                    AND mi.path NOT IN (
+                    AND i.source NOT IN (
                         SELECT cs.source FROM collection_status cs
                         WHERE cs.collector = ?
                     )
                     UNION
-                    SELECT DISTINCT i.path FROM tags t
+                    SELECT s.source FROM tags t
                     JOIN sources s ON s.file_hash = t.file_hash
-                    JOIN files i ON i.source = s.source
                     WHERE t.key IN ({placeholders})
-                    AND i.path NOT IN (
+                    AND s.source NOT IN (
                         SELECT cs.source FROM collection_status cs
                         WHERE cs.collector = ?
                     )""",

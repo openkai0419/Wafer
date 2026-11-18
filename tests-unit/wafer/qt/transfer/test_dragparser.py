@@ -1,5 +1,5 @@
 import os
-from PySide6 import QtCore
+from PySide6 import QtCore, QtGui
 
 from wafer.qt.transfer.dragparser import MimeDataParser, ParsedItem
 from wafer.core.platform.file_operations import FileSaver
@@ -60,6 +60,53 @@ def test_mimedata_parser_ignores_invalid_filegroupdescriptor(monkeypatch):
 
     assert parser.can_accept(mime) is True
     assert parser.parse(mime) == []
+
+
+def _descriptor(names: list[str], *, wide: bool) -> bytes:
+    record, codec = (592, "utf-16le") if wide else (332, "mbcs")
+    buf = bytearray(4 + record * len(names))
+    buf[0:4] = len(names).to_bytes(4, "little")
+    for i, name in enumerate(names):
+        encoded = name.encode(codec)
+        start = 4 + i * record + 72
+        buf[start : start + len(encoded)] = encoded
+    return bytes(buf)
+
+
+def test_filegroupdescriptor_reads_long_names_of_every_entry(monkeypatch):
+    monkeypatch.setattr("wafer.qt.transfer.dragparser.platform.system", lambda: "Windows")
+    long_name = "a" * 140 + ".png"
+    mime = QtCore.QMimeData()
+    mime.setData('application/x-qt-windows-mime;value="FileGroupDescriptorW"', QtCore.QByteArray(_descriptor([long_name, "b.png", "noext"], wide=True)))
+
+    items = MimeDataParser().parse(mime)
+
+    assert [item.name for item in items] == [long_name, "b.png", "noext"]
+
+
+def test_filegroupdescriptor_ansi_records_are_332_bytes(monkeypatch):
+    monkeypatch.setattr("wafer.qt.transfer.dragparser.platform.system", lambda: "Windows")
+    mime = QtCore.QMimeData()
+    mime.setData('application/x-qt-windows-mime;value="FileGroupDescriptor"', QtCore.QByteArray(_descriptor(["first.txt", "second.txt"], wide=False)))
+
+    items = MimeDataParser().parse(mime)
+
+    assert [item.name for item in items] == ["first.txt", "second.txt"]
+
+
+def test_image_data_is_encoded_as_png(qtbot):
+    image = QtGui.QImage(3, 2, QtGui.QImage.Format_ARGB32)
+    image.fill(QtGui.QColor(10, 20, 30))
+    mime = QtCore.QMimeData()
+    mime.setImageData(image)
+
+    items = MimeDataParser().parse(mime)
+
+    assert len(items) == 1
+    assert items[0].name == "image.png"
+    assert items[0].is_binary is True
+    decoded = QtGui.QImage.fromData(items[0].source, "PNG")
+    assert (decoded.width(), decoded.height()) == (3, 2)
 
 
 def test_file_saver_copies_and_moves_files_and_dirs(tmp_path):

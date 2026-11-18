@@ -34,9 +34,8 @@ class TestContainedFilesListOption:
         assert provider.mode == ListMode.FIX
         assert provider.open_contained_files_as_list is False
 
-    @patch.object(FileListProvider, "_has_contained_children", return_value=True)
     @patch.object(FileListProvider, "_query_contained_files")
-    def test_container_path_triggers_contained_query_when_enabled(self, mock_query, _mock_has_children, provider, file_model):
+    def test_container_path_triggers_contained_query_when_enabled(self, mock_query, provider, file_model):
         file_model._dbpath_getter = lambda: ":memory:"
         provider.set_open_contained_files_as_list(True)
 
@@ -63,15 +62,38 @@ class TestContainedFilesListOption:
         mock_query.assert_not_called()
         assert file_model.path() == "C:/data/temp.zip"
 
-    @patch.object(FileListProvider, "_query_contained_files")
-    def test_physical_non_container_sets_path_immediately(self, mock_query, provider, file_model):
+    def test_physical_file_is_checked_off_the_main_thread_and_opened_when_it_has_no_children(self, provider, file_model, monkeypatch):
         file_model._dbpath_getter = lambda: ":memory:"
         provider.set_open_contained_files_as_list(True)
+        engines = []
+        monkeypatch.setattr("wafer.app.viewer.preview.file_list_provider.FileSearchEngine", lambda dbpath: engines.append(MagicMock()) or engines[-1])
+        posted = []
+        monkeypatch.setattr(provider._dispatcher, "post", lambda fn, **kwargs: posted.append(fn))
+        monkeypatch.setattr(provider._dispatcher, "invoke", lambda fn: fn())
+        monkeypatch.setattr(provider._composer, "execute", lambda *a: ([], [], []))
+
+        provider.on_file_set("C:/data/plain.png")
+
+        assert engines == []
+        assert file_model.path() is None
+        posted[0]()
+        assert file_model.path() == "C:/data/plain.png"
+        engines[0].close.assert_called_once_with()
+
+    def test_a_failed_contained_query_still_opens_the_file(self, provider, file_model, monkeypatch):
+        file_model._dbpath_getter = lambda: ":memory:"
+        provider.set_open_contained_files_as_list(True)
+        monkeypatch.setattr(provider._dispatcher, "post", lambda fn, **kwargs: fn())
+        monkeypatch.setattr(provider._dispatcher, "invoke", lambda fn: fn())
+
+        def broken(*a):
+            raise RuntimeError("database is locked")
+
+        monkeypatch.setattr(provider._composer, "execute", broken)
 
         provider.on_file_set("C:/data/plain.png")
 
         assert file_model.path() == "C:/data/plain.png"
-        mock_query.assert_not_called()
 
     def test_on_contained_ready_sets_first_child_for_container(self, provider, file_model):
         archive = "C:/data/temp.zip"

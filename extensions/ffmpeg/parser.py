@@ -22,6 +22,14 @@ def _to_num(value: str) -> float | None:
         return None
 
 
+def _is_quarter_turn(stream: dict) -> bool:
+    rotation = next((side["rotation"] for side in stream.get("side_data_list", []) if "rotation" in side), None)
+    if rotation is None:
+        rotation = stream.get("tags", {}).get("rotate")
+    degrees = _to_num(rotation)
+    return degrees is not None and round(degrees) % 180 == 90
+
+
 def probe(path: str, ffprobe_path: str) -> dict | None:
     try:
         result = run_external(
@@ -86,6 +94,8 @@ def flatten(data: dict) -> tuple[dict[str, str], float | None]:
             if w and h:
                 meta["Width"] = str(w)
                 meta["Height"] = str(h)
+                if _is_quarter_turn(stream):
+                    w, h = h, w
                 try:
                     aspect = int(w) / int(h)
                 except (ValueError, ZeroDivisionError):

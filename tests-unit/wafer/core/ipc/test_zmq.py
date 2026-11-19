@@ -13,7 +13,7 @@ from wafer.core.common.profile import current_profile
 from wafer.core.ipc import transport
 from wafer.core.ipc.transport import Priority, close_socket
 from wafer.core.logs import AppLogger
-from wafer.core.ipc.broker import Broker, _CoalescingQueue, _PeerInfo
+from wafer.core.ipc.broker import DROP_WARN_INTERVAL, Broker, _CoalescingQueue, _PeerInfo
 from wafer.core.ipc.message import Message
 from wafer.core.ipc.node import Node
 from wafer.core.store.workspace import WindowSlot, WorkspaceStore
@@ -500,6 +500,34 @@ class TestFullPeer:
 
         assert len(caplog_applogger.warnings) == 2
         assert "6 message(s)" in caplog_applogger.warnings[1]
+
+    def test_drops_held_back_by_the_interval_are_reported_once_it_passes(self, broker, caplog_applogger):
+        broker._deliver_batch([(b"full", [b"x"])] * 4, False)
+        broker._report_drops(time.monotonic())
+        assert len(caplog_applogger.warnings) == 1
+
+        broker._report_drops(time.monotonic() + DROP_WARN_INTERVAL)
+
+        assert len(caplog_applogger.warnings) == 2
+        assert "3 message(s)" in caplog_applogger.warnings[1]
+
+    def test_drops_not_yet_reported_are_reported_when_the_peer_goes_away(self, broker, caplog_applogger):
+        broker._deliver_batch([(b"full", [b"x"])] * 3, False)
+
+        broker._unregister_peer(b"full")
+
+        assert "2 message(s)" in caplog_applogger.warnings[-1]
+
+    def test_a_drop_to_an_unregistered_peer_is_logged(self, broker, monkeypatch):
+        logged = []
+        monkeypatch.setattr("wafer.core.ipc.broker.debug_non_recursive", logged.append)
+
+        broker._deliver_batch([(b"stranger", [b"x"])], False)
+        broker._router.full.add(b"stranger")
+        broker._deliver_batch([(b"stranger", [b"x"])], False)
+
+        assert len(logged) == 1
+        assert "stranger" in logged[0]
 
 
 class TestStalledNode:

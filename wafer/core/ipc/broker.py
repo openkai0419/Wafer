@@ -197,7 +197,9 @@ class Broker:
             self._by_role.get(peer.role, set()).discard(ident)
             self._by_node_id.pop(peer.node_id, None)
             self._viewer_ids.pop(ident, None)
-            self._drops.pop(ident, None)
+            unreported, _ = self._drops.pop(ident, (0, None))
+            if unreported:
+                AppLogger.warning(f"broker: dropped {unreported} message(s) to {peer.node_id} before it went away")
             if peer.role == "viewer" or (peer.role == "webui" and peer.session_id):
                 self._on_restorable_peer_disconnected()
 
@@ -337,18 +339,28 @@ class Broker:
         return did_work
 
     def _note_drop(self, ident: bytes):
-        now = time.monotonic()
         with self._lock:
-            peer = self._peers.get(ident)
-            if peer is None:
-                return
-            count, last_warned = self._drops.get(ident, (0, None))
-            count += 1
-            if last_warned is not None and now - last_warned < DROP_WARN_INTERVAL:
-                self._drops[ident] = (count, last_warned)
-                return
-            self._drops[ident] = (0, now)
-        AppLogger.warning(f"broker: dropped {count} message(s) to {peer.node_id}, it is not reading them (busy or frozen)")
+            registered = ident in self._peers
+            if registered:
+                count, last_warned = self._drops.get(ident, (0, None))
+                self._drops[ident] = (count + 1, last_warned)
+        if not registered:
+            debug_non_recursive(f"broker: dropped a message to unregistered peer {ident!r}, it is not reading them")
+            return
+        self._report_drops(time.monotonic(), [ident])
+
+    def _report_drops(self, now: float, idents=None):
+        reports = []
+        with self._lock:
+            for ident in list(self._drops) if idents is None else idents:
+                peer = self._peers.get(ident)
+                count, last_warned = self._drops.get(ident, (0, None))
+                if peer is None or count == 0 or (last_warned is not None and now - last_warned < DROP_WARN_INTERVAL):
+                    continue
+                self._drops[ident] = (0, now)
+                reports.append((peer.node_id, count))
+        for node_id, count in reports:
+            AppLogger.warning(f"broker: dropped {count} message(s) to {node_id}, it is not reading them (busy or frozen)")
 
     def _drain_broadcasts(self) -> list[tuple[bytes, list[bytes]]]:
         return [(t, frames) for _key, (targets, frames) in self._broadcast_q.drain() for t in targets]
@@ -404,6 +416,7 @@ class Broker:
             for ident, node_id in stale:
                 AppLogger.info(f"pruning stale peer: {node_id}")
                 self._unregister_peer(ident)
+            self._report_drops(now)
             self._stop.wait(1)
 
     def set_workspace_store_factory(self, factory):

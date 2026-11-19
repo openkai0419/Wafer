@@ -56,6 +56,13 @@ class _FakePlatformDirs:
         self.user_config_dir = _FakePlatformDirs.base
 
 
+@pytest.fixture(autouse=True)
+def tooling_root(tmp_path, monkeypatch):
+    root = tmp_path / "Repo"
+    monkeypatch.setattr(profile_setup, "get_app_root_dir", lambda: root)
+    return root
+
+
 @pytest.fixture
 def app_data(tmp_path, monkeypatch):
     base = tmp_path / "appdata"
@@ -99,6 +106,30 @@ def test_main_root_of_worktree_and_nested_worktree(tmp_path):
     plain.mkdir()
     with pytest.raises(ValueError):
         profile_name_for(plain)
+
+
+def test_main_root_of_refuses_a_clone_the_tools_do_not_run_from(tmp_path):
+    make_checkout(tmp_path / "Repo")
+    other = make_checkout(tmp_path / "Other")
+    other_wt = make_checkout(other / ".claude" / "worktrees" / "task")
+    for checkout in (other, other_wt):
+        with pytest.raises(ValueError, match="not the Wafer checkout the debug tools run from"):
+            main_root_of(checkout)
+        with pytest.raises(ValueError, match="not the Wafer checkout the debug tools run from"):
+            profile_name_for(checkout)
+
+
+def test_tools_run_from_a_worktree_accept_its_main_checkout_and_sibling_worktrees(tmp_path, tooling_root, monkeypatch):
+    main_root = make_checkout(tooling_root)
+    own = make_checkout(main_root / ".claude" / "worktrees" / "own")
+    sibling = make_checkout(main_root / ".claude" / "worktrees" / "sibling")
+    monkeypatch.setattr(profile_setup, "get_app_root_dir", lambda: own)
+
+    assert profile_name_for(main_root) == "debug-main"
+    assert profile_name_for(own) == "debug-own"
+    assert profile_name_for(sibling) == "debug-sibling"
+    with pytest.raises(ValueError, match="not the Wafer checkout the debug tools run from"):
+        profile_name_for(make_checkout(tmp_path / "Other"))
 
 
 def test_schema_hash_changes_only_with_table_definitions(tmp_path):

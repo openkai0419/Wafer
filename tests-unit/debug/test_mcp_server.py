@@ -509,7 +509,9 @@ def test_rebuild_template_uses_launched_checkout(tmp_path, app_data, processes, 
     session = DebugSession()
     server = build_server(session)
 
-    first, second = make_checkout(tmp_path / "a"), make_checkout(tmp_path / "b")
+    first = make_checkout(tmp_path / "Repo")
+    second = make_checkout(first / ".claude" / "worktrees" / "b")
+    monkeypatch.setattr(profile_setup, "get_app_root_dir", lambda: first)
     assert "launch(checkout=...)" in tool_text(server, "rebuild_template")
     result = json.loads(tool_text(server, "rebuild_template", {"checkout": str(first)}))
     assert result == {"template": str(tmp_path / "template"), "progress": ["Sample template abc built"]}

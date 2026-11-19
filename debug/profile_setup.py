@@ -13,6 +13,7 @@ from typing import NamedTuple
 from wafer.app.indexer.scanner import files_in_scope
 from wafer.core.common.paths import (
     debug_profiles_dir,
+    get_app_root_dir,
     normalize_path,
     profile_config_root,
     profile_data_root,
@@ -79,17 +80,30 @@ def _real(path: Path) -> Path:
     return Path(os.path.realpath(path))
 
 
+def _is_worktree(path: Path) -> bool:
+    return _same_name(path.parent.name, "worktrees") and _same_name(path.parent.parent.name, ".claude")
+
+
+def _main_of(path: Path) -> Path:
+    return path.parent.parent.parent if _is_worktree(path) else path
+
+
+def tooling_main_root() -> Path:
+    return _main_of(_real(get_app_root_dir()))
+
+
 def main_root_of(checkout: Path) -> Path:
     path = _real(checkout)
     if not _is_checkout(path):
         raise ValueError(f"Not a Wafer checkout (main.py and wafer/ are required): {checkout}")
-    main = path
-    if _same_name(path.parent.name, "worktrees") and _same_name(path.parent.parent.name, ".claude"):
-        main = path.parent.parent.parent
-        if not _is_checkout(main):
-            raise ValueError(f"Worktree is not inside a Wafer checkout: {checkout}")
+    main = _main_of(path)
+    if _is_worktree(path) and not _is_checkout(main):
+        raise ValueError(f"Worktree is not inside a Wafer checkout: {checkout}")
     if any(_is_checkout(parent) for parent in main.parents):
         raise ValueError(f"Only the main checkout or one of its .claude/worktrees/<task> can be used, not a nested one: {checkout}")
+    tooling = tooling_main_root()
+    if not _same_name(str(main), str(tooling)):
+        raise ValueError(f"{checkout} is not the Wafer checkout the debug tools run from ({tooling}) or one of its .claude/worktrees/<task>; run the tools from that clone instead")
     return main
 
 

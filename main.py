@@ -49,7 +49,7 @@ def set_app_user_model_id(app_id):
     if sys.platform == 'win32':
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
-from wafer.core.common.profile import app_user_model_id, current_profile
+from wafer.core.common.profile import PROFILE_ARG, app_user_model_id, current_profile, validate_profile_name
 set_app_user_model_id(app_user_model_id(APP_ID, current_profile()))
 
 
@@ -284,7 +284,7 @@ def _entry_webui(args):
     finally:
         lock.release()
 
-def main():
+def build_parser():
     parser = argparse.ArgumentParser(description='Script with three run modes')
     parser.add_argument('--version', action='version', version=f'Wafer {__version__}')
     group = parser.add_mutually_exclusive_group()
@@ -306,8 +306,13 @@ def main():
     parser.add_argument('--no-tray', action='store_true', help='webui: do not spawn the tray process')
     parser.add_argument('--open-path', default=None, help='viewer --slot: file to open once the workspace is restored')
     parser.add_argument('--open-database', default=None, help='viewer --open-path: database to open the file in')
+    parser.add_argument(PROFILE_ARG, type=validate_profile_name, default=None, help='debug profile (debug-<name>) that keeps its own data, IPC and locks')
     parser.add_argument('path', nargs='?', help='file to open through the workspace picker')
-    args = parser.parse_args()
+    return parser
+
+
+def main():
+    args = build_parser().parse_args()
     if not any([args.tray, args.viewer, args.webui, args.indexer, args.collector, args.parser]):
         from wafer.app.viewer.workspace_launch import claim_workspace, first_restore_slot_id, is_openable_path, restore_session
         if args.path and is_openable_path(args.path):

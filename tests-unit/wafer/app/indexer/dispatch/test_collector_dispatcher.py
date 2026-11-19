@@ -214,7 +214,7 @@ def test_terminate_workers_requests_shutdown_before_fallback(tmp_path):
     dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress, plugins=["exif"])
     dispatcher._node = MagicMock()
 
-    with patch.object(dispatcher, "_wait_stopped", return_value=False), patch("wafer.app.indexer.dispatch.plugin_dispatcher.AppProcess.terminate_cmd") as terminate_cmd:
+    with patch.object(dispatcher, "_wait_stopped", return_value=["exif"]), patch("wafer.app.indexer.dispatch.plugin_dispatcher.AppProcess.terminate_cmd") as terminate_cmd:
         dispatcher._terminate_workers()
 
     dispatcher._node.send.assert_called_once_with(
@@ -234,7 +234,7 @@ def test_terminate_workers_skips_fallback_when_graceful_stop_succeeds(tmp_path):
     dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress, plugins=["exif"])
     dispatcher._node = MagicMock()
 
-    with patch.object(dispatcher, "_wait_stopped", return_value=True), patch("wafer.app.indexer.dispatch.plugin_dispatcher.AppProcess.terminate_cmd") as terminate_cmd:
+    with patch.object(dispatcher, "_wait_stopped", return_value=[]), patch("wafer.app.indexer.dispatch.plugin_dispatcher.AppProcess.terminate_cmd") as terminate_cmd:
         dispatcher._terminate_workers()
 
     dispatcher._node.send.assert_called_once()
@@ -293,3 +293,20 @@ def test_reset_stale_sends_again_what_a_lost_worker_held(capped_dispatcher):
         dispatcher._dispatch_pending()
 
     assert len(_sent_paths(dispatcher)) == cap * 2
+
+
+def test_start_keeps_the_process_of_each_per_indexer_worker(tmp_path):
+    per_indexer = collector_resolver.per_indexer_names()[0]
+    singleton = collector_resolver.singleton_names()[0]
+    dispatcher = CollectorDispatcher("testdb", tmp_path / "test.db", MagicMock(), MagicMock(), MagicMock(), plugins=[per_indexer, singleton], tray_pid=4242)
+    procs = {}
+
+    def launch(*args):
+        procs[args[3]] = MagicMock()
+        return procs[args[3]]
+
+    with patch("wafer.app.indexer.dispatch.plugin_dispatcher.AppProcess.new_main", side_effect=launch) as new_main:
+        dispatcher._start_workers()
+
+    assert dispatcher._worker_procs == {per_indexer: procs[per_indexer]}
+    assert new_main.call_args_list[1].args == ("--collector", "testdb", "--plugin", singleton, "--parent-pid", "4242")

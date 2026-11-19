@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import threading
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from ....core.platform.process import AppProcess
 from ..db_writer import DatabaseWriter
 from ..runtime.progress_aggregator import ProgressAggregator
 from ..runtime.scheduler import TaskScheduler
-from ..runtime.worker_shutdown import WORKER_SHUTDOWN_TIMEOUT, wait_worker_stopped
+from ..runtime.worker_shutdown import WORKER_SHUTDOWN_TIMEOUT, wait_workers_stopped
 
 _DISPATCH_INTERVAL = 2.0
 MAX_IN_FLIGHT_BATCHES = 4
@@ -46,6 +47,7 @@ class PluginDispatcher:
         self._stop = threading.Event()
         self._dispatch_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._worker_procs: dict[str, subprocess.Popen] = {}
         self._in_flight: dict[str, int] = {}
         self._in_flight_lock = threading.Lock()
         self._tag = f"[{type(self).__name__}]"
@@ -86,7 +88,7 @@ class PluginDispatcher:
         my_pid = str(os.getpid())
         singleton_parent = str(self._tray_pid) if self._tray_pid else my_pid
         for plugin in self._per_indexer:
-            self._launch(plugin, my_pid)
+            self._worker_procs[plugin] = self._launch(plugin, my_pid)
         for plugin in self._plugins:
             if plugin not in self._per_indexer:
                 self._launch(plugin, singleton_parent)
@@ -99,9 +101,8 @@ class PluginDispatcher:
     def _terminate_workers(self):
         for plugin in self._per_indexer:
             self._request_shutdown(plugin)
-        for plugin in self._per_indexer:
-            if not self._wait_stopped(plugin, WORKER_SHUTDOWN_TIMEOUT):
-                AppProcess.terminate_cmd(f"--{self.KIND}", self._db_name, "--plugin", plugin, recursive=True)
+        for plugin in self._wait_stopped(WORKER_SHUTDOWN_TIMEOUT):
+            AppProcess.terminate_cmd(f"--{self.KIND}", self._db_name, "--plugin", plugin, recursive=True)
         AppLogger.info(f"{self._tag} Terminated per-indexer {self.KIND}s for db={self._db_name}")
 
     def _request_shutdown(self, plugin: str):
@@ -114,8 +115,8 @@ class PluginDispatcher:
             db=self._db_name,
         )
 
-    def _wait_stopped(self, plugin: str, timeout: float) -> bool:
-        return wait_worker_stopped(self.KIND, self._db_name, plugin, timeout)
+    def _wait_stopped(self, timeout: float) -> list[str]:
+        return wait_workers_stopped(self.KIND, self._db_name, self._worker_procs, timeout)
 
     def _dispatch_loop(self):
         try:

@@ -14,7 +14,7 @@ from mcp.server.mcpserver import Image, MCPServer
 
 from debug import profile_setup
 from wafer.core.common.paths import profile_data_root
-from wafer.core.common.profile import PROFILE_ARG, TOOLS_PROFILE, current_profile
+from wafer.core.common.profile import PROFILE_ARG, TOOLS_PROFILE, current_profile, validate_profile_name
 from wafer.core.ipc.node import Node
 from wafer.core.logs import AppLogger
 from wafer.core.platform.process import AppProcess
@@ -111,31 +111,34 @@ class DebugSession:
             pid = profile_setup.launch_process(path, profile)
             with self._lock:
                 self.profile, self.checkout = profile, path
-            viewer = self._wait_for_viewer(LAUNCH_TIMEOUT)
+            viewer = self._wait_for_viewer(profile, LAUNCH_TIMEOUT)
         AppLogger.info(f"[debug-mcp] {profile} is up ({viewer})")
-        return {"profile": profile, "checkout": str(path), "pid": pid, "viewer": viewer, "processes": self._processes(), "progress": progress}
+        return {"profile": profile, "checkout": str(path), "pid": pid, "viewer": viewer, "processes": self._processes(profile), "progress": progress}
 
     def stop(self) -> dict:
         with self._lock:
-            self._require_running()
-            profile = self.profile
+            profile, _ = self._running()
+            self._require_running(profile)
             self._close_node()
             profile_setup.stop_profile(profile)
         return {"stopped": profile}
 
     def status(self) -> dict:
-        processes = self._require_running()
+        profile, checkout = self._running()
+        processes = self._require_running(profile)
         has_webui = any(p["role"] == "webui" for p in processes)
         return {
-            "profile": self.profile,
-            "checkout": str(self.checkout) if self.checkout else "",
+            "profile": profile,
+            "checkout": str(checkout) if checkout else "",
             "processes": processes,
-            "webui_url": self._webui_url() if has_webui else "",
-            "index": self._index_counts(),
+            "webui_url": self._webui_url(profile) if has_webui else "",
+            "index": self._index_counts(profile),
         }
 
     def rebuild_template(self, checkout: str = "") -> dict:
-        path = Path(checkout) if checkout else self.checkout
+        with self._lock:
+            launched = self.checkout
+        path = Path(checkout) if checkout else launched
         if path is None:
             raise DebugError("Pass checkout=... or call launch(checkout=...) first.")
         profile_setup.main_root_of(path)
@@ -149,25 +152,15 @@ class DebugSession:
         return {"template": str(target), "progress": progress}
 
     def call(self, op: str, args: dict, target: str | None, timeout: float) -> Any:
-        pid = self._resolve_target(target)
-        deadline = time.monotonic() + timeout
-        node = self._ensure_node()
-        if not node.wait_registered(timeout=timeout):
-            raise CallTimeout(TIMEOUT_MESSAGE.format(timeout=timeout))
-        remaining = max(deadline - time.monotonic(), 0.0)
-        reply = node.request(CALL_TOPIC, {"op": op, "args": args}, dst=f"{AGENT_ROLE}-{pid}", timeout=remaining)
-        if reply is None:
-            raise CallTimeout(TIMEOUT_MESSAGE.format(timeout=timeout))
-        payload = reply.payload if isinstance(reply.payload, dict) else {}
-        if not payload.get("ok"):
-            raise DebugError(f"{op} failed: {payload.get('error') or 'the agent sent no result'}")
-        return payload.get("result")
+        profile, _ = self._running()
+        return self._call(profile, op, args, target, timeout)
 
     def run_command(self, command_id: str, args: dict | None, target: str | None) -> dict:
-        started = self.call("run_command", {"id": command_id, "args": args}, target, CALL_TIMEOUT)
+        profile, _ = self._running()
+        started = self._call(profile, "run_command", {"id": command_id, "args": args}, target, CALL_TIMEOUT)
         deadline = time.monotonic() + MODAL_WAIT_SECONDS
         while True:
-            state = self.call("modal_state", {}, target, CALL_TIMEOUT)
+            state = self._call(profile, "modal_state", {}, target, CALL_TIMEOUT)
             if state:
                 return {**started, "modal": state.get("title")}
             if time.monotonic() >= deadline:
@@ -175,20 +168,21 @@ class DebugSession:
             time.sleep(POLL_SECONDS)
 
     def wait_idle(self, timeout: float, target: str | None) -> dict:
-        self._require_running()
+        profile, _ = self._running()
+        self._require_running(profile)
         started = time.monotonic()
         deadline = started + timeout
-        expected = self._sample_scope_count()
+        expected = self._sample_scope_count(profile)
         fast_answers = 0
         while True:
             remaining = max(deadline - time.monotonic(), POLL_SECONDS)
             try:
-                idle = self.call("idle", {}, target, min(CALL_TIMEOUT, remaining))
+                idle = self._call(profile, "idle", {}, target, min(CALL_TIMEOUT, remaining))
             except CallTimeout:
                 idle = None
             main_thread_ms = None if idle is None else float(idle["main_thread_ms"])
             fast_answers = fast_answers + 1 if main_thread_ms is not None and main_thread_ms < IDLE_MAIN_THREAD_MS else 0
-            index = profile_setup.sample_index_state(self.profile)
+            index = profile_setup.sample_index_state(profile)
             if fast_answers >= IDLE_FAST_ANSWERS and index.is_complete(expected):
                 return {"idle": True, "modal": idle["modal"], "waited": round(time.monotonic() - started, 1)}
             if time.monotonic() >= deadline:
@@ -196,14 +190,13 @@ class DebugSession:
             time.sleep(POLL_SECONDS)
 
     def tail_log(self, n: int, level: str) -> str:
-        if self.profile is None:
-            raise DebugError(NO_RUNNING_MESSAGE)
+        profile, _ = self._running()
         if n <= 0:
             raise DebugError(f"n must be positive, not {n}")
         minimum = level.upper()
         if minimum and minimum not in LOG_LEVELS:
             raise DebugError(f"Unknown level {level!r}: use one of {', '.join(LOG_LEVELS)}")
-        log_dir = profile_data_root(self.profile) / ".log"
+        log_dir = profile_data_root(validate_profile_name(profile)) / ".log"
         logs = list(log_dir.glob("*.log"))
         if not logs:
             raise DebugError(f"No log files in {log_dir}")
@@ -228,17 +221,37 @@ class DebugSession:
                 kept.append(line)
         return kept
 
-    def _sample_scope_count(self) -> int:
-        try:
-            return profile_setup.sample_scope_count(self.profile)
-        except (FileNotFoundError, profile_setup.SampleUnavailable) as e:
-            raise DebugError(f"Cannot tell whether {self.profile} finished indexing: {e}") from e
+    def _running(self) -> tuple[str, Path | None]:
+        with self._lock:
+            profile, checkout = self.profile, self.checkout
+        if profile is None:
+            raise DebugError(NO_RUNNING_MESSAGE)
+        return profile, checkout
 
-    def _processes(self) -> list[dict]:
-        if self.profile is None:
-            return []
+    def _call(self, profile: str, op: str, args: dict, target: str | None, timeout: float) -> Any:
+        pid = self._resolve_target(profile, target)
+        deadline = time.monotonic() + timeout
+        node = self._ensure_node(profile)
+        if not node.wait_registered(timeout=timeout):
+            raise CallTimeout(TIMEOUT_MESSAGE.format(timeout=timeout))
+        remaining = max(deadline - time.monotonic(), 0.0)
+        reply = node.request(CALL_TOPIC, {"op": op, "args": args}, dst=f"{AGENT_ROLE}-{pid}", timeout=remaining)
+        if reply is None:
+            raise CallTimeout(TIMEOUT_MESSAGE.format(timeout=timeout))
+        payload = reply.payload if isinstance(reply.payload, dict) else {}
+        if not payload.get("ok"):
+            raise DebugError(f"{op} failed: {payload.get('error') or 'the agent sent no result'}")
+        return payload.get("result")
+
+    def _sample_scope_count(self, profile: str) -> int:
+        try:
+            return profile_setup.sample_scope_count(profile)
+        except (FileNotFoundError, profile_setup.SampleUnavailable) as e:
+            raise DebugError(f"Cannot tell whether {profile} finished indexing: {e}") from e
+
+    def _processes(self, profile: str) -> list[dict]:
         processes = []
-        for proc in AppProcess.list_profile_processes(self.profile):
+        for proc in AppProcess.list_profile_processes(validate_profile_name(profile)):
             try:
                 role = _role_of(proc.cmdline())
             except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
@@ -247,34 +260,34 @@ class DebugSession:
             processes.append({"pid": proc.pid, "role": role, "target": f"{role}:{proc.pid}" if role in AGENT_ROLES else None})
         return processes
 
-    def _require_running(self) -> list[dict]:
-        processes = self._processes()
+    def _require_running(self, profile: str) -> list[dict]:
+        processes = self._processes(profile)
         if not processes:
             raise DebugError(NO_RUNNING_MESSAGE)
         return processes
 
-    def _resolve_target(self, target: str | None) -> int:
-        processes = self._require_running()
+    def _resolve_target(self, profile: str, target: str | None) -> int:
+        processes = self._require_running(profile)
         targets = [p["target"] for p in processes if p["target"]]
         if target is None:
             viewers = [p["pid"] for p in processes if p["role"] == "viewer"]
             if not viewers:
-                raise DebugError(f"{self.profile} has no Viewer; pass target= one of {targets}")
+                raise DebugError(f"{profile} has no Viewer; pass target= one of {targets}")
             return viewers[0]
         if target not in targets:
             raise DebugError(f"Unknown target {target!r}; use one of {targets} from status")
         return int(target.split(":", 1)[1])
 
-    def _wait_for_viewer(self, timeout: float) -> str:
+    def _wait_for_viewer(self, profile: str, timeout: float) -> str:
         deadline = time.monotonic() + timeout
-        node = self._ensure_node()
+        node = self._ensure_node(profile)
         while True:
-            processes = self._processes()
+            processes = self._processes(profile)
             if not processes:
-                raise DebugError(f"{self.profile} exited before its Viewer answered; see tail_log")
+                raise DebugError(f"{profile} exited before its Viewer answered; see tail_log")
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise DebugError(f"The Viewer of {self.profile} did not answer within {timeout:g}s; see tail_log")
+                raise DebugError(f"The Viewer of {profile} did not answer within {timeout:g}s; see tail_log")
             if node.wait_registered(timeout=min(PING_TIMEOUT, remaining)):
                 for viewer in (p for p in processes if p["role"] == "viewer"):
                     reply = node.request(CALL_TOPIC, {"op": "ping", "args": {}}, dst=f"{AGENT_ROLE}-{viewer['pid']}", timeout=min(PING_TIMEOUT, remaining))
@@ -282,12 +295,13 @@ class DebugSession:
                         return viewer["target"]
             time.sleep(POLL_SECONDS)
 
-    def _ensure_node(self) -> Node:
+    def _ensure_node(self, profile: str) -> Node:
+        validate_profile_name(profile)
         with self._lock:
-            if self._node is not None and self._node.profile != self.profile:
+            if self._node is not None and self._node.profile != profile:
                 self._close_node()
             if self._node is None:
-                self._node = Node(NODE_ROLE, profile=self.profile)
+                self._node = Node(NODE_ROLE, profile=profile)
                 self._node.start()
             return self._node
 
@@ -296,8 +310,8 @@ class DebugSession:
             self._node.stop()
             self._node = None
 
-    def _webui_url(self) -> str:
-        state = profile_data_root(self.profile) / ".temp" / "webui.json"
+    def _webui_url(self, profile: str) -> str:
+        state = profile_data_root(validate_profile_name(profile)) / ".temp" / "webui.json"
         if not state.is_file():
             return ""
         try:
@@ -307,8 +321,8 @@ class DebugSession:
             return ""
         return str(data.get("url", "")) if isinstance(data, dict) else ""
 
-    def _index_counts(self) -> dict:
-        index = profile_setup.sample_index_state(self.profile)
+    def _index_counts(self, profile: str) -> dict:
+        index = profile_setup.sample_index_state(profile)
         return {"sources": index.sources, "pending": index.unfinished}
 
 

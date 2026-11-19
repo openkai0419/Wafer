@@ -9,6 +9,7 @@ from collections.abc import Callable
 
 import zmq
 
+from ..common.profile import TOOLS_PROFILE, current_profile
 from ..logs import AppLogger
 from .transport import (
     APP_ID,
@@ -50,6 +51,8 @@ class Node:
         self.role = role
         self.db = db
         self.profile = resolve_profile(profile)
+        if self.profile is None and current_profile() == TOOLS_PROFILE:
+            raise RuntimeError(f"{role}: the {TOOLS_PROFILE} tooling never joins the normal Wafer's broker; pass the debug profile to talk to")
         self._port_file = port_file_for(self.profile)
         self.node_id = f"{role}-{os.getpid()}"
         self.session_id: str = ""

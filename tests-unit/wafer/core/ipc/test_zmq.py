@@ -1232,6 +1232,17 @@ class TestNodeJoinsOnlyItsOwnBroker:
             node.stop()
             fake.close()
 
+    def test_tooling_never_builds_a_node_for_the_normal_broker(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", [sys.argv[0], "--profile", "debug-tools"])
+        current_profile.cache_clear()
+        try:
+            with pytest.raises(RuntimeError, match="debug-tools"):
+                Node("debug", profile=None)
+            assert Node("debug", profile=DEBUG_PROFILE).profile == DEBUG_PROFILE
+            assert Node("debug").profile == "debug-tools"
+        finally:
+            current_profile.cache_clear()
+
     def test_node_follows_the_current_profile_when_omitted(self, running_as_debug_profile):
         broker = Broker()
         broker.start()

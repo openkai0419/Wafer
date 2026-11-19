@@ -583,6 +583,110 @@ def test_tools_answer_while_launch_prepares_the_profile(tmp_path, app_data, proc
     assert session.profile == PROFILE
 
 
+class LaunchInTheMiddle:
+    def __init__(self, tmp_path, processes, monkeypatch):
+        self.entered, self.release = threading.Event(), threading.Event()
+        self.thread: threading.Thread | None = None
+        self.roots: list = []
+        processes.extend([FakeProcess(70, profile="debug-other"), FakeProcess(71, "--webui", profile="debug-other")])
+
+        def ensure(path, *, fresh, on_progress):
+            self.entered.set()
+            assert self.release.wait(10)
+            return PROFILE
+
+        def launch(path, profile):
+            processes.append(FakeProcess(20))
+            return 20
+
+        real_root = mcp_server.profile_data_root
+        monkeypatch.setattr(mcp_server, "profile_data_root", lambda profile: self.roots.append(profile) or real_root(profile))
+        monkeypatch.setattr(profile_setup, "profile_name_for", lambda path: PROFILE)
+        monkeypatch.setattr(profile_setup, "stop_profile", lambda profile: None)
+        monkeypatch.setattr(profile_setup, "ensure_profile", ensure)
+        monkeypatch.setattr(profile_setup, "launch_process", launch)
+        self.session = DebugSession()
+        self.session.profile = "debug-other"
+        self.checkout = str(tmp_path)
+
+    def start_launch(self) -> None:
+        if self.thread is None:
+            self.thread = threading.Thread(target=lambda: self.session.launch(self.checkout))
+            self.thread.start()
+            assert self.entered.wait(10)
+            assert self.session.profile is None
+
+    def finish(self) -> None:
+        self.release.set()
+        if self.thread is not None:
+            self.thread.join(10)
+            assert not self.thread.is_alive()
+
+
+@pytest.fixture
+def launch_in_the_middle(tmp_path, app_data, processes, node, monkeypatch):
+    race = LaunchInTheMiddle(tmp_path, processes, monkeypatch)
+    yield race
+    race.finish()
+
+
+def launch_while_listing_processes(race, monkeypatch):
+    real_list = AppProcess.list_profile_processes
+
+    def list_then_launch(profile):
+        found = real_list(profile)
+        race.start_launch()
+        return found
+
+    monkeypatch.setattr(AppProcess, "list_profile_processes", list_then_launch)
+
+
+def test_status_during_a_launch_never_reads_the_normal_wafer(launch_in_the_middle, node, monkeypatch):
+    launch_while_listing_processes(launch_in_the_middle, monkeypatch)
+
+    status = launch_in_the_middle.session.status()
+
+    assert launch_in_the_middle.thread is not None
+    assert status["profile"] == "debug-other"
+    assert None not in launch_in_the_middle.roots
+    assert launch_in_the_middle.roots
+
+
+def test_a_call_during_a_launch_never_builds_a_node_without_a_profile(launch_in_the_middle, node, monkeypatch):
+    launch_while_listing_processes(launch_in_the_middle, monkeypatch)
+
+    launch_in_the_middle.session.call("get_state", {}, None, 5.0)
+
+    assert launch_in_the_middle.thread is not None
+    launch_in_the_middle.finish()
+    assert node.instances
+    assert None not in [n.profile for n in node.instances]
+
+
+def test_tail_log_during_a_launch_never_reads_the_normal_wafer(launch_in_the_middle, node):
+    race = launch_in_the_middle
+    log_dir = profile_data_root("debug-other") / ".log"
+    log_dir.mkdir(parents=True)
+    (log_dir / "viewer_70.log").write_text("2026-11-19 10:00:01,000 INFO other\n", encoding="utf-8")
+
+    class LaunchWhileReadingTheLevel(str):
+        def upper(self):
+            race.start_launch()
+            return str.upper(self)
+
+    assert race.session.tail_log(5, LaunchWhileReadingTheLevel("")) == "2026-11-19 10:00:01,000 INFO other"
+    assert race.thread is not None
+    assert race.roots == ["debug-other"]
+
+
+def test_helpers_refuse_to_work_without_a_profile(app_data, processes, node):
+    session = DebugSession()
+    for helper in (lambda: session._ensure_node(None), lambda: session._webui_url(None), lambda: session._index_counts(None), lambda: session._processes(None)):
+        with pytest.raises(ValueError):
+            helper()
+    assert node.instances == []
+
+
 def test_expected_input_errors_are_logged_as_info_and_unexpected_ones_as_warnings(tmp_path, app_data, processes, node, monkeypatch):
     logged = []
     monkeypatch.setattr(AppLogger, "info", staticmethod(lambda text: logged.append(("info", text, None))))

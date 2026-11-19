@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from collections.abc import Iterable
 
+from ...core.logs import AppLogger
 from ...core.common.paths import normalize_path
 from ...core.platform.file_operations import (
     MergeConflictItem,
@@ -13,6 +15,29 @@ from ...core.platform.file_operations import (
 from ...core.platform.path_utils import check_copy_conflict
 from ...core.lang.manager import t
 from ..widgets.dialogs import FileConflictDialog, FolderConflictDialog, SingleFileConflictDialog
+
+
+def _destination_key(path) -> str:
+    return os.path.normcase(os.path.abspath(str(path)))
+
+
+def _earlier_with_same_destination(plans: list) -> dict[int, list]:
+    seen: dict[str, list] = {}
+    earlier: dict[int, list] = {}
+    for p in plans:
+        dst = getattr(p, "dst_default", None)
+        if dst is None:
+            continue
+        same = seen.setdefault(_destination_key(dst), [])
+        if same:
+            earlier[int(getattr(p, "index", 0) or 0)] = list(same)
+        same.append(p)
+    return earlier
+
+
+def _landing_source(p) -> Path:
+    src = getattr(p, "src", None)
+    return Path(src) if src is not None else Path(getattr(p, "dst_default", ""))
 
 
 class ConflictResolver:
@@ -43,6 +68,8 @@ class ConflictResolver:
         same_path_items: list[tuple[int, object]] = []
         subpath_items: list[tuple[int, object]] = []
         no_conflict: list[tuple[int, object]] = []
+        self._earlier = _earlier_with_same_destination(plans)
+        self._decisions: dict[int, PasteDecision] = {}
 
         for p in plans:
             src = getattr(p, "src", None)
@@ -65,7 +92,7 @@ class ConflictResolver:
                     subpath_items.append((idx, p))
                     continue
 
-            if not bool(getattr(p, "conflict", False)):
+            if not (bool(getattr(p, "conflict", False)) or idx in self._earlier):
                 no_conflict.append((idx, p))
                 continue
 
@@ -79,10 +106,10 @@ class ConflictResolver:
         self._show_subpath_apply_all = len(subpath_items) > 1
         merge_scans = self._count_file_conflicts(file_conflicts, folder_conflicts)
 
-        decisions: dict[int, PasteDecision] = {}
+        decisions = self._decisions
 
         for idx, _ in no_conflict:
-            decisions[idx] = PasteDecision(mode="overwrite")
+            decisions[idx] = PasteDecision(mode="create")
 
         for idx, p in subpath_items:
             self._notify_subpath(getattr(p, "src", None))
@@ -92,21 +119,26 @@ class ConflictResolver:
             decisions[idx] = self._ask_same_path(getattr(p, "src", None))
 
         for idx, p in folder_conflicts:
+            occupants = self._occupants(idx, p)
+            if not occupants:
+                decisions[idx] = PasteDecision(mode="create")
+                continue
             src = Path(getattr(p, "src", ""))
-            dst = Path(getattr(p, "dst_default", ""))
-            dec = self._ask_folder(src, dst)
-            decisions[idx] = dec
+            decisions[idx] = self._ask_folder(src, occupants[-1], in_batch=self._in_batch(p, occupants))
 
         pending_merge_files: list[tuple[int, MergeConflictItem]] = []
         for idx, p in folder_conflicts:
             dec = decisions.get(idx)
             if self._overwrite_mode == "ask" and dec and dec.mode == "merge":
-                conflicts = merge_scans[idx] if idx in merge_scans else scan_merge_conflicts(Path(p.src), Path(p.dst_default))
+                conflicts = merge_scans[idx] if idx in merge_scans else self._scan_merge(p, self._occupants(idx, p))
                 pending_merge_files.extend((idx, c) for c in conflicts)
 
         for idx, p in file_conflicts:
+            occupants = self._occupants(idx, p)
+            if not occupants:
+                decisions[idx] = PasteDecision(mode="create")
+                continue
             src = getattr(p, "src", None)
-            dst = Path(getattr(p, "dst_default", ""))
             src_path = str(src) if src else ""
             name = str(getattr(src, "name", "") or getattr(p, "name", "") or "")
             src_bytes = None
@@ -114,8 +146,7 @@ class ConflictResolver:
                 item = getattr(p, "parsed_item", None)
                 if item and getattr(item, "is_binary", False):
                     src_bytes = getattr(item, "source", None)
-            dec = self._ask_file(src_path, str(dst), name, src_bytes)
-            decisions[idx] = dec
+            decisions[idx] = self._ask_file(src_path, str(occupants[-1]), name, src_bytes, in_batch=self._in_batch(p, occupants))
 
         for idx, conflict in pending_merge_files:
             dec = self._ask_file(str(conflict.src), str(conflict.dst), conflict.src.name, None)
@@ -126,6 +157,30 @@ class ConflictResolver:
 
         return decisions
 
+    def _occupants(self, idx: int, p) -> list[Path]:
+        dst = Path(getattr(p, "dst_default", ""))
+        occupants = [dst] if bool(getattr(p, "conflict", False)) else []
+        for earlier in self._earlier.get(idx, ()):
+            dec = self._decisions.get(int(getattr(earlier, "index", 0) or 0))
+            mode = dec.mode if dec else "create"
+            if mode in ("create", "overwrite"):
+                occupants = [_landing_source(earlier)]
+            elif mode == "merge":
+                occupants.append(_landing_source(earlier))
+        return occupants
+
+    @staticmethod
+    def _in_batch(p, occupants: list[Path]) -> bool:
+        return occupants[-1] != Path(getattr(p, "dst_default", ""))
+
+    @staticmethod
+    def _scan_merge(p, occupants: list[Path], limit: int | None = None) -> list[MergeConflictItem]:
+        by_rel_path: dict[str, MergeConflictItem] = {}
+        for occupant in occupants:
+            for c in scan_merge_conflicts(Path(p.src), occupant, limit=limit):
+                by_rel_path[c.rel_path] = c
+        return list(by_rel_path.values())
+
     def _count_file_conflicts(self, file_conflicts: list, folder_conflicts: list) -> dict[int, list[MergeConflictItem]]:
         complete_scans: dict[int, list[MergeConflictItem]] = {}
         if self._overwrite_mode != "ask":
@@ -135,8 +190,10 @@ class ConflictResolver:
             if total > 1:
                 break
             limit = 2 - total
-            found = scan_merge_conflicts(Path(p.src), Path(p.dst_default), limit=limit)
-            if len(found) < limit:
+            batch = idx in self._earlier
+            occupants = [Path(p.dst_default), *(_landing_source(e) for e in self._earlier.get(idx, ()))]
+            found = self._scan_merge(p, occupants, limit=limit)
+            if len(found) < limit and not batch:
                 complete_scans[idx] = found
             total += len(found)
         self._show_file_apply_all = total > 1
@@ -188,7 +245,13 @@ class ConflictResolver:
             self._same_path_apply_all = "skip"
         return PasteDecision(mode="skip")
 
-    def _ask_folder(self, src: Path, dst: Path) -> PasteDecision:
+    def _keep_both(self, src: Path) -> PasteDecision:
+        AppLogger.info(f"[{self._op}] another selected item is also named {src.name}; both are kept, this one under a new name")
+        return PasteDecision(mode="rename")
+
+    def _ask_folder(self, src: Path, dst: Path, *, in_batch: bool = False) -> PasteDecision:
+        if in_batch and self._overwrite_mode == "overwrite":
+            return self._keep_both(src)
         if self._overwrite_mode in ("overwrite", "rename", "skip"):
             mode_map = {"overwrite": "merge", "rename": "rename", "skip": "skip"}
             return PasteDecision(mode=mode_map[self._overwrite_mode])
@@ -197,7 +260,7 @@ class ConflictResolver:
             return PasteDecision(mode=self._folder_apply_all)
 
         choice, apply_all = FolderConflictDialog.ask(
-            t(self._folder_message),
+            t("Another selected item has the same name.") if in_batch else t(self._folder_message),
             src_path=normalize_path(str(src)),
             dst_path=normalize_path(str(dst)),
             src_name=src.name,
@@ -220,7 +283,9 @@ class ConflictResolver:
             self._folder_apply_all = "rename"
         return PasteDecision(mode="rename")
 
-    def _ask_file(self, src_path: str, dst_path: str, name: str, src_bytes: bytes | bytearray | None) -> PasteDecision:
+    def _ask_file(self, src_path: str, dst_path: str, name: str, src_bytes: bytes | bytearray | None, *, in_batch: bool = False) -> PasteDecision:
+        if in_batch and self._overwrite_mode == "overwrite":
+            return self._keep_both(Path(src_path or name))
         if self._overwrite_mode in ("overwrite", "rename", "skip"):
             return PasteDecision(mode=self._overwrite_mode)
 
@@ -228,7 +293,7 @@ class ConflictResolver:
             return PasteDecision(mode=self._file_apply_all)
 
         choice, apply_all = FileConflictDialog.ask(
-            t("An item with the same name already exists."),
+            t("Another selected item has the same name.") if in_batch else t("An item with the same name already exists."),
             src_path=normalize_path(src_path) if src_path else "",
             dst_path=normalize_path(dst_path),
             src_name=name,

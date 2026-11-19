@@ -108,6 +108,20 @@ class TestRunWithProgress:
         assert results[0].status == "ok"
         assert results[2].status == "ok"
 
+    def test_failed_items_are_reported_to_the_user(self, qapp, monkeypatch):
+        from wafer.qt.transfer import paste
+
+        warnings = []
+        monkeypatch.setattr(paste.Notifier, "warning", staticmethod(warnings.append))
+
+        def execute_fn(idx: int) -> OperationResult:
+            return OperationResult(action="move", src=f"s{idx}", dst=f"d{idx}", status="error" if idx else "ok", error="in use")
+
+        paste._run_with_progress(None, "Moving", 3, execute_fn)
+
+        assert len(warnings) == 1
+        assert "2" in warnings[0]
+
     def test_progress_starts_indeterminate_then_switches_to_determinate(self, qapp):
         from wafer.qt.transfer.paste import _run_with_progress
 
@@ -427,3 +441,59 @@ class TestClipboardPaste:
 
         assert (dst_dir / "a.txt").read_text(encoding="utf-8") == "x"
         assert threads and threads[0] is not threading.main_thread()
+
+    def test_a_paste_while_one_is_running_is_ignored_with_a_message(self, qapp, monkeypatch, tmp_path):
+        from wafer.qt.transfer import paste
+
+        src = tmp_path / "a.txt"
+        src.write_text("x", encoding="utf-8")
+        dst_dir = tmp_path / "dst"
+        release = threading.Event()
+        builds = []
+        notices = []
+        real_build = paste.ClipboardFilePaster.build_paste_plan
+
+        def blocking_build(destination_dir, extracted):
+            builds.append(destination_dir)
+            release.wait(5)
+            return real_build(destination_dir, extracted)
+
+        monkeypatch.setattr(paste.ClipboardFilePaster, "__init__", lambda self: None)
+        monkeypatch.setattr(paste.ClipboardFilePaster, "collect_clipboard_files", lambda self: ("copy", [src]))
+        monkeypatch.setattr(paste.ClipboardFilePaster, "build_paste_plan", staticmethod(blocking_build))
+        monkeypatch.setattr(paste.Notifier, "info", staticmethod(notices.append))
+
+        paste.paste_clipboard_files(dst_dir, overwrite_mode="skip")
+        _process_events_until(lambda: len(builds) == 1)
+        paste.paste_clipboard_files(dst_dir, overwrite_mode="skip")
+        release.set()
+        _process_events_until(lambda: (dst_dir / "a.txt").exists() and not paste.paste_in_progress())
+
+        assert len(builds) == 1
+        assert len(notices) >= 1
+        assert [p.name for p in dst_dir.iterdir()] == ["a.txt"]
+
+        paste.paste_clipboard_files(dst_dir, overwrite_mode="skip")
+        _process_events_until(lambda: len(builds) == 2 and not paste.paste_in_progress())
+
+        assert len(builds) == 2
+
+    def test_a_failed_plan_still_allows_the_next_paste(self, qapp, monkeypatch, tmp_path):
+        from wafer.qt.transfer import paste
+
+        builds = []
+
+        def failing_build(destination_dir, extracted):
+            builds.append(destination_dir)
+            raise OSError("destination is read-only")
+
+        monkeypatch.setattr(paste.ClipboardFilePaster, "__init__", lambda self: None)
+        monkeypatch.setattr(paste.ClipboardFilePaster, "collect_clipboard_files", lambda self: ("copy", [tmp_path]))
+        monkeypatch.setattr(paste.ClipboardFilePaster, "build_paste_plan", staticmethod(failing_build))
+
+        paste.paste_clipboard_files(tmp_path / "dst")
+        _process_events_until(lambda: len(builds) == 1 and not paste.paste_in_progress())
+        paste.paste_clipboard_files(tmp_path / "dst")
+        _process_events_until(lambda: len(builds) == 2 and not paste.paste_in_progress())
+
+        assert len(builds) == 2

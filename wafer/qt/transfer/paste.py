@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import struct
 import sys
+import threading
 from pathlib import Path, PureWindowsPath
 from typing import Literal
 from collections.abc import Callable
@@ -35,6 +36,7 @@ DROP_OPERATION_SETTING_KEY = "file/drop_operation"
 DropOperation = Literal["copy", "move", "ask"]
 
 _paste_dispatcher = Dispatcher(utility_pool)
+_paste_running = threading.Event()
 
 
 def normalize_drop_operation(value: object, default: Literal["copy", "move"] = "copy") -> Literal["copy", "move"]:
@@ -358,10 +360,13 @@ def _run_with_progress(
     dialog.deleteLater()
 
     ok_count = sum(1 for r in results if r.status == "ok")
+    failed_count = sum(1 for r in results if r.status == "error")
     if token.is_cancelled():
         Notifier.info(t("Operation cancelled ({count} completed)", count=ok_count))
     elif ok_count:
         Notifier.info(t("{count} file(s) processed", count=ok_count))
+    if failed_count:
+        Notifier.warning(t("{count} item(s) failed. See the log.", count=failed_count))
     return results
 
 
@@ -392,24 +397,41 @@ def paste_clipboard_files(
 ) -> None:
     if _reject_virtual_destination(destination_dir, "paste"):
         return
+    if _paste_running.is_set():
+        Notifier.info(t("A paste is already running."))
+        return
     extracted = ClipboardFilePaster().collect_clipboard_files()
     if not extracted:
         return
+    _paste_running.set()
 
     def resolve_and_execute(plans: list[PastePlanItem]):
-        op = "move" if plans[0].action == "cut" else "copy"
         try:
-            decisions = _resolve_conflicts_with_ui(plans=plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
-        except PasteCancelledError:
-            return
-        _execute_plans(plans, decisions, parent, op)
+            if not plans:
+                return
+            op = "move" if plans[0].action == "cut" else "copy"
+            try:
+                decisions = _resolve_conflicts_with_ui(plans=plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
+            except PasteCancelledError:
+                return
+            _execute_plans(plans, decisions, parent, op)
+        finally:
+            _paste_running.clear()
 
     def build_in_background():
-        plans = ClipboardFilePaster.build_paste_plan(destination_dir, extracted)
-        if plans:
+        plans: list[PastePlanItem] = []
+        try:
+            plans = ClipboardFilePaster.build_paste_plan(destination_dir, extracted)
+        except Exception as e:
+            AppLogger.warning(f"Paste failed while checking the files to paste into {destination_dir}", exc=e)
+        finally:
             _paste_dispatcher.invoke(lambda: resolve_and_execute(plans))
 
     _paste_dispatcher.post(build_in_background)
+
+
+def paste_in_progress() -> bool:
+    return _paste_running.is_set()
 
 
 def execute_paste_plans_with_ui(

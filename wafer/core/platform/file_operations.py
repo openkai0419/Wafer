@@ -70,6 +70,67 @@ def _swap_into_place(staged: Path, dst: Path) -> None:
     _safe_remove(backup)
 
 
+def _put_back(staged: Path, original: Path) -> list[Path]:
+    if not os.path.lexists(staged):
+        return []
+    if not os.path.lexists(original):
+        try:
+            os.rename(staged, original)
+            return []
+        except OSError as e:
+            AppLogger.debug(f"put back by rename failed, restoring one by one: {staged} ({e})")
+    if staged.is_dir() and not staged.is_symlink():
+        return _put_back_dir(staged, original)
+    if os.path.lexists(original):
+        return _drop_staged_duplicate(staged, original)
+    try:
+        _move_any(staged, original)
+        return []
+    except OSError as e:
+        AppLogger.warning(f"could not put {original.name} back; it is kept at {staged}", exc=e)
+        if os.path.lexists(staged) and os.path.isfile(original):
+            try:
+                original.unlink()
+            except OSError as partial_error:
+                AppLogger.warning(f"an incomplete copy is left at {original}; the complete file is {staged}", exc=partial_error)
+        return [staged]
+
+
+def _drop_staged_duplicate(staged: Path, original: Path) -> list[Path]:
+    if original.is_dir() and not original.is_symlink():
+        return [staged]
+    try:
+        staged.unlink()
+        return []
+    except OSError as e:
+        AppLogger.warning(f"a copy of {original.name} is left at {staged}", exc=e)
+        return [staged]
+
+
+def _put_back_dir(staged: Path, original: Path) -> list[Path]:
+    try:
+        original.mkdir(parents=True, exist_ok=True)
+        entries = list(staged.iterdir())
+    except OSError as e:
+        AppLogger.warning(f"could not put {original} back; it is kept at {staged}", exc=e)
+        return [staged]
+    left = [p for entry in entries for p in _put_back(entry, original / entry.name)]
+    if not left:
+        try:
+            staged.rmdir()
+        except OSError as e:
+            AppLogger.warning(f"an empty staging folder is left behind: {staged}", exc=e)
+    return left
+
+
+def _unclaimed_destination(dst: Path, operation: str) -> Path:
+    if not os.path.lexists(dst):
+        return dst
+    renamed = Path(unique_path(dst.parent, dst.name))
+    AppLogger.warning(f"[{operation}] {dst} appeared after the paste was planned, so it is kept; saved as {renamed.name}")
+    return renamed
+
+
 def _write_replacing(target: Path, chunks) -> None:
     partial = _staging_path(target, "wafer-partial")
     try:
@@ -269,7 +330,7 @@ class DropPlanItem:
 
 @dataclass
 class PasteDecision:
-    mode: Literal["overwrite", "rename", "skip", "merge"]
+    mode: Literal["create", "overwrite", "rename", "skip", "merge"]
     new_name_or_path: str | None = None
     merge_decisions: dict[str, PasteDecision] | None = None
 
@@ -353,6 +414,8 @@ class FileExecutor:
             return OperationResult(action="unknown", src="", dst="", status="error", error=f"unknown mode: {decision.mode}")
         if final_dst.is_dir():
             final_dst = Path(unique_path(final_dst.parent, final_dst.name))
+        elif decision.mode == "create":
+            final_dst = _unclaimed_destination(final_dst, "save")
         if _profile_refusal("save", [final_dst]):
             self._advance()
             return OperationResult(action="save", src="(remote)", dst=str(final_dst), status="error", error="refused by debug profile")
@@ -400,6 +463,8 @@ class FileExecutor:
                 self._advance_item(src, final_dst, action)
                 return OperationResult(action="skip", src=str(src), dst=str(final_dst), status="skipped")
             final_dst = Path(unique_path(final_dst.parent, final_dst.name))
+        elif decision.mode == "create":
+            final_dst = _unclaimed_destination(final_dst, _operation_name(action))
 
         if action == "cut" and is_dir and conflict in ("same_path", "subpath"):
             self._advance_item(src, final_dst, action)
@@ -434,12 +499,8 @@ class FileExecutor:
         staged = _staging_path(dst, "wafer-partial")
         try:
             self._copy_or_move(src, staged, action)
-        except BaseException:
-            _safe_remove(staged)
-            raise
-        try:
             _swap_into_place(staged, dst)
-        except OSError:
+        except BaseException:
             self._undo_staging(src, staged, action)
             raise
         return dst
@@ -449,14 +510,13 @@ class FileExecutor:
         if action != "cut":
             _safe_remove(staged)
             return
-        try:
-            _move_any(staged, src)
-        except OSError as e:
-            AppLogger.error(f"[move] could not put {src} back; it is at {staged}", exc=e)
+        left = _put_back(staged, src)
+        if left:
+            AppLogger.error(f"[move] could not put {len(left)} item(s) back into {src}; they are kept in {staged}")
 
     @staticmethod
     def _resolve_dst(dst: Path, decision: PasteDecision) -> Path | None:
-        if decision.mode in ("overwrite", "merge"):
+        if decision.mode in ("create", "overwrite", "merge"):
             return dst
         if decision.mode == "rename":
             if decision.new_name_or_path:

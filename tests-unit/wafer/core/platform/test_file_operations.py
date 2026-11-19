@@ -604,6 +604,171 @@ def test_merge_cancel_keeps_every_destination_file(tmp_path):
     assert [(dst / f"f{i}").read_text(encoding="utf-8") for i in range(3)] == ["new0", "old1", "old2"]
 
 
+def _album(root, files, text):
+    root.mkdir(parents=True)
+    for name in files:
+        (root / name).write_text(f"{text} {name}", encoding="utf-8")
+    return {name: f"{text} {name}" for name in files}
+
+
+def _contents(*roots):
+    found = {}
+    for root in roots:
+        for p in root.rglob("*") if root.exists() else ():
+            if p.is_file():
+                found.setdefault(p.read_text(encoding="utf-8"), []).append(p)
+    return found
+
+
+def _assert_nothing_lost(originals, *roots):
+    found = _contents(*roots)
+    missing = [text for text in originals.values() if text not in found]
+    assert missing == []
+
+
+windows_only = pytest.mark.skipif(sys.platform != "win32", reason="an open file blocks rename and delete only on Windows")
+
+
+@windows_only
+def test_overwrite_move_of_a_folder_with_an_open_file_loses_nothing(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    src = tmp_path / "src" / "album"
+    dst = tmp_path / "dst" / "album"
+    originals = {**_album(src, ["a.txt", "b.txt", "c.txt"], "new"), **_album(dst, ["old.txt"], "old")}
+
+    with open(src / "b.txt", "rb"):
+        res = FileExecutor()._execute_item(src, dst, "cut", PasteDecision(mode="overwrite"))
+
+    assert res.status == "error"
+    _assert_nothing_lost(originals, src, dst)
+    assert sorted(p.name for p in src.iterdir()) == ["a.txt", "b.txt", "c.txt"]
+    assert sorted(p.name for p in dst.parent.iterdir()) == ["album"]
+
+
+@windows_only
+def test_overwrite_move_of_an_open_file_loses_nothing(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    src = tmp_path / "src" / "a.txt"
+    src.parent.mkdir()
+    src.write_text("new", encoding="utf-8")
+    dst = tmp_path / "dst" / "a.txt"
+    dst.parent.mkdir()
+    dst.write_text("old", encoding="utf-8")
+
+    with open(src, "rb"):
+        res = FileExecutor()._execute_item(src, dst, "cut", PasteDecision(mode="overwrite"))
+
+    assert res.status == "error"
+    assert src.read_text(encoding="utf-8") == "new"
+    assert dst.read_text(encoding="utf-8") == "old"
+    assert [p.name for p in dst.parent.iterdir()] == ["a.txt"]
+
+
+@windows_only
+def test_failed_swap_after_a_partial_cross_drive_move_puts_every_file_back(tmp_path, monkeypatch):
+    from wafer.core.platform import file_operations
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    def failing_swap(staged, dst):
+        raise PermissionError("destination is in use")
+
+    monkeypatch.setattr(file_operations, "_same_device", lambda a, b: False)
+    monkeypatch.setattr(file_operations, "_swap_into_place", failing_swap)
+    src = tmp_path / "src" / "album"
+    dst = tmp_path / "dst" / "album"
+    originals = {**_album(src, ["a.txt", "b.txt", "c.txt"], "new"), **_album(dst, ["old.txt"], "old")}
+
+    with open(src / "b.txt", "rb"):
+        res = FileExecutor()._execute_item(src, dst, "cut", PasteDecision(mode="overwrite"))
+
+    assert res.status == "error"
+    _assert_nothing_lost(originals, src, dst)
+    assert sorted(p.name for p in src.iterdir()) == ["a.txt", "b.txt", "c.txt"]
+    assert sorted(p.name for p in dst.parent.iterdir()) == ["album"]
+
+
+def test_overwrite_move_that_fails_midway_keeps_the_staged_files(tmp_path, monkeypatch):
+    import shutil
+
+    from wafer.core.platform import file_operations
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    def move_that_stops_deleting(src, dst):
+        shutil.copytree(src, dst)
+        Path(src, "a.txt").unlink()
+        raise PermissionError("b.txt is in use")
+
+    monkeypatch.setattr(file_operations.shutil, "move", move_that_stops_deleting)
+    src = tmp_path / "src" / "album"
+    dst = tmp_path / "dst" / "album"
+    originals = {**_album(src, ["a.txt", "b.txt"], "new"), **_album(dst, ["old.txt"], "old")}
+
+    res = FileExecutor()._execute_item(src, dst, "cut", PasteDecision(mode="overwrite"))
+
+    assert res.status == "error"
+    _assert_nothing_lost(originals, src, dst)
+    assert sorted(p.name for p in src.iterdir()) == ["a.txt", "b.txt"]
+    assert sorted(p.name for p in dst.parent.iterdir()) == ["album"]
+
+
+def test_create_saves_under_a_new_name_when_the_destination_appeared(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    src = tmp_path / "src" / "a.txt"
+    src.parent.mkdir()
+    src.write_text("new", encoding="utf-8")
+    dst = tmp_path / "a.txt"
+    dst.write_text("appeared", encoding="utf-8")
+
+    res = FileExecutor()._execute_item(src, dst, "cut", PasteDecision(mode="create"))
+
+    assert res.status == "ok"
+    assert dst.read_text(encoding="utf-8") == "appeared"
+    assert Path(res.dst).read_text(encoding="utf-8") == "new"
+
+
+def test_create_never_merges_into_a_folder_that_appeared(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    src = tmp_path / "src" / "d"
+    _album(src, ["x.txt"], "new")
+    dst = tmp_path / "d"
+    _album(dst, ["x.txt"], "appeared")
+
+    res = FileExecutor()._execute_item(src, dst, "copy", PasteDecision(mode="create"))
+
+    assert res.status == "ok"
+    assert (dst / "x.txt").read_text(encoding="utf-8") == "appeared x.txt"
+    assert (Path(res.dst) / "x.txt").read_text(encoding="utf-8") == "new x.txt"
+
+
+def test_create_moves_to_a_free_destination_and_renames_by_case(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    src = tmp_path / "Photo.PNG"
+    src.write_text("x", encoding="utf-8")
+
+    res = FileExecutor()._execute_item(src, tmp_path / "photo.png", "cut", PasteDecision(mode="create"))
+
+    assert res.status == "ok"
+    assert [p.name for p in tmp_path.iterdir()] == ["photo.png"]
+
+
+def test_remote_create_never_replaces_a_file_that_appeared(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    plan = _remote_plan(tmp_path, b"new", binary=True)
+    (tmp_path / "image.png").write_bytes(b"appeared")
+
+    res = FileExecutor().execute_one(plan, PasteDecision(mode="create"))
+
+    assert res.status == "ok"
+    assert (tmp_path / "image.png").read_bytes() == b"appeared"
+    assert Path(res.dst).read_bytes() == b"new"
+
+
 class _FakeResponse:
     def __init__(self, status_code, chunks=()):
         self.status_code = status_code

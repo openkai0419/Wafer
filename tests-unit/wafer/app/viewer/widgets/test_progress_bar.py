@@ -1,5 +1,5 @@
 import pytest
-from PySide6 import QtGui
+from PySide6 import QtGui, QtWidgets
 
 from wafer.qt.palette import DARK, LIGHT
 from wafer.qt.theme import ThemeManager
@@ -29,3 +29,33 @@ def test_tooltip_uses_the_theme_colors(qtbot, palette):
 
     style = tooltip.label.styleSheet()
     assert palette.text_primary in style and palette.bg_elevated in style
+
+
+
+def test_hover_proxy_follows_a_width_change_made_while_hidden(qtbot):
+    window = QtWidgets.QWidget()
+    qtbot.addWidget(window)
+    QtWidgets.QVBoxLayout(window)
+    panel = QtWidgets.QWidget()
+    layout = QtWidgets.QVBoxLayout(panel)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(0)
+    bar = ThinProgressBar()
+    layout.addWidget(QtWidgets.QPushButton("top"))
+    layout.addWidget(bar)
+    layout.addWidget(QtWidgets.QPushButton("bottom"))
+    window.layout().addWidget(panel)
+    window.resize(300, 200)
+    window.show()
+    qtbot.waitUntil(lambda: getattr(bar, "_hover_proxy", None) is not None)
+    proxy = bar._hover_proxy
+    margin = proxy._margin
+
+    panel.hide()
+    window.resize(600, 200)
+    qtbot.waitUntil(lambda: window.width() == 600)
+    panel.show()
+    qtbot.waitUntil(lambda: bar.isVisible() and bar.width() > 500)
+
+    assert proxy.geometry() == bar.geometry().adjusted(-margin, -margin, margin, margin)
+    window.close()

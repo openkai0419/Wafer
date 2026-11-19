@@ -25,7 +25,7 @@ class HoverProxy(QtWidgets.QWidget):
     def eventFilter(self, watched, event):
         if not isinstance(event, QtCore.QEvent):
             return False
-        if watched is self._target and event.type() == QtCore.QEvent.Move:
+        if watched is self._target and event.type() in (QtCore.QEvent.Move, QtCore.QEvent.Resize):
             self.updateGeometry()
         return False
 

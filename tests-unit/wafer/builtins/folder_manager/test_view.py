@@ -222,7 +222,11 @@ def test_context_menu_separates_disk_files_from_each_rule_with_a_query(qtbot, tm
     view.show_context_menu(view.visualRect(index).center())
 
     items = seen["items"]
-    assert items[: len(MENU_HEAD) + 2] == ["ft.show_in_tree", *MENU_HEAD, "-"]
+    assert items[: len(MENU_HEAD) + 1] == [":Folder Manager", *MENU_HEAD]
+    headers = [i for i in items if isinstance(i, str) and i.startswith(":")]
+    assert headers == [":Folder Manager", ":File", ":Selection", ":FolderTree"]
+    assert items[items.index(":FolderTree") + 1] == "ft.show_in_tree"
+    assert "file.select_path" not in items
     disk = items.index("Files in Folder/:All files on disk")
     assert items[disk + 1 : disk + 5] == DISK_ROWS
     assert not any("ignore" in str(i) or "remove_from_view" in str(i) for i in items)
@@ -302,7 +306,23 @@ def test_context_menu_for_a_vanished_folder_offers_only_safe_items(qtbot, tmp_pa
 
     view.show_context_menu(view.visualRect(index).center())
 
-    assert seen["items"] == ["ft.show_in_tree", *MENU_HEAD, "-", "file.copy_path", "-"]
+    assert seen["items"] == [":Folder Manager", *MENU_HEAD, "-", ":File", "file.copy_path"]
+    view.close()
+
+
+def test_context_menu_outside_the_viewer_keeps_files_in_folder_without_show_in_tree(qtbot, tmp_path, monkeypatch, text_filter):
+    seen = capture_menu(monkeypatch)
+    view, _root = make_view(qtbot, tmp_path)
+    view.resize(480, 240)
+    view.show()
+    index = view.model_.index(0, 0)
+    view.selectionModel().select(index, QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows)
+
+    view.show_context_menu(view.visualRect(index).center())
+
+    items = seen["items"]
+    assert "ft.show_in_tree" not in items and "file.select_path" not in items
+    assert items[items.index(":FolderTree") + 1 :] == ["Files in Folder/:All files on disk", *DISK_ROWS]
     view.close()
 
 
@@ -320,13 +340,14 @@ def test_context_menu_shows_show_in_tree_only_for_the_window_database(qtbot, tmp
     assert view.show_in_tree_available() is False
 
     open_menu_on_first_row(view)
-    assert seen["items"][:4] == [*MENU_HEAD, "-"]
+    assert "ft.show_in_tree" not in seen["items"]
     assert "file.select_path" not in seen["items"]
 
     view.show_in_tree_available = lambda: True
     open_menu_on_first_row(view)
-    assert seen["items"][:4] == ["ft.show_in_tree", *MENU_HEAD]
-    assert "file.select_path" in seen["items"]
+    items = seen["items"]
+    assert items[items.index(":FolderTree") + 1] == "ft.show_in_tree"
+    assert "file.select_path" not in items
     view.close()
 
 

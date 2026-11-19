@@ -1,5 +1,5 @@
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 from PySide6 import QtCore, QtWidgets
 
@@ -150,10 +150,6 @@ def run_on_disk_files(ctx, command_id: str, recursive: bool) -> None:
     run_on_folder_files(ctx, command_id, lambda folders, cancel: disk_files(folders, recursive, cancel))
 
 
-def folder_items(path: str) -> list:
-    return folder_file_items() if os.path.isdir(path) else ["file.copy_path", "-"]
-
-
 def _apply_to_sources(command_id: str, sources: list[str], notify: Callable[[str], None]) -> None:
     if not sources:
         notify("No files")
@@ -184,36 +180,50 @@ def show_in_tree(ctx):
     ctx.get_instance("FolderTree").expand_and_select_path(path)
 
 
-def folder_file_items() -> list:
-    return [
-        ":Path",
-        "file.show_explorer",
-        "file.shell_context_menu",
-        "-",
-        "file.copy_path",
-        "-",
-        "file.select_path",
-        "-",
-        "-",
-        "file.cut",
-        "file.copy",
-        "file.delete",
-        "-",
-        "file.paste",
-        "file.new_folder",
-        "-",
-        "Files in Folder/:All files on disk",
-        "Files in Folder/ft.files.cut_direct",
-        "Files in Folder/ft.files.copy_direct",
-        "Files in Folder/ft.files.cut_all",
-        "Files in Folder/ft.files.copy_all",
-        "-",
-        "Recollect/:Recollect",
-        "Recollect/file.recollect.folder.reset_prefix",
-        "Recollect/file.recollect.folder.reset_all",
-        "Recollect/file.recollect.folder.forget",
-        "-",
-    ]
+def folder_menu_sections(path: str) -> dict[str, list]:
+    if not os.path.isdir(path):
+        return {"File": ["file.copy_path"]}
+    return {
+        "File": [
+            "file.show_explorer",
+            "file.shell_context_menu",
+            "-",
+            "file.copy_path",
+            "-",
+            "file.cut",
+            "file.copy",
+            "file.delete",
+            "-",
+            "file.paste",
+            "file.new_folder",
+        ],
+        "Selection": [
+            "file.select_path",
+            "Recollect/:Recollect",
+            "Recollect/file.recollect.folder.reset_prefix",
+            "Recollect/file.recollect.folder.reset_all",
+            "Recollect/file.recollect.folder.forget",
+        ],
+        "FolderTree": [
+            "Files in Folder/:All files on disk",
+            "Files in Folder/ft.files.cut_direct",
+            "Files in Folder/ft.files.copy_direct",
+            "Files in Folder/ft.files.cut_all",
+            "Files in Folder/ft.files.copy_all",
+        ],
+    }
+
+
+def menu_sections(sections: Iterable[tuple[str, list]]) -> list:
+    items = []
+    for title, section in sections:
+        if not section:
+            continue
+        if items:
+            items.append("-")
+        items.append(f":{title}")
+        items.extend(section)
+    return items
 
 
 def show_context_menu(ctx):
@@ -228,15 +238,15 @@ def show_context_menu(ctx):
             tree.folder_selected.emit()
         except Exception as e:
             AppLogger.debug(f"folder_selected emit failed: {e}")
-    items = folder_items(path)
+    sections = folder_menu_sections(path)
     if hasattr(tree, "roots") and path in tree.roots:
-        items.append(ActionKit.Action(path="inline.folder.remove_from_view", display="Remove from view", func=remove_from_view))
+        sections["Exclude"] = [ActionKit.Action(path="inline.folder.remove_from_view", display="Remove from view", func=remove_from_view)]
     else:
-        items.append(ActionKit.Action(path="inline.folder.ignore", display="Ignore this folder", func=ignore_folder))
+        sections["Exclude"] = [ActionKit.Action(path="inline.folder.ignore", display="Ignore this folder", func=ignore_folder)]
     s = Menu.from_context(ctx)
     if s is None:
         return
-    s.menu(items).exec()
+    s.menu(menu_sections(sections.items())).exec()
 
 
 def reload_tree(ctx):

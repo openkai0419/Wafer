@@ -6,7 +6,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.app.viewer.widgets.foldertree import EXPAND_RECURSIVE_BATCH_SIZE, USER_ROLE_PATH, LazyFolderTreeModel, LazyFolderTreeView
 from wafer.builtins.commands.folder_files import query_folder_sources
-from wafer.builtins.commands.foldertree import folder_items, run_on_folder_files
+from wafer.builtins.commands.foldertree import folder_menu_sections, menu_sections, run_on_folder_files
 from wafer.core.common.paths import child_prefix, data_db_path, normalize_path, parent_folder
 from wafer.core.lang.manager import t
 from wafer.qt.commands.bridge import ActionKit, Context, Menu
@@ -25,7 +25,6 @@ RULE_FILE_ACTIONS = (
     ("copy_all", "Copy all files below", "file.copy", True),
 )
 PANEL_COMMANDS = ("folder_manager.select_matches", "folder_manager.matches_only", "folder_manager.collapse_all")
-WINDOW_TREE_COMMANDS = ("file.select_path",)
 DISK_METRICS = ("folders", "all_folders")
 COUNT_SAMPLE = "99,999,999"
 UNSCANNED = object()
@@ -288,16 +287,16 @@ class FolderManagerTreeView(LazyFolderTreeView):
         path = ctx.get("path")
         if not path:
             return
-        in_window_tree = self.show_in_tree_available()
-        file_items = [item for item in folder_items(normalize_path(path)) if in_window_tree or item not in WINDOW_TREE_COMMANDS]
-        items = [*(["ft.show_in_tree"] if in_window_tree else []), *PANEL_COMMANDS, "-", *file_items]
-        files_items = [n for n, item in enumerate(items) if item.startswith("Files in Folder/")]
-        if files_items:
-            items[files_items[-1] + 1 : files_items[-1] + 1] = self.rule_file_actions()
+        sections = {"Folder Manager": list(PANEL_COMMANDS), **folder_menu_sections(normalize_path(path))}
+        if "Selection" in sections:
+            sections["Selection"] = [item for item in sections["Selection"] if item != "file.select_path"]
+        if "FolderTree" in sections:
+            show_in_tree = ["ft.show_in_tree"] if self.show_in_tree_available() else []
+            sections["FolderTree"] = [*show_in_tree, *sections["FolderTree"], *self.rule_file_actions()]
         session = Menu.from_context(ctx)
         if session is None:
             return
-        spec = session.menu(items)
+        spec = session.menu(menu_sections(sections.items()))
         if spec is not None:
             spec.exec()
 

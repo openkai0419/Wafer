@@ -8,8 +8,8 @@ from wafer.qt.commands.command.core import CommandRegistry
 from wafer.core.common.paths import normalize_path
 from wafer.builtins.commands import foldertree as foldertree_module
 from wafer.builtins.commands.foldertree import (
-    folder_file_items,
-    folder_items,
+    folder_menu_sections,
+    menu_sections,
     cut_all_files,
     copy_direct_files,
     run_on_disk_files,
@@ -432,9 +432,20 @@ def test_quick_collection_shows_no_collecting_notice(qtbot, monkeypatch, tmp_pat
     assert calls["notices"] == []
 
 
-def test_folder_items_offer_only_copy_path_for_a_missing_folder(tmp_path):
-    assert folder_items(str(tmp_path)) == folder_file_items()
-    assert folder_items(str(tmp_path / "gone")) == ["file.copy_path", "-"]
+def test_folder_menu_sections_follow_the_viewer_menu(tmp_path):
+    sections = folder_menu_sections(str(tmp_path))
+    assert list(sections) == ["File", "Selection", "FolderTree"]
+    assert "file.cut" in sections["File"] and "file.select_path" in sections["Selection"]
+    assert sections["FolderTree"] == ["Files in Folder/:All files on disk", *[f"Files in Folder/ft.files.{key}" for key in ("cut_direct", "copy_direct", "cut_all", "copy_all")]]
+    assert all("ignore" not in str(i) and "remove_from_view" not in str(i) for items in sections.values() for i in items)
+
+
+def test_folder_menu_sections_offer_only_copy_path_for_a_missing_folder(tmp_path):
+    assert folder_menu_sections(str(tmp_path / "gone")) == {"File": ["file.copy_path"]}
+
+
+def test_menu_sections_put_a_titled_separator_before_each_nonempty_section():
+    assert menu_sections([("A", ["a"]), ("Empty", []), ("B", ["b", "-", "c"])]) == [":A", "a", "-", ":B", "b", "-", "c"]
 
 
 def test_show_in_tree_selects_path(tmp_path):
@@ -444,16 +455,7 @@ def test_show_in_tree_selects_path(tmp_path):
     assert selected == [normalize_path(str(tmp_path))]
 
 
-def test_folder_file_items_include_files_in_folder_and_no_ignore():
-    items = folder_file_items()
-    assert "Files in Folder/ft.files.cut_all" in items
-    disk = items.index("Files in Folder/:All files on disk")
-    assert items[disk + 1 : disk + 5] == [f"Files in Folder/ft.files.{key}" for key in ("cut_direct", "copy_direct", "cut_all", "copy_all")]
-    assert "Files in Folder/ft.files.copy_direct" in items
-    assert all("ignore" not in str(i) and "remove_from_view" not in str(i) for i in items)
-
-
-def test_context_menu_contains_files_in_folder(qtbot, tmp_path, monkeypatch):
+def capture_folder_menu(qtbot, monkeypatch, path, roots):
     seen = {}
 
     class FakeSession:
@@ -462,10 +464,27 @@ def test_context_menu_contains_files_in_folder(qtbot, tmp_path, monkeypatch):
             return type("M", (), {"exec": lambda self: None})()
 
     monkeypatch.setattr(foldertree_module.Menu, "from_context", lambda ctx: FakeSession())
-    tree = _FakeTree(roots=set())
+    tree = _FakeTree(roots=roots)
     qtbot.addWidget(tree)
-    show_context_menu(_FakeCtx(path=str(tmp_path), widget=tree))
-    assert "Files in Folder/ft.files.cut_all" in seen["items"]
+    show_context_menu(_FakeCtx(path=path, widget=tree))
+    return seen["items"]
+
+
+def test_context_menu_puts_folder_tree_items_last_and_exclude_apart(qtbot, tmp_path, monkeypatch):
+    items = capture_folder_menu(qtbot, monkeypatch, str(tmp_path), roots=set())
+    headers = [i for i in items if isinstance(i, str) and i.startswith(":")]
+    assert headers == [":File", ":Selection", ":FolderTree", ":Exclude"]
+    assert "Files in Folder/ft.files.cut_all" in items
+    assert items[-3:-1] == ["-", ":Exclude"]
+    assert items[-1].path == "inline.folder.ignore"
+
+
+def test_context_menu_on_a_root_offers_remove_from_view_under_exclude(qtbot, tmp_path, monkeypatch):
+    path = normalize_path(str(tmp_path))
+    items = capture_folder_menu(qtbot, monkeypatch, path, roots={path})
+    assert items[-3:-1] == ["-", ":Exclude"]
+    assert items[-1].path == "inline.folder.remove_from_view"
+    assert not any(getattr(i, "path", "") == "inline.folder.ignore" for i in items)
 
 
 def test_files_in_folder_tells_the_panel_that_asked(qtbot, monkeypatch, tmp_path):

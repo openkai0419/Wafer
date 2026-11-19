@@ -54,7 +54,17 @@ RESERVED_WORKTREE_NAMES = {
     TOOLS_PROFILE.removeprefix(PROFILE_PREFIX): "the profile the debug tooling (MCP server, this CLI) runs under",
 }
 
+SAMPLE_FIX_HINT = (
+    "In a worktree, restore its .sample link with `python scripts/worktree.py repair <task>` from the main checkout; "
+    "in the main checkout, create the sample with `python tests/dataset_downloader.py`; "
+    "or point WAFER_DEBUG_SAMPLE_ROOT at a sample folder."
+)
+
 Progress = Callable[[str], None]
+
+
+class SampleUnavailable(RuntimeError):
+    pass
 
 
 def _is_checkout(path: Path) -> bool:
@@ -127,15 +137,44 @@ def _add_parent_folder(settings: SettingDB, folder: Path) -> None:
         raise RuntimeError(f"Could not register {folder} as a parent folder of {settings.db_name}")
 
 
+def _sample_scope_rules(sample: Path) -> tuple[list[Path], list[str], list[str]]:
+    ignored_folders = [str(sample / folder) for folder in SAMPLE_IGNORED_FOLDERS]
+    ignored_patterns = [f"{glob.escape(normalize_path(sample))}/{SAMPLE_IGNORED_PATTERN}"]
+    return [sample], ignored_folders, ignored_patterns
+
+
+def require_sample_root() -> Path:
+    sample = sample_root()
+    if not sample.is_dir():
+        raise SampleUnavailable(f"The debug sample folder {sample} is missing. {SAMPLE_FIX_HINT}")
+    try:
+        with os.scandir(sample) as entries:
+            next(entries, None)
+    except OSError as e:
+        raise SampleUnavailable(f"The debug sample folder {sample} cannot be listed ({e}). {SAMPLE_FIX_HINT}") from e
+    return sample
+
+
+def require_sample() -> Path:
+    sample = require_sample_root()
+    roots, ignored_folders, ignored_patterns = _sample_scope_rules(sample)
+    if not files_in_scope([str(root) for root in roots], ignored_folders, ignored_patterns):
+        raise SampleUnavailable(f"The debug sample folder {sample} has no files to index. {SAMPLE_FIX_HINT}")
+    return sample
+
+
 def sample_db_setup(root: Path) -> None:
+    sample = require_sample_root()
     db_path = _sample_settings_db(root)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    sample = sample_root()
+    roots, ignored_folders, ignored_patterns = _sample_scope_rules(sample)
     settings = SettingDB(str(db_path))
-    _add_parent_folder(settings, sample)
-    for folder in SAMPLE_IGNORED_FOLDERS:
-        settings.add_ignore_folder(str(sample / folder))
-    settings.add_ignore_pattern(f"{glob.escape(normalize_path(sample))}/{SAMPLE_IGNORED_PATTERN}")
+    for folder in roots:
+        _add_parent_folder(settings, folder)
+    for folder in ignored_folders:
+        settings.add_ignore_folder(folder)
+    for pattern in ignored_patterns:
+        settings.add_ignore_pattern(pattern)
     AppLogger.info(f"Sample DB settings written to {db_path} (sample root {sample})")
 
 
@@ -185,7 +224,12 @@ def expected_source_count(settings_db: Path) -> int:
 
 
 def sample_scope_count(profile: str) -> int:
-    return expected_source_count(_sample_settings_db(profile_data_root(validate_profile_name(profile))))
+    settings_db = _sample_settings_db(profile_data_root(validate_profile_name(profile)))
+    sample = require_sample_root()
+    count = expected_source_count(settings_db)
+    if not count:
+        raise SampleUnavailable(f"{profile} has no files to index under {sample} or its other folders. {SAMPLE_FIX_HINT}")
+    return count
 
 
 def sample_index_state(profile: str) -> IndexState:
@@ -300,6 +344,7 @@ def build_template(checkout: Path, *, on_progress: Progress) -> Path:
         if target.is_dir():
             on_progress(f"Sample template {digest} is ready")
             return target
+        require_sample()
         root = profile_data_root(TEMPLATE_BUILD_PROFILE)
         stop_profile(TEMPLATE_BUILD_PROFILE)
         if root.exists():
@@ -322,6 +367,7 @@ def build_template(checkout: Path, *, on_progress: Progress) -> Path:
 
 
 def rebuild_template(checkout: Path, *, on_progress: Progress) -> Path:
+    require_sample()
     digest = schema_hash(checkout)
     target = template_dir(digest)
     with file_lock(_template_lock(digest), timeout=TEMPLATE_LOCK_TIMEOUT):
@@ -344,6 +390,7 @@ def _prepare_scratch(profile: str, staging: Path) -> None:
 
 def ensure_profile(checkout: Path, *, fresh: bool, on_progress: Progress) -> str:
     profile = profile_name_for(checkout)
+    require_sample()
     template = template_dir(schema_hash(checkout))
     if not template.is_dir():
         template = build_template(checkout, on_progress=on_progress)

@@ -231,7 +231,7 @@ class DebugSession:
     def _sample_scope_count(self) -> int:
         try:
             return profile_setup.sample_scope_count(self.profile)
-        except FileNotFoundError as e:
+        except (FileNotFoundError, profile_setup.SampleUnavailable) as e:
             raise DebugError(f"Cannot tell whether {self.profile} finished indexing: {e}") from e
 
     def _processes(self) -> list[dict]:

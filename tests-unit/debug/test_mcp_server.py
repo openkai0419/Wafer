@@ -383,6 +383,20 @@ def test_wait_idle_waits_for_the_whole_sample_like_the_template(app_data, proces
     assert reason in str(excinfo.value)
 
 
+def test_wait_idle_reports_a_missing_sample_instead_of_idle(tmp_path, app_data, processes, node, clock, sample_scope, monkeypatch):
+    sample_scope(1)
+    session = running_session(processes)
+    make_sample_db(PROFILE, [], 0)
+    monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(tmp_path / "gone"))
+    node.handler = staticmethod(lambda op, args, dst: ok({"modal": False, "main_thread_ms": 5.0}))
+
+    text = tool_text(build_server(session), "wait_idle", {"timeout": 2})
+
+    assert "idle" not in text.split(":")[0]
+    assert str(tmp_path / "gone") in text
+    assert "worktree.py repair" in text
+
+
 def test_wait_idle_needs_a_running_profile_before_reading_any_index(app_data, processes, node, monkeypatch):
     session = DebugSession()
     monkeypatch.setattr(profile_setup, "sample_scope_count", lambda profile: pytest.fail("read the index without a running profile"))

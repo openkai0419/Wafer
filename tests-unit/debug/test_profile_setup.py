@@ -255,6 +255,78 @@ def test_build_template_stops_the_build_profile_when_indexing_fails(tmp_path, mo
     assert not profile_setup.template_dir(schema_hash(checkout)).exists()
 
 
+def _no_launch(monkeypatch):
+    stops = []
+    monkeypatch.setattr(profile_setup, "launch_process", lambda checkout, profile: pytest.fail("launched without a usable sample"))
+    monkeypatch.setattr(profile_setup, "wait_indexed", lambda profile, timeout: pytest.fail("waited without a usable sample"))
+    monkeypatch.setattr(profile_setup, "stop_profile", lambda profile, timeout=15.0: stops.append(profile))
+    return stops
+
+
+def _missing_sample(tmp_path, monkeypatch) -> Path:
+    missing = tmp_path / "no-sample"
+    monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(missing))
+    return missing
+
+
+def _empty_sample(tmp_path, monkeypatch) -> Path:
+    empty = tmp_path / "empty-sample"
+    (empty / "coco" / "train2017").mkdir(parents=True)
+    Image.new("RGB", (8, 8)).save(empty / "coco" / "train2017" / "000000000001.jpg")
+    (empty / "coco" / "val2017.zip").write_bytes(b"zip")
+    monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(empty))
+    return empty
+
+
+@pytest.mark.parametrize(("make", "message"), [(_missing_sample, "is missing"), (_empty_sample, "has no files")])
+def test_build_template_refuses_an_unusable_sample_before_launching(tmp_path, monkeypatch, app_data, make, message):
+    checkout = make_checkout(tmp_path / "Repo")
+    sample = make(tmp_path, monkeypatch)
+    stops = _no_launch(monkeypatch)
+
+    with pytest.raises(profile_setup.SampleUnavailable, match=message) as exc:
+        build_template(checkout, on_progress=lambda text: None)
+    assert str(sample) in str(exc.value)
+    assert "worktree.py repair" in str(exc.value)
+    assert stops == []
+    assert not profile_setup.template_dir(schema_hash(checkout)).exists()
+    assert not profile_data_root("debug-template-build").exists()
+
+
+@pytest.mark.parametrize(("make", "message"), [(_missing_sample, "is missing"), (_empty_sample, "has no files")])
+def test_ensure_profile_refuses_an_unusable_sample_before_creating_anything(tmp_path, monkeypatch, app_data, make, message):
+    checkout = make_checkout(tmp_path / "Repo")
+    _write_template(profile_setup.template_dir(schema_hash(checkout)))
+    make(tmp_path, monkeypatch)
+    stops = _no_launch(monkeypatch)
+    monkeypatch.setattr(profile_setup, "build_template", lambda c, *, on_progress: pytest.fail("built without a usable sample"))
+
+    with pytest.raises(profile_setup.SampleUnavailable, match=message):
+        ensure_profile(checkout, fresh=False, on_progress=lambda text: None)
+    assert stops == []
+    assert not profile_data_root("debug-main").exists()
+
+
+def test_sample_root_that_cannot_be_listed_is_refused(tmp_path, monkeypatch, app_data, sample):
+    real_scandir = os.scandir
+
+    def denied(path):
+        if Path(path) == sample:
+            raise PermissionError(13, "Access is denied", str(path))
+        return real_scandir(path)
+
+    monkeypatch.setattr(profile_setup.os, "scandir", denied)
+    with pytest.raises(profile_setup.SampleUnavailable, match="cannot be listed"):
+        profile_setup.require_sample()
+
+
+def test_wait_indexed_refuses_a_sample_that_went_missing(tmp_path, monkeypatch, app_data, sample, fast_wait):
+    sample_db_setup(profile_data_root(PROFILE))
+    _missing_sample(tmp_path, monkeypatch)
+    with pytest.raises(profile_setup.SampleUnavailable, match="is missing"):
+        wait_indexed(PROFILE, timeout=5.0)
+
+
 PROFILE = "debug-x"
 SAMPLE_IN_SCOPE = 31
 
@@ -377,7 +449,7 @@ def test_wait_indexed_times_out_without_a_database(fast_wait, build_profile):
         wait_indexed(PROFILE, timeout=0.3)
 
 
-def test_wait_indexed_needs_the_sample_settings(app_data, fast_wait):
+def test_wait_indexed_needs_the_sample_settings(app_data, sample, fast_wait):
     with pytest.raises(FileNotFoundError):
         wait_indexed(PROFILE, timeout=0.3)
 
@@ -500,7 +572,7 @@ def test_cli_launch_stops_prepares_and_starts_the_profile(tmp_path, monkeypatch)
     assert events == [("stop", "debug-main"), ("ensure", True), ("launch", "debug-main")]
 
 
-def test_cli_rebuild_template_replaces_the_current_template(tmp_path, monkeypatch, app_data):
+def test_cli_rebuild_template_replaces_the_current_template(tmp_path, monkeypatch, app_data, sample):
     checkout = make_checkout(tmp_path / "Repo")
     old = profile_setup.template_dir(schema_hash(checkout))
     (old / "stale").mkdir(parents=True)
@@ -680,7 +752,7 @@ def _write_template(target: Path):
         (target / "data" / name).write_bytes(b"x")
 
 
-def test_rebuild_template_never_leaves_a_half_deleted_template(tmp_path, monkeypatch, app_data):
+def test_rebuild_template_never_leaves_a_half_deleted_template(tmp_path, monkeypatch, app_data, sample):
     checkout = make_checkout(tmp_path / "Repo")
     target = profile_setup.template_dir(schema_hash(checkout))
     _write_template(target)
@@ -704,7 +776,7 @@ def test_rebuild_template_never_leaves_a_half_deleted_template(tmp_path, monkeyp
     assert not target.exists()
 
 
-def test_rebuild_template_keeps_the_template_it_cannot_move_away(tmp_path, monkeypatch, app_data):
+def test_rebuild_template_keeps_the_template_it_cannot_move_away(tmp_path, monkeypatch, app_data, sample):
     checkout = make_checkout(tmp_path / "Repo")
     target = profile_setup.template_dir(schema_hash(checkout))
     _write_template(target)
@@ -724,4 +796,17 @@ def test_rebuild_template_keeps_the_template_it_cannot_move_away(tmp_path, monke
     with pytest.raises(PermissionError):
         profile_setup.rebuild_template(checkout, on_progress=lambda text: None)
 
+    assert sorted(p.name for p in (target / "data").iterdir()) == ["a.bin", "b.bin", "c.bin"]
+
+
+@pytest.mark.parametrize("make", [_missing_sample, _empty_sample])
+def test_rebuild_template_keeps_the_template_when_the_sample_is_unusable(tmp_path, monkeypatch, app_data, make):
+    checkout = make_checkout(tmp_path / "Repo")
+    target = profile_setup.template_dir(schema_hash(checkout))
+    _write_template(target)
+    make(tmp_path, monkeypatch)
+    monkeypatch.setattr(profile_setup, "build_template", lambda c, *, on_progress: pytest.fail("built without a usable sample"))
+
+    with pytest.raises(profile_setup.SampleUnavailable):
+        profile_setup.rebuild_template(checkout, on_progress=lambda text: None)
     assert sorted(p.name for p in (target / "data").iterdir()) == ["a.bin", "b.bin", "c.bin"]

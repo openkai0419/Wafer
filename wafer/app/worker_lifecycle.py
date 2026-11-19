@@ -45,6 +45,12 @@ class PluginWorkerLifecycle:
         self._executor.shutdown(wait=True, cancel_futures=True)
 
 
-def failed_results(paths, results) -> list[dict]:
+def cancel_not_started(futures: dict, not_done) -> set:
+    return {futures[f] for f in not_done if f.cancel()}
+
+
+def failed_results(paths, results, not_started=()) -> list[dict]:
+    """Paths left out stay 'dispatched' and go back to pending through reset_stale_dispatched."""
     reported = {r.get("source") for r in results}
+    reported.update(not_started)
     return [{"source": p, "status": False} for p in paths if p not in reported]

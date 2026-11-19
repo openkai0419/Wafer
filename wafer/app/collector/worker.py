@@ -8,7 +8,7 @@ from ...core.ipc.node import Node
 from ...core.ipc.transport import BROKER_LOST_TIMEOUT
 from ...plugin.collector.handler import collector_resolver
 from ...plugin.collector.base import CollectorResult, BaseSingletonCollector
-from ..worker_lifecycle import PluginWorkerLifecycle, failed_results
+from ..worker_lifecycle import PluginWorkerLifecycle, cancel_not_started, failed_results
 
 _SHUTDOWN_WAIT = 5
 
@@ -122,11 +122,14 @@ class CollectorWorker:
                     all_results.extend(fut.result())
                 except Exception as e:
                     AppLogger.warning(f"[Collector] future failed: {futures[fut]}: {e}", exc=e)
+            not_started = cancel_not_started(futures, not_done)
             if not_done:
-                AppLogger.warning(f"[Collector] batch timeout: {len(not_done)}/{len(paths)} unfinished")
-                for fut in not_done:
-                    fut.cancel()
-            all_results.extend(failed_results(paths, all_results))
+                AppLogger.warning(f"[Collector] batch timeout: {len(not_done) - len(not_started)}/{len(paths)} unfinished, {len(not_started)} not started (retried later)")
+            failures = failed_results(paths, all_results, not_started)
+            if failures and self._stop.is_set():
+                AppLogger.info(f"[Collector] Stopping: {len(failures)} paths without a result are retried later")
+            else:
+                all_results.extend(failures)
             self._node.send_reliable(
                 "collect.result",
                 {"collector": self.plugin_name, "results": all_results},

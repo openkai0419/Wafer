@@ -8,7 +8,7 @@ from ...core.ipc.node import Node
 from ...core.ipc.transport import BROKER_LOST_TIMEOUT
 from ...plugin.parser.handler import parser_resolver
 from ...plugin.parser.base import ParserResult, BaseSingletonParser
-from ..worker_lifecycle import PluginWorkerLifecycle, failed_results
+from ..worker_lifecycle import PluginWorkerLifecycle, cancel_not_started, failed_results
 
 _SHUTDOWN_WAIT = 5
 
@@ -115,12 +115,15 @@ class ParserWorker:
                 except Exception as e:
                     AppLogger.warning(f"[Parser] future failed: {futures[fut]}: {e}", exc=e)
                     results_raw.append({})
+            not_started = cancel_not_started(futures, not_done)
             if not_done:
-                AppLogger.warning(f"[Parser] batch timeout: {len(not_done)}/{len(paths)} unfinished")
-                for fut in not_done:
-                    fut.cancel()
+                AppLogger.warning(f"[Parser] batch timeout: {len(not_done) - len(not_started)}/{len(paths)} unfinished, {len(not_started)} not started (retried later)")
             results = [r for r in results_raw if r]
-            results.extend(failed_results(paths, results))
+            failures = failed_results(paths, results, not_started)
+            if failures and self._stop.is_set():
+                AppLogger.info(f"[Parser] Stopping: {len(failures)} paths without a result are retried later")
+            else:
+                results.extend(failures)
             self._node.send_reliable(
                 "parse.result",
                 {"parser": self._status_name, "results": results},

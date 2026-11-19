@@ -306,10 +306,6 @@ connectEvents(
     if (event.topic === 'update' && event.db === state.db) {
       keyPicker.invalidate();
       meta.invalidate();
-    } else if (event.topic === 'folderchanged' && event.db === state.db) {
-      tree.load(state.db, state.folder);
-    } else if (event.topic === 'db.created' || event.topic === 'db.deleted') {
-      location.reload();
     }
   },
   (connState) => {

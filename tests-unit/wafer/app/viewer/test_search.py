@@ -224,3 +224,13 @@ def test_a_search_closes_its_engine(monkeypatch):
     _run_search_inline(svc, monkeypatch, lambda *a: ([], [], []))
 
     assert len(closed) == 1
+
+
+def test_a_search_sends_the_path_index_built_off_main(monkeypatch):
+    svc = _make_service()
+    finished = []
+    svc.search_finished.connect(lambda *a: finished.append(a))
+
+    _run_search_inline(svc, monkeypatch, lambda *a: (["a", "b"], ["sa", "sb"], [1.0, 2.0]))
+
+    assert finished == [(["a", "b"], ["sa", "sb"], [1.0, 2.0], {"a": 0, "b": 1})]

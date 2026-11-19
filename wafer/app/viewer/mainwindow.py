@@ -767,9 +767,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_search_started(self):
         self._show_loading()
 
-    @QtCore.Slot(object, object, object)
+    @QtCore.Slot(object, object, object, object)
     @profiler.profile
-    def _on_search_finished(self, paths, sources, aspects):
+    def _on_search_finished(self, paths, sources, aspects, path_index=None):
         keep_scroll = not self._folder_changed
         self._folder_changed = False
         self.search_row_widget.run_folder_worker(
@@ -785,9 +785,9 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self._last_paths = paths
         self._last_aspects = aspects
-        self.grid_view.set_paths(paths, sources, aspects, keep_scroll=keep_scroll)
+        self.grid_view.set_paths(paths, sources, aspects, keep_scroll=keep_scroll, path_index=path_index)
         if paths_changed:
-            self.file_list_provider.on_search_results(paths, sources)
+            self.file_list_provider.on_search_results(paths, sources, path_index)
 
     def _restore_from_slot(self, entry: WindowSlot, skip_window_state=False, on_complete=None):
         def after_path():

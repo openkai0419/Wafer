@@ -134,3 +134,13 @@ def test_avg_aspect_none_treated_as_one():
     vi = GridItemModel()
     vi.set_items(["a", "b"], ["sa", "sb"], [None, 3.0])
     assert vi.avg_aspect == pytest.approx(2.0)
+
+
+def test_set_items_keeps_the_given_lists_and_index():
+    vi = GridItemModel()
+    paths, sources, aspects = ["a", "b"], ["sa", "sb"], [1.0, 2.0]
+    index = {"a": 0, "b": 1}
+    vi.set_items(paths, sources, aspects, index)
+    assert vi.paths is paths and vi.sources is sources and vi.aspect_ratios is aspects
+    assert vi.path_index is index
+    assert vi.index_of_path("b") == 1

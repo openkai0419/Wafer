@@ -48,7 +48,7 @@ class FileListProvider(QtCore.QObject):
         return self._open_contained_files_as_list
 
     def _sync_from_grid(self):
-        self._file_model.set_items(self._grid_items.paths, self._grid_items.sources)
+        self._file_model.set_items(self._grid_items.paths, self._grid_items.sources, self._grid_items.path_index)
 
     def set_mode(self, mode: ListMode):
         self._cancel_pending()
@@ -88,9 +88,9 @@ class FileListProvider(QtCore.QObject):
                 return None
         return None
 
-    def on_search_results(self, paths: list[str], sources: list[str]):
+    def on_search_results(self, paths: list[str], sources: list[str], path_index: dict[str, int] | None = None):
         if self._mode == ListMode.SYNC:
-            self._file_model.set_items(paths, sources)
+            self._file_model.set_items(paths, sources, path_index)
 
     def on_file_set(self, path: str):
         if self._open_contained_files_as_list and self._file_model.dbpath:
@@ -104,10 +104,8 @@ class FileListProvider(QtCore.QObject):
             case ListMode.SYNC:
                 self._file_model.set_path(path)
             case ListMode.FIX:
-                self._file_model.set_items(
-                    list(self._grid_items.paths),
-                    list(self._grid_items.sources),
-                )
+                if self._file_model.paths is not self._grid_items.paths:
+                    self._sync_from_grid()
                 self._file_model.set_path(path)
             case ListMode.DIR:
                 self._file_model.set_path(path)

@@ -443,7 +443,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self._overlay.update()
 
     @profiler.profile
-    def set_paths(self, path_list, sources, aspect_ratios, keep_scroll=True):
+    def set_paths(self, path_list, sources, aspect_ratios, keep_scroll=True, path_index=None):
         if not path_list:
             self.items.clear()
             self._clear_all_widgets()
@@ -462,7 +462,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self._update_scroll = None
         self._clear_all_widgets()
         with self.items.selection_noemit():
-            self.items.set_items(path_list, sources, aspect_ratios)
+            self.items.set_items(path_list, sources, aspect_ratios, path_index)
         self._recalc_layout()
 
     @profiler.profile

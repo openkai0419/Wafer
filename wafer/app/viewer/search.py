@@ -12,6 +12,7 @@ from ...qt.common.thread import utility_pool
 from ...plugin.query.handler import sort_registry
 from ...builtins.filters import TextFilter, DirectoryFilter, ContainedFilesFilter
 from ...builtins.sorts import NaturalPathSort
+from .grid.items import index_paths
 
 
 _DEFAULTS = {
@@ -31,7 +32,7 @@ _DEFAULTS = {
 
 class SearchService(QtCore.QObject):
     search_started = QtCore.Signal()
-    search_finished = QtCore.Signal(object, object, object)
+    search_finished = QtCore.Signal(object, object, object, object)
     search_failed = QtCore.Signal()
     params_changed = QtCore.Signal(dict)
 
@@ -180,7 +181,8 @@ class SearchService(QtCore.QObject):
         def task():
             engine = FileSearchEngine(dbpath)
             try:
-                result = self._composer.execute(engine, filter_entries, sort_plugin, ascending)
+                paths, sources, aspects = self._composer.execute(engine, filter_entries, sort_plugin, ascending)
+                result = (paths, sources, aspects, index_paths(paths))
             except Exception as e:
                 AppLogger.error(f"Search failed: {e}. Run the search again or change the conditions.", exc=e)
                 result = None
@@ -203,9 +205,8 @@ class SearchService(QtCore.QObject):
             self.search_failed.emit()
         else:
             self._last_snapshot = snapshot
-            paths, sources, aspects = result
-            AppLogger.debug(f"search done: {len(paths)} results")
-            self.search_finished.emit(paths, sources, aspects)
+            AppLogger.debug(f"search done: {len(result[0])} results")
+            self.search_finished.emit(*result)
         with QtCore.QMutexLocker(self._lock):
             if self._pending_snapshot:
                 self._pending_snapshot = None

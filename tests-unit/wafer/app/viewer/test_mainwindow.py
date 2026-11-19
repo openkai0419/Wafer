@@ -113,10 +113,19 @@ class TestSearchResultDiffCheck:
     def test_new_aspects_of_the_same_paths_update_only_the_grid(self):
         paths = ["a.png", "b.png"]
         win = self._make_win(last_paths=paths, last_aspects=[1.0, 1.0])
-        win._on_search_finished(paths, paths, [1.0, 1.5])
-        win.grid_view.set_paths.assert_called_once_with(paths, paths, [1.0, 1.5], keep_scroll=True)
+        index = {"a.png": 0, "b.png": 1}
+        win._on_search_finished(paths, paths, [1.0, 1.5], index)
+        win.grid_view.set_paths.assert_called_once_with(paths, paths, [1.0, 1.5], keep_scroll=True, path_index=index)
         win.file_list_provider.on_search_results.assert_not_called()
         assert win._last_aspects == [1.0, 1.5]
+
+    def test_the_path_index_goes_to_the_grid_and_the_file_list(self):
+        win = self._make_win(last_paths=["a.png"])
+        paths = ["a.png", "b.png"]
+        index = {"a.png": 0, "b.png": 1}
+        win._on_search_finished(paths, paths, [1.0, 1.5], index)
+        assert win.grid_view.set_paths.call_args.kwargs["path_index"] is index
+        win.file_list_provider.on_search_results.assert_called_once_with(paths, paths, index)
 
     def test_first_search_always_updates(self):
         win = self._make_win(last_paths=None)

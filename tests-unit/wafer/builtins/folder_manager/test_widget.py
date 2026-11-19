@@ -1718,3 +1718,12 @@ def test_collapse_all_drops_a_waiting_select(qtbot, tmp_path, monkeypatch, query
     qtbot.waitUntil(lambda: panel.model.disk is not None and panel.model.disk.finished and not panel.scanning and not panel.counting, timeout=5000)
     settle()
     assert expanded == []
+
+
+def test_bar_uses_the_funnel_and_collapse_all_icons(qtbot, monkeypatch):
+    keys = []
+    real_tool_button = widget_module.tool_button
+    monkeypatch.setattr(widget_module, "tool_button", lambda icon, *args: keys.append(icon) or real_tool_button(icon, *args))
+    make_panel(qtbot)
+    assert {"filter", "collapse_all"} <= set(keys)
+    assert "query" not in keys and "chevron_right" not in keys

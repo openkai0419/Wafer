@@ -67,3 +67,12 @@ class TestPadding:
             icon = themed_icon("folder_plus", margin=margin)
             assert not icon.isNull()
             _assert_logical_size(icon.pixmap(QSize(32, 32)), 32)
+
+
+def test_filter_and_collapse_all_icons_are_registered_and_distinct():
+    from wafer.qt.common.icon_engine import _REGISTRY, themed_icon
+
+    assert {"filter", "collapse_all"} <= _REGISTRY.keys()
+    images = {key: themed_icon(key).pixmap(32, 32).toImage() for key in ("filter", "query", "collapse_all", "chevron_right")}
+    assert images["filter"] != images["query"]
+    assert images["collapse_all"] != images["chevron_right"]

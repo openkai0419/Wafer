@@ -556,6 +556,51 @@ def _draw_query(p: QPainter, r: QRectF, color: QColor):
     p.drawLine(handle_start, handle_end)
 
 
+@_register("filter", padding=0.08)
+def _draw_filter(p: QPainter, r: QRectF, color: QColor):
+    s = min(r.width(), r.height())
+    pen = QPen(color, max(1.5, s * 0.10))
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    cx = r.center().x()
+    top = r.top() + s * 0.14
+    waist = r.top() + s * 0.52
+    bottom = r.bottom() - s * 0.10
+    half_top = s * 0.40
+    half_neck = s * 0.09
+    path = QPainterPath()
+    path.moveTo(QPointF(cx - half_top, top))
+    path.lineTo(QPointF(cx + half_top, top))
+    path.lineTo(QPointF(cx + half_neck, waist))
+    path.lineTo(QPointF(cx + half_neck, bottom))
+    path.lineTo(QPointF(cx - half_neck, bottom))
+    path.lineTo(QPointF(cx - half_neck, waist))
+    path.closeSubpath()
+    p.drawPath(path)
+
+
+@_register("collapse_all", padding=0.08)
+def _draw_collapse_all(p: QPainter, r: QRectF, color: QColor):
+    s = min(r.width(), r.height())
+    pen = QPen(color, max(1.5, s * 0.10))
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    cx = r.center().x()
+    cy = r.center().y()
+    half_width = s * 0.34
+    depth = s * 0.20
+    gap = s * 0.16
+    for direction in (1, -1):
+        tip = cy - direction * gap
+        wing = tip - direction * depth
+        p.drawLine(QPointF(cx - half_width, wing), QPointF(cx, tip))
+        p.drawLine(QPointF(cx + half_width, wing), QPointF(cx, tip))
+
+
 @_register("menu", padding=0.15)
 def _draw_menu(p: QPainter, r: QRectF, color: QColor):
     lw = max(1.5, min(r.width(), r.height()) * 0.11)

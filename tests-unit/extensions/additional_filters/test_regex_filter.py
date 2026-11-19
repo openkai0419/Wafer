@@ -161,6 +161,18 @@ class TestExtractLiteralHints:
         hints = _extract_literal_hints(r"abc(?=def)")
         assert "abc" in hints
 
+    def test_lookaround_text_is_never_a_hint(self):
+        assert _extract_literal_hints(r"abc(?=def)") == ["abc"]
+        assert _extract_literal_hints(r"foo(?!bar)") == ["foo"]
+        assert _extract_literal_hints(r"(?<=x)abc") == ["abc"]
+        assert _extract_literal_hints(r"(?<!x)abc") == ["abc"]
+        assert _extract_literal_hints(r"(?<=pre)mid(?!post)end") == ["mid", "end"]
+
+    def test_groups_nested_in_lookaround_are_never_hints(self):
+        assert _extract_literal_hints(r"foo(?!(?:bar)baz)") == ["foo"]
+        assert _extract_literal_hints(r"foo(?!b(ar)(?=z)q)") == ["foo"]
+        assert _extract_literal_hints(r"(?:foo(?<!xfoo))end") == ["foo", "end"]
+
     def test_lazy_quantifier(self):
         hints = _extract_literal_hints(r"ab+?c")
         assert "ab" in hints
@@ -437,6 +449,21 @@ class TestMetaFiltering:
             },
         )
         assert "c:/a.jpg" in result
+
+    def test_lookaround_text_does_not_exclude_matches(self, tmp_path):
+        db = _setup_db(
+            tmp_path,
+            files=["c:/a.jpg", "c:/b.jpg", "c:/c.jpg"],
+            meta=[
+                ("c:/a.jpg", "desc", "foobaz"),
+                ("c:/b.jpg", "desc", "foobar"),
+                ("c:/c.jpg", "desc", "yabc"),
+            ],
+        )
+        assert _query(db, {"pattern": r"foo(?!bar)", "keys": ["desc"]}) == {"c:/a.jpg"}
+        assert _query(db, {"pattern": r"foo(?=baz)", "keys": ["desc"]}) == {"c:/a.jpg"}
+        assert _query(db, {"pattern": r"(?<!x)abc", "keys": ["desc"]}) == {"c:/c.jpg"}
+        assert _query(db, {"pattern": r"(?<=y)abc", "keys": ["desc"]}) == {"c:/c.jpg"}
 
     def test_tag_value_like_match(self, tmp_path):
         db = _setup_db(

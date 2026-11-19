@@ -8,6 +8,7 @@ from wafer.core.db.query import compiled_regex, key_path_queries
 from wafer.plugin import BaseFilterPlugin
 from wafer.core.profiling import profiler
 
+_LOOKAROUND_PREFIXES = ("?=", "?!", "?<=", "?<!")
 
 def _extract_literal_hints(pattern):
     try:
@@ -56,14 +57,15 @@ def _extract_literal_hints(pattern):
             i = _skip_char_class(pattern, i + 1, n)
         elif c == "(":
             _flush(current, runs)
-            group_stack.append((len(runs), False))
+            is_lookaround = pattern.startswith(_LOOKAROUND_PREFIXES, i + 1)
+            group_stack.append((len(runs), is_lookaround))
             i += 1
             i = _skip_group_modifier(pattern, i, n)
         elif c == ")":
             _flush(current, runs)
             if group_stack:
-                start_idx, has_alt = group_stack.pop()
-                if has_alt:
+                start_idx, drop_runs = group_stack.pop()
+                if drop_runs:
                     del runs[start_idx:]
             i += 1
         elif c == "|":

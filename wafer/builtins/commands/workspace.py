@@ -13,7 +13,7 @@ from ...core.store.workspace import (
     UIPreset,
     WorkspaceStore,
 )
-from ...qt.widgets.dialogs import InputDialog
+from ...qt.widgets.dialogs import ConfirmDialog, InputDialog
 from ...core.logs import AppLogger
 from ...qt.common.notifier import Notifier
 
@@ -43,6 +43,18 @@ def _unique_name(prefix: str, existing: list[str]) -> str:
         i += 1
 
 
+def _save_preset(w, presets: list, name: str, prefix: str, create, overwrite) -> str:
+    name = (name or "").strip() or _unique_name(prefix, [p.name for p in presets])
+    existing = next((p for p in presets if p.name == name), None)
+    if existing is None:
+        return create(w, name)
+    ok = t("Overwrite")
+    if ConfirmDialog.ask(t('Overwrite "{name}"?', name=name), title=ok, buttons=(ok, t("Cancel")), parent=w) != ok:
+        return ""
+    overwrite(w, existing)
+    return existing.preset_id
+
+
 def _preset_id_param(list_presets) -> ActionKit.Param:
     return ActionKit.Param(
         name="preset_id",
@@ -54,9 +66,7 @@ def _preset_id_param(list_presets) -> ActionKit.Param:
 
 
 # ---------- UI preset ----------
-@require(w="MainWindow")
-def ui_preset_save_current(ctx, w, name: str = "") -> str:
-    name = (name or "").strip() or _unique_name("UI", [p.name for p in _store().list_ui_presets()])
+def _create_ui_preset(w, name: str) -> str:
     state = w.ui_coord.capture()
     preset = UIPreset(
         name=name,
@@ -67,6 +77,18 @@ def ui_preset_save_current(ctx, w, name: str = "") -> str:
     Notifier.info(f"UI preset saved: {name}")
     AppLogger.info(f"ui_preset saved: {name} ({preset.preset_id})")
     return preset.preset_id
+
+
+def _overwrite_ui_preset(w, preset: UIPreset) -> None:
+    state = w.ui_coord.capture()
+    if _store().update_ui_preset(preset.preset_id, state.get("window_state", {}), state.get("component_states", {})):
+        Notifier.info(f"UI preset overwritten: {preset.name}")
+        AppLogger.info(f"ui_preset overwritten: {preset.name} ({preset.preset_id})")
+
+
+@require(w="MainWindow")
+def ui_preset_save_current(ctx, w, name: str = "") -> str:
+    return _save_preset(w, _store().list_ui_presets(), name, "UI", _create_ui_preset, _overwrite_ui_preset)
 
 
 @require(w="MainWindow")
@@ -107,21 +129,11 @@ def ui_preset_overwrite(ctx, w, preset_id: str = ""):
     if not preset:
         Notifier.warning("UI preset not found")
         return
-    state = w.ui_coord.capture()
-    ok = _store().update_ui_preset(
-        preset_id,
-        state.get("window_state", {}),
-        state.get("component_states", {}),
-    )
-    if ok:
-        Notifier.info(f"UI preset overwritten: {preset.name}")
-        AppLogger.info(f"ui_preset overwritten: {preset.name} ({preset_id})")
+    _overwrite_ui_preset(w, preset)
 
 
 # ---------- Path preset ----------
-@require(w="MainWindow")
-def path_preset_save_current(ctx, w, name: str = "") -> str:
-    name = (name or "").strip() or _unique_name("Path", [p.name for p in _store().list_path_presets()])
+def _create_path_preset(w, name: str) -> str:
     state = w.path_coord.capture()
     preset = PathPreset(
         name=name,
@@ -133,6 +145,23 @@ def path_preset_save_current(ctx, w, name: str = "") -> str:
     Notifier.info(f"Path preset saved: {name}")
     AppLogger.info(f"path_preset saved: {name} ({preset.preset_id})")
     return preset.preset_id
+
+
+def _overwrite_path_preset(w, preset: PathPreset) -> None:
+    state = w.path_coord.capture()
+    if _store().update_path_preset(
+        preset.preset_id,
+        state.get("database_name", ""),
+        list(state.get("expanded") or []),
+        list(state.get("selected") or []),
+    ):
+        Notifier.info(f"Path preset overwritten: {preset.name}")
+        AppLogger.info(f"path_preset overwritten: {preset.name} ({preset.preset_id})")
+
+
+@require(w="MainWindow")
+def path_preset_save_current(ctx, w, name: str = "") -> str:
+    return _save_preset(w, _store().list_path_presets(), name, "Path", _create_path_preset, _overwrite_path_preset)
 
 
 @require(w="MainWindow")
@@ -177,22 +206,11 @@ def path_preset_overwrite(ctx, w, preset_id: str = ""):
     if not preset:
         Notifier.warning("Path preset not found")
         return
-    state = w.path_coord.capture()
-    ok = _store().update_path_preset(
-        preset_id,
-        state.get("database_name", ""),
-        list(state.get("expanded") or []),
-        list(state.get("selected") or []),
-    )
-    if ok:
-        Notifier.info(f"Path preset overwritten: {preset.name}")
-        AppLogger.info(f"path_preset overwritten: {preset.name} ({preset_id})")
+    _overwrite_path_preset(w, preset)
 
 
 # ---------- Query preset ----------
-@require(w="MainWindow")
-def query_preset_save_current(ctx, w, name: str = "") -> str:
-    name = (name or "").strip() or _unique_name("Filter", [p.name for p in _store().list_query_presets()])
+def _create_query_preset(w, name: str) -> str:
     state = w.query_coord.capture()
     preset = QueryPreset(
         name=name,
@@ -204,6 +222,23 @@ def query_preset_save_current(ctx, w, name: str = "") -> str:
     Notifier.info(f"Query preset saved: {name}")
     AppLogger.info(f"query_preset saved: {name} ({preset.preset_id})")
     return preset.preset_id
+
+
+def _overwrite_query_preset(w, preset: QueryPreset) -> None:
+    state = w.query_coord.capture()
+    if _store().update_query_preset(
+        preset.preset_id,
+        [BarSpec.from_dict(b) for b in (state.get("bars") or [])],
+        state.get("sort_by", "none"),
+        bool(state.get("ascending", False)),
+    ):
+        Notifier.info(f"Query preset overwritten: {preset.name}")
+        AppLogger.info(f"query_preset overwritten: {preset.name} ({preset.preset_id})")
+
+
+@require(w="MainWindow")
+def query_preset_save_current(ctx, w, name: str = "") -> str:
+    return _save_preset(w, _store().list_query_presets(), name, "Filter", _create_query_preset, _overwrite_query_preset)
 
 
 @require(w="MainWindow")
@@ -245,16 +280,7 @@ def query_preset_overwrite(ctx, w, preset_id: str = ""):
     if not preset:
         Notifier.warning("Query preset not found")
         return
-    state = w.query_coord.capture()
-    ok = _store().update_query_preset(
-        preset_id,
-        [BarSpec.from_dict(b) for b in (state.get("bars") or [])],
-        state.get("sort_by", "none"),
-        bool(state.get("ascending", False)),
-    )
-    if ok:
-        Notifier.info(f"Query preset overwritten: {preset.name}")
-        AppLogger.info(f"query_preset overwritten: {preset.name} ({preset_id})")
+    _overwrite_query_preset(w, preset)
 
 
 @require(w="MainWindow")

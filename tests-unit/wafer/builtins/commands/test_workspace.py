@@ -298,6 +298,39 @@ class TestWorkspaceCommands:
         assert LayoutManager._command_id("Workspace") not in items
 
 
+class TestSavePresetWithExistingName:
+    def save(self, answer, name="Work"):
+        win = MagicMock()
+        win.ui_coord.capture.return_value = {"window_state": {"geometry": "new"}, "component_states": {}}
+        store = MagicMock()
+        store.list_ui_presets.return_value = [UIPreset(preset_id="p1", name="Work")]
+        store.update_ui_preset.return_value = True
+        with (
+            patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store),
+            patch.object(workspace_commands.ConfirmDialog, "ask", return_value=answer) as ask,
+        ):
+            result = workspace_commands.ui_preset_save_current(_Ctx(win), name=name)
+        return store, ask, result
+
+    def test_confirmed_save_overwrites_the_preset_with_that_name(self):
+        store, ask, result = self.save(workspace_commands.t("Overwrite"))
+        ask.assert_called_once()
+        store.save_ui_preset.assert_not_called()
+        store.update_ui_preset.assert_called_once_with("p1", {"geometry": "new"}, {})
+        assert result == "p1"
+
+    def test_cancelled_save_changes_nothing(self):
+        store, _, result = self.save(workspace_commands.t("Cancel"))
+        store.save_ui_preset.assert_not_called()
+        store.update_ui_preset.assert_not_called()
+        assert result == ""
+
+    def test_new_name_saves_without_asking(self):
+        store, ask, _ = self.save(None, name="Home")
+        ask.assert_not_called()
+        assert store.save_ui_preset.call_args[0][0].name == "Home"
+
+
 class TestPresetIdParam:
     def params(self, path):
         meta = next(i for i in workspace_commands.WorkspaceCommands.commands() if getattr(i, "path", "") == path)

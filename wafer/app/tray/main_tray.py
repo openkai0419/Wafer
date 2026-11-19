@@ -9,6 +9,7 @@ from ...qt.commands.command.menu import MenuPath
 from ...qt.common.rate_limit import qt_debounce
 from ...core.ipc.broker import Broker
 from ...core.ipc.node import Node
+from ...core.ipc.outbox import DeadOutboxCleaner
 from ...core.platform.process import AppProcess
 from ..viewer.ipc_bridge import ViewerIpcBridge
 from ...core.store.settings import app_settings
@@ -45,6 +46,8 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self._node.subscribe("app.restart_all", lambda msg: self._request_shutdown_all(then_restart=True) or True)
         self.update_bridge = ViewerIpcBridge.for_updates(self._node, parent=self)
         self._node.start(self.broker.port)
+        self._outbox_cleaner = DeadOutboxCleaner()
+        self._outbox_cleaner.start()
         app_settings.committed.connect(self._broadcast_settings)
         AppLogger.set_node(self._node, role="tray")
         UI.register_instance("Tray", self)
@@ -120,6 +123,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
     def on_quit(self):
         AppLogger.info("tray shutting down")
         self.update_bridge.stop_updates()
+        self._outbox_cleaner.stop()
         try:
             self._node.stop()
         except Exception as e:

@@ -32,7 +32,7 @@ from .transport import (
     tune_socket,
 )
 from .message import Message
-from .outbox import OutboxStore, cleanup_dead_outbox_files, read_outbox_of, remove_outbox_batch_from, scan_all_outbox
+from .outbox import OutboxStore, read_outbox_of, remove_outbox_batch_from, scan_all_outbox
 
 _OUTBOX_POLL = 30.0
 
@@ -244,8 +244,6 @@ class Node:
                 done.setdefault(rec.source_db, []).append(rec.id)
         for db_path, ids in done.items():
             remove_outbox_batch_from(db_path, ids)
-        if senders is None:
-            cleanup_dead_outbox_files()
 
     def _create_socket(self) -> zmq.Socket:
         sock = self._ctx.socket(zmq.DEALER)

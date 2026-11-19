@@ -50,6 +50,7 @@ class FakeProcess:
 class FakeNode:
     instances: list["FakeNode"] = []
     handler = None
+    ping_handler = None
 
     def __init__(self, role, profile=None):
         self.role = role
@@ -57,6 +58,7 @@ class FakeNode:
         self.started = False
         self.stopped = False
         self.requests: list[tuple[str, dict, str, float]] = []
+        self.pings: list[tuple[str, dict, str, float]] = []
         FakeNode.instances.append(self)
 
     def start(self):
@@ -69,8 +71,9 @@ class FakeNode:
         return True
 
     def request(self, topic, payload=None, *, dst="ALL", db="", timeout=5.0):
-        self.requests.append((topic, payload, dst, timeout))
-        reply = FakeNode.handler(payload["op"], payload["args"], dst)
+        is_ping = payload["op"] == "ping"
+        (self.pings if is_ping else self.requests).append((topic, payload, dst, timeout))
+        reply = (FakeNode.ping_handler if is_ping else FakeNode.handler)(payload["op"], payload["args"], dst)
         if reply is None:
             return None
         return Message.build(topic, reply, src=dst, dst="debug-1")
@@ -115,6 +118,7 @@ def processes(monkeypatch):
 def node(monkeypatch):
     FakeNode.instances = []
     FakeNode.handler = staticmethod(lambda op, args, dst: ok({"op": op, "args": args, "dst": dst}))
+    FakeNode.ping_handler = staticmethod(lambda op, args, dst: ok({"pid": int(dst.rsplit("-", 1)[1]), "role": "viewer", "profile": PROFILE, "focused_at": None}))
     monkeypatch.setattr(mcp_server, "Node", FakeNode)
     monkeypatch.setattr(mcp_server, "POLL_SECONDS", 0.01)
     return FakeNode
@@ -198,6 +202,43 @@ def test_target_defaults_to_first_viewer(app_data, processes, node):
             session.call("get_state", {}, bad, 5.0)
     assert [n.profile for n in node.instances] == [PROFILE]
     assert node.instances[0].requests[0][:2] == ("debug.call", {"op": "get_state", "args": {}})
+
+
+def focus_handler(focused: dict[int, float | None], silent: tuple[int, ...] = ()):
+    def handler(op, args, dst):
+        pid = int(dst.rsplit("-", 1)[1])
+        return None if pid in silent else ok({"pid": pid, "role": "viewer", "profile": PROFILE, "focused_at": focused[pid]})
+
+    return staticmethod(handler)
+
+
+@pytest.mark.parametrize(
+    ("focused", "silent", "expected"),
+    [
+        ({20: 5.0, 40: 9.0}, (), 40),
+        ({20: 9.0, 40: 5.0}, (), 20),
+        ({20: None, 40: 1.0}, (), 40),
+        ({20: 7.0, 40: 7.0}, (), 20),
+        ({20: None, 40: None}, (), 20),
+        ({20: 5.0, 40: 9.0}, (40,), 20),
+    ],
+    ids=["latest-wins", "latest-wins-lower-pid", "focused-beats-never", "tie-lowest-pid", "none-lowest-pid", "silent-viewer-counts-as-never"],
+)
+def test_default_target_is_the_viewer_that_last_had_focus(app_data, processes, node, focused, silent, expected):
+    session = running_session(processes)
+    node.ping_handler = focus_handler(focused, silent)
+
+    assert session.call("get_state", {}, None, 5.0)["dst"] == f"debug_agent-{expected}"
+    assert sorted(p[2] for p in node.instances[0].pings) == ["debug_agent-20", "debug_agent-40"]
+
+
+def test_a_single_viewer_is_the_default_target_without_asking_for_focus(app_data, processes, node):
+    processes.extend([FakeProcess(10, "--tray"), FakeProcess(20)])
+    session = DebugSession()
+    session.profile = PROFILE
+
+    assert session.call("get_state", {}, None, 5.0)["dst"] == "debug_agent-20"
+    assert node.instances[0].pings == []
 
 
 def test_call_timeout_message(app_data, processes, node):
@@ -471,7 +512,7 @@ def test_launch_stops_running_profile_prepares_and_waits_for_viewer(tmp_path, ap
     assert [p["target"] for p in result["processes"]] == ["tray:10", "viewer:20"]
     assert progress == ["Creating debug-task from sample template abc"]
     assert node.instances[-1].profile == PROFILE
-    assert node.instances[-1].requests[-1][1:3] == ({"op": "ping", "args": {}}, "debug_agent-20")
+    assert node.instances[-1].pings[-1][1:3] == ({"op": "ping", "args": {}}, "debug_agent-20")
 
 
 def test_launch_reports_exit_before_viewer_answers(tmp_path, app_data, processes, node, monkeypatch):

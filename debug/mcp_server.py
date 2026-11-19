@@ -273,10 +273,24 @@ class DebugSession:
             viewers = [p["pid"] for p in processes if p["role"] == "viewer"]
             if not viewers:
                 raise DebugError(f"{profile} has no Viewer; pass target= one of {targets}")
-            return viewers[0]
+            return viewers[0] if len(viewers) == 1 else self._last_focused_viewer(profile, viewers)
         if target not in targets:
             raise DebugError(f"Unknown target {target!r}; use one of {targets} from status")
         return int(target.split(":", 1)[1])
+
+    def _focused_at(self, node: Node, pid: int) -> float | None:
+        reply = node.request(CALL_TOPIC, {"op": "ping", "args": {}}, dst=f"{AGENT_ROLE}-{pid}", timeout=PING_TIMEOUT)
+        payload = reply.payload if reply is not None and isinstance(reply.payload, dict) else {}
+        result = payload.get("result") if payload.get("ok") else None
+        focused_at = result.get("focused_at") if isinstance(result, dict) else None
+        return float(focused_at) if isinstance(focused_at, (int, float)) else None
+
+    def _last_focused_viewer(self, profile: str, viewers: list[int]) -> int:
+        node = self._ensure_node(profile)
+        registered = node.wait_registered(timeout=PING_TIMEOUT)
+        focused = {pid: self._focused_at(node, pid) if registered else None for pid in viewers}
+        AppLogger.debug(f"[debug-mcp] last focus of the Viewers of {profile}: {focused}")
+        return min(viewers, key=lambda pid: (focused[pid] is None, -(focused[pid] or 0.0), pid))
 
     def _wait_for_viewer(self, profile: str, timeout: float) -> str:
         deadline = time.monotonic() + timeout
@@ -330,7 +344,7 @@ def _as_text(result: Any) -> str:
     return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, indent=2)
 
 
-TARGET_HELP = 'target is a process from status ("viewer:<pid>", "tray:<pid>", "webui:<pid>"); the first Viewer when omitted.'
+TARGET_HELP = 'target is a process from status ("viewer:<pid>", "tray:<pid>", "webui:<pid>"); the Viewer that last had focus when omitted.'
 WIDGET_HELP = "widget is an objectName or the visible text of a widget."
 
 SERVER_INSTRUCTIONS = (

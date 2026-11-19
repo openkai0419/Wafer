@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 import msgpack
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from debug import qt_inspect
 from wafer.core.common.profile import current_profile
@@ -42,7 +42,15 @@ class DebugAgent(QtCore.QObject):
             "type_text": qt_inspect.type_text,
             "key": qt_inspect.key,
         }
+        app = QtWidgets.QApplication.instance()
+        self._focused_at: float | None = time.monotonic() if app.focusWindow() is not None else None
+        app.focusWindowChanged.connect(self._on_focus_window_changed)
         node.subscribe(CALL_TOPIC, self._on_call)
+
+    @QtCore.Slot(QtGui.QWindow)
+    def _on_focus_window_changed(self, window: QtGui.QWindow | None) -> None:
+        if window is not None:
+            self._focused_at = time.monotonic()
 
     @property
     def node(self) -> Node:
@@ -87,10 +95,10 @@ class DebugAgent(QtCore.QObject):
         return self._ops.get(op)
 
     def _ping(self) -> dict:
-        return {"pid": os.getpid(), "role": self._role, "profile": self._node.profile}
+        return {"pid": os.getpid(), "role": self._role, "profile": self._node.profile, "focused_at": self._focused_at}
 
     def _idle(self, received: float) -> dict:
-        return {"modal": qt_inspect.active_modal() is not None, "main_thread_ms": (time.perf_counter() - received) * 1000.0}
+        return {"modal": qt_inspect.active_modal() is not None, "main_thread_ms": (time.perf_counter() - received) * 1000.0, "focused_at": self._focused_at}
 
     def _on_call(self, msg: Message) -> bool:
         key = next(self._keys)

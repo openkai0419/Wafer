@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+import time
 
 import pytest
 from PySide6 import QtCore, QtWidgets
@@ -30,7 +31,26 @@ def test_run_command_unknown_id(agent):
 
 
 def test_ping_names_the_process(agent):
-    assert agent.call("ping", {}) == {"ok": True, "result": {"pid": os.getpid(), "role": "viewer", "profile": current_profile()}, "error": ""}
+    reply = agent.call("ping", {})
+    assert reply == {"ok": True, "result": {"pid": os.getpid(), "role": "viewer", "profile": current_profile(), "focused_at": reply["result"]["focused_at"]}, "error": ""}
+
+
+def test_ping_and_idle_report_when_a_window_of_the_process_last_had_focus(agent, qtbot):
+    window = QtWidgets.QWidget()
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitExposed(window)
+    try:
+        before = time.monotonic()
+        QtWidgets.QApplication.instance().focusWindowChanged.emit(window.windowHandle())
+        after = time.monotonic()
+        focused_at = agent.call("ping", {})["result"]["focused_at"]
+        assert before <= focused_at <= after
+        QtWidgets.QApplication.instance().focusWindowChanged.emit(None)
+        assert agent.call("ping", {})["result"]["focused_at"] == focused_at
+        assert agent.call("idle", {})["result"]["focused_at"] == focused_at
+    finally:
+        window.close()
 
 
 def test_unknown_op_is_an_error(agent):
@@ -137,7 +157,8 @@ def test_agent_replies_over_ipc(qtbot, agent_with_broker):
     assert agent.node.wait_registered(5.0) and client.wait_registered(5.0)
     box = _request_in_background(client, {"op": "ping", "args": {}})
     qtbot.waitUntil(lambda: "reply" in box, timeout=6000)
-    assert box["reply"].payload == {"ok": True, "result": {"pid": os.getpid(), "role": "viewer", "profile": DEBUG_PROFILE}, "error": ""}
+    result = box["reply"].payload["result"]
+    assert box["reply"].payload == {"ok": True, "result": {"pid": os.getpid(), "role": "viewer", "profile": DEBUG_PROFILE, "focused_at": result["focused_at"]}, "error": ""}
 
 
 def test_agent_measures_main_thread_latency_over_ipc(qtbot, agent_with_broker):

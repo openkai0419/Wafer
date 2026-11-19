@@ -145,6 +145,7 @@ class TestTrayStartup:
                 plugin="image",
                 parent_pid=None,
                 slot=None,
+                profile=None,
             )
             from main import main
 
@@ -381,7 +382,7 @@ class TestPluginLoadingPerRole:
     def run_role(self, **role):
         import argparse
 
-        values = dict(tray=False, viewer=False, webui=False, indexer=None, collector=None, parser=None, plugin="image", parent_pid=None, slot=None)
+        values = dict(tray=False, viewer=False, webui=False, indexer=None, collector=None, parser=None, plugin="image", parent_pid=None, slot=None, profile=None)
         values.update(role)
         entries = MagicMock()
         with (

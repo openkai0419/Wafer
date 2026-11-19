@@ -449,6 +449,20 @@ def _draw_checkbox_unchecked(p: QPainter, r: QRectF, color: QColor):
     p.drawRoundedRect(box, radius, radius)
 
 
+@_register("options", padding=0.22)
+def _draw_options(p: QPainter, r: QRectF, color: QColor):
+    side = round(min(r.width(), r.height()))
+    lw = max(1, round(side / 9))
+    x = round(r.center().x() - side / 2)
+    y = round(r.center().y() - side / 2)
+    frame = QPainterPath()
+    frame.addRect(QRectF(x, y, side, side))
+    frame.addRect(QRectF(x + lw, y + lw, side - 2 * lw, side - 2 * lw))
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    p.drawPath(frame)
+
+
 @_register("checkbox_checked", padding=0.13)
 def _draw_checkbox_checked(p: QPainter, r: QRectF, color: QColor):
     lw = max(1.2, min(r.width(), r.height()) * 0.13)

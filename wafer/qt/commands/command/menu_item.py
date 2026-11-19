@@ -133,7 +133,7 @@ class CommandMenuRow(QtWidgets.QWidget):
         if self._has_options and self._options_btn is None:
             try:
                 btn = QtWidgets.QToolButton(self)
-                btn.setIcon(themed_icon("gear_small"))
+                btn.setIcon(themed_icon("options"))
                 btn.setAutoRaise(True)
                 btn.setFixedWidth(px["opt"])
                 btn.setCursor(QtCore.Qt.PointingHandCursor)

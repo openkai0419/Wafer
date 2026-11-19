@@ -20,14 +20,8 @@ _CRASH_LOG_PATH = resolve_data_path(".crashlog")
 _logger = None
 _initialized = False
 _role = ""
-_suppress_dialog = False
 
 LOG_SINK_ROLES = ("viewer", "webui")
-
-
-def set_suppress_dialog(value: bool):
-    global _suppress_dialog
-    _suppress_dialog = value
 
 
 def _is_pid_active(pid):
@@ -163,6 +157,7 @@ class _LoggerFactory:
 
 class AppLogger:
     on_critical = Signal()
+    on_uncaught_exception = Signal()
     on_error = Signal()
     on_warning = Signal()
     on_info = Signal()
@@ -254,18 +249,10 @@ def _create_exception_hook():
                 exc_info=(exc_type, exc_value, exc_traceback),
             )
         AppLogger.on_critical.emit("Uncaught exception")
-        if not _suppress_dialog:
-            try:
-                from PySide6 import QtWidgets
-
-                if QtWidgets.QApplication.instance():
-                    QtWidgets.QMessageBox.critical(
-                        None,
-                        "Unexpected Error",
-                        "An unexpected error occurred. Please check the log file.",
-                    )
-            except Exception as e:
-                print(f"Failed to show error dialog: {e}", file=sys.stderr)
+        try:
+            AppLogger.on_uncaught_exception.emit()
+        except Exception as e:
+            print(f"Failed to show error dialog: {e}", file=sys.stderr)
         sys.exit(1)
 
     return exception_hook

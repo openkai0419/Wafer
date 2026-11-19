@@ -11,6 +11,7 @@ from wafer.core.logs import AppLogger
 def _clear_signals():
     signals = [
         AppLogger.on_critical,
+        AppLogger.on_uncaught_exception,
         AppLogger.on_error,
         AppLogger.on_warning,
         AppLogger.on_info,
@@ -103,6 +104,26 @@ class TestAppLogger:
         with patch("wafer.core.logs._logger") as logger:
             logger.debug.side_effect = RuntimeError("logging failed")
             debug_non_recursive("still safe")
+
+
+    def test_uncaught_exception_notifies_then_exits(self):
+        from wafer.core.logs import _create_exception_hook
+
+        notified = []
+        AppLogger.on_uncaught_exception.connect(lambda: notified.append(True))
+        with patch("wafer.core.logs._logger"), pytest.raises(SystemExit):
+            _create_exception_hook()(ValueError, ValueError("boom"), None)
+        assert notified == [True]
+
+    def test_uncaught_exception_exits_even_when_the_notice_fails(self):
+        from wafer.core.logs import _create_exception_hook
+
+        def fail():
+            raise RuntimeError("no dialog")
+
+        AppLogger.on_uncaught_exception.connect(fail)
+        with patch("wafer.core.logs._logger"), pytest.raises(SystemExit):
+            _create_exception_hook()(ValueError, ValueError("boom"), None)
 
 
 class TestLoggerFactory:

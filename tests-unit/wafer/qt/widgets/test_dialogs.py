@@ -119,3 +119,12 @@ def test_confirm_dialog_disables_named_buttons(qtbot):
     assert buttons["A"].isEnabled()
     assert not buttons["B"].isEnabled()
     assert buttons["C"].isEnabled()
+
+
+def test_show_unexpected_error_shows_a_critical_message(qtbot, monkeypatch):
+    from wafer.qt.widgets import dialogs
+
+    shown = []
+    monkeypatch.setattr(dialogs.QMessageBox, "critical", staticmethod(lambda parent, title, text: shown.append(title)))
+    dialogs.show_unexpected_error()
+    assert shown == ["Unexpected Error"]

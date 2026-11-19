@@ -123,11 +123,14 @@ class TestCreateApp:
             patch("PySide6.QtWidgets.QApplication"),
             patch("wafer.qt.common.app_icon.get_icon"),
             patch("wafer.qt.common.tooltip.install_instant_tooltips"),
+            patch("main.AppLogger.on_uncaught_exception") as on_uncaught,
         ):
             from main import _create_app
+            from wafer.qt.widgets.dialogs import show_unexpected_error
 
             _create_app(shared_opengl=shared_opengl)
         assert enable.called is shared_opengl
+        on_uncaught.connect.assert_called_once_with(show_unexpected_error)
 
 
 class TestTrayStartup:

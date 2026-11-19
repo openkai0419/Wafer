@@ -14,11 +14,8 @@ isolate_app_data()
 
 from wafer.core.logs import AppLogger
 from wafer.core.logs import debug_non_recursive
-from wafer.core.logs import set_suppress_dialog
 from wafer.plugin.loader import load_plugins, get_command_registry
 from wafer.plugin.settings import PluginSettings
-
-set_suppress_dialog(True)
 
 _orig_enabled_overrides = PluginSettings.enabled_overrides
 PluginSettings.enabled_overrides = lambda self: {}

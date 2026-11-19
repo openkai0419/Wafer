@@ -110,6 +110,7 @@ def _create_app(*, shared_opengl=True):
     from PySide6 import QtWidgets
     from wafer.qt.common.app_icon import get_icon
     from wafer.qt.common.tooltip import install_instant_tooltips
+    from wafer.qt.widgets.dialogs import show_unexpected_error
 
     from PySide6 import QtCore
 
@@ -122,6 +123,7 @@ def _create_app(*, shared_opengl=True):
     app.setApplicationVersion(__version__)
     app.setWindowIcon(get_icon())
     install_instant_tooltips(app)
+    AppLogger.on_uncaught_exception.connect(show_unexpected_error)
     return app
 
 def _attach_debug_agent(process_role):

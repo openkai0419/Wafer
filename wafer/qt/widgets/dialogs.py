@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QButtonGroup, QCheckBox, QComboBox, QDialog, QFileIconProvider, QHBoxLayout, QLabel, QLineEdit, QPushButton, QRadioButton, QSizePolicy, QStyle, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileIconProvider, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QRadioButton, QSizePolicy, QStyle, QVBoxLayout
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtCore import QFileInfo
 from shiboken6 import isValid
@@ -126,6 +126,11 @@ class BaseDialog(QDialog):
     def _on_button(self, text):
         self.result_text = text
         self.accept()
+
+
+def show_unexpected_error():
+    if QApplication.instance():
+        QMessageBox.critical(None, "Unexpected Error", "An unexpected error occurred. Please check the log file.")
 
 
 class ConfirmDialog(BaseDialog):

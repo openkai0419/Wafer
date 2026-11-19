@@ -114,7 +114,7 @@ def test_selection_changed_signal():
         vi.toggle_selection(1)
     assert received == []
     vi.toggle_selection(0)
-    assert received == [{0, 1}]
+    assert received == [{0}]
 
 
 def test_avg_aspect(items):

@@ -16,6 +16,7 @@ from .pipeline import GridPipeline
 from .items import GridItemModel
 from ....qt.theme import ThemeManager
 from ....qt.commands.bridge import ActionKit, Command
+from ....qt.commands.command.context import Lazy
 
 
 class _SelectionOverlay(QtWidgets.QWidget):
@@ -173,7 +174,6 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.items.selectionChanged.connect(self._on_selection_changed)
         self.widgets = {}
         self._additional_widgets: dict[int, QtWidgets.QWidget] = {}
-        self._prev_selection_set: set[int] = set()
         self.visible_indices = set()
 
         self.verticalScrollBar().valueChanged.connect(self._on_scroll_bar_changed)
@@ -365,24 +365,21 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self._auto_scroll_anim.start()
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
-        paths = self.items.selected_paths()
-        path = self.items.last_selected_path()
-        sources = self.items.selected_sources()
-        return {"path": path, "paths": paths, "source": self.items.last_selected_source(), "sources": sources}
+        items = self.items
+        return {"path": items.last_selected_path(), "paths": Lazy(items.selected_paths), "source": items.last_selected_source(), "sources": Lazy(items.selected_sources)}
 
     @profiler.profile
-    def _on_selection_changed(self, current_selection):
-        newly_selected = current_selection - self._prev_selection_set
-        newly_deselected = self._prev_selection_set - current_selection
-        self._prev_selection_set = set(current_selection)
-        for i in newly_deselected:
-            widget = self._additional_widgets.get(i)
-            if widget is not None:
-                self._notifier.deselect(i, widget)
-        for i in newly_selected:
-            widget = self._additional_widgets.get(i)
-            if widget is not None:
+    def _on_selection_changed(self, changed):
+        widgets = self._additional_widgets
+        indices = changed if len(changed) <= len(widgets) else [i for i in widgets if i in changed]
+        for i in indices:
+            widget = widgets.get(i)
+            if widget is None:
+                continue
+            if self.items.is_selected(i):
                 self._notifier.select(i, widget)
+            else:
+                self._notifier.deselect(i, widget)
         self.last_selections = []
         self._overlay.update()
 
@@ -725,7 +722,6 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             with self.items.selection_noemit():
                 self.items.set_selected(indexes, last=-1)
             self.last_selections = []
-        self._prev_selection_set = set(self.items.selected_indices())
         if self._restore_raw_scroll_if_needed():
             if was_scrolling:
                 self._start_auto_scroll_from_current()

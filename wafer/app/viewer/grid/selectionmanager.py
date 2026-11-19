@@ -32,9 +32,11 @@ class SelectionManager(QtCore.QObject):
             self._emit({index})
 
     def add_selection(self, indexes, last=0):
-        self._selected = set(indexes) | self._selected
-        self._emit(self._selected)
+        added = set(indexes) - self._selected
+        self._selected |= added
         self._anchor_index = indexes[last]
+        if added:
+            self._emit(added)
 
     def remove_selection(self, indexes):
         to_remove = set(indexes) & self._selected
@@ -76,10 +78,10 @@ class SelectionManager(QtCore.QObject):
 
     @profiler.profile
     def set_selected(self, indexes, last=0):
-        temp = self._selected.copy()
+        previous = self._selected
         self._selected = set(indexes)
         self._anchor_index = indexes[last]
-        changed = temp | self._selected
+        changed = previous ^ self._selected
         if changed:
             self._emit(changed)
 

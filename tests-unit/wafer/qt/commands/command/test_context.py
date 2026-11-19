@@ -4,6 +4,7 @@ from PySide6 import QtCore
 
 from wafer.qt.commands.command.context import (
     CommandContext,
+    Lazy,
     _wheel_steps_from_event,
     _global_pos_from_event,
     _local_pos_from_event,
@@ -156,6 +157,14 @@ class TestCommandContextGet:
         ctx.wheel_steps = 5
         ctx.extras["wheel_steps"] = 99
         assert ctx.get("wheel_steps") == 99
+
+    def test_lazy_value_is_computed_once_on_first_get(self):
+        compute = MagicMock(return_value=["a"])
+        ctx = CommandContext().merge({"paths": Lazy(compute)})
+        compute.assert_not_called()
+        assert ctx.get("paths") == ["a"]
+        assert ctx.get("paths") == ["a"]
+        compute.assert_called_once()
 
 
 class TestCommandContextPut:

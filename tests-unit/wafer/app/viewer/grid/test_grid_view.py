@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.qt.common.dpi import dpix
@@ -795,7 +795,6 @@ class TestOnLayoutReadyWidgetRerender:
         fake.visible_indices = set()
         fake.is_scrolling.return_value = False
         fake.last_selections = []
-        fake._prev_selection_set = set()
         fake._pending_scroll_index = None
         fake._content_size = lambda cell_size: self.GridView._content_size(fake, cell_size)
         fake.get_restore_index.return_value = 0
@@ -1144,6 +1143,38 @@ class TestSelectionAnchorOnRelayout:
 
         assert gv.items.last_selected_index() == 4
         assert gv.items.selected_indices() == {4, 6}
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_selection_change_notifies_only_changed_widgets(self, mock_resolver, qtbot):
+        paths = [f"/img/{i}.png" for i in range(12)]
+        gv = self._prepare(qtbot, paths)
+        gv.items.set_selected(list(range(12)), last=-1)
+        widgets = {1: MagicMock(), 2: MagicMock()}
+        gv._additional_widgets = widgets
+        gv._notifier = MagicMock()
+
+        gv.items.toggle_selection(1)
+        gv.items.toggle_selection(1)
+
+        assert gv._notifier.deselect.call_args_list == [call(1, widgets[1])]
+        assert gv._notifier.select.call_args_list == [call(1, widgets[1])]
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_command_context_reads_the_selection_on_demand(self, mock_resolver, qtbot):
+        from wafer.qt.commands.command.context import CommandContext
+
+        paths = [f"/img/{i}.png" for i in range(12)]
+        gv = self._prepare(qtbot, paths)
+        gv.items.set_selected([2, 5], last=-1)
+        gv.items.selected_paths = MagicMock(wraps=gv.items.selected_paths)
+        ctx = CommandContext().merge(gv.extend_context(None, None))
+
+        gv.items.selected_paths.assert_not_called()
+        assert sorted(ctx.get("paths")) == ["/img/2.png", "/img/5.png"]
+        assert sorted(ctx.get("sources")) == ["/img/2.png", "/img/5.png"]
+        assert ctx.get("path") == "/img/5.png"
+        ctx.get("paths")
+        gv.items.selected_paths.assert_called_once()
 
 
 class TestAnimatedScroll:

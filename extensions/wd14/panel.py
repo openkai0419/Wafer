@@ -2,27 +2,20 @@ from __future__ import annotations
 
 import html
 
-from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6 import QtWidgets, QtCore
 
-from wafer.plugin import BasePanelPlugin, KeyFilter
+from wafer.plugin import BasePanelPlugin, CollectorPreviewWidget
 from wafer.plugin.key_filter_dialog import FilterSaveConfirmDialog
 from wafer.qt.common.icon_engine import themed_icon
-from wafer.qt.common.image import numpy_to_qimage
-from wafer.plugin.imageloader.handler import image_loader_resolver
 from wafer.qt.common.dpi import dpix
 from wafer.core.logs import AppLogger
 from wafer.qt.common.notifier import Notifier
 from wafer.core.common.paths import list_setting_db_names
 from wafer.core.lang.manager import t
-from wafer.qt.common.dispatcher import Dispatcher
-from wafer.qt.common.thread import utility_pool
 from wafer.qt.meta.searchable import build_highlight_ctx, highlight_html
 from ._downloader import DEFAULT_MODEL
 from ._models import CATEGORIES, NAMED_CATEGORIES, list_models
 from .settings import parse_blacklist, wd14_config
-
-_DST = "collector-wd14"
-_REQUEST_TIMEOUT = 120.0
 
 
 class WD14SettingsPanelPlugin(BasePanelPlugin):
@@ -64,18 +57,13 @@ class WD14SettingsPanelPlugin(BasePanelPlugin):
         return w
 
 
-class WD14SettingsWidget(QtWidgets.QWidget):
-    _preview_result = QtCore.Signal(object)
-    _device_result = QtCore.Signal(dict)
+class WD14SettingsWidget(CollectorPreviewWidget):
+    COLLECTOR = "wd14"
+    PREVIEW_TIMEOUT = 120.0
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._settings = wd14_config.load()
-        self._dispatcher = Dispatcher(utility_pool, parent=self)
-        self._preview_result.connect(self._on_preview_result)
-        self._device_result.connect(self._on_device_result)
-
-        self._original_pixmap: QtGui.QPixmap | None = None
         self._last_raw: dict | None = None
         self._blacklist: list[str] = parse_blacklist(self._settings.get("tag_blacklist", ""))
 
@@ -84,11 +72,11 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         root.setSpacing(dpix(6))
 
         self._vsplitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
-        self._vsplitter.splitterMoved.connect(lambda *_: self._update_thumb())
+        self._vsplitter.splitterMoved.connect(lambda *_: self.update_thumb())
 
         # ── Top pane: horizontal split (image | outputs) ──
         self._hsplitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        self._hsplitter.splitterMoved.connect(lambda *_: self._update_thumb())
+        self._hsplitter.splitterMoved.connect(lambda *_: self.update_thumb())
 
         from wafer.qt.theme import ThemeManager
 
@@ -99,17 +87,10 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(dpix(4))
 
-        self._thumb_label = QtWidgets.QLabel(t("Drop a file here for preview"))
-        self._thumb_label.setMinimumSize(dpix(64), dpix(64))
-        self._thumb_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        self._thumb_label.setAlignment(QtCore.Qt.AlignCenter)
-        self._thumb_label.setStyleSheet(f"border: 1px solid palette(mid); border-radius: {dpix(4)}px; color: {muted};")
-        left_layout.addWidget(self._thumb_label, 1)
-
-        self._preview_btn = QtWidgets.QPushButton(t("Re Preview"))
-        self._preview_btn.clicked.connect(self._on_preview_clicked)
-        self._preview_btn.setEnabled(False)
-        left_layout.addWidget(self._preview_btn)
+        self.thumb_label.setText(t("Drop a file here for preview"))
+        self.thumb_label.setStyleSheet(f"border: 1px solid palette(mid); border-radius: {dpix(4)}px; color: {muted};")
+        left_layout.addWidget(self.thumb_label, 1)
+        left_layout.addWidget(self.preview_btn)
 
         self._hsplitter.addWidget(left_container)
 
@@ -284,11 +265,9 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         bottom_layout.addWidget(self._bl_group)
 
         device_group = QtWidgets.QGroupBox(t("Device Info"))
-        self._device_label = QtWidgets.QLabel(t("Requesting..."))
-        self._device_label.setWordWrap(True)
         device_vbox = QtWidgets.QVBoxLayout(device_group)
         device_vbox.setContentsMargins(dpix(6), dpix(6), dpix(6), dpix(6))
-        device_vbox.addWidget(self._device_label)
+        device_vbox.addWidget(self.device_label)
         bottom_layout.addWidget(device_group)
 
         bottom_outer_layout.addWidget(settings_frame)
@@ -299,12 +278,6 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         self._vsplitter.setStretchFactor(1, 0)
         root.addWidget(self._vsplitter, 1)
 
-        self.setAcceptDrops(True)
-        self._current_path: str = ""
-        self._requesting = False
-        self._preview_pending = False
-        self._device_fetched = False
-        self._device_ok = False
         self._saved_settings = dict(self._settings)
         self._saved_blacklist = list(self._blacklist)
 
@@ -471,28 +444,7 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         hits = sum(1 for category in CATEGORIES for tag in self._last_raw.get(category, {}) if self._matching_term(tag))
         self._search_hits.setText(t("Hits: {count}").format(count=hits))
 
-    # ── Events ──
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        if not self._device_fetched:
-            self._device_fetched = True
-            self._request_device_info()
-
-    def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-
-    def dropEvent(self, event: QtGui.QDropEvent):
-        urls = event.mimeData().urls()
-        if urls:
-            path = urls[0].toLocalFile()
-            if path:
-                self._set_preview_path(path)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._update_thumb()
+    # ── UI state ──
 
     def save_ui_state(self) -> dict:
         state = {}
@@ -508,41 +460,9 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         if "vsplitter" in state:
             self._vsplitter.setSizes(state["vsplitter"])
 
-    def _set_preview_path(self, path: str):
-        self._current_path = path
-        self._preview_btn.setEnabled(True)
-        self._dispatcher.post(lambda: self._load_preview_thumb(path))
-        self._on_preview_clicked()
-
-    def _load_preview_thumb(self, path: str):
-        arr = image_loader_resolver.load(path, 512)
-        qimage = numpy_to_qimage(arr) if arr is not None else None
-        self._dispatcher.invoke(lambda: self._show_preview_thumb(path, qimage))
-
-    def _show_preview_thumb(self, path: str, qimage: QtGui.QImage | None):
-        if path != self._current_path:
-            return
-        if qimage is None:
-            self._original_pixmap = None
-            self._thumb_label.setText(t("(no preview)"))
-            return
-        self._original_pixmap = QtGui.QPixmap.fromImage(qimage)
-        self._update_thumb()
-
-    def _update_thumb(self):
-        if self._original_pixmap is None:
-            return
-        label_size = self._thumb_label.size()
-        scaled = self._original_pixmap.scaled(
-            label_size,
-            QtCore.Qt.KeepAspectRatio,
-            QtCore.Qt.SmoothTransformation,
-        )
-        self._thumb_label.setPixmap(scaled)
-
     # ── Settings gathering ──
 
-    def _current_settings(self) -> dict:
+    def current_settings(self) -> dict:
         return {
             "model": self._model_combo.currentText(),
             "general_threshold": self._general_spin.value(),
@@ -555,100 +475,25 @@ class WD14SettingsWidget(QtWidgets.QWidget):
             "tag_blacklist": ", ".join(self._blacklist),
         }
 
-    # ── Preview IPC ──
+    # ── Preview ──
 
-    def _on_preview_clicked(self):
-        if not self._current_path:
-            return
-        if self._requesting:
-            self._preview_pending = True
-            return
-        self._requesting = True
-        self._preview_btn.setEnabled(False)
+    def on_preview_started(self):
         self._raw_label.setText(t("Generating tags..."))
         self._filtered_label.setText("")
-        path = self._current_path
-        settings = self._current_settings()
-        self._dispatcher.post(lambda: self._do_preview_request(path, settings))
 
-    def _do_preview_request(self, path: str, settings: dict):
-        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
+    def show_preview_error(self, error: str):
+        self._raw_label.setText(t("Error: {error}").format(error=error))
+        self._filtered_label.setText("")
 
-        node = InstanceRegistry.instance().resolve_node()
-        if not node:
-            self._preview_result.emit({"error": "No IPC node"})
-            return
-        reply = node.request(
-            "service.request",
-            {"action": "wd14.preview", "path": path, "settings": settings},
-            dst=_DST,
-            timeout=_REQUEST_TIMEOUT,
-        )
-        if reply is None:
-            self._preview_result.emit({"error": "Collector not running or timed out"})
-        elif isinstance(reply.payload, dict):
-            self._preview_result.emit(reply.payload)
-        else:
-            self._preview_result.emit({"error": "Unexpected response"})
-
-    @QtCore.Slot(object)
-    def _on_preview_result(self, result: dict):
-        self._requesting = False
-        self._preview_btn.setEnabled(bool(self._current_path))
-        if self._preview_pending:
-            self._preview_pending = False
-            self._on_preview_clicked()
-            return
-        error = result.get("error")
-        if error:
-            self._raw_label.setText(t("Error: {error}").format(error=error))
-            self._filtered_label.setText("")
-            return
-
+    def show_preview(self, result: dict):
         self._last_raw = result
         self._output_group.setTitle(t("Output  ({model}, {ms} ms)").format(model=result.get("model", ""), ms=result.get("elapsed_ms", 0)))
         self._update_raw_display()
         self._update_filtered_display()
 
-        if not self._device_ok:
-            self._request_device_info()
-
     def _on_raw_tag_clicked(self, link: str):
         if link.startswith("bl:"):
             self._toggle_blacklist(html.unescape(link[3:]))
-
-    # ── Device info ──
-
-    def _request_device_info(self):
-        self._device_label.setText(t("Requesting..."))
-        self._dispatcher.post(self._do_device_request)
-
-    def _do_device_request(self):
-        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
-
-        node = InstanceRegistry.instance().resolve_node()
-        if not node:
-            self._device_result.emit({"device": "unknown", "device_name": "No IPC node"})
-            return
-        reply = node.request(
-            "service.request",
-            {"action": "wd14.device_info"},
-            dst=_DST,
-            timeout=10.0,
-        )
-        if reply is None:
-            self._device_result.emit({"device": "unknown", "device_name": "Collector not running"})
-        elif isinstance(reply.payload, dict):
-            self._device_result.emit(reply.payload)
-        else:
-            self._device_result.emit({"device": "unknown", "device_name": "Unexpected response"})
-
-    @QtCore.Slot(dict)
-    def _on_device_result(self, result: dict):
-        device = result.get("device", "unknown")
-        name = result.get("device_name", "")
-        self._device_ok = device != "unknown"
-        self._device_label.setText(t("Device: {device}  ({name})").format(device=device.upper(), name=name))
 
     # ── Model ──
 
@@ -667,12 +512,12 @@ class WD14SettingsWidget(QtWidgets.QWidget):
         self._model_combo.setCurrentText(name)
 
     def _on_model_changed(self, _name: str):
-        self._on_preview_clicked()
+        self.request_preview()
 
     # ── Save / Reset / Revert ──
 
     def _on_save(self):
-        values = self._current_settings()
+        values = self.current_settings()
         has_changes = values != self._saved_settings
 
         do_delete = False

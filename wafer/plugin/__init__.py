@@ -25,6 +25,7 @@ _EXPORTS = {
     "BaseSortPlugin": (".query.base", None),
     "BaseLayoutPlugin": (".layout.base", None),
     "BasePanelPlugin": (".panel.base", None),
+    "CollectorPreviewWidget": (".panel.collector_preview", None),
     "PluginConfig": (".config", None),
     "KeyFilter": (".key_filter", None),
     "MODE_BLACKLIST": (".key_filter", None),

@@ -34,7 +34,7 @@ class TestModelSelection:
         w = make_widget(qtbot)
         assert [w._model_combo.itemText(i) for i in range(w._model_combo.count())] == [DEFAULT_MODEL, "pixai-tagger-v1.0"]
         assert w._model_combo.currentText() == DEFAULT_MODEL
-        assert w._current_settings()["model"] == DEFAULT_MODEL
+        assert w.current_settings()["model"] == DEFAULT_MODEL
 
     def test_missing_saved_model_stays_selectable(self, qtbot, monkeypatch):
         from extensions.wd14.settings import wd14_config
@@ -135,9 +135,9 @@ class TestPreviewThumbnail:
             threads.append(threading.current_thread())
             return np.zeros((8, 16, 3), dtype=np.uint8)
 
-        monkeypatch.setattr("extensions.wd14.panel.image_loader_resolver.load", fake_load)
-        monkeypatch.setattr(w, "_on_preview_clicked", lambda: None)
-        w._set_preview_path("/a.png")
+        monkeypatch.setattr("wafer.plugin.panel.collector_preview.image_loader_resolver.load", fake_load)
+        monkeypatch.setattr(w, "request_preview", lambda: None)
+        w.set_preview_path("/a.png")
         qtbot.waitUntil(lambda: w._original_pixmap is not None, timeout=5000)
         assert w._dispatcher._pool is utility_pool
         assert threads and threads[0] is not threading.main_thread()

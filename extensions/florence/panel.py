@@ -1,22 +1,15 @@
 from __future__ import annotations
 
-from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6 import QtWidgets, QtCore
 
-from wafer.plugin import BasePanelPlugin
-from wafer.plugin.collector.base import BaseCollector
+from wafer.plugin import BasePanelPlugin, CollectorPreviewWidget
 from wafer.plugin.key_filter_dialog import FilterSaveConfirmDialog
-from wafer.qt.common.image import numpy_to_qimage
-from wafer.plugin.imageloader.handler import image_loader_resolver
 from wafer.qt.common.dpi import dpix
 from wafer.qt.common.notifier import Notifier
 from wafer.core.common.paths import list_setting_db_names
 from wafer.core.lang.manager import t
-from wafer.qt.common.dispatcher import Dispatcher
-from wafer.qt.common.thread import utility_pool
 from .settings import TAG_MAP, florence_config
 
-_DST = "collector-florence"
-_REQUEST_TIMEOUT = 60.0
 _DELETE_KEYS = [f"florence.{tag}" for tag in TAG_MAP.values()]
 
 
@@ -32,43 +25,26 @@ class FlorenceSettingsPanelPlugin(BasePanelPlugin):
         return FlorenceSettingsWidget()
 
 
-class FlorenceSettingsWidget(QtWidgets.QWidget):
-    _preview_result = QtCore.Signal(dict)
-    _device_result = QtCore.Signal(dict)
+class FlorenceSettingsWidget(CollectorPreviewWidget):
+    COLLECTOR = "florence"
+    PREVIEW_TIMEOUT = 60.0
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._settings = florence_config.load()
-        self._dispatcher = Dispatcher(utility_pool, parent=self)
-        self._preview_result.connect(self._on_preview_result)
-        self._device_result.connect(self._on_device_result)
-
-        self._original_pixmap: QtGui.QPixmap | None = None
 
         preview_group = QtWidgets.QGroupBox(t("Preview"))
-        self._thumb_label = QtWidgets.QLabel()
-        self._thumb_label.setMinimumSize(dpix(64), dpix(64))
-        self._thumb_label.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding,
-            QtWidgets.QSizePolicy.Expanding,
-        )
-        self._thumb_label.setAlignment(QtCore.Qt.AlignCenter)
-        self._thumb_label.setStyleSheet(f"border: 1px solid palette(mid); border-radius: {dpix(4)}px;")
 
         self._result_label = QtWidgets.QLabel(t("Drop a file here"))
         self._result_label.setWordWrap(True)
         self._result_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
         self._result_label.setMinimumHeight(dpix(60))
 
-        self._preview_btn = QtWidgets.QPushButton(t("Re Preview"))
-        self._preview_btn.clicked.connect(self._on_preview_clicked)
-        self._preview_btn.setEnabled(False)
-
         preview_layout = QtWidgets.QVBoxLayout(preview_group)
         preview_layout.setContentsMargins(dpix(6), dpix(6), dpix(6), dpix(6))
-        preview_layout.addWidget(self._thumb_label, 1)
+        preview_layout.addWidget(self.thumb_label, 1)
         preview_layout.addWidget(self._result_label)
-        preview_layout.addWidget(self._preview_btn)
+        preview_layout.addWidget(self.preview_btn)
 
         settings_group = QtWidgets.QGroupBox(t("Settings"))
         form = QtWidgets.QFormLayout(settings_group)
@@ -102,11 +78,9 @@ class FlorenceSettingsWidget(QtWidgets.QWidget):
         form.addRow(t("Num Beams:"), self._beams_spin)
 
         device_group = QtWidgets.QGroupBox(t("Device Info"))
-        self._device_label = QtWidgets.QLabel(t("Requesting..."))
-        self._device_label.setWordWrap(True)
         device_layout = QtWidgets.QVBoxLayout(device_group)
         device_layout.setContentsMargins(dpix(6), dpix(6), dpix(6), dpix(6))
-        device_layout.addWidget(self._device_label)
+        device_layout.addWidget(self.device_label)
 
         btn_layout = QtWidgets.QHBoxLayout()
         btn_layout.addStretch()
@@ -131,67 +105,9 @@ class FlorenceSettingsWidget(QtWidgets.QWidget):
         layout.addWidget(device_group)
         layout.addLayout(btn_layout)
 
-        self.setAcceptDrops(True)
-        self._current_path: str = ""
-        self._requesting = False
-        self._device_fetched = False
-        self._device_ok = False
         self._saved_settings = dict(self._settings)
 
-    def showEvent(self, event):
-        super().showEvent(event)
-        if not self._device_fetched:
-            self._device_fetched = True
-            self._request_device_info()
-
-    def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-
-    def dropEvent(self, event: QtGui.QDropEvent):
-        urls = event.mimeData().urls()
-        if urls:
-            path = urls[0].toLocalFile()
-            if path:
-                self._set_preview_path(path)
-
-    def _set_preview_path(self, path: str):
-        self._current_path = path
-        self._preview_btn.setEnabled(True)
-        self._dispatcher.post(lambda: self._load_preview_thumb(path))
-        self._on_preview_clicked()
-
-    def _load_preview_thumb(self, path: str):
-        arr = image_loader_resolver.load(path, 512)
-        qimage = numpy_to_qimage(arr) if arr is not None else None
-        self._dispatcher.invoke(lambda: self._show_preview_thumb(path, qimage))
-
-    def _show_preview_thumb(self, path: str, qimage: QtGui.QImage | None):
-        if path != self._current_path:
-            return
-        if qimage is None:
-            self._original_pixmap = None
-            self._thumb_label.setText(t("(no preview)"))
-            return
-        self._original_pixmap = QtGui.QPixmap.fromImage(qimage)
-        self._update_thumb()
-
-    def _update_thumb(self):
-        if self._original_pixmap is None:
-            return
-        label_size = self._thumb_label.size()
-        scaled = self._original_pixmap.scaled(
-            label_size,
-            QtCore.Qt.KeepAspectRatio,
-            QtCore.Qt.SmoothTransformation,
-        )
-        self._thumb_label.setPixmap(scaled)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._update_thumb()
-
-    def _current_settings(self) -> dict:
+    def current_settings(self) -> dict:
         return {
             "model_variant": self._variant_combo.currentText(),
             "enable_caption": self._caption_cb.isChecked(),
@@ -201,88 +117,24 @@ class FlorenceSettingsWidget(QtWidgets.QWidget):
             "num_beams": self._beams_spin.value(),
         }
 
-    def _on_preview_clicked(self):
-        if not self._current_path or self._requesting:
-            return
-        self._requesting = True
-        self._preview_btn.setEnabled(False)
+    def on_preview_started(self):
         self._result_label.setText(t("Generating captions..."))
-        path = self._current_path
-        settings = self._current_settings()
-        self._dispatcher.post(lambda: self._do_preview_request(path, settings))
 
-    def _do_preview_request(self, path: str, settings: dict):
-        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
+    def show_preview_error(self, error: str):
+        self._result_label.setText(f"Error: {error}")
 
-        node = InstanceRegistry.instance().resolve_node()
-        if not node:
-            self._preview_result.emit({"error": "No IPC node"})
-            return
-        reply = node.request(
-            "service.request",
-            {"action": "florence.preview", "path": path, "settings": settings},
-            dst=_DST,
-            timeout=_REQUEST_TIMEOUT,
-        )
-        if reply is None:
-            self._preview_result.emit({"error": "Collector not running or timed out"})
-        elif isinstance(reply.payload, dict):
-            self._preview_result.emit(reply.payload)
-        else:
-            self._preview_result.emit({"error": "Unexpected response"})
-
-    @QtCore.Slot(dict)
-    def _on_preview_result(self, result: dict):
-        self._requesting = False
-        self._preview_btn.setEnabled(bool(self._current_path))
-        error = result.get("error")
-        if error:
-            self._result_label.setText(f"Error: {error}")
-            return
+    def show_preview(self, result: dict):
         tags = result.get("tags", {})
         if not tags:
             self._result_label.setText("(no results)")
             return
-        lines = []
-        for key, text in tags.items():
-            lines.append(f"<b>{key}:</b> {text}")
-        self._result_label.setText("<br><br>".join(lines))
-        if not self._device_ok:
-            self._request_device_info()
+        self._result_label.setText("<br><br>".join(f"<b>{key}:</b> {text}" for key, text in tags.items()))
 
-    def _request_device_info(self):
-        self._device_label.setText("Requesting...")
-        self._dispatcher.post(self._do_device_request)
-
-    def _do_device_request(self):
-        from wafer.qt.commands.binding.instance_registry import InstanceRegistry
-
-        node = InstanceRegistry.instance().resolve_node()
-        if not node:
-            self._device_result.emit({"device": "unknown", "device_name": "No IPC node"})
-            return
-        reply = node.request(
-            "service.request",
-            {"action": "florence.device_info"},
-            dst=_DST,
-            timeout=10.0,
-        )
-        if reply is None:
-            self._device_result.emit({"device": "unknown", "device_name": "Collector not running"})
-        elif isinstance(reply.payload, dict):
-            self._device_result.emit(reply.payload)
-        else:
-            self._device_result.emit({"device": "unknown", "device_name": "Unexpected response"})
-
-    @QtCore.Slot(dict)
-    def _on_device_result(self, result: dict):
-        device = result.get("device", "unknown")
-        name = result.get("device_name", "")
-        self._device_ok = device != "unknown"
-        self._device_label.setText(f"Device: {device.upper()}  ({name})\nModel: Florence-2 (Microsoft)")
+    def device_text(self, device: str, name: str) -> str:
+        return f"{super().device_text(device, name)}\nModel: Florence-2 (Microsoft)"
 
     def _on_save(self):
-        values = self._current_settings()
+        values = self.current_settings()
         if values == self._saved_settings:
             return
 

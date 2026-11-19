@@ -72,6 +72,24 @@ def test_modal_state_describes_the_open_dialog(qtbot):
     assert {"text": "OK", "enabled": True, "checked": None} in state["buttons"]
 
 
+def test_modal_state_tells_two_modals_with_the_same_title_apart(qtbot):
+    first, second = make_rename_dialog(), make_rename_dialog()
+    states = []
+    try:
+        for dialog in (first, second):
+            qtbot.addWidget(dialog)
+            dialog.setWindowModality(QtCore.Qt.ApplicationModal)
+            dialog.show()
+            qtbot.waitUntil(lambda d=dialog: QtWidgets.QApplication.activeModalWidget() is d)
+            states.append(qt_inspect.modal_state())
+            assert qt_inspect.modal_state()["id"] == states[-1]["id"]
+    finally:
+        second.close()
+        first.close()
+    assert [s["title"] for s in states] == ["Rename", "Rename"]
+    assert states[0]["id"] != states[1]["id"]
+
+
 def test_modal_state_is_none_without_a_modal(qtbot):
     assert qt_inspect.modal_state() is None
 

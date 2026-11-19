@@ -115,6 +115,7 @@ def modal_state() -> dict | None:
     else:
         buttons = [_button_state(w) for w in widgets if isinstance(w, QtWidgets.QAbstractButton)]
     return {
+        "id": shiboken6.getCppPointer(modal)[0],
         "title": modal.windowTitle(),
         "class": type(modal).__name__,
         "object_name": modal.objectName(),

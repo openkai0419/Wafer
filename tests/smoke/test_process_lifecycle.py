@@ -265,21 +265,6 @@ class TestBatchDelivery:
             parser_resolver.registry._instances.pop(_StubParser.NAME, None)
 
 
-class TestDispatcherSingletonState:
-    def test_reset_singleton_state(self):
-        from wafer.app.indexer.dispatch.collector_dispatcher import CollectorDispatcher
-        from wafer.app.indexer.dispatch.parser_dispatcher import ParserDispatcher
-
-        CollectorDispatcher._singleton_started.add("test_plugin")
-        ParserDispatcher._singleton_started.add("test_parser")
-
-        CollectorDispatcher.reset_singleton_state()
-        ParserDispatcher.reset_singleton_state()
-
-        assert len(CollectorDispatcher._singleton_started) == 0
-        assert len(ParserDispatcher._singleton_started) == 0
-
-
 class TestTerminateAndWait:
     def test_terminate_and_wait_kills_process(self):
         proc = subprocess.Popen(

@@ -111,7 +111,7 @@ class IndexerProcess:
             self.scheduler,
             self.writer,
             progress,
-            collectors=collector_names,
+            plugins=collector_names,
             tray_pid=self._tray_pid,
         )
         self.dispatcher.start(self.zmq)
@@ -126,7 +126,7 @@ class IndexerProcess:
                 self.scheduler,
                 self.writer,
                 progress,
-                parsers=parser_names,
+                plugins=parser_names,
                 tray_pid=self._tray_pid,
             )
             self.parser_dispatcher.start(self.zmq)

@@ -1,6 +1,7 @@
 import pytest
 
-from wafer.app.collector.worker import CollectorWorker, _SHUTDOWN_WAIT
+from wafer.app.collector.worker import CollectorWorker
+from wafer.app.worker_lifecycle import _SHUTDOWN_WAIT
 from wafer.plugin.collector.handler import collector_resolver
 
 
@@ -25,7 +26,7 @@ def make_worker():
 def test_unknown_plugin_raises():
     import pytest
 
-    with pytest.raises(ValueError, match="Unknown plugin"):
+    with pytest.raises(ValueError, match="Unknown collector plugin"):
         CollectorWorker("test_db", "nonexistent_plugin")
 
 
@@ -48,7 +49,7 @@ def test_process_one_error_is_sent_as_failure(make_worker):
         raise RuntimeError("simulated plugin error")
 
     worker._plugin.process = always_fail
-    worker._process_batch(["/nonexistent/test.jpg"], {"/nonexistent/test.jpg": [0.0, 0]}, "test_db")
+    worker._process_batch(["/nonexistent/test.jpg"], {"/nonexistent/test.jpg": [0.0, 0]}, {}, "test_db")
     assert worker._node.send_reliable.called
     payload = worker._node.send_reliable.call_args[0][1]
     assert payload["results"] == [{"source": "/nonexistent/test.jpg", "status": False}]
@@ -74,7 +75,7 @@ def test_process_batch_partial_failure(make_worker):
     worker._plugin.process = partial_fail
     paths = ["/test/a.jpg", "/test/b.jpg", "/test/c.jpg"]
     file_info = {p: [0.0, 0] for p in paths}
-    worker._process_batch(paths, file_info, "test_db")
+    worker._process_batch(paths, file_info, {}, "test_db")
 
     assert worker._node.send_reliable.called
     payload = worker._node.send_reliable.call_args[0][1]
@@ -90,7 +91,7 @@ def test_process_batch_uses_db_from_argument(make_worker):
     worker._node = MagicMock()
 
     worker._plugin.process = lambda path, info: CollectorResult(source=path, status=True)
-    worker._process_batch(["/test/x.jpg"], {"/test/x.jpg": [0.0, 0]}, "other_db")
+    worker._process_batch(["/test/x.jpg"], {"/test/x.jpg": [0.0, 0]}, {}, "other_db")
 
     call_kwargs = worker._node.send_reliable.call_args[1]
     assert call_kwargs["db"] == "other_db"
@@ -115,7 +116,7 @@ def test_result_is_sent_without_file_hash(make_worker):
         status=True,
         tags={"tags": "1girl, blue_hair"},
     )
-    worker._process_batch(["/test/a.jpg"], {"/test/a.jpg": [0.0, 100, "abc123hash"]}, "test_db")
+    worker._process_batch(["/test/a.jpg"], {"/test/a.jpg": [0.0, 100, "abc123hash"]}, {}, "test_db")
 
     result = worker._node.send_reliable.call_args[0][1]["results"][0]
     assert "file_hash" not in result
@@ -240,7 +241,7 @@ def test_process_batch_passes_source_key_unchanged(make_worker):
 
     worker._plugin.process = record
     key = "b:/Data/./Archive.zip"
-    worker._process_batch([key], {key: [0.0, 0]}, "test_db")
+    worker._process_batch([key], {key: [0.0, 0]}, {}, "test_db")
 
     assert received == [key]
     assert worker._node.send_reliable.call_args[0][1]["results"][0]["source"] == key
@@ -267,7 +268,7 @@ def test_timed_out_and_empty_paths_are_sent_as_failures(make_worker, monkeypatch
     worker._plugin.process = process
     paths = ["/test/ok.jpg", "/test/slow.jpg", "/test/empty.jpg"]
     try:
-        worker._process_batch(paths, {}, "test_db")
+        worker._process_batch(paths, {}, {}, "test_db")
     finally:
         release.set()
 
@@ -295,7 +296,7 @@ def test_timed_out_batch_leaves_paths_that_never_started_dispatched(make_worker,
     worker._plugin.process = process
     paths = ["/test/slow.jpg", "/test/queued1.jpg", "/test/queued2.jpg"]
     try:
-        worker._process_batch(paths, {}, "test_db")
+        worker._process_batch(paths, {}, {}, "test_db")
     finally:
         release.set()
 
@@ -325,7 +326,7 @@ def test_batch_interrupted_by_stop_reports_no_failures(make_worker, monkeypatch)
 
     worker._plugin.process = process
     worker._plugin.shutdown = interrupted.set
-    batch = threading.Thread(target=worker._process_batch, args=(["/test/ok.png", "/test/busy.png"], {}, "test_db"))
+    batch = threading.Thread(target=worker._process_batch, args=(["/test/ok.png", "/test/busy.png"], {}, {}, "test_db"))
     batch.start()
     assert busy.wait(5)
     worker.stop()

@@ -36,7 +36,7 @@ def real_db_dispatcher(tmp_path):
     writer.db.upsert_basic_sources([(s, f"hash-{s}", 1, 1.0) for s in sources], [])
     writer.insert_pending(sources, ["exif"])
     lane = _BusyLane()
-    dispatcher = CollectorDispatcher("testdb", tmp_path / "test.db", lane, writer, MagicMock(), collectors=["exif"])
+    dispatcher = CollectorDispatcher("testdb", tmp_path / "test.db", lane, writer, MagicMock(), plugins=["exif"])
     dispatcher._node = MagicMock()
     dispatcher._node.nudge_undelivered.return_value = False
     dispatcher._read_conn = open_readonly(tmp_path / "test.db")
@@ -134,13 +134,13 @@ def test_dispatching_counts_as_activity_for_the_idle_tasks(real_db_dispatcher):
 def test_stale_rows_are_reset_before_the_first_dispatch(tmp_path, monkeypatch):
     import threading
 
-    from wafer.app.indexer.dispatch import collector_dispatcher
+    from wafer.app.indexer.dispatch import plugin_dispatcher
 
-    monkeypatch.setattr(collector_dispatcher, "_DISPATCH_INTERVAL", 0.01)
+    monkeypatch.setattr(plugin_dispatcher, "_DISPATCH_INTERVAL", 0.01)
     calls = []
     writer = MagicMock()
     writer.reset_stale.side_effect = lambda names: calls.append(("reset", names))
-    dispatcher = CollectorDispatcher("testdb", tmp_path / "test.db", MagicMock(), writer, MagicMock(), collectors=["exif"])
+    dispatcher = CollectorDispatcher("testdb", tmp_path / "test.db", MagicMock(), writer, MagicMock(), plugins=["exif"])
     dispatched = threading.Event()
 
     def dispatch():
@@ -161,14 +161,14 @@ def test_stale_rows_are_reset_before_the_first_dispatch(tmp_path, monkeypatch):
 def test_dispatch_loop_survives_exception(tmp_path, monkeypatch):
     import threading
 
-    from wafer.app.indexer.dispatch import collector_dispatcher
+    from wafer.app.indexer.dispatch import plugin_dispatcher
 
-    monkeypatch.setattr(collector_dispatcher, "_DISPATCH_INTERVAL", 0.01)
+    monkeypatch.setattr(plugin_dispatcher, "_DISPATCH_INTERVAL", 0.01)
     scheduler = MagicMock()
     writer = MagicMock()
     progress = MagicMock()
     db_path = tmp_path / "test.db"
-    dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress, collectors=["exif"])
+    dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress, plugins=["exif"])
     call_count = 0
     second_call = threading.Event()
 
@@ -201,21 +201,21 @@ def test_per_indexer_excludes_singletons(tmp_path):
     singleton_names = set(collector_resolver.singleton_names())
     for name in dispatcher._per_indexer:
         assert name not in singleton_names
-    for name in dispatcher._collectors:
+    for name in dispatcher._plugins:
         if name not in singleton_names:
             assert name in dispatcher._per_indexer
 
 
-def test_terminate_collectors_requests_shutdown_before_fallback(tmp_path):
+def test_terminate_workers_requests_shutdown_before_fallback(tmp_path):
     scheduler = MagicMock()
     writer = MagicMock()
     progress = MagicMock()
     db_path = tmp_path / "test.db"
-    dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress, collectors=["exif"])
+    dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress, plugins=["exif"])
     dispatcher._node = MagicMock()
 
-    with patch.object(dispatcher, "_wait_collector_stopped", return_value=False), patch("wafer.app.indexer.dispatch.collector_dispatcher.AppProcess.terminate_cmd") as terminate_cmd:
-        dispatcher._terminate_collectors()
+    with patch.object(dispatcher, "_wait_stopped", return_value=False), patch("wafer.app.indexer.dispatch.plugin_dispatcher.AppProcess.terminate_cmd") as terminate_cmd:
+        dispatcher._terminate_workers()
 
     dispatcher._node.send.assert_called_once_with(
         "worker.shutdown",
@@ -226,16 +226,16 @@ def test_terminate_collectors_requests_shutdown_before_fallback(tmp_path):
     terminate_cmd.assert_called_once_with("--collector", "testdb", "--plugin", "exif", recursive=True)
 
 
-def test_terminate_collectors_skips_fallback_when_graceful_stop_succeeds(tmp_path):
+def test_terminate_workers_skips_fallback_when_graceful_stop_succeeds(tmp_path):
     scheduler = MagicMock()
     writer = MagicMock()
     progress = MagicMock()
     db_path = tmp_path / "test.db"
-    dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress, collectors=["exif"])
+    dispatcher = CollectorDispatcher("testdb", db_path, scheduler, writer, progress, plugins=["exif"])
     dispatcher._node = MagicMock()
 
-    with patch.object(dispatcher, "_wait_collector_stopped", return_value=True), patch("wafer.app.indexer.dispatch.collector_dispatcher.AppProcess.terminate_cmd") as terminate_cmd:
-        dispatcher._terminate_collectors()
+    with patch.object(dispatcher, "_wait_stopped", return_value=True), patch("wafer.app.indexer.dispatch.plugin_dispatcher.AppProcess.terminate_cmd") as terminate_cmd:
+        dispatcher._terminate_workers()
 
     dispatcher._node.send.assert_called_once()
     terminate_cmd.assert_not_called()

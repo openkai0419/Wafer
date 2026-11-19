@@ -138,14 +138,6 @@ def pytest_runtest_protocol(item, nextitem):
 def _cleanup_background_resources():
     yield
     try:
-        from wafer.app.indexer.dispatch.collector_dispatcher import CollectorDispatcher
-        from wafer.app.indexer.dispatch.parser_dispatcher import ParserDispatcher
-
-        CollectorDispatcher.reset_singleton_state()
-        ParserDispatcher.reset_singleton_state()
-    except Exception as e:
-        _record_cleanup_error("reset dispatcher singletons", e)
-    try:
         from wafer.core.platform.process import AppProcess
 
         children = AppProcess.children(recursive=True)

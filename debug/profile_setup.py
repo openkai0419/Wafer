@@ -10,6 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
 
+from wafer.app.indexer.scanner import files_in_scope
 from wafer.core.common.paths import (
     debug_profiles_dir,
     normalize_path,
@@ -20,7 +21,6 @@ from wafer.core.common.paths import (
 )
 from wafer.core.common.profile import PROFILE_ARG, PROFILE_PREFIX, TOOLS_PROFILE, validate_profile_name
 from wafer.core.db.db_utils import open_readonly
-from wafer.core.db.path_scope import compile_ignore_patterns, path_in_scope
 from wafer.core.db.setting_db import SettingDB
 from wafer.core.ipc.node import Node
 from wafer.core.logs import AppLogger
@@ -177,48 +177,24 @@ def _index_state(db_path: Path) -> IndexState:
         conn.close()
 
 
-def _collected_source_count(db_path: Path) -> int:
-    if not db_path.is_file():
-        return 0
-    conn = open_readonly(db_path)
-    try:
-        tables = conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('sources', 'collection_status')").fetchone()[0]
-        if tables < 2:
-            return 0
-        placeholders = ", ".join("?" for _ in UNFINISHED_STATUSES)
-        unfinished = conn.execute(f"SELECT EXISTS(SELECT 1 FROM collection_status WHERE status IN ({placeholders}))", UNFINISHED_STATUSES).fetchone()[0]
-        if unfinished:
-            return 0
-        return conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
-    finally:
-        conn.close()
-
-
 def expected_source_count(settings_db: Path) -> int:
     if not settings_db.is_file():
         raise FileNotFoundError(f"No sample DB settings at {settings_db}")
     roots, ignore_folders, ignore_patterns = SettingDB(str(settings_db)).get_all_folder_settings()
-    pattern_re = compile_ignore_patterns(ignore_patterns)
-    found: set[str] = set()
-    stack = [root for root in roots if path_in_scope(root, roots, ignore_folders, pattern_re)]
-    while stack:
-        with os.scandir(stack.pop()) as entries:
-            for entry in entries:
-                path = normalize_path(entry.path)
-                if not path_in_scope(path, roots, ignore_folders, pattern_re):
-                    continue
-                if entry.is_file(follow_symlinks=False):
-                    found.add(path)
-                elif entry.is_dir(follow_symlinks=False):
-                    stack.append(entry.path)
-    return len(found)
+    return len(files_in_scope(roots, ignore_folders, ignore_patterns))
+
+
+def sample_scope_count(profile: str) -> int:
+    return expected_source_count(_sample_settings_db(profile_data_root(validate_profile_name(profile))))
+
+
+def sample_index_state(profile: str) -> IndexState:
+    return _index_state(_sample_data_db(validate_profile_name(profile)))
 
 
 def wait_indexed(profile: str, timeout: float) -> None:
-    validate_profile_name(profile)
-    root = profile_data_root(profile)
-    db_path = _sample_data_db(profile)
-    expected = expected_source_count(_sample_settings_db(root))
+    db_path = _sample_data_db(validate_profile_name(profile))
+    expected = sample_scope_count(profile)
     AppLogger.info(f"{profile}: waiting until {expected} sources are indexed and collected")
     deadline = time.monotonic() + timeout
     settled: IndexState | None = None
@@ -226,7 +202,7 @@ def wait_indexed(profile: str, timeout: float) -> None:
     while True:
         if not AppProcess.list_profile_processes(profile):
             raise RuntimeError(f"Wafer for {profile} exited before {db_path} finished indexing")
-        state = _index_state(db_path)
+        state = sample_index_state(profile)
         now = time.monotonic()
         if state != settled:
             settled, settled_since = state, now

@@ -15,7 +15,6 @@ from mcp.server.mcpserver import Image, MCPServer
 from debug import profile_setup
 from wafer.core.common.paths import profile_data_root
 from wafer.core.common.profile import PROFILE_ARG, TOOLS_PROFILE, current_profile
-from wafer.core.db.db_utils import open_readonly
 from wafer.core.ipc.node import Node
 from wafer.core.logs import AppLogger
 from wafer.core.platform.process import AppProcess
@@ -61,6 +60,27 @@ def _role_of(cmdline: list[str]) -> str:
 
 def _plural(count: int, noun: str) -> str:
     return f"{count} {noun}{'' if count == 1 else 's'}"
+
+
+def _index_reason(index: profile_setup.IndexState, expected: int) -> str:
+    if index.unfinished:
+        return f"{_plural(index.unfinished, 'collection task')} pending"
+    if not index.sources:
+        return "the sample DB has no collected sources yet"
+    if index.sources != expected:
+        return f"{index.sources} of {expected} sources indexed"
+    return f"{_plural(index.uncollected, 'source')} without collection rows"
+
+
+def _busy_reasons(fast_answers: int, main_thread_ms: float | None, index: profile_setup.IndexState, expected: int) -> list[str]:
+    reasons = []
+    if main_thread_ms is None:
+        reasons.append(f"main thread did not answer within {CALL_TIMEOUT:g}s")
+    elif fast_answers < IDLE_FAST_ANSWERS:
+        reasons.append(f"main thread answered in {main_thread_ms:.0f} ms (needs < {IDLE_MAIN_THREAD_MS:.0f} ms twice in a row)")
+    if not index.is_complete(expected):
+        reasons.append(_index_reason(index, expected))
+    return reasons
 
 
 class DebugSession:
@@ -155,8 +175,10 @@ class DebugSession:
             time.sleep(POLL_SECONDS)
 
     def wait_idle(self, timeout: float, target: str | None) -> dict:
+        self._require_running()
         started = time.monotonic()
         deadline = started + timeout
+        expected = self._sample_scope_count()
         fast_answers = 0
         while True:
             remaining = max(deadline - time.monotonic(), POLL_SECONDS)
@@ -166,11 +188,11 @@ class DebugSession:
                 idle = None
             main_thread_ms = None if idle is None else float(idle["main_thread_ms"])
             fast_answers = fast_answers + 1 if main_thread_ms is not None and main_thread_ms < IDLE_MAIN_THREAD_MS else 0
-            collected = profile_setup._collected_source_count(profile_setup._sample_data_db(self.profile))
-            if fast_answers >= IDLE_FAST_ANSWERS and collected:
+            index = profile_setup.sample_index_state(self.profile)
+            if fast_answers >= IDLE_FAST_ANSWERS and index.is_complete(expected):
                 return {"idle": True, "modal": idle["modal"], "waited": round(time.monotonic() - started, 1)}
             if time.monotonic() >= deadline:
-                raise DebugError(f"Still busy after {timeout:g}s: {'; '.join(self._busy_reasons(fast_answers, main_thread_ms, collected))}")
+                raise DebugError(f"Still busy after {timeout:g}s: {'; '.join(_busy_reasons(fast_answers, main_thread_ms, index, expected))}")
             time.sleep(POLL_SECONDS)
 
     def tail_log(self, n: int, level: str) -> str:
@@ -206,16 +228,11 @@ class DebugSession:
                 kept.append(line)
         return kept
 
-    def _busy_reasons(self, fast_answers: int, main_thread_ms: float | None, collected: int) -> list[str]:
-        reasons = []
-        if main_thread_ms is None:
-            reasons.append(f"main thread did not answer within {CALL_TIMEOUT:g}s")
-        elif fast_answers < IDLE_FAST_ANSWERS:
-            reasons.append(f"main thread answered in {main_thread_ms:.0f} ms (needs < {IDLE_MAIN_THREAD_MS:.0f} ms twice in a row)")
-        if not collected:
-            pending = self._index_counts()["pending"]
-            reasons.append(f"{_plural(pending, 'collection task')} pending" if pending else "the sample DB has no collected sources yet")
-        return reasons
+    def _sample_scope_count(self) -> int:
+        try:
+            return profile_setup.sample_scope_count(self.profile)
+        except FileNotFoundError as e:
+            raise DebugError(f"Cannot tell whether {self.profile} finished indexing: {e}") from e
 
     def _processes(self) -> list[dict]:
         if self.profile is None:
@@ -291,18 +308,8 @@ class DebugSession:
         return str(data.get("url", "")) if isinstance(data, dict) else ""
 
     def _index_counts(self) -> dict:
-        db_path = profile_setup._sample_data_db(self.profile)
-        if not db_path.is_file():
-            return {"sources": 0, "pending": 0}
-        conn = open_readonly(db_path)
-        try:
-            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('sources', 'collection_status')")}
-            sources = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0] if "sources" in tables else 0
-            placeholders = ", ".join("?" for _ in profile_setup.UNFINISHED_STATUSES)
-            pending = conn.execute(f"SELECT COUNT(*) FROM collection_status WHERE status IN ({placeholders})", profile_setup.UNFINISHED_STATUSES).fetchone()[0] if "collection_status" in tables else 0
-        finally:
-            conn.close()
-        return {"sources": sources, "pending": pending}
+        index = profile_setup.sample_index_state(self.profile)
+        return {"sources": index.sources, "pending": index.unfinished}
 
 
 def _as_text(result: Any) -> str:

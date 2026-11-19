@@ -67,6 +67,45 @@ def test_scan_directory_skips_subdirectories_matching_ignore_pattern(tmp_path):
     assert normalize_path(str(scan_dir / "my_cache_dir" / "inside.txt")) not in results
 
 
+def test_files_in_scope_matches_a_full_scan(tmp_path):
+    from wafer.app.indexer.scanner import files_in_scope
+
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    for folder in (first / "keep", first / "skip", first / "my_cache_dir", second):
+        folder.mkdir(parents=True)
+    for path in (first / "a.png", first / "keep" / "b.png", first / "skip" / "c.png", first / "my_cache_dir" / "d.png", first / "e.cache", second / "f.png"):
+        path.write_text("x")
+    exclude_paths = [str(first / "skip")]
+    patterns = ["*cache*"]
+    scanner, *_ = _make_scanner(tmp_path)
+    scanner.set_exclusions(exclude_paths, patterns)
+    scanned = {path for root in (first, second) for path, _ in scanner._scan_directory(str(root))}
+
+    found = files_in_scope([str(first), str(second), str(first / "keep")], exclude_paths, patterns)
+
+    assert found == scanned
+    assert found == {normalize_path(str(p)) for p in (first / "a.png", first / "keep" / "b.png", second / "f.png")}
+
+
+def test_files_in_scope_never_walks_excluded_folders(tmp_path, monkeypatch):
+    import wafer.app.indexer.scanner as scanner_module
+    from wafer.app.indexer.scanner import files_in_scope
+
+    (tmp_path / "skip" / "deep").mkdir(parents=True)
+    (tmp_path / "skip" / "deep" / "x.png").write_text("x")
+    walked = []
+    real_scandir = scanner_module.os.scandir
+
+    def recording_scandir(path):
+        walked.append(normalize_path(path))
+        return real_scandir(path)
+
+    monkeypatch.setattr(scanner_module.os, "scandir", recording_scandir)
+    assert files_in_scope([str(tmp_path)], [str(tmp_path / "skip")], []) == set()
+    assert walked == [normalize_path(str(tmp_path))]
+
+
 def test_start_stop(tmp_path):
     scanner, *_ = _make_scanner(tmp_path)
     scanner.start()

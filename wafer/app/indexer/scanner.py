@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import stat
 import threading
 import time
@@ -130,9 +131,7 @@ class DirectoryScanner:
                     AppLogger.error(f"[Scanner] request failed ({kind}): {e}", exc=e)
 
     def _is_excluded(self, path: str) -> bool:
-        if contains_path_prefix(self._exclude_paths, path):
-            return True
-        return self._ignore_pattern_re is not None and self._ignore_pattern_re.match(path) is not None
+        return is_excluded(path, self._exclude_paths, self._ignore_pattern_re)
 
     @profiler.profile
     def _do_full_scan(self, root_paths: Sequence[str], partial: bool = False):
@@ -385,30 +384,7 @@ class DirectoryScanner:
         return result
 
     def _scan_directory(self, root_path: str, unreadable: list[str] | None = None):
-        stack = [str(root_path)]
-        while stack:
-            current = stack.pop()
-            self._progress.increment(0, 1)
-            full_path = normalize_path(current)
-            if self._is_excluded(full_path):
-                self._progress.increment(1, 0)
-                continue
-            try:
-                with os.scandir(current) as it:
-                    for entry in it:
-                        if entry.is_file(follow_symlinks=False):
-                            file_path = normalize_path(entry.path)
-                            if self._is_excluded(file_path):
-                                continue
-                            yield (file_path, _get_stat(entry.stat()))
-                        elif entry.is_dir(follow_symlinks=False) and not _is_junction(entry):
-                            stack.append(entry.path)
-                self._progress.increment(1, 0)
-            except OSError as e:
-                AppLogger.warning(f"[Scanner] Cannot read folder: {full_path}", exc=e)
-                if unreadable is not None:
-                    unreadable.append(full_path)
-                self._progress.increment(1, 0)
+        return scan_directory(root_path, self._is_excluded, self._progress, unreadable)
 
 
 def _get_stat(stat_result):
@@ -424,3 +400,54 @@ def _under_any(folders: Iterable[str]) -> Callable[[str], bool]:
     roots = set(folders)
     children = tuple(child_prefix(root) for root in roots)
     return lambda path: path in roots or path.startswith(children)
+
+
+class _NoProgress:
+    def increment(self, current_inc=0, total_inc=0):
+        return None
+
+
+_NO_PROGRESS = _NoProgress()
+
+
+def is_excluded(path: str, exclude_prefixes: Sequence[str], ignore_pattern_re: re.Pattern[str] | None) -> bool:
+    if contains_path_prefix(exclude_prefixes, path):
+        return True
+    return ignore_pattern_re is not None and ignore_pattern_re.match(path) is not None
+
+
+def scan_directory(root_path: str, excluded: Callable[[str], bool], progress=_NO_PROGRESS, unreadable: list[str] | None = None):
+    stack = [str(root_path)]
+    while stack:
+        current = stack.pop()
+        progress.increment(0, 1)
+        full_path = normalize_path(current)
+        if excluded(full_path):
+            progress.increment(1, 0)
+            continue
+        try:
+            with os.scandir(current) as it:
+                for entry in it:
+                    if entry.is_file(follow_symlinks=False):
+                        file_path = normalize_path(entry.path)
+                        if excluded(file_path):
+                            continue
+                        yield (file_path, _get_stat(entry.stat()))
+                    elif entry.is_dir(follow_symlinks=False) and not _is_junction(entry):
+                        stack.append(entry.path)
+            progress.increment(1, 0)
+        except OSError as e:
+            AppLogger.warning(f"[Scanner] Cannot read folder: {full_path}", exc=e)
+            if unreadable is not None:
+                unreadable.append(full_path)
+            progress.increment(1, 0)
+
+
+def files_in_scope(roots: Sequence[str], exclude_paths: Sequence[str], ignore_patterns: Sequence[str]) -> set[str]:
+    exclude_prefixes = normalize_prefixes(exclude_paths)
+    ignore_pattern_re = compile_ignore_patterns(ignore_patterns)
+
+    def excluded(path: str) -> bool:
+        return is_excluded(path, exclude_prefixes, ignore_pattern_re)
+
+    return {path for root in normalize_prefixes(roots) for path, _ in scan_directory(root, excluded)}

@@ -278,13 +278,26 @@ def make_sample_db(profile: str, statuses: list[str], sources: int) -> Path:
     db_path = profile_data_root(profile) / "data" / "sample.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
-    conn.execute("CREATE TABLE sources (id INTEGER PRIMARY KEY)")
-    conn.execute("CREATE TABLE collection_status (source INTEGER, collector TEXT, status TEXT)")
-    conn.executemany("INSERT INTO sources (id) VALUES (?)", [(i,) for i in range(sources)])
-    conn.executemany("INSERT INTO collection_status VALUES (?, 'meta', ?)", list(enumerate(statuses)))
+    conn.execute("CREATE TABLE sources (source TEXT PRIMARY KEY)")
+    conn.execute("CREATE TABLE collection_status (source TEXT, collector TEXT, status TEXT, PRIMARY KEY(source, collector))")
+    conn.executemany("INSERT INTO sources (source) VALUES (?)", [(f"s{i}",) for i in range(sources)])
+    conn.executemany("INSERT INTO collection_status VALUES (?, 'meta', ?)", [(f"s{i}", status) for i, status in enumerate(statuses)])
     conn.commit()
     conn.close()
     return db_path
+
+
+@pytest.fixture
+def sample_scope(tmp_path, monkeypatch, app_data):
+    def make(files: int) -> None:
+        sample = tmp_path / "sample"
+        sample.mkdir()
+        for i in range(files):
+            (sample / f"{i}.png").write_bytes(b"x")
+        monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(sample))
+        profile_setup.sample_db_setup(profile_data_root(PROFILE))
+
+    return make
 
 
 def test_status_reports_processes_webui_and_index(app_data, processes, node):
@@ -319,7 +332,8 @@ def test_status_without_webui_or_db(app_data, processes, node):
     assert status["index"] == {"sources": 0, "pending": 0}
 
 
-def test_wait_idle_returns_when_main_thread_is_fast_and_index_settled(app_data, processes, node):
+def test_wait_idle_returns_when_main_thread_is_fast_and_index_settled(app_data, processes, node, sample_scope):
+    sample_scope(2)
     session = running_session(processes)
     make_sample_db(PROFILE, ["done", "done"], 2)
     timings = iter([500.0, 20.0, 900.0, 10.0, 15.0])
@@ -332,7 +346,8 @@ def test_wait_idle_returns_when_main_thread_is_fast_and_index_settled(app_data, 
     assert [r[1]["op"] for r in node.instances[0].requests] == ["idle"] * 5
 
 
-def test_wait_idle_timeout_says_what_is_busy(app_data, processes, node):
+def test_wait_idle_timeout_says_what_is_busy(app_data, processes, node, sample_scope):
+    sample_scope(2)
     session = running_session(processes)
     make_sample_db(PROFILE, ["pending", "done"], 2)
     node.handler = staticmethod(lambda op, args, dst: ok({"modal": False, "main_thread_ms": 5.0}))
@@ -342,11 +357,38 @@ def test_wait_idle_timeout_says_what_is_busy(app_data, processes, node):
     assert "1 collection task pending" in str(excinfo.value)
 
     (profile_data_root(PROFILE) / "data" / "sample.db").unlink()
-    make_sample_db(PROFILE, ["done"], 1)
+    make_sample_db(PROFILE, ["done", "done"], 2)
     node.handler = staticmethod(lambda op, args, dst: ok({"modal": False, "main_thread_ms": 450.0}))
     with pytest.raises(DebugError) as excinfo:
         session.wait_idle(0.2, None)
     assert "main thread answered in 450 ms" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    ("statuses", "sources", "reason"),
+    [
+        ([], 0, "the sample DB has no collected sources yet"),
+        (["done"], 1, "1 of 3 sources indexed"),
+        (["done", "done"], 3, "1 source without collection rows"),
+    ],
+)
+def test_wait_idle_waits_for_the_whole_sample_like_the_template(app_data, processes, node, clock, sample_scope, statuses, sources, reason):
+    sample_scope(3)
+    session = running_session(processes)
+    make_sample_db(PROFILE, statuses, sources)
+    node.handler = staticmethod(lambda op, args, dst: ok({"modal": False, "main_thread_ms": 5.0}))
+
+    with pytest.raises(DebugError) as excinfo:
+        session.wait_idle(2.0, None)
+    assert reason in str(excinfo.value)
+
+
+def test_wait_idle_needs_a_running_profile_before_reading_any_index(app_data, processes, node, monkeypatch):
+    session = DebugSession()
+    monkeypatch.setattr(profile_setup, "sample_scope_count", lambda profile: pytest.fail("read the index without a running profile"))
+
+    with pytest.raises(DebugError, match="No debug Wafer is running"):
+        session.wait_idle(1.0, None)
 
 
 def test_tail_log_reads_newest_log_with_level_filter(app_data, processes, node):
@@ -465,7 +507,8 @@ def test_rebuild_template_uses_launched_checkout(tmp_path, app_data, processes, 
     assert built == [first, second]
 
 
-def test_wait_idle_keeps_polling_when_the_agent_does_not_answer(app_data, processes, node, clock):
+def test_wait_idle_keeps_polling_when_the_agent_does_not_answer(app_data, processes, node, clock, sample_scope):
+    sample_scope(1)
     session = running_session(processes)
     make_sample_db(PROFILE, ["done"], 1)
     answers = iter([None, None, None, ok({"modal": False, "main_thread_ms": 10.0}), ok({"modal": False, "main_thread_ms": 12.0})])
@@ -477,7 +520,8 @@ def test_wait_idle_keeps_polling_when_the_agent_does_not_answer(app_data, proces
     assert len(node.instances[0].requests) == 5
 
 
-def test_wait_idle_reports_a_main_thread_that_never_answers(app_data, processes, node, clock):
+def test_wait_idle_reports_a_main_thread_that_never_answers(app_data, processes, node, clock, sample_scope):
+    sample_scope(1)
     session = running_session(processes)
     make_sample_db(PROFILE, ["done"], 1)
     node.handler = staticmethod(lambda op, args, dst: None)

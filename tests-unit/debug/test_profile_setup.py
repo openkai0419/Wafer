@@ -306,6 +306,19 @@ def test_expected_source_count_follows_the_sample_scope(app_data, sample, build_
     assert profile_setup.expected_source_count(settings) == SAMPLE_IN_SCOPE + 3
 
 
+def test_expected_source_count_agrees_with_the_scanner(app_data, sample, build_profile):
+    from wafer.app.indexer.scanner import DirectoryScanner
+
+    settings = profile_data_root(PROFILE) / "dirs" / "sample.db"
+    SettingDB(str(settings)).add_ignore_folder(str(sample / "COCO" / "VAL2017"))
+    parents, ignores, patterns = SettingDB(str(settings)).get_all_folder_settings()
+    scanner = DirectoryScanner(app_data / "unused.db", MagicMock(), MagicMock(), MagicMock(), None)
+    scanner.set_exclusions(ignores, patterns)
+    scanned = {path for parent in parents for path, _ in scanner._scan_directory(parent)}
+
+    assert profile_setup.expected_source_count(settings) == len(scanned)
+
+
 def test_expected_source_count_does_not_walk_ignored_folders(app_data, sample, build_profile, monkeypatch):
     walked = []
     real_scandir = os.scandir

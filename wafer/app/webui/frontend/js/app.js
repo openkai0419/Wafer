@@ -101,7 +101,7 @@ function buildFilters() {
 let queryToken = 0;
 let lastSnapshot = '';
 let unusedQueryIds = [];
-async function runQuery(force = false) {
+async function runQuery(force = false, expired = null) {
   if (!state.db) return;
   const filters = buildFilters();
   const snapshot = JSON.stringify([state.db, filters, state.sort, state.ascending]);
@@ -113,7 +113,7 @@ async function runQuery(force = false) {
   const unused = unusedQueryIds;
   unusedQueryIds = [];
   const client = new QueryClient((expired) => {
-    if (expired === grid.client) runQuery(true);
+    if (expired === grid.client) runQuery(true, expired);
   });
   try {
     const previous = grid.client ? [...unused, grid.client.queryId] : unused;
@@ -123,8 +123,9 @@ async function runQuery(force = false) {
       unusedQueryIds.push(client.queryId);
       return;
     }
-    grid.setQuery(client, aspects);
-    viewer.setQuery(client, client.total);
+    const keepPosition = expired !== null && result.total === expired.total;
+    grid.setQuery(client, aspects, keepPosition);
+    viewer.setQuery(client, client.total, keepPosition);
     status.textContent = `${result.total} files`;
   } catch (e) {
     unusedQueryIds.push(...(client.queryId ? [client.queryId] : unused));

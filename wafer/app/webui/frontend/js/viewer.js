@@ -198,10 +198,11 @@ export class Viewer {
     this.open(next, this.knownItem(next));
   }
 
-  setQuery(client, total) {
+  setQuery(client, total, keepIndex = false) {
     this.client = client;
     this.total = total;
-    this.close();
+    if (!keepIndex || !this.isOpen) this.close();
+    else if (!this.item) this.open(this.index);
   }
 
   fillPane(index, pane) {

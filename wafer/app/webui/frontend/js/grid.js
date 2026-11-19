@@ -29,13 +29,13 @@ export class Grid {
     });
   }
 
-  setQuery(client, aspects) {
+  setQuery(client, aspects, keepScroll = false) {
     this.client = client;
     this.aspects = aspects;
     this.total = aspects.length;
     this.items.clear();
     this.pending.clear();
-    this.scroll.scrollTop = 0;
+    if (!keepScroll) this.scroll.scrollTop = 0;
     this.relayout();
   }
 

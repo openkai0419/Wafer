@@ -8,7 +8,7 @@ from typing import Any
 import msgpack
 from PySide6 import QtCore, QtWidgets
 
-from debug import inspect
+from debug import qt_inspect
 from wafer.core.common.profile import current_profile
 from wafer.core.ipc.message import Message
 from wafer.core.ipc.node import Node
@@ -29,18 +29,18 @@ class DebugAgent(QtCore.QObject):
         self._stopped = False
         self._ops: dict[str, Callable[..., Any]] = {
             "ping": self._ping,
-            "screenshot": inspect.screenshot,
-            "get_state": inspect.get_state,
-            "widget_tree": inspect.widget_tree,
-            "get_property": inspect.get_property,
-            "list_commands": inspect.list_commands,
-            "run_command": inspect.run_command,
-            "modal_state": inspect.modal_state,
-            "modal_input": inspect.modal_input,
-            "modal_click": inspect.modal_click,
-            "click": inspect.click,
-            "type_text": inspect.type_text,
-            "key": inspect.key,
+            "screenshot": qt_inspect.screenshot,
+            "get_state": qt_inspect.get_state,
+            "widget_tree": qt_inspect.widget_tree,
+            "get_property": qt_inspect.get_property,
+            "list_commands": qt_inspect.list_commands,
+            "run_command": qt_inspect.run_command,
+            "modal_state": qt_inspect.modal_state,
+            "modal_input": qt_inspect.modal_input,
+            "modal_click": qt_inspect.modal_click,
+            "click": qt_inspect.click,
+            "type_text": qt_inspect.type_text,
+            "key": qt_inspect.key,
         }
         node.subscribe(CALL_TOPIC, self._on_call)
 
@@ -90,7 +90,7 @@ class DebugAgent(QtCore.QObject):
         return {"pid": os.getpid(), "role": self._role, "profile": self._node.profile}
 
     def _idle(self, received: float) -> dict:
-        return {"modal": inspect.active_modal() is not None, "main_thread_ms": (time.perf_counter() - received) * 1000.0}
+        return {"modal": qt_inspect.active_modal() is not None, "main_thread_ms": (time.perf_counter() - received) * 1000.0}
 
     def _on_call(self, msg: Message) -> bool:
         key = next(self._keys)

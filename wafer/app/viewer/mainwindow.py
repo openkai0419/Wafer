@@ -716,8 +716,8 @@ class MainWindow(QtWidgets.QMainWindow):
         TagEditService.instance().handle_ack(payload)
         self.grid_overlay_host.reload()
 
-    @QtCore.Slot(str)
-    def _on_folder_changed_ipc(self, db: str):
+    @QtCore.Slot(str, list)
+    def _on_folder_changed_ipc(self, db: str, _paths: list):
         if not self._is_my_db(db):
             return
         self.reload_folderlist()

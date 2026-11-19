@@ -248,6 +248,80 @@ def test_flush_infers_move_from_delete_create(tmp_path):
     assert not scanner.request_update.called
     assert normalize_path(str(old_path)) not in wf._pending_deletes
     assert _MOVE_INFER_WINDOW > 0
+    assert all("created" not in c.kwargs for c in wf._progress.send_files_changed.call_args_list)
+
+
+def test_flush_reports_new_files_in_scope_as_created(tmp_path):
+    from wafer.core.common.paths import normalize_path
+
+    root = tmp_path / "watched"
+    ignored = root / "ignored"
+    ignored.mkdir(parents=True)
+    new, edited, hidden = root / "new.png", root / "edited.png", ignored / "hidden.png"
+    for path in (new, edited, hidden):
+        path.write_bytes(b"x")
+    wf, scheduler, writer, scanner, progress = _make_watcher()
+    _set_scope(wf, [root], ignores=[ignored])
+
+    wf._flush({str(new), str(edited), str(hidden)}, set(), {}, created={str(new), str(hidden)})
+
+    progress.send_files_changed.assert_called_once_with(created=[normalize_path(str(new))])
+    assert sorted(scanner.request_update.call_args[0][0]) == sorted([str(new), str(edited), str(hidden)])
+
+
+def _run_watch_loop(monkeypatch, roots):
+    from wafer.app.indexer.watch import folder_watcher as folder_watcher_module
+    from wafer.app.indexer.watch.folder_watcher import FolderWatcher
+
+    monkeypatch.setattr(folder_watcher_module, "_BATCH_TIMEOUT", 0.05)
+    monkeypatch.setattr(folder_watcher_module, "_FOLDER_NOTICE_INTERVAL", 60.0)
+    progress = MagicMock()
+    wf = FolderWatcher(MagicMock(), MagicMock(), MagicMock(), progress)
+    _set_scope(wf, roots)
+    return wf, progress
+
+
+def _noticed_folders(progress):
+    return [list(c.args[0]) for c in progress.send_folders_changed.call_args_list]
+
+
+def test_folder_events_send_their_paths_and_merge_the_ones_held_back(tmp_path, monkeypatch):
+    from wafer.core.common.paths import normalize_path
+
+    root = tmp_path / "watched"
+    wf, progress = _run_watch_loop(monkeypatch, [root])
+    try:
+        wf._q.put(("folder", str(root / "new")))
+        _wait(lambda: len(progress.send_folders_changed.call_args_list) == 1)
+        wf._q.put(("folder", str(root / "deleted")))
+        wf._q.put(("folder_moved", (str(root / "a" / "moved"), str(root / "b" / "moved"))))
+        _wait(lambda: len(progress.send_folders_changed.call_args_list) == 2)
+    finally:
+        wf.stop()
+
+    first, second = _noticed_folders(progress)
+    assert first == [normalize_path(str(root / "new"))]
+    assert sorted(second) == sorted(normalize_path(str(path)) for path in (root / "deleted", root / "a" / "moved", root / "b" / "moved"))
+
+
+def test_folder_events_outside_the_scope_send_nothing(tmp_path, monkeypatch):
+    root = tmp_path / "watched"
+    wf, progress = _run_watch_loop(monkeypatch, [root])
+    try:
+        wf._q.put(("folder", str(tmp_path / "elsewhere")))
+        wf._q.put(("changed", str(root / "a.png")))
+        _wait(lambda: wf._scanner.request_update.called)
+    finally:
+        wf.stop()
+
+    assert not progress.send_folders_changed.called
+
+
+def _wait(predicate, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while not predicate():
+        assert time.monotonic() < deadline, "timed out"
+        time.sleep(0.01)
 
 
 def test_flush_buffers_delete_until_move_window_expires(tmp_path):
@@ -602,12 +676,14 @@ class TestEventAccumulator:
         assert "delete_sources" in ops
         assert not scanner.request_update.called
 
-    def test_folder_dirty(self):
+    def test_changed_folders_are_merged_until_taken(self):
         acc = self._make_accumulator()
-        assert not acc.consume_folder_dirty()
-        acc.on_folder()
-        assert acc.consume_folder_dirty()
-        assert not acc.consume_folder_dirty()
+        assert acc.take_changed_folders() == set()
+        acc.on_folder("C:/w/new")
+        acc.on_folder_moved("C:/w/a", "C:/w/b/a")
+        acc.on_folder("C:/w/new")
+        assert acc.take_changed_folders() == {"C:/w/new", "C:/w/a", "C:/w/b/a"}
+        assert acc.take_changed_folders() == set()
 
     def test_drain_all_includes_pending(self):
         acc = self._make_accumulator()

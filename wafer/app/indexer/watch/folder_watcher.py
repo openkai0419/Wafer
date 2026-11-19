@@ -19,6 +19,7 @@ DISABLE_MODIFY_EVENT = False
 _BATCH_TIMEOUT = 0.5
 _STABLE_THRESHOLD = 2.0
 _MOVE_INFER_WINDOW = 1.0
+_FOLDER_NOTICE_INTERVAL = 0.5
 
 
 def _stat_signature(path):
@@ -95,7 +96,7 @@ class _EventAccumulator:
         self._deleted = set()
         self._moved = {}
         self._folder_moved = {}
-        self._folder_dirty = False
+        self._changed_folders = set()
 
     def on_created(self, path):
         self._pending.pop(path, None)
@@ -132,17 +133,15 @@ class _EventAccumulator:
             self._moved[src] = dst
 
     def on_folder_moved(self, src, dst):
-        self._folder_dirty = True
+        self._changed_folders.update((src, dst))
         self._folder_moved[src] = dst
 
-    def on_folder(self):
-        self._folder_dirty = True
+    def on_folder(self, path):
+        self._changed_folders.add(path)
 
-    def consume_folder_dirty(self):
-        if self._folder_dirty:
-            self._folder_dirty = False
-            return True
-        return False
+    def take_changed_folders(self):
+        folders, self._changed_folders = self._changed_folders, set()
+        return folders
 
     def drain(self):
         stable = _extract_stable(self._pending)
@@ -190,6 +189,8 @@ class FolderWatcher:
         self._ignore_paths = []
         self._ignore_pattern_re = None
         self._pending_deletes: dict[str, tuple[str, float]] = {}
+        self._held_folders: set[str] = set()
+        self._folders_noticed_at = 0.0
         self._stop = threading.Event()
         self._worker = threading.Thread(target=self._loop, daemon=True)
         self._worker.start()
@@ -255,6 +256,7 @@ class FolderWatcher:
                 item = self._q.get(timeout=_BATCH_TIMEOUT)
             except queue.Empty:
                 self._flush(*acc.drain())
+                self._notice_folders(acc, force=True)
                 continue
             now = time.monotonic()
             for kind, data in _drain_queue(self._q, item):
@@ -267,7 +269,7 @@ class FolderWatcher:
                 elif kind == "moved":
                     acc.on_moved(*data)
                 elif kind == "folder":
-                    acc.on_folder()
+                    acc.on_folder(data)
                 elif kind == "folder_moved":
                     acc.on_folder_moved(*data)
                 elif kind in ("rescan", "cleanup", "refresh"):
@@ -279,8 +281,17 @@ class FolderWatcher:
                     self._exec(kind, data)
                 elif kind == "__stop__":
                     return
-            if acc.consume_folder_dirty():
-                self._progress.send_event("folderchanged")
+            self._notice_folders(acc)
+
+    def _notice_folders(self, acc, force=False):
+        self._held_folders.update(normalize_path(path) for path in acc.take_changed_folders() if self._is_in_scope(path))
+        now = time.monotonic()
+        if not self._held_folders or (not force and now - self._folders_noticed_at < _FOLDER_NOTICE_INTERVAL):
+            return
+        folders, self._held_folders = sorted(self._held_folders), set()
+        self._folders_noticed_at = now
+        AppLogger.debug(f"[watch] folders changed: {len(folders)}")
+        self._progress.send_folders_changed(folders)
 
     def _flush(self, changed, deleted, moved, folder_moved=None, created=None):
         folder_moved = folder_moved or {}
@@ -317,6 +328,9 @@ class FolderWatcher:
         if deleted:
             self._exec("remove", list(deleted))
         if changed:
+            new_files = [normalize_path(path) for path in created if path in changed and self._is_in_scope(path)]
+            if new_files:
+                self._progress.send_files_changed(created=new_files)
             self._exec("update", list(changed))
 
     @staticmethod

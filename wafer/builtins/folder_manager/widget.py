@@ -3,6 +3,7 @@ import json
 import os
 from collections.abc import Callable, Iterable, Iterator, Sequence, Set as AbstractSet
 from dataclasses import dataclass
+from functools import partial
 from itertools import chain
 
 from PySide6 import QtCore, QtWidgets
@@ -60,6 +61,11 @@ def outermost(paths: Iterable[str]) -> list[str]:
         if not any(is_under(path, other) for other in kept):
             kept.append(path)
     return kept
+
+
+def cancel_all(slots: Iterable[CancelSlot], count_slots: dict[int, CancelSlot]) -> None:
+    for slot in chain(slots, count_slots.values()):
+        slot.cancel()
 
 
 RuleCounts = list[tuple[HighlightRule, dict[str, tuple[int, int]]]]
@@ -135,8 +141,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.dispatcher = Dispatcher(utility_pool, parent=self)
-        bridge = ViewerIpcBridge.instance()
-        self.follows_viewer = bridge is not None
+        self.follows_viewer = ViewerIpcBridge.instance() is not None
         self.database_name = ""
         self.columns = dict(DEFAULT_COLUMNS)
         self.settings_slot = CancelSlot()
@@ -160,6 +165,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.matches_only = False
         self.matches_version = 0
         self.filter_slot = CancelSlot()
+        self.task_slots = (self.settings_slot, self.disk_slot, self.relist_slot, self.select_slot, self.filter_slot)
         self.filtering = False
         self.found_matches: MatchScan | None = None
         self.found_version = -1
@@ -174,6 +180,8 @@ class FolderManagerWidget(QtWidgets.QWidget):
         app_settings.key_changed.connect(self.on_setting_changed)
         QtCore.QCoreApplication.instance().aboutToQuit.connect(self.save_pending)
         UI.register_instance(INSTANCE_NAME, self)
+        self.destroyed.connect(partial(cancel_all, self.task_slots, self.count_slots))
+        bridge = ViewerIpcBridge.updates()
         if bridge is not None:
             bridge.db_content_updated.connect(self.on_db_content_updated)
             bridge.files_changed.connect(self.on_files_changed)
@@ -395,8 +403,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
             self.apply_folder_settings(settings)
 
     def clear_folders(self) -> None:
-        self.disk_slot.cancel()
-        self.relist_slot.cancel()
+        cancel_all(self.task_slots, self.count_slots)
         self.forget_counts()
         self.scanning = False
         self.scanned = 0
@@ -404,8 +411,6 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.relisting = set()
         self.stale_disk = False
         self.stale_parents.clear()
-        self.select_slot.cancel()
-        self.filter_slot.cancel()
         self.filtering = False
         self.pending_select = False
         self.view.stop_expanding()
@@ -433,9 +438,14 @@ class FolderManagerWidget(QtWidgets.QWidget):
     def is_my_db(self, db: str) -> bool:
         return not db or db == self.database_name
 
-    def on_folder_changed(self, db: str) -> None:
-        if self.is_my_db(db):
+    def on_folder_changed(self, db: str, paths: Sequence[str]) -> None:
+        if not self.is_my_db(db):
+            return
+        if not paths:
             self.set_database(self.database_name)
+            return
+        self.stale_parents.update(parent_folder(normalize_path(path)) for path in paths)
+        self.flush_later_if_visible()
 
     def on_db_content_updated(self, db: str) -> None:
         if self.is_my_db(db):
@@ -446,7 +456,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         if not self.is_my_db(db):
             return
         self.stale_rules = True
-        for path in (*payload.get("modified", ()), *payload.get("removed", ())):
+        for path in chain.from_iterable(payload.get(key, ()) for key in ("modified", "removed", "created")):
             self.stale_parents.add(parent_folder(normalize_path(source_path(path))))
         self.flush_later_if_visible()
 

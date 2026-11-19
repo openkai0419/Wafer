@@ -1,16 +1,41 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from PySide6 import QtCore
 
 from ...core.logs import AppLogger
 from ...core.ipc.node import Node
 
+UPDATE_TOPICS = ("update", "folderchanged", "files.changed")
+
 
 class ViewerIpcBridge(QtCore.QObject):
     _instance: ViewerIpcBridge | None = None
+    _update_instance: ViewerIpcBridge | None = None
+
+    HANDLERS = {
+        "update": "_on_update",
+        "folderchanged": "_on_folder_changed",
+        "progress": "_on_progress",
+        "maximum": "_on_maximum",
+        "show_toggle": "_on_show_toggle",
+        "slot.close": "_on_slot_close",
+        "slot.restart": "_on_slot_restart",
+        "slot.shutdown": "_on_slot_shutdown",
+        "slot.renamed": "_on_slot_renamed",
+        "slot.open_path": "_on_slot_open_path",
+        "app.shutdown": "_on_app_shutdown",
+        "db.created": "_on_db_created",
+        "db.deleted": "_on_db_deleted",
+        "dev.log": "_on_dev_log",
+        "tags.updated": "_on_tags_updated",
+        "files.changed": "_on_files_changed",
+        "settings.changed": "_on_settings_changed",
+    }
 
     db_content_updated = QtCore.Signal(str)
-    folder_changed = QtCore.Signal(str)
+    folder_changed = QtCore.Signal(str, list)
     progress_updated = QtCore.Signal(str, int)
     progress_maximum = QtCore.Signal(str, int)
     show_toggled = QtCore.Signal(str, bool)
@@ -27,14 +52,29 @@ class ViewerIpcBridge(QtCore.QObject):
     files_changed = QtCore.Signal(str, dict)
     settings_received = QtCore.Signal(dict)
 
-    def __init__(self, node: Node, parent: QtCore.QObject | None = None):
+    def __init__(self, node: Node, parent: QtCore.QObject | None = None, topics: Sequence[str] | None = None):
         super().__init__(parent)
         self._node = node
-        self._subscribe_all()
+        for topic in topics if topics is not None else self.HANDLERS:
+            node.subscribe(topic, getattr(self, self.HANDLERS[topic]))
 
     @classmethod
     def instance(cls) -> ViewerIpcBridge | None:
         return cls._instance
+
+    @classmethod
+    def updates(cls) -> ViewerIpcBridge | None:
+        return cls._instance or cls._update_instance
+
+    @classmethod
+    def for_updates(cls, node: Node, parent: QtCore.QObject | None = None) -> ViewerIpcBridge:
+        bridge = cls(node, parent, topics=UPDATE_TOPICS)
+        cls._update_instance = bridge
+        return bridge
+
+    def stop_updates(self):
+        if ViewerIpcBridge._update_instance is self:
+            ViewerIpcBridge._update_instance = None
 
     def start(self):
         ViewerIpcBridge._instance = self
@@ -50,26 +90,6 @@ class ViewerIpcBridge(QtCore.QObject):
     def node(self) -> Node:
         return self._node
 
-    def _subscribe_all(self):
-        n = self._node
-        n.subscribe("update", self._on_update)
-        n.subscribe("folderchanged", self._on_folder_changed)
-        n.subscribe("progress", self._on_progress)
-        n.subscribe("maximum", self._on_maximum)
-        n.subscribe("show_toggle", self._on_show_toggle)
-        n.subscribe("slot.close", self._on_slot_close)
-        n.subscribe("slot.restart", self._on_slot_restart)
-        n.subscribe("slot.shutdown", self._on_slot_shutdown)
-        n.subscribe("slot.renamed", self._on_slot_renamed)
-        n.subscribe("slot.open_path", self._on_slot_open_path)
-        n.subscribe("app.shutdown", self._on_app_shutdown)
-        n.subscribe("db.created", self._on_db_created)
-        n.subscribe("db.deleted", self._on_db_deleted)
-        n.subscribe("dev.log", self._on_dev_log)
-        n.subscribe("tags.updated", self._on_tags_updated)
-        n.subscribe("files.changed", self._on_files_changed)
-        n.subscribe("settings.changed", self._on_settings_changed)
-
     def _invoke(self, slot: str, *args):
         try:
             QtCore.QMetaObject.invokeMethod(self, slot, QtCore.Qt.QueuedConnection, *args)
@@ -81,7 +101,9 @@ class ViewerIpcBridge(QtCore.QObject):
         return self._invoke("_emit_db_content_updated", QtCore.Q_ARG(str, msg.db or ""))
 
     def _on_folder_changed(self, msg):
-        return self._invoke("_emit_folder_changed", QtCore.Q_ARG(str, msg.db or ""))
+        p = msg.payload if isinstance(msg.payload, dict) else {}
+        self.folder_changed.emit(msg.db or "", [path for path in p.get("paths") or () if isinstance(path, str)])
+        return True
 
     def _on_progress(self, msg):
         try:
@@ -155,7 +177,7 @@ class ViewerIpcBridge(QtCore.QObject):
 
     def _on_files_changed(self, msg):
         p = msg.payload if isinstance(msg.payload, dict) else {}
-        self.files_changed.emit(msg.db or "", {"modified": list(p.get("modified") or ()), "removed": list(p.get("removed") or ())})
+        self.files_changed.emit(msg.db or "", {key: list(p.get(key) or ()) for key in ("modified", "removed", "created")})
         return True
 
     def _on_settings_changed(self, msg):
@@ -184,10 +206,6 @@ class ViewerIpcBridge(QtCore.QObject):
     @QtCore.Slot(str)
     def _emit_db_content_updated(self, db: str):
         self.db_content_updated.emit(db)
-
-    @QtCore.Slot(str)
-    def _emit_folder_changed(self, db: str):
-        self.folder_changed.emit(db)
 
     @QtCore.Slot(str, int)
     def _emit_progress_updated(self, db: str, value: int):

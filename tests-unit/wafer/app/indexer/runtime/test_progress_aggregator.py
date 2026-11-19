@@ -102,4 +102,25 @@ def test_send_files_changed_sends_paths_without_coalescing():
     p.send_files_changed(modified=["C:/a.png"], removed=("C:/b.png",))
     p.send_files_changed()
 
-    assert node.sent == [("send", ("files.changed", {"modified": ["C:/a.png"], "removed": ["C:/b.png"]}), {"dst": "viewer", "db": "testdb"})]
+    payload = {"modified": ["C:/a.png"], "removed": ["C:/b.png"], "created": []}
+    assert node.sent == [
+        ("send", ("files.changed", payload), {"dst": "viewer", "db": "testdb"}),
+        ("send", ("files.changed", payload), {"dst": "tray", "db": "testdb"}),
+    ]
+
+
+def test_new_files_are_sent_as_created():
+    node = _StubNode()
+    ProgressAggregator("testdb", node).send_files_changed(created=["C:/new.png"])
+
+    assert [args for _, args, _ in node.sent] == [("files.changed", {"modified": [], "removed": [], "created": ["C:/new.png"]})] * 2
+
+
+def test_changed_folders_are_sent_to_every_role_without_coalescing():
+    node = _StubNode()
+    p = ProgressAggregator("testdb", node)
+
+    p.send_folders_changed(["C:/a", "C:/b"])
+    p.send_folders_changed([])
+
+    assert node.sent == [("send", ("folderchanged", {"paths": ["C:/a", "C:/b"]}), {"dst": "ALL", "db": "testdb"})]

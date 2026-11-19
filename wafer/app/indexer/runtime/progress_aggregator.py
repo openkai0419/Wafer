@@ -3,6 +3,8 @@ import threading
 from ....core.profiling import profiler
 from ....core.logs import AppLogger
 
+FILES_CHANGED_ROLES = ("viewer", "tray")
+
 
 class ProgressAggregator:
     def __init__(self, db_name, node):
@@ -44,14 +46,24 @@ class ProgressAggregator:
         except Exception as e:
             AppLogger.warning(f"[notify {topic} failed] {e}")
 
-    def send_files_changed(self, modified=(), removed=()):
-        modified, removed = list(modified), list(removed)
-        if not modified and not removed:
+    def send_files_changed(self, modified=(), removed=(), created=()):
+        changes = {"modified": list(modified), "removed": list(removed), "created": list(created)}
+        if not any(changes.values()):
             return
         try:
-            self._node.send("files.changed", {"modified": modified, "removed": removed}, dst="viewer", db=self.db_name)
+            for role in FILES_CHANGED_ROLES:
+                self._node.send("files.changed", changes, dst=role, db=self.db_name)
         except Exception as e:
             AppLogger.warning(f"[notify files.changed failed] {e}")
+
+    def send_folders_changed(self, paths):
+        paths = list(paths)
+        if not paths:
+            return
+        try:
+            self._node.send("folderchanged", {"paths": paths}, dst="ALL", db=self.db_name)
+        except Exception as e:
+            AppLogger.warning(f"[notify folderchanged failed] {e}")
 
     def _send_progress(self):
         try:

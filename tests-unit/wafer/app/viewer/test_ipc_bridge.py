@@ -152,4 +152,77 @@ class TestIpcHandlers:
         assert bridge._on_files_changed(_FakeMsg(topic="files.changed", payload={"modified": ["C:/a.png"]}, db="db1")) is True
         assert bridge._on_files_changed(_FakeMsg(topic="files.changed", payload="oops")) is True
 
-        assert received == [("db1", {"modified": ["C:/a.png"], "removed": []}), ("", {"modified": [], "removed": []})]
+        assert received == [("db1", {"modified": ["C:/a.png"], "removed": [], "created": []}), ("", {"modified": [], "removed": [], "created": []})]
+
+    def test_files_changed_carries_created_files(self, bridge):
+        received = []
+        bridge.files_changed.connect(lambda db, changes: received.append(changes))
+
+        bridge._on_files_changed(_FakeMsg(topic="files.changed", payload={"created": ["C:/new.png"], "future": [1]}, db="db1"))
+
+        assert received == [{"modified": [], "removed": [], "created": ["C:/new.png"]}]
+
+    def test_folder_changed_carries_the_changed_folders(self, qtbot, bridge):
+        received = []
+        bridge.folder_changed.connect(lambda db, paths: received.append((db, paths)))
+
+        for payload in ({"paths": ["C:/w/a", 3, "C:/w/b"]}, "", None):
+            assert bridge._on_folder_changed(_FakeMsg(topic="folderchanged", payload=payload, db="db1")) is True
+
+        assert received == [("db1", ["C:/w/a", "C:/w/b"]), ("db1", []), ("db1", [])]
+
+
+class TestUpdateBridge:
+    def test_the_viewer_bridge_serves_updates_once_started(self, bridge):
+        from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
+
+        assert ViewerIpcBridge.updates() is None
+        bridge.start()
+        assert ViewerIpcBridge.updates() is bridge
+        bridge.stop()
+        assert ViewerIpcBridge.updates() is None
+
+    def test_a_tray_bridge_listens_only_to_updates_and_is_not_the_viewer(self, qtbot, mock_node):
+        from wafer.app.viewer.ipc_bridge import UPDATE_TOPICS, ViewerIpcBridge
+
+        bridge = ViewerIpcBridge.for_updates(mock_node)
+        try:
+            assert [c.args[0] for c in mock_node.subscribe.call_args_list] == list(UPDATE_TOPICS)
+            assert ViewerIpcBridge.updates() is bridge and ViewerIpcBridge.instance() is None
+            mock_node.start.assert_not_called()
+        finally:
+            bridge.stop_updates()
+        assert ViewerIpcBridge.updates() is None
+
+    def test_folder_and_file_changes_reach_the_tray_through_the_broker(self, qtbot, tmp_path, monkeypatch):
+        from wafer.app.indexer.runtime.progress_aggregator import ProgressAggregator
+        from wafer.app.viewer.ipc_bridge import ViewerIpcBridge
+        from wafer.core.ipc.broker import Broker
+        from wafer.core.ipc.node import Node
+
+        monkeypatch.setattr("wafer.core.ipc.transport._PORT_FILE", tmp_path / "broker.json")
+        broker = Broker()
+        broker.start()
+        tray = Node("tray")
+        bridge = ViewerIpcBridge.for_updates(tray)
+        indexer = Node("indexer", db="db1")
+        progress = ProgressAggregator("db1", indexer)
+        folders, files = [], []
+        bridge.folder_changed.connect(lambda db, paths: folders.append((db, paths)))
+        bridge.files_changed.connect(lambda db, changes: files.append((db, changes)))
+        try:
+            tray.start(broker.port)
+            indexer.start(broker.port)
+            assert tray.wait_registered(3.0) and indexer.wait_registered(3.0)
+
+            progress.send_folders_changed(["C:/w/a"])
+            progress.send_files_changed(created=["C:/w/new.png"])
+
+            qtbot.waitUntil(lambda: bool(folders and files), timeout=3000)
+            assert folders == [("db1", ["C:/w/a"])]
+            assert files == [("db1", {"modified": [], "removed": [], "created": ["C:/w/new.png"]})]
+        finally:
+            bridge.stop_updates()
+            indexer.stop()
+            tray.stop()
+            broker.stop()

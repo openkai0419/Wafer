@@ -10,6 +10,7 @@ from ...qt.common.rate_limit import qt_debounce
 from ...core.ipc.broker import Broker
 from ...core.ipc.node import Node
 from ...core.platform.process import AppProcess
+from ..viewer.ipc_bridge import ViewerIpcBridge
 from ...core.store.settings import app_settings
 import threading
 
@@ -42,6 +43,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self._node = Node("tray")
         self._node.subscribe("app.quit_all", lambda msg: self._request_shutdown_all(then_restart=False) or True)
         self._node.subscribe("app.restart_all", lambda msg: self._request_shutdown_all(then_restart=True) or True)
+        self.update_bridge = ViewerIpcBridge.for_updates(self._node, parent=self)
         self._node.start(self.broker.port)
         app_settings.committed.connect(self._broadcast_settings)
         AppLogger.set_node(self._node, role="tray")
@@ -117,6 +119,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
 
     def on_quit(self):
         AppLogger.info("tray shutting down")
+        self.update_bridge.stop_updates()
         try:
             self._node.stop()
         except Exception as e:

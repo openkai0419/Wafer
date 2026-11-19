@@ -6,6 +6,9 @@ import threading
 import pytest
 from PySide6 import QtCore, QtWidgets
 
+from wafer.app.indexer.runtime.progress_aggregator import ProgressAggregator
+from wafer.app.viewer.ipc_bridge import UPDATE_TOPICS, ViewerIpcBridge
+from wafer.app.viewer.widgets import foldertree as foldertree_module
 from wafer.app.viewer.widgets.foldertree import USER_ROLE_PATH
 from wafer.builtins.filters import TextFilter
 from wafer.builtins.folder_manager import commands as commands_module
@@ -17,7 +20,8 @@ from wafer.builtins.folder_manager.rule_editor import describe_rule
 from wafer.builtins.folder_manager.shared_settings import COLUMNS_KEY, DATABASE_KEY, RULES_KEY, load_columns, load_last_database, load_rules, save_last_database
 from wafer.builtins.folder_manager.stats import DiskTree, FolderValues
 from wafer.builtins.folder_manager.widget import FolderManagerPlugin, FolderManagerWidget
-from wafer.core.common.paths import data_db_path, normalize_path
+from wafer.core.common.paths import data_db_path, normalize_path, parent_folder
+from wafer.core.ipc.message import Message
 from wafer.core.store.settings import app_settings
 from wafer.plugin.query.handler import filter_registry
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
@@ -109,11 +113,56 @@ class FakeBridge:
 
 def without_viewer(monkeypatch):
     monkeypatch.setattr(widget_module.ViewerIpcBridge, "instance", staticmethod(lambda: None))
+    monkeypatch.setattr(widget_module.ViewerIpcBridge, "updates", staticmethod(lambda: None))
 
 
 def in_viewer(monkeypatch):
     bridge = FakeBridge()
     monkeypatch.setattr(widget_module.ViewerIpcBridge, "instance", staticmethod(lambda: bridge))
+    monkeypatch.setattr(widget_module.ViewerIpcBridge, "updates", staticmethod(lambda: bridge))
+
+
+class LoopbackNode:
+    def __init__(self, role):
+        self.role = role
+        self.handlers = {}
+
+    def subscribe(self, topic, handler):
+        self.handlers[topic] = handler
+        return self
+
+    def send(self, topic, payload=None, *, dst="ALL", db=""):
+        handler = self.handlers.get(topic)
+        if handler is not None and dst in ("ALL", self.role):
+            assert handler(Message.build(topic, payload, dst=dst, db=db)) is True
+
+    send_coalesced = send
+
+
+def indexer_notices(monkeypatch, role="viewer") -> ProgressAggregator:
+    node = LoopbackNode(role)
+    if role == "viewer":
+        bridge = ViewerIpcBridge(node)
+        monkeypatch.setattr(widget_module.ViewerIpcBridge, "instance", staticmethod(lambda: bridge))
+    else:
+        without_viewer(monkeypatch)
+        bridge = ViewerIpcBridge(node, topics=UPDATE_TOPICS)
+    monkeypatch.setattr(widget_module.ViewerIpcBridge, "updates", staticmethod(lambda: bridge))
+    return ProgressAggregator("test", node)
+
+
+def wait_notices(qtbot) -> None:
+    qtbot.wait(0)
+    QtCore.QCoreApplication.processEvents()
+
+
+def drop_move(qtbot, panel, source: str, target: str, monkeypatch) -> None:
+    monkeypatch.setattr(foldertree_module, "resolve_drop_operation_with_ui", lambda *args, **kwargs: "move")
+    panel.view.load_paths_async([parent_folder(source), target], lambda: None)
+    qtbot.waitUntil(lambda: target in panel.model.path_item_map, timeout=5000)
+    mime = QtCore.QMimeData()
+    mime.setData("application/x-foldertree-paths", source.encode())
+    assert panel.model.dropMimeData(mime, QtCore.Qt.MoveAction, -1, 0, panel.model.indexFromItem(panel.model.path_item_map[target]))
 
 
 @pytest.fixture(autouse=True)
@@ -668,7 +717,7 @@ def test_notifications_follow_the_panel_database(qtbot, tmp_path, query_calls, i
     qtbot.waitUntil(lambda: len(query_calls) == 1 and not panel.counting, timeout=5000)
 
     panel.on_db_content_updated("some_other_db")
-    panel.on_folder_changed("some_other_db")
+    panel.on_folder_changed("some_other_db", [])
     panel.on_files_changed("some_other_db", {"modified": [f"{root}/a/f0.png"], "removed": []})
     QtCore.QCoreApplication.processEvents()
     assert len(query_calls) == 1 and len(served_folders) == 1 and not panel.stale_parents
@@ -677,7 +726,7 @@ def test_notifications_follow_the_panel_database(qtbot, tmp_path, query_calls, i
     qtbot.waitUntil(lambda: len(query_calls) == 2, timeout=5000)
 
     serve("test", [other])
-    panel.on_folder_changed("test")
+    panel.on_folder_changed("test", [])
     qtbot.waitUntil(lambda: scanned(panel, [other]), timeout=5000)
     assert len(served_folders) == 2
 
@@ -918,9 +967,11 @@ def test_renaming_a_folder_walks_only_the_renamed_folder(qtbot, tmp_path, monkey
     real_list = widget_module.list_folder
     monkeypatch.setattr(widget_module, "walk_disk", lambda roots, *args: walked.append(list(roots)) or real_walk(roots, *args))
     monkeypatch.setattr(widget_module, "list_folder", lambda path, *args: listed.append(path) or real_list(path, *args))
-    (tmp_path / "root" / "a").rename(tmp_path / "root" / "renamed")
+    panel.view.load_paths_async([root], lambda: None)
+    qtbot.waitUntil(lambda: f"{root}/a" in panel.model.path_item_map, timeout=5000)
 
-    panel.model.paths_changed.emit([root])
+    assert panel.model.setData(panel.model.indexFromItem(panel.model.path_item_map[f"{root}/a"]), "renamed")
+    assert (tmp_path / "root" / "renamed").is_dir()
     qtbot.waitUntil(lambda: disk.values(f"{root}/renamed") is not None and not panel.scanning, timeout=5000)
     qtbot.waitUntil(lambda: not disk.orphans, timeout=5000)
     assert listed == [root]
@@ -933,26 +984,46 @@ def test_renaming_a_folder_walks_only_the_renamed_folder(qtbot, tmp_path, monkey
     assert finished_on_main(finish_threads) == []
 
 
-def test_moving_a_folder_relists_both_parents(qtbot, tmp_path, monkeypatch, query_calls):
+def test_a_folder_moved_in_the_panel_updates_both_parents_from_the_watcher_notice(qtbot, tmp_path, monkeypatch, query_calls, immediate_flush, served_folders):
     root = make_folders(tmp_path / "root", {"a/b": 2, "d": 1})
+    notices = indexer_notices(monkeypatch)
     panel = make_panel(qtbot)
     bind(qtbot, panel, [root])
     disk = panel.model.disk
     walked = []
     real_walk = widget_module.walk_disk
     monkeypatch.setattr(widget_module, "walk_disk", lambda roots, *args: walked.append(list(roots)) or real_walk(roots, *args))
-    (tmp_path / "root" / "a" / "b").rename(tmp_path / "root" / "d" / "b")
 
-    panel.model.paths_changed.emit([f"{root}/a", f"{root}/d"])
+    drop_move(qtbot, panel, f"{root}/a/b", f"{root}/d", monkeypatch)
+    assert (tmp_path / "root" / "d" / "b").is_dir()
+    notices.send_folders_changed([f"{root}/a/b", f"{root}/d/b"])
+
     qtbot.waitUntil(lambda: disk.values(f"{root}/d/b") is not None and not panel.scanning, timeout=5000)
     assert walked == [[f"{root}/d/b"]]
+    assert panel.model.disk is disk and len(served_folders) == 1
     assert disk.values(f"{root}/a") == FolderValues(0, 0, 0, 0)
     assert disk.values(f"{root}/d") == FolderValues(1, 3, 1, 1)
     assert disk.totals == fresh_totals(disk)
 
 
-def test_a_second_change_keeps_the_parents_of_the_first(qtbot, tmp_path, monkeypatch, query_calls):
+def test_a_folder_notice_without_paths_reads_the_settings_and_rescans_everything(qtbot, tmp_path, monkeypatch, query_calls, immediate_flush, served_folders):
+    root = make_folders(tmp_path / "root", {"a": 1})
+    notices = indexer_notices(monkeypatch)
+    panel = make_panel(qtbot)
+    bind(qtbot, panel, [root])
+    walked = []
+    real_walk = widget_module.walk_disk
+    monkeypatch.setattr(widget_module, "walk_disk", lambda roots, *args: walked.append(list(roots)) or real_walk(roots, *args))
+
+    notices.send_event("folderchanged")
+
+    qtbot.waitUntil(lambda: walked == [[root]] and not panel.scanning, timeout=5000)
+    assert len(served_folders) == 2
+
+
+def test_new_files_from_the_watcher_update_their_folders(qtbot, tmp_path, monkeypatch, query_calls, immediate_flush):
     root = make_folders(tmp_path / "root", {"a": 1, "b": 1})
+    notices = indexer_notices(monkeypatch)
     panel = make_panel(qtbot)
     bind(qtbot, panel, [root])
     disk = panel.model.disk
@@ -970,21 +1041,74 @@ def test_a_second_change_keeps_the_parents_of_the_first(qtbot, tmp_path, monkeyp
     (tmp_path / "root" / "a" / "x.png").write_bytes(b"x")
     (tmp_path / "root" / "b" / "y.png").write_bytes(b"x")
 
-    panel.model.paths_changed.emit([f"{root}/a"])
+    notices.send_files_changed(created=[f"{root}/a/x.png"])
     qtbot.waitUntil(entered.is_set, timeout=5000)
-    panel.model.paths_changed.emit([f"{root}/b"])
+    notices.send_files_changed(created=[f"{root}/b/y.png"])
+    wait_notices(qtbot)
     release.set()
     qtbot.waitUntil(lambda: disk.values(f"{root}/a").files == 2 and disk.values(f"{root}/b").files == 2, timeout=5000)
+    assert panel.model.disk is disk
 
 
-def test_changes_outside_the_roots_are_ignored(qtbot, tmp_path, query_calls):
+def test_the_tray_panel_follows_the_same_notices(qtbot, tmp_path, monkeypatch, query_calls, immediate_flush, served_folders):
     root = make_folders(tmp_path / "root", {"a": 1})
+    notices = indexer_notices(monkeypatch, role="tray")
+    panel = make_panel(qtbot)
+    assert not panel.follows_viewer
+    bind(qtbot, panel, [root])
+    qtbot.waitUntil(lambda: len(query_calls) == 1 and not panel.counting, timeout=5000)
+    disk = panel.model.disk
+    make_folders(tmp_path / "root" / "new", {"": 2})
+    (tmp_path / "root" / "a" / "x.png").write_bytes(b"x")
+
+    notices.send_folders_changed([f"{root}/new"])
+    notices.send_files_changed(created=[f"{root}/a/x.png"])
+    notices.send_event("update")
+
+    qtbot.waitUntil(lambda: disk.values(f"{root}/new") is not None and disk.values(f"{root}/a").files == 2 and not panel.scanning, timeout=5000)
+    assert disk.values(root) == FolderValues(0, 4, 2, 2)
+    qtbot.waitUntil(lambda: len(query_calls) >= 2, timeout=5000)
+    assert len(served_folders) == 1
+
+
+def test_folder_notices_outside_the_roots_are_ignored(qtbot, tmp_path, monkeypatch, query_calls, immediate_flush):
+    root = make_folders(tmp_path / "root", {"a": 1})
+    notices = indexer_notices(monkeypatch)
     panel = make_panel(qtbot)
     bind(qtbot, panel, [root])
     disk = panel.model.disk
-    panel.model.paths_changed.emit([normalize_path(str(tmp_path))])
-    QtCore.QCoreApplication.processEvents()
-    assert panel.model.disk is disk and not panel.scanning
+    notices.send_folders_changed([normalize_path(str(tmp_path / "elsewhere"))])
+    wait_notices(qtbot)
+    assert panel.model.disk is disk and not panel.scanning and not panel.relisting
+
+
+def test_closing_the_window_cancels_the_walk_and_the_counts(qtbot, tmp_path, monkeypatch, query_calls):
+    root = make_folders(tmp_path / "root", {"a": 1})
+    serve("test", [root])
+    release, delivered = gated_walk(monkeypatch, [root])
+    walks = []
+    gated = widget_module.walk_disk
+    monkeypatch.setattr(widget_module, "walk_disk", lambda roots, excluded, pattern, cancel, on_batch, *rest: walks.append(cancel) or gated(roots, excluded, pattern, cancel, on_batch, *rest))
+    counting = gate()
+    finish_count = gate()
+
+    def slow_query(db_path, entries):
+        counting.set()
+        finish_count.wait(5)
+        return []
+
+    monkeypatch.setattr(widget_module, "query_sources", slow_query)
+    panel = open_standalone(FolderManagerWidget, "Folder Manager", "folder_manager_cancel_test")
+    qtbot.waitExposed(panel)
+    panel.set_database("test")
+    qtbot.waitUntil(lambda: delivered.is_set() and counting.is_set(), timeout=5000)
+    count_tokens = [slot._token for slot in panel.count_slots.values()]
+    assert walks and count_tokens and not any(token.is_cancelled() for token in [*walks, *count_tokens])
+
+    panel.window().close()
+    QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+
+    assert all(token.is_cancelled() for token in [*walks, *count_tokens])
 
 
 def test_select_matches_opens_the_tree_to_badged_folders(qtbot, tmp_path, monkeypatch, query_calls):

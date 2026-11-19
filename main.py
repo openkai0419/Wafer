@@ -40,6 +40,7 @@ def _setup_faulthandler(force=False):
 
 _setup_faulthandler()
 from wafer import __version__
+from wafer._version import warn_if_version_unknown
 from wafer.constants import APP_DATA_DIR_NAME, APP_ID, APP_NAME, DEFAULT_DB_NAME, TRAY_LOCK_NAME
 from wafer.core.common.paths import get_app_root_dir, get_plugin_dir
 from wafer.core.platform.process import AppProcess
@@ -326,6 +327,7 @@ def _parse_args():
 
 def main():
     args = _parse_args()
+    warn_if_version_unknown()
     if not any([args.tray, args.viewer, args.webui, args.indexer, args.collector, args.parser]):
         from wafer.app.viewer.workspace_launch import claim_workspace, first_restore_slot_id, is_openable_path, restore_session
         if args.path and is_openable_path(args.path):

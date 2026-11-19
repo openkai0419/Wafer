@@ -9,7 +9,7 @@ from aiohttp import web
 
 from wafer.core.common.folder_scan import scan_children, scan_roots
 from wafer.core.db.path_scope import compile_ignore_patterns, path_in_scope
-from wafer.core.db.setting_db import SettingDB
+from wafer.core.db.setting_db import read_folder_settings
 from wafer.plugin.query.handler import filter_registry, sort_registry
 from wafer.core.logs import AppLogger
 from wafer.core.common.formatting import format_file_entries, format_source_entries
@@ -141,7 +141,7 @@ def read_setting_folders(db_name: str) -> tuple[list[str], set[str], re.Pattern[
     if not os.path.isfile(db_file):
         return [], set(), None
     try:
-        roots, ignored, patterns = SettingDB(db_file).get_all_folder_settings()
+        roots, ignored, patterns = read_folder_settings(db_file)
     except sqlite3.Error as e:
         AppLogger.warning(f"WebUI failed to read setting DB for {db_name}: {e}")
         return [], set(), None

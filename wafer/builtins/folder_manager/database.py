@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from wafer.core.common.paths import normalize_path, setting_db_path
 from wafer.core.db.path_scope import compile_ignore_patterns
-from wafer.core.db.setting_db import SettingDB
+from wafer.core.db import setting_db
 
 
 @dataclass(frozen=True)
@@ -19,7 +19,7 @@ def read_folder_settings(name: str) -> FolderSettings:
     path = setting_db_path(name)
     if not os.path.exists(path):
         return FolderSettings([], set(), None)
-    parents, ignores, patterns = SettingDB(path).get_all_folder_settings()
+    parents, ignores, patterns = setting_db.read_folder_settings(path)
     return FolderSettings(
         roots=[normalize_path(p) for p in parents],
         excluded={normalize_path(p) for p in ignores},

@@ -6,7 +6,7 @@ import re
 from collections.abc import Iterable, Sequence
 
 from ..common.paths import child_prefix, list_setting_db_names, normalize_path, setting_db_path
-from .setting_db import SettingDB
+from .setting_db import read_folder_settings
 
 
 def compile_ignore_patterns(patterns: Sequence[str]) -> re.Pattern[str] | None:
@@ -39,7 +39,7 @@ def path_in_scope(path: str, roots: Iterable[str], ignore_folders: Iterable[str]
 def databases_containing(path: str) -> list[str]:
     names = []
     for name in list_setting_db_names():
-        roots, ignore_folders, ignore_patterns = SettingDB(str(setting_db_path(name))).get_all_folder_settings()
+        roots, ignore_folders, ignore_patterns = read_folder_settings(setting_db_path(name))
         if path_in_scope(path, roots, ignore_folders, compile_ignore_patterns(ignore_patterns)):
             names.append(name)
     return names

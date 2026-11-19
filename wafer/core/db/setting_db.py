@@ -178,12 +178,7 @@ class SettingDB:
 
     @profiler.profile
     def get_all_folder_settings(self) -> tuple[list[str], list[str], list[str]]:
-        """Fetch parent/ignore folders and ignore patterns in a single connection."""
-        with self._conn(read_only=True) as con:
-            parents = [row[0] for row in con.execute("SELECT path FROM parent_folders ORDER BY id ASC")]
-            ignores = [row[0] for row in con.execute("SELECT path FROM ignore_folders ORDER BY id ASC")]
-            patterns = [row[0] for row in con.execute("SELECT pattern FROM ignore_patterns ORDER BY id ASC")]
-        return parents, ignores, patterns
+        return read_folder_settings(self.db_name)
 
     @profiler.profile
     def set_setting(self, key, value):
@@ -219,3 +214,15 @@ class SettingDB:
 
     def set_enabled_collectors(self, names: list[str]):
         self.set_setting("enabled_collectors", list(names))
+
+
+@profiler.profile
+def read_folder_settings(db_path) -> tuple[list[str], list[str], list[str]]:
+    con = open_readonly(db_path)
+    try:
+        parents = [row[0] for row in con.execute("SELECT path FROM parent_folders ORDER BY id ASC")]
+        ignores = [row[0] for row in con.execute("SELECT path FROM ignore_folders ORDER BY id ASC")]
+        patterns = [row[0] for row in con.execute("SELECT pattern FROM ignore_patterns ORDER BY id ASC")]
+    finally:
+        con.close()
+    return parents, ignores, patterns

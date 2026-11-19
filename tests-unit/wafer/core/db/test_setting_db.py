@@ -1,8 +1,9 @@
+import sqlite3
 import sys
 
 import pytest
 
-from wafer.core.db.setting_db import SettingDB
+from wafer.core.db.setting_db import SettingDB, read_folder_settings
 
 TEST_DB_NAME = None
 
@@ -97,6 +98,22 @@ def test_get_all_folder_settings(setting_db):
     assert ignores == setting_db.get_all_ignore_folders()
     assert patterns == setting_db.get_all_ignore_patterns()
 
+
+def test_reading_folder_settings_never_creates_a_missing_database(tmp_path):
+    with pytest.raises(sqlite3.OperationalError):
+        read_folder_settings(tmp_path / "gone.db")
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_reading_folder_settings_leaves_the_database_unchanged(tmp_path):
+    path = tmp_path / "settings.db"
+    db = SettingDB(str(path))
+    db.add_parent_folder("C:/photos")
+    before = path.read_bytes()
+
+    assert read_folder_settings(path) == (["C:/photos"], [], [])
+    assert path.read_bytes() == before
 
 def test_enabled_collectors_default_none(setting_db):
     assert setting_db.get_enabled_collectors() is None

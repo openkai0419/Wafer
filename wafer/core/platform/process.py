@@ -4,7 +4,7 @@ import sys
 import threading
 import psutil
 from ...constants import TRAY_LOCK_NAME
-from ..common.profile import PROFILE_ARG, PROFILE_PREFIX, current_profile, profile_args, profile_from_args, validate_profile_name
+from ..common.profile import PROFILE_PREFIX, current_profile, profile_args, profile_from_args, split_profile_args, validate_profile_name
 from ..logs import AppLogger
 from .process_lock import SafeProcessLock
 
@@ -114,14 +114,6 @@ def kill_with_parent(pid: int) -> bool:
     return True
 
 
-def _split_profile(args):
-    profile = profile_from_args(list(args))
-    if profile is None:
-        return None, list(args)
-    index = list(args).index(PROFILE_ARG)
-    return profile, list(args[:index]) + list(args[index + 2:])
-
-
 def _is_main_script(arg):
     return os.path.normcase(os.path.basename(arg)) == os.path.normcase("main.py")
 
@@ -139,7 +131,7 @@ class ProcessMatcher:
         self.exe_stems = {self._stem(cmd_list[0]), self._stem(self.exe_path)}
         self.script_path = self._normalize_path(cmd_list[1]) if len(cmd_list) > 1 else None
         self.script_stems = {self._stem(cmd_list[1]), self._stem(self.script_path)} if len(cmd_list) > 1 else set()
-        self.profile, own_args = _split_profile(cmd_list[2:])
+        self.profile, own_args = split_profile_args(cmd_list[2:])
         self.args_set = set(own_args)
 
     def find_by_args_subset(self, exclude_args=None):
@@ -177,7 +169,7 @@ class ProcessMatcher:
                 else:
                     proc_args = pcmd[1:]
                 try:
-                    proc_profile, proc_args = _split_profile(proc_args)
+                    proc_profile, proc_args = split_profile_args(proc_args)
                 except ValueError:
                     continue
                 if proc_profile != self.profile:

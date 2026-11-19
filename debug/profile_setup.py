@@ -411,7 +411,7 @@ def _rebuild_template(args: argparse.Namespace) -> None:
 
 
 def _parser() -> argparse.ArgumentParser:
-    tooling = argparse.ArgumentParser(add_help=False)
+    tooling = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
     tooling.add_argument(
         PROFILE_ARG,
         choices=[TOOLS_PROFILE],
@@ -422,19 +422,20 @@ def _parser() -> argparse.ArgumentParser:
         prog="python -m debug.profile_setup",
         description=f"Prepare, launch and stop debug profiles of Wafer. Tooling that runs this CLI should pass {PROFILE_ARG} {TOOLS_PROFILE}.",
         parents=[tooling],
+        allow_abbrev=False,
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    launch = commands.add_parser("launch", parents=[tooling], help="Launch the checkout's debug profile, creating it from the sample template if needed.")
+    launch = commands.add_parser("launch", parents=[tooling], allow_abbrev=False, help="Launch the checkout's debug profile, creating it from the sample template if needed.")
     launch.add_argument("--checkout", type=Path, required=True)
     launch.add_argument("--fresh", action="store_true", help="Recreate the profile from the template.")
     launch.set_defaults(func=_launch)
-    stop = commands.add_parser("stop", parents=[tooling], help="Quit every process of a debug profile.")
+    stop = commands.add_parser("stop", parents=[tooling], allow_abbrev=False, help="Quit every process of a debug profile.")
     stop.add_argument("name")
     stop.set_defaults(func=_stop)
-    forget = commands.add_parser("forget", parents=[tooling], help="Stop a debug profile and delete its data.")
+    forget = commands.add_parser("forget", parents=[tooling], allow_abbrev=False, help="Stop a debug profile and delete its data.")
     forget.add_argument("name")
     forget.set_defaults(func=_forget)
-    rebuild = commands.add_parser("rebuild-template", parents=[tooling], help="Rebuild the sample template for the checkout's schema.")
+    rebuild = commands.add_parser("rebuild-template", parents=[tooling], allow_abbrev=False, help="Rebuild the sample template for the checkout's schema.")
     rebuild.add_argument("--checkout", type=Path, required=True)
     rebuild.set_defaults(func=_rebuild_template)
     return parser

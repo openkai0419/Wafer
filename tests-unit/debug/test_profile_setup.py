@@ -516,6 +516,9 @@ def test_cli_accepts_the_tooling_profile_before_or_after_the_command(tmp_path, m
     assert events == ["debug-main", "debug-main", "debug-main"]
     with pytest.raises(SystemExit):
         main(["launch", "--checkout", str(checkout), "--profile", "debug-main"])
+    for argv in (["--prof", "debug-tools", "stop", "debug-main"], ["stop", "debug-main", "--prof", "debug-tools"]):
+        with pytest.raises(SystemExit):
+            main(argv)
     assert "--profile debug-tools" in profile_setup._parser().format_help()
 
 

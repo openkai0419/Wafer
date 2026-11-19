@@ -285,7 +285,7 @@ def _entry_webui(args):
         lock.release()
 
 def build_parser():
-    parser = argparse.ArgumentParser(description='Script with three run modes')
+    parser = argparse.ArgumentParser(description='Script with three run modes', allow_abbrev=False)
     parser.add_argument('--version', action='version', version=f'Wafer {__version__}')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--tray', action='store_true', help='run tray process (background manager)')
@@ -311,8 +311,17 @@ def build_parser():
     return parser
 
 
-def main():
+def _parse_args():
     args = build_parser().parse_args()
+    runtime_profile = current_profile()
+    if args.profile != runtime_profile:
+        AppLogger.error(f'{PROFILE_ARG} was parsed as {args.profile!r} but the process runs as {runtime_profile!r}; refusing to start')
+        sys.exit(2)
+    return args
+
+
+def main():
+    args = _parse_args()
     if not any([args.tray, args.viewer, args.webui, args.indexer, args.collector, args.parser]):
         from wafer.app.viewer.workspace_launch import claim_workspace, first_restore_slot_id, is_openable_path, restore_session
         if args.path and is_openable_path(args.path):

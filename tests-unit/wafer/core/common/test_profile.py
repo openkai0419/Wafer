@@ -24,6 +24,7 @@ from wafer.core.common.profile import (
     profile_args,
     profile_from_args,
     profile_label,
+    split_profile_args,
     validate_profile_name,
 )
 
@@ -51,6 +52,35 @@ def test_profile_from_args_rejects_invalid_and_missing_value():
         profile_from_args(["main.py", "--profile", "main"])
     with pytest.raises(ValueError):
         profile_from_args(["main.py", "--profile"])
+
+
+def test_profile_from_args_reads_the_equals_form():
+    assert profile_from_args(["main.py", "--tray", "--profile=debug-x"]) == "debug-x"
+    with pytest.raises(ValueError):
+        profile_from_args(["main.py", "--profile=main"])
+    with pytest.raises(ValueError):
+        profile_from_args(["main.py", "--profile="])
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["main.py", "--profile", "debug-a", "--profile", "debug-a"],
+        ["main.py", "--profile", "debug-a", "--profile", "debug-b"],
+        ["main.py", "--profile=debug-a", "--profile", "debug-b"],
+        ["main.py", "--profile=debug-a", "--profile=debug-a"],
+    ],
+)
+def test_profile_from_args_rejects_a_repeated_profile(argv):
+    with pytest.raises(ValueError, match="more than once"):
+        profile_from_args(argv)
+
+
+def test_split_profile_args_removes_either_form():
+    assert split_profile_args(["--tray", "--profile", "debug-a", "--slot", "s"]) == ("debug-a", ["--tray", "--slot", "s"])
+    assert split_profile_args(["--profile=debug-a", "--tray"]) == ("debug-a", ["--tray"])
+    assert split_profile_args(["--tray"]) == (None, ["--tray"])
+    assert split_profile_args(["--profiles", "x"]) == (None, ["--profiles", "x"])
 
 
 @pytest.mark.parametrize("name", ["main", "debug-", "debug-a.b", "debug-a b", "Debug-x", ""])

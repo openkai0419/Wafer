@@ -513,6 +513,27 @@ def test_invalid_profile_in_process_is_not_matched(fake_procs):
     assert _pids(ProcessMatcher([EXE, MAIN, "--tray"]).find_by_args_subset()) == [3]
 
 
+def test_matchers_read_the_equals_form_as_the_profile(fake_procs):
+    fake_procs([[EXE, MAIN, "--tray", "--profile=debug-a"], [EXE, MAIN, "--tray"]])
+    assert _pids(ProcessMatcher([EXE, MAIN, "--tray"]).find_by_args_subset()) == [2]
+    assert _pids(ProcessMatcher([EXE, MAIN, "--tray", "--profile", "debug-a"]).find_by_args_exact()) == [1]
+    assert _pids(AppProcess.list_profile_processes("debug-a")) == [1]
+
+
+def test_repeated_profile_in_process_is_never_matched(fake_procs):
+    fake_procs([
+        [EXE, MAIN, "--tray", "--profile", "debug-a", "--profile", "debug-a"],
+        [EXE, MAIN, "--tray", "--profile", "debug-a", "--profile=debug-b"],
+        [EXE, MAIN, "--tray"],
+        [EXE, MAIN, "--tray", "--profile", "debug-a"],
+    ])
+    assert _pids(ProcessMatcher([EXE, MAIN, "--tray"]).find_by_args_subset()) == [3]
+    assert _pids(ProcessMatcher([EXE, MAIN, "--tray", "--profile", "debug-a"]).find_by_args_subset()) == [4]
+    assert _pids(AppProcess.list_profile_processes("debug-a")) == [4]
+    packages = os.path.join(os.path.dirname(MAIN), "extensions", ".packages")
+    assert _pids(AppProcess.list_debug_processes_sharing(packages)) == [4]
+
+
 def test_list_viewers_stays_inside_profile(fake_procs, monkeypatch):
     fake_procs([[EXE, MAIN], [EXE, MAIN, "--profile", "debug-a"], [EXE, MAIN, "--tray", "--profile", "debug-a"]])
     monkeypatch.setattr(AppProcess, "base_command", staticmethod(lambda: [EXE, MAIN, "--profile", "debug-a"]))

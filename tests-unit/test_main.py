@@ -1,4 +1,11 @@
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
+
+MAIN = Path(__file__).resolve().parents[1] / "main.py"
 
 ROLE_ARGS = [
     [],
@@ -35,3 +42,67 @@ def test_parser_rejects_a_non_debug_profile(capsys):
     with pytest.raises(SystemExit):
         build_parser().parse_args(["--profile", "release", "--tray"])
     assert "--profile" in capsys.readouterr().err
+
+
+def test_parser_reads_the_equals_form_like_the_runtime():
+    from main import build_parser
+    from wafer.core.common.profile import profile_from_args
+
+    argv = ["--tray", "--profile=debug-x"]
+    assert build_parser().parse_args(argv).profile == "debug-x"
+    assert profile_from_args(["main.py", *argv]) == "debug-x"
+
+
+@pytest.mark.parametrize("argv", [["--prof", "debug-x", "--tray"], ["--tra", "--profile", "debug-x"]])
+def test_parser_rejects_abbreviated_options(argv, capsys):
+    from main import build_parser
+
+    with pytest.raises(SystemExit) as exc:
+        build_parser().parse_args(argv)
+    assert exc.value.code != 0
+    assert "unrecognized arguments" in capsys.readouterr().err
+
+
+def test_a_repeated_profile_stops_the_process_before_it_starts(tmp_path):
+    env = {**os.environ, "WIN_PD_OVERRIDE_LOCAL_APPDATA": str(tmp_path)}
+    done = subprocess.run(
+        [sys.executable, str(MAIN), "--profile", "debug-x", "--profile", "debug-y", "--version"],
+        env=env,
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        timeout=25,
+    )
+    assert done.returncode != 0
+    assert "--profile was given more than once" in done.stderr
+    assert "Wafer " not in done.stdout
+
+
+def _run_main(monkeypatch, argv, runtime_profile):
+    import main
+
+    errors = []
+    started = []
+    monkeypatch.setattr(sys, "argv", ["main.py", *argv])
+    monkeypatch.setattr(main, "current_profile", lambda: runtime_profile)
+    monkeypatch.setattr(main.AppLogger, "error", lambda message, *args, **kwargs: errors.append(message))
+    monkeypatch.setattr(main, "_entry_tray", lambda: started.append("tray"))
+    return main, errors, started
+
+
+def test_main_refuses_to_start_when_parser_and_runtime_disagree(monkeypatch):
+    main, errors, started = _run_main(monkeypatch, ["--tray", "--profile", "debug-x"], None)
+
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+    assert exc.value.code != 0
+    assert started == []
+    assert len(errors) == 1 and "debug-x" in errors[0] and "--profile" in errors[0]
+
+
+def test_main_starts_when_parser_and_runtime_agree(monkeypatch):
+    main, errors, started = _run_main(monkeypatch, ["--tray", "--profile=debug-x"], "debug-x")
+
+    main.main()
+    assert started == ["tray"]
+    assert errors == []

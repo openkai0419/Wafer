@@ -3,6 +3,7 @@ import sys
 from functools import lru_cache
 
 PROFILE_ARG = "--profile"
+_PROFILE_ASSIGN = f"{PROFILE_ARG}="
 PROFILE_PREFIX = "debug-"
 TOOLS_PROFILE = f"{PROFILE_PREFIX}tools"
 _PROFILE_PATTERN = re.compile(r"^debug-[A-Za-z0-9_-]+$")
@@ -14,12 +15,31 @@ def validate_profile_name(name: str) -> str:
     return name
 
 
+def split_profile_args(argv: list[str]) -> tuple[str | None, list[str]]:
+    args = list(argv)
+    values: list[str] = []
+    rest: list[str] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == PROFILE_ARG:
+            values.append(args[index + 1] if index + 1 < len(args) else "")
+            index += 2
+            continue
+        if arg.startswith(_PROFILE_ASSIGN):
+            values.append(arg[len(_PROFILE_ASSIGN):])
+        else:
+            rest.append(arg)
+        index += 1
+    if not values:
+        return None, rest
+    if len(values) > 1:
+        raise ValueError(f"{PROFILE_ARG} was given more than once: {values!r}")
+    return validate_profile_name(values[0]), rest
+
+
 def profile_from_args(argv: list[str]) -> str | None:
-    if PROFILE_ARG not in argv:
-        return None
-    index = argv.index(PROFILE_ARG)
-    value = argv[index + 1] if index + 1 < len(argv) else ""
-    return validate_profile_name(value)
+    return split_profile_args(argv)[0]
 
 
 @lru_cache(maxsize=1)

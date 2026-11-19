@@ -424,7 +424,7 @@ def build_server(session: DebugSession) -> MCPServer:
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="python -m debug.mcp_server", description="MCP server (stdio) that launches and drives debug profiles of Wafer.")
+    parser = argparse.ArgumentParser(prog="python -m debug.mcp_server", description="MCP server (stdio) that launches and drives debug profiles of Wafer.", allow_abbrev=False)
     parser.add_argument(
         PROFILE_ARG,
         required=True,

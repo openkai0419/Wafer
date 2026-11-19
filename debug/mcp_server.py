@@ -6,8 +6,9 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import psutil
 from mcp.server.mcpserver import Image, MCPServer
@@ -38,6 +39,9 @@ IDLE_FAST_ANSWERS = 2
 DEFAULT_SCREENSHOT_SIDE = 1600
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 LOG_ENTRY = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} (DEBUG|INFO|WARNING|ERROR|CRITICAL) ")
+LOG_FILE = re.compile(r"(?P<process>.+?)\.log(?:\.(?P<rotation>\d+))?")
+LOG_STAMP_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
+LOG_STAMP_LENGTH = len("2026-01-01 00:00:00,000")
 
 
 class DebugError(Exception):
@@ -72,6 +76,61 @@ def _index_reason(index: profile_setup.IndexState, expected: int) -> str:
     return f"{_plural(index.uncollected, 'source')} without collection rows"
 
 
+class LogEntry(NamedTuple):
+    stamp: str
+    process: str
+    level: str
+    lines: list[str]
+
+
+def _log_stamp(seconds: float) -> str:
+    return datetime.fromtimestamp(seconds).strftime(LOG_STAMP_FORMAT)[:LOG_STAMP_LENGTH]
+
+
+def _launch_log_files(log_dir: Path, since: float | None) -> list[tuple[str, Path]]:
+    found = []
+    for path in log_dir.glob("*.log*"):
+        match = LOG_FILE.fullmatch(path.name)
+        if match is None:
+            continue
+        try:
+            if since is not None and path.stat().st_mtime < since:
+                continue
+        except FileNotFoundError as e:
+            AppLogger.debug(f"[debug-mcp] {path.name} was rotated away while listing the logs: {e}")
+            continue
+        found.append((match["process"], -int(match["rotation"] or 0), path))
+    return [(process, path) for process, _, path in sorted(found, key=lambda item: item[:2])]
+
+
+def _log_entries(process: str, path: Path) -> list[LogEntry]:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError as e:
+        AppLogger.debug(f"[debug-mcp] {path.name} was rotated away before it was read: {e}")
+        return []
+    entries: list[LogEntry] = []
+    for line in text.splitlines():
+        match = LOG_ENTRY.match(line)
+        if match:
+            entries.append(LogEntry(line[:LOG_STAMP_LENGTH], process, match.group(1), [line]))
+        elif entries:
+            entries[-1].lines.append(line)
+        else:
+            entries.append(LogEntry("", process, LOG_LEVELS[0], [line]))
+    return entries
+
+
+def _launch_log_entries(log_dir: Path, launched_at: float | None) -> list[LogEntry]:
+    since = None if launched_at is None else _log_stamp(launched_at)
+    entries = [entry for process, path in _launch_log_files(log_dir, launched_at) for entry in _log_entries(process, path)]
+    return sorted((entry for entry in entries if since is None or entry.stamp >= since), key=lambda entry: entry.stamp)
+
+
+def _modal_identity(state: dict | None) -> tuple[Any, Any] | None:
+    return (state.get("id"), state.get("title")) if state else None
+
+
 def _busy_reasons(fast_answers: int, main_thread_ms: float | None, index: profile_setup.IndexState, expected: int) -> list[str]:
     reasons = []
     if main_thread_ms is None:
@@ -87,6 +146,7 @@ class DebugSession:
     def __init__(self):
         self.profile: str | None = None
         self.checkout: Path | None = None
+        self.launched_at: float | None = None
         self._node: Node | None = None
         self._lock = threading.RLock()
         self._launch_lock = threading.Lock()
@@ -105,12 +165,13 @@ class DebugSession:
         with self._launch_lock:
             with self._lock:
                 self._close_node()
-                self.profile = None
+                self.profile = self.launched_at = None
             profile_setup.stop_profile(profile)
             profile_setup.ensure_profile(path, fresh=fresh, on_progress=report)
+            launched_at = time.time()
             pid = profile_setup.launch_process(path, profile)
             with self._lock:
-                self.profile, self.checkout = profile, path
+                self.profile, self.checkout, self.launched_at = profile, path, launched_at
             viewer = self._wait_for_viewer(profile, LAUNCH_TIMEOUT)
         AppLogger.info(f"[debug-mcp] {profile} is up ({viewer})")
         return {"profile": profile, "checkout": str(path), "pid": pid, "viewer": viewer, "processes": self._processes(profile), "progress": progress}
@@ -157,11 +218,12 @@ class DebugSession:
 
     def run_command(self, command_id: str, args: dict | None, target: str | None) -> dict:
         profile, _ = self._running()
+        before = _modal_identity(self._call(profile, "modal_state", {}, target, CALL_TIMEOUT))
         started = self._call(profile, "run_command", {"id": command_id, "args": args}, target, CALL_TIMEOUT)
         deadline = time.monotonic() + MODAL_WAIT_SECONDS
         while True:
             state = self._call(profile, "modal_state", {}, target, CALL_TIMEOUT)
-            if state:
+            if state and _modal_identity(state) != before:
                 return {**started, "modal": state.get("title")}
             if time.monotonic() >= deadline:
                 return {**started, "modal": None}
@@ -190,36 +252,27 @@ class DebugSession:
             time.sleep(POLL_SECONDS)
 
     def tail_log(self, n: int, level: str) -> str:
-        profile, _ = self._running()
+        with self._lock:
+            profile, launched_at = self.profile, self.launched_at
+        if profile is None:
+            raise DebugError(NO_RUNNING_MESSAGE)
         if n <= 0:
             raise DebugError(f"n must be positive, not {n}")
         minimum = level.upper()
         if minimum and minimum not in LOG_LEVELS:
             raise DebugError(f"Unknown level {level!r}: use one of {', '.join(LOG_LEVELS)}")
         log_dir = profile_data_root(validate_profile_name(profile)) / ".log"
-        logs = list(log_dir.glob("*.log"))
-        if not logs:
-            raise DebugError(f"No log files in {log_dir}")
-        newest = max(logs, key=lambda path: path.stat().st_mtime)
-        lines = newest.read_text(encoding="utf-8", errors="replace").splitlines()
+        entries = _launch_log_entries(log_dir, launched_at)
+        if not entries:
+            raise DebugError(f"No log entries of this launch in {log_dir}")
         if minimum:
-            lines = self._lines_at_or_above(lines, LOG_LEVELS.index(minimum))
+            entries = [entry for entry in entries if LOG_LEVELS.index(entry.level) >= LOG_LEVELS.index(minimum)]
+        lines = [f"[{entry.process}] {line}" for entry in entries for line in entry.lines]
         return "\n".join(lines[-n:])
 
     def close(self) -> None:
         with self._lock:
             self._close_node()
-
-    @staticmethod
-    def _lines_at_or_above(lines: list[str], minimum: int) -> list[str]:
-        kept, keep = [], False
-        for line in lines:
-            match = LOG_ENTRY.match(line)
-            if match:
-                keep = LOG_LEVELS.index(match.group(1)) >= minimum
-            if keep:
-                kept.append(line)
-        return kept
 
     def _running(self) -> tuple[str, Path | None]:
         with self._lock:
@@ -415,7 +468,10 @@ def build_server(session: DebugSession) -> MCPServer:
     def get_property(widget: str, prop: str, target: str | None = None) -> Any:
         return agent("get_property", target, name=widget, prop=prop)
 
-    @tool("The last n lines of the newest log file of the launched profile; level keeps entries at or above DEBUG/INFO/WARNING/ERROR/CRITICAL.")
+    @tool(
+        "The last n lines of the logs of every process of the current launch, merged in time order and prefixed with [role_pid]; "
+        "level keeps entries at or above DEBUG/INFO/WARNING/ERROR/CRITICAL."
+    )
     def tail_log(n: int = 100, level: str = "") -> Any:
         return session.tail_log(n, level)
 
@@ -423,7 +479,7 @@ def build_server(session: DebugSession) -> MCPServer:
     def list_commands(filter: str = "", target: str | None = None) -> Any:
         return agent("list_commands", target, filter=filter)
 
-    @tool(f"Run a command by id with keyword args; reports the title of a modal it opens. {TARGET_HELP}")
+    @tool(f"Run a command by id with keyword args; reports the title of a modal it opens (not one that was already open). {TARGET_HELP}")
     def run_command(id: str, args: dict | None = None, target: str | None = None) -> Any:
         return session.run_command(id, args, target)
 

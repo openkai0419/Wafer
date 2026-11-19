@@ -5,6 +5,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -309,25 +310,46 @@ def test_screenshot_returns_png_image(app_data, processes, node):
     assert node.instances[0].requests[0][1] == {"op": "screenshot", "args": {"target": "grid", "max_side": 800}}
 
 
-def test_run_command_reports_modal_title(app_data, processes, node, clock):
-    session = running_session(processes)
-    modal_answers = iter([None, None, {"title": "Rename", "fields": []}])
+def modal_handler(modal_answers):
+    answers = iter(modal_answers)
 
     def handler(op, args, dst):
         if op == "run_command":
             return ok({"started": True})
-        return ok(next(modal_answers))
+        return ok(next(answers))
 
-    node.handler = staticmethod(handler)
+    return staticmethod(handler)
+
+
+def test_run_command_reports_modal_title(app_data, processes, node, clock):
+    session = running_session(processes)
+    node.handler = modal_handler([None, None, None, {"id": 1, "title": "Rename", "fields": []}])
+
     assert session.run_command("file.rename", {"name": "a"}, None) == {"started": True, "modal": "Rename"}
-    assert node.instances[0].requests[0][1] == {"op": "run_command", "args": {"id": "file.rename", "args": {"name": "a"}}}
-
-    assert [r[1]["op"] for r in node.instances[0].requests] == ["run_command", "modal_state", "modal_state", "modal_state"]
+    assert node.instances[0].requests[1][1] == {"op": "run_command", "args": {"id": "file.rename", "args": {"name": "a"}}}
+    assert [r[1]["op"] for r in node.instances[0].requests] == ["modal_state", "run_command", "modal_state", "modal_state", "modal_state"]
 
     node.handler = staticmethod(lambda op, args, dst: ok({"started": True}) if op == "run_command" else ok(None))
     started = clock.now
     assert session.run_command("view.refresh", None, None) == {"started": True, "modal": None}
     assert clock.now - started >= mcp_server.MODAL_WAIT_SECONDS
+
+
+def test_run_command_never_reports_a_modal_that_was_already_open(app_data, processes, node, clock):
+    session = running_session(processes)
+    already_open = {"id": 7, "title": "Rename", "fields": []}
+    node.handler = staticmethod(lambda op, args, dst: ok({"started": True}) if op == "run_command" else ok(already_open))
+
+    started = clock.now
+    assert session.run_command("view.refresh", None, None) == {"started": True, "modal": None}
+    assert clock.now - started >= mcp_server.MODAL_WAIT_SECONDS
+
+
+def test_run_command_reports_a_new_modal_with_the_title_of_the_open_one(app_data, processes, node, clock):
+    session = running_session(processes)
+    node.handler = modal_handler([{"id": 7, "title": "Rename"}, {"id": 7, "title": "Rename"}, {"id": 8, "title": "Rename"}])
+
+    assert session.run_command("file.rename", None, None) == {"started": True, "modal": "Rename"}
 
 
 def make_sample_db(profile: str, statuses: list[str], sources: int) -> Path:
@@ -461,34 +483,90 @@ def test_wait_idle_needs_a_running_profile_before_reading_any_index(app_data, pr
         session.wait_idle(1.0, None)
 
 
-def test_tail_log_reads_newest_log_with_level_filter(app_data, processes, node):
+LAUNCHED_AT = time.mktime((2026, 11, 19, 10, 0, 0, 0, 0, -1))
+
+
+def stamp(second: int, ms: int = 0) -> str:
+    return f"2026-11-19 10:00:{second:02d},{ms:03d}"
+
+
+def write_log(log_dir: Path, name: str, lines: list[str], mtime: float) -> None:
+    path = log_dir / name
+    path.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
+    os.utime(path, (mtime, mtime))
+
+
+@pytest.fixture
+def launched_logs(app_data):
     session = DebugSession()
     session.profile = PROFILE
+    session.launched_at = LAUNCHED_AT
     log_dir = profile_data_root(PROFILE) / ".log"
     log_dir.mkdir(parents=True)
-    old = log_dir / "tray_10.log"
-    old.write_text("2026-11-19 10:00:00,000 ERROR old\n", encoding="utf-8")
-    new = log_dir / "viewer_20.log"
-    new.write_text(
-        "2026-11-19 10:00:01,000 INFO opened\n"
-        "2026-11-19 10:00:02,000 WARNING slow\n"
-        "2026-11-19 10:00:03,000 ERROR broke\n"
-        "Traceback (most recent call last):\n"
-        "  ValueError: x\n"
-        "2026-11-19 10:00:04,000 DEBUG detail\n",
-        encoding="utf-8",
+    write_log(log_dir, "viewer_99.log", ["2026-11-19 09:59:58,000 ERROR from the previous launch"], LAUNCHED_AT - 60)
+    write_log(log_dir, "tray_10.log", [f"{stamp(1)} INFO tray up", f"{stamp(5, 500)} INFO broker ready"], LAUNCHED_AT + 5)
+    write_log(
+        log_dir,
+        "viewer_20.log",
+        [
+            f"{stamp(2)} INFO opened",
+            f"{stamp(4)} WARNING slow",
+            f"{stamp(6)} ERROR broke",
+            "Traceback (most recent call last):",
+            "  ValueError: x",
+        ],
+        LAUNCHED_AT + 6,
     )
-    os.utime(old, (1, 1))
+    write_log(log_dir, "collector_30.log.1", [f"{stamp(3)} DEBUG collected 1", f"{stamp(4)} DEBUG collected 2"], LAUNCHED_AT + 4)
+    write_log(log_dir, "collector_30.log", [f"{stamp(6, 1)} DEBUG collected 3", f"{stamp(7)} DEBUG collected 4"], LAUNCHED_AT + 70)
+    write_log(log_dir, "indexer_40.log", [f"{stamp(4)} INFO scanning"], LAUNCHED_AT + 4)
+    return session
 
-    assert session.tail_log(2, "") == "  ValueError: x\n2026-11-19 10:00:04,000 DEBUG detail"
-    assert session.tail_log(100, "warning").splitlines() == [
-        "2026-11-19 10:00:02,000 WARNING slow",
-        "2026-11-19 10:00:03,000 ERROR broke",
-        "Traceback (most recent call last):",
-        "  ValueError: x",
+
+def test_tail_log_merges_the_logs_of_the_launch_in_time_order(launched_logs):
+    assert launched_logs.tail_log(100, "").splitlines() == [
+        f"[tray_10] {stamp(1)} INFO tray up",
+        f"[viewer_20] {stamp(2)} INFO opened",
+        f"[collector_30] {stamp(3)} DEBUG collected 1",
+        f"[collector_30] {stamp(4)} DEBUG collected 2",
+        f"[indexer_40] {stamp(4)} INFO scanning",
+        f"[viewer_20] {stamp(4)} WARNING slow",
+        f"[tray_10] {stamp(5, 500)} INFO broker ready",
+        f"[viewer_20] {stamp(6)} ERROR broke",
+        "[viewer_20] Traceback (most recent call last):",
+        "[viewer_20]   ValueError: x",
+        f"[collector_30] {stamp(6, 1)} DEBUG collected 3",
+        f"[collector_30] {stamp(7)} DEBUG collected 4",
     ]
+
+
+def test_tail_log_returns_a_viewer_error_while_a_collector_keeps_writing(launched_logs):
+    assert launched_logs.tail_log(100, "error").splitlines() == [
+        f"[viewer_20] {stamp(6)} ERROR broke",
+        "[viewer_20] Traceback (most recent call last):",
+        "[viewer_20]   ValueError: x",
+    ]
+    assert launched_logs.tail_log(4, "warning").splitlines() == [
+        f"[viewer_20] {stamp(4)} WARNING slow",
+        f"[viewer_20] {stamp(6)} ERROR broke",
+        "[viewer_20] Traceback (most recent call last):",
+        "[viewer_20]   ValueError: x",
+    ]
+    assert launched_logs.tail_log(2, "") == f"[collector_30] {stamp(6, 1)} DEBUG collected 3\n[collector_30] {stamp(7)} DEBUG collected 4"
     with pytest.raises(DebugError):
-        session.tail_log(10, "loud")
+        launched_logs.tail_log(10, "loud")
+
+
+def test_tail_log_reports_a_launch_without_logs(app_data):
+    session = DebugSession()
+    session.profile = PROFILE
+    session.launched_at = LAUNCHED_AT
+    log_dir = profile_data_root(PROFILE) / ".log"
+    log_dir.mkdir(parents=True)
+    write_log(log_dir, "viewer_99.log", ["2026-11-19 09:59:58,000 ERROR from the previous launch"], LAUNCHED_AT - 60)
+
+    with pytest.raises(DebugError, match="No log"):
+        session.tail_log(10, "")
 
 
 def test_launch_stops_running_profile_prepares_and_waits_for_viewer(tmp_path, app_data, processes, node, monkeypatch):
@@ -730,7 +808,7 @@ def test_tail_log_during_a_launch_never_reads_the_normal_wafer(launch_in_the_mid
             race.start_launch()
             return str.upper(self)
 
-    assert race.session.tail_log(5, LaunchWhileReadingTheLevel("")) == "2026-11-19 10:00:01,000 INFO other"
+    assert race.session.tail_log(5, LaunchWhileReadingTheLevel("")) == "[viewer_70] 2026-11-19 10:00:01,000 INFO other"
     assert race.thread is not None
     assert race.roots == ["debug-other"]
 

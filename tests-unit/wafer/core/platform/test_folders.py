@@ -1,3 +1,10 @@
+import sys
+
+import pytest
+
+import wafer.core.common.paths as paths
+from wafer.core.common.paths import scratch_root
+from wafer.core.common.profile import current_profile
 from wafer.core.platform.folders import first_entry, make_directory
 from wafer.core.common.virtual_paths import build_virtual_path
 
@@ -168,3 +175,40 @@ def test_make_directory_rejects_virtual_path(tmp_path):
     virtual_dir = build_virtual_path(str(tmp_path / "archive.zip"), "new_folder")
 
     assert make_directory(virtual_dir) is None
+
+
+@pytest.fixture
+def debug_profile(monkeypatch, tmp_path):
+    root = str(tmp_path / "appdata")
+
+    class _TmpPlatformDirs:
+        def __init__(self, appname=None):
+            self.user_data_dir = root
+            self.user_config_dir = root
+
+    monkeypatch.setattr(paths, "PlatformDirs", _TmpPlatformDirs)
+    sample = tmp_path / "sample"
+    sample.mkdir()
+    monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(sample))
+    monkeypatch.setattr(sys, "argv", ["main.py", "--profile", "debug-fo"])
+    current_profile.cache_clear()
+    scratch = scratch_root("debug-fo")
+    scratch.mkdir(parents=True, exist_ok=True)
+    yield sample, scratch
+    current_profile.cache_clear()
+
+
+def test_make_directory_refuses_the_shared_sample_in_a_profile(debug_profile):
+    sample, _ = debug_profile
+    target = sample / "new"
+
+    assert make_directory(str(target)) is None
+    assert not target.exists()
+
+
+def test_make_directory_creates_inside_the_scratch_in_a_profile(debug_profile):
+    _, scratch = debug_profile
+    target = scratch / "new"
+
+    assert make_directory(str(target)) == str(target)
+    assert target.is_dir()

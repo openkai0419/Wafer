@@ -116,16 +116,17 @@ async function runQuery(force = false, expired = null) {
     if (expired === grid.client) runQuery(true, expired);
   });
   try {
-    const previous = grid.client ? [...unused, grid.client.queryId] : unused;
-    const result = await client.run(state.db, filters, state.sort, state.ascending, previous);
+    const result = await client.run(state.db, filters, state.sort, state.ascending, unused);
     const aspects = token === queryToken ? await client.aspects() : null;
     if (token !== queryToken) {
       unusedQueryIds.push(client.queryId);
       return;
     }
     const keepPosition = expired !== null && result.total === expired.total;
+    const replaced = grid.client;
     grid.setQuery(client, aspects, keepPosition);
     viewer.setQuery(client, client.total, keepPosition);
+    if (replaced) unusedQueryIds.push(replaced.queryId);
     status.textContent = `${result.total} files`;
   } catch (e) {
     unusedQueryIds.push(...(client.queryId ? [client.queryId] : unused));

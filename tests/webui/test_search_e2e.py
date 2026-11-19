@@ -215,13 +215,17 @@ def test_key_catalog_is_prefetched_before_the_popup_opens(page, webui_base_url):
     assert later == []
 
 
-def test_new_searches_drop_the_page_s_previous_sessions(ready_page, webui_query_service):
+def test_a_new_search_drops_the_replaced_session_on_the_search_after(ready_page, webui_query_service):
     page = ready_page
     before = set(webui_query_service._sessions)
+    shown = []
     for word, total in (("cat", "2 "), ("dog", "1 "), ("", "5 ")):
         page.fill("#search-input", word)
         page.press("#search-input", "Enter")
         page.wait_for_function(f"document.querySelector('#status').textContent.startsWith('{total}')")
+        shown.append(next(reversed(webui_query_service._sessions)))
+        if len(shown) >= 2:
+            assert shown[-2] in webui_query_service._sessions
     after = set(webui_query_service._sessions)
-    assert len(after - before) == 1
-    assert len(after) == len(before)
+    assert after - before == set(shown[-2:])
+    assert shown[0] not in after

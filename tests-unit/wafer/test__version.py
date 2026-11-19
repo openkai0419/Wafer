@@ -22,9 +22,26 @@ def _fake_describe(result):
     return check_output
 
 
-def test_a_hanging_git_falls_back_to_the_bundled_version(monkeypatch):
-    monkeypatch.setattr(_version.subprocess, "check_output", _fake_describe(subprocess.TimeoutExpired("git", 5)))
-    assert _version.get_version() == _version.FALLBACK_VERSION
+@pytest.fixture
+def warnings(monkeypatch):
+    seen = []
+    monkeypatch.setattr(_version.AppLogger, "warning", lambda text, **kwargs: seen.append(text))
+    return seen
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        subprocess.TimeoutExpired("git", 5),
+        subprocess.CalledProcessError(128, "git"),
+        FileNotFoundError("git"),
+        "not-a-version\n",
+    ],
+)
+def test_a_checkout_whose_version_git_cannot_tell_is_unknown_and_warns(monkeypatch, warnings, result):
+    monkeypatch.setattr(_version.subprocess, "check_output", _fake_describe(result))
+    assert _version.get_version() == _version.UNKNOWN_VERSION
+    assert len(warnings) == 1
 
 
 def test_a_release_tag_is_the_version(monkeypatch):
@@ -49,7 +66,7 @@ def test_git_runs_in_the_app_root_not_the_working_folder(monkeypatch, app_root):
     assert seen["cwd"] == app_root
 
 
-def test_an_app_root_without_git_uses_the_bundled_version_without_running_git(monkeypatch, app_root):
+def test_an_app_root_without_git_uses_the_bundled_version_without_running_git(monkeypatch, app_root, warnings):
     (app_root / ".git").rmdir()
 
     def check_output(cmd, **kwargs):
@@ -57,3 +74,4 @@ def test_an_app_root_without_git_uses_the_bundled_version_without_running_git(mo
 
     monkeypatch.setattr(_version.subprocess, "check_output", check_output)
     assert _version.get_version() == _version.FALLBACK_VERSION
+    assert warnings == []

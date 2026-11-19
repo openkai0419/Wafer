@@ -6,11 +6,18 @@ import sys
 
 from . import _dev
 from .core.common.paths import get_app_root_dir
+from .core.logs import AppLogger
 
 FALLBACK_VERSION = "0.7.3.dev1+g1d36add"
+UNKNOWN_VERSION = "unknown"
 
 _NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 GIT_DESCRIBE_TIMEOUT = 5
+
+
+def _unknown_version(reason: str) -> str:
+    AppLogger.warning(f"Could not read the Wafer version from git ({reason}). The version is shown as '{UNKNOWN_VERSION}' and updates are not offered in this process.")
+    return UNKNOWN_VERSION
 
 
 def get_version() -> str:
@@ -26,8 +33,10 @@ def get_version() -> str:
             timeout=GIT_DESCRIBE_TIMEOUT,
             **_NO_WINDOW,
         ).strip()
-    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
-        return FALLBACK_VERSION
+    except subprocess.TimeoutExpired:
+        return _unknown_version(f"git describe took more than {GIT_DESCRIBE_TIMEOUT}s")
+    except (subprocess.CalledProcessError, OSError) as e:
+        return _unknown_version(f"git describe failed: {e}")
     if out.startswith("v"):
         out = out[1:]
     m = re.match(r"^(\d+\.\d+\.\d+)$", out)
@@ -36,7 +45,7 @@ def get_version() -> str:
     m = re.match(r"^(\d+\.\d+\.\d+)-(\d+)-g([0-9a-f]+)$", out)
     if m:
         return f"{m.group(1)}.dev{m.group(2)}+g{m.group(3)}"
-    return FALLBACK_VERSION
+    return _unknown_version(f"unexpected git describe output {out!r}")
 
 
 __version__ = get_version()

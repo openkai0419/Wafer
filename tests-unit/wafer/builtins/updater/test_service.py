@@ -178,5 +178,14 @@ def test_should_notify_update_rejects_skipped_version():
     assert service.should_notify_update(info, "0.6.19") is False
 
 
+def test_an_unknown_current_version_never_offers_an_update():
+    from wafer._version import UNKNOWN_VERSION
+
+    info = service.build_update_info(_release(), "", current_version=UNKNOWN_VERSION)
+
+    assert info.is_newer is False
+    assert service.should_notify_update(info, "") is False
+
+
 def test_should_notify_update_rejects_missing_info():
     assert service.should_notify_update(None, "") is False

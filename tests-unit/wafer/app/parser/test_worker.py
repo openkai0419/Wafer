@@ -1,3 +1,4 @@
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -188,12 +189,12 @@ def test_timed_out_batch_leaves_paths_that_never_started_dispatched(make_worker,
     assert statuses == {"/slow.png": False}
 
 
-def test_batch_interrupted_by_stop_reports_no_failures(make_worker, monkeypatch):
+def test_stop_ends_a_batch_with_queued_paths_at_once_and_sends_finished_results(make_worker, monkeypatch):
     import threading
 
     from wafer.plugin.parser.base import ParserResult
 
-    monkeypatch.setattr(parser_resolver, "max_workers", lambda name: 2)
+    monkeypatch.setattr(parser_resolver, "max_workers", lambda name: 1)
     worker = make_worker()
     worker._batch_timeout = 20
     busy = threading.Event()
@@ -208,13 +209,16 @@ def test_batch_interrupted_by_stop_reports_no_failures(make_worker, monkeypatch)
 
     worker._plugin.process = process
     worker._plugin.shutdown = interrupted.set
-    batch = threading.Thread(target=worker._process_batch, args=(["/ok.png", "/busy.png"], {}, {}, "test_db"))
+    batch = threading.Thread(target=worker._process_batch, args=(["/ok.png", "/busy.png", "/queued.png"], {}, {}, "test_db"))
     batch.start()
     assert busy.wait(5)
+    started = time.monotonic()
     worker.stop()
     batch.join(5)
+    stopped_in = time.monotonic() - started
 
     assert not batch.is_alive()
+    assert stopped_in < 2
     statuses = {r["source"]: r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]}
     assert statuses == {"/ok.png": True}
 

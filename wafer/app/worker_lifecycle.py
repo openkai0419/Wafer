@@ -2,6 +2,7 @@ import concurrent.futures
 import queue
 import signal
 import threading
+import time
 from collections.abc import Callable
 
 from ..core.ipc.node import Node
@@ -9,6 +10,7 @@ from ..core.ipc.transport import BROKER_LOST_TIMEOUT
 from ..core.logs import AppLogger
 
 _SHUTDOWN_WAIT = 5
+_STOP_POLL = 0.5
 
 
 class PluginWorkerLifecycle:
@@ -145,6 +147,18 @@ class PluginWorker:
                 break
             self._process_batch(*item)
 
+    def _wait_unless_stopped(self, futures) -> tuple[set, set]:
+        deadline = time.monotonic() + self._batch_timeout
+        done: set = set()
+        not_done = set(futures)
+        while not_done and not self._stop.is_set():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            finished, not_done = concurrent.futures.wait(not_done, timeout=min(_STOP_POLL, remaining))
+            done |= finished
+        return done, not_done
+
     def _process_batch(self, paths, file_info_raw, metadata, db):
         try:
             file_info = {p: tuple(v) for p, v in file_info_raw.items()}
@@ -157,7 +171,7 @@ class PluginWorker:
                     return []
 
             futures = {self._executor.submit(process_one, p): p for p in paths}
-            done, not_done = concurrent.futures.wait(futures, timeout=self._batch_timeout)
+            done, not_done = self._wait_unless_stopped(futures)
             results = []
             for fut in done:
                 try:

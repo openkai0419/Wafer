@@ -43,37 +43,6 @@ def test_make_directory_existing_is_ok(tmp_path):
     assert result == target
 
 
-def test_open_file_calls_desktop_services(monkeypatch):
-    from wafer.core.platform import folders
-    from PySide6 import QtCore, QtGui
-
-    opened: list[str] = []
-    orig_open = QtGui.QDesktopServices.openUrl
-
-    monkeypatch.setattr(QtGui.QDesktopServices, "openUrl", staticmethod(lambda url: opened.append(url.toLocalFile())))
-    folders.open_file("/some/path")
-    assert len(opened) == 1
-    assert opened[0] == "/some/path"
-
-
-def test_open_file_empty_path_is_noop():
-    from wafer.core.platform import folders
-
-    folders.open_file("")
-
-
-def test_open_file_rejects_virtual_path(monkeypatch, tmp_path):
-    from wafer.core.platform import folders
-    from PySide6 import QtGui
-
-    opened: list[str] = []
-    monkeypatch.setattr(QtGui.QDesktopServices, "openUrl", staticmethod(lambda url: opened.append(url.toLocalFile())))
-
-    folders.open_file(build_virtual_path(str(tmp_path / "archive.zip"), "image.png"))
-
-    assert opened == []
-
-
 def test_show_in_explorer_rejects_virtual_path(monkeypatch, tmp_path):
     from wafer.core.platform import folders
 

@@ -12,7 +12,7 @@ from ...qt.transfer.copy import ClipboardFileTransfer
 from ...qt.transfer.paste import paste_clipboard_files, execute_paste_plans_with_ui
 from ...core.platform.path_utils import unique_path, get_os_new_folder_name, validate_filename
 from ...core.platform.file_operations import PastePlanItem, delete_to_trash
-from ...core.platform.folders import show_in_explorer as reveal_in_explorer, open_file as platform_open_file, open_with as platform_open_with, make_directory
+from ...core.platform.folders import show_in_explorer as reveal_in_explorer, open_with as platform_open_with, make_directory
 from ...core.logs import AppLogger
 from ...qt.common.notifier import Notifier
 from ...core.common.paths import containing_dir, normalize_path
@@ -76,7 +76,7 @@ def open_file(ctx):
     path = _ctx_source(ctx)
     if not path:
         return
-    platform_open_file(path)
+    QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(path))
 
 
 def open_with(ctx, program: str = ""):

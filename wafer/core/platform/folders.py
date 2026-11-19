@@ -129,16 +129,6 @@ def first_entry(path: str) -> str | None:
     return None
 
 
-def open_file(path: str) -> None:
-    if not path:
-        return
-    if _reject_virtual_path(path, "open"):
-        return
-    from PySide6 import QtCore, QtGui
-
-    QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(path))
-
-
 _BATCH_SUFFIXES = (".bat", ".cmd")
 
 

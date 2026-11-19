@@ -99,6 +99,27 @@ def test_file_commands_reject_virtual_source():
     assert file_mod._ctx_sources(_Ctx(sources=[logical])) == []
 
 
+def _record_opened_urls(monkeypatch):
+    from PySide6 import QtGui
+
+    opened = []
+    monkeypatch.setattr(QtGui.QDesktopServices, "openUrl", staticmethod(lambda url: opened.append(url.toLocalFile())))
+    return opened
+
+
+def test_open_file_opens_the_source_with_the_default_app(monkeypatch):
+    opened = _record_opened_urls(monkeypatch)
+    file_mod.open_file(_Ctx(source="C:/data/a.png"))
+    assert opened == ["C:/data/a.png"]
+
+
+def test_open_file_skips_virtual_and_missing_sources(monkeypatch):
+    opened = _record_opened_urls(monkeypatch)
+    file_mod.open_file(_Ctx(source=build_virtual_path("C:/data/archive.zip", "image.png")))
+    file_mod.open_file(_PathOnlyCtx(path="C:/data/a.png"))
+    assert opened == []
+
+
 def _wait_file_cmd_pool(qtbot):
     assert file_mod._file_cmd_pool.pool.waitForDone(5000)
     qtbot.wait(50)

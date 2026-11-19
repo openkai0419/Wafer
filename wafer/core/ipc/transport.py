@@ -45,6 +45,16 @@ def resolve_profile(profile: str | None | object) -> str | None:
     return current_profile() if profile is CURRENT_PROFILE else profile
 
 
+def peer_identity(payload: dict) -> tuple[Any, Any]:
+    if "app" not in payload:
+        return APP_ID, ""
+    return payload.get("app"), payload.get("profile")
+
+
+def is_own_peer(payload: dict, profile: str | None) -> bool:
+    return peer_identity(payload) == (APP_ID, profile or "")
+
+
 def port_file_for(profile: str | None) -> Path:
     if profile == current_profile():
         return _PORT_FILE

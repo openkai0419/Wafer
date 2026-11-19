@@ -21,6 +21,7 @@ from .transport import (
     adaptive_poll,
     close_socket,
     drain_queue,
+    is_own_peer,
     port_file_for,
     remove_broker_port,
     resolve_profile,
@@ -228,7 +229,7 @@ class Broker:
 
         if topic == "mgmt.register":
             payload = msg.payload if isinstance(msg.payload, dict) else {}
-            if payload.get("app") != APP_ID or payload.get("profile") != (self.profile or ""):
+            if not is_own_peer(payload, self.profile):
                 self._refuse(ident, msg, payload)
                 return
             with self._lock:

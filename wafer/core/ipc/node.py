@@ -22,6 +22,7 @@ from .transport import (
     adaptive_poll,
     close_socket,
     drain_queue,
+    is_own_peer,
     port_file_for,
     port_file_stamp,
     read_broker_port,
@@ -366,7 +367,7 @@ class Node:
 
         if msg.topic in ("mgmt.registered", "mgmt.rejected"):
             payload = msg.payload if isinstance(msg.payload, dict) else {}
-            if msg.topic == "mgmt.rejected" or payload.get("app") != APP_ID or payload.get("profile") != (self.profile or ""):
+            if msg.topic == "mgmt.rejected" or not is_own_peer(payload, self.profile):
                 self._leave_foreign_broker(payload)
                 return
             self._viewer_id = payload.get("viewer_id")

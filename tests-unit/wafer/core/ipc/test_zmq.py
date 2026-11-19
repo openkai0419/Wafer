@@ -1048,9 +1048,19 @@ class TestBrokerIdentity:
         finally:
             broker.stop()
 
-    @pytest.mark.parametrize("identity", [{"app": "wafer", "profile": DEBUG_PROFILE}, {"app": "other", "profile": ""}, {}], ids=["other-profile", "other-app", "no-identity"])
-    def test_broker_refuses_a_register_that_is_not_its_own(self, identity, raw_dealer, caplog_applogger):
-        broker = Broker()
+    @pytest.mark.parametrize(
+        ("profile", "identity"),
+        [
+            (None, {"app": "wafer", "profile": DEBUG_PROFILE}),
+            (None, {"app": "other", "profile": ""}),
+            (None, {"app": "other"}),
+            (DEBUG_PROFILE, {"app": "wafer", "profile": ""}),
+            (DEBUG_PROFILE, {}),
+        ],
+        ids=["other-profile", "other-app", "other-app-without-profile", "normal-wafer-at-a-profile", "legacy-wafer-at-a-profile"],
+    )
+    def test_broker_refuses_a_register_that_is_not_its_own(self, profile, identity, raw_dealer, caplog_applogger):
+        broker = Broker(profile=profile)
         broker.start()
         try:
             sock = raw_dealer(broker.port)
@@ -1058,9 +1068,19 @@ class TestBrokerIdentity:
                 reply = _register(sock, **identity)
                 assert reply.topic == "mgmt.rejected"
                 assert reply.payload["app"] == "wafer"
-                assert reply.payload["profile"] == ""
+                assert reply.payload["profile"] == (profile or "")
             assert broker.peer_counts() == {}
             assert len([text for text in caplog_applogger.warnings if "probe-1" in text]) == 1
+        finally:
+            broker.stop()
+
+    def test_normal_broker_accepts_a_node_from_before_profiles(self, raw_dealer):
+        broker = Broker(profile=None)
+        broker.start()
+        try:
+            reply = _register(raw_dealer(broker.port))
+            assert reply.topic == "mgmt.registered"
+            assert broker.peer_counts() == {"probe": 1}
         finally:
             broker.stop()
 
@@ -1156,8 +1176,36 @@ class TestNodeJoinsOnlyItsOwnBroker:
             if own:
                 own.stop()
 
-    def test_node_stays_away_from_a_rejected_broker_until_the_port_file_is_rewritten(self):
+    def test_normal_node_joins_a_broker_from_before_profiles(self):
         fake = _FakeBroker({"status": "ok", "node_id": "probe"})
+        transport.write_broker_port(fake.port)
+        node = Node("probe", profile=None)
+        try:
+            node.start()
+            assert node.wait_registered(3.0)
+            assert node._current_port == fake.port
+        finally:
+            node.stop()
+            fake.close()
+
+    def test_profile_node_leaves_a_broker_from_before_profiles(self):
+        fake = _FakeBroker({"status": "ok", "node_id": "probe"})
+        transport.write_broker_port(fake.port, port_file=transport.port_file_for(DEBUG_PROFILE))
+        node = Node("probe", profile=DEBUG_PROFILE)
+        ticks = _count_ticks(node)
+        try:
+            node.start()
+            assert _wait_until(lambda: fake.registers == 1 and node._dealer is None)
+            seen = len(ticks)
+            assert _wait_until(lambda: len(ticks) >= seen + 3)
+            assert not node.is_registered
+            assert fake.registers == 1
+        finally:
+            node.stop()
+            fake.close()
+
+    def test_node_stays_away_from_a_rejected_broker_until_the_port_file_is_rewritten(self):
+        fake = _FakeBroker({"status": "ok", "node_id": "probe", "app": "other", "profile": ""})
         transport.write_broker_port(fake.port)
         received = []
         node = Node("probe")

@@ -448,6 +448,60 @@ class TestReconnection:
             broker.stop()
 
 
+class _RouterWithFullPeers:
+    def __init__(self, full: set[bytes]):
+        self.full = full
+        self.delivered: list[bytes] = []
+        self.blocking_sends = 0
+
+    def send_multipart(self, frames, flags=0, copy=True):
+        if not flags & zmq.NOBLOCK:
+            self.blocking_sends += 1
+        if frames[0] in self.full:
+            raise zmq.Again()
+        self.delivered.append(frames[0])
+
+
+class TestFullPeer:
+    @pytest.fixture
+    def broker(self, monkeypatch):
+        broker = Broker()
+        real_router = broker._router
+        broker._router = _RouterWithFullPeers({b"full"})
+        broker._register_peer(b"full", "stalled", set(), "stalled-1")
+        yield broker
+        close_socket(real_router)
+
+    def test_sends_to_a_full_peer_neither_block_nor_hold_up_the_others(self, broker, caplog_applogger):
+        items = [(b"full", [b"x"])] * 50 + [(b"ok", [b"y"])]
+
+        broker._deliver_batch(items, False)
+
+        assert broker._router.blocking_sends == 0
+        assert broker._router.delivered == [b"ok"]
+        assert len(caplog_applogger.warnings) == 1
+        assert "stalled-1" in caplog_applogger.warnings[0]
+
+    def test_coalesced_broadcasts_skip_a_full_peer_without_blocking(self, broker):
+        broker._broadcast_q.put(("db.updated", "ALL", ""), ([b"full", b"ok"], [b"z"]))
+
+        broker._deliver_batch(broker._drain_broadcasts(), False)
+
+        assert broker._router.blocking_sends == 0
+        assert broker._router.delivered == [b"ok"]
+
+    def test_drops_are_counted_and_reported_again_after_the_interval(self, broker, caplog_applogger, monkeypatch):
+        monkeypatch.setattr("wafer.core.ipc.broker.DROP_WARN_INTERVAL", 0.0)
+        broker._deliver_batch([(b"full", [b"x"])], False)
+        monkeypatch.setattr("wafer.core.ipc.broker.DROP_WARN_INTERVAL", 3600.0)
+        broker._deliver_batch([(b"full", [b"x"])] * 5, False)
+        monkeypatch.setattr("wafer.core.ipc.broker.DROP_WARN_INTERVAL", 0.0)
+        broker._deliver_batch([(b"full", [b"x"])], False)
+
+        assert len(caplog_applogger.warnings) == 2
+        assert "6 message(s)" in caplog_applogger.warnings[1]
+
+
 class TestStalledNode:
     """A plugin holding the GIL (a model load) stops the IO thread right after its poll returned empty."""
 

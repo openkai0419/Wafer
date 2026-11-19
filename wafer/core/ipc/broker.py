@@ -31,6 +31,8 @@ from .transport import (
 )
 from .message import Message
 
+DROP_WARN_INTERVAL = 10.0
+
 
 class _PeerInfo:
     __slots__ = ("db_set", "last_seen", "node_id", "role", "session_id")
@@ -102,6 +104,7 @@ class Broker:
         self._by_role: dict[str, set[bytes]] = {}
         self._by_node_id: dict[str, bytes] = {}
         self._refused: set[bytes] = set()
+        self._drops: dict[bytes, tuple[int, float | None]] = {}
         self._lock = threading.RLock()
         self._viewer_ids: dict[bytes, int] = {}
         self._restore_debounce: threading.Timer | None = None
@@ -194,6 +197,7 @@ class Broker:
             self._by_role.get(peer.role, set()).discard(ident)
             self._by_node_id.pop(peer.node_id, None)
             self._viewer_ids.pop(ident, None)
+            self._drops.pop(ident, None)
             if peer.role == "viewer" or (peer.role == "webui" and peer.session_id):
                 self._on_restorable_peer_disconnected()
 
@@ -323,14 +327,31 @@ class Broker:
     def _deliver_batch(self, items, did_work):
         for ident, frames in items:
             try:
-                self._router.send_multipart([ident, *frames], copy=False)
+                self._router.send_multipart([ident, *frames], flags=zmq.NOBLOCK, copy=False)
                 did_work = True
             except zmq.Again:
-                AppLogger.debug("broker: drop direct (timeout)")
+                self._note_drop(ident)
             except zmq.ZMQError as e:
                 if e.errno != zmq.EHOSTUNREACH:
                     AppLogger.debug(f"broker: send error {e}")
         return did_work
+
+    def _note_drop(self, ident: bytes):
+        now = time.monotonic()
+        with self._lock:
+            peer = self._peers.get(ident)
+            if peer is None:
+                return
+            count, last_warned = self._drops.get(ident, (0, None))
+            count += 1
+            if last_warned is not None and now - last_warned < DROP_WARN_INTERVAL:
+                self._drops[ident] = (count, last_warned)
+                return
+            self._drops[ident] = (0, now)
+        AppLogger.warning(f"broker: dropped {count} message(s) to {peer.node_id}, it is not reading them (busy or frozen)")
+
+    def _drain_broadcasts(self) -> list[tuple[bytes, list[bytes]]]:
+        return [(t, frames) for _key, (targets, frames) in self._broadcast_q.drain() for t in targets]
 
     def _io_loop(self):
         poller = zmq.Poller()
@@ -368,15 +389,7 @@ class Broker:
                 items, _ = drain_queue(q, self._sentinel)
                 did_work = self._deliver_batch(items, did_work)
 
-            for _key, (targets, frames) in self._broadcast_q.drain():
-                for t in targets:
-                    try:
-                        self._router.send_multipart([t, *frames], copy=False)
-                        did_work = True
-                    except zmq.Again:
-                        pass
-                    except zmq.ZMQError as e:
-                        AppLogger.debug(f"broker: bcast error {e}")
+            did_work = self._deliver_batch(self._drain_broadcasts(), did_work)
 
             low_items, _ = drain_queue(self._low_q, self._sentinel)
             did_work = self._deliver_batch(low_items, did_work)

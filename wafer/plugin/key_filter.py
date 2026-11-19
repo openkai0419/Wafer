@@ -4,6 +4,7 @@ import threading
 from collections.abc import Callable, Iterable
 
 from .config import PluginConfig
+from ..core.common.paths import list_setting_db_names
 from ..core.logs import AppLogger
 
 MODE_BLACKLIST = "blacklist"
@@ -104,6 +105,19 @@ class KeyFilter:
             return mode, new_keys
 
         cls._update(prefix, apply)
+
+    @classmethod
+    def delete_key_everywhere(cls, prefix: str, key: str) -> None:
+        db_names = list_setting_db_names()
+        if not db_names:
+            AppLogger.warning("[KeyFilter] delete-all aborted: no setting DBs")
+            return
+        from ..core.db.recollect import Recollect
+
+        full_key = f"{prefix}.{key}"
+        Recollect.reset(db_scope=list(db_names), collector=prefix, keys=[full_key], re_collect=False)
+        cls.apply_key_states(prefix, {key: False})
+        AppLogger.info(f"[KeyFilter] delete-all submitted prefix={prefix} key={full_key} dbs={len(db_names)}")
 
     @classmethod
     def _update(cls, prefix: str, change: Callable[[str, frozenset[str]], tuple[str, Iterable[str]]]) -> None:

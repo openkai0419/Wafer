@@ -372,13 +372,12 @@ def test_delete_request_this_only(qtbot, monkeypatch):
     import wafer.qt.meta.searchable as mod
 
     monkeypatch.setattr(mod.ConfirmDialog, "ask", staticmethod(lambda *a, **k: k["buttons"][0]))
-    w = SearchableMetaWidget(scope="meta_info", prefix="custom")
+    everywhere = MagicMock()
+    w = SearchableMetaWidget(scope="meta_info", prefix="custom", delete_everywhere=everywhere)
     qtbot.addWidget(w)
     w.set_context({"k": "v"}, {}, path="/a.png", db="db", scope="meta_info", prefix="custom")
     single = MagicMock()
-    everywhere = MagicMock()
     monkeypatch.setattr(w, "_submit_delete", single)
-    monkeypatch.setattr(w, "_delete_key_everywhere", everywhere)
     w._confirm_delete("k")
     single.assert_called_once_with("k")
     everywhere.assert_not_called()
@@ -394,17 +393,17 @@ def test_delete_request_all_dbs(qtbot, monkeypatch):
         return k["buttons"][1]
 
     monkeypatch.setattr(mod.ConfirmDialog, "ask", staticmethod(fake_ask))
-    w = SearchableMetaWidget(scope="meta_info", prefix="custom")
+    everywhere = MagicMock()
+    w = SearchableMetaWidget(scope="meta_info", prefix="custom", delete_everywhere=everywhere)
     qtbot.addWidget(w)
     w.set_context({"k": "v"}, {}, path="/a.png", db="db", scope="meta_info", prefix="custom")
-    everywhere = MagicMock()
-    monkeypatch.setattr(w, "_delete_key_everywhere", everywhere)
     w._confirm_delete("k")
-    everywhere.assert_called_once_with("k")
+    everywhere.assert_called_once_with("custom", "k")
     assert captured["disabled"] == ()
 
 
-def test_delete_request_disables_all_dbs_when_no_prefix(qtbot, monkeypatch):
+@pytest.mark.parametrize(("scope", "prefix", "delete_everywhere"), [("tag", "", MagicMock()), ("meta_info", "custom", None)])
+def test_delete_request_disables_all_dbs_without_prefix_or_handler(qtbot, monkeypatch, scope, prefix, delete_everywhere):
     import wafer.qt.meta.searchable as mod
 
     captured = {}
@@ -412,46 +411,15 @@ def test_delete_request_disables_all_dbs_when_no_prefix(qtbot, monkeypatch):
     def fake_ask(*a, **k):
         captured["disabled"] = k.get("disabled")
         captured["buttons"] = k["buttons"]
-        return k["buttons"][2]
+        return k["buttons"][1]
 
     monkeypatch.setattr(mod.ConfirmDialog, "ask", staticmethod(fake_ask))
-    w = SearchableMetaWidget(scope="tag", prefix="")
+    w = SearchableMetaWidget(scope=scope, prefix=prefix, delete_everywhere=delete_everywhere)
     qtbot.addWidget(w)
     w.set_data({"k": "v"})
-    w._confirm_delete("k")
+    on_deleted = MagicMock()
+    w._confirm_delete("k", on_deleted=on_deleted)
     assert captured["disabled"] == (captured["buttons"][1],)
-
-
-def test_delete_key_everywhere_deletes_and_disables(qtbot, monkeypatch):
-    import wafer.qt.meta.searchable as mod
-    import wafer.core.db.recollect as recollect_mod
-
-    monkeypatch.setattr(mod, "list_setting_db_names", lambda: ["db1", "db2"])
-    delete_calls = []
-    state_calls = []
-    monkeypatch.setattr(
-        recollect_mod.Recollect,
-        "reset",
-        staticmethod(lambda *, db_scope, collector=None, keys=None, delete=False, re_collect=True, **k: delete_calls.append((list(db_scope), list(keys), collector, delete, re_collect))),
-    )
-    monkeypatch.setattr(mod.KeyFilter, "apply_key_states", classmethod(lambda cls, prefix, states: state_calls.append((prefix, states))))
-    w = SearchableMetaWidget(scope="meta_info", prefix="custom")
-    qtbot.addWidget(w)
-    w.set_context({"k": "v"}, {}, path="/a.png", db="db", scope="meta_info", prefix="custom")
-    w._delete_key_everywhere("k")
-    assert delete_calls == [(["db1", "db2"], ["custom.k"], "custom", False, False)]
-    assert state_calls == [("custom", {"k": False})]
-
-
-def test_delete_key_everywhere_noop_without_prefix(qtbot, monkeypatch):
-    import wafer.qt.meta.searchable as mod
-    import wafer.core.db.recollect as recollect_mod
-
-    monkeypatch.setattr(mod, "list_setting_db_names", lambda: ["db1"])
-    called = []
-    monkeypatch.setattr(recollect_mod.Recollect, "reset", staticmethod(lambda *a, **k: called.append(k)))
-    w = SearchableMetaWidget(scope="tag", prefix="")
-    qtbot.addWidget(w)
-    w.set_data({"k": "v"})
-    w._delete_key_everywhere("k")
-    assert called == []
+    on_deleted.assert_not_called()
+    if delete_everywhere is not None:
+        delete_everywhere.assert_not_called()

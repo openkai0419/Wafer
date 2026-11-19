@@ -166,6 +166,38 @@ def test_folders_children(client, dataset):
     assert jbody(body)["folders"] == [{"path": dataset["images"] + "/sub", "has_children": False}]
 
 
+def folder_settings(monkeypatch, tmp_path, roots, ignore_folders=(), ignore_patterns=()):
+    from wafer.core.common.paths import normalize_path
+    from wafer.core.db.setting_db import SettingDB
+
+    setting = SettingDB(str(tmp_path / "setting.db"))
+    for root in roots:
+        setting.add_parent_folder(normalize_path(str(root)))
+    for folder in ignore_folders:
+        setting.add_ignore_folder(normalize_path(str(folder)))
+    for pattern in ignore_patterns:
+        setting.add_ignore_pattern(pattern)
+    monkeypatch.setattr("wafer.app.webui.backend.api.setting_db_path", lambda name: str(tmp_path / "setting.db"))
+
+
+def test_folders_hide_ignore_patterns_and_sort_naturally(client, monkeypatch, tmp_path):
+    from wafer.core.common.paths import normalize_path
+
+    base = tmp_path / "tree"
+    for name in ("r10", "r2/img10", "r2/img2", "r2/cache_x/deep", "r2/skip"):
+        (base / name).mkdir(parents=True)
+    folder_settings(monkeypatch, tmp_path, [base / "r10", base / "r2"], [base / "r2" / "skip"], ["*cache*"])
+    r2 = normalize_path(str(base / "r2"))
+
+    _, body = client.get("/api/folders", params={"db": DB})
+    assert [f["path"] for f in jbody(body)["folders"]] == [r2, normalize_path(str(base / "r10"))]
+    assert jbody(body)["folders"][0]["has_children"] is True
+    _, body = client.get("/api/folders", params={"db": DB, "path": r2})
+    assert [f["path"] for f in jbody(body)["folders"]] == [f"{r2}/img2", f"{r2}/img10"]
+    resp, _ = client.get("/api/folders", params={"db": DB, "path": f"{r2}/cache_x"})
+    assert resp.status == 403
+
+
 def test_folders_outside_root(client):
     resp, _ = client.get("/api/folders", params={"db": DB, "path": "C:/Windows"})
     assert resp.status == 403

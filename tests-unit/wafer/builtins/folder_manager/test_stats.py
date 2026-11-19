@@ -4,7 +4,7 @@ import shutil
 
 import pytest
 
-from wafer.app.viewer.widgets.foldertree import _scan_child_paths
+from wafer.core.common.folder_scan import scan_child_paths
 from wafer.builtins.folder_manager.stats import (
     DiskTree,
     FolderValues,
@@ -344,7 +344,7 @@ def test_list_folder_matches_foldertree_rules(tmp_path):
     pattern = re.compile(r".*/tmp_[^/]*$")
     for ignore in (None, pattern):
         mine = sorted(list_folder(base, excluded, ignore)[0])
-        assert mine == sorted(_scan_child_paths(base, excluded, ignore))
+        assert mine == sorted(scan_child_paths(base, excluded, ignore))
     assert f"{base}/tmp_x" not in list_folder(base, excluded, pattern)[0]
 
 
@@ -376,4 +376,4 @@ def test_directory_links_are_not_followed(tmp_path):
         pytest.skip("directory symlinks unavailable")
     base = normalize_path(str(root))
     assert list_folder(base, set(), None) == ([], 1)
-    assert list_folder(base, set(), None)[0] == list(_scan_child_paths(base, set()))
+    assert list_folder(base, set(), None)[0] == list(scan_child_paths(base, set()))

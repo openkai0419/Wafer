@@ -7,11 +7,10 @@ from PySide6 import QtCore, QtWidgets
 from wafer.app.viewer.widgets import foldertree as foldertree_module
 from wafer.app.viewer.widgets.foldertree import (
     LazyFolderTreeView,
-    _scan_children,
-    _has_subfolders_bg,
     _collect_segments_for_paths,
     structure_is_current,
 )
+from wafer.core.common import folder_scan
 from wafer.core.common.paths import normalize_path
 from wafer.core.db.path_scope import compile_ignore_patterns
 
@@ -153,82 +152,6 @@ def test_restore_scroll_state_clamps_to_maximum(qtbot):
         qtbot.waitUntil(lambda: bar.value() == bar.maximum(), timeout=3000)
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-def test_scan_children_returns_dirs_only():
-    tmpdir = tempfile.mkdtemp()
-    try:
-        create_fs_tree(tmpdir)
-        children = _scan_children(tmpdir, set())
-        names = [os.path.basename(p) for p, _ in children]
-        assert "A" in names
-        assert "B" in names
-        assert "file.txt" not in names
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-def test_scan_children_excludes_paths():
-    tmpdir = tempfile.mkdtemp()
-    try:
-        create_fs_tree(tmpdir)
-        excluded = {normalize_path(os.path.join(tmpdir, "A"))}
-        children = _scan_children(tmpdir, excluded)
-        names = [os.path.basename(p) for p, _ in children]
-        assert "A" not in names
-        assert "B" in names
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-def test_scan_children_reports_subfolders():
-    tmpdir = tempfile.mkdtemp()
-    try:
-        create_fs_tree(tmpdir)
-        children = _scan_children(tmpdir, set())
-        child_map = {os.path.basename(p): has_sub for p, has_sub in children}
-        assert child_map["A"] is True
-        assert child_map["B"] is False
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-def test_scan_children_nonexistent_dir():
-    result = _scan_children("/nonexistent/path/that/does/not/exist", set())
-    assert result == []
-
-
-def test_has_subfolders_true():
-    tmpdir = tempfile.mkdtemp()
-    try:
-        create_fs_tree(tmpdir)
-        assert _has_subfolders_bg(tmpdir, set()) is True
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-def test_has_subfolders_false():
-    tmpdir = tempfile.mkdtemp()
-    try:
-        os.makedirs(os.path.join(tmpdir, "leaf"))
-        assert _has_subfolders_bg(os.path.join(tmpdir, "leaf"), set()) is False
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-def test_has_subfolders_with_exclusion():
-    tmpdir = tempfile.mkdtemp()
-    try:
-        sub = os.path.join(tmpdir, "only_child")
-        os.makedirs(sub)
-        excluded = {normalize_path(sub)}
-        assert _has_subfolders_bg(tmpdir, excluded) is False
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-def test_has_subfolders_nonexistent():
-    assert _has_subfolders_bg("/nonexistent/path", set()) is False
 
 
 def test_foldertree_model_accepts_internal_copy_drop(qtbot, tmp_path):
@@ -694,7 +617,7 @@ def test_structure_current_uses_lightweight_scan(qtbot, monkeypatch):
         tree.model_._build_roots([tmpdir])
         expand_to(qtbot, tree, normalize_path(tmpdir))
 
-        monkeypatch.setattr(foldertree_module, "_has_subfolders_bg", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("_has_subfolders_bg should not be used by is_structure_current")))
+        monkeypatch.setattr(foldertree_module, "has_subfolders", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("has_subfolders should not be used by is_structure_current")))
 
         assert structure_is_current(tree.structure_snapshot(), [tmpdir], []) is True
     finally:
@@ -1175,7 +1098,7 @@ def test_expand_recursive_drains_entries_by_timer(qtbot, monkeypatch, tmp_path):
     tree = LazyFolderTreeView(roots=[root], excluded=[])
     qtbot.addWidget(tree)
     tree.model_._build_roots([root])
-    monkeypatch.setattr(foldertree_module, "_scan_children", scan_children)
+    monkeypatch.setattr(foldertree_module, "scan_children", scan_children)
     monkeypatch.setattr(foldertree_module, "EXPAND_RECURSIVE_BATCH_SIZE", 2)
     monkeypatch.setattr(foldertree_module, "EXPAND_RECURSIVE_DRAIN_MS", 0.0)
     drains = []
@@ -1234,7 +1157,7 @@ def test_expand_recursive_cancel_clears_job(qtbot, monkeypatch, tmp_path):
     tree = LazyFolderTreeView(roots=[root], excluded=[])
     qtbot.addWidget(tree)
     tree.model_._build_roots([root])
-    monkeypatch.setattr(foldertree_module, "_scan_children", scan_children)
+    monkeypatch.setattr(foldertree_module, "scan_children", scan_children)
     monkeypatch.setattr(foldertree_module, "EXPAND_RECURSIVE_DRAIN_MS", 0.0)
 
     root_index = index_of(tree, root)
@@ -1263,7 +1186,7 @@ def test_cancel_expand_recursive_cancels_active_job(qtbot, monkeypatch, tmp_path
     tree = LazyFolderTreeView(roots=[root], excluded=[])
     qtbot.addWidget(tree)
     tree.model_._build_roots([root])
-    monkeypatch.setattr(foldertree_module, "_scan_children", scan_children)
+    monkeypatch.setattr(foldertree_module, "scan_children", scan_children)
 
     root_index = index_of(tree, root)
     tree.expand(root_index)
@@ -1489,8 +1412,8 @@ def test_load_paths_async_skips_loaded_folders_only_when_asked(qtbot, tmp_path, 
     tree, root = make_deep_tree(qtbot, tmp_path)
     expand_to(qtbot, tree, f"{root}/a")
     scanned = []
-    original = foldertree_module._scan_children
-    monkeypatch.setattr(foldertree_module, "_scan_children", lambda path, *args: (scanned.append(path), original(path, *args))[1])
+    original = foldertree_module.scan_children
+    monkeypatch.setattr(foldertree_module, "scan_children", lambda path, *args: (scanned.append(path), original(path, *args))[1])
     done = []
 
     tree.load_paths_async([f"{root}/a/b"], lambda: done.append(True), skip_loaded=True)
@@ -1545,9 +1468,10 @@ def test_reload_tree_scans_folders_off_the_main_thread(qtbot, tmp_path, monkeypa
     tree.set_folders([str(tmp_path)])
     expand_to(qtbot, tree, tmp_path / "A")
     on_main = []
-    for name in ("_scan_child_paths", "_has_subfolders_bg"):
-        original = getattr(foldertree_module, name)
-        monkeypatch.setattr(foldertree_module, name, lambda *args, _original=original: (on_main.append(threading.current_thread() is threading.main_thread()), _original(*args))[1])
+    for module in (foldertree_module, folder_scan):
+        for name in ("scan_child_paths", "has_subfolders"):
+            original = getattr(module, name)
+            monkeypatch.setattr(module, name, lambda *args, _original=original: (on_main.append(threading.current_thread() is threading.main_thread()), _original(*args))[1])
 
     tree.reload_tree()
     assert on_main == []

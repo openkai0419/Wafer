@@ -102,9 +102,6 @@ class IndexerProcess:
         self.scanner = DirectoryScanner(db_path, self.scheduler, self.writer, progress, collectors)
         self.scanner.start()
 
-        self.receiver = CollectorReceiver(self.scheduler, self.writer, progress)
-        self.zmq.subscribe("collect.result", self.receiver.handle_result)
-
         self.dispatcher = CollectorDispatcher(
             self.db_name,
             db_path,
@@ -114,12 +111,12 @@ class IndexerProcess:
             plugins=collector_names,
             tray_pid=self._tray_pid,
         )
+        self.receiver = CollectorReceiver(self.scheduler, self.writer, progress, on_batch_done=self.dispatcher.batch_done)
+        self.zmq.subscribe("collect.result", self.receiver.handle_result)
         self.dispatcher.start(self.zmq)
 
         if parser_names:
             parser_resolver.bind_db(self.db_name)
-            self.parser_receiver = ParserReceiver(self.scheduler, self.writer, progress)
-            self.zmq.subscribe("parse.result", self.parser_receiver.handle_result)
             self.parser_dispatcher = ParserDispatcher(
                 self.db_name,
                 db_path,
@@ -129,6 +126,8 @@ class IndexerProcess:
                 plugins=parser_names,
                 tray_pid=self._tray_pid,
             )
+            self.parser_receiver = ParserReceiver(self.scheduler, self.writer, progress, on_batch_done=self.parser_dispatcher.batch_done)
+            self.zmq.subscribe("parse.result", self.parser_receiver.handle_result)
             self.parser_dispatcher.start(self.zmq)
             self.parser_receiver.set_request_dispatch(self.parser_dispatcher.request_dispatch)
             self.receiver.set_parser_dispatch(
@@ -176,7 +175,7 @@ class IndexerProcess:
                 create_task=lambda: Task.create(
                     "reset_stale",
                     priority=TaskPriority.RETRY,
-                    run=lambda: self.writer.reset_stale(),
+                    run=self._reset_stale_dispatched,
                 ),
             )
         )
@@ -239,6 +238,11 @@ class IndexerProcess:
         delay = max(timeouts) + _IDLE_GRACE_SECONDS
         AppLogger.info(f"[Indexer] Idle task delay floor: {delay:.1f}s (child batch timeout max={max(timeouts):.1f}s)")
         return delay
+
+    def _reset_stale_dispatched(self):
+        for dispatcher in (self.dispatcher, self.parser_dispatcher):
+            if dispatcher:
+                dispatcher.reset_stale()
 
     def _request_backfill(self):
         if self.scanner:

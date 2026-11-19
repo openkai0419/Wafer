@@ -55,6 +55,13 @@ def test_handle_result_empty_results():
     assert not scheduler.submit.called
 
 
+def test_each_result_message_ends_one_batch_of_its_collector():
+    done = MagicMock()
+    receiver = CollectorReceiver(MagicMock(), MagicMock(), MagicMock(), on_batch_done=done)
+    receiver.handle_result(_StubMsg({"collector": "exif", "results": []}))
+    done.assert_called_once_with("exif")
+
+
 def test_handle_result_sets_collector_on_results(no_flush_delay):
     receiver, scheduler, writer, _ = _make_receiver()
     results = [{"source": "a", "status": True}]

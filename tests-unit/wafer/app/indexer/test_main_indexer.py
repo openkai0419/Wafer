@@ -157,6 +157,21 @@ class TestPeriodicTaskConfig:
         assert tasks["cleanup_optimize"].idle_delay == 1800.0
 
     @patch("wafer.app.indexer.main_indexer.Node")
+    def test_stale_reset_goes_through_both_dispatchers(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        proc.scheduler = MagicMock()
+        proc.dispatcher = MagicMock()
+        proc.parser_dispatcher = MagicMock()
+        proc.writer = MagicMock()
+        proc._register_periodic_tasks()
+        tasks = {call.args[0].name: call.args[0] for call in proc.scheduler.add_periodic_task.call_args_list}
+        tasks["retry_stale_dispatched"].create_task().run()
+        proc.dispatcher.reset_stale.assert_called_once_with()
+        proc.parser_dispatcher.reset_stale.assert_called_once_with()
+        proc.writer.reset_stale.assert_not_called()
+
+    @patch("wafer.app.indexer.main_indexer.Node")
     def test_idle_base_delay_uses_grace_without_children(self, mock_node_cls):
         mock_node_cls.return_value = MagicMock()
         proc = IndexerProcess("test")

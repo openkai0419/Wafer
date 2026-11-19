@@ -239,3 +239,57 @@ def test_terminate_workers_skips_fallback_when_graceful_stop_succeeds(tmp_path):
 
     dispatcher._node.send.assert_called_once()
     terminate_cmd.assert_not_called()
+
+
+@pytest.fixture
+def capped_dispatcher(tmp_path):
+    from wafer.app.indexer.dispatch.plugin_dispatcher import MAX_IN_FLIGHT_BATCHES
+
+    writer = DatabaseWriter(tmp_path / "test.db")
+    writer.start()
+    writer.initialize()
+    sources = [f"src{i}" for i in range(MAX_IN_FLIGHT_BATCHES + 2)]
+    writer.db.upsert_basic_sources([(s, f"hash-{s}", 1, 1.0) for s in sources], [])
+    writer.insert_pending(sources, ["exif"])
+    dispatcher = CollectorDispatcher("testdb", tmp_path / "test.db", MagicMock(), writer, MagicMock(), plugins=["exif"])
+    dispatcher._node = MagicMock()
+    dispatcher._node.nudge_undelivered.return_value = False
+    dispatcher._read_conn = open_readonly(tmp_path / "test.db")
+    with patch.object(collector_resolver, "batch_size", return_value=1):
+        yield dispatcher, writer, sources, MAX_IN_FLIGHT_BATCHES
+    dispatcher._read_conn.close()
+    writer.close()
+
+
+def test_batches_without_a_result_are_capped(capped_dispatcher):
+    dispatcher, writer, sources, cap = capped_dispatcher
+
+    for _ in sources:
+        dispatcher._dispatch_pending()
+
+    assert len(_sent_paths(dispatcher)) == cap
+    assert sorted(_statuses(writer).values()) == ["dispatched"] * cap + ["pending"] * (len(sources) - cap)
+
+
+def test_every_pending_row_is_sent_as_results_come_back(capped_dispatcher):
+    dispatcher, _writer, sources, _cap = capped_dispatcher
+
+    for _ in range(len(sources) * 2):
+        dispatcher._dispatch_pending()
+        dispatcher.batch_done("exif")
+
+    assert sorted(p for batch in _sent_paths(dispatcher) for p in batch) == sorted(sources)
+
+
+def test_reset_stale_sends_again_what_a_lost_worker_held(capped_dispatcher):
+    dispatcher, writer, _sources, cap = capped_dispatcher
+    for _ in range(cap + 1):
+        dispatcher._dispatch_pending()
+    assert len(_sent_paths(dispatcher)) == cap
+
+    dispatcher.reset_stale()
+    assert set(_statuses(writer).values()) == {"pending"}
+    for _ in range(cap + 1):
+        dispatcher._dispatch_pending()
+
+    assert len(_sent_paths(dispatcher)) == cap * 2

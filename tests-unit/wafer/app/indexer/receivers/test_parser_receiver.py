@@ -195,3 +195,14 @@ def test_parse_batch_delete_entries_are_keyed_by_source():
     ]
     parsed = _parse_batch(results)
     assert parsed["delete_entries"] == [("/a.zip::b.png", "/a.zip", [], ["sd.x"])]
+
+
+def test_each_result_message_ends_one_batch_of_its_parser():
+    from types import SimpleNamespace
+
+    from wafer.app.indexer.receivers.parser_receiver import ParserReceiver
+
+    done = MagicMock()
+    receiver = ParserReceiver(MagicMock(), MagicMock(), MagicMock(), on_batch_done=done)
+    receiver.handle_result(SimpleNamespace(payload={"parser": "novelai", "results": []}))
+    done.assert_called_once_with("novelai")

@@ -88,8 +88,9 @@ def _merge_parsed(entries: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 class ParserReceiver:
-    def __init__(self, scheduler: TaskScheduler, writer: DatabaseWriter, progress: ProgressAggregator):
+    def __init__(self, scheduler: TaskScheduler, writer: DatabaseWriter, progress: ProgressAggregator, on_batch_done=None):
         self._scheduler = scheduler
+        self._on_batch_done = on_batch_done
         self._writer = writer
         self._progress = progress
         self._buffer = ResultBuffer(_merge_parsed)
@@ -104,6 +105,8 @@ class ParserReceiver:
             AppLogger.warning(f"parse.result: invalid payload type: {type(payload)}")
             return True
         parser = payload.get("parser", "")
+        if self._on_batch_done:
+            self._on_batch_done(parser)
         results = payload.get("results", [])
         if results:
             for r in results:

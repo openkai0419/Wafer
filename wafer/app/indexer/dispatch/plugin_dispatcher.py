@@ -14,6 +14,7 @@ from ..runtime.scheduler import TaskScheduler
 from ..runtime.worker_shutdown import WORKER_SHUTDOWN_TIMEOUT, wait_worker_stopped
 
 _DISPATCH_INTERVAL = 2.0
+MAX_IN_FLIGHT_BATCHES = 4
 
 
 class PluginDispatcher:
@@ -45,6 +46,8 @@ class PluginDispatcher:
         self._stop = threading.Event()
         self._dispatch_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._in_flight: dict[str, int] = {}
+        self._in_flight_lock = threading.Lock()
         self._tag = f"[{type(self).__name__}]"
 
     def start(self, node):
@@ -69,6 +72,15 @@ class PluginDispatcher:
 
     def status_name(self, plugin: str) -> str:
         return plugin
+
+    def batch_done(self, status_name: str):
+        with self._in_flight_lock:
+            self._in_flight[status_name] = max(0, self._in_flight.get(status_name, 0) - 1)
+
+    def reset_stale(self):
+        with self._in_flight_lock:
+            self._writer.reset_stale([self.status_name(p) for p in self._plugins])
+            self._in_flight.clear()
 
     def _start_workers(self):
         my_pid = str(os.getpid())
@@ -107,7 +119,7 @@ class PluginDispatcher:
 
     def _dispatch_loop(self):
         try:
-            self._writer.reset_stale([self.status_name(p) for p in self._plugins])
+            self.reset_stale()
         except Exception as e:
             AppLogger.error(f"{self._tag} reset_stale failed: {e}", exc=e)
         while not self._stop.is_set():
@@ -127,6 +139,8 @@ class PluginDispatcher:
             if self._node.nudge_undelivered(self.BATCH_TOPIC, dst=dst, db=self._db_name):
                 continue
             status_name = self.status_name(plugin)
+            if self._in_flight.get(status_name, 0) >= MAX_IN_FLIGHT_BATCHES:
+                continue
             rows = self._read_pending(status_name, self.resolver.batch_size(plugin))
             if not rows:
                 continue
@@ -134,14 +148,16 @@ class PluginDispatcher:
             if not batch:
                 continue
             paths = batch["paths"]
-            # Before the batch leaves, not through the scheduler: a mark that runs later would
-            # turn a source set pending again meanwhile into 'dispatched' with no batch behind it.
-            self._writer.mark_dispatched(paths, status_name)
-            try:
-                self._node.send_reliable(self.BATCH_TOPIC, batch, dst=dst, db=self._db_name)
-            except Exception:
-                self._writer.unmark_dispatched(paths, status_name)
-                raise
+            with self._in_flight_lock:
+                # Before the batch leaves, not through the scheduler: a mark that runs later would
+                # turn a source set pending again meanwhile into 'dispatched' with no batch behind it.
+                self._writer.mark_dispatched(paths, status_name)
+                try:
+                    self._node.send_reliable(self.BATCH_TOPIC, batch, dst=dst, db=self._db_name)
+                except Exception:
+                    self._writer.unmark_dispatched(paths, status_name)
+                    raise
+                self._in_flight[status_name] = self._in_flight.get(status_name, 0) + 1
             self._scheduler.note_activity()
             self._progress.increment(0, len(paths))
             AppLogger.info(f"{self._tag} Sent {len(paths)} paths to {dst}")

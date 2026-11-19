@@ -436,3 +436,41 @@ def test_all_classes_returns_name_cls_tuples():
     assert ("p1", P1) in result
     assert ("p2", P2) in result
     assert len(result) == 2
+
+
+def test_merged_chain_keeps_user_order_between_widgets(monkeypatch):
+    from wafer.plugin.grid.handler import GridResolver, IMAGE, WIDGET
+    from wafer.plugin.registry import FilePluginRegistry
+
+    class HighWidget(WidgetGridPlugin):
+        NAME = "high_widget"
+        EXTENSIONS = (".ord",)
+        PRIORITY = 100
+
+    class LowWidget(WidgetGridPlugin):
+        NAME = "low_widget"
+        EXTENSIONS = (".ord",)
+        PRIORITY = 50
+
+    class MidLoader(BaseImageLoader):
+        NAME = "mid_loader"
+        EXTENSIONS = (".ord",)
+        PRIORITY = 70
+
+    class TieLoader(BaseImageLoader):
+        NAME = "tie_loader"
+        EXTENSIONS = (".ord",)
+        PRIORITY = 50
+
+    loaders = FilePluginRegistry()
+    loaders.register(MidLoader)
+    loaders.register(TieLoader)
+    monkeypatch.setattr(image_loader_resolver, "registry", loaders)
+    resolver = GridResolver()
+    resolver.registry.register(HighWidget)
+    resolver.registry.register(LowWidget)
+
+    assert resolver.resolve_merged_chain("x.ord") == [(HighWidget, WIDGET), (MidLoader, IMAGE), (LowWidget, WIDGET), (TieLoader, IMAGE)]
+
+    resolver.registry.set_order(["low_widget", "high_widget"])
+    assert resolver.resolve_merged_chain("x.ord") == [(MidLoader, IMAGE), (LowWidget, WIDGET), (HighWidget, WIDGET), (TieLoader, IMAGE)]

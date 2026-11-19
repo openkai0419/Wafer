@@ -27,8 +27,14 @@ class GridResolver:
 
         widget_chain = [cls for cls in self.registry.resolve_chain(path) if issubclass(cls, WidgetGridPlugin)]
         loader_chain = image_loader_resolver.registry.resolve_chain(path)
-        merged = [(cls, WIDGET) for cls in widget_chain] + [(cls, IMAGE) for cls in loader_chain]
-        merged.sort(key=lambda x: (x[0].PRIORITY, x[1] == WIDGET), reverse=True)
+        merged = []
+        next_loader = 0
+        for widget_cls in widget_chain:
+            while next_loader < len(loader_chain) and loader_chain[next_loader].PRIORITY > widget_cls.PRIORITY:
+                merged.append((loader_chain[next_loader], IMAGE))
+                next_loader += 1
+            merged.append((widget_cls, WIDGET))
+        merged.extend((cls, IMAGE) for cls in loader_chain[next_loader:])
         return merged
 
     def resolve_plan(self, path: str, context: ResolveContext | None = None) -> RenderPlan[WidgetGridPlugin | BaseImageLoader]:

@@ -43,6 +43,16 @@ def _unique_name(prefix: str, existing: list[str]) -> str:
         i += 1
 
 
+def _preset_id_param(list_presets) -> ActionKit.Param:
+    return ActionKit.Param(
+        name="preset_id",
+        value=lambda: [(p.preset_id, p.name) for p in list_presets(_store())],
+        description="Preset",
+        required=True,
+        persist=False,
+    )
+
+
 # ---------- UI preset ----------
 @require(w="MainWindow")
 def ui_preset_save_current(ctx, w, name: str = "") -> str:
@@ -402,25 +412,25 @@ class WorkspaceCommands(ActionKit.MenuBase):
                 path="ui_preset.apply",
                 display="Apply UI Preset",
                 func=ui_preset_apply,
-                params=[ActionKit.Param(name="preset_id", value=""), ActionKit.Param(name="restore_window_state", value=True)],
+                params=[_preset_id_param(WorkspaceStore.list_ui_presets), ActionKit.Param(name="restore_window_state", value=True)],
             ),
             ActionKit.Command(
                 path="ui_preset.rename",
                 display="Rename UI Preset",
                 func=ui_preset_rename,
-                params=[ActionKit.Param(name="preset_id", value=""), ActionKit.Param(name="name", value="")],
+                params=[_preset_id_param(WorkspaceStore.list_ui_presets), ActionKit.Param(name="name", value="", persist=False)],
             ),
             ActionKit.Command(
                 path="ui_preset.delete",
                 display="Delete UI Preset",
                 func=ui_preset_delete,
-                params=[ActionKit.Param(name="preset_id", value="")],
+                params=[_preset_id_param(WorkspaceStore.list_ui_presets)],
             ),
             ActionKit.Command(
                 path="ui_preset.overwrite",
                 display="Overwrite UI Preset",
                 func=ui_preset_overwrite,
-                params=[ActionKit.Param(name="preset_id", value="")],
+                params=[_preset_id_param(WorkspaceStore.list_ui_presets)],
             ),
             "-",
             ":Path",
@@ -434,25 +444,25 @@ class WorkspaceCommands(ActionKit.MenuBase):
                 path="path_preset.apply",
                 display="Apply Path Preset",
                 func=path_preset_apply,
-                params=[ActionKit.Param(name="preset_id", value="")],
+                params=[_preset_id_param(WorkspaceStore.list_path_presets)],
             ),
             ActionKit.Command(
                 path="path_preset.rename",
                 display="Rename Path Preset",
                 func=path_preset_rename,
-                params=[ActionKit.Param(name="preset_id", value=""), ActionKit.Param(name="name", value="")],
+                params=[_preset_id_param(WorkspaceStore.list_path_presets), ActionKit.Param(name="name", value="", persist=False)],
             ),
             ActionKit.Command(
                 path="path_preset.delete",
                 display="Delete Path Preset",
                 func=path_preset_delete,
-                params=[ActionKit.Param(name="preset_id", value="")],
+                params=[_preset_id_param(WorkspaceStore.list_path_presets)],
             ),
             ActionKit.Command(
                 path="path_preset.overwrite",
                 display="Overwrite Path Preset",
                 func=path_preset_overwrite,
-                params=[ActionKit.Param(name="preset_id", value="")],
+                params=[_preset_id_param(WorkspaceStore.list_path_presets)],
             ),
             "-",
             ":Query",
@@ -467,7 +477,7 @@ class WorkspaceCommands(ActionKit.MenuBase):
                 display="Apply Query Preset",
                 func=query_preset_apply,
                 params=[
-                    ActionKit.Param(name="preset_id", value=""),
+                    _preset_id_param(WorkspaceStore.list_query_presets),
                     ActionKit.Param(name="mode", value="replace"),
                     ActionKit.Param(name="restore_sort", value=True),
                 ],
@@ -476,18 +486,18 @@ class WorkspaceCommands(ActionKit.MenuBase):
                 path="query_preset.rename",
                 display="Rename Query Preset",
                 func=query_preset_rename,
-                params=[ActionKit.Param(name="preset_id", value=""), ActionKit.Param(name="name", value="")],
+                params=[_preset_id_param(WorkspaceStore.list_query_presets), ActionKit.Param(name="name", value="", persist=False)],
             ),
             ActionKit.Command(
                 path="query_preset.delete",
                 display="Delete Query Preset",
                 func=query_preset_delete,
-                params=[ActionKit.Param(name="preset_id", value="")],
+                params=[_preset_id_param(WorkspaceStore.list_query_presets)],
             ),
             ActionKit.Command(
                 path="query_preset.overwrite",
                 display="Overwrite Query Preset",
                 func=query_preset_overwrite,
-                params=[ActionKit.Param(name="preset_id", value="")],
+                params=[_preset_id_param(WorkspaceStore.list_query_presets)],
             ),
         ]

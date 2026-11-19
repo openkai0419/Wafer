@@ -286,6 +286,11 @@ class TestIsValueSatisfied:
         p = CommandParam(name="x", value=lambda: ["a", "b"])
         assert p.is_value_satisfied("c") is False
 
+    def test_dynamic_pairs_match_the_value_not_the_label(self):
+        p = CommandParam(name="x", value=lambda: [("id1", "Work")])
+        assert p.is_value_satisfied("id1") is True
+        assert p.is_value_satisfied("Work") is False
+
     def test_dynamic_choices_fn_error_returns_true(self):
         def boom():
             raise RuntimeError("boom")

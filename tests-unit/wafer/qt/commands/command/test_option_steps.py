@@ -156,3 +156,16 @@ def test_plain_str_param_has_no_file_button(qtbot, tmp_path):
     qtbot.addWidget(w)
     d = CommandOptionsDialog(_Cmd, w)
     assert d.findChild(QtWidgets.QToolButton) is None
+
+
+
+def test_pair_choices_show_labels_and_return_values(qtbot, tmp_path):
+    CommandOptionStore.configure(tmp_path / "opts.json")
+    _Cmd.meta = CommandMeta(id="__test__.pairs", display="pairs", params=[CommandParam(name="preset_id", value=lambda: [("id1", "Work"), ("id2", "Home")])])
+    w = QtWidgets.QWidget()
+    qtbot.addWidget(w)
+    d = CommandOptionsDialog(_Cmd, w)
+    combo = d.widgets["preset_id"]
+    assert [combo.itemText(i) for i in range(combo.count())] == ["Work", "Home"]
+    combo.setCurrentIndex(1)
+    assert d.get_values() == {"preset_id": "id2"}

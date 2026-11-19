@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from wafer.builtins.commands import workspace as workspace_commands
-from wafer.core.store.workspace import BarSpec, QueryPreset, UIPreset, WindowSlot
+from wafer.core.store.workspace import BarSpec, PathPreset, QueryPreset, UIPreset, WindowSlot
 
 
 class _Ctx:
@@ -296,3 +296,28 @@ class TestWorkspaceCommands:
         assert "ws.rename_slot" in paths
         assert "ws.reset_panel_layout" not in paths
         assert LayoutManager._command_id("Workspace") not in items
+
+
+class TestPresetIdParam:
+    def params(self, path):
+        meta = next(i for i in workspace_commands.WorkspaceCommands.commands() if getattr(i, "path", "") == path)
+        return {p.name: p for p in meta.params}
+
+    @pytest.mark.parametrize("kind", ["ui", "path", "query"])
+    @pytest.mark.parametrize("action", ["apply", "rename", "delete", "overwrite"])
+    def test_menu_lists_presets_by_name_and_passes_the_id(self, kind, action, tmp_path):
+        store = workspace_commands.WorkspaceStore(str(tmp_path / "workspace.json"))
+        preset_cls = {"ui": UIPreset, "path": PathPreset, "query": QueryPreset}[kind]
+        for preset_id in ("p1", "p2"):
+            getattr(store, f"save_{kind}_preset")(preset_cls(preset_id=preset_id, name="Work"))
+        param = self.params(f"{kind}_preset.{action}")["preset_id"]
+        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store):
+            assert param.choice_items() == [("p1", "Work"), ("p2", "Work")]
+            assert param.is_value_satisfied("p2") is True
+            assert param.is_value_satisfied("") is False
+        assert param.required is True
+        assert param.persist is False
+
+    @pytest.mark.parametrize("kind", ["ui", "path", "query"])
+    def test_rename_does_not_remember_the_new_name(self, kind):
+        assert self.params(f"{kind}_preset.rename")["name"].persist is False

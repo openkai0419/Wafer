@@ -53,10 +53,14 @@ class CommandParam:
         self.max_value = max_value
         self.widget_type = widget_type
 
+    def choice_items(self) -> list[tuple[Any, str]] | None:
+        if self.choices_fn is None:
+            return None if self.choices is None else [(c, str(c)) for c in self.choices]
+        return [c if isinstance(c, tuple) and len(c) == 2 else (c, str(c)) for c in self.choices_fn()]
+
     def resolve_choices(self) -> list | None:
-        if self.choices_fn is not None:
-            return list(self.choices_fn())
-        return self.choices
+        items = self.choice_items()
+        return None if items is None else [value for value, _ in items]
 
     def is_value_satisfied(self, value: Any) -> bool:
         if value is None or value == "":

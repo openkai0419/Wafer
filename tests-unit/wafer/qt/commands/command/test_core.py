@@ -370,6 +370,16 @@ class TestCommandParamEdgeCases:
         p = CommandParam(name="x", value=lambda: ["a", "b"])
         assert p.resolve_choices() == ["a", "b"]
 
+    def test_choices_fn_may_return_value_label_pairs(self):
+        p = CommandParam(name="x", value=lambda: [("id1", "Work"), ("id2", "Home")])
+        assert p.resolve_choices() == ["id1", "id2"]
+        assert p.choice_items() == [("id1", "Work"), ("id2", "Home")]
+
+    def test_plain_choices_label_themselves(self):
+        assert CommandParam(name="x", value=lambda: ["a", 2]).choice_items() == [("a", "a"), (2, "2")]
+        assert CommandParam(name="x", value=["a", "b"]).choice_items() == [("a", "a"), ("b", "b")]
+        assert CommandParam(name="x", value=5).choice_items() is None
+
     def test_callable_with_explicit_default(self):
         p = CommandParam(name="x", value=lambda: ["a", "b"], default="a")
         assert p.default == "a"

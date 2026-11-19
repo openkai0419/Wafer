@@ -70,11 +70,11 @@ class CommandOptionsDialog(QtWidgets.QDialog):
         layout.addLayout(row)
 
     def _create_widget(self, param) -> QtWidgets.QWidget:
-        resolved_choices = param.resolve_choices()
-        if resolved_choices:
+        choice_items = param.choice_items()
+        if choice_items:
             combo = QtWidgets.QComboBox()
-            for choice in resolved_choices:
-                combo.addItem(str(choice), choice)
+            for value, label in choice_items:
+                combo.addItem(label, value)
             base = self._initial.get(param.name, param.default)
             if base is not None:
                 idx = combo.findData(base)

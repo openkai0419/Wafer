@@ -255,15 +255,29 @@ def test_build_template_stops_the_build_profile_when_indexing_fails(tmp_path, mo
     assert not profile_setup.template_dir(schema_hash(checkout)).exists()
 
 
-def _make_file_db(path: Path, sources: int, statuses: list[str]):
+PROFILE = "debug-x"
+SAMPLE_IN_SCOPE = 31
+
+
+def _sample_sources(sample: Path) -> list[str]:
+    files = [*(sample / "coco" / "val2017").iterdir(), sample / "elephant.gif"]
+    return sorted(normalize_path(path) for path in files)
+
+
+def _make_file_db(sources: list[str], rows: list[tuple[str, str, str]]):
+    path = profile_data_root(PROFILE) / "data" / "sample.db"
     path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(path)
     con.execute("CREATE TABLE sources (source TEXT PRIMARY KEY)")
-    con.execute("CREATE TABLE collection_status (source TEXT, collector TEXT, status TEXT DEFAULT 'pending')")
-    con.executemany("INSERT INTO sources VALUES (?)", [(f"s{i}",) for i in range(sources)])
-    con.executemany("INSERT INTO collection_status VALUES (?, 'c', ?)", [(f"s{i}", s) for i, s in enumerate(statuses)])
+    con.execute("CREATE TABLE collection_status (source TEXT, collector TEXT, status TEXT DEFAULT 'pending', PRIMARY KEY(source, collector))")
+    con.executemany("INSERT INTO sources VALUES (?)", [(source,) for source in sources])
+    con.executemany("INSERT INTO collection_status VALUES (?, ?, ?)", rows)
     con.commit()
     con.close()
+
+
+def _rows(sources: list[str], *statuses: str) -> list[tuple[str, str, str]]:
+    return [(source, collector, status) for source in sources for collector, status in zip(("color", "exiftool"), statuses)]
 
 
 @pytest.fixture
@@ -273,30 +287,92 @@ def fast_wait(monkeypatch):
     monkeypatch.setattr(AppProcess, "list_profile_processes", classmethod(lambda cls, profile: [object()]))
 
 
-def test_wait_indexed_returns_once_sources_are_collected(app_data, fast_wait):
-    _make_file_db(profile_data_root("debug-x") / "data" / "sample.db", 2, ["ok", "ok"])
-    wait_indexed("debug-x", timeout=5.0)
+@pytest.fixture
+def build_profile(app_data, sample):
+    sample_db_setup(profile_data_root(PROFILE))
+    return _sample_sources(sample)
+
+
+def test_expected_source_count_follows_the_sample_scope(app_data, sample, build_profile):
+    settings = profile_data_root(PROFILE) / "dirs" / "sample.db"
+    assert len(build_profile) == SAMPLE_IN_SCOPE
+    assert profile_setup.expected_source_count(settings) == SAMPLE_IN_SCOPE
+
+    scratch = scratch_root(PROFILE)
+    scratch.mkdir(parents=True)
+    for i in range(3):
+        Image.new("RGB", (8, 8)).save(scratch / f"{i}.png")
+    SettingDB(str(settings)).add_parent_folder(str(scratch))
+    assert profile_setup.expected_source_count(settings) == SAMPLE_IN_SCOPE + 3
+
+
+def test_expected_source_count_does_not_walk_ignored_folders(app_data, sample, build_profile, monkeypatch):
+    walked = []
+    real_scandir = os.scandir
+
+    def recording_scandir(path):
+        walked.append(normalize_path(path))
+        return real_scandir(path)
+
+    monkeypatch.setattr(profile_setup.os, "scandir", recording_scandir)
+    profile_setup.expected_source_count(profile_data_root(PROFILE) / "dirs" / "sample.db")
+
+    assert normalize_path(sample / "coco" / "val2017") in walked
+    assert not any("/coco/train2017" in path or "/coco/unlabeled2017" in path for path in walked)
+
+
+def test_wait_indexed_returns_once_the_whole_sample_is_collected(fast_wait, build_profile):
+    _make_file_db(build_profile, _rows(build_profile, "ok", "ok"))
+    wait_indexed(PROFILE, timeout=5.0)
+
+
+def test_wait_indexed_accepts_finished_errors(fast_wait, build_profile):
+    _make_file_db(build_profile, _rows(build_profile, "ok", "error"))
+    wait_indexed(PROFILE, timeout=5.0)
 
 
 @pytest.mark.parametrize(
-    ("sources", "statuses"),
-    [(0, []), (2, ["ok", "pending"]), (2, ["ok", "dispatched"])],
+    "state",
+    [
+        "first_chunk_without_collection",
+        "first_chunk_collected",
+        "all_sources_without_collection",
+        "all_sources_pending",
+        "all_sources_dispatched",
+        "one_source_without_collection",
+        "one_source_missing",
+    ],
 )
-def test_wait_indexed_times_out_while_indexing_is_unfinished(app_data, fast_wait, sources, statuses):
-    _make_file_db(profile_data_root("debug-x") / "data" / "sample.db", sources, statuses)
+def test_wait_indexed_times_out_until_the_whole_sample_is_collected(fast_wait, build_profile, state):
+    first_chunk = build_profile[:10]
+    sources, rows = {
+        "first_chunk_without_collection": (first_chunk, []),
+        "first_chunk_collected": (first_chunk, _rows(first_chunk, "ok", "ok")),
+        "all_sources_without_collection": (build_profile, []),
+        "all_sources_pending": (build_profile, _rows(build_profile, "ok", "pending")),
+        "all_sources_dispatched": (build_profile, _rows(build_profile[:1], "ok", "dispatched") + _rows(build_profile[1:], "ok", "ok")),
+        "one_source_without_collection": (build_profile, _rows(build_profile[1:], "ok", "ok")),
+        "one_source_missing": (build_profile[1:], _rows(build_profile[1:], "ok", "ok")),
+    }[state]
+    _make_file_db(sources, rows)
+    with pytest.raises(TimeoutError, match=f"{len(sources)} of {SAMPLE_IN_SCOPE} sources"):
+        wait_indexed(PROFILE, timeout=0.6)
+
+
+def test_wait_indexed_times_out_without_a_database(fast_wait, build_profile):
     with pytest.raises(TimeoutError):
-        wait_indexed("debug-x", timeout=0.6)
+        wait_indexed(PROFILE, timeout=0.3)
 
 
-def test_wait_indexed_times_out_without_a_database(app_data, fast_wait):
-    with pytest.raises(TimeoutError):
-        wait_indexed("debug-x", timeout=0.3)
+def test_wait_indexed_needs_the_sample_settings(app_data, fast_wait):
+    with pytest.raises(FileNotFoundError):
+        wait_indexed(PROFILE, timeout=0.3)
 
 
-def test_wait_indexed_fails_when_the_profile_exits(app_data, fast_wait, monkeypatch):
+def test_wait_indexed_fails_when_the_profile_exits(fast_wait, build_profile, monkeypatch):
     monkeypatch.setattr(AppProcess, "list_profile_processes", classmethod(lambda cls, profile: []))
     with pytest.raises(RuntimeError):
-        wait_indexed("debug-x", timeout=5.0)
+        wait_indexed(PROFILE, timeout=5.0)
 
 
 class _FakeNode:

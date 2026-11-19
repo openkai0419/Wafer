@@ -8,6 +8,7 @@ import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 from wafer.core.common.paths import (
     debug_profiles_dir,
@@ -19,6 +20,7 @@ from wafer.core.common.paths import (
 )
 from wafer.core.common.profile import PROFILE_ARG, PROFILE_PREFIX, TOOLS_PROFILE, validate_profile_name
 from wafer.core.db.db_utils import open_readonly
+from wafer.core.db.path_scope import compile_ignore_patterns, path_in_scope
 from wafer.core.db.setting_db import SettingDB
 from wafer.core.ipc.node import Node
 from wafer.core.logs import AppLogger
@@ -137,6 +139,44 @@ def sample_db_setup(root: Path) -> None:
     AppLogger.info(f"Sample DB settings written to {db_path} (sample root {sample})")
 
 
+class IndexState(NamedTuple):
+    sources: int
+    uncollected: int
+    unfinished: int
+    rows: int
+
+    def is_complete(self, expected: int) -> bool:
+        return self.sources == expected and not self.uncollected and not self.unfinished
+
+    def describe(self, expected: int) -> str:
+        return f"{self.sources} of {expected} sources, {self.uncollected} without collection rows, {self.unfinished} rows pending or dispatched"
+
+
+EMPTY_INDEX = IndexState(0, 0, 0, 0)
+
+
+def _index_state(db_path: Path) -> IndexState:
+    if not db_path.is_file():
+        return EMPTY_INDEX
+    conn = open_readonly(db_path)
+    try:
+        tables = conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('sources', 'collection_status')").fetchone()[0]
+        if tables < 2:
+            return EMPTY_INDEX
+        placeholders = ", ".join("?" for _ in UNFINISHED_STATUSES)
+        row = conn.execute(
+            f"""SELECT
+                (SELECT COUNT(*) FROM sources),
+                (SELECT COUNT(*) FROM sources s WHERE NOT EXISTS (SELECT 1 FROM collection_status cs WHERE cs.source = s.source)),
+                (SELECT COUNT(*) FROM collection_status WHERE status IN ({placeholders})),
+                (SELECT COUNT(*) FROM collection_status)""",
+            UNFINISHED_STATUSES,
+        ).fetchone()
+        return IndexState(*row)
+    finally:
+        conn.close()
+
+
 def _collected_source_count(db_path: Path) -> int:
     if not db_path.is_file():
         return 0
@@ -154,24 +194,47 @@ def _collected_source_count(db_path: Path) -> int:
         conn.close()
 
 
+def expected_source_count(settings_db: Path) -> int:
+    if not settings_db.is_file():
+        raise FileNotFoundError(f"No sample DB settings at {settings_db}")
+    roots, ignore_folders, ignore_patterns = SettingDB(str(settings_db)).get_all_folder_settings()
+    pattern_re = compile_ignore_patterns(ignore_patterns)
+    found: set[str] = set()
+    stack = [root for root in roots if path_in_scope(root, roots, ignore_folders, pattern_re)]
+    while stack:
+        with os.scandir(stack.pop()) as entries:
+            for entry in entries:
+                path = normalize_path(entry.path)
+                if not path_in_scope(path, roots, ignore_folders, pattern_re):
+                    continue
+                if entry.is_file(follow_symlinks=False):
+                    found.add(path)
+                elif entry.is_dir(follow_symlinks=False):
+                    stack.append(entry.path)
+    return len(found)
+
+
 def wait_indexed(profile: str, timeout: float) -> None:
     validate_profile_name(profile)
+    root = profile_data_root(profile)
     db_path = _sample_data_db(profile)
+    expected = expected_source_count(_sample_settings_db(root))
+    AppLogger.info(f"{profile}: waiting until {expected} sources are indexed and collected")
     deadline = time.monotonic() + timeout
-    settled_count, settled_since = 0, 0.0
+    settled: IndexState | None = None
+    settled_since = 0.0
     while True:
         if not AppProcess.list_profile_processes(profile):
             raise RuntimeError(f"Wafer for {profile} exited before {db_path} finished indexing")
-        count = _collected_source_count(db_path)
+        state = _index_state(db_path)
         now = time.monotonic()
-        if count and count == settled_count:
-            if now - settled_since >= INDEX_SETTLE_SECONDS:
-                AppLogger.info(f"{profile}: {count} sources indexed and collected")
-                return
-        else:
-            settled_count, settled_since = count, now
+        if state != settled:
+            settled, settled_since = state, now
+        elif state.is_complete(expected) and now - settled_since >= INDEX_SETTLE_SECONDS:
+            AppLogger.info(f"{profile}: {state.sources} sources indexed and collected ({state.rows} collection rows)")
+            return
         if now >= deadline:
-            raise TimeoutError(f"{profile}: {db_path} was not fully indexed within {timeout:.0f}s")
+            raise TimeoutError(f"{profile}: {db_path} was not fully indexed within {timeout:.0f}s: {state.describe(expected)}")
         time.sleep(INDEX_POLL_SECONDS)
 
 

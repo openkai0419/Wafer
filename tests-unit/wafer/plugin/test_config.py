@@ -148,6 +148,53 @@ class TestPluginConfigSharedFile:
         (ini_dir / "viewer_plugins.ini").write_text("x = 1\n", encoding="utf-8")
         assert PluginConfig("s", {"x": 0}).load() == {"x": 0}
 
+    def test_unparsable_file_is_moved_aside_before_save(self, ini_dir, monkeypatch):
+        ini_path = ini_dir / "viewer_plugins.ini"
+        original = '[plugins]\nenabled_overrides = {"a.B": true}\n[wd14]\nthreshold = 0.3\nthreshold = 0.4\n'
+        ini_path.write_text(original, encoding="utf-8")
+        warnings = []
+        monkeypatch.setattr("wafer.plugin.config.AppLogger.warning", lambda text, exc=None: warnings.append(text))
+
+        PluginConfig("key_filter", {"sort_mode": 1}).save(sort_mode=0)
+
+        bad_files = list(ini_dir.glob("viewer_plugins.ini.*.bad"))
+        assert len(bad_files) == 1
+        assert bad_files[0].read_text(encoding="utf-8") == original
+        assert any(str(bad_files[0]) in text for text in warnings)
+        assert PluginConfig("key_filter", {"sort_mode": 1}).load() == {"sort_mode": 0}
+
+    def test_each_unparsable_file_gets_its_own_bad_copy(self, ini_dir):
+        ini_path = ini_dir / "viewer_plugins.ini"
+        for content in ("x = 1\n", "y = 2\n"):
+            ini_path.write_text(content, encoding="utf-8")
+            PluginConfig("s", {"x": 0}).save(x=3)
+        bad_contents = sorted(p.read_text(encoding="utf-8") for p in ini_dir.glob("viewer_plugins.ini.*.bad"))
+        assert bad_contents == ["x = 1\n", "y = 2\n"]
+
+    def test_undecodable_file_is_moved_aside_before_save(self, ini_dir):
+        ini_path = ini_dir / "viewer_plugins.ini"
+        ini_path.write_bytes(b"[s]\nx = \xe3\x81\n")
+        assert PluginConfig("s", {"x": "d"}).load() == {"x": "d"}
+        PluginConfig("s", {"x": "d"}).save(x="new")
+        assert [p.read_bytes() for p in ini_dir.glob("viewer_plugins.ini.*.bad")] == [b"[s]\nx = \xe3\x81\n"]
+        assert PluginConfig("s", {"x": "d"}).load() == {"x": "new"}
+
+    def test_file_that_cannot_be_opened_is_neither_moved_nor_overwritten(self, ini_dir, monkeypatch):
+        ini_path = ini_dir / "viewer_plugins.ini"
+        ini_path.write_text("[s]\nx = 1\n[other]\nkeep = yes\n", encoding="utf-8")
+        monkeypatch.setattr("wafer.core.common.atomic_file._IN_USE_TIMEOUT", 0)
+
+        def locked(*args, **kwargs):
+            raise PermissionError(13, "The process cannot access the file", str(ini_path))
+
+        monkeypatch.setattr("wafer.plugin.config.open", locked, raising=False)
+        assert PluginConfig("s", {"x": 0}).load() == {"x": 0}
+        with pytest.raises(PermissionError):
+            PluginConfig("s", {"x": 0}).save(x=2)
+        monkeypatch.undo()
+        assert ini_path.read_text(encoding="utf-8") == "[s]\nx = 1\n[other]\nkeep = yes\n"
+        assert list(ini_dir.glob("viewer_plugins.ini.*.bad")) == []
+
     def test_update_holds_the_process_lock(self, ini_dir):
         from wafer.core.platform.process_lock import file_lock
         from wafer.plugin.config import update_ini

@@ -439,11 +439,11 @@ def _parser() -> argparse.ArgumentParser:
         PROFILE_ARG,
         choices=[TOOLS_PROFILE],
         default=argparse.SUPPRESS,
-        help=f"Pass {PROFILE_ARG} {TOOLS_PROFILE} so this tool keeps its own logs in that profile instead of the normal Wafer's data folder.",
+        help=f"Required, always {TOOLS_PROFILE}: keeps this tool's own logs out of the normal Wafer's data folder.",
     )
     parser = argparse.ArgumentParser(
         prog="python -m debug.profile_setup",
-        description=f"Prepare, launch and stop debug profiles of Wafer. Tooling that runs this CLI should pass {PROFILE_ARG} {TOOLS_PROFILE}.",
+        description=f"Prepare, launch and stop debug profiles of Wafer. Always pass {PROFILE_ARG} {TOOLS_PROFILE}.",
         parents=[tooling],
         allow_abbrev=False,
     )
@@ -465,7 +465,10 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if not hasattr(args, "profile"):
+        parser.error(f"the following arguments are required: {PROFILE_ARG} {TOOLS_PROFILE}")
     try:
         args.func(args)
     except ValueError as exc:

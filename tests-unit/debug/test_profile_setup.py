@@ -568,7 +568,7 @@ def test_cli_launch_stops_prepares_and_starts_the_profile(tmp_path, monkeypatch)
     monkeypatch.setattr(profile_setup, "ensure_profile", lambda c, *, fresh, on_progress: events.append(("ensure", fresh)) or "debug-main")
     monkeypatch.setattr(profile_setup, "launch_process", lambda c, profile: events.append(("launch", profile)) or 99)
 
-    assert main(["launch", "--checkout", str(checkout), "--fresh"]) == 0
+    assert main(["--profile", "debug-tools", "launch", "--checkout", str(checkout), "--fresh"]) == 0
     assert events == [("stop", "debug-main"), ("ensure", True), ("launch", "debug-main")]
 
 
@@ -584,7 +584,7 @@ def test_cli_rebuild_template_replaces_the_current_template(tmp_path, monkeypatc
 
     monkeypatch.setattr(profile_setup, "build_template", fake_build)
 
-    assert main(["rebuild-template", "--checkout", str(checkout)]) == 0
+    assert main(["--profile", "debug-tools", "rebuild-template", "--checkout", str(checkout)]) == 0
     assert built == [False]
 
 
@@ -599,12 +599,15 @@ def test_cli_accepts_the_tooling_profile_before_or_after_the_command(tmp_path, m
     assert main(["launch", "--checkout", str(checkout), "--profile", "debug-tools"]) == 0
     assert main(["stop", "debug-main", "--profile", "debug-tools"]) == 0
     assert events == ["debug-main", "debug-main", "debug-main"]
-    with pytest.raises(SystemExit):
-        main(["launch", "--checkout", str(checkout), "--profile", "debug-main"])
+    for argv in (["launch", "--checkout", str(checkout), "--profile", "debug-main"], ["launch", "--checkout", str(checkout)], ["stop", "debug-main"], ["forget", "debug-main"]):
+        with pytest.raises(SystemExit) as exc:
+            main(argv)
+        assert exc.value.code != 0
+    assert events == ["debug-main", "debug-main", "debug-main"]
     for argv in (["--prof", "debug-tools", "stop", "debug-main"], ["stop", "debug-main", "--prof", "debug-tools"]):
         with pytest.raises(SystemExit):
             main(argv)
-    assert "--profile debug-tools" in profile_setup._parser().format_help()
+    assert "Required, always debug-tools" in " ".join(profile_setup._parser().format_help().split())
 
 
 def test_ensure_profile_works_from_the_tooling_profile(tmp_path, monkeypatch, app_data, sample):
@@ -624,8 +627,8 @@ def test_ensure_profile_works_from_the_tooling_profile(tmp_path, monkeypatch, ap
 
 
 def test_cli_reports_an_invalid_checkout(tmp_path):
-    assert main(["launch", "--checkout", str(tmp_path / "missing")]) != 0
-    assert main(["stop", "normal"]) != 0
+    assert main(["--profile", "debug-tools", "launch", "--checkout", str(tmp_path / "missing")]) != 0
+    assert main(["--profile", "debug-tools", "stop", "normal"]) != 0
 
 
 @pytest.mark.parametrize("name", ["main", "Main", "template-build", "tools", "Tools"])

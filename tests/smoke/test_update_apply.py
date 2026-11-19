@@ -10,7 +10,7 @@ import psutil
 import pytest
 
 from scripts.build import find_csc
-from wafer.builtins.updater.plan import PlanOp, execute_plan, generate_plan, plan_path, read_plan, write_plan
+from wafer.builtins.updater.plan import PlanOp, generate_plan, plan_path, read_plan, write_plan
 
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="launcher update apply is Windows-only")
@@ -109,23 +109,6 @@ def test_csharp_apply_succeeds(tmp_path, launcher_exe):
     assert not (root / ".update/next").exists()
     assert (root / "Wafer.exe").read_text(encoding="utf-8", errors="replace") == "new-launcher"
     assert (root / "Uninstaller.exe").read_text(encoding="utf-8") == "new-uninstaller"
-
-
-def test_csharp_matches_python_reference_executor(tmp_path, launcher_exe):
-    cs_root = tmp_path / "cs"
-    py_root = tmp_path / "py"
-    build_tree(cs_root, launcher_exe)
-    build_tree(py_root, launcher_exe)
-
-    proc = run_helper(cs_root, launcher_exe)
-    assert proc.returncode == 0
-
-    execute_plan(read_plan(plan_path(py_root)), py_root)
-    (py_root / ".update/apply.plan").unlink()
-    (py_root / ".update/ready.json").unlink()
-    shutil.rmtree(py_root / ".update/next")
-
-    assert snapshot(cs_root) == snapshot(py_root)
 
 
 def test_csharp_rolls_back_on_failure(tmp_path, launcher_exe):

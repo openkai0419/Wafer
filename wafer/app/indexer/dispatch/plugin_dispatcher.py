@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 
 from ....core.db.db_utils import open_readonly
+from ....core.db.file_db import read_pending_sources
 from ....core.logs import AppLogger
 from ....core.profiling import profiler
 from ....core.platform.process import AppProcess
@@ -164,19 +165,7 @@ class PluginDispatcher:
             AppLogger.info(f"{self._tag} Sent {len(paths)} paths to {dst}")
 
     def _read_pending(self, status_name: str, limit: int) -> list[tuple]:
-        cur = self._read_conn.cursor()
-        try:
-            cur.execute(
-                """SELECT cs.source, s.modified, s.size, s.file_hash
-                FROM collection_status cs
-                JOIN sources s ON s.source = cs.source
-                WHERE cs.collector = ? AND cs.status = 'pending'
-                LIMIT ?""",
-                (status_name, limit),
-            )
-            return cur.fetchall()
-        finally:
-            cur.close()
+        return read_pending_sources(self._read_conn, status_name, limit)
 
     def _build_batch(self, plugin: str, status_name: str, rows: list[tuple]) -> dict | None:
         return {

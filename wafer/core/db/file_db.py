@@ -133,6 +133,31 @@ def _chunked(values: Sequence, size: int = 900):
         yield values[i : i + size]
 
 
+def read_existing_sources(conn: sqlite3.Connection) -> dict[str, tuple[float, int]]:
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT source, modified, size FROM sources")
+        return {source: (mtime, size) for source, mtime, size in cur.fetchall()}
+    finally:
+        cur.close()
+
+
+def read_pending_sources(conn: sqlite3.Connection, collector: str, limit: int) -> list[tuple[str, float, int, str]]:
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """SELECT cs.source, s.modified, s.size, s.file_hash
+            FROM collection_status cs
+            JOIN sources s ON s.source = cs.source
+            WHERE cs.collector = ? AND cs.status = 'pending'
+            LIMIT ?""",
+            (collector, limit),
+        )
+        return cur.fetchall()
+    finally:
+        cur.close()
+
+
 _SQL_UPSERT_SOURCES = """INSERT INTO sources (source, file_hash, size, modified, created, collected)
     VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(source) DO UPDATE SET
@@ -420,18 +445,11 @@ class FileDB:
 
     @profiler.profile
     def load_existing_sources(self) -> dict[str, tuple[float, int]]:
-        result: dict[str, tuple[float, int]] = {}
         try:
-            cur = self.get_reader_cursor()
-            try:
-                cur.execute("SELECT source, modified, size FROM sources")
-                for source, mtime, size in cur.fetchall():
-                    result[source] = (mtime, size)
-            finally:
-                cur.close()
+            return read_existing_sources(self.read_conn)
         except Exception as e:
             AppLogger.warning(f"Failed to load previous data from DB: {e}", exc=e)
-        return result
+            return {}
 
     @staticmethod
     def _hashes_of_sources(cur, sources: Sequence[str]) -> set[str]:
@@ -780,19 +798,7 @@ class FileDB:
 
     @profiler.profile
     def get_pending_sources(self, collector, limit=5000):
-        cur = self.get_reader_cursor()
-        try:
-            cur.execute(
-                """SELECT cs.source, s.modified, s.size
-                FROM collection_status cs
-                JOIN sources s ON s.source = cs.source
-                WHERE cs.collector = ? AND cs.status = 'pending'
-                LIMIT ?""",
-                (collector, limit),
-            )
-            return cur.fetchall()
-        finally:
-            cur.close()
+        return read_pending_sources(self.read_conn, collector, limit)
 
     @profiler.profile
     def mark_dispatched(self, sources, collector):

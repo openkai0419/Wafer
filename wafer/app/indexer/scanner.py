@@ -9,7 +9,7 @@ from pathlib import Path
 from collections.abc import Callable, Iterable, Sequence
 
 from ...core.db.db_utils import build_basic_entries, escape_like, open_readonly
-from ...core.db.file_db import SOURCE_TRIGGER_KEYS
+from ...core.db.file_db import SOURCE_TRIGGER_KEYS, read_existing_sources
 from ...core.logs import AppLogger
 from ...core.common.folder_scan import JunctionFilter
 from ...core.common.paths import child_prefix, normalize_path
@@ -377,16 +377,11 @@ class DirectoryScanner:
             AppLogger.info(f'[Scanner] Backfill parser: {len(sources)} pending for "{status_name}"')
 
     def _load_existing_sources(self) -> dict[str, tuple[float, int]]:
-        result: dict[str, tuple[float, int]] = {}
         try:
-            cur = self._read_conn.cursor()
-            cur.execute("SELECT source, modified, size FROM sources")
-            for source, mtime, size in cur.fetchall():
-                result[source] = (mtime, size)
-            cur.close()
+            return read_existing_sources(self._read_conn)
         except Exception as e:
             AppLogger.warning(f"[Scanner] Failed to load existing sources: {e}", exc=e)
-        return result
+            return {}
 
     def _scan_directory(self, root_path: str, unreadable: list[str] | None = None):
         return scan_directory(root_path, self._is_excluded, self._progress, unreadable, self._junctions([root_path]))

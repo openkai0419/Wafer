@@ -8,6 +8,8 @@ from wafer.core.db.file_db import (
     _table_signature,
     _expected_table_signature,
     _TABLES,
+    read_existing_sources,
+    read_pending_sources,
     schema_columns,
     source_tree_condition,
 )
@@ -354,6 +356,18 @@ def test_insert_pending_collection(tmp_path):
     assert len(rows) == 2
     sources = {r[0] for r in rows}
     assert sources == {"src1", "src2"}
+    db.close()
+
+
+def test_pending_sources_carry_what_a_dispatch_batch_needs(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    db.upsert_basic_sources([("src1", "hash1", 100, 1.0)], [("c:/a.jpg", "src1", None)])
+    db.insert_pending_collection(["src1"], ["exif"])
+    assert db.get_pending_sources("exif") == [("src1", 1.0, 100, "hash1")]
+    assert read_pending_sources(db.read_conn, "exif", 10) == [("src1", 1.0, 100, "hash1")]
+    assert read_existing_sources(db.read_conn) == {"src1": (1.0, 100)}
     db.close()
 
 

@@ -1027,6 +1027,11 @@ class TestPortFile:
     def test_other_profile_uses_its_data_root(self, tmp_path):
         assert transport.port_file_for(DEBUG_PROFILE) == tmp_path / "profiles" / DEBUG_PROFILE / "ipc" / "broker.json"
 
+    def test_current_profile_in_another_case_uses_the_module_port_file(self, tmp_path, monkeypatch, running_as_debug_profile):
+        replaced = tmp_path / "elsewhere" / "broker.json"
+        monkeypatch.setattr("wafer.core.ipc.transport._PORT_FILE", replaced)
+        assert transport.port_file_for("debug-X") == replaced
+
     def test_read_and_write_an_explicit_port_file(self, tmp_path):
         port_file = tmp_path / "other" / "broker.json"
         transport.write_broker_port(12345, port_file=port_file)
@@ -1071,6 +1076,17 @@ class TestBrokerIdentity:
                 assert reply.payload["profile"] == (profile or "")
             assert broker.peer_counts() == {}
             assert len([text for text in caplog_applogger.warnings if "probe-1" in text]) == 1
+        finally:
+            broker.stop()
+
+    def test_broker_accepts_its_profile_in_another_case(self, raw_dealer):
+        broker = Broker(profile="debug-foo")
+        broker.start()
+        try:
+            reply = _register(raw_dealer(broker.port), app="wafer", profile="debug-Foo")
+            assert reply.topic == "mgmt.registered"
+            assert reply.payload["profile"] == "debug-foo"
+            assert broker.peer_counts() == {"probe": 1}
         finally:
             broker.stop()
 
@@ -1144,6 +1160,18 @@ class TestNodeJoinsOnlyItsOwnBroker:
         try:
             node.start()
             assert node.wait_registered(3.0)
+        finally:
+            node.stop()
+            broker.stop()
+
+    def test_node_registers_with_its_profile_in_another_case(self):
+        broker = Broker(profile="debug-foo")
+        broker.start()
+        node = Node("probe", profile="debug-Foo")
+        try:
+            node.start()
+            assert node.wait_registered(3.0)
+            assert broker.peer_counts() == {"probe": 1}
         finally:
             node.stop()
             broker.stop()
@@ -1240,6 +1268,10 @@ class TestNodeJoinsOnlyItsOwnBroker:
                 Node("debug", profile=None)
             assert Node("debug", profile=DEBUG_PROFILE).profile == DEBUG_PROFILE
             assert Node("debug").profile == "debug-tools"
+            monkeypatch.setattr(sys, "argv", [sys.argv[0], "--profile", "debug-Tools"])
+            current_profile.cache_clear()
+            with pytest.raises(RuntimeError, match="debug-tools"):
+                Node("debug", profile=None)
         finally:
             current_profile.cache_clear()
 

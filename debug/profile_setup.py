@@ -10,6 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
 
+from debug import tools_profile_arg
 from wafer.app.indexer.scanner import files_in_scope
 from wafer.core.common.paths import (
     debug_profiles_dir,
@@ -20,7 +21,7 @@ from wafer.core.common.paths import (
     sample_root,
     scratch_root,
 )
-from wafer.core.common.profile import PROFILE_ARG, PROFILE_PREFIX, TOOLS_PROFILE, validate_profile_name
+from wafer.core.common.profile import PROFILE_ARG, PROFILE_PREFIX, TOOLS_PROFILE, same_profile, validate_profile_name
 from wafer.core.db.db_utils import open_readonly
 from wafer.core.db.setting_db import SettingDB
 from wafer.core.ipc.node import Node
@@ -112,10 +113,11 @@ def profile_name_for(checkout: Path) -> str:
     main = main_root_of(path)
     if _same_name(str(path), str(main)):
         return MAIN_PROFILE
+    profile = f"{PROFILE_PREFIX}{path.name}"
     for reserved, used_by in RESERVED_WORKTREE_NAMES.items():
-        if path.name.casefold() == reserved.casefold():
+        if same_profile(profile, f"{PROFILE_PREFIX}{reserved}"):
             raise ValueError(f"Worktree name {path.name!r} is reserved: {PROFILE_PREFIX}{reserved} is {used_by}")
-    return validate_profile_name(f"{PROFILE_PREFIX}{path.name}")
+    return validate_profile_name(profile)
 
 
 def _create_statements(source: str) -> list[str]:
@@ -453,6 +455,7 @@ def _parser() -> argparse.ArgumentParser:
     tooling = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
     tooling.add_argument(
         PROFILE_ARG,
+        type=tools_profile_arg,
         choices=[TOOLS_PROFILE],
         default=argparse.SUPPRESS,
         help=f"Required, always {TOOLS_PROFILE}: keeps this tool's own logs out of the normal Wafer's data folder.",

@@ -4,7 +4,7 @@ import sys
 import threading
 import psutil
 from ...constants import TRAY_LOCK_NAME
-from ..common.profile import PROFILE_PREFIX, current_profile, profile_args, profile_from_args, split_profile_args, validate_profile_name
+from ..common.profile import PROFILE_PREFIX, current_profile, profile_args, profile_from_args, same_profile, split_profile_args, validate_profile_name
 from ..logs import AppLogger
 from .process_lock import SafeProcessLock
 
@@ -172,7 +172,7 @@ class ProcessMatcher:
                     proc_profile, proc_args = split_profile_args(proc_args)
                 except ValueError:
                     continue
-                if proc_profile != self.profile:
+                if not same_profile(proc_profile, self.profile):
                     continue
                 proc_args_set = set(proc_args)
                 if exclude_args and not exclude_args.isdisjoint(proc_args_set):
@@ -399,7 +399,7 @@ class AppProcess:
             if _main_script_of(cmdline) is None:
                 continue
             try:
-                if profile_from_args(cmdline) == profile:
+                if same_profile(profile_from_args(cmdline), profile):
                     procs.append(p)
             except ValueError:
                 continue

@@ -779,6 +779,7 @@ def test_server_argv_selects_the_tooling_profile(app_data, monkeypatch):
     finally:
         current_profile.cache_clear()
     assert mcp_server.parse_args(["--profile", TOOLS_PROFILE]).profile == TOOLS_PROFILE
+    assert mcp_server.parse_args(["--profile", "debug-Tools"]).profile == TOOLS_PROFILE
     for argv in ([], ["--profile", "debug-main"], ["--prof", TOOLS_PROFILE]):
         with pytest.raises(SystemExit):
             mcp_server.parse_args(argv)

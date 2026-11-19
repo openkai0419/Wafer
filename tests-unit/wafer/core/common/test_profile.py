@@ -24,6 +24,7 @@ from wafer.core.common.profile import (
     profile_args,
     profile_from_args,
     profile_label,
+    same_profile,
     split_profile_args,
     validate_profile_name,
 )
@@ -93,6 +94,28 @@ def test_invalid_profile_names_are_rejected(name):
 def test_valid_profile_name_is_returned_unchanged():
     assert validate_profile_name("debug-A_b-1") == "debug-A_b-1"
     assert PROFILE_PREFIX == "debug-"
+
+
+@pytest.mark.parametrize(
+    ("a", "b", "same"),
+    [
+        ("debug-foo", "debug-foo", True),
+        ("debug-Foo", "debug-foo", True),
+        ("debug-FOO_1", "debug-foo_1", True),
+        ("debug-foo", "debug-bar", False),
+        (None, None, True),
+        (None, "debug-foo", False),
+        ("debug-foo", None, False),
+    ],
+)
+def test_same_profile_ignores_case_only(a, b, same):
+    assert same_profile(a, b) is same
+    assert same_profile(b, a) is same
+
+
+def test_profile_name_keeps_its_case():
+    assert validate_profile_name("debug-Foo") == "debug-Foo"
+    assert profile_from_args(["main.py", "--profile", "debug-Foo"]) == "debug-Foo"
 
 
 def test_profile_args():
@@ -261,3 +284,9 @@ def test_tools_profile_allows_the_scratch_of_every_debug_profile_only(monkeypatc
     assert not profile_allows_folder(str(tmp_path / "other"))
     _use_profile(monkeypatch, "debug-task")
     assert not profile_allows_folder(str(scratch_root("debug-other")))
+
+
+def test_tools_profile_in_another_case_is_the_tools_profile(monkeypatch, tmp_path, tmp_app_data):
+    monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(tmp_path / "s"))
+    _use_profile(monkeypatch, "debug-Tools")
+    assert profile_allows_folder(str(scratch_root("debug-task")))

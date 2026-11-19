@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from platformdirs import PlatformDirs
 from ...constants import APP_DATA_DIR_NAME
-from .profile import PROFILE_PREFIX, TOOLS_PROFILE, current_profile
+from .profile import PROFILE_PREFIX, TOOLS_PROFILE, current_profile, same_profile
 
 DEBUG_PROFILES_DIR_NAME = f"{APP_DATA_DIR_NAME}-debug"
 
@@ -155,7 +155,7 @@ def profile_allows_folder(path: str) -> bool:
     profile = current_profile()
     if profile is None:
         return True
-    if profile == TOOLS_PROFILE and _is_in_any_profile_scratch(path):
+    if same_profile(profile, TOOLS_PROFILE) and _is_in_any_profile_scratch(path):
         return True
     return _is_within(path, sample_root()) or _is_within(path, scratch_root(profile))
 

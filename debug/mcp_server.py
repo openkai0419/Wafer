@@ -12,9 +12,9 @@ from typing import Any
 import psutil
 from mcp.server.mcpserver import Image, MCPServer
 
-from debug import profile_setup
+from debug import profile_setup, tools_profile_arg
 from wafer.core.common.paths import profile_data_root
-from wafer.core.common.profile import PROFILE_ARG, TOOLS_PROFILE, current_profile, validate_profile_name
+from wafer.core.common.profile import PROFILE_ARG, TOOLS_PROFILE, current_profile, same_profile, validate_profile_name
 from wafer.core.ipc.node import Node
 from wafer.core.logs import AppLogger
 from wafer.core.platform.process import AppProcess
@@ -312,7 +312,7 @@ class DebugSession:
     def _ensure_node(self, profile: str) -> Node:
         validate_profile_name(profile)
         with self._lock:
-            if self._node is not None and self._node.profile != profile:
+            if self._node is not None and not same_profile(self._node.profile, profile):
                 self._close_node()
             if self._node is None:
                 self._node = Node(NODE_ROLE, profile=profile)
@@ -478,6 +478,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         PROFILE_ARG,
         required=True,
+        type=tools_profile_arg,
         choices=[TOOLS_PROFILE],
         help=f"Always {TOOLS_PROFILE}: keeps this server's own data and logs out of the normal Wafer's data folder.",
     )

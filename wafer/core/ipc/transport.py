@@ -10,7 +10,7 @@ import zmq
 
 from ..logs import debug_non_recursive
 from ..common.paths import profile_data_root, resolve_data_path
-from ..common.profile import current_profile
+from ..common.profile import current_profile, same_profile
 
 
 class Priority:
@@ -52,11 +52,12 @@ def peer_identity(payload: dict) -> tuple[Any, Any]:
 
 
 def is_own_peer(payload: dict, profile: str | None) -> bool:
-    return peer_identity(payload) == (APP_ID, profile or "")
+    app, peer_profile = peer_identity(payload)
+    return app == APP_ID and isinstance(peer_profile, str) and same_profile(peer_profile, profile)
 
 
 def port_file_for(profile: str | None) -> Path:
-    if profile == current_profile():
+    if same_profile(profile, current_profile()):
         return _PORT_FILE
     return profile_data_root(profile) / "ipc" / "broker.json"
 

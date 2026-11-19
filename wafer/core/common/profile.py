@@ -15,6 +15,10 @@ def validate_profile_name(name: str) -> str:
     return name
 
 
+def same_profile(a: str | None, b: str | None) -> bool:
+    return (a or "").casefold() == (b or "").casefold()
+
+
 def split_profile_args(argv: list[str]) -> tuple[str | None, list[str]]:
     args = list(argv)
     values: list[str] = []

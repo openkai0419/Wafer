@@ -168,16 +168,16 @@ def test_remove_skips_forget_for_names_that_never_have_a_debug_profile(root, mon
 
 def test_debug_profile_names_match_the_profile_rules():
     from debug.profile_setup import RESERVED_WORKTREE_NAMES
-    from wafer.core.common.profile import PROFILE_PREFIX, validate_profile_name
+    from wafer.core.common.profile import PROFILE_PREFIX, same_profile, validate_profile_name
 
     assert worktree.RESERVED_DEBUG_NAMES == set(RESERVED_WORKTREE_NAMES)
-    for name in ["task", "fix-v1.2", "a b", "x_y-Z9", "tools", ""]:
+    for name in ["task", "fix-v1.2", "a b", "x_y-Z9", "tools", "Tools", "MAIN", "Template-Build", ""]:
         try:
-            validate_profile_name(f"{PROFILE_PREFIX}{name}")
-            valid = True
+            profile = validate_profile_name(f"{PROFILE_PREFIX}{name}")
+            reserved = any(same_profile(profile, f"{PROFILE_PREFIX}{r}") for r in RESERVED_WORKTREE_NAMES)
         except ValueError:
-            valid = False
-        assert worktree.has_debug_profile(name) == (valid and name not in RESERVED_WORKTREE_NAMES), name
+            profile, reserved = None, False
+        assert worktree.has_debug_profile(name) == (profile is not None and not reserved), name
 
 
 def test_finish_skips_forget_for_a_name_that_is_not_a_profile_suffix(root, monkeypatch):

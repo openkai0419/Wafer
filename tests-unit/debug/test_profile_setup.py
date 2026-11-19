@@ -676,12 +676,13 @@ def test_cli_accepts_the_tooling_profile_before_or_after_the_command(tmp_path, m
     assert main(["--profile", "debug-tools", "launch", "--checkout", str(checkout)]) == 0
     assert main(["launch", "--checkout", str(checkout), "--profile", "debug-tools"]) == 0
     assert main(["stop", "debug-main", "--profile", "debug-tools"]) == 0
-    assert events == ["debug-main", "debug-main", "debug-main"]
+    assert main(["--profile", "debug-TOOLS", "stop", "debug-main"]) == 0
+    assert events == ["debug-main", "debug-main", "debug-main", "debug-main"]
     for argv in (["launch", "--checkout", str(checkout), "--profile", "debug-main"], ["launch", "--checkout", str(checkout)], ["stop", "debug-main"], ["forget", "debug-main"]):
         with pytest.raises(SystemExit) as exc:
             main(argv)
         assert exc.value.code != 0
-    assert events == ["debug-main", "debug-main", "debug-main"]
+    assert events == ["debug-main", "debug-main", "debug-main", "debug-main"]
     for argv in (["--prof", "debug-tools", "stop", "debug-main"], ["stop", "debug-main", "--prof", "debug-tools"]):
         with pytest.raises(SystemExit):
             main(argv)

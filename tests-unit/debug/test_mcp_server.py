@@ -162,6 +162,8 @@ def test_tools_without_running_profile_return_launch_hint(app_data, processes, n
         "click": {"widget": "ok"},
         "type_text": {"widget": "search", "text": "cat"},
         "key": {"sequence": "Ctrl+A"},
+        "mouse": {"widget": "grid"},
+        "wheel": {"widget": "grid", "dy": -1},
         "wait_idle": {"timeout": 0.1},
     }
     for name, args in calls.items():
@@ -274,6 +276,19 @@ def test_tools_map_arguments_to_agent_ops(app_data, processes, node):
         ("modal_click", {"text": "OK"}, "debug_agent-20", {"op": "modal_click", "args": {"text": "OK"}}),
         ("type_text", {"widget": "search", "text": "cat"}, "debug_agent-20", {"op": "type_text", "args": {"target": "search", "text": "cat"}}),
         ("key", {"sequence": "Ctrl+A", "target": "tray:10"}, "debug_agent-10", {"op": "key", "args": {"target": None, "sequence": "Ctrl+A"}}),
+        (
+            "mouse",
+            {"widget": "grid", "kind": "double", "button": "right", "x": 3, "y": 4, "modifiers": "Ctrl"},
+            "debug_agent-20",
+            {"op": "mouse", "args": {"target": "grid", "kind": "double", "button": "right", "x": 3, "y": 4, "modifiers": "Ctrl"}},
+        ),
+        ("mouse", {"widget": "grid"}, "debug_agent-20", {"op": "mouse", "args": {"target": "grid", "kind": "click", "button": "left", "x": None, "y": None, "modifiers": ""}}),
+        (
+            "wheel",
+            {"widget": "grid", "dy": -2, "dx": 1, "x": 5, "y": 6, "modifiers": "Shift"},
+            "debug_agent-20",
+            {"op": "wheel", "args": {"target": "grid", "dy": -2, "dx": 1, "x": 5, "y": 6, "modifiers": "Shift"}},
+        ),
     ]
     for name, args, dst, payload in calls:
         before = len(node.instances[0].requests) if node.instances else 0

@@ -212,6 +212,154 @@ def test_type_text_and_key(qtbot, window):
     qtbot.waitUntil(lambda: edit.text() == "ab")
 
 
+class Pad(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("pad")
+        self.setFixedSize(120, 80)
+        self.events = []
+
+    def mousePressEvent(self, event):
+        self.events.append(("press", event.button(), event.position().toPoint(), event.modifiers()))
+
+    def mouseReleaseEvent(self, event):
+        self.events.append(("release", event.button(), event.position().toPoint(), event.modifiers()))
+
+    def mouseDoubleClickEvent(self, event):
+        self.events.append(("double", event.button(), event.position().toPoint(), event.modifiers()))
+
+    def mouseMoveEvent(self, event):
+        self.events.append(("move", event.buttons(), event.position().toPoint(), event.modifiers()))
+
+    def wheelEvent(self, event):
+        self.events.append(("wheel", event.angleDelta(), event.position().toPoint(), event.modifiers()))
+
+
+@pytest.fixture
+def pad(qtbot, window):
+    widget = Pad()
+    widget.setMouseTracking(True)
+    window.layout().addWidget(widget)
+    qtbot.waitUntil(widget.isVisible)
+    return widget
+
+
+@pytest.fixture
+def long_list(qtbot, window):
+    widget = QtWidgets.QListWidget()
+    widget.setObjectName("list")
+    widget.setFixedHeight(60)
+    widget.addItems([f"item {i}" for i in range(200)])
+    widget.contextMenuRequested = []
+    widget.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+    widget.customContextMenuRequested.connect(widget.contextMenuRequested.append)
+    window.layout().addWidget(widget)
+    qtbot.waitUntil(widget.isVisible)
+    return widget
+
+
+def test_mouse_click_defaults_to_the_left_button_at_the_center(qtbot, pad):
+    center = pad.rect().center()
+    result = qt_inspect.mouse("pad")
+    assert result["deferred"] is True and result["position"] == [center.x(), center.y()]
+    assert pad.events == []
+    qtbot.waitUntil(lambda: [e[0] for e in pad.events] == ["press", "release"])
+    assert all(e[1] == QtCore.Qt.LeftButton and e[2] == center for e in pad.events)
+
+
+def test_mouse_sends_each_kind_with_button_position_and_modifiers(qtbot, pad):
+    qt_inspect.mouse("pad", kind="press", button="right", x=5, y=6, modifiers="Ctrl+Shift")
+    qt_inspect.mouse("pad", kind="move", x=30, y=20)
+    qt_inspect.mouse("pad", kind="release", button="right", x=30, y=20)
+    qt_inspect.mouse("pad", kind="double", button="middle", x=10, y=10)
+    qtbot.waitUntil(lambda: "double" in [e[0] for e in pad.events])
+    press = next(e for e in pad.events if e[0] == "press")
+    assert press[1] == QtCore.Qt.RightButton and press[2] == QtCore.QPoint(5, 6)
+    assert press[3] == QtCore.Qt.ControlModifier | QtCore.Qt.ShiftModifier
+    assert any(e[0] == "move" and e[2] == QtCore.QPoint(30, 20) for e in pad.events)
+    assert any(e[0] == "release" and e[1] == QtCore.Qt.RightButton and e[2] == QtCore.QPoint(30, 20) for e in pad.events)
+    assert any(e[0] == "double" and e[1] == QtCore.Qt.MiddleButton for e in pad.events)
+
+
+def test_mouse_right_click_opens_the_context_menu(qtbot, long_list):
+    qt_inspect.mouse("list", button="right", x=20, y=10)
+    qtbot.waitUntil(lambda: len(long_list.contextMenuRequested) == 1)
+    assert long_list.contextMenuRequested[0] == long_list.viewport().mapFrom(long_list, QtCore.QPoint(20, 10))
+
+
+def test_mouse_double_click_on_a_list_item(qtbot, long_list):
+    activated = []
+    long_list.itemDoubleClicked.connect(lambda item: activated.append(item.text()))
+    rect = long_list.visualItemRect(long_list.item(1))
+    point = long_list.viewport().mapTo(long_list, rect.center())
+    qt_inspect.mouse("list", kind="double", x=point.x(), y=point.y())
+    qtbot.waitUntil(lambda: activated == ["item 1"])
+
+
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        ({"kind": "drag"}, "kind"),
+        ({"button": "fourth"}, "button"),
+        ({"modifiers": "Hyper"}, "modifier"),
+        ({"x": 500, "y": 5}, "outside"),
+        ({"x": 5}, "both"),
+    ],
+)
+def test_mouse_rejects_bad_arguments(qtbot, pad, kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        qt_inspect.mouse("pad", **kwargs)
+
+
+def test_wheel_scrolls_a_list(qtbot, long_list):
+    bar = long_list.verticalScrollBar()
+    assert bar.value() == 0
+    result = qt_inspect.wheel("list", dy=-3)
+    assert result["deferred"] is True
+    qtbot.waitUntil(lambda: bar.value() > 0)
+
+
+def test_wheel_sends_notches_position_and_modifiers(qtbot, pad):
+    qt_inspect.wheel("pad", dy=2, dx=-1, x=7, y=8, modifiers="Ctrl")
+    qtbot.waitUntil(lambda: len(pad.events) == 1)
+    kind, delta, position, modifiers = pad.events[0]
+    assert kind == "wheel" and delta == QtCore.QPoint(-120, 240) and position == QtCore.QPoint(7, 8)
+    assert modifiers == QtCore.Qt.ControlModifier
+
+
+def test_wheel_needs_a_delta(qtbot, pad):
+    with pytest.raises(ValueError, match="dy or dx"):
+        qt_inspect.wheel("pad")
+
+
+def test_mouse_and_wheel_on_a_disabled_widget_raise(qtbot, pad):
+    pad.setEnabled(False)
+    with pytest.raises(ValueError, match="disabled"):
+        qt_inspect.mouse("pad")
+    with pytest.raises(ValueError, match="disabled"):
+        qt_inspect.wheel("pad", dy=1)
+
+
+def test_mouse_and_wheel_behind_a_modal_are_blocked(qtbot, pad):
+    dialog = make_rename_dialog()
+    errors = []
+
+    def attempt():
+        try:
+            for action in (lambda: qt_inspect.mouse("pad"), lambda: qt_inspect.wheel("pad", dy=1)):
+                try:
+                    action()
+                except LookupError as e:
+                    errors.append(str(e))
+        finally:
+            dialog.reject()
+
+    QtCore.QTimer.singleShot(0, attempt)
+    assert dialog.exec() == 0
+    assert len(errors) == 2 and all("blocked by modal 'Rename'" in error for error in errors)
+    assert pad.events == []
+
+
 def test_get_property_reads_qt_properties_and_getters(qtbot, window):
     window.findChild(QtWidgets.QLineEdit).setText("hello")
     assert qt_inspect.get_property("query", "text") == "hello"

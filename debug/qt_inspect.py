@@ -16,6 +16,16 @@ TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 DEFAULT_TREE_DEPTH = 3
 DEFAULT_SCREENSHOT_SIDE = 1600
 FIELD_TYPES = (QtWidgets.QLineEdit, QtWidgets.QComboBox, QtWidgets.QAbstractSpinBox, QtWidgets.QPlainTextEdit, QtWidgets.QTextEdit)
+WHEEL_NOTCH = 120
+MOUSE_BUTTONS = {"left": QtCore.Qt.LeftButton, "right": QtCore.Qt.RightButton, "middle": QtCore.Qt.MiddleButton}
+MODIFIER_NAMES = {
+    "ctrl": QtCore.Qt.ControlModifier,
+    "control": QtCore.Qt.ControlModifier,
+    "shift": QtCore.Qt.ShiftModifier,
+    "alt": QtCore.Qt.AltModifier,
+    "meta": QtCore.Qt.MetaModifier,
+    "win": QtCore.Qt.MetaModifier,
+}
 
 
 class AmbiguousTargetError(LookupError):
@@ -171,6 +181,29 @@ def key(target: str | None, sequence: str) -> dict:
     return {**_describe(widget), "deferred": True}
 
 
+def mouse(target: str, kind: str = "click", button: str = "left", x: int | None = None, y: int | None = None, modifiers: str = "") -> dict:
+    send = MOUSE_KINDS.get(kind)
+    if send is None:
+        raise ValueError(f"kind must be one of {sorted(MOUSE_KINDS)}, not {kind!r}")
+    qt_button = MOUSE_BUTTONS.get(button)
+    if qt_button is None:
+        raise ValueError(f"button must be one of {sorted(MOUSE_BUTTONS)}, not {button!r}")
+    qt_modifiers = _modifiers(modifiers)
+    widget, point, receiver, local = _pointer_target(target, x, y)
+    _later(receiver, lambda: send(receiver, qt_button, qt_modifiers, local), f"mouse {kind} {target!r}")
+    return {**_describe(widget), "position": [point.x(), point.y()], "deferred": True}
+
+
+def wheel(target: str, dy: int = 0, dx: int = 0, x: int | None = None, y: int | None = None, modifiers: str = "") -> dict:
+    if not dy and not dx:
+        raise ValueError("wheel needs dy or dx (notches; negative dy scrolls down)")
+    qt_modifiers = _modifiers(modifiers)
+    widget, point, receiver, local = _pointer_target(target, x, y)
+    delta = QtCore.QPoint(dx * WHEEL_NOTCH, dy * WHEEL_NOTCH)
+    _later(receiver, lambda: _send_wheel(receiver, local, delta, qt_modifiers), f"wheel {target!r}")
+    return {**_describe(widget), "position": [point.x(), point.y()], "deferred": True}
+
+
 def find_widget(target: str, roots: list[QtWidgets.QWidget] | None = None, prefer: tuple[type, ...] = ()) -> QtWidgets.QWidget:
     roots = _search_roots() if roots is None else roots
     for root in roots:
@@ -296,6 +329,76 @@ def _later(widget: QtWidgets.QWidget, action: Callable[[], Any], what: str) -> N
             AppLogger.warning(f"[debug] {what} failed", exc=e)
 
     QtCore.QTimer.singleShot(0, run)
+
+
+def _modifiers(text: str) -> QtCore.Qt.KeyboardModifier:
+    combined = QtCore.Qt.NoModifier
+    for name in filter(None, (part.strip().lower() for part in text.split("+"))):
+        modifier = MODIFIER_NAMES.get(name)
+        if modifier is None:
+            raise ValueError(f"unknown modifier {name!r}; use {'/'.join(sorted(MODIFIER_NAMES))} joined by '+'")
+        combined |= modifier
+    return combined
+
+
+def _pointer_target(target: str, x: int | None, y: int | None) -> tuple[QtWidgets.QWidget, QtCore.QPoint, QtWidgets.QWidget, QtCore.QPoint]:
+    widget = _reachable_widget(target, ())
+    point = _point_in(widget, x, y)
+    _require_enabled(widget.isEnabled(), target)
+    receiver, local = _pointer_receiver(widget, point)
+    return widget, point, receiver, local
+
+
+def _point_in(widget: QtWidgets.QWidget, x: int | None, y: int | None) -> QtCore.QPoint:
+    if (x is None) != (y is None):
+        raise ValueError("give both x and y, or neither for the center")
+    if x is None:
+        return widget.rect().center()
+    point = QtCore.QPoint(x, y)
+    if not widget.rect().contains(point):
+        raise ValueError(f"({x}, {y}) is outside {_label(widget)} (size {widget.width()}x{widget.height()})")
+    return point
+
+
+def _pointer_receiver(widget: QtWidgets.QWidget, point: QtCore.QPoint) -> tuple[QtWidgets.QWidget, QtCore.QPoint]:
+    if isinstance(widget, QtWidgets.QAbstractScrollArea):
+        viewport = widget.viewport()
+        local = viewport.mapFrom(widget, point)
+        if viewport.rect().contains(local):
+            return viewport, local
+    return widget, point
+
+
+def _mouse_click(widget: QtWidgets.QWidget, button: QtCore.Qt.MouseButton, modifiers: QtCore.Qt.KeyboardModifier, point: QtCore.QPoint) -> None:
+    QTest.mousePress(widget, button, modifiers, point)
+    _mouse_release(widget, button, modifiers, point)
+
+
+def _mouse_double(widget: QtWidgets.QWidget, button: QtCore.Qt.MouseButton, modifiers: QtCore.Qt.KeyboardModifier, point: QtCore.QPoint) -> None:
+    QTest.mousePress(widget, button, modifiers, point)
+    QTest.mouseRelease(widget, button, modifiers, point)
+    QTest.mouseDClick(widget, button, modifiers, point)
+    QTest.mouseRelease(widget, button, modifiers, point)
+
+
+def _mouse_release(widget: QtWidgets.QWidget, button: QtCore.Qt.MouseButton, modifiers: QtCore.Qt.KeyboardModifier, point: QtCore.QPoint) -> None:
+    QTest.mouseRelease(widget, button, modifiers, point)
+    if button == QtCore.Qt.RightButton and shiboken6.isValid(widget):
+        event = QtGui.QContextMenuEvent(QtGui.QContextMenuEvent.Mouse, point, widget.mapToGlobal(point), modifiers)
+        QtWidgets.QApplication.sendEvent(widget, event)
+
+
+def _mouse_move(widget: QtWidgets.QWidget, button: QtCore.Qt.MouseButton, modifiers: QtCore.Qt.KeyboardModifier, point: QtCore.QPoint) -> None:
+    QTest.mouseMove(widget, point)
+
+
+MOUSE_KINDS = {"click": _mouse_click, "double": _mouse_double, "press": QTest.mousePress, "release": _mouse_release, "move": _mouse_move}
+
+
+def _send_wheel(receiver: QtWidgets.QWidget, local: QtCore.QPoint, delta: QtCore.QPoint, modifiers: QtCore.Qt.KeyboardModifier) -> None:
+    position = QtCore.QPointF(local)
+    event = QtGui.QWheelEvent(position, QtCore.QPointF(receiver.mapToGlobal(local)), QtCore.QPoint(), delta, QtCore.Qt.NoButton, modifiers, QtCore.Qt.NoScrollPhase, False)
+    QtWidgets.QApplication.sendEvent(receiver, event)
 
 
 def _invoke_command(command_id: str, kwargs: dict) -> None:

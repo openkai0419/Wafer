@@ -41,6 +41,8 @@ class DebugAgent(QtCore.QObject):
             "click": qt_inspect.click,
             "type_text": qt_inspect.type_text,
             "key": qt_inspect.key,
+            "mouse": qt_inspect.mouse,
+            "wheel": qt_inspect.wheel,
         }
         app = QtWidgets.QApplication.instance()
         self._focused_at: float | None = time.monotonic() if app.focusWindow() is not None else None

@@ -451,6 +451,21 @@ def build_server(session: DebugSession) -> MCPServer:
     def key(sequence: str, widget: str | None = None, target: str | None = None) -> Any:
         return agent("key", target, target=widget, sequence=sequence)
 
+    @tool(
+        "Mouse input on a widget, sent like a user's: kind click/double/press/release/move, button left/right/middle, "
+        "x and y inside the widget (its center when omitted), modifiers like 'Ctrl+Shift'. A right click also opens the context menu; "
+        f"read it with modal_state and pick an item with modal_click. Runs after the reply. {WIDGET_HELP} {TARGET_HELP}"
+    )
+    def mouse(widget: str, kind: str = "click", button: str = "left", x: int | None = None, y: int | None = None, modifiers: str = "", target: str | None = None) -> Any:
+        return agent("mouse", target, target=widget, kind=kind, button=button, x=x, y=y, modifiers=modifiers)
+
+    @tool(
+        "Scroll the mouse wheel over a widget: dy/dx in notches (negative dy scrolls down), at x and y inside the widget "
+        f"(its center when omitted), with modifiers like 'Ctrl' (e.g. Ctrl+wheel resizes thumbnails). Runs after the reply. {WIDGET_HELP} {TARGET_HELP}"
+    )
+    def wheel(widget: str, dy: int = 0, dx: int = 0, x: int | None = None, y: int | None = None, modifiers: str = "", target: str | None = None) -> Any:
+        return agent("wheel", target, target=widget, dy=dy, dx=dx, x=x, y=y, modifiers=modifiers)
+
     @tool(f"Wait until the main thread answers in < 200 ms twice in a row and the sample index has nothing pending, or say what is still busy. {TARGET_HELP}")
     def wait_idle(timeout: float = 30, target: str | None = None) -> Any:
         return session.wait_idle(timeout, target)

@@ -30,6 +30,25 @@ def test_run_command_unknown_id(agent):
     assert "no.such" in reply["error"]
 
 
+def test_mouse_and_wheel_are_agent_ops(agent, qtbot):
+    pressed = []
+    button = QtWidgets.QPushButton("Pad")
+    button.setObjectName("pad")
+    button.pressed.connect(lambda: pressed.append(True))
+    qtbot.addWidget(button)
+    button.show()
+    qtbot.waitExposed(button)
+    try:
+        mouse = agent.call("mouse", {"target": "pad", "kind": "press"})
+        wheel = agent.call("wheel", {"target": "pad", "dy": 1})
+        assert mouse["ok"] is True and mouse["result"]["deferred"] is True
+        center = button.rect().center()
+        assert wheel["ok"] is True and wheel["result"]["position"] == [center.x(), center.y()]
+        qtbot.waitUntil(lambda: pressed == [True])
+    finally:
+        button.close()
+
+
 def test_ping_names_the_process(agent):
     reply = agent.call("ping", {})
     assert reply == {"ok": True, "result": {"pid": os.getpid(), "role": "viewer", "profile": current_profile(), "focused_at": reply["result"]["focused_at"]}, "error": ""}

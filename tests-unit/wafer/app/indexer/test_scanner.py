@@ -519,19 +519,108 @@ def test_full_scan_keeps_sources_under_unreadable_subfolder(tmp_path, monkeypatc
     scanner.stop()
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions")
-def test_scan_directory_does_not_follow_junctions(tmp_path):
+windows_only = pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions")
+
+
+def _junction(link, target):
     import _winapi
 
+    _winapi.CreateJunction(str(target), str(link))
+
+
+def _write(*paths):
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x")
+
+
+def _capture_registered(scanner):
+    registered = []
+    scanner._register_and_submit = lambda paths, _info, _token: registered.extend(paths)
+    return registered
+
+
+@windows_only
+def test_scan_directory_does_not_follow_a_junction_loop(tmp_path):
     scanner, *_ = _make_scanner(tmp_path)
     root = tmp_path / "data"
-    root.mkdir()
-    (root / "f.png").write_text("x")
-    _winapi.CreateJunction(str(root), str(root / "loop"))
+    _write(root / "f.png")
+    _junction(root / "loop", root)
+    _junction(root / "up", tmp_path)
 
     results = dict(scanner._scan_directory(str(root)))
 
     assert list(results) == [normalize_path(str(root / "f.png"))]
+
+
+@windows_only
+def test_scan_directory_follows_a_junction_to_a_folder_outside_the_roots(tmp_path):
+    scanner, *_ = _make_scanner(tmp_path)
+    root, outside = tmp_path / "Library", tmp_path / "OtherDrive" / "pics"
+    _write(root / "own.png", outside / "a.png", outside / "sub" / "b.png")
+    _junction(root / "linked", outside)
+
+    results = dict(scanner._scan_directory(str(root)))
+
+    assert sorted(results) == sorted(normalize_path(str(root / p)) for p in ("own.png", "linked/a.png", "linked/sub/b.png"))
+
+
+@windows_only
+def test_scan_directory_stops_junctions_that_point_at_each_other(tmp_path):
+    scanner, *_ = _make_scanner(tmp_path)
+    root, x, z = tmp_path / "root", tmp_path / "x", tmp_path / "z"
+    _write(x / "a.png", z / "b.png")
+    root.mkdir()
+    _junction(root / "j", x)
+    _junction(x / "to_z", z)
+    _junction(z / "to_x", x)
+
+    results = dict(scanner._scan_directory(str(root)))
+
+    assert sorted(results) == sorted(normalize_path(str(root / p)) for p in ("j/a.png", "j/to_z/b.png"))
+
+
+@windows_only
+def test_full_scan_skips_a_junction_into_another_root(tmp_path):
+    first, second = tmp_path / "first", tmp_path / "second"
+    _write(first / "a.png", second / "inner" / "b.png")
+    _junction(first / "to_second", second / "inner")
+    scanner, _ = _scanner_with_sources(tmp_path, [])
+    registered = _capture_registered(scanner)
+
+    scanner._do_full_scan([str(first), str(second)])
+
+    assert set(registered) == {normalize_path(str(first / "a.png")), normalize_path(str(second / "inner" / "b.png"))}
+    scanner.stop()
+
+
+@windows_only
+def test_full_scan_keeps_sources_under_a_followed_junction(tmp_path):
+    root, outside = tmp_path / "Library", tmp_path / "OtherDrive" / "pics"
+    _write(root / "own.png", outside / "a.png")
+    _junction(root / "linked", outside)
+    via_junction = normalize_path(str(root / "linked" / "a.png"))
+    scanner, progress = _scanner_with_sources(tmp_path, [via_junction, normalize_path(str(root / "own.png"))])
+
+    scanner._do_full_scan([str(root)])
+
+    assert _removed(progress) == set()
+    scanner.stop()
+
+
+@windows_only
+def test_partial_scan_skips_a_junction_into_a_root_it_was_not_asked_to_scan(tmp_path):
+    first, second = tmp_path / "first", tmp_path / "second"
+    _write(first / "sub" / "a.png", second / "b.png")
+    _junction(first / "sub" / "to_second", second)
+    scanner, _ = _scanner_with_sources(tmp_path, [])
+    scanner._do_full_scan([str(first), str(second)])
+    registered = _capture_registered(scanner)
+
+    scanner._do_full_scan([str(first / "sub")], partial=True)
+
+    assert set(registered) == {normalize_path(str(first / "sub" / "a.png"))}
+    scanner.stop()
 
 
 def test_backfill_selects_only_matching_extensions_in_sql(tmp_path):

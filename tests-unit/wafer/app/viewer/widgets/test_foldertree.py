@@ -1092,7 +1092,7 @@ def test_expand_recursive_drains_entries_by_timer(qtbot, monkeypatch, tmp_path):
         path_b1: [],
     }
 
-    def scan_children(path, _excluded, _ignore_pattern_re=None):
+    def scan_children(path, _excluded, _ignore_pattern_re=None, _roots=()):
         return children_by_path.get(normalize_path(path), [])
 
     tree = LazyFolderTreeView(roots=[root], excluded=[])
@@ -1151,7 +1151,7 @@ def test_expand_recursive_cancel_clears_job(qtbot, monkeypatch, tmp_path):
     root = normalize_path(str(tmp_path))
     path_a = normalize_path(os.path.join(root, "A"))
 
-    def scan_children(path, _excluded, _ignore_pattern_re=None):
+    def scan_children(path, _excluded, _ignore_pattern_re=None, _roots=()):
         return [(path_a, True)] if normalize_path(path) == root else []
 
     tree = LazyFolderTreeView(roots=[root], excluded=[])
@@ -1176,7 +1176,7 @@ def test_cancel_expand_recursive_cancels_active_job(qtbot, monkeypatch, tmp_path
     started = threading.Event()
     released = threading.Event()
 
-    def scan_children(path, _excluded, _ignore_pattern_re=None):
+    def scan_children(path, _excluded, _ignore_pattern_re=None, _roots=()):
         if normalize_path(path) == root:
             started.set()
             released.wait(2.0)

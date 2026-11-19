@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+from wafer.core.common.folder_scan import JunctionFilter
 from wafer.core.common.paths import child_prefix, normalize_path, parent_folder
 from wafer.core.logs import AppLogger
 
@@ -26,7 +27,8 @@ def is_hidden(path: str, excluded: set[str], ignore_pattern_re) -> bool:
     return path in excluded or (ignore_pattern_re is not None and ignore_pattern_re.match(path) is not None)
 
 
-def list_folder(path: str, excluded: set[str], ignore_pattern_re) -> tuple[list[str], int]:
+def list_folder(path: str, excluded: set[str], ignore_pattern_re, roots: Iterable[str] = ()) -> tuple[list[str], int]:
+    junctions = JunctionFilter(roots)
     child_dirs: list[str] = []
     file_count = 0
     try:
@@ -34,7 +36,7 @@ def list_folder(path: str, excluded: set[str], ignore_pattern_re) -> tuple[list[
             for entry in entries:
                 if entry.is_dir(follow_symlinks=False):
                     child = normalize_path(entry.path)
-                    if not is_hidden(child, excluded, ignore_pattern_re):
+                    if not is_hidden(child, excluded, ignore_pattern_re) and not junctions.skips(entry):
                         child_dirs.append(child)
                 else:
                     file_count += 1
@@ -52,7 +54,7 @@ def walk_disk(
     on_batch: Callable[[list[tuple[str, list[str], int]]], None],
     batch_size: int = 256,
 ) -> None:
-    normalized = (normalize_path(root) for root in roots)
+    normalized = [normalize_path(root) for root in roots]
     queue = [root for root in normalized if not is_hidden(root, excluded, ignore_pattern_re)]
     head = 0
     batch: list[tuple[str, list[str], int]] = []
@@ -61,7 +63,7 @@ def walk_disk(
             return
         path = queue[head]
         head += 1
-        child_dirs, file_count = list_folder(path, excluded, ignore_pattern_re)
+        child_dirs, file_count = list_folder(path, excluded, ignore_pattern_re, normalized)
         queue.extend(child_dirs)
         batch.append((path, child_dirs, file_count))
         if len(batch) >= batch_size:

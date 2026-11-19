@@ -169,7 +169,7 @@ async def get_folders(request: web.Request):
         raise web.HTTPForbidden(reason="path is outside of indexed folders")
     if not await loop.run_in_executor(None, safe_is_dir, parent):
         raise web.HTTPNotFound(reason="folder not found")
-    return web.json_response({"folders": folder_entries(await loop.run_in_executor(None, scan_children, parent, ignored, pattern))})
+    return web.json_response({"folders": folder_entries(await loop.run_in_executor(None, scan_children, parent, ignored, pattern, roots))})
 
 
 @routes.get("/api/keys")

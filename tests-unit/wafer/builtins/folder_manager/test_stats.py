@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+import sys
 
 import pytest
 
@@ -377,3 +378,37 @@ def test_directory_links_are_not_followed(tmp_path):
     base = normalize_path(str(root))
     assert list_folder(base, set(), None) == ([], 1)
     assert list_folder(base, set(), None)[0] == list(scan_child_paths(base, set()))
+
+
+def make_junction(link, target):
+    import _winapi
+
+    _winapi.CreateJunction(str(target), str(link))
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions")
+def test_a_junction_outside_the_roots_is_walked_and_counted(tmp_path):
+    root = build_tree(tmp_path)
+    touch(tmp_path / "outside" / "4.txt")
+    touch(tmp_path / "outside" / "deep" / "5.txt")
+    make_junction(tmp_path / "root" / "linked", tmp_path / "outside")
+    tree = scan(root)
+    tree.finish()
+    assert tree.values(f"{root}/linked") == FolderValues(1, 2, 1, 1)
+    assert tree.values(root) == FolderValues(1, 5, 3, 5)
+    assert f"{root}/linked" in list_folder(root, set(), None)[0]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions")
+def test_junction_loops_and_junctions_into_a_root_are_not_walked(tmp_path):
+    root = build_tree(tmp_path)
+    other = normalize_path(str(tmp_path / "other"))
+    touch(tmp_path / "other" / "9.txt")
+    make_junction(tmp_path / "root" / "a" / "loop", tmp_path / "root")
+    make_junction(tmp_path / "other" / "to_root", tmp_path / "root" / "a")
+    tree = DiskTree([root, other])
+    walk_disk([root, other], set(), None, FakeCancel(), lambda batch: [tree.add(*item) for item in batch])
+    tree.finish()
+    assert tree.values(root) == FolderValues(1, 3, 2, 3)
+    assert tree.values(other) == FolderValues(1, 1, 0, 0)
+    assert list_folder(f"{root}/a", set(), None) == ([f"{root}/a/b"], 1)

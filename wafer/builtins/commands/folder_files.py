@@ -1,10 +1,10 @@
 import os
-import stat
 from collections.abc import Sequence
 from typing import Protocol
 
 from wafer.builtins.filters import DirectoryFilter
 from wafer.builtins.sorts import NoSort
+from wafer.core.common.folder_scan import JunctionFilter
 from wafer.core.common.paths import child_prefix, normalize_path
 from wafer.core.db.db_utils import open_readonly
 from wafer.core.db.query import ALL_PATHS_SQL, FileSearchEngine
@@ -60,13 +60,10 @@ def query_folder_sources(db_path: str, folders: Sequence[str], recursive: bool, 
     return [source for source in sources if source[: source.rfind("/") + 1] in prefixes]
 
 
-def is_junction(entry: os.DirEntry) -> bool:
-    return getattr(entry.stat(follow_symlinks=False), "st_reparse_tag", 0) == stat.IO_REPARSE_TAG_MOUNT_POINT
-
-
 def disk_files(folders: Sequence[str], recursive: bool, cancel: Cancellable | None = None) -> list[str]:
     found: dict[str, None] = {}
     pending = list(dict.fromkeys(normalize_path(folder) for folder in folders))
+    junctions = JunctionFilter(pending)
     walked: set[str] = set()
     while pending:
         if cancel is not None and cancel.is_cancelled():
@@ -83,7 +80,7 @@ def disk_files(folders: Sequence[str], recursive: bool, cancel: Cancellable | No
                             found[normalize_path(entry.path)] = None
                     elif not entry.is_dir(follow_symlinks=False):
                         found[normalize_path(entry.path)] = None
-                    elif recursive and not is_junction(entry):
+                    elif recursive and not junctions.skips(entry):
                         pending.append(normalize_path(entry.path))
         except FileNotFoundError:
             AppLogger.warning(f"[Files in Folder] Skipped a folder that no longer exists: {normalize_path(folder)}")

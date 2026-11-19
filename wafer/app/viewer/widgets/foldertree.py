@@ -35,7 +35,7 @@ def structure_is_current(structure, roots, excluded, ignore_pattern_re=None):
         return False
     if structure.ignore_pattern != (ignore_pattern_re.pattern if ignore_pattern_re is not None else None):
         return False
-    return all(scan_child_paths(path, excluded, ignore_pattern_re) == children for path, children in structure.loaded_children.items())
+    return all(scan_child_paths(path, excluded, ignore_pattern_re, roots) == children for path, children in structure.loaded_children.items())
 
 
 def _collect_segments_for_paths(paths, roots):
@@ -344,7 +344,7 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
 
     @profiler.profile
     def has_subfolders(self, path):
-        return has_subfolders(path, self.excluded, self.ignore_pattern_re)
+        return has_subfolders(path, self.excluded, self.ignore_pattern_re, self.roots or ())
 
     def request_expand(self, item):
         path = item.data(USER_ROLE_PATH)
@@ -358,9 +358,10 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         self._pending_expands[path] = cancel
         excluded = set(self.excluded)
         ignore_pattern_re = self.ignore_pattern_re
+        roots = list(self.roots or ())
 
         def task():
-            children = scan_children(path, excluded, ignore_pattern_re)
+            children = scan_children(path, excluded, ignore_pattern_re, roots)
             if cancel.is_cancelled():
                 self._dispatcher.invoke(lambda: self._pending_expands.pop(path, None))
                 return
@@ -694,7 +695,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
                 return
             root_entries = scan_roots(roots, excluded, ignore_pattern_re)
             segments = _collect_segments_for_paths(wanted, [root for root, _has_subfolders in root_entries])
-            children_map = {seg: scan_children(seg, excluded, ignore_pattern_re) for seg in segments if not cancel.is_cancelled()}
+            children_map = {seg: scan_children(seg, excluded, ignore_pattern_re, roots) for seg in segments if not cancel.is_cancelled()}
             dispatcher.invoke(lambda: self._apply_reload(cancel, (roots, excluded, ignore_pattern_re), root_entries, children_map, load_settings, on_complete))
 
         dispatcher.post(task, priority=8, cancel=cancel)
@@ -897,7 +898,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         dispatcher = model._dispatcher
 
         def task():
-            children_map = {seg: scan_children(seg, excluded, ignore_pattern_re) for seg in segments}
+            children_map = {seg: scan_children(seg, excluded, ignore_pattern_re, roots) for seg in segments}
             dispatcher.invoke(lambda: self._apply_loaded_children(children_map, on_loaded))
 
         dispatcher.post(task, priority=8)
@@ -1164,6 +1165,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         self._recursive_expand_jobs[root_path] = job
         excluded = set(self.model_.excluded)
         ignore_pattern_re = self.model_.ignore_pattern_re
+        roots = list(self.model_.roots or ())
         dispatcher = self.model_._dispatcher
 
         def task():
@@ -1175,7 +1177,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
                     dispatcher.invoke(lambda: self._finish_expand_recursive_job(root_path))
                     return
                 path = stack.pop()
-                children = scan_children(path, excluded, ignore_pattern_re)
+                children = scan_children(path, excluded, ignore_pattern_re, roots)
                 batch.append((path, children))
                 for child_path, has_sub in reversed(children):
                     if has_sub:
@@ -1388,9 +1390,9 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         return [path for item in iter_root_items(self.model_) if (path := item.data(USER_ROLE_PATH))]
 
     @staticmethod
-    def _deepest_last(path, excluded, ignore_pattern_re=None):
+    def _deepest_last(path, excluded, ignore_pattern_re=None, roots=()):
         while True:
-            children = scan_child_paths(path, excluded, ignore_pattern_re)
+            children = scan_child_paths(path, excluded, ignore_pattern_re, roots)
             if not children:
                 return path
             path = children[-1]
@@ -1405,9 +1407,10 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         current = normalize_path(current)
         excluded = self.model_.excluded
         ignore_pattern_re = self.model_.ignore_pattern_re
+        roots = self.model_.roots or ()
         roots_set = set(sorted_roots)
 
-        children = scan_child_paths(current, excluded, ignore_pattern_re)
+        children = scan_child_paths(current, excluded, ignore_pattern_re, roots)
         if children:
             return self._select_path_for_navigation(children[0], trigger_search=trigger_search)
 
@@ -1421,7 +1424,7 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
             parent = normalize_path(os.path.dirname(path))
             if parent == path:
                 return None
-            siblings = scan_child_paths(parent, excluded, ignore_pattern_re)
+            siblings = scan_child_paths(parent, excluded, ignore_pattern_re, roots)
             if path in siblings:
                 idx = siblings.index(path)
                 if idx + 1 < len(siblings):
@@ -1437,18 +1440,19 @@ class LazyFolderTreeView(QtWidgets.QTreeView):
         current = normalize_path(current)
         excluded = self.model_.excluded
         ignore_pattern_re = self.model_.ignore_pattern_re
+        roots = self.model_.roots or ()
         sorted_roots = self._root_paths()
 
         if current in sorted_roots:
             idx = sorted_roots.index(current)
             if idx > 0:
-                return self._select_path_for_navigation(self._deepest_last(sorted_roots[idx - 1], excluded, ignore_pattern_re), trigger_search=trigger_search)
+                return self._select_path_for_navigation(self._deepest_last(sorted_roots[idx - 1], excluded, ignore_pattern_re, roots), trigger_search=trigger_search)
             return None
 
         parent = normalize_path(os.path.dirname(current))
-        siblings = scan_child_paths(parent, excluded, ignore_pattern_re)
+        siblings = scan_child_paths(parent, excluded, ignore_pattern_re, roots)
         if current in siblings:
             idx = siblings.index(current)
             if idx > 0:
-                return self._select_path_for_navigation(self._deepest_last(siblings[idx - 1], excluded, ignore_pattern_re), trigger_search=trigger_search)
+                return self._select_path_for_navigation(self._deepest_last(siblings[idx - 1], excluded, ignore_pattern_re, roots), trigger_search=trigger_search)
         return self._select_path_for_navigation(parent, trigger_search=trigger_search)

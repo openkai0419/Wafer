@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterable, Sequence
 from ...core.db.db_utils import build_basic_entries, escape_like, open_readonly
 from ...core.db.file_db import SOURCE_TRIGGER_KEYS
 from ...core.logs import AppLogger
+from ...core.common.folder_scan import JunctionFilter
 from ...core.common.paths import child_prefix, normalize_path
 from ...core.profiling import profiler
 from .db_writer import DatabaseWriter
@@ -43,6 +44,7 @@ class DirectoryScanner:
         self._exclude_paths: list[str] = []
         self._ignore_patterns: list[str] = []
         self._ignore_pattern_re = None
+        self._roots: list[str] = []
         self._read_conn = None
         self._stop = threading.Event()
         self._request_queue: list[tuple[str, object]] = []
@@ -139,11 +141,14 @@ class DirectoryScanner:
         token = self._current_token
         file_info: dict[str, tuple] = {}
         unreadable: list[str] = []
+        if not partial:
+            self._roots = [normalize_path(p) for p in root_paths]
+        junctions = self._junctions(root_paths)
         self._progress.increment(0, 1)
         for path in root_paths:
             if token.is_cancelled:
                 return
-            file_info.update(self._scan_directory(path, unreadable))
+            file_info.update(scan_directory(path, self._is_excluded, self._progress, unreadable, junctions))
         self._progress.increment(1, 0)
 
         if token.is_cancelled:
@@ -384,16 +389,15 @@ class DirectoryScanner:
         return result
 
     def _scan_directory(self, root_path: str, unreadable: list[str] | None = None):
-        return scan_directory(root_path, self._is_excluded, self._progress, unreadable)
+        return scan_directory(root_path, self._is_excluded, self._progress, unreadable, self._junctions([root_path]))
+
+    def _junctions(self, root_paths: Sequence[str]) -> JunctionFilter:
+        return JunctionFilter(self._roots or [normalize_path(p) for p in root_paths])
 
 
 def _get_stat(stat_result):
     ctime = stat_result.st_birthtime if hasattr(stat_result, "st_birthtime") else stat_result.st_ctime
     return (stat_result.st_mtime, stat_result.st_size, ctime)
-
-
-def _is_junction(entry: os.DirEntry) -> bool:
-    return getattr(entry.stat(follow_symlinks=False), "st_reparse_tag", 0) == stat.IO_REPARSE_TAG_MOUNT_POINT
 
 
 def _under_any(folders: Iterable[str]) -> Callable[[str], bool]:
@@ -416,7 +420,8 @@ def is_excluded(path: str, exclude_prefixes: Sequence[str], ignore_pattern_re: r
     return ignore_pattern_re is not None and ignore_pattern_re.match(path) is not None
 
 
-def scan_directory(root_path: str, excluded: Callable[[str], bool], progress=_NO_PROGRESS, unreadable: list[str] | None = None):
+def scan_directory(root_path: str, excluded: Callable[[str], bool], progress=_NO_PROGRESS, unreadable: list[str] | None = None, junctions: JunctionFilter | None = None):
+    junctions = junctions or JunctionFilter([root_path])
     stack = [str(root_path)]
     while stack:
         current = stack.pop()
@@ -433,7 +438,7 @@ def scan_directory(root_path: str, excluded: Callable[[str], bool], progress=_NO
                         if excluded(file_path):
                             continue
                         yield (file_path, _get_stat(entry.stat()))
-                    elif entry.is_dir(follow_symlinks=False) and not _is_junction(entry):
+                    elif entry.is_dir(follow_symlinks=False) and not junctions.skips(entry):
                         stack.append(entry.path)
             progress.increment(1, 0)
         except OSError as e:
@@ -450,4 +455,6 @@ def files_in_scope(roots: Sequence[str], exclude_paths: Sequence[str], ignore_pa
     def excluded(path: str) -> bool:
         return is_excluded(path, exclude_prefixes, ignore_pattern_re)
 
-    return {path for root in normalize_prefixes(roots) for path, _ in scan_directory(root, excluded)}
+    prefixes = normalize_prefixes(roots)
+    junctions = JunctionFilter(prefixes)
+    return {path for root in prefixes for path, _ in scan_directory(root, excluded, junctions=junctions)}

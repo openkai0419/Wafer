@@ -130,11 +130,22 @@ def make_junction(link, target):
 
 
 @pytest.mark.skipif(os.name != "nt", reason="junctions are a Windows feature")
-def test_disk_files_do_not_follow_junctions(tmp_path):
-    outside = write_files(tmp_path / "outside", "secret.png")
+def test_disk_files_follow_a_junction_like_a_folder(tmp_path):
+    outside = write_files(tmp_path / "outside", "linked.png", "sub/deep.png")
     root = write_files(tmp_path / "root", "a.png")
     make_junction(root / "junction", outside)
-    assert sorted(disk_files([str(root)], recursive=True)) == norm(root / "a.png")
+    assert sorted(disk_files([str(root)], recursive=True)) == norm(root / "a.png", root / "junction/linked.png", root / "junction/sub/deep.png")
+    assert sorted(disk_files([str(root)], recursive=False)) == norm(root / "a.png")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="junctions are a Windows feature")
+def test_disk_files_skip_junction_loops_and_junctions_into_the_chosen_folders(tmp_path):
+    root = write_files(tmp_path / "root", "a.png", "sub/b.png")
+    make_junction(root / "loop", root)
+    make_junction(root / "up", tmp_path)
+    other = write_files(tmp_path / "other", "c.png")
+    make_junction(other / "to_root_sub", root / "sub")
+    assert sorted(disk_files([str(root), str(other)], recursive=True)) == norm(root / "a.png", root / "sub/b.png", other / "c.png")
 
 
 def test_disk_files_do_not_follow_folder_symlinks_but_keep_file_symlinks(tmp_path):

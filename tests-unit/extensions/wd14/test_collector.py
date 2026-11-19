@@ -6,7 +6,7 @@ import pytest
 from PIL import Image
 
 from extensions.wd14._downloader import DEFAULT_MODEL
-from extensions.wd14.collector import WD14TaggerCollector, _CACHE_MAX, _ENGINE_IDLE_TIMEOUT
+from extensions.wd14.collector import WD14TaggerCollector
 from extensions.wd14.settings import parse_blacklist
 from extensions.wd14.settings import wd14_config
 
@@ -148,7 +148,7 @@ class TestTwoLevelCache:
 
     def test_l1_hash_cache_hit(self):
         self.collector._hash_cache["abc123"] = self.tags
-        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
+        with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
             result = self.collector.process("/test/file.jpg", (1000.0, 500, "abc123"))
             mock_resolver.load_pil.assert_not_called()
         assert result.status is True
@@ -161,7 +161,7 @@ class TestTwoLevelCache:
         engine = mock_engine()
         self.collector._engines[DEFAULT_MODEL] = engine
 
-        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
+        with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = thumb
             result = self.collector.process("/test/file.jpg", (1000.0, 500, "xyz789"))
         assert result.status is True
@@ -175,7 +175,7 @@ class TestTwoLevelCache:
         engine = mock_engine(RESULT)
         self.collector._engines[DEFAULT_MODEL] = engine
 
-        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
+        with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = thumb
             result = self.collector.process("/test/file.jpg", (1000.0, 500, "new_hash"))
             mock_resolver.load_pil.assert_called_once_with("/test/file.jpg", size=448)
@@ -192,7 +192,7 @@ class TestTwoLevelCache:
         engine = mock_engine(RESULT, input_size=1008)
         self.collector._engines["other-tagger"] = engine
 
-        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
+        with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = Image.new("RGB", (10, 10))
             result = self.collector.process("/test/file.jpg", (1000.0, 500, "h"))
             mock_resolver.load_pil.assert_called_once_with("/test/file.jpg", size=1008)
@@ -201,7 +201,7 @@ class TestTwoLevelCache:
 
     def test_thumbnail_none_returns_failure(self):
         self.collector._engines[DEFAULT_MODEL] = mock_engine()
-        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
+        with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = None
             result = self.collector.process("/test/file.jpg", (1000.0, 500, "some_hash"))
         assert result.status is False
@@ -210,7 +210,7 @@ class TestTwoLevelCache:
         engine = mock_engine()
         engine.predict.side_effect = RuntimeError("ONNX error")
         self.collector._engines[DEFAULT_MODEL] = engine
-        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
+        with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = Image.new("RGB", (10, 10), (128, 128, 128))
             result = self.collector.process("/test/file.jpg", (1000.0, 500, "err_hash"))
         assert result.status is False
@@ -227,11 +227,11 @@ class TestCacheEviction:
     def test_hash_cache_evicts_oldest(self):
         collector = WD14TaggerCollector()
         tags = {"rating": "general"}
-        for i in range(_CACHE_MAX + 10):
-            WD14TaggerCollector._cache_put(collector._hash_cache, f"key_{i}", tags)
-        assert len(collector._hash_cache) == _CACHE_MAX
+        for i in range(WD14TaggerCollector.CACHE_MAX + 10):
+            collector.cache_put(collector._hash_cache, f"key_{i}", tags)
+        assert len(collector._hash_cache) == WD14TaggerCollector.CACHE_MAX
         assert "key_0" not in collector._hash_cache
-        assert f"key_{_CACHE_MAX + 9}" in collector._hash_cache
+        assert f"key_{WD14TaggerCollector.CACHE_MAX + 9}" in collector._hash_cache
 
 
 class TestEngines:
@@ -276,14 +276,14 @@ class TestEngines:
     def test_unload_idle_engines_keeps_recent(self):
         idle, recent = MagicMock(), MagicMock()
         self.collector._engines = {"idle": idle, "recent": recent}
-        self.collector._last_used = {"idle": time.monotonic() - _ENGINE_IDLE_TIMEOUT - 1, "recent": time.monotonic()}
+        self.collector._last_used = {"idle": time.monotonic() - WD14TaggerCollector.ENGINE_IDLE_TIMEOUT - 1, "recent": time.monotonic()}
         self.collector.unload_idle_engines()
         assert self.collector._engines == {"recent": recent}
         assert self.collector._idle_timer is not None
 
     def test_unload_idle_engines_stops_timer_when_empty(self):
         self.collector._engines = {"idle": MagicMock()}
-        self.collector._last_used = {"idle": time.monotonic() - _ENGINE_IDLE_TIMEOUT - 1}
+        self.collector._last_used = {"idle": time.monotonic() - WD14TaggerCollector.ENGINE_IDLE_TIMEOUT - 1}
         self.collector.unload_idle_engines()
         assert self.collector._engines == {}
         assert self.collector._idle_timer is None
@@ -292,7 +292,7 @@ class TestEngines:
         p1, p2, p3 = self.load_patches()
         with p1, p2, p3:
             first = self.collector.engine(DEFAULT_MODEL)
-            self.collector._last_used[DEFAULT_MODEL] -= _ENGINE_IDLE_TIMEOUT + 1
+            self.collector._last_used[DEFAULT_MODEL] -= WD14TaggerCollector.ENGINE_IDLE_TIMEOUT + 1
             self.collector.unload_idle_engines()
             second = self.collector.engine(DEFAULT_MODEL)
         assert second is not first
@@ -330,7 +330,7 @@ class TestOnRequest:
 
     def test_preview_thumbnail_failed(self):
         self.collector._engines[self.collector.model] = mock_engine()
-        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
+        with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = None
             result = self.collector.on_request("wd14.preview", {"path": "/test.jpg", "settings": {}}, None)
         assert result["error"] == "thumbnail_failed"
@@ -340,7 +340,7 @@ class TestOnRequest:
         engine = mock_engine({**RESULT, "character": {"hatsune_miku": 0.90}})
         self.collector._engines["preview-tagger"] = engine
 
-        with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
+        with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = thumb
             result = self.collector.on_request(
                 "wd14.preview",
@@ -363,7 +363,7 @@ class TestSettingsIntegration:
         engine = mock_engine(RESULT)
         collector._engines[DEFAULT_MODEL] = engine
         try:
-            with patch("extensions.wd14.collector.image_loader_resolver") as mock_resolver:
+            with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
                 mock_resolver.load_pil.return_value = thumb
                 collector.process("/test/file.jpg", (1000.0, 500, "hash_x"))
             engine.predict.assert_called_once_with(thumb, general_threshold=0.1, character_threshold=0.9)

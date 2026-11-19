@@ -6,7 +6,9 @@ import pytest
 from PIL import Image
 
 from extensions.florence._downloader import MODELS, ensure_model
-from extensions.florence.collector import FlorenceCollector, _CACHE_MAX, _ENGINE_IDLE_TIMEOUT
+from extensions.florence.collector import FlorenceCollector
+
+_ENGINE_IDLE_TIMEOUT = FlorenceCollector.ENGINE_IDLE_TIMEOUT
 
 
 class TestDownloaderConfig:
@@ -30,7 +32,7 @@ class TestTwoLevelCache:
 
     def test_l1_hash_cache_hit(self):
         self.collector._hash_cache["abc123"] = self.tags
-        with patch("extensions.florence.collector.image_loader_resolver") as mock_resolver:
+        with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
             result = self.collector.process("/test/file.jpg", (1000.0, 500, "abc123"))
             mock_resolver.load_pil.assert_not_called()
         assert result.status is True
@@ -42,16 +44,15 @@ class TestTwoLevelCache:
         pixel_hash = hashlib.sha256(thumb.tobytes(), usedforsecurity=False).hexdigest()[:16]
         self.collector._pixel_cache[pixel_hash] = self.tags
 
-        self.collector._engine = MagicMock()
-        self.collector._loaded_variant = "base"
+        engine = self.collector._engines["base"] = MagicMock()
 
-        with patch("extensions.florence.collector.image_loader_resolver") as mock_resolver:
+        with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = thumb
             result = self.collector.process("/test/file.jpg", (1000.0, 500, "xyz789"))
         assert result.status is True
         assert result.tags == self.tags
         assert self.collector._hash_cache["xyz789"] == self.tags
-        self.collector._engine.predict.assert_not_called()
+        engine.predict.assert_not_called()
 
     def test_cache_miss_runs_inference(self):
         thumb = Image.new("RGB", (10, 10), (0, 255, 0))
@@ -59,10 +60,9 @@ class TestTwoLevelCache:
 
         engine = MagicMock()
         engine.predict.return_value = "a girl standing in a field"
-        self.collector._engine = engine
-        self.collector._loaded_variant = "base"
+        self.collector._engines["base"] = engine
 
-        with patch("extensions.florence.collector.image_loader_resolver") as mock_resolver:
+        with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = thumb
             result = self.collector.process("/test/file.jpg", (1000.0, 500, "new_hash"))
         assert result.status is True
@@ -72,10 +72,9 @@ class TestTwoLevelCache:
         assert pixel_hash in self.collector._pixel_cache
 
     def test_thumbnail_none_returns_failure(self):
-        self.collector._engine = MagicMock()
-        self.collector._loaded_variant = "base"
+        engine = self.collector._engines["base"] = MagicMock()
 
-        with patch("extensions.florence.collector.image_loader_resolver") as mock_resolver:
+        with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = None
             result = self.collector.process("/test/file.jpg", (1000.0, 500, "some_hash"))
         assert result.status is False
@@ -99,11 +98,10 @@ class TestSettings:
 
         engine = MagicMock()
         engine.predict.side_effect = RuntimeError("Model error")
-        collector._engine = engine
-        collector._loaded_variant = "base"
+        collector._engines["base"] = engine
 
         try:
-            with patch("extensions.florence.collector.image_loader_resolver") as mock_resolver:
+            with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
                 mock_resolver.load_pil.return_value = thumb
                 result = collector.process("/test/file.jpg", (1000.0, 500, "err_hash"))
             assert result.status is False
@@ -116,11 +114,10 @@ class TestSettings:
 
         engine = MagicMock()
         engine.predict.return_value = "a test caption"
-        collector._engine = engine
-        collector._loaded_variant = "base"
+        collector._engines["base"] = engine
 
         try:
-            with patch("extensions.florence.collector.image_loader_resolver") as mock_resolver:
+            with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
                 mock_resolver.load_pil.return_value = thumb
                 result = collector.process("/test/file.jpg", (1000.0, 500))
             assert result.status is True
@@ -133,11 +130,17 @@ class TestSettings:
 class TestCacheEviction:
     def test_hash_cache_evicts_oldest(self):
         collector = FlorenceCollector()
-        for i in range(_CACHE_MAX + 10):
-            FlorenceCollector._cache_put(collector._hash_cache, f"key_{i}", {"caption": f"cap_{i}"})
-        assert len(collector._hash_cache) == _CACHE_MAX
+        for i in range(collector.CACHE_MAX + 10):
+            collector.cache_put(collector._hash_cache, f"key_{i}", {"caption": f"cap_{i}"})
+        assert len(collector._hash_cache) == collector.CACHE_MAX
         assert "key_0" not in collector._hash_cache
-        assert f"key_{_CACHE_MAX + 9}" in collector._hash_cache
+        assert f"key_{collector.CACHE_MAX + 9}" in collector._hash_cache
+
+
+def inference_module():
+    module = MagicMock()
+    module.FlorenceInference.side_effect = lambda model_dir: MagicMock(model_dir=model_dir)
+    return module
 
 
 class TestIdleTimeout:
@@ -147,63 +150,60 @@ class TestIdleTimeout:
     def teardown_method(self):
         self.collector.shutdown()
 
-    def test_touch_starts_timer(self):
+    def test_engine_starts_daemon_timer(self):
         assert self.collector._idle_timer is None
-        assert self.collector._last_used == 0.0
-        self.collector._touch()
-        assert self.collector._last_used > 0.0
+        with patch("extensions.florence.collector.ensure_model", side_effect=lambda variant, version: variant), patch.dict("sys.modules", {"extensions.florence._inference": inference_module()}):
+            self.collector.engine("base")
+        assert self.collector._last_used["base"] > 0.0
         assert self.collector._idle_timer is not None
         assert self.collector._idle_timer.daemon is True
 
-    def test_touch_replaces_previous_timer(self):
-        self.collector._touch()
-        first_timer = self.collector._idle_timer
-        self.collector._touch()
-        second_timer = self.collector._idle_timer
-        assert first_timer is not second_timer
+    def test_unload_idle_engines_unloads_engine(self):
+        self.collector._engines["base"] = MagicMock()
+        self.collector._last_used["base"] = time.monotonic() - _ENGINE_IDLE_TIMEOUT - 1
+        self.collector.unload_idle_engines()
+        assert self.collector._engines == {}
+        assert self.collector._idle_timer is None
 
-    def test_check_idle_unloads_engine(self):
-        engine = MagicMock()
-        self.collector._engine = engine
-        self.collector._last_used = time.monotonic() - _ENGINE_IDLE_TIMEOUT - 1
-        self.collector._check_idle()
-        assert self.collector._engine is None
+    def test_unload_idle_engines_keeps_recent_engine(self):
+        engine = self.collector._engines["base"] = MagicMock()
+        self.collector._last_used["base"] = time.monotonic()
+        self.collector.unload_idle_engines()
+        assert self.collector._engines == {"base": engine}
+        assert self.collector._idle_timer is not None
 
-    def test_check_idle_keeps_engine_when_recent(self):
-        engine = MagicMock()
-        self.collector._engine = engine
-        self.collector._last_used = time.monotonic()
-        self.collector._check_idle()
-        assert self.collector._engine is engine
-
-    def test_process_calls_touch(self):
+    def test_process_marks_engine_used(self):
         thumb = Image.new("RGB", (10, 10), (0, 255, 0))
-        self.collector._engine = MagicMock()
-        self.collector._engine.predict.return_value = "caption"
-        self.collector._loaded_variant = "base"
+        self.collector._engines["base"] = MagicMock()
+        self.collector._engines["base"].predict.return_value = "caption"
 
-        before = self.collector._last_used
-        with patch("extensions.florence.collector.image_loader_resolver") as mock_resolver:
+        with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = thumb
             self.collector.process("/test/file.jpg", (1000.0, 500, "new_hash"))
-        assert self.collector._last_used > before
+        assert self.collector._last_used["base"] > 0.0
         assert self.collector._idle_timer is not None
 
     def test_engine_reloads_after_unload(self):
-        engine = MagicMock()
-        self.collector._engine = engine
-        self.collector._last_used = time.monotonic() - _ENGINE_IDLE_TIMEOUT - 1
-        self.collector._check_idle()
-        assert self.collector._engine is None
+        self.collector._engines["base"] = MagicMock()
+        self.collector._last_used["base"] = time.monotonic() - _ENGINE_IDLE_TIMEOUT - 1
+        self.collector.unload_idle_engines()
+        assert self.collector._engines == {}
 
-        mock_inference_mod = MagicMock()
-        mock_instance = MagicMock()
-        mock_inference_mod.FlorenceInference.return_value = mock_instance
+        with patch("extensions.florence.collector.ensure_model", return_value="/fake/model"), patch.dict("sys.modules", {"extensions.florence._inference": inference_module()}):
+            engine = self.collector.engine("base")
+        assert self.collector._engines == {"base": engine}
 
-        with patch("extensions.florence.collector.ensure_model") as mock_ensure, patch.dict("sys.modules", {"extensions.florence._inference": mock_inference_mod}):
-            mock_ensure.return_value = "/fake/model"
-            self.collector._ensure_engine()
-            assert self.collector._engine is mock_instance
+    def test_variant_switch_replaces_the_loaded_engine(self):
+        with patch("extensions.florence.collector.ensure_model", side_effect=lambda variant, version: variant), patch.dict("sys.modules", {"extensions.florence._inference": inference_module()}):
+            self.collector.engine("base")
+            large = self.collector.engine("large")
+        assert self.collector._engines == {"large": large}
+
+    def test_saving_a_new_variant_unloads_the_old_engine(self):
+        self.collector._engines["base"] = MagicMock()
+        with patch("extensions.florence.collector.florence_config.load", return_value={**self.collector._settings, "model_variant": "large"}):
+            self.collector.on_notify()
+        assert self.collector._engines == {}
 
     def test_ensure_engine_passes_post_install_version(self):
         from extensions.florence.collector import POST_INSTALL_VERSION
@@ -214,7 +214,7 @@ class TestIdleTimeout:
 
         with patch("extensions.florence.collector.ensure_model") as mock_ensure, patch.dict("sys.modules", {"extensions.florence._inference": mock_inference_mod}):
             mock_ensure.return_value = "/fake/model"
-            self.collector._ensure_engine()
+            self.collector.engine(self.collector.model)
             mock_ensure.assert_called_once_with("large", version=POST_INSTALL_VERSION)
 
 
@@ -225,12 +225,12 @@ class TestIdleTimeout:
         with (
             patch("extensions.florence.collector.ensure_model", return_value="/fake/model") as mock_ensure,
             patch.dict("sys.modules", {"extensions.florence._inference": mock_inference_mod}),
-            patch("extensions.florence.collector.image_loader_resolver") as mock_resolver,
+            patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver,
         ):
             mock_resolver.load_pil.return_value = Image.new("RGB", (10, 10))
             self.collector._handle_preview({"path": "/a.jpg", "settings": {"model_variant": "large"}})
         assert mock_ensure.call_args.args[0] == "large"
-        assert self.collector._loaded_variant == "large"
+        assert list(self.collector._engines) == ["large"]
 
     def test_settings_reload_retries_failed_engine(self):
         mock_inference_mod = MagicMock()
@@ -240,10 +240,12 @@ class TestIdleTimeout:
             patch("extensions.florence.collector.florence_config.load", return_value=dict(self.collector._settings)),
         ):
             with pytest.raises(RuntimeError):
-                self.collector._ensure_engine()
+                self.collector.engine("base")
+            with pytest.raises(RuntimeError, match="previously failed"):
+                self.collector.engine("base")
             self.collector.on_notify()
-            self.collector._ensure_engine()
-        assert self.collector._engine is mock_inference_mod.FlorenceInference.return_value
+            self.collector.engine("base")
+        assert self.collector._engines["base"] is mock_inference_mod.FlorenceInference.return_value
 
 
 class TestPostInstall:

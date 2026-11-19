@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
     [
         ("wafer.plugin.imageloader.handler", ("PySide6", "numpy")),
         ("wafer.plugin.grid.base", ("PySide6",)),
+        ("wafer.plugin.collector.inference", ("PySide6",)),
         ("wafer.core.platform.file_operations", ("requests",)),
         ("wafer.builtins.updater.service", ("requests",)),
         ("wafer.qt.widgets.markdown_browser", ("PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineCore")),

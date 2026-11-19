@@ -10,6 +10,8 @@ from wafer.core.logs import AppLogger
 
 
 class FlorenceInference:
+    input_size = 384
+
     def __init__(self, model_dir: Path):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.dtype = torch.float16 if self.device.type == "cuda" else torch.float32

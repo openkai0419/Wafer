@@ -16,6 +16,7 @@ _EXPORTS = {
     "OverlayHelper": (".grid_overlay.helper", None),
     "BaseCollectorPlugin": (".collector.base", None),
     "BaseSingletonCollector": (".collector.base", None),
+    "BaseInferenceCollector": (".collector.inference", None),
     "CollectorResult": (".collector.base", None),
     "BaseParserPlugin": (".parser.base", None),
     "BaseSingletonParser": (".parser.base", None),

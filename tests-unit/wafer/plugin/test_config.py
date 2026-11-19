@@ -179,6 +179,17 @@ class TestPluginConfigSharedFile:
         assert [p.read_bytes() for p in ini_dir.glob("viewer_plugins.ini.*.bad")] == [b"[s]\nx = \xe3\x81\n"]
         assert PluginConfig("s", {"x": "d"}).load() == {"x": "new"}
 
+    def test_values_with_a_percent_sign_are_saved_and_loaded_as_written(self, ini_dir):
+        PluginConfig("wd14", {"tag_blacklist": ""}).save(tag_blacklist="a, 50%")
+        assert PluginConfig("wd14", {"tag_blacklist": ""}).load() == {"tag_blacklist": "a, 50%"}
+
+    def test_a_file_saved_with_a_bom_is_read_and_not_moved_aside(self, ini_dir):
+        ini_path = ini_dir / "viewer_plugins.ini"
+        ini_path.write_text("[zip]\ncache_limit_gb = 20\n", encoding="utf-8-sig")
+        PluginConfig("wd14", {"color": "red"}).save(color="blue")
+        assert list(ini_dir.glob("viewer_plugins.ini.*.bad")) == []
+        assert PluginConfig("zip", {"cache_limit_gb": 5}).load() == {"cache_limit_gb": 20}
+
     def test_file_that_cannot_be_opened_is_neither_moved_nor_overwritten(self, ini_dir, monkeypatch):
         ini_path = ini_dir / "viewer_plugins.ini"
         ini_path.write_text("[s]\nx = 1\n[other]\nkeep = yes\n", encoding="utf-8")

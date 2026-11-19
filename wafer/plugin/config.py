@@ -24,10 +24,14 @@ def _ini_path() -> str:
 CORRUPT_INI_ERRORS = (ConfigParserError, UnicodeDecodeError)
 
 
+def _new_parser() -> ConfigParser:
+    return ConfigParser(interpolation=None)
+
+
 def _parse_unlocked(path: str) -> ConfigParser:
-    cp = ConfigParser()
+    cp = _new_parser()
     if os.path.isfile(path):
-        with retry_while_in_use(lambda: open(path, encoding="utf-8")) as f:
+        with retry_while_in_use(lambda: open(path, encoding="utf-8-sig")) as f:
             cp.read_file(f, source=path)
     return cp
 
@@ -41,7 +45,7 @@ def read_ini() -> ConfigParser:
             AppLogger.warning(f"[PluginConfig] {path} is unreadable, using defaults ({e})", exc=e)
         except OSError as e:
             AppLogger.warning(f"[PluginConfig] could not open {path}, using defaults ({e})", exc=e)
-    return ConfigParser()
+    return _new_parser()
 
 
 @contextlib.contextmanager
@@ -52,7 +56,7 @@ def update_ini() -> Iterator[ConfigParser]:
         try:
             cp = _parse_unlocked(path)
         except CORRUPT_INI_ERRORS as e:
-            cp, corrupt = ConfigParser(), e
+            cp, corrupt = _new_parser(), e
         except OSError as e:
             AppLogger.error(f"[PluginConfig] could not open {path}, plugin settings were not saved ({e})", exc=e)
             raise

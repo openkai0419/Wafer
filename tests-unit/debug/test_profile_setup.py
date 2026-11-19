@@ -540,6 +540,53 @@ def test_forget_profile_stops_then_deletes_the_profile(monkeypatch, app_data):
     assert other.exists()
 
 
+def test_any_discard_sweeps_every_leftover_trash(monkeypatch, app_data):
+    base = profile_setup.debug_profiles_dir()
+    leftovers = [
+        base / "debug-y.trash-1-2",
+        base / "debug-x.partial.trash-3-4",
+        base / profile_setup.TEMPLATE_DIR_NAME / "abc.trash-5-6",
+        base / profile_setup.TEMPLATE_DIR_NAME / "abc.partial.trash-7-8",
+    ]
+    for leftover in leftovers:
+        (leftover / "data").mkdir(parents=True)
+        (leftover / "data" / "a.bin").write_bytes(b"x")
+    kept = [base / "debug-y", base / profile_setup.TEMPLATE_DIR_NAME / "abc"]
+    for folder in kept:
+        folder.mkdir(parents=True)
+    (profile_data_root("debug-x") / "data").mkdir(parents=True)
+    monkeypatch.setattr(profile_setup, "stop_profile", lambda profile, timeout=15.0: None)
+
+    forget_profile("debug-x")
+
+    assert [leftover for leftover in leftovers if leftover.exists()] == []
+    assert all(folder.is_dir() for folder in kept)
+
+
+def test_a_trash_that_cannot_be_deleted_yet_is_only_a_warning(monkeypatch, app_data):
+    base = profile_setup.debug_profiles_dir()
+    held = base / profile_setup.TEMPLATE_DIR_NAME / "abc.trash-5-6"
+    held.mkdir(parents=True)
+    (profile_data_root("debug-x") / "data").mkdir(parents=True)
+    monkeypatch.setattr(profile_setup, "stop_profile", lambda profile, timeout=15.0: None)
+    real_rmtree = profile_setup.shutil.rmtree
+
+    def rmtree(path, *args, **kwargs):
+        if Path(path) == held:
+            raise PermissionError("a file is open in another session")
+        return real_rmtree(path, *args, **kwargs)
+
+    warnings = []
+    monkeypatch.setattr(profile_setup.shutil, "rmtree", rmtree)
+    monkeypatch.setattr(profile_setup.AppLogger, "warning", lambda text, exc=None: warnings.append(text))
+
+    forget_profile("debug-x")
+
+    assert not profile_data_root("debug-x").exists()
+    assert held.exists()
+    assert len([text for text in warnings if str(held) in text]) == 1
+
+
 def test_launch_process_runs_the_checkout_main_with_the_profile(tmp_path, monkeypatch):
     checkout = make_checkout(tmp_path / "Repo")
     spawned = {}

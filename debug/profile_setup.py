@@ -304,7 +304,9 @@ def _profile_lock(profile: str) -> str:
 
 
 def _sweep_trash(path: Path) -> None:
-    for leftover in path.parent.glob(f"{glob.escape(path.name)}{TRASH_SUFFIX}-*"):
+    base = debug_profiles_dir()
+    folders = {base, base / TEMPLATE_DIR_NAME, path.parent}
+    for leftover in (leftover for folder in folders for leftover in folder.glob(f"*{TRASH_SUFFIX}-*")):
         try:
             shutil.rmtree(leftover)
         except OSError as exc:

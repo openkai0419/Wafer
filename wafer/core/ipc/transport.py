@@ -125,24 +125,50 @@ def write_broker_port(port: int, *, port_file: Path | None = None):
     tmp.replace(path)
 
 
+_unreadable_port_files: set[Path] = set()
+
+
+def _note_unreadable(path: Path, error: OSError) -> None:
+    if path in _unreadable_port_files:
+        return
+    _unreadable_port_files.add(path)
+    from ..logs import AppLogger
+
+    AppLogger.info(f"{path} cannot be read yet, so the broker port is not available yet: {error}")
+
+
+def _note_readable(path: Path) -> None:
+    _unreadable_port_files.discard(path)
+
+
 def read_broker_port(timeout: float = 5.0, *, port_file: Path | None = None) -> int | None:
     path = port_file if port_file is not None else _PORT_FILE
     end = time.time() + timeout
     while True:
         try:
             data = json.loads(path.read_text())
-            return int(data["port"])
-        except (OSError, KeyError, ValueError):
-            if time.time() > end:
-                return None
-            time.sleep(0.1)
+            port = int(data["port"])
+            _note_readable(path)
+            return port
+        except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError):
+            pass
+        except OSError as e:
+            _note_unreadable(path, e)
+        if time.time() > end:
+            return None
+        time.sleep(0.1)
 
 
 def port_file_stamp(port_file: Path) -> tuple[int, bytes] | None:
     try:
-        return port_file.stat().st_mtime_ns, port_file.read_bytes()
+        stamp = port_file.stat().st_mtime_ns, port_file.read_bytes()
     except FileNotFoundError:
         return None
+    except OSError as e:
+        _note_unreadable(port_file, e)
+        return None
+    _note_readable(port_file)
+    return stamp
 
 
 def remove_broker_port(*, port_file: Path | None = None):

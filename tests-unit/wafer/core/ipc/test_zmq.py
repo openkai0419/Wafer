@@ -2,6 +2,7 @@ import socket
 import sys
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -1218,6 +1219,41 @@ class TestNodeJoinsOnlyItsOwnBroker:
         broker = Broker()
         try:
             broker.start()
+            assert node.wait_registered(5.0)
+            assert node._current_port == broker.port
+        finally:
+            node.stop()
+            broker.stop()
+
+    @pytest.mark.usefixtures("short_port_wait")
+    def test_node_keeps_its_heartbeat_while_the_port_file_cannot_be_read(self, monkeypatch):
+        broker = Broker()
+        broker.start()
+        denied = threading.Event()
+        denied.set()
+        real_read_text, real_read_bytes, real_stat = Path.read_text, Path.read_bytes, Path.stat
+        port_file = transport.port_file_for(None)
+
+        def guard(real):
+            def read(self, *args, **kwargs):
+                if denied.is_set() and self == port_file:
+                    raise PermissionError(13, "Access is denied", str(self))
+                return real(self, *args, **kwargs)
+
+            return read
+
+        monkeypatch.setattr(Path, "read_text", guard(real_read_text))
+        monkeypatch.setattr(Path, "read_bytes", guard(real_read_bytes))
+        monkeypatch.setattr(Path, "stat", guard(real_stat))
+        node = Node("probe")
+        ticks = _count_ticks(node)
+        try:
+            node.start()
+            assert _wait_until(lambda: len(ticks) >= 3)
+            assert node._io_thread.is_alive()
+            assert not node.is_registered
+
+            denied.clear()
             assert node.wait_registered(5.0)
             assert node._current_port == broker.port
         finally:

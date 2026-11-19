@@ -68,3 +68,65 @@ def test_lookup_file_reports_a_file_missing_on_disk(db_copy, dataset, monkeypatc
         assert (logical, source, found) == (path, path, None)
     finally:
         service.close()
+
+
+def test_a_new_query_drops_the_previous_sessions_it_names(db_copy):
+    from wafer.app.webui.backend.session import QueryService
+
+    async def scenario():
+        service = QueryService()
+        first = await service.execute(DB_NAME, [], "none", True)
+        other = await service.execute(DB_NAME, [], "none", True)
+        second = await service.execute(DB_NAME, [], "none", True, [first.query_id, "unknown"])
+        alive = [service.session(s.query_id) is not None for s in (first, other, second)]
+        await service.close()
+        return alive
+
+    assert asyncio.run(scenario()) == [False, True, True]
+
+
+def test_a_failed_query_keeps_the_previous_session(db_copy):
+    from wafer.app.webui.backend.session import QueryService
+
+    async def scenario():
+        service = QueryService()
+        first = await service.execute(DB_NAME, [], "none", True)
+        with pytest.raises(ValueError):
+            await service.execute(DB_NAME, [{"name": "nope"}], "none", True, [first.query_id])
+        alive = service.session(first.query_id) is not None
+        await service.close()
+        return alive
+
+    assert asyncio.run(scenario()) is True
+
+
+def test_expired_sessions_are_dropped_on_access(db_copy, monkeypatch):
+    from wafer.app.webui.backend import session as session_module
+
+    async def scenario():
+        service = session_module.QueryService()
+        old = await service.execute(DB_NAME, [], "none", True)
+        new = await service.execute(DB_NAME, [], "none", True)
+        old.last_access -= session_module.SESSION_TTL + 1
+        assert service.session(new.query_id) is new
+        remaining = list(service._sessions)
+        await service.close()
+        return remaining, new.query_id
+
+    remaining, new_id = asyncio.run(scenario())
+    assert remaining == [new_id]
+
+
+def test_aspects_are_kept_as_a_float_array(db_copy):
+    from array import array
+
+    from wafer.app.webui.backend.session import QueryService
+
+    async def scenario():
+        service = QueryService()
+        session = await service.execute(DB_NAME, [], "none", True)
+        await service.close()
+        return session.aspects, session.total
+
+    aspects, total = asyncio.run(scenario())
+    assert isinstance(aspects, array) and aspects.typecode == "f" and len(aspects) == total

@@ -15,12 +15,12 @@ export class QueryClient {
     this.total = 0;
   }
 
-  async run(db, filters, sort, ascending) {
+  async run(db, filters, sort, ascending, previous = []) {
     this.db = db;
     this.filters = filters;
     this.sort = sort;
     this.ascending = ascending;
-    const result = await postQuery(db, filters, sort, ascending);
+    const result = await postQuery(db, filters, sort, ascending, previous);
     this.queryId = result.query_id;
     this.total = result.total;
     return result;

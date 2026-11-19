@@ -100,6 +100,7 @@ function buildFilters() {
 
 let queryToken = 0;
 let lastSnapshot = '';
+let unusedQueryIds = [];
 async function runQuery(force = false) {
   if (!state.db) return;
   const filters = buildFilters();
@@ -109,18 +110,24 @@ async function runQuery(force = false) {
   const token = ++queryToken;
   status.textContent = 'searching...';
   loadBar.classList.add('busy');
+  const unused = unusedQueryIds;
+  unusedQueryIds = [];
+  const client = new QueryClient((expired) => {
+    if (expired === grid.client) runQuery(true);
+  });
   try {
-    const client = new QueryClient((expired) => {
-      if (expired === grid.client) runQuery(true);
-    });
-    const result = await client.run(state.db, filters, state.sort, state.ascending);
-    if (token !== queryToken) return;
-    const aspects = await client.aspects();
-    if (token !== queryToken) return;
+    const previous = grid.client ? [...unused, grid.client.queryId] : unused;
+    const result = await client.run(state.db, filters, state.sort, state.ascending, previous);
+    const aspects = token === queryToken ? await client.aspects() : null;
+    if (token !== queryToken) {
+      unusedQueryIds.push(client.queryId);
+      return;
+    }
     grid.setQuery(client, aspects);
     viewer.setQuery(client, client.total);
     status.textContent = `${result.total} files`;
   } catch (e) {
+    unusedQueryIds.push(...(client.queryId ? [client.queryId] : unused));
     if (token === queryToken) {
       lastSnapshot = '';
       status.textContent = `error: ${e.message}`;

@@ -213,3 +213,15 @@ def test_key_catalog_is_prefetched_before_the_popup_opens(page, webui_base_url):
     page.click("#key-picker")
     page.wait_for_selector(".key-row")
     assert later == []
+
+
+def test_new_searches_drop_the_page_s_previous_sessions(ready_page, webui_query_service):
+    page = ready_page
+    before = set(webui_query_service._sessions)
+    for word, total in (("cat", "2 "), ("dog", "1 "), ("", "5 ")):
+        page.fill("#search-input", word)
+        page.press("#search-input", "Enter")
+        page.wait_for_function(f"document.querySelector('#status').textContent.startsWith('{total}')")
+    after = set(webui_query_service._sessions)
+    assert len(after - before) == 1
+    assert len(after) == len(before)

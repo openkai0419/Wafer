@@ -5,7 +5,9 @@ import os
 import stat
 import time
 import uuid
+from array import array
 from collections import OrderedDict
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial
@@ -42,7 +44,7 @@ class QuerySession:
     db: str
     paths: list[str]
     sources: list[str]
-    aspects: list[float]
+    aspects: array
     created: float = field(default_factory=time.monotonic)
     last_access: float = field(default_factory=time.monotonic)
 
@@ -155,7 +157,7 @@ class QueryService:
             for name in set(self._key_cache) | set(self._key_tasks):
                 self._key_version[name] = self._key_version.get(name, 0) + 1
 
-    async def execute(self, db_name: str, filters: list[dict], sort: str, ascending: bool) -> QuerySession:
+    async def execute(self, db_name: str, filters: list[dict], sort: str, ascending: bool, previous: Sequence[str] = ()) -> QuerySession:
         service = self.db(db_name)
         entries = []
         for item in filters:
@@ -170,11 +172,17 @@ class QueryService:
             entries.append((cls, item.get("params") or {}, item.get("op") or "AND"))
         sort_plugin = sort_registry.get(sort) or NoSort
         started = time.perf_counter()
-        paths, sources, aspects = await service.run(self.composer.execute, service.engine, entries, sort_plugin, ascending)
+        paths, sources, aspects = await service.run(self.run_query, service.engine, entries, sort_plugin, ascending)
+        for query_id in previous:
+            self._sessions.pop(query_id, None)
         session = QuerySession(uuid.uuid4().hex, db_name, paths, sources, aspects)
         self._store(session)
         AppLogger.info(f"WebUI query db={db_name} filters={len(entries)} sort={sort} -> {session.total} items in {time.perf_counter() - started:.3f}s")
         return session
+
+    def run_query(self, engine, entries, sort_plugin, ascending) -> tuple[list[str], list[str], array]:
+        paths, sources, aspects = self.composer.execute(engine, entries, sort_plugin, ascending)
+        return paths, sources, array("f", aspects)
 
     def _store(self, session: QuerySession):
         self._sessions[session.query_id] = session
@@ -189,6 +197,7 @@ class QueryService:
             self._sessions.popitem(last=False)
 
     def session(self, query_id: str) -> QuerySession | None:
+        self._evict()
         session = self._sessions.get(query_id)
         if session is None:
             return None

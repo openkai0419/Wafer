@@ -4,7 +4,6 @@ import asyncio
 import os
 import re
 import sqlite3
-from array import array
 
 from aiohttp import web
 
@@ -48,14 +47,17 @@ async def post_query(request: web.Request):
     filters = body.get("filters") or []
     sort = body.get("sort", "none")
     ascending = bool(body.get("ascending", True))
+    previous = body.get("previous") or []
     if not db:
         raise web.HTTPBadRequest(reason="db is required")
     if not isinstance(filters, list):
         raise web.HTTPBadRequest(reason="filters must be a list")
     if not isinstance(sort, str):
         raise web.HTTPBadRequest(reason="sort must be a string")
+    if not isinstance(previous, list) or not all(isinstance(query_id, str) for query_id in previous):
+        raise web.HTTPBadRequest(reason="previous must be a list of query ids")
     try:
-        session = await request.app[QUERY_SERVICE].execute(db, filters, sort, ascending)
+        session = await request.app[QUERY_SERVICE].execute(db, filters, sort, ascending, previous)
     except KeyError:
         raise web.HTTPNotFound(reason=f"unknown db: {db}") from None
     except ValueError as e:
@@ -66,8 +68,7 @@ async def post_query(request: web.Request):
 @routes.get("/api/query/{query_id}/aspects")
 async def get_aspects(request: web.Request):
     session = get_session_or_404(request)
-    data = array("f", session.aspects).tobytes()
-    return web.Response(body=data, content_type="application/octet-stream")
+    return web.Response(body=session.aspects.tobytes(), content_type="application/octet-stream")
 
 
 def read_source_modified(engine, sources: list[str]) -> dict[str, float]:

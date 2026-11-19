@@ -99,6 +99,22 @@ def test_aspects_binary(client, query):
     assert abs(values[1] - 0.5) < 1e-6
 
 
+def test_query_drops_the_previous_sessions_it_names(client, query):
+    old, _ = query(DB)
+    kept, _ = query(DB)
+    resp, body = client.post("/api/query", json={"db": DB, "previous": [old]})
+    assert resp.status == 200
+    new = jbody(body)["query_id"]
+    assert client.get(f"/api/query/{old}/aspects")[0].status == 404
+    assert client.get(f"/api/query/{kept}/aspects")[0].status == 200
+    assert client.get(f"/api/query/{new}/aspects")[0].status == 200
+
+
+def test_query_previous_must_be_a_list_of_ids(client):
+    resp, _ = client.post("/api/query", json={"db": DB, "previous": "abc"})
+    assert resp.status == 400
+
+
 def test_query_session_not_found(client):
     resp, _ = client.get("/api/query/deadbeef/items")
     assert resp.status == 404

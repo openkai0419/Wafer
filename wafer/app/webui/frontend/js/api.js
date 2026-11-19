@@ -12,11 +12,11 @@ export async function getJson(path, params) {
   return res.json();
 }
 
-export async function postQuery(db, filters, sort, ascending) {
+export async function postQuery(db, filters, sort, ascending, previous = []) {
   const res = await fetch('/api/query', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ db, filters, sort, ascending }),
+    body: JSON.stringify({ db, filters, sort, ascending, previous }),
   });
   if (!res.ok) throw new ApiError(`query: ${res.status}`, res.status);
   return res.json();

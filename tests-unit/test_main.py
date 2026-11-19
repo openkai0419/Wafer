@@ -106,3 +106,23 @@ def test_main_starts_when_parser_and_runtime_agree(monkeypatch):
     main.main()
     assert started == ["tray"]
     assert errors == []
+
+
+def test_main_refuses_a_profile_when_the_debug_tools_are_not_shipped(monkeypatch, tmp_path):
+    main, errors, started = _run_main(monkeypatch, ["--tray", "--profile", "debug-x"], "debug-x")
+    monkeypatch.setattr(main, "get_app_root_dir", lambda: tmp_path)
+
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+    assert exc.value.code != 0
+    assert started == []
+    assert len(errors) == 1 and "debug-x" in errors[0] and str(tmp_path / "debug") in errors[0]
+
+
+def test_main_starts_without_a_profile_when_the_debug_tools_are_not_shipped(monkeypatch, tmp_path):
+    main, errors, started = _run_main(monkeypatch, ["--tray"], None)
+    monkeypatch.setattr(main, "get_app_root_dir", lambda: tmp_path)
+
+    main.main()
+    assert started == ["tray"]
+    assert errors == []

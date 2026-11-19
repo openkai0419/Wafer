@@ -41,7 +41,7 @@ def _setup_faulthandler(force=False):
 _setup_faulthandler()
 from wafer import __version__
 from wafer.constants import APP_DATA_DIR_NAME, APP_ID, APP_NAME, DEFAULT_DB_NAME, TRAY_LOCK_NAME
-from wafer.core.common.paths import get_plugin_dir
+from wafer.core.common.paths import get_app_root_dir, get_plugin_dir
 from wafer.core.platform.process import AppProcess
 import wafer.constants as constants
 
@@ -316,6 +316,10 @@ def _parse_args():
     runtime_profile = current_profile()
     if args.profile != runtime_profile:
         AppLogger.error(f'{PROFILE_ARG} was parsed as {args.profile!r} but the process runs as {runtime_profile!r}; refusing to start')
+        sys.exit(2)
+    debug_tools = get_app_root_dir() / 'debug'
+    if runtime_profile is not None and not (debug_tools / 'agent.py').is_file():
+        AppLogger.error(f'{PROFILE_ARG} {runtime_profile} needs the debug tools in {debug_tools}, which this build does not include; refusing to start')
         sys.exit(2)
     return args
 

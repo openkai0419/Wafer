@@ -230,7 +230,50 @@ def test_ensure_profile_copies_every_image_when_the_sample_has_few(tmp_path, mon
 
     monkeypatch.setattr(profile_setup, "build_template", fake_build)
     assert ensure_profile(checkout, fresh=False, on_progress=lambda text: None) == "debug-main"
-    assert len(list(scratch_root("debug-main").iterdir())) == 3
+    assert sorted(p.name for p in scratch_root("debug-main").iterdir()) == ["000000000000.jpg", "000000000001.jpg", "000000000002.jpg", "elephant.gif"]
+
+
+def _build_fake_template(checkout, *, on_progress):
+    target = profile_setup.template_dir(schema_hash(checkout))
+    _fake_template(target)
+    return target
+
+
+def test_scratch_images_come_from_the_in_scope_files_of_any_sample(tmp_path, monkeypatch, app_data):
+    sample = tmp_path / "other-sample"
+    for folder in ("photos/2024", "art", "coco/train2017", "docs"):
+        (sample / folder).mkdir(parents=True)
+    for name in ("b.png", "a.jpg"):
+        Image.new("RGB", (8, 8)).save(sample / "photos" / "2024" / name)
+    Image.new("RGB", (8, 8)).save(sample / "art" / "c.webp")
+    Image.new("RGB", (8, 8)).save(sample / "art" / "a.jpg")
+    Image.new("RGB", (8, 8)).save(sample / "coco" / "train2017" / "ignored.jpg")
+    (sample / "docs" / "readme.txt").write_text("x", encoding="utf-8")
+    (sample / "coco" / "ignored.zip").write_bytes(b"zip")
+    monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(sample))
+    checkout = make_checkout(tmp_path / "Repo")
+    monkeypatch.setattr(profile_setup, "build_template", _build_fake_template)
+
+    assert ensure_profile(checkout, fresh=False, on_progress=lambda text: None) == "debug-main"
+
+    scratch = scratch_root("debug-main")
+    assert sorted(p.name for p in scratch.iterdir()) == ["a.jpg", "b.png", "c.webp"]
+    assert (scratch / "a.jpg").read_bytes() == (sample / "art" / "a.jpg").read_bytes()
+
+
+def test_scratch_takes_at_most_the_image_count_in_path_order(tmp_path, monkeypatch, app_data):
+    sample = tmp_path / "many"
+    for folder in ("x", "y"):
+        (sample / folder).mkdir(parents=True)
+        for i in range(profile_setup.SCRATCH_IMAGE_COUNT):
+            Image.new("RGB", (8, 8)).save(sample / folder / f"{folder}{i:02d}.png")
+    monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(sample))
+    checkout = make_checkout(tmp_path / "Repo")
+    monkeypatch.setattr(profile_setup, "build_template", _build_fake_template)
+
+    ensure_profile(checkout, fresh=False, on_progress=lambda text: None)
+
+    assert sorted(p.name for p in scratch_root("debug-main").iterdir()) == [f"x{i:02d}.png" for i in range(profile_setup.SCRATCH_IMAGE_COUNT)]
 
 
 def test_build_template_copies_the_indexed_profile_without_runtime_state(tmp_path, monkeypatch, app_data, sample):

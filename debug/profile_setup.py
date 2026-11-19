@@ -28,6 +28,7 @@ from wafer.core.ipc.node import Node
 from wafer.core.logs import AppLogger
 from wafer.core.platform.process import AppProcess
 from wafer.core.platform.process_lock import file_lock
+from wafer.web.media import classify
 
 MAIN_PROFILE = f"{PROFILE_PREFIX}main"
 TEMPLATE_BUILD_PROFILE = f"{PROFILE_PREFIX}template-build"
@@ -42,7 +43,6 @@ TEMPLATE_LOCK_TIMEOUT = TEMPLATE_INDEX_TIMEOUT + 300.0
 SAMPLE_DB_NAME = "sample"
 SAMPLE_IGNORED_FOLDERS = ("coco/train2017", "coco/unlabeled2017")
 SAMPLE_IGNORED_PATTERN = "coco/*.zip"
-SCRATCH_SOURCE = "coco/val2017"
 SCRATCH_IMAGE_COUNT = 24
 SCHEMA_FILES = ("wafer/core/db/file_db.py", "wafer/core/db/setting_db.py")
 UNFINISHED_STATUSES = ("pending", "dispatched")
@@ -171,12 +171,27 @@ def require_sample_root() -> Path:
     return sample
 
 
+def _sample_files(sample: Path) -> set[str]:
+    roots, ignored_folders, ignored_patterns = _sample_scope_rules(sample)
+    return files_in_scope([str(root) for root in roots], ignored_folders, ignored_patterns)
+
+
 def require_sample() -> Path:
     sample = require_sample_root()
-    roots, ignored_folders, ignored_patterns = _sample_scope_rules(sample)
-    if not files_in_scope([str(root) for root in roots], ignored_folders, ignored_patterns):
+    if not _sample_files(sample):
         raise SampleUnavailable(f"The debug sample folder {sample} has no files to index. {SAMPLE_FIX_HINT}")
     return sample
+
+
+def scratch_images(sample: Path) -> list[Path]:
+    chosen: dict[str, Path] = {}
+    for file in sorted(_sample_files(sample)):
+        name = os.path.basename(file)
+        if classify(file) == "image" and name.casefold() not in chosen:
+            chosen[name.casefold()] = Path(file)
+            if len(chosen) == SCRATCH_IMAGE_COUNT:
+                break
+    return list(chosen.values())
 
 
 def sample_db_setup(root: Path) -> None:
@@ -398,12 +413,15 @@ def _prepare_scratch(profile: str, staging: Path) -> None:
     scratch = scratch_root(profile)
     staged_scratch = staging / scratch.relative_to(profile_data_root(profile))
     staged_scratch.mkdir(parents=True, exist_ok=True)
-    source = sample_root() / SCRATCH_SOURCE
-    images = sorted((p for p in source.iterdir() if p.is_file()), key=lambda p: p.name)[:SCRATCH_IMAGE_COUNT]
+    sample = require_sample_root()
+    images = scratch_images(sample)
     for image in images:
         shutil.copy2(image, staged_scratch / image.name)
     _add_parent_folder(SettingDB(str(_sample_settings_db(staging))), scratch)
-    AppLogger.info(f"{profile}: copied {len(images)} sample images into {scratch}")
+    if images:
+        AppLogger.info(f"{profile}: copied {len(images)} sample images into {scratch}")
+    else:
+        AppLogger.warning(f"{profile}: {sample} has no images in scope to copy, so {scratch} starts empty")
 
 
 def ensure_profile(checkout: Path, *, fresh: bool, on_progress: Progress) -> str:

@@ -55,6 +55,7 @@ class ConflictResolver:
         self._folder_message = folder_message
         self._folder_apply_all: str | None = None
         self._file_apply_all: str | None = None
+        self._batch_file_apply_all: str | None = None
         self._same_path_apply_all: str | None = None
         self._subpath_apply_all: bool = False
         self._show_folder_apply_all: bool = False
@@ -289,6 +290,8 @@ class ConflictResolver:
         if self._overwrite_mode in ("overwrite", "rename", "skip"):
             return PasteDecision(mode=self._overwrite_mode)
 
+        if in_batch and self._batch_file_apply_all is not None:
+            return PasteDecision(mode=self._batch_file_apply_all)
         if self._file_apply_all is not None:
             if in_batch and self._file_apply_all == "overwrite":
                 return self._keep_both(Path(src_path or name))
@@ -309,17 +312,13 @@ class ConflictResolver:
 
         if choice in (None, "cancel"):
             raise PasteCancelledError()
-        if choice == "skip":
-            if apply_all:
-                self._file_apply_all = "skip"
-            return PasteDecision(mode="skip")
-        if choice == "overwrite":
-            if apply_all:
-                self._file_apply_all = "overwrite"
-            return PasteDecision(mode="overwrite")
+        mode = choice if choice in ("skip", "overwrite") else "rename"
         if apply_all:
-            self._file_apply_all = "rename"
-        return PasteDecision(mode="rename")
+            if in_batch:
+                self._batch_file_apply_all = mode
+            else:
+                self._file_apply_all = mode
+        return PasteDecision(mode=mode)
 
 
 def resolve_paste_plans_with_ui(

@@ -545,6 +545,41 @@ def test_same_named_remote_items_are_both_kept_in_overwrite_mode(tmp_path):
     assert sorted(p.read_bytes() for p in tmp_path.iterdir()) == [b"first", b"second"]
 
 
+def test_overwrite_applied_to_all_same_named_copies_overwrites_each_of_them(monkeypatch, tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor
+    from wafer.qt.transfer import conflict_resolver as r
+    from wafer.qt.transfer.paste import ClipboardFilePaster
+
+    asked = []
+    monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(lambda message, **kw: (asked.append(kw), ("overwrite", True))[1]))
+    sources, dst_dir = _same_named_sources(tmp_path, ("A", "B", "C"))
+    plans = ClipboardFilePaster.build_paste_plan(dst_dir, ("copy", sources))
+
+    decisions = r.ConflictResolver(op="copy", overwrite_mode="ask", parent=None, folder_message="").resolve_plans(plans)
+    FileExecutor().execute_plans(plans, decisions)
+
+    assert len(asked) == 1
+    assert _files_under(dst_dir) == [("image.png", "from C")]
+    assert [src.read_text(encoding="utf-8") for src in sources] == ["from A", "from B", "from C"]
+
+
+def test_apply_to_all_for_same_named_items_does_not_answer_an_existing_file(monkeypatch, tmp_path):
+    from wafer.qt.transfer import conflict_resolver as r
+    from wafer.qt.transfer.paste import ClipboardFilePaster
+
+    messages = []
+    monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(lambda message, **kw: (messages.append(message), ("rename", True))[1]))
+    sources, dst_dir = _same_named_sources(tmp_path)
+    other = tmp_path / "B" / "other.png"
+    other.write_text("new other", encoding="utf-8")
+    (dst_dir / "other.png").write_text("old other", encoding="utf-8")
+    plans = ClipboardFilePaster.build_paste_plan(dst_dir, ("copy", [*sources, other]))
+
+    r.ConflictResolver(op="copy", overwrite_mode="ask", parent=None, folder_message="").resolve_plans(plans)
+
+    assert messages == [r.t("Another selected item has the same name."), r.t("An item with the same name already exists.")]
+
+
 def test_same_named_remote_items_are_asked_as_selected_items(monkeypatch, tmp_path):
     from wafer.core.platform.file_operations import build_drop_plans
     from wafer.qt.transfer import conflict_resolver as r

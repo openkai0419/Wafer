@@ -474,6 +474,91 @@ def test_same_named_drops_are_asked_too(monkeypatch, tmp_path):
     assert sources[1].read_text(encoding="utf-8") == "from B"
 
 
+
+def test_overwrite_applied_to_all_never_overwrites_another_selected_item(monkeypatch, tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor
+    from wafer.qt.transfer import conflict_resolver as r
+    from wafer.qt.transfer.paste import ClipboardFilePaster
+
+    asked = []
+    monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(lambda message, **kw: (asked.append(kw), ("overwrite", True))[1]))
+    sources, dst_dir = _same_named_sources(tmp_path)
+    other = tmp_path / "A" / "other.png"
+    other.write_text("new other", encoding="utf-8")
+    (dst_dir / "other.png").write_text("old other", encoding="utf-8")
+    plans = ClipboardFilePaster.build_paste_plan(dst_dir, ("cut", [other, *sources]))
+
+    decisions = r.ConflictResolver(op="move", overwrite_mode="ask", parent=None, folder_message="").resolve_plans(plans)
+    FileExecutor().execute_plans(plans, decisions)
+
+    assert len(asked) == 1
+    assert sorted(text for _, text in _files_under(dst_dir)) == ["from A", "from B", "new other"]
+
+
+def test_moving_same_named_items_does_not_offer_to_overwrite_the_first(monkeypatch, tmp_path):
+    from wafer.qt.transfer import conflict_resolver as r
+    from wafer.qt.transfer.paste import ClipboardFilePaster
+
+    offered = {}
+
+    def ask(message, **kw):
+        offered[kw["op"]] = kw["choices"]
+        return ("rename", False)
+
+    monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(ask))
+    for op, action in (("move", "cut"), ("copy", "copy")):
+        sources, dst_dir = _same_named_sources(tmp_path / op)
+        plans = ClipboardFilePaster.build_paste_plan(dst_dir, (action, sources))
+        r.ConflictResolver(op=op, overwrite_mode="ask", parent=None, folder_message="").resolve_plans(plans)
+
+    assert "overwrite" not in offered["move"]
+    assert "overwrite" in offered["copy"]
+
+
+def test_merging_same_named_folders_does_not_offer_to_overwrite_files_of_the_first(monkeypatch, tmp_path):
+    from wafer.qt.transfer import conflict_resolver as r
+    from wafer.qt.transfer.paste import ClipboardFilePaster
+
+    offered = []
+    monkeypatch.setattr(r.FolderConflictDialog, "ask", staticmethod(lambda message, **kw: ("merge", False)))
+    monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(lambda message, **kw: (offered.append(kw["choices"]), ("rename", False))[1]))
+    sources, dst_dir = _same_named_sources(tmp_path, is_dir=True)
+    plans = ClipboardFilePaster.build_paste_plan(dst_dir, ("cut", sources))
+
+    r.ConflictResolver(op="move", overwrite_mode="ask", parent=None, folder_message="").resolve_plans(plans)
+
+    assert len(offered) == 1
+    assert "overwrite" not in offered[0]
+
+
+def test_same_named_remote_items_are_both_kept_in_overwrite_mode(tmp_path):
+    from wafer.core.platform.file_operations import FileExecutor, build_drop_plans
+    from wafer.qt.transfer import conflict_resolver as r
+    from wafer.qt.transfer.dragparser import ParsedItem
+
+    items = [ParsedItem(source=b"first", name="image.png", is_binary=True), ParsedItem(source=b"second", name="image.png", is_binary=True)]
+    plans = build_drop_plans(items, str(tmp_path), "copy")
+
+    decisions = r.ConflictResolver(op="copy", overwrite_mode="overwrite", parent=None, folder_message="").resolve_plans(plans)
+    FileExecutor().execute_plans(plans, decisions)
+
+    assert sorted(p.read_bytes() for p in tmp_path.iterdir()) == [b"first", b"second"]
+
+
+def test_same_named_remote_items_are_asked_as_selected_items(monkeypatch, tmp_path):
+    from wafer.core.platform.file_operations import build_drop_plans
+    from wafer.qt.transfer import conflict_resolver as r
+    from wafer.qt.transfer.dragparser import ParsedItem
+
+    messages = []
+    monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(lambda message, **kw: (messages.append(message), ("rename", False))[1]))
+    items = [ParsedItem(source=b"first", name="image.png", is_binary=True), ParsedItem(source=b"second", name="image.png", is_binary=True)]
+    plans = build_drop_plans(items, str(tmp_path), "copy")
+
+    r.ConflictResolver(op="copy", overwrite_mode="ask", parent=None, folder_message="").resolve_plans(plans)
+
+    assert messages == [r.t("Another selected item has the same name.")]
+
 def test_resolve_paste_plans_with_ui_empty():
     from wafer.qt.transfer.conflict_resolver import resolve_paste_plans_with_ui
 

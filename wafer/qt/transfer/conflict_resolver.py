@@ -124,14 +124,16 @@ class ConflictResolver:
                 decisions[idx] = PasteDecision(mode="create")
                 continue
             src = Path(getattr(p, "src", ""))
-            decisions[idx] = self._ask_folder(src, occupants[-1], in_batch=self._in_batch(p, occupants))
+            occupant, in_batch = occupants[-1]
+            decisions[idx] = self._ask_folder(src, occupant, in_batch=in_batch)
 
-        pending_merge_files: list[tuple[int, MergeConflictItem]] = []
+        pending_merge_files: list[tuple[int, object, MergeConflictItem]] = []
         for idx, p in folder_conflicts:
             dec = decisions.get(idx)
             if self._overwrite_mode == "ask" and dec and dec.mode == "merge":
-                conflicts = merge_scans[idx] if idx in merge_scans else self._scan_merge(p, self._occupants(idx, p))
-                pending_merge_files.extend((idx, c) for c in conflicts)
+                occupant_paths = [path for path, _ in self._occupants(idx, p)]
+                conflicts = merge_scans[idx] if idx in merge_scans else self._scan_merge(p, occupant_paths)
+                pending_merge_files.extend((idx, p, c) for c in conflicts)
 
         for idx, p in file_conflicts:
             occupants = self._occupants(idx, p)
@@ -146,10 +148,12 @@ class ConflictResolver:
                 item = getattr(p, "parsed_item", None)
                 if item and getattr(item, "is_binary", False):
                     src_bytes = getattr(item, "source", None)
-            decisions[idx] = self._ask_file(src_path, str(occupants[-1]), name, src_bytes, in_batch=self._in_batch(p, occupants))
+            occupant, in_batch = occupants[-1]
+            decisions[idx] = self._ask_file(src_path, str(occupant), name, src_bytes, in_batch=in_batch)
 
-        for idx, conflict in pending_merge_files:
-            dec = self._ask_file(str(conflict.src), str(conflict.dst), conflict.src.name, None)
+        for idx, p, conflict in pending_merge_files:
+            in_batch = not _destination_key(conflict.dst).startswith(_destination_key(p.dst_default) + os.sep)
+            dec = self._ask_file(str(conflict.src), str(conflict.dst), conflict.src.name, None, in_batch=in_batch)
             parent_dec = decisions[idx]
             if parent_dec.merge_decisions is None:
                 parent_dec.merge_decisions = {}
@@ -157,21 +161,17 @@ class ConflictResolver:
 
         return decisions
 
-    def _occupants(self, idx: int, p) -> list[Path]:
+    def _occupants(self, idx: int, p) -> list[tuple[Path, bool]]:
         dst = Path(getattr(p, "dst_default", ""))
-        occupants = [dst] if bool(getattr(p, "conflict", False)) else []
+        occupants = [(dst, False)] if bool(getattr(p, "conflict", False)) else []
         for earlier in self._earlier.get(idx, ()):
             dec = self._decisions.get(int(getattr(earlier, "index", 0) or 0))
             mode = dec.mode if dec else "create"
             if mode in ("create", "overwrite"):
-                occupants = [_landing_source(earlier)]
+                occupants = [(_landing_source(earlier), True)]
             elif mode == "merge":
-                occupants.append(_landing_source(earlier))
+                occupants.append((_landing_source(earlier), True))
         return occupants
-
-    @staticmethod
-    def _in_batch(p, occupants: list[Path]) -> bool:
-        return occupants[-1] != Path(getattr(p, "dst_default", ""))
 
     @staticmethod
     def _scan_merge(p, occupants: list[Path], limit: int | None = None) -> list[MergeConflictItem]:
@@ -290,8 +290,11 @@ class ConflictResolver:
             return PasteDecision(mode=self._overwrite_mode)
 
         if self._file_apply_all is not None:
+            if in_batch and self._file_apply_all == "overwrite":
+                return self._keep_both(Path(src_path or name))
             return PasteDecision(mode=self._file_apply_all)
 
+        choices = ("rename", "skip", "cancel") if in_batch and self._op == "move" else ("overwrite", "rename", "skip", "cancel")
         choice, apply_all = FileConflictDialog.ask(
             t("Another selected item has the same name.") if in_batch else t("An item with the same name already exists."),
             src_path=normalize_path(src_path) if src_path else "",
@@ -300,6 +303,7 @@ class ConflictResolver:
             src_bytes=src_bytes,
             op=self._op,
             show_apply_all=self._show_file_apply_all,
+            choices=choices,
             parent=self._parent,
         )
 

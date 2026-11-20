@@ -1,38 +1,56 @@
 from __future__ import annotations
-import os
 from typing import Any
+from collections.abc import Callable
 from pathlib import Path
 from ....core.profiling import profiler
 from ....core.common.json_io import read_json_file, write_json_file
+from ....core.platform.process_lock import file_lock
 from ....core.logs import AppLogger
 from .payload import CommandPayload
 
 
 class PersistentStore:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path | None):
         self._map: dict[str, Any] = {}
         self._buffer: dict[str, Any] = {}
         self._loaded = False
         self._path = path
         self._flush_pending = False
 
+    def _read_file(self) -> dict[str, Any]:
+        data = read_json_file(self._path, {}) if self._path is not None else {}
+        if not isinstance(data, dict):
+            return {}
+        return {str(k): v for k, v in data.items() if isinstance(v, dict)}
+
     def _ensure_loaded(self):
         if self._loaded:
             return
         self._loaded = True
-        data = read_json_file(self._path, {})
-        if isinstance(data, dict):
-            self._map = {str(k): v for k, v in data.items() if isinstance(v, dict)}
-        else:
-            self._map = {}
+        self._map = self._read_file()
+
+    def _update_file(self, apply: Callable[[dict[str, Any]], None]) -> bool:
+        if self._path is None:
+            apply(self._map)
+            return True
+        try:
+            with file_lock(f"{self._path}.lock"):
+                latest = self._read_file()
+                apply(latest)
+                self._map = latest
+                return bool(write_json_file(self._path, latest, indent=2, ensure_ascii=False))
+        except TimeoutError as e:
+            AppLogger.warning(f"Command options were not saved, the file stayed locked: {self._path}", exc=e)
+            apply(self._map)
+            return False
 
     def _flush(self) -> bool:
         if not self._buffer:
             return True
-        self._map.update(self._buffer)
+        changed = dict(self._buffer)
         self._buffer.clear()
         self._flush_pending = False
-        return bool(write_json_file(self._path, self._map, indent=2, ensure_ascii=False))
+        return self._update_file(lambda m: m.update(changed))
 
     def _get_raw(self, key: str) -> dict[str, Any]:
         self._ensure_loaded()
@@ -54,13 +72,13 @@ class PersistentStore:
     def clear(self, key: str | None = None) -> bool:
         self._ensure_loaded()
         if key is None:
-            self._map.clear()
             self._buffer.clear()
-        else:
-            k = str(key)
-            self._map.pop(k, None)
-            self._buffer.pop(k, None)
-        return self._flush()
+            self._flush_pending = False
+            return self._update_file(lambda m: m.clear())
+        k = str(key)
+        self._buffer.pop(k, None)
+        self._flush_pending = bool(self._buffer)
+        return self._update_file(lambda m: m.pop(k, None))
 
 
 class CommandOptionStore(PersistentStore):
@@ -72,11 +90,7 @@ class CommandOptionStore(PersistentStore):
     def instance(cls) -> CommandOptionStore:
         if cls._instance is None:
             inst = object.__new__(cls)
-            if cls._default_path is not None:
-                PersistentStore.__init__(inst, cls._default_path)
-            else:
-                PersistentStore.__init__(inst, Path(os.devnull))
-                inst._loaded = True
+            PersistentStore.__init__(inst, cls._default_path)
             cls._initialized = True
             cls._instance = inst
         return cls._instance
@@ -113,43 +127,3 @@ class CommandOptionStore(PersistentStore):
         if isinstance(options, CommandPayload):
             return self._set_raw(str(command_id), {"id": options.id, "args": options.args})
         return self._set_raw(str(command_id), {"id": str(command_id), "args": options or {}})
-
-
-class ActionGroupStateManager:
-    _instance: ActionGroupStateManager | None = None
-
-    @classmethod
-    def instance(cls) -> ActionGroupStateManager:
-        if cls._instance is None:
-            inst = object.__new__(cls)
-            inst._group_members = {}
-            cls._instance = inst
-        return cls._instance
-
-    def register_member(self, group_name: str, command_id: str):
-        if group_name not in self._group_members:
-            self._group_members[group_name] = []
-        if command_id not in self._group_members[group_name]:
-            self._group_members[group_name].append(command_id)
-
-    def get_members(self, group_name: str) -> list[str]:
-        return self._group_members.get(group_name, [])
-
-    @profiler.profile
-    def find_current(self, group_name: str, registry) -> str | None:
-        members = self._group_members.get(group_name)
-        if not members:
-            return None
-        for member in members:
-            cmd = registry.get_command(member)
-            if cmd is None:
-                continue
-            resolver = cmd.meta.checked
-            if resolver is None:
-                continue
-            try:
-                if bool(resolver()):
-                    return member
-            except Exception as e:
-                AppLogger.warning(f"checked resolver failed for '{member}' in group '{group_name}': {e}")
-        return None

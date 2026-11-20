@@ -1,11 +1,10 @@
 import contextlib
 import json
-import sqlite3
-from ..common.paths import normalize_path
+from ..common.paths import normalize_path, profile_allows_folder
 from ..common.helpers import try_json_loads
 from ..profiling import profiler
 from ..logs import AppLogger
-from .db_utils import connect_with_retry
+from .db_utils import connect_with_retry, open_readonly
 
 _ENTRY_TABLE_COLUMNS = {
     "parent_folders": "path",
@@ -23,8 +22,7 @@ class SettingDB:
     @contextlib.contextmanager
     def _conn(self, read_only: bool = False):
         if read_only:
-            uri = f"file:{self.db_name}?mode=ro"
-            con = sqlite3.connect(uri, uri=True, isolation_level=None)
+            con = open_readonly(self.db_name)
             try:
                 yield con
             finally:
@@ -133,6 +131,9 @@ class SettingDB:
 
     @profiler.profile
     def add_parent_folder(self, path):
+        if not profile_allows_folder(path):
+            AppLogger.warning(f"Parent folder refused outside the debug profile sample data: {path}")
+            return False
         return self._add_entry("parent_folders", path)
 
     @profiler.profile
@@ -177,12 +178,7 @@ class SettingDB:
 
     @profiler.profile
     def get_all_folder_settings(self) -> tuple[list[str], list[str], list[str]]:
-        """Fetch parent/ignore folders and ignore patterns in a single connection."""
-        with self._conn(read_only=True) as con:
-            parents = [row[0] for row in con.execute("SELECT path FROM parent_folders ORDER BY id ASC")]
-            ignores = [row[0] for row in con.execute("SELECT path FROM ignore_folders ORDER BY id ASC")]
-            patterns = [row[0] for row in con.execute("SELECT pattern FROM ignore_patterns ORDER BY id ASC")]
-        return parents, ignores, patterns
+        return read_folder_settings(self.db_name)
 
     @profiler.profile
     def set_setting(self, key, value):
@@ -218,3 +214,15 @@ class SettingDB:
 
     def set_enabled_collectors(self, names: list[str]):
         self.set_setting("enabled_collectors", list(names))
+
+
+@profiler.profile
+def read_folder_settings(db_path) -> tuple[list[str], list[str], list[str]]:
+    con = open_readonly(db_path)
+    try:
+        parents = [row[0] for row in con.execute("SELECT path FROM parent_folders ORDER BY id ASC")]
+        ignores = [row[0] for row in con.execute("SELECT path FROM ignore_folders ORDER BY id ASC")]
+        patterns = [row[0] for row in con.execute("SELECT pattern FROM ignore_patterns ORDER BY id ASC")]
+    finally:
+        con.close()
+    return parents, ignores, patterns

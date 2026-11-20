@@ -449,6 +449,20 @@ def _draw_checkbox_unchecked(p: QPainter, r: QRectF, color: QColor):
     p.drawRoundedRect(box, radius, radius)
 
 
+@_register("options", padding=0.22)
+def _draw_options(p: QPainter, r: QRectF, color: QColor):
+    side = round(min(r.width(), r.height()))
+    lw = max(1, round(side / 9))
+    x = round(r.center().x() - side / 2)
+    y = round(r.center().y() - side / 2)
+    frame = QPainterPath()
+    frame.addRect(QRectF(x, y, side, side))
+    frame.addRect(QRectF(x + lw, y + lw, side - 2 * lw, side - 2 * lw))
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    p.drawPath(frame)
+
+
 @_register("checkbox_checked", padding=0.13)
 def _draw_checkbox_checked(p: QPainter, r: QRectF, color: QColor):
     lw = max(1.2, min(r.width(), r.height()) * 0.13)
@@ -540,6 +554,51 @@ def _draw_query(p: QPainter, r: QRectF, color: QColor):
     )
     handle_end = QPointF(r.right() - s * 0.12, r.bottom() - s * 0.12)
     p.drawLine(handle_start, handle_end)
+
+
+@_register("filter", padding=0.08)
+def _draw_filter(p: QPainter, r: QRectF, color: QColor):
+    s = min(r.width(), r.height())
+    pen = QPen(color, max(1.5, s * 0.10))
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    cx = r.center().x()
+    top = r.top() + s * 0.14
+    waist = r.top() + s * 0.52
+    bottom = r.bottom() - s * 0.10
+    half_top = s * 0.40
+    half_neck = s * 0.09
+    path = QPainterPath()
+    path.moveTo(QPointF(cx - half_top, top))
+    path.lineTo(QPointF(cx + half_top, top))
+    path.lineTo(QPointF(cx + half_neck, waist))
+    path.lineTo(QPointF(cx + half_neck, bottom))
+    path.lineTo(QPointF(cx - half_neck, bottom))
+    path.lineTo(QPointF(cx - half_neck, waist))
+    path.closeSubpath()
+    p.drawPath(path)
+
+
+@_register("collapse_all", padding=0.08)
+def _draw_collapse_all(p: QPainter, r: QRectF, color: QColor):
+    s = min(r.width(), r.height())
+    pen = QPen(color, max(1.5, s * 0.10))
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    cx = r.center().x()
+    cy = r.center().y()
+    half_width = s * 0.34
+    depth = s * 0.20
+    gap = s * 0.16
+    for direction in (1, -1):
+        tip = cy - direction * gap
+        wing = tip - direction * depth
+        p.drawLine(QPointF(cx - half_width, wing), QPointF(cx, tip))
+        p.drawLine(QPointF(cx + half_width, wing), QPointF(cx, tip))
 
 
 @_register("menu", padding=0.15)

@@ -48,3 +48,17 @@ def test_remove_database_delegates_deletion_to_indexer_over_ipc(monkeypatch):
     assert sent == [(("db.delete", "old"), {"dst": "indexer", "db": "old"})]
     assert window.database_combo.names == ["keep"]
     assert reloaded == ["keep"]
+
+
+def test_add_database_rejects_a_name_that_is_not_a_valid_filename(monkeypatch):
+    created, warnings = [], []
+    window = SimpleNamespace(reload_database=lambda name: None)
+    monkeypatch.setattr(database_mod.InputDialog, "get_text", lambda *a, **k: "a?b")
+    monkeypatch.setattr(database_mod, "list_setting_db_names", lambda: ["db"])
+    monkeypatch.setattr(database_mod, "create_database", created.append)
+    monkeypatch.setattr(database_mod.Notifier, "warning", warnings.append)
+
+    database_mod.add_database(SimpleNamespace(get_instance=lambda name: window))
+
+    assert created == []
+    assert warnings == ["Invalid database name: invalid_chars"]

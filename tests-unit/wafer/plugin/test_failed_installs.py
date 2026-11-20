@@ -64,3 +64,18 @@ def test_corrupted_file_returns_empty(ext_dir):
     with open(path, "w", encoding="utf-8") as f:
         f.write("not json{{{")
     assert failed_installs.failed_names(ext_dir) == set()
+
+
+def test_failed_delete_is_logged(ext_dir, monkeypatch):
+    failed_installs.mark_failed(ext_dir, "ext_a", "pip failed")
+    warnings = []
+    monkeypatch.setattr(failed_installs.AppLogger, "warning", lambda text, *, exc=None: warnings.append(text))
+
+    def locked(path):
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(failed_installs.os, "remove", locked)
+    failed_installs.clear(ext_dir, ["ext_a"])
+
+    assert len(warnings) == 1
+    assert "failed.json" in warnings[0]

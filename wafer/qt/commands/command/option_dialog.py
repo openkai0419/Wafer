@@ -10,6 +10,8 @@ from ...common.dpi import dpix
 from ...common.icon_engine import themed_icon
 from .state import CommandOptionStore
 
+QT_INT_MAX = 2147483647
+
 
 class CommandOptionsDialog(QtWidgets.QDialog):
     def __init__(self, command_class: type, parent=None, execute_callback: Callable[[dict[str, Any]], None] | None = None, binding_mode: bool = False, auto_required: bool = False):
@@ -68,11 +70,11 @@ class CommandOptionsDialog(QtWidgets.QDialog):
         layout.addLayout(row)
 
     def _create_widget(self, param) -> QtWidgets.QWidget:
-        resolved_choices = param.resolve_choices()
-        if resolved_choices:
+        choice_items = param.choice_items()
+        if choice_items:
             combo = QtWidgets.QComboBox()
-            for choice in resolved_choices:
-                combo.addItem(str(choice), choice)
+            for value, label in choice_items:
+                combo.addItem(label, value)
             base = self._initial.get(param.name, param.default)
             if base is not None:
                 idx = combo.findData(base)
@@ -93,7 +95,7 @@ class CommandOptionsDialog(QtWidgets.QDialog):
             if param.min_value is not None:
                 w.setMinimum(int(param.min_value))
             else:
-                w.setMinimum(int(min(0, v)))
+                w.setMinimum(max(-QT_INT_MAX, min(0, v)))
             if param.max_value is not None:
                 w.setMaximum(int(param.max_value))
             else:
@@ -165,7 +167,7 @@ class CommandOptionsDialog(QtWidgets.QDialog):
             return 999
         sq = a * a
         digits = len(str(int(sq)))
-        return max(999, (10 ** (digits + 1)) - 1)
+        return min(QT_INT_MAX, max(999, (10 ** (digits + 1)) - 1))
 
     @staticmethod
     def _infer_float_step(v: float) -> tuple[float, int]:
@@ -221,7 +223,7 @@ class CommandOptionsDialog(QtWidgets.QDialog):
             if callable(self._execute_callback):
                 self._execute_callback(values)
         except Exception as e:
-            AppLogger.warning(f"Failed to execute command from dialog: {e}")
+            AppLogger.warning("Failed to execute command from dialog", exc=e)
 
     def _on_reset_defaults(self):
         for param in self.command_class.meta.params:
@@ -250,7 +252,7 @@ class CommandOptionsDialog(QtWidgets.QDialog):
             if callable(self._execute_callback):
                 self._execute_callback(values)
         except Exception as e:
-            AppLogger.warning(f"Failed to execute command from dialog: {e}")
+            AppLogger.warning("Failed to execute command from dialog", exc=e)
             return
         self._did_save = True
         self.accept()

@@ -2,6 +2,9 @@ import os
 from pathlib import Path
 from platformdirs import PlatformDirs
 from ...constants import APP_DATA_DIR_NAME
+from .profile import PROFILE_PREFIX, TOOLS_PROFILE, current_profile, same_profile
+
+DEBUG_PROFILES_DIR_NAME = f"{APP_DATA_DIR_NAME}-debug"
 
 
 def normalize_path(p):
@@ -9,6 +12,10 @@ def normalize_path(p):
     if path[1:2] == ":":
         return path[0].upper() + path[1:]
     return path
+
+
+def parent_folder(path: str) -> str:
+    return os.path.dirname(path).replace("\\", "/")
 
 
 def child_prefix(folder: str) -> str:
@@ -100,9 +107,68 @@ def _resolve_app_path(relative_path, base_dir):
     return path
 
 
+def profile_data_root(profile: str | None) -> Path:
+    base = Path(PlatformDirs(appname=None).user_data_dir)
+    return base / APP_DATA_DIR_NAME if profile is None else base / DEBUG_PROFILES_DIR_NAME / profile
+
+
+def profile_config_root(profile: str | None) -> Path:
+    base = Path(PlatformDirs(appname=None).user_config_dir)
+    return base / APP_DATA_DIR_NAME if profile is None else base / DEBUG_PROFILES_DIR_NAME / profile
+
+
+def debug_profiles_dir() -> Path:
+    return Path(PlatformDirs(appname=None).user_data_dir) / DEBUG_PROFILES_DIR_NAME
+
+
+def sample_root() -> Path:
+    override = os.environ.get("WAFER_DEBUG_SAMPLE_ROOT")
+    if override:
+        return Path(override)
+    return Path(os.path.realpath(get_app_root_dir() / ".sample"))
+
+
+def scratch_root(profile: str) -> Path:
+    return profile_data_root(profile) / "scratch"
+
+
+def _guard_key(path) -> str:
+    return os.path.normcase(normalize_path(os.path.realpath(path))).replace("\\", "/")
+
+
+def _is_within(path: str, root: Path) -> bool:
+    target = _guard_key(path)
+    base = _guard_key(root)
+    return target == base or target.startswith(child_prefix(base))
+
+
+def _is_in_any_profile_scratch(path: str) -> bool:
+    target = Path(_guard_key(path))
+    base = Path(_guard_key(debug_profiles_dir()))
+    if not target.is_relative_to(base):
+        return False
+    parts = target.relative_to(base).parts
+    return len(parts) >= 2 and parts[0].startswith(PROFILE_PREFIX) and parts[1] == os.path.normcase(scratch_root(parts[0]).name)
+
+
+def profile_allows_folder(path: str) -> bool:
+    profile = current_profile()
+    if profile is None:
+        return True
+    if same_profile(profile, TOOLS_PROFILE) and _is_in_any_profile_scratch(path):
+        return True
+    return _is_within(path, sample_root()) or _is_within(path, scratch_root(profile))
+
+
+def profile_allows_file_write(path: str) -> bool:
+    profile = current_profile()
+    if profile is None:
+        return True
+    return _is_within(path, scratch_root(profile))
+
+
 def resolve_data_path(relative_path):
-    dirs = PlatformDirs(appname=None)
-    base_dir = Path(dirs.user_data_dir) / APP_DATA_DIR_NAME
+    base_dir = profile_data_root(current_profile())
     return normalize_path(_resolve_app_path(relative_path, base_dir))
 
 
@@ -115,8 +181,7 @@ def resolve_temp_path(relative_path):
 
 
 def resolve_config_path(relative_path):
-    dirs = PlatformDirs(appname=None)
-    base_dir = Path(dirs.user_config_dir) / APP_DATA_DIR_NAME
+    base_dir = profile_config_root(current_profile())
     return normalize_path(_resolve_app_path(relative_path, base_dir))
 
 

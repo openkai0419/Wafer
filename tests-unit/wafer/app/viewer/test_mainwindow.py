@@ -73,12 +73,13 @@ class TestSlotRenamed:
 
 
 class TestSearchResultDiffCheck:
-    def _make_win(self, last_paths=None):
+    def _make_win(self, last_paths=None, last_aspects=None):
         with patch("wafer.app.viewer.mainwindow.MainWindow.__init__", lambda self, *a, **kw: None):
             from wafer.app.viewer.mainwindow import MainWindow
 
             win = MainWindow.__new__(MainWindow)
             win._last_paths = last_paths
+            win._last_aspects = last_aspects
             win._folder_changed = False
             win.grid_view = MagicMock()
             win.file_model = MagicMock()
@@ -96,7 +97,7 @@ class TestSearchResultDiffCheck:
 
     def test_skip_when_paths_unchanged(self):
         paths = ["a.png", "b.png"]
-        win = self._make_win(last_paths=paths)
+        win = self._make_win(last_paths=paths, last_aspects=[1.0, 1.5])
         win._on_search_finished(paths, ["a.png", "b.png"], [1.0, 1.5])
         win.grid_view.set_paths.assert_not_called()
         win.grid_view.layout_ready.emit.assert_called_once_with()
@@ -108,6 +109,23 @@ class TestSearchResultDiffCheck:
         win._on_search_finished(new_paths, new_paths, [1.0, 1.5])
         win.grid_view.set_paths.assert_called_once()
         assert win._last_paths is new_paths
+
+    def test_new_aspects_of_the_same_paths_update_only_the_grid(self):
+        paths = ["a.png", "b.png"]
+        win = self._make_win(last_paths=paths, last_aspects=[1.0, 1.0])
+        index = {"a.png": 0, "b.png": 1}
+        win._on_search_finished(paths, paths, [1.0, 1.5], index)
+        win.grid_view.set_paths.assert_called_once_with(paths, paths, [1.0, 1.5], keep_scroll=True, path_index=index)
+        win.file_list_provider.on_search_results.assert_not_called()
+        assert win._last_aspects == [1.0, 1.5]
+
+    def test_the_path_index_goes_to_the_grid_and_the_file_list(self):
+        win = self._make_win(last_paths=["a.png"])
+        paths = ["a.png", "b.png"]
+        index = {"a.png": 0, "b.png": 1}
+        win._on_search_finished(paths, paths, [1.0, 1.5], index)
+        assert win.grid_view.set_paths.call_args.kwargs["path_index"] is index
+        win.file_list_provider.on_search_results.assert_called_once_with(paths, paths, index)
 
     def test_first_search_always_updates(self):
         win = self._make_win(last_paths=None)
@@ -211,7 +229,8 @@ class TestSupersededDbReload:
 
     def apply(self, win, call_index):
         task = win._dispatcher.post.call_args_list[call_index].args[0]
-        with patch("wafer.app.viewer.mainwindow.SettingDB"):
+        with patch("wafer.app.viewer.mainwindow.SettingDB") as setting_db:
+            setting_db.return_value.get_all_folder_settings.return_value = ([], [], [])
             task()
         win._dispatcher.invoke.call_args_list[-1].args[0]()
 
@@ -257,51 +276,37 @@ class TestReloadFolderList:
             win.setting_db = MagicMock()
             win.setting_db.get_all_folder_settings.return_value = (["/root"], ["/ignored"], [])
             win.folder_view = MagicMock()
-            win.folder_view.is_structure_current.return_value = False
-            win.folder_view.defer_reload_if_editing.return_value = False
-            win.folder_view.capture_scroll_state.return_value = {"value": 37, "maximum": 120}
-            win.folder_view.get_state.return_value = (["/root"], ["/root/A"])
             win._dismiss_folder_callout = MagicMock()
             return win, MainWindow
 
-    def test_restore_scroll_after_rebuild_without_selection_scroll(self):
+    def test_reload_reads_settings_off_the_main_thread_and_hands_them_to_the_tree(self):
         win, MainWindow = self._make_win()
 
         MainWindow._reload_folderlist_now(win)
 
-        assert win.folder_view.method_calls == [
-            call.is_structure_current(["/root"], ["/ignored"], None),
-            call.defer_reload_if_editing(ANY, strong=True),
-            call.capture_scroll_state(),
-            call.get_state(),
-            call.set_folders(["/root"], ["/ignored"], None),
-            call.set_state((["/root"], ["/root/A"]), scroll_to_selection=False),
-            call.restore_scroll_state({"value": 37, "maximum": 120}),
-        ]
+        win.setting_db.get_all_folder_settings.assert_not_called()
+        load_settings = win.folder_view.reload_folders_async.call_args.args[0]
+        assert load_settings() == (["/root"], ["/ignored"], None)
+        on_complete = win.folder_view.reload_folders_async.call_args.kwargs["on_complete"]
+        on_complete(["/root"])
         win._dismiss_folder_callout.assert_called_once()
 
-    def test_skip_rebuild_when_structure_is_current(self):
+    def test_the_callout_stays_while_there_are_no_roots(self):
         win, MainWindow = self._make_win()
-        win.folder_view.is_structure_current.return_value = True
 
         MainWindow._reload_folderlist_now(win)
+        win.folder_view.reload_folders_async.call_args.kwargs["on_complete"]([])
 
-        win.folder_view.is_structure_current.assert_called_once_with(["/root"], ["/ignored"], None)
-        win.folder_view.capture_scroll_state.assert_not_called()
-        win.folder_view.set_folders.assert_not_called()
-        win._dismiss_folder_callout.assert_called_once()
-
-    def test_defer_rebuild_while_editing(self):
-        win, MainWindow = self._make_win()
-        win.folder_view.defer_reload_if_editing.return_value = True
-
-        MainWindow._reload_folderlist_now(win)
-
-        win.folder_view.is_structure_current.assert_called_once_with(["/root"], ["/ignored"], None)
-        win.folder_view.defer_reload_if_editing.assert_called_once_with(ANY, strong=True)
-        win.folder_view.capture_scroll_state.assert_not_called()
-        win.folder_view.set_folders.assert_not_called()
         win._dismiss_folder_callout.assert_not_called()
+
+    def test_without_a_setting_db_the_tree_reloads_itself(self):
+        win, MainWindow = self._make_win()
+        win.setting_db = None
+
+        MainWindow._reload_folderlist_now(win)
+
+        win.folder_view.reload_tree.assert_called_once_with()
+        win.folder_view.reload_folders_async.assert_not_called()
 
 
 class TestPanelLayoutReset:

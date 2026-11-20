@@ -162,3 +162,39 @@ class TestReload:
         KeyFilter._cache = None
         KeyFilter.reload()
         assert KeyFilter.get("exif") == (MODE_WHITELIST, frozenset({"a"}))
+
+
+class TestOtherProcessWrites:
+    def test_apply_key_states_keeps_keys_another_viewer_blocked(self):
+        KeyFilter.get("exif")
+        from wafer.plugin.config import PluginConfig
+
+        PluginConfig("key_filter", {"filters": {}}).save(filters={"exif": {"mode": MODE_BLACKLIST, "keys": ["other_viewer"]}})
+        KeyFilter.apply_key_states("exif", {"mine": False})
+
+        KeyFilter.reload()
+        assert KeyFilter.get("exif") == (MODE_BLACKLIST, frozenset({"other_viewer", "mine"}))
+
+
+class TestDeleteKeyEverywhere:
+    def _record_reset(self, monkeypatch):
+        import wafer.core.db.recollect as recollect_mod
+
+        calls = []
+        monkeypatch.setattr(recollect_mod.Recollect, "reset", staticmethod(lambda **k: calls.append(k)))
+        return calls
+
+    def test_deletes_from_all_dbs_and_hides_the_key(self, monkeypatch):
+        monkeypatch.setattr("wafer.plugin.key_filter.list_setting_db_names", lambda: ["db1", "db2"])
+        calls = self._record_reset(monkeypatch)
+        KeyFilter.delete_key_everywhere("custom", "k")
+        assert calls == [{"db_scope": ["db1", "db2"], "collector": "custom", "keys": ["custom.k"], "re_collect": False}]
+        assert KeyFilter.is_enabled("custom", "k") is False
+        assert KeyFilter.is_enabled("custom", "other") is True
+
+    def test_does_nothing_without_setting_dbs(self, monkeypatch):
+        monkeypatch.setattr("wafer.plugin.key_filter.list_setting_db_names", lambda: [])
+        calls = self._record_reset(monkeypatch)
+        KeyFilter.delete_key_everywhere("custom", "k")
+        assert calls == []
+        assert KeyFilter.is_enabled("custom", "k") is True

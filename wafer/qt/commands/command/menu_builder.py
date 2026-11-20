@@ -5,11 +5,12 @@ from types import SimpleNamespace
 from PySide6 import QtCore, QtGui, QtWidgets
 from ....core.lang.manager import t
 from ....core.profiling import profiler
+from ...theme import ThemeManager
 from .core import COMMAND_MENU_MARKER, CommandMeta, CommandRegistry, MenuAction, call_with_matching_args, persistent_args
 from .context import CommandContext
 from ....core.logs import AppLogger
 from .payload import CommandPayload
-from .state import ActionGroupStateManager, CommandOptionStore
+from .state import CommandOptionStore
 from .menu import split_menu_path, is_sep_token, sep_path, is_section_token, section_parts
 from .maker import MenuMaker, MenuPlan
 from .menu_item import CommandMenuRow
@@ -72,12 +73,15 @@ class CommandMenuBuilder:
         if CommandMenuBuilder._initialized:
             return
         self.registry = CommandRegistry.instance()
-        self.state_manager = ActionGroupStateManager.instance()
         self._active_seed_ctx: CommandContext | None = None
         CommandMenuBuilder._initialized = True
 
     _action_groups: dict[str, QtGui.QActionGroup] = {}
     _menu_cache: dict[tuple, QtWidgets.QMenu] = {}
+
+    @classmethod
+    def clear_menu_cache(cls) -> None:
+        cls._menu_cache.clear()
 
     def _build_ctx(self, parent: QtWidgets.QWidget | None, cmd_id: str, args: dict[str, Any]) -> CommandContext | None:
         if parent is None:
@@ -191,9 +195,11 @@ class CommandMenuBuilder:
                 parts = section_parts(token)
                 if not parts:
                     continue
-                text = parts[-1]
+                action = getattr(item, "action", None)
+                text = parts[-1] if action is None else action.display
+                translate = action is None or action.translate
                 target_menu = menu if len(parts) == 1 else self._get_or_create_submenu_chain(menu, menus_cache, parts[:-1], parent)
-                target_menu.addAction(self._create_section_action(parent, t(text) or text))
+                target_menu.addAction(self._create_section_action(parent, (t(text) or text) if translate else text))
                 continue
             path_parts = split_menu_path(token)
             target_menu = menu if len(path_parts) <= 1 else self._get_or_create_submenu_chain(menu, menus_cache, path_parts[:-1], parent)
@@ -210,8 +216,6 @@ class CommandMenuBuilder:
                 continue
             meta = command_class.meta
             target_menu, text_override = self._display_override(menu, menus_cache, parent, target_menu, command_id, meta, display_map)
-            if meta.action_group and meta.checkable:
-                self.state_manager.register_member(meta.action_group, command_id)
             self._add_entry(
                 target_menu,
                 parent,
@@ -363,7 +367,7 @@ class CommandMenuBuilder:
             payload = CommandPayload(name, {})
             callback(payload)
         except Exception as e:
-            AppLogger.warning(f"Failed to execute selection callback for '{name}': {e}")
+            AppLogger.warning(f"Failed to execute selection callback for '{name}'", exc=e)
 
     def _get_action_checked(self, action: MenuAction) -> bool:
         return bool(action.checked()) if action.checked is not None else False
@@ -397,33 +401,6 @@ class CommandMenuBuilder:
             container = action.defaultWidget() if isinstance(action, QtWidgets.QWidgetAction) else None
             if container is not None:
                 self._update_checkmark(container, checked)
-
-    def cycle_action_group(self, group_name: str) -> str | None:
-        members = self.state_manager.get_members(group_name)
-        if not members:
-            return None
-        current = self.state_manager.find_current(group_name, self.registry)
-        try:
-            idx = members.index(current) if current else -1
-        except ValueError:
-            idx = -1
-        result = members[(idx + 1) % len(members)]
-        group = self._action_groups.get(group_name)
-        if group:
-            result_action = next((a for a in group.actions() if str(a.data()) == result), None)
-            if result_action:
-                result_action.trigger()
-                return result
-        try:
-            ctx = CommandContext.create(None, "*", source="cycle", event=None)
-            ctx.put("checked", True)
-            self.registry.execute(result, ctx=ctx)
-        except Exception as e:
-            AppLogger.warning(f"Failed to execute command: {e}")
-        return result
-
-    def get_action_group_current(self, group_name: str) -> str | None:
-        return self.state_manager.find_current(group_name, self.registry)
 
     def _update_checkmark(self, container: QtWidgets.QWidget, state: bool):
         lbl = getattr(container, "_chk", None)
@@ -524,7 +501,7 @@ class CommandMenuBuilder:
         try:
             call_with_matching_args(action.func, {"ctx": ctx, "checked": checked})
         except Exception as e:
-            AppLogger.warning(f"Failed to execute menu action '{action.path}': {e}", exc=e)
+            AppLogger.warning(f"Failed to execute menu action '{action.path}'", exc=e)
 
     def _show_options_and_close_menu(self, command_name: str, parent: QtWidgets.QWidget, menu: QtWidgets.QMenu, selection_callback: Callable[[Any], None] | None = None):
         menu.close()
@@ -559,7 +536,7 @@ class CommandMenuBuilder:
                 try:
                     selection_callback(CommandPayload(command_name, options))
                 except Exception as e:
-                    AppLogger.warning(f"Failed to call selection callback for '{command_name}': {e}")
+                    AppLogger.warning(f"Failed to call selection callback for '{command_name}'", exc=e)
         else:
             if not callable(selection_callback):
                 return
@@ -583,7 +560,7 @@ class CommandMenuBuilder:
         try:
             Command.invoke(name, ctx=ctx, parent=parent)
         except Exception as e:
-            AppLogger.warning(f"Failed to execute command '{name}': {e}")
+            AppLogger.warning(f"Failed to execute command '{name}'", exc=e)
 
     @profiler.profile
     def _get_or_create_submenu_chain(self, root_menu: QtWidgets.QMenu, cache: dict[str, QtWidgets.QMenu], parts: list[str], parent: QtWidgets.QWidget) -> QtWidgets.QMenu:
@@ -620,7 +597,7 @@ class CommandMenuBuilder:
         l.setContentsMargins(int(s * 1.6), int(s / 4), int(s * 1.6), 0)
         lbl = QtWidgets.QLabel(text)
         lbl.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        lbl.setStyleSheet(f"color: gray; font-size: {s}px;")
+        lbl.setStyleSheet(f"color: {ThemeManager.instance().palette.text_secondary}; font-size: {s}px;")
         lbl.setSizePolicy(QtWidgets.QSizePolicy.Maximum, QtWidgets.QSizePolicy.Maximum)
         l.addWidget(lbl)
         a.setDefaultWidget(w)
@@ -675,7 +652,7 @@ class MenuBuilder:
             self._menu.setProperty(COMMAND_MENU_MARKER, True)
             self._builder._install_hotkey_alignment(self._menu)
             return self._build_resolved(plan.resolve_items(), selection_callback, allow_options_with_selection)
-        if selection_callback is not None:
+        if selection_callback is not None or self._ctx_parent is None:
             self._menu = StickyMenu(self._ctx_parent)
             self._menu.setProperty(COMMAND_MENU_MARKER, True)
             self._builder._install_hotkey_alignment(self._menu)
@@ -692,6 +669,7 @@ class MenuBuilder:
         self._builder._install_hotkey_alignment(self._menu)
         result = self._build_into(tokens, None, allow_options_with_selection)
         CommandMenuBuilder._menu_cache[cache_key] = result
+        parent.destroyed.connect(lambda *_: CommandMenuBuilder._menu_cache.pop(cache_key, None))
         return result
 
     @profiler.profile

@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 import numpy as np
+import shiboken6
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
@@ -625,11 +626,31 @@ class MapView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if rows.size == 0:
             return
         indexes = (self.color_ids[rows] << 2) | self.selected[rows].astype(np.int64) | (self.outliers[rows].astype(np.int64) << 1)
-        sprites = {index: self.sprite(index) for index in np.unique(indexes).tolist()}
-        corners = np.floor(projection.pixels(self.positions[rows]) - self.sprite_pixels() / 2 + 0.5).astype(np.int64)
-        draw = painter.drawPixmap
-        for index, x, y in zip(indexes.tolist(), corners[:, 0].tolist(), corners[:, 1].tolist()):
-            draw(x, y, sprites[index])
+        used = np.zeros(int(indexes.max()) + 1, dtype=bool)
+        used[indexes] = True
+        kinds, slots = np.flatnonzero(used), (np.cumsum(used) - 1)[indexes]
+        side = self.sprite_pixels()
+        atlas, cells = self.sprite_atlas(kinds.tolist(), side)
+        fragments = np.empty((rows.size, 10), dtype=np.float64)
+        fragments[:, :2] = np.floor(projection.pixels(self.positions[rows]) - side / 2 + 0.5) + side / 2
+        fragments[:, 2:4] = cells[slots]
+        fragments[:, 4:6] = side
+        fragments[:, 6:8] = 1.0
+        fragments[:, 8] = 0.0
+        fragments[:, 9] = 1.0
+        painter.drawPixmapFragments(shiboken6.wrapInstance(fragments.ctypes.data, QtGui.QPainter.PixmapFragment), rows.size, atlas)
+
+    def sprite_atlas(self, kinds: list[int], side: int) -> tuple[QtGui.QPixmap, np.ndarray]:
+        columns = math.ceil(math.sqrt(len(kinds)))
+        cells = np.array([(slot % columns * side, slot // columns * side) for slot in range(len(kinds))], dtype=np.float64)
+        atlas = QtGui.QPixmap(columns * side, math.ceil(len(kinds) / columns) * side)
+        atlas.fill(Qt.transparent)
+        painter = QtGui.QPainter(atlas)
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode_Source)
+        for kind, (x, y) in zip(kinds, cells.astype(np.int64).tolist()):
+            painter.drawPixmap(x, y, self.sprite(kind))
+        painter.end()
+        return atlas, cells
 
     def paint_images(self, painter: QtGui.QPainter, images: list[tuple[int, QtGui.QPixmap]], rects: np.ndarray) -> None:
         for (row, pixmap), (left, top, right, bottom) in zip(images, rects.tolist()):

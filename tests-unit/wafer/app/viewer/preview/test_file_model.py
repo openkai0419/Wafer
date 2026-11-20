@@ -226,3 +226,14 @@ def test_set_path_insert_preserves_navigation(model):
     assert model.path() == "z"
     model.move_current_prev()
     assert model.path() == "b"
+
+
+def test_set_path_not_in_a_shared_list_leaves_the_list_alone(model):
+    shared = ["a", "b"]
+    index = {"a": 0, "b": 1}
+    model.set_items(shared, ["sa", "sb"], index)
+    model.set_current_index(0)
+    model.set_path("z")
+    assert shared == ["a", "b"] and index == {"a": 0, "b": 1}
+    assert model.paths == ["a", "z", "b"]
+    assert model.index_of_path("b") == 2

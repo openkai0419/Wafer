@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import stat
 import time
 import uuid
+from array import array
 from collections import OrderedDict
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial
@@ -40,7 +44,7 @@ class QuerySession:
     db: str
     paths: list[str]
     sources: list[str]
-    aspects: list[float]
+    aspects: array
     created: float = field(default_factory=time.monotonic)
     last_access: float = field(default_factory=time.monotonic)
 
@@ -58,11 +62,18 @@ class DbService:
     async def run(self, fn, *args):
         return await asyncio.get_running_loop().run_in_executor(self.executor, fn, *args)
 
-    def lookup_file(self, path: str) -> tuple[str, str] | None:
+    def lookup_file(self, path: str) -> tuple[str, str, os.stat_result | None] | None:
         record = self.engine.get_file_record(path)
         if not record:
             return None
-        return record["path"], record["source"]
+        source = record["source"]
+        try:
+            found = os.stat(source)
+        except OSError:
+            found = None
+        if found is not None and not stat.S_ISREG(found.st_mode):
+            found = None
+        return record["path"], source, found
 
     def close(self):
         self.executor.shutdown(wait=True, cancel_futures=True)
@@ -78,6 +89,8 @@ class QueryService:
         self._key_stale: set[str] = set()
         self._key_version: dict[str, int] = {}
         self._key_retry_after: dict[str, float] = {}
+        self._released: set[str] = set()
+        self._closing: set[asyncio.Task] = set()
         self.composer = SearchComposer()
         register_builtin_query_plugins()
 
@@ -88,7 +101,7 @@ class QueryService:
     def db(self, name: str) -> DbService:
         service = self._dbs.get(name)
         if service is None:
-            if name not in self.list_dbs():
+            if name in self._released or name not in self.list_dbs():
                 raise KeyError(name)
             service = DbService(name)
             self._dbs[name] = service
@@ -144,7 +157,7 @@ class QueryService:
             for name in set(self._key_cache) | set(self._key_tasks):
                 self._key_version[name] = self._key_version.get(name, 0) + 1
 
-    async def execute(self, db_name: str, filters: list[dict], sort: str, ascending: bool) -> QuerySession:
+    async def execute(self, db_name: str, filters: list[dict], sort: str, ascending: bool, previous: Sequence[str] = ()) -> QuerySession:
         service = self.db(db_name)
         entries = []
         for item in filters:
@@ -159,11 +172,17 @@ class QueryService:
             entries.append((cls, item.get("params") or {}, item.get("op") or "AND"))
         sort_plugin = sort_registry.get(sort) or NoSort
         started = time.perf_counter()
-        paths, sources, aspects = await service.run(self.composer.execute, service.engine, entries, sort_plugin, ascending)
+        paths, sources, aspects = await service.run(self.run_query, service.engine, entries, sort_plugin, ascending)
+        for query_id in previous:
+            self._sessions.pop(query_id, None)
         session = QuerySession(uuid.uuid4().hex, db_name, paths, sources, aspects)
         self._store(session)
         AppLogger.info(f"WebUI query db={db_name} filters={len(entries)} sort={sort} -> {session.total} items in {time.perf_counter() - started:.3f}s")
         return session
+
+    def run_query(self, engine, entries, sort_plugin, ascending) -> tuple[list[str], list[str], array]:
+        paths, sources, aspects = self.composer.execute(engine, entries, sort_plugin, ascending)
+        return paths, sources, array("f", aspects)
 
     def _store(self, session: QuerySession):
         self._sessions[session.query_id] = session
@@ -178,12 +197,40 @@ class QueryService:
             self._sessions.popitem(last=False)
 
     def session(self, query_id: str) -> QuerySession | None:
+        self._evict()
         session = self._sessions.get(query_id)
         if session is None:
             return None
         session.last_access = time.monotonic()
         self._sessions.move_to_end(query_id)
         return session
+
+    def release_db(self, name: str):
+        self._released.add(name)
+        for query_id in [k for k, s in self._sessions.items() if s.db == name]:
+            del self._sessions[query_id]
+        task = self._key_tasks.pop(name, None)
+        if task is not None and not task.done():
+            task.cancel()
+        for cache in (self._key_cache, self._key_version, self._key_retry_after):
+            cache.pop(name, None)
+        self._key_stale.discard(name)
+        service = self._dbs.pop(name, None)
+        if service is not None:
+            AppLogger.info(f"WebUI closing db {name} for deletion")
+            task = asyncio.get_running_loop().create_task(self.close_service(service))
+            self._closing.add(task)
+            task.add_done_callback(self._closing.discard)
+
+    def restore_db(self, name: str):
+        self._released.discard(name)
+
+    @staticmethod
+    async def close_service(service: DbService):
+        try:
+            await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(None, service.close), timeout=DB_CLOSE_TIMEOUT)
+        except TimeoutError:
+            AppLogger.warning(f"WebUI db close timed out for {service.name}, a background scan may still be running")
 
     async def close(self):
         for task in self._key_tasks.values():
@@ -194,13 +241,11 @@ class QueryService:
         self._key_stale.clear()
         self._key_version.clear()
         self._key_retry_after.clear()
-        loop = asyncio.get_running_loop()
         for service in self._dbs.values():
-            try:
-                await asyncio.wait_for(loop.run_in_executor(None, service.close), timeout=DB_CLOSE_TIMEOUT)
-            except TimeoutError:
-                AppLogger.warning(f"WebUI db close timed out for {service.name}, a background scan may still be running")
+            await self.close_service(service)
         self._dbs.clear()
+        if self._closing:
+            await asyncio.gather(*self._closing)
         self._sessions.clear()
 
 

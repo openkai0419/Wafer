@@ -19,8 +19,8 @@ class _StubMsg:
 
 
 @pytest.fixture
-def short_flush_delay(monkeypatch):
-    monkeypatch.setattr(collector_receiver, "FLUSH_DELAY", 0.05)
+def no_flush_delay(monkeypatch):
+    monkeypatch.setattr(collector_receiver, "FLUSH_DELAY", 0)
 
 
 def _make_receiver():
@@ -38,7 +38,7 @@ def test_handle_result_invalid_payload():
     assert not scheduler.submit.called
 
 
-def test_handle_result_submits_flush_task():
+def test_handle_result_submits_flush_task(no_flush_delay):
     receiver, scheduler, _, _ = _make_receiver()
     results = [{"source": f"p{i}", "status": True} for i in range(5)]
     msg = _StubMsg({"collector": "exif", "results": results})
@@ -55,7 +55,14 @@ def test_handle_result_empty_results():
     assert not scheduler.submit.called
 
 
-def test_handle_result_sets_collector_on_results(short_flush_delay):
+def test_each_result_message_ends_one_batch_of_its_collector():
+    done = MagicMock()
+    receiver = CollectorReceiver(MagicMock(), MagicMock(), MagicMock(), on_batch_done=done)
+    receiver.handle_result(_StubMsg({"collector": "exif", "results": []}))
+    done.assert_called_once_with("exif")
+
+
+def test_handle_result_sets_collector_on_results(no_flush_delay):
     receiver, scheduler, writer, _ = _make_receiver()
     results = [{"source": "a", "status": True}]
     msg = _StubMsg({"collector": "test_coll", "results": results})
@@ -67,7 +74,7 @@ def test_handle_result_sets_collector_on_results(short_flush_delay):
     assert any(c[1] == "test_coll" for c in collector_status)
 
 
-def test_coalescing_multiple_batches(short_flush_delay):
+def test_coalescing_multiple_batches(no_flush_delay):
     receiver, scheduler, writer, progress = _make_receiver()
     for i in range(5):
         msg = _StubMsg(
@@ -87,7 +94,7 @@ def test_coalescing_multiple_batches(short_flush_delay):
     progress.send_event.assert_called_once_with("update")
 
 
-def test_flush_reschedules_on_pending(short_flush_delay):
+def test_flush_reschedules_on_pending(no_flush_delay):
     receiver, scheduler, writer, progress = _make_receiver()
     msg = _StubMsg({"collector": "exif", "results": [{"source": "a", "status": True}]})
     receiver.handle_result(msg)
@@ -269,3 +276,23 @@ def test_parse_batch_exif_datetime_value_num():
     assert dt_entry[0][2] == "2024:01:15 10:30:45"
     assert isinstance(dt_entry[0][3], float)
     assert dt_entry[0][3] > 0
+
+
+def test_flush_waits_outside_the_scheduler_lane(monkeypatch):
+    import time
+
+    monkeypatch.setattr(collector_receiver, "FLUSH_DELAY", 0.3)
+    receiver, scheduler, writer, _ = _make_receiver()
+    receiver.handle_result(_StubMsg({"collector": "exif", "results": [{"source": "a", "status": True}]}))
+    assert not scheduler.submit.called
+
+    deadline = time.monotonic() + 5.0
+    while not scheduler.submit.called and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert scheduler.submit.called
+
+    receiver.handle_result(_StubMsg({"collector": "exif", "results": [{"source": "b", "status": True}]}))
+    started = time.monotonic()
+    scheduler.submit.call_args[0][0].run()
+    assert time.monotonic() - started < 0.2
+    assert writer.upsert_results.called

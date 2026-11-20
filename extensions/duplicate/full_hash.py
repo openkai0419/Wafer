@@ -1,7 +1,5 @@
 from wafer.plugin import BaseParserPlugin, ParserResult
-from wafer.core.common.hashes import HASH_FAILED, full_hash
-
-FULL_HASH_LENGTH = 64
+from wafer.core.common.hashes import FULL_HASH_LENGTH, HASH_FAILED, full_hash
 
 
 class FullHashParser(BaseParserPlugin):

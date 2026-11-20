@@ -35,12 +35,10 @@ def test_get_collector_summary():
     assert ".jpg" in exts
 
 
-def test_collectors_for_path_image():
-    assert "exiftool" in collector_resolver.collectors_for_path("photo.jpg")
-
-
-def test_collectors_for_path_non_image():
-    assert "exiftool" not in collector_resolver.collectors_for_path("doc.txt")
+def test_exiftool_extensions_cover_images_only():
+    exts = dict(collector_resolver.summary())["exiftool"]
+    assert ".jpg" in exts
+    assert ".txt" not in exts
 
 
 def test_exif_plugin_process_success(tmp_path):

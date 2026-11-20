@@ -15,6 +15,8 @@ from ..logs import AppLogger
 
 _OUTBOX_DIR = resolve_data_path(".outbox/")
 OUTBOX_MAX_AGE_DAYS = 30
+OUTBOX_CLEANUP_INTERVAL = 600.0
+_DB_SUFFIXES = ("", "-wal", "-shm")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS outbox (
@@ -35,8 +37,29 @@ def _extract_pid(node_id: str) -> int | None:
     return None
 
 
+def _created_at(path: str) -> float:
+    try:
+        st = os.stat(path)
+    except OSError:
+        return 0.0
+    return getattr(st, "st_birthtime", st.st_ctime)
+
+
+def owner_alive(db_path: str) -> bool:
+    pid = _extract_pid(Path(db_path).stem)
+    if pid is None:
+        return False
+    try:
+        started = psutil.Process(pid).create_time()
+    except psutil.NoSuchProcess:
+        return False
+    except psutil.AccessDenied:
+        return True
+    return started <= _created_at(db_path)
+
+
 def _delete_db_files(db_path: str):
-    for suffix in ("", "-wal", "-shm"):
+    for suffix in _DB_SUFFIXES:
         try:
             os.remove(db_path + suffix)
         except FileNotFoundError:
@@ -161,10 +184,9 @@ def cleanup_dead_outbox_files():
         return
     cutoff = time.time() - OUTBOX_MAX_AGE_DAYS * 86400
     for db_file in outbox_dir.glob("*.db"):
-        pid = _extract_pid(db_file.stem)
-        if pid is not None and psutil.pid_exists(pid):
-            continue
         db_path = str(db_file)
+        if owner_alive(db_path):
+            continue
         try:
             remaining = _drop_expired_rows(db_path, cutoff)
         except sqlite3.OperationalError as e:
@@ -175,6 +197,29 @@ def cleanup_dead_outbox_files():
             continue
         if remaining == 0:
             _delete_db_files(db_path)
+
+
+class DeadOutboxCleaner:
+    def __init__(self, interval: float = OUTBOX_CLEANUP_INTERVAL):
+        self._interval = interval
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="outbox-cleaner", daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        if self._thread.is_alive():
+            self._thread.join(timeout=5.0)
+
+    def _run(self):
+        while not self._stop.is_set():
+            try:
+                cleanup_dead_outbox_files()
+            except Exception as e:
+                AppLogger.warning("outbox cleanup failed; it runs again later", exc=e)
+            self._stop.wait(self._interval)
 
 
 def _read_records(db_path: str, dst_filter: set[str] | None, db_filter: str | None) -> list[OutboxRecord]:

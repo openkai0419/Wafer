@@ -14,7 +14,6 @@ import { load, save } from './store.js';
 import { setIcon, setTip } from './icons.js';
 
 const SEARCH_DEBOUNCE_MS = 250;
-const UPDATE_REFRESH_MS = 1500;
 
 const state = {
   db: load('db', ''),
@@ -101,7 +100,8 @@ function buildFilters() {
 
 let queryToken = 0;
 let lastSnapshot = '';
-async function runQuery(force = false) {
+let unusedQueryIds = [];
+async function runQuery(force = false, expired = null) {
   if (!state.db) return;
   const filters = buildFilters();
   const snapshot = JSON.stringify([state.db, filters, state.sort, state.ascending]);
@@ -110,16 +110,26 @@ async function runQuery(force = false) {
   const token = ++queryToken;
   status.textContent = 'searching...';
   loadBar.classList.add('busy');
+  const unused = unusedQueryIds;
+  unusedQueryIds = [];
+  const client = new QueryClient((expired) => {
+    if (expired === grid.client) runQuery(true, expired);
+  });
   try {
-    const client = new QueryClient();
-    const result = await client.run(state.db, filters, state.sort, state.ascending);
-    if (token !== queryToken) return;
-    const aspects = await client.aspects();
-    if (token !== queryToken) return;
-    grid.setQuery(client, aspects);
-    viewer.setQuery(client, client.total);
+    const result = await client.run(state.db, filters, state.sort, state.ascending, unused);
+    const aspects = token === queryToken ? await client.aspects() : null;
+    if (token !== queryToken) {
+      unusedQueryIds.push(client.queryId);
+      return;
+    }
+    const keepPosition = expired !== null && result.total === expired.total;
+    const replaced = grid.client;
+    grid.setQuery(client, aspects, keepPosition);
+    viewer.setQuery(client, client.total, keepPosition);
+    if (replaced) unusedQueryIds.push(replaced.queryId);
     status.textContent = `${result.total} files`;
   } catch (e) {
+    unusedQueryIds.push(...(client.queryId ? [client.queryId] : unused));
     if (token === queryToken) {
       lastSnapshot = '';
       status.textContent = `error: ${e.message}`;
@@ -292,15 +302,11 @@ function setupSettings() {
 
 const connBanner = document.getElementById('conn-banner');
 
-const refreshQuery = debounce(UPDATE_REFRESH_MS, () => runQuery(true));
 connectEvents(
   (event) => {
     if (event.topic === 'update' && event.db === state.db) {
       keyPicker.invalidate();
       meta.invalidate();
-      refreshQuery();
-    } else if (event.topic === 'db.created' || event.topic === 'db.deleted') {
-      location.reload();
     }
   },
   (connState) => {

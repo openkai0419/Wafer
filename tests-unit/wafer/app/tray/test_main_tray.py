@@ -1,4 +1,6 @@
+from wafer.app.tray import main_tray
 from wafer.app.tray.main_tray import TrayApp
+from wafer.qt.commands.command.menu import MenuPath
 
 
 class _Broker:
@@ -255,3 +257,28 @@ def test_on_trigger_noop_while_shutting_down(monkeypatch):
     fake.shutting_down = False
     TrayApp._on_trigger.__wrapped__(fake)
     assert ran == [("tray.show_window",)]
+
+
+def test_tray_menu_hides_file_selection_and_folder_tree(monkeypatch):
+    hidden = []
+
+    class _Plan:
+        def hide(self, targets):
+            hidden.extend(targets)
+            return self
+
+        def build(self):
+            return "menu"
+
+    class _Session:
+        def all_roots(self):
+            return _Plan()
+
+    monkeypatch.setattr(main_tray.Menu, "session", lambda *args, **kwargs: _Session())
+
+    class _Tray:
+        def _ctx(self):
+            return None
+
+    assert TrayApp._build_menu(_Tray()) == "menu"
+    assert set(hidden) == {MenuPath.FILE, MenuPath.SELECTION, MenuPath.FOLDER_TREE}

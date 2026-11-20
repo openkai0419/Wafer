@@ -261,7 +261,7 @@ def test_check_now_hides_title_until_result_is_applied(monkeypatch, qtbot):
     w.set_update_info(_info(is_newer=True))
     monkeypatch.setattr(w._dispatcher, "post", lambda fn, priority=5: None)
 
-    w.check_now(explicit=True)
+    w.check_now()
 
     assert w._title.isHidden() is True
     assert w._status.text() == "Checking for updates..."
@@ -278,7 +278,7 @@ def test_error_result_keeps_title_hidden_after_reload(monkeypatch, qtbot):
     w.set_update_info(_info(is_newer=True))
     monkeypatch.setattr(w._dispatcher, "post", lambda fn, priority=5: None)
 
-    w.check_now(explicit=True)
+    w.check_now()
     w.apply_check_result(UpdateCheckResult(error="network"))
 
     assert w._title.isHidden() is True
@@ -289,11 +289,11 @@ def test_error_result_keeps_title_hidden_after_reload(monkeypatch, qtbot):
 def test_show_event_starts_initial_refresh_once(monkeypatch, qtbot):
     calls = []
     w = _make_widget(monkeypatch, qtbot)
-    monkeypatch.setattr(w, "check_now", lambda explicit=True: calls.append(explicit))
+    monkeypatch.setattr(w, "check_now", lambda: calls.append(True))
 
     w.show()
-    qtbot.waitUntil(lambda: calls == [False], timeout=1000)
+    qtbot.waitUntil(lambda: calls == [True], timeout=1000)
 
     w.refresh_if_needed()
 
-    assert calls == [False]
+    assert calls == [True]

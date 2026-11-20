@@ -17,17 +17,26 @@ from .widget import PANEL_DISPLAY_NAME
 STARTUP_SCOPE = "updater.auto_panel"
 
 _dispatcher: Dispatcher | None = None
+_apply_dispatcher: Dispatcher | None = None
 
 
 def schedule_startup_update_check(delay_ms: int = 1000) -> None:
     QtCore.QTimer.singleShot(int(delay_ms), run_startup_update_check)
 
 
-def process_apply_results() -> None:
+def process_apply_results(invoke=None) -> None:
     try:
-        stage.process_apply_results()
+        stage.process_apply_results(invoke)
     except Exception as e:
         AppLogger.warning("Failed to process update apply results", exc=e)
+
+
+def _post_apply_results() -> None:
+    global _apply_dispatcher
+    if _apply_dispatcher is None:
+        _apply_dispatcher = Dispatcher(utility_pool)
+    dispatcher = _apply_dispatcher
+    dispatcher.post(lambda: process_apply_results(dispatcher.invoke))
 
 
 def present_updater():
@@ -59,7 +68,7 @@ def _resolve_dispatcher() -> Dispatcher | None:
 def run_startup_update_check() -> None:
     if _dev.FORCE_UPDATE_ENABLED:
         AppLogger.warning(f"[Updater] DEV update source active: {_dev.source_dir()} (reporting version {__version__})")
-    process_apply_results()
+    _post_apply_results()
     if not state.is_auto_check_enabled():
         return
     dispatcher = _resolve_dispatcher()

@@ -41,7 +41,6 @@ class GridOverlayHost(QtCore.QObject):
         self._plugins: list[BaseOverlayPlugin] = []
         self._plugins_by_name: dict[str, BaseOverlayPlugin] = {}
         self._helpers: dict[str, OverlayHelper] = {}
-        self._visible_paths: tuple[str, ...] = ()
         self._badge_visible: bool = True
         self._badge_radius: int = DEFAULT_BADGE_RADIUS
         self._cell_visible: dict[str, bool] = {}
@@ -99,12 +98,6 @@ class GridOverlayHost(QtCore.QObject):
             return
         self._cell_visible[name] = visible
         self.request_update()
-
-    def set_visible_paths(self, paths) -> None:
-        visible = tuple(dict.fromkeys(str(path) for path in paths if path))
-        if visible == self._visible_paths:
-            return
-        self._visible_paths = visible
 
     def paint(self, painter: QtGui.QPainter, grid_view, map_rect: Callable[[QtCore.QRectF], QtCore.QRectF]) -> None:
         context = self._build_context(grid_view, map_rect)

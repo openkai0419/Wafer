@@ -74,7 +74,7 @@ def test_grid_item_model_materialization(n):
     elapsed = time.perf_counter() - t0
     _current, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
-    print(f"\n[scaling] grid_model n={n:,} set_items={elapsed:.3f}s peak={peak / MB:.1f}MB index={len(model._path_to_index):,}")
+    print(f"\n[scaling] grid_model n={n:,} set_items={elapsed:.3f}s peak={peak / MB:.1f}MB index={len(model.path_index):,}")
     assert model.count() == n
 
 

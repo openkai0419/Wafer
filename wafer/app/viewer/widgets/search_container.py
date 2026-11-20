@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtWidgets
 
 from ....qt.common.dpi import dpix
+from ....core.logs import AppLogger
 from ....core.profiling import profiler
 from ....core.db.query import FileSearchEngine
 from ....plugin.query.composer import SearchComposer
@@ -146,13 +147,16 @@ class FilterRow(QtWidgets.QWidget):
 class SearchContainer(QtWidgets.QWidget):
     filter_changed = QtCore.Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, sortable: bool = True):
         super().__init__(parent)
+        self.sortable = sortable
         self._dispatcher = Dispatcher(utility_pool)
         self._key_cancel = CancelSlot()
         self._key_store = KeyStore(self)
         self._last_paths = object()
+        self._key_waiters = []
         self._rows: list[FilterRow] = []
+        self._unavailable_bars: list[tuple[int, dict]] = []
         self._sort_name = "none"
         self._ascending = False
         self._tools_host = None
@@ -279,15 +283,20 @@ class SearchContainer(QtWidgets.QWidget):
     def _add_row(self, filter_cls, emit=True):
         self._insert_row(len(self._rows), filter_cls, emit=emit)
 
-    def _insert_row(self, index: int, filter_cls, emit=True):
+    def _insert_row(self, index: int, filter_cls, emit=True, *, params: dict | None = None, op: str | None = None, enabled: bool = True):
         index = max(0, min(index, len(self._rows)))
-        inherited = self._collect_inherited_params(index)
+        values = self._collect_inherited_params(index) if params is None else params
         row = FilterRow(filter_cls, show_op=index > 0, key_store=self._key_store, parent=self)
         row.changed.connect(self._on_row_changed)
         row.remove_requested.connect(self._on_remove_row)
         row.context_requested.connect(self._show_row_menu)
-        if inherited and row.get_param_widget():
-            filter_cls.write_params(row.get_param_widget(), inherited)
+        if values and row.get_param_widget():
+            filter_cls.write_params(row.get_param_widget(), values)
+        if op and index > 0:
+            op_index = row.op_combo.findData(op)
+            if op_index >= 0:
+                row.op_combo.setCurrentIndex(op_index)
+        row.set_enabled(enabled)
         self._rows.insert(index, row)
         self._filter_stack.insertWidget(index, row)
         self._update_op_visibility()
@@ -439,7 +448,7 @@ class SearchContainer(QtWidgets.QWidget):
             idx = target.layout().indexOf(target.remove_button)
             target.layout().insertWidget(idx, self._sort_button)
             target.layout().insertWidget(idx + 1, self._add_button)
-            self._sort_button.show()
+            self._sort_button.setVisible(self.sortable)
             self._add_button.show()
             self._add_button.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
             self._empty_row.hide()
@@ -448,7 +457,7 @@ class SearchContainer(QtWidgets.QWidget):
             el = self._empty_row.layout()
             el.addWidget(self._sort_button)
             el.addWidget(self._add_button, 1)
-            self._sort_button.show()
+            self._sort_button.setVisible(self.sortable)
             self._add_button.show()
             self._add_button.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
             self._empty_row.show()
@@ -477,10 +486,6 @@ class SearchContainer(QtWidgets.QWidget):
     def set_sort(self, sort_by: str, ascending: bool):
         self._sort_name = sort_by
         self._ascending = ascending
-        self._sync_sort_menu()
-
-    def _sync_sort_menu(self):
-        return
 
     def invalidate_key_cache(self):
         self._last_paths = object()
@@ -498,27 +503,36 @@ class SearchContainer(QtWidgets.QWidget):
             return
         self._last_paths = key
         cancel = self._key_cancel.renew()
+        if on_complete:
+            self._key_waiters.append(on_complete)
 
         def task():
-            engine = FileSearchEngine(dbname)
-            composer = SearchComposer()
             entries = []
             if paths:
                 entries.append((DirectoryFilter, {"directories": paths, "include_subfolders": include_subfolders}, None))
             if not include_contained_files:
                 entries.append((ContainedFilesFilter, {"include": False}, None))
-            results = composer.list_all_keys(engine, entries, sort_by_freq=True)
-            if cancel.is_cancelled():
-                return
-
-            def apply():
-                self._key_store.set_data(results)
-                if on_complete:
-                    on_complete()
-
-            self._dispatcher.invoke(apply)
+            try:
+                results = SearchComposer().list_all_keys(FileSearchEngine(dbname), entries, sort_by_freq=True)
+            except Exception as exc:
+                AppLogger.error(f"Failed to load the filter keys of {dbname}", exc=exc)
+                results = None
+            if not cancel.is_cancelled():
+                self._dispatcher.invoke(lambda: self._finish_key_load(cancel, key, results))
 
         self._dispatcher.post(task, priority=6, cancel=cancel)
+
+    def _finish_key_load(self, cancel, key, results):
+        if cancel.is_cancelled():
+            return
+        if results is None:
+            if self._last_paths == key:
+                self._last_paths = object()
+        else:
+            self._key_store.set_data(results)
+        waiters, self._key_waiters = self._key_waiters, []
+        for on_complete in waiters:
+            on_complete()
 
     def get_primary_row(self) -> FilterRow | None:
         return self._rows[0] if self._rows else None
@@ -538,6 +552,8 @@ class SearchContainer(QtWidgets.QWidget):
                     "enabled": row.is_enabled(),
                 }
             )
+        for index, bar in self._unavailable_bars:
+            bars.insert(min(index, len(bars)), dict(bar))
         return bars
 
     def save_state(self) -> dict:
@@ -558,29 +574,16 @@ class SearchContainer(QtWidgets.QWidget):
                 row.setParent(None)
                 row.deleteLater()
             self._rows.clear()
-        for rd in bars or []:
-            filter_cls = filter_registry.get(rd.get("filter", "text"))
+            self._unavailable_bars.clear()
+        start = len(self._rows) + len(self._unavailable_bars)
+        for offset, rd in enumerate(bars or []):
+            name = rd.get("filter", "text")
+            filter_cls = filter_registry.get(name)
             if not filter_cls:
+                AppLogger.warning(f"Filter '{name}' is not available, so it is kept in the Workspace but not applied. Enable its extension to use it.")
+                self._unavailable_bars.append((start + offset, dict(rd)))
                 continue
-            is_first = len(self._rows) == 0
-            row = FilterRow(
-                filter_cls=filter_cls,
-                show_op=not is_first,
-                key_store=self._key_store,
-                parent=self,
-            )
-            row.changed.connect(self._on_row_changed)
-            row.remove_requested.connect(self._on_remove_row)
-            row.context_requested.connect(self._show_row_menu)
-            if rd.get("params") and row.get_param_widget():
-                row.filter_cls.write_params(row.get_param_widget(), rd["params"])
-            if not is_first and rd.get("op"):
-                idx = row.op_combo.findData(rd["op"])
-                if idx >= 0:
-                    row.op_combo.setCurrentIndex(idx)
-            row.set_enabled(rd.get("enabled", True))
-            self._rows.append(row)
-            self._filter_stack.addWidget(row)
+            self._insert_row(len(self._rows), filter_cls, emit=False, params=rd.get("params") or {}, op=rd.get("op"), enabled=rd.get("enabled", True))
         self._update_op_visibility()
         self._update_tool_placement()
         self.filter_changed.emit()
@@ -610,8 +613,6 @@ class SearchContainer(QtWidgets.QWidget):
 
     def set_sort_by(self, key: str):
         self._sort_name = key
-        self._sync_sort_menu()
 
     def set_ascending(self, ascending: bool):
         self._ascending = ascending
-        self._sync_sort_menu()

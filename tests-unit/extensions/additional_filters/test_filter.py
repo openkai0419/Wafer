@@ -4,6 +4,7 @@ import hashlib
 import os
 import sqlite3
 import time
+from datetime import datetime
 
 
 from wafer.core.db.db_utils import apply_read_pragmas, apply_write_pragmas
@@ -110,6 +111,9 @@ class TestDateStrToEpoch:
     def test_invalid_format(self):
         assert _date_str_to_epoch("not-a-date") is None
 
+    def test_day_starts_at_local_midnight(self):
+        assert _date_str_to_epoch("2024/01/15") == datetime(2024, 1, 15).timestamp()
+
 
 class TestPresetToEpoch:
     def test_fixed_units(self):
@@ -138,11 +142,9 @@ class TestPresetToEpoch:
         assert abs(result - (ref - 7 * 86400)) < 1.0
 
     def test_ref_time_months(self):
-        from datetime import datetime, timezone
-
-        ref = datetime(2024, 6, 15, 23, 59, 59, tzinfo=timezone.utc).timestamp()
+        ref = datetime(2024, 6, 15, 23, 59, 59).timestamp()
         result = _preset_to_epoch(1, "months", ref_time=ref)
-        expected = datetime(2024, 5, 15, 23, 59, 59, tzinfo=timezone.utc).timestamp()
+        expected = datetime(2024, 5, 15, 23, 59, 59).timestamp()
         assert abs(result - expected) < 1.0
 
 
@@ -249,6 +251,13 @@ class TestBuildPathQuery:
         sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
         assert "BETWEEN" in sql
         assert bind[0] < bind[1]
+
+    def test_range_covers_both_whole_days_in_either_order(self):
+        expected = [datetime(2024, 1, 10).timestamp(), datetime(2024, 1, 18, 23, 59, 59).timestamp()]
+        for range_from, range_to in (("2024/01/10", "2024/01/18"), ("2024/01/18", "2024/01/10")):
+            params = {"target_key": "modified", "mode": "range", "range_from": range_from, "range_to": range_to}
+            _sql, bind = DateRangeFilter.build_path_query(params, lambda p: p)
+            assert bind == expected
 
 
 class TestQueryExecution:

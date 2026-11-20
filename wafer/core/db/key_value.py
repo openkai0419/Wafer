@@ -50,7 +50,7 @@ _SPECS = {
 
 _KEY_PREFIX_LOOKUP_SQL = {
     scope: (
-        f"SELECT {spec.path_column} AS path, {spec.key_column} AS key FROM {spec.from_clause} WHERE {spec.key_column} LIKE ?",
+        f"SELECT {spec.path_column} AS path, {spec.key_column} AS key FROM {spec.from_clause} WHERE {spec.key_column} LIKE ? ESCAPE '\\'",
         spec.path_column,
     )
     for scope, spec in _SPECS.items()

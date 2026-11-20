@@ -85,3 +85,23 @@ def test_file_unregistered(client):
 def test_file_unknown_db(client, dataset):
     resp, _ = client.get("/api/file", params={"db": "nope", "path": dataset["files"][0][0]})
     assert resp.status == 404
+
+
+def test_thumb_checks_the_file_off_the_event_loop(client, dataset, monkeypatch):
+    import os
+    import threading
+
+    path = dataset["files"][0][0]
+    real_stat = os.stat
+    threads = []
+
+    def fake_stat(p, *args, **kwargs):
+        if str(p).replace("\\", "/") == path:
+            threads.append(threading.current_thread().name)
+            raise FileNotFoundError(p)
+        return real_stat(p, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", fake_stat)
+    resp, _ = client.get("/api/thumb", params={"db": DB, "path": path})
+    assert resp.status == 404
+    assert threads and all(name.startswith("webdb-") for name in threads)

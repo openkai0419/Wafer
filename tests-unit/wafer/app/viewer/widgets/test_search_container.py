@@ -179,6 +179,19 @@ class TestSearchContainer:
         container.show()
         assert container._rows[0].remove_button.isVisibleTo(container)
 
+    def test_sort_button_is_shown_unless_unsortable(self, qapp):
+        for sortable in (True, False):
+            container = SearchContainer(sortable=sortable)
+            container.show()
+            assert container._sort_button.isVisibleTo(container) is sortable
+            container.apply_bars([])
+            assert container._sort_button.isVisibleTo(container) is sortable
+            container.apply_bars([{"filter": "text", "params": {}}])
+            qapp.processEvents()
+            assert container._sort_button.isVisibleTo(container) is sortable
+            assert container._add_button.isVisibleTo(container)
+            container.close()
+
     def test_add_row(self, qapp):
         container = SearchContainer()
         container._add_row(TextFilter)
@@ -724,3 +737,92 @@ class TestSelectableParamWidgets:
 
         assert len(widgets) == 1
         assert widgets[0] is container._rows[0].get_param_widget()
+
+
+class TestAppliedRows:
+    def test_applied_rows_behave_like_added_rows(self, qapp):
+        container = SearchContainer()
+        container.apply_bars(
+            [
+                {"filter": "text", "params": {"keywords": "first"}},
+                {"filter": "text", "params": {"keywords": "second"}, "op": "OR", "enabled": False},
+            ]
+        )
+        second = container._rows[1]
+        assert second.read_op() == "OR"
+        assert second.is_enabled() is False
+        assert second.read_params()["keywords"] == "second"
+        changed = []
+        container.filter_changed.connect(lambda: changed.append(True))
+
+        second.remove_requested.emit(second)
+
+        assert len(container._rows) == 1
+        assert changed == [True]
+
+
+class TestUnavailableFilters:
+    def test_bars_of_unavailable_filters_survive_a_round_trip(self, qapp):
+        container = SearchContainer()
+        missing = {"filter": "not_installed", "params": {"value": 3}, "op": "OR", "enabled": True}
+        bars = [
+            {"filter": "text", "params": {"keywords": "first"}, "op": None, "enabled": True},
+            missing,
+            {"filter": "text", "params": {"keywords": "last"}, "op": "AND", "enabled": False},
+        ]
+
+        with patch("wafer.app.viewer.widgets.search_container.AppLogger.warning") as warning:
+            container.apply_bars(bars)
+
+        warning.assert_called_once()
+        assert len(container._rows) == 2
+        saved = container.get_bars()
+        assert [bar["filter"] for bar in saved] == ["text", "not_installed", "text"]
+        assert saved[1] == missing
+
+    def test_replacing_the_bars_drops_unavailable_ones(self, qapp):
+        container = SearchContainer()
+        container.apply_bars([{"filter": "not_installed", "params": {}}])
+
+        container.apply_bars([{"filter": "text", "params": {"keywords": "x"}}])
+
+        assert [bar["filter"] for bar in container.get_bars()] == ["text"]
+
+
+def run_tasks_inline(container):
+    posted = []
+    dispatcher = patch.object(container, "_dispatcher").start()
+    dispatcher.post.side_effect = lambda task, priority=6, cancel=None: posted.append(task)
+    dispatcher.invoke.side_effect = lambda fn: fn()
+    return posted
+
+
+class TestKeyLoadCompletion:
+    def teardown_method(self):
+        patch.stopall()
+
+    def test_failed_key_load_still_completes_and_can_be_retried(self, qapp):
+        container = SearchContainer()
+        posted = run_tasks_inline(container)
+        done = []
+        with patch("wafer.app.viewer.widgets.search_container.SearchComposer.list_all_keys", side_effect=RuntimeError("db is locked")):
+            container.run_folder_worker("dummy.db", ["/a"], on_complete=lambda: done.append(True))
+            posted.pop()()
+
+        assert done == [True]
+        container.run_folder_worker("dummy.db", ["/a"])
+        assert len(posted) == 1
+
+    def test_replaced_key_load_completes_with_the_newer_one(self, qapp):
+        container = SearchContainer()
+        posted = run_tasks_inline(container)
+        done = []
+        with patch("wafer.app.viewer.widgets.search_container.SearchComposer.list_all_keys", return_value=[("prompt", 1)]):
+            container.run_folder_worker("dummy.db", ["/a"], on_complete=lambda: done.append("restore"))
+            container.run_folder_worker("dummy.db", ["/b"])
+            first, second = posted
+            first()
+            assert done == []
+            second()
+
+        assert done == ["restore"]

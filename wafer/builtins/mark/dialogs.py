@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+import os
 import uuid
 
+import shiboken6
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from ...qt.commands.bridge import ActionKit, Menu
+from ...core.common.paths import data_db_path, list_setting_db_names
+from ...core.db.db_utils import open_readonly
 from ...core.db.dispatch import send_to_db_scope
 from ...core.db.key_value import SCOPE_META_INFO, SCOPE_TAG, normalize_data_scope, other_data_scope
 from ...core.lang.manager import t
 from ...qt.common.badge_engine import badge_shape_keys, badge_shape_pixmap, normalize_badge_shape_key
 from ...qt.common.icon_engine import themed_icon
 from ...qt.widgets.color_picker import ColorPickerDialog
+from ...qt.common.dispatcher import Dispatcher
 from ...qt.common.dpi import dpix
+from ...qt.common.thread import utility_pool
 from ...core.logs import AppLogger
 from ...qt.common.notifier import Notifier
 from .registry import MarkRegistry
@@ -78,19 +84,85 @@ def _prompt_new_mark_values(parent: QtWidgets.QWidget | None = None, *, scope: s
     return name, _normalize_mark_scope(scope_combo.currentData()), DEFAULT_SHAPE_KEY
 
 
-def prompt_new_mark(parent: QtWidgets.QWidget | None = None, *, scope: str = SCOPE_META_INFO) -> str | None:
+_dispatcher: Dispatcher | None = None
+
+
+def _mark_dispatcher() -> Dispatcher:
+    global _dispatcher
+    if _dispatcher is None:
+        _dispatcher = Dispatcher(utility_pool)
+    return _dispatcher
+
+
+_STORED_KEY_SQL = "SELECT EXISTS(SELECT 1 FROM meta_info WHERE key = ?) OR EXISTS(SELECT 1 FROM tags WHERE key = ?)"
+
+
+def has_stored_data(mark_id: str) -> bool:
+    key = MarkRegistry.key(mark_id)
+    for db_name in list_setting_db_names():
+        db_path = data_db_path(db_name)
+        if not os.path.exists(db_path):
+            continue
+        conn = None
+        try:
+            conn = open_readonly(db_path)
+            if conn.execute(_STORED_KEY_SQL, (key, key)).fetchone()[0]:
+                return True
+        except Exception as e:
+            AppLogger.warning(f"[Mark] Failed to check '{key}' in {db_name}: {e}", exc=e)
+        finally:
+            if conn:
+                conn.close()
+    return False
+
+
+def prompt_new_mark(parent: QtWidgets.QWidget | None = None, *, scope: str = SCOPE_META_INFO) -> None:
     name, selected_scope, shape_key = _prompt_new_mark_values(parent, scope=scope)
     if not name:
-        return None
+        return
     color = ColorPickerDialog.get_color("#888888", parent, t("Choose mark color"), with_alpha=False, scope="mark")
     if color is None:
-        return None
+        return
+    hex_color = color.name()
+    mark_id = MarkRegistry.instance().id_for(name)
+    dispatcher = _mark_dispatcher()
+
+    def check():
+        stored = has_stored_data(mark_id)
+        dispatcher.invoke(lambda: _add_new_mark(parent, name, hex_color, selected_scope, shape_key, mark_id, stored))
+
+    dispatcher.post(check)
+
+
+def _add_new_mark(parent: QtWidgets.QWidget | None, name: str, color: str, scope: str, shape_key: str, mark_id: str, stored: bool) -> None:
+    if parent is not None and not shiboken6.isValid(parent):
+        parent = None
+    if stored:
+        choice = ask_stored_data(parent, mark_id)
+        if choice is None:
+            return
+        if choice == "delete":
+            _purge_mark_from_all_dbs(mark_id)
     reg = MarkRegistry.instance()
-    new_id = reg.add(name, color.name(), storage_scope=selected_scope, shape_key=shape_key)
+    new_id = reg.add(name, color, mark_id, storage_scope=scope, shape_key=shape_key)
     final_name = reg.name_of(new_id)
     if final_name != name:
         Notifier.info(t("Added as '{name}' to avoid duplicate", name=final_name))
-    return new_id
+
+
+def ask_stored_data(parent: QtWidgets.QWidget | None, mark_id: str) -> str | None:
+    box = QtWidgets.QMessageBox(QtWidgets.QMessageBox.Question, t("Add mark"), t("Previous data for '{key}' remains.", key=MarkRegistry.key(mark_id)), parent=parent)
+    restore_btn = box.addButton(t("Restore"), QtWidgets.QMessageBox.AcceptRole)
+    delete_btn = box.addButton(t("Delete"), QtWidgets.QMessageBox.DestructiveRole)
+    box.addButton(QtWidgets.QMessageBox.Cancel)
+    box.setDefaultButton(restore_btn)
+    box.exec()
+    clicked = box.clickedButton()
+    if clicked is restore_btn:
+        return "restore"
+    if clicked is delete_btn:
+        return "delete"
+    return None
 
 
 def prompt_rename_mark(parent: QtWidgets.QWidget | None, mark_id: str) -> bool:

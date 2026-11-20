@@ -200,6 +200,7 @@ def test_search_with_unchanged_results_ends_the_wait(qtbot):
     window = FakeWindow(selected=["F:/p/other"])
     paths = [FILE]
     window._last_paths = paths
+    window._last_aspects = [1.0]
     window._folder_changed = True
     window.search_row_widget = MagicMock()
     window.grid_overlay_host = MagicMock()

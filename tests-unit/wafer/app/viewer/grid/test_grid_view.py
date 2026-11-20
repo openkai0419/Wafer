@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.qt.common.dpi import dpix
@@ -795,7 +795,6 @@ class TestOnLayoutReadyWidgetRerender:
         fake.visible_indices = set()
         fake.is_scrolling.return_value = False
         fake.last_selections = []
-        fake._prev_selection_set = set()
         fake._pending_scroll_index = None
         fake._content_size = lambda cell_size: self.GridView._content_size(fake, cell_size)
         fake.get_restore_index.return_value = 0
@@ -1096,3 +1095,102 @@ class TestGridActive:
 
         splitter.setSizes([500, 500])
         qtbot.waitUntil(lambda: gv._active is True and bool(gv.visible_indices))
+
+
+class TestSelectionAnchorOnRelayout:
+    @pytest.fixture(autouse=True)
+    def _import(self, qtbot):
+        from wafer.app.viewer.grid.grid_view import GridView
+
+        self.GridView = GridView
+
+    def _make_layout(self, n):
+        from wafer.plugin.layout.calc import LayoutData
+
+        return LayoutData([QtCore.QRectF(0, i * 100, 800, 100) for i in range(n)], n * 100, True)
+
+    def _prepare(self, qtbot, paths):
+        gv = self.GridView(MagicMock())
+        qtbot.addWidget(gv)
+        gv._pipeline.schedule_render = MagicMock()
+        gv._pipeline.request_layout = MagicMock()
+        gv.items.set_items(paths, paths, [1.0] * len(paths))
+        gv._on_layout_ready(self._make_layout(len(paths)))
+        return gv
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_relayout_keeps_the_anchor(self, mock_resolver, qtbot):
+        paths = [f"/img/{i}.png" for i in range(12)]
+        gv = self._prepare(qtbot, paths)
+        gv.items.toggle_selection(5)
+        gv.items.toggle_selection(3)
+
+        gv._on_layout_ready(self._make_layout(12))
+
+        assert gv.items.last_selected_index() == 3
+        assert gv.items.selected_indices() == {3, 5}
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_new_paths_keep_the_anchor_at_its_new_index(self, mock_resolver, qtbot):
+        paths = [f"/img/{i}.png" for i in range(12)]
+        gv = self._prepare(qtbot, paths)
+        gv.items.toggle_selection(5)
+        gv.items.toggle_selection(3)
+        new_paths = ["/img/new.png"] + paths
+
+        gv.set_paths(new_paths, new_paths, [1.0] * len(new_paths))
+        gv._on_layout_ready(self._make_layout(len(new_paths)))
+
+        assert gv.items.last_selected_index() == 4
+        assert gv.items.selected_indices() == {4, 6}
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_selection_change_notifies_only_changed_widgets(self, mock_resolver, qtbot):
+        paths = [f"/img/{i}.png" for i in range(12)]
+        gv = self._prepare(qtbot, paths)
+        gv.items.set_selected(list(range(12)), last=-1)
+        widgets = {1: MagicMock(), 2: MagicMock()}
+        gv._additional_widgets = widgets
+        gv._notifier = MagicMock()
+
+        gv.items.toggle_selection(1)
+        gv.items.toggle_selection(1)
+
+        assert gv._notifier.deselect.call_args_list == [call(1, widgets[1])]
+        assert gv._notifier.select.call_args_list == [call(1, widgets[1])]
+
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_command_context_reads_the_selection_on_demand(self, mock_resolver, qtbot):
+        from wafer.qt.commands.command.context import CommandContext
+
+        paths = [f"/img/{i}.png" for i in range(12)]
+        gv = self._prepare(qtbot, paths)
+        gv.items.set_selected([2, 5], last=-1)
+        gv.items.selected_paths = MagicMock(wraps=gv.items.selected_paths)
+        ctx = CommandContext().merge(gv.extend_context(None, None))
+
+        gv.items.selected_paths.assert_not_called()
+        assert sorted(ctx.get("paths")) == ["/img/2.png", "/img/5.png"]
+        assert sorted(ctx.get("sources")) == ["/img/2.png", "/img/5.png"]
+        assert ctx.get("path") == "/img/5.png"
+        ctx.get("paths")
+        gv.items.selected_paths.assert_called_once()
+
+
+class TestAnimatedScroll:
+    @patch("wafer.app.viewer.grid.grid_view.grid_resolver")
+    def test_animated_scrolls_reuse_one_animation(self, mock_resolver, qtbot):
+        from wafer.app.viewer.grid.grid_view import GridView
+
+        gv = GridView(MagicMock())
+        qtbot.addWidget(gv)
+        bar = gv._primary_bar()
+        bar.setRange(0, 10000)
+        before = len(gv.findChildren(QtCore.QPropertyAnimation))
+
+        for target in (500, 1500, 3000, 200):
+            gv._scroll_to(target, animated=True)
+
+        assert len(gv.findChildren(QtCore.QPropertyAnimation)) - before == 1
+        assert gv._scroll_anim.endValue() == 200
+        gv._scroll_anim.stop()

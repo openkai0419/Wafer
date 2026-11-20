@@ -14,11 +14,8 @@ isolate_app_data()
 
 from wafer.core.logs import AppLogger
 from wafer.core.logs import debug_non_recursive
-from wafer.core.logs import set_suppress_dialog
 from wafer.plugin.loader import load_plugins, get_command_registry
 from wafer.plugin.settings import PluginSettings
-
-set_suppress_dialog(True)
 
 _orig_enabled_overrides = PluginSettings.enabled_overrides
 PluginSettings.enabled_overrides = lambda self: {}
@@ -99,9 +96,8 @@ def _close_qt_widgets_after_test():
 
         for key in list(qt_debounce_manager._timers):
             qt_debounce_manager.cancel(key)
-        for _last_call, idle_timer, _pending in _qt_throttle_manager._states.values():
-            idle_timer.stop()
-        _qt_throttle_manager._states.clear()
+        for key in list(_qt_throttle_manager._states):
+            _qt_throttle_manager.cancel(key)
     except Exception as e:
         _record_cleanup_error("cancel pending debounced calls after test", e)
     try:
@@ -141,14 +137,6 @@ def pytest_runtest_protocol(item, nextitem):
 @pytest.fixture(autouse=True, scope="session")
 def _cleanup_background_resources():
     yield
-    try:
-        from wafer.app.indexer.dispatch.collector_dispatcher import CollectorDispatcher
-        from wafer.app.indexer.dispatch.parser_dispatcher import ParserDispatcher
-
-        CollectorDispatcher.reset_singleton_state()
-        ParserDispatcher.reset_singleton_state()
-    except Exception as e:
-        _record_cleanup_error("reset dispatcher singletons", e)
     try:
         from wafer.core.platform.process import AppProcess
 

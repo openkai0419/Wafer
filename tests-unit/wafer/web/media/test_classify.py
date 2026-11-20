@@ -24,3 +24,8 @@ def test_classify_other():
 
 def test_native_video_is_subset_of_video():
     assert NATIVE_VIDEO_EXTS <= VIDEO_EXTS
+
+
+def test_classify_tiff_is_a_download_because_browsers_cannot_show_it():
+    assert classify("scan.tif") == "other"
+    assert classify("scan.TIFF") == "other"

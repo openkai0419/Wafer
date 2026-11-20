@@ -6,7 +6,12 @@ from wafer.app.viewer.widgets.workspace_labels import (
     slot_tooltip,
     window_title,
 )
+import sys
+
+import pytest
+
 from wafer.constants import APP_NAME
+from wafer.core.common.profile import PROFILE_ARG, current_profile
 from wafer.core.store.workspace import WindowSlot
 
 
@@ -45,3 +50,22 @@ def test_slot_subtitle_and_tooltip_include_summary_for_named_slot():
     assert slot_subtitle(named).startswith("db / photos +1 / ")
     tooltip = slot_tooltip(named)
     assert "Work" in tooltip and "db / photos +1" in tooltip and "slot_id: s1" in tooltip
+
+
+@pytest.fixture
+def _profile(monkeypatch):
+    def use(profile):
+        argv = ["main.py"] if profile is None else ["main.py", PROFILE_ARG, profile]
+        monkeypatch.setattr(sys, "argv", argv)
+        current_profile.cache_clear()
+
+    yield use
+    current_profile.cache_clear()
+
+
+def test_window_title_has_profile_prefix(_profile):
+    _profile("debug-x")
+    assert window_title("Work", [], "main") == "[debug-x] Work"
+    assert window_title("", [], "") == f"[debug-x] {APP_NAME}"
+    _profile(None)
+    assert window_title("Work", [], "main") == "Work"

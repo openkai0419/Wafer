@@ -7,6 +7,14 @@ from ....core.profiling import profiler
 from .selectionmanager import SelectionManager
 
 
+def index_paths(paths: list[str]) -> dict[str, int]:
+    return {p: i for i, p in enumerate(paths)}
+
+
+def as_list(values) -> list:
+    return values if isinstance(values, list) else list(values or [])
+
+
 class GridItemModel(QtCore.QObject):
     itemsChanged = QtCore.Signal()
     selectionChanged = QtCore.Signal(set)
@@ -18,11 +26,8 @@ class GridItemModel(QtCore.QObject):
         self.aspect_ratios: list[float] = []
         self.avg_aspect: float = 1.0
         self._selection = SelectionManager()
-        self._selection.selectionChanged.connect(self._on_selection_changed)
-        self._path_to_index: dict[str, int] = {}
-
-    def _rebuild_index(self):
-        self._path_to_index = {p: i for i, p in enumerate(self.paths)}
+        self._selection.selectionChanged.connect(self.selectionChanged)
+        self.path_index: dict[str, int] = {}
 
     def _normalize_lengths(self):
         n = len(self.paths)
@@ -32,12 +37,12 @@ class GridItemModel(QtCore.QObject):
             self.aspect_ratios = (self.aspect_ratios[:n] + [1.0] * n)[:n]
 
     @profiler.profile
-    def set_items(self, paths: list[str] | None, sources: list[str] | None, aspect_ratios: list[float] | None):
-        self.paths = list(paths or [])
-        self.sources = list(sources or [])
-        self.aspect_ratios = list(aspect_ratios or [])
+    def set_items(self, paths: list[str] | None, sources: list[str] | None, aspect_ratios: list[float] | None, path_index: dict[str, int] | None = None):
+        self.paths = as_list(paths)
+        self.sources = as_list(sources)
+        self.aspect_ratios = as_list(aspect_ratios)
         self._normalize_lengths()
-        self._rebuild_index()
+        self.path_index = index_paths(self.paths) if path_index is None else path_index
         ratios = self.aspect_ratios
         self.avg_aspect = sum(r or 1.0 for r in ratios) / len(ratios) if ratios else 1.0
         self._selection.clear()
@@ -51,7 +56,7 @@ class GridItemModel(QtCore.QObject):
         return len(self.paths)
 
     def index_of_path(self, path: str) -> int | None:
-        return self._path_to_index.get(path)
+        return self.path_index.get(path)
 
     def selected_indices(self) -> set[int]:
         return self._selection.selected_indices()
@@ -131,6 +136,3 @@ class GridItemModel(QtCore.QObject):
         if 0 <= index < len(self.aspect_ratios):
             return self.aspect_ratios[index]
         return None
-
-    def _on_selection_changed(self, _):
-        self.selectionChanged.emit(self.selected_indices())

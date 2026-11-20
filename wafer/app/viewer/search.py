@@ -12,6 +12,7 @@ from ...qt.common.thread import utility_pool
 from ...plugin.query.handler import sort_registry
 from ...builtins.filters import TextFilter, DirectoryFilter, ContainedFilesFilter
 from ...builtins.sorts import NaturalPathSort
+from .grid.items import index_paths
 
 
 _DEFAULTS = {
@@ -31,7 +32,8 @@ _DEFAULTS = {
 
 class SearchService(QtCore.QObject):
     search_started = QtCore.Signal()
-    search_finished = QtCore.Signal(object, object, object)
+    search_finished = QtCore.Signal(object, object, object, object)
+    search_failed = QtCore.Signal()
     params_changed = QtCore.Signal(dict)
 
     def __init__(self, dbpath_getter, parent=None):
@@ -178,7 +180,14 @@ class SearchService(QtCore.QObject):
 
         def task():
             engine = FileSearchEngine(dbpath)
-            result = self._composer.execute(engine, filter_entries, sort_plugin, ascending)
+            try:
+                paths, sources, aspects = self._composer.execute(engine, filter_entries, sort_plugin, ascending)
+                result = (paths, sources, aspects, index_paths(paths))
+            except Exception as e:
+                AppLogger.error(f"Search failed: {e}. Run the search again or change the conditions.", exc=e)
+                result = None
+            finally:
+                engine.close()
             if cancel.is_cancelled():
                 return
             self._dispatcher.invoke(lambda: self._on_search_finished(cancel, snapshot, result))
@@ -189,13 +198,15 @@ class SearchService(QtCore.QObject):
     def _on_search_finished(self, cancel, snapshot, result):
         if cancel is not self._current_cancel:
             return
-        self._last_snapshot = snapshot
         self._current_cancel = None
         self._current_snapshot = None
         self._query_start_time = None
-        paths, sources, aspects = result
-        AppLogger.debug(f"search done: {len(paths)} results")
-        self.search_finished.emit(paths, sources, aspects)
+        if result is None:
+            self.search_failed.emit()
+        else:
+            self._last_snapshot = snapshot
+            AppLogger.debug(f"search done: {len(result[0])} results")
+            self.search_finished.emit(*result)
         with QtCore.QMutexLocker(self._lock):
             if self._pending_snapshot:
                 self._pending_snapshot = None

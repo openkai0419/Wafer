@@ -132,3 +132,23 @@ def test_signal_on_toggle(sm):
     sm.toggle(3)
     assert len(received) == 2
     assert all(3 in s for s in received)
+
+
+def test_add_selection_emits_only_the_added(sm):
+    sm.set_selected([0, 1, 2])
+    received = []
+    sm.selectionChanged.connect(lambda s: received.append(s))
+    sm.add_selection([2, 3], last=-1)
+    sm.add_selection([1, 2])
+    assert received == [{3}]
+    assert sm.selected_indices() == {0, 1, 2, 3}
+    assert sm.anchor_index() == 1
+
+
+def test_set_selected_emits_only_the_changed(sm):
+    sm.set_selected([0, 1, 2])
+    received = []
+    sm.selectionChanged.connect(lambda s: received.append(s))
+    sm.set_selected([1, 2, 3])
+    sm.set_selected([1, 2, 3])
+    assert received == [{0, 3}]

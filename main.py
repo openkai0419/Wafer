@@ -1,7 +1,6 @@
 import argparse
 import atexit
 import faulthandler
-import io
 import os
 import signal
 import sys
@@ -13,9 +12,9 @@ os.environ.setdefault('OPENBLAS_NUM_THREADS', '4')
 import setproctitle
 
 if sys.stdout is None:
-    sys.stdout = io.StringIO()
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
 if sys.stderr is None:
-    sys.stderr = io.StringIO()
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
 
 from wafer.core.common.paths import list_setting_db_names, resolve_data_path
 from wafer.core.platform.process_lock import SafeProcessLock
@@ -41,8 +40,9 @@ def _setup_faulthandler(force=False):
 
 _setup_faulthandler()
 from wafer import __version__
+from wafer._version import warn_if_version_unknown
 from wafer.constants import APP_DATA_DIR_NAME, APP_ID, APP_NAME, DEFAULT_DB_NAME, TRAY_LOCK_NAME
-from wafer.core.common.paths import get_plugin_dir
+from wafer.core.common.paths import get_app_root_dir, get_plugin_dir
 from wafer.core.platform.process import AppProcess
 import wafer.constants as constants
 
@@ -50,7 +50,8 @@ def set_app_user_model_id(app_id):
     if sys.platform == 'win32':
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
-set_app_user_model_id(APP_ID)
+from wafer.core.common.profile import PROFILE_ARG, app_user_model_id, current_profile, validate_profile_name
+set_app_user_model_id(app_user_model_id(APP_ID, current_profile()))
 
 
 def _load_plugins():
@@ -79,13 +80,18 @@ def _wait_install_then_load_plugins(app):
 
 
 def _ensure_tray_unless_pending():
-    from wafer.plugin import installer_queue
+    from wafer.plugin.install_wait import has_pending_install
 
-    if not installer_queue.has_pending_queue(get_plugin_dir()):
+    if not has_pending_install():
         AppProcess.ensure_tray()
 
 
 def _sync_explorer_menu():
+    from wafer.core.common.profile import current_profile
+
+    if current_profile() is not None:
+        AppLogger.info('Explorer menu sync skipped: a debug profile leaves the shared entry alone')
+        return
     from wafer.core.platform import explorer_menu
 
     try:
@@ -104,15 +110,27 @@ def _create_app(*, shared_opengl=True):
     from PySide6 import QtWidgets
     from wafer.qt.common.app_icon import get_icon
     from wafer.qt.common.tooltip import install_instant_tooltips
+    from wafer.qt.widgets.dialogs import show_unexpected_error
+
+    from PySide6 import QtCore
 
     if shared_opengl:
         _enable_shared_opengl_contexts()
+    if current_profile() is not None:
+        QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_DontUseNativeDialogs, True)
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(__version__)
     app.setWindowIcon(get_icon())
     install_instant_tooltips(app)
+    AppLogger.on_uncaught_exception.connect(show_unexpected_error)
     return app
+
+def _attach_debug_agent(process_role):
+    if current_profile() is None:
+        return
+    from debug.agent import attach
+    attach(process_role)
 
 def _start_viewer_profiling():
     if constants.DEV_MODE:
@@ -160,6 +178,7 @@ def _entry_tray():
             AppLogger.info('TRAY RUNNING')
 
             app = _create_app()
+            _attach_debug_agent('tray')
             app.setQuitOnLastWindowClosed(False)
             app.aboutToQuit.connect(AppProcess.shutdown_children)
             tray_icon = TrayApp(get_icon())
@@ -260,6 +279,7 @@ def _entry_webui(args):
             run_headless(host, port, open_browser=not args.no_browser)
         else:
             app = _create_app()
+            _attach_debug_agent('webui')
             _wait_install_then_load_plugins(app)
             from wafer.plugin.loader import get_command_registry
             get_command_registry().activate('webui')
@@ -267,8 +287,8 @@ def _entry_webui(args):
     finally:
         lock.release()
 
-def main():
-    parser = argparse.ArgumentParser(description='Script with three run modes')
+def build_parser():
+    parser = argparse.ArgumentParser(description='Script with three run modes', allow_abbrev=False)
     parser.add_argument('--version', action='version', version=f'Wafer {__version__}')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--tray', action='store_true', help='run tray process (background manager)')
@@ -289,14 +309,34 @@ def main():
     parser.add_argument('--no-tray', action='store_true', help='webui: do not spawn the tray process')
     parser.add_argument('--open-path', default=None, help='viewer --slot: file to open once the workspace is restored')
     parser.add_argument('--open-database', default=None, help='viewer --open-path: database to open the file in')
+    parser.add_argument(PROFILE_ARG, type=validate_profile_name, default=None, help='debug profile (debug-<name>) that keeps its own data, IPC and locks')
     parser.add_argument('path', nargs='?', help='file to open through the workspace picker')
-    args = parser.parse_args()
+    return parser
+
+
+def _parse_args():
+    args = build_parser().parse_args()
+    runtime_profile = current_profile()
+    if args.profile != runtime_profile:
+        AppLogger.error(f'{PROFILE_ARG} was parsed as {args.profile!r} but the process runs as {runtime_profile!r}; refusing to start')
+        sys.exit(2)
+    debug_tools = get_app_root_dir() / 'debug'
+    if runtime_profile is not None and not (debug_tools / 'agent.py').is_file():
+        AppLogger.error(f'{PROFILE_ARG} {runtime_profile} needs the debug tools in {debug_tools}, which this build does not include; refusing to start')
+        sys.exit(2)
+    return args
+
+
+def main():
+    args = _parse_args()
+    warn_if_version_unknown()
     if not any([args.tray, args.viewer, args.webui, args.indexer, args.collector, args.parser]):
         from wafer.app.viewer.workspace_launch import claim_workspace, first_restore_slot_id, is_openable_path, restore_session
         if args.path and is_openable_path(args.path):
             _entry_launcher(args.path)
             return
         app = _create_app()
+        _attach_debug_agent('viewer')
         if os.environ.pop('WAFER_REPLACE_TRAY', None):
             AppProcess.terminate_cmd('--tray', wait=True)
         _ensure_tray_unless_pending()
@@ -337,6 +377,7 @@ def main():
             AppLogger.warning('--parser requires a db name')
     elif args.viewer:
         app = _create_app()
+        _attach_debug_agent('viewer')
         open_request = _open_request(args)
         lock = None
         if not args.pick:

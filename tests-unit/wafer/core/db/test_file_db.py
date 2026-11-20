@@ -8,7 +8,10 @@ from wafer.core.db.file_db import (
     _table_signature,
     _expected_table_signature,
     _TABLES,
+    read_existing_sources,
+    read_pending_sources,
     schema_columns,
+    source_tree_condition,
 )
 from wafer.core.common.virtual_paths import build_virtual_path
 
@@ -162,6 +165,17 @@ def test_filedb_delete_sources_by_path_prefixes_escapes_like(tmp_path):
     assert set(prev) == {"/root/aX%/file.jpg"}
     db.close()
 
+
+
+def test_source_tree_condition_searches_the_source_indexes(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    condition, args = source_tree_condition("/root/dir")
+    for table in ("sources", "collection_status"):
+        plan = " ".join(row[3] for row in db.conn.execute(f"EXPLAIN QUERY PLAN SELECT * FROM {table} WHERE {condition}", args))
+        assert "SCAN" not in plan, plan
+    db.close()
 
 def test_schema_no_change_preserves_data(tmp_path):
     db = FileDB(tmp_path / "test.db")
@@ -345,6 +359,18 @@ def test_insert_pending_collection(tmp_path):
     db.close()
 
 
+def test_pending_sources_carry_what_a_dispatch_batch_needs(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    db.upsert_basic_sources([("src1", "hash1", 100, 1.0)], [("c:/a.jpg", "src1", None)])
+    db.insert_pending_collection(["src1"], ["exif"])
+    assert db.get_pending_sources("exif") == [("src1", 1.0, 100, "hash1")]
+    assert read_pending_sources(db.read_conn, "exif", 10) == [("src1", 1.0, 100, "hash1")]
+    assert read_existing_sources(db.read_conn) == {"src1": (1.0, 100)}
+    db.close()
+
+
 def test_get_pending_sources_excludes_completed(tmp_path):
     db = FileDB(tmp_path / "test.db")
     db.start()
@@ -511,6 +537,35 @@ def test_rename_paths_nonexistent_source(tmp_path):
     assert db.read_conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 0
     db.close()
 
+
+
+def test_rename_paths_replaces_a_registered_destination(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    sources = [("c:/a.png", "hash_a", 1, 1.0), ("c:/b.png", "hash_b", 2, 2.0), ("c:/z.zip", "hash_z", 3, 3.0)]
+    db.upsert_basic_sources(sources, [(source, source, 1.0) for source, *_ in sources], [("c:/b.png", "k", "old b", None)])
+
+    missing = db.rename_paths([("c:/z.zip", "c:/zz.zip"), ("c:/a.png", "c:/b.png")])
+
+    assert missing == []
+    rows = db.read_conn.execute("SELECT source, file_hash FROM sources ORDER BY source").fetchall()
+    assert rows == [("c:/b.png", "hash_a"), ("c:/zz.zip", "hash_z")]
+    assert db.read_conn.execute("SELECT COUNT(*) FROM meta_info").fetchone()[0] == 0
+    db.close()
+
+
+def test_rename_paths_keeps_the_destination_when_the_source_is_unknown(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    db.upsert_basic_sources([("c:/b.png", "hash_b", 2, 2.0)], [("c:/b.png", "c:/b.png", 1.0)])
+
+    missing = db.rename_paths([("c:/a.png", "c:/b.png")])
+
+    assert missing == ["c:/b.png"]
+    assert db.read_conn.execute("SELECT source FROM sources").fetchall() == [("c:/b.png",)]
+    db.close()
 
 def _setup_db_with_pending(tmp_path, sources_count=3):
     db = FileDB(tmp_path / "test.db")
@@ -1063,6 +1118,25 @@ def test_find_sources_with_trigger_keys_from_tags(tmp_path):
     db.close()
 
 
+def test_find_sources_with_trigger_keys_returns_the_archive_for_its_entries(tmp_path):
+    db = FileDB(tmp_path / "test.db")
+    db.start()
+    db.initialize_database()
+    archive = "c:/a.zip"
+    entry = build_virtual_path(archive, "x.png")
+    db.upsert_basic_sources(
+        [(archive, "hash_zip", 100, 1.0)],
+        [(archive, archive, 1.0), (entry, archive, 1.0)],
+        [(entry, "exif.parameters", "steps:20", None)],
+    )
+    db.upsert_collection_results([], [], [(archive, "wd14.general", "cat", None)], [])
+
+    assert db.find_sources_with_trigger_keys(("exif.parameters", "wd14.general"), "sd_meta") == [archive]
+    db.insert_pending_collection([archive], ["sd_meta"])
+    assert db.find_sources_with_trigger_keys(("exif.parameters", "wd14.general"), "sd_meta") == []
+    db.close()
+
+
 def test_get_trigger_metadata(tmp_path):
     db = _setup_db_for_parser(tmp_path)
     meta = db.get_trigger_metadata(["src1", "src2"], ("exif.parameters",))
@@ -1085,3 +1159,28 @@ def test_get_trigger_metadata_empty(tmp_path):
     meta = db.get_trigger_metadata(["src1"], ())
     assert meta == {}
     db.close()
+
+
+def test_failed_schema_recreate_keeps_the_old_tables(tmp_path):
+    import pytest
+
+    path = tmp_path / "test.db"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE hash_index (file_hash TEXT PRIMARY KEY)")
+    conn.execute("CREATE TABLE sources (source TEXT PRIMARY KEY, file_hash TEXT, size INTEGER, modified REAL, created REAL, collected REAL)")
+    conn.execute("INSERT INTO sources (source, file_hash) VALUES ('src1', NULL)")
+    conn.commit()
+    conn.close()
+
+    db = FileDB(path)
+    db.start()
+    with pytest.raises(sqlite3.IntegrityError):
+        db.initialize_database()
+    db.close()
+
+    conn = sqlite3.connect(path)
+    tables = sorted(r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'"))
+    rows = conn.execute("SELECT source FROM sources").fetchall()
+    conn.close()
+    assert tables == ["hash_index", "sources"]
+    assert rows == [("src1",)]

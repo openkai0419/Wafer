@@ -108,8 +108,9 @@ class DirectoryFilter(BaseFilterPlugin):
             prefix = child_prefix(normalize_path(d))
             clause, clause_bind = path_prefix_condition(column, prefix)
             if not include_subfolders:
-                clause = f"({clause} AND instr(substr({column}, ?), '/') = 0)"
-                clause_bind.append(len(prefix) + 1)
+                rest = f"(substr({column}, ?) || '{VIRTUAL_PATH_SEPARATOR}/')"
+                clause = f"({clause} AND instr({rest}, '/') > instr({rest}, '{VIRTUAL_PATH_SEPARATOR}'))"
+                clause_bind.extend([len(prefix) + 1, len(prefix) + 1])
             clauses.append(clause)
             bind.extend(clause_bind)
         if not clauses:

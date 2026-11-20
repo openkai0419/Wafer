@@ -32,7 +32,7 @@ def test_a_failed_write_keeps_the_old_file_and_leaves_no_temp(tmp_path, monkeypa
     def fail(*args):
         raise OSError("disk full")
 
-    monkeypatch.setattr("wafer.core.common.ini_io.os.fsync", fail)
+    monkeypatch.setattr("wafer.core.common.atomic_file.os.fsync", fail)
     with pytest.raises(OSError):
         write_ini(str(path), _parser("new"))
 

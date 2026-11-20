@@ -8,6 +8,7 @@ from wafer.plugin import BaseKeyValuePanelPlugin
 from wafer.qt.meta.viewer import CollapsibleCard
 from wafer.qt.widgets import FlowLayout
 from wafer.qt.common.dpi import dpix
+from wafer.core.logs import AppLogger
 
 from ._color import packed_to_hex
 from .commands import apply_color_filter, apply_selected_color
@@ -40,8 +41,8 @@ class ColorTagPanelPlugin(BaseKeyValuePanelPlugin):
             return
         try:
             ColorSettings.instance().changed.disconnect(self._refresh_colors)
-        except (TypeError, RuntimeError):
-            pass
+        except (TypeError, RuntimeError) as e:
+            AppLogger.debug(f"[color] settings signal already disconnected: {e}")
         self._settings_connected = False
 
     def create_card(self, parent: QtWidgets.QWidget | None = None, *, scope: str = "tag") -> QtWidgets.QWidget:

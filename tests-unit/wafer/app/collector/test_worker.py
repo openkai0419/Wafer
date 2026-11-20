@@ -1,6 +1,9 @@
+import time
+
 import pytest
 
-from wafer.app.collector.worker import CollectorWorker, _SHUTDOWN_WAIT
+from wafer.app.collector.worker import CollectorWorker
+from wafer.app.worker_lifecycle import _SHUTDOWN_WAIT
 from wafer.plugin.collector.handler import collector_resolver
 
 
@@ -25,7 +28,7 @@ def make_worker():
 def test_unknown_plugin_raises():
     import pytest
 
-    with pytest.raises(ValueError, match="Unknown plugin"):
+    with pytest.raises(ValueError, match="Unknown collector plugin"):
         CollectorWorker("test_db", "nonexistent_plugin")
 
 
@@ -38,7 +41,7 @@ def test_all_registered_plugins_constructable(make_worker):
         assert worker._batch_timeout == collector_resolver.batch_timeout(name)
 
 
-def test_process_one_error_excludes_from_results(make_worker):
+def test_process_one_error_is_sent_as_failure(make_worker):
     from unittest.mock import MagicMock
 
     worker = make_worker()
@@ -48,11 +51,10 @@ def test_process_one_error_excludes_from_results(make_worker):
         raise RuntimeError("simulated plugin error")
 
     worker._plugin.process = always_fail
-    worker._process_batch(["/nonexistent/test.jpg"], {"/nonexistent/test.jpg": [0.0, 0]}, "test_db")
+    worker._process_batch(["/nonexistent/test.jpg"], {"/nonexistent/test.jpg": [0.0, 0]}, {}, "test_db")
     assert worker._node.send_reliable.called
     payload = worker._node.send_reliable.call_args[0][1]
-    results = payload["results"]
-    assert len(results) == 0
+    assert payload["results"] == [{"source": "/nonexistent/test.jpg", "status": False}]
 
 
 def test_process_batch_partial_failure(make_worker):
@@ -75,13 +77,12 @@ def test_process_batch_partial_failure(make_worker):
     worker._plugin.process = partial_fail
     paths = ["/test/a.jpg", "/test/b.jpg", "/test/c.jpg"]
     file_info = {p: [0.0, 0] for p in paths}
-    worker._process_batch(paths, file_info, "test_db")
+    worker._process_batch(paths, file_info, {}, "test_db")
 
     assert worker._node.send_reliable.called
     payload = worker._node.send_reliable.call_args[0][1]
-    results = payload["results"]
-    assert len(results) == 2
-    assert all(r["status"] is True for r in results)
+    statuses = {r["source"]: r["status"] for r in payload["results"]}
+    assert statuses == {"/test/a.jpg": True, "/test/b.jpg": False, "/test/c.jpg": True}
 
 
 def test_process_batch_uses_db_from_argument(make_worker):
@@ -92,7 +93,7 @@ def test_process_batch_uses_db_from_argument(make_worker):
     worker._node = MagicMock()
 
     worker._plugin.process = lambda path, info: CollectorResult(source=path, status=True)
-    worker._process_batch(["/test/x.jpg"], {"/test/x.jpg": [0.0, 0]}, "other_db")
+    worker._process_batch(["/test/x.jpg"], {"/test/x.jpg": [0.0, 0]}, {}, "other_db")
 
     call_kwargs = worker._node.send_reliable.call_args[1]
     assert call_kwargs["db"] == "other_db"
@@ -117,7 +118,7 @@ def test_result_is_sent_without_file_hash(make_worker):
         status=True,
         tags={"tags": "1girl, blue_hair"},
     )
-    worker._process_batch(["/test/a.jpg"], {"/test/a.jpg": [0.0, 100, "abc123hash"]}, "test_db")
+    worker._process_batch(["/test/a.jpg"], {"/test/a.jpg": [0.0, 100, "abc123hash"]}, {}, "test_db")
 
     result = worker._node.send_reliable.call_args[0][1]["results"][0]
     assert "file_hash" not in result
@@ -242,7 +243,100 @@ def test_process_batch_passes_source_key_unchanged(make_worker):
 
     worker._plugin.process = record
     key = "b:/Data/./Archive.zip"
-    worker._process_batch([key], {key: [0.0, 0]}, "test_db")
+    worker._process_batch([key], {key: [0.0, 0]}, {}, "test_db")
 
     assert received == [key]
     assert worker._node.send_reliable.call_args[0][1]["results"][0]["source"] == key
+
+
+def test_timed_out_and_empty_paths_are_sent_as_failures(make_worker, monkeypatch):
+    import threading
+    from unittest.mock import MagicMock
+    from wafer.plugin.collector.base import CollectorResult
+
+    monkeypatch.setattr(collector_resolver, "max_workers", lambda name: 3)
+    worker = make_worker()
+    worker._node = MagicMock()
+    worker._batch_timeout = 0.2
+    release = threading.Event()
+
+    def process(path, info):
+        if path == "/test/slow.jpg":
+            release.wait(5)
+        if path == "/test/empty.jpg":
+            return []
+        return CollectorResult(source=path, status=True)
+
+    worker._plugin.process = process
+    paths = ["/test/ok.jpg", "/test/slow.jpg", "/test/empty.jpg"]
+    try:
+        worker._process_batch(paths, {}, {}, "test_db")
+    finally:
+        release.set()
+
+    statuses = {r["source"]: r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]}
+    assert statuses == {"/test/ok.jpg": True, "/test/slow.jpg": False, "/test/empty.jpg": False}
+
+
+def test_timed_out_batch_leaves_paths_that_never_started_dispatched(make_worker, monkeypatch):
+    import threading
+    from unittest.mock import MagicMock
+    from wafer.plugin.collector.base import CollectorResult
+
+    monkeypatch.setattr(collector_resolver, "max_workers", lambda name: 1)
+    worker = make_worker()
+    worker._node = MagicMock()
+    worker._batch_timeout = 0.2
+    release = threading.Event()
+    started = []
+
+    def process(path, info):
+        started.append(path)
+        release.wait(5)
+        return CollectorResult(source=path, status=True)
+
+    worker._plugin.process = process
+    paths = ["/test/slow.jpg", "/test/queued1.jpg", "/test/queued2.jpg"]
+    try:
+        worker._process_batch(paths, {}, {}, "test_db")
+    finally:
+        release.set()
+
+    statuses = {r["source"]: r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]}
+    assert started == ["/test/slow.jpg"]
+    assert statuses == {"/test/slow.jpg": False}
+
+
+def test_stop_ends_a_batch_with_queued_paths_at_once_and_sends_finished_results(make_worker, monkeypatch):
+    import threading
+    from unittest.mock import MagicMock
+    from wafer.plugin.collector.base import CollectorResult
+
+    monkeypatch.setattr(collector_resolver, "max_workers", lambda name: 1)
+    worker = make_worker()
+    worker._node = MagicMock()
+    worker._batch_timeout = 20
+    busy = threading.Event()
+    interrupted = threading.Event()
+
+    def process(path, info):
+        if path == "/test/busy.png":
+            busy.set()
+            if interrupted.wait(10):
+                raise RuntimeError("tool killed by shutdown")
+        return CollectorResult(source=path, status=True)
+
+    worker._plugin.process = process
+    worker._plugin.shutdown = interrupted.set
+    batch = threading.Thread(target=worker._process_batch, args=(["/test/ok.png", "/test/busy.png", "/test/queued.png"], {}, {}, "test_db"))
+    batch.start()
+    assert busy.wait(5)
+    started = time.monotonic()
+    worker.stop()
+    batch.join(5)
+    stopped_in = time.monotonic() - started
+
+    assert not batch.is_alive()
+    assert stopped_in < 2
+    statuses = {r["source"]: r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]}
+    assert statuses == {"/test/ok.png": True}

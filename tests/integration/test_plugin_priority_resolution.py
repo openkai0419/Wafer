@@ -52,17 +52,14 @@ class TestViewerPriorityResolution:
 
 class TestCollectorResolution:
     def test_exif_matches_image_extensions(self):
+        exts = dict(collector_resolver.summary())["exiftool"]
         for ext in [".jpg", ".jpeg", ".png", ".bmp", ".webp", ".gif"]:
-            collectors = collector_resolver.collectors_for_path(f"test{ext}")
-            assert "exiftool" in collectors
+            assert ext in exts
 
-    def test_exif_does_not_match_text(self):
-        collectors = collector_resolver.collectors_for_path("readme.txt")
-        assert "exiftool" not in collectors
-
-    def test_exif_does_not_match_unknown(self):
-        collectors = collector_resolver.collectors_for_path("data.xyz_no_plugin")
-        assert "exiftool" not in collectors
+    def test_exif_does_not_match_text_or_unknown(self):
+        exts = dict(collector_resolver.summary())["exiftool"]
+        assert ".txt" not in exts
+        assert ".xyz_no_plugin" not in exts
 
 
 class TestRegistryPriorityOrdering:

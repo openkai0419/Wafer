@@ -53,10 +53,14 @@ class CommandParam:
         self.max_value = max_value
         self.widget_type = widget_type
 
+    def choice_items(self) -> list[tuple[Any, str]] | None:
+        if self.choices_fn is None:
+            return None if self.choices is None else [(c, str(c)) for c in self.choices]
+        return [c if isinstance(c, tuple) and len(c) == 2 else (c, str(c)) for c in self.choices_fn()]
+
     def resolve_choices(self) -> list | None:
-        if self.choices_fn is not None:
-            return list(self.choices_fn())
-        return self.choices
+        items = self.choice_items()
+        return None if items is None else [value for value, _ in items]
 
     def is_value_satisfied(self, value: Any) -> bool:
         if value is None or value == "":
@@ -65,7 +69,7 @@ class CommandParam:
             try:
                 return value in self.resolve_choices()
             except Exception as e:
-                AppLogger.warning(f"choices_fn failed for param '{self.name}': {e}")
+                AppLogger.warning(f"choices_fn failed for param '{self.name}'", exc=e)
                 return True
         return True
 
@@ -354,10 +358,7 @@ def create_command_from_meta(meta: CommandMeta) -> type[CommandBase]:
 
 
 def register_command_defs(defs: list[CommandMeta]):
-    from .state import ActionGroupStateManager
-
     r = CommandRegistry.instance()
-    state_manager = ActionGroupStateManager.instance()
     for meta in defs:
         acceptor = getattr(meta, "drop_acceptor", None)
         if callable(acceptor):
@@ -375,24 +376,3 @@ def register_command_defs(defs: list[CommandMeta]):
             raise ValueError(f"Command '{meta.id}' has category='drop' but uses func. Use drop_callbacks instead.")
 
         r.register(create_command_from_meta(meta))
-
-        if not (meta.action_group and meta.checkable):
-            continue
-        if meta.id:
-            state_manager.register_member(meta.action_group, meta.id)
-
-
-def create_cycle_command(group_name: str, display: str) -> CommandMeta:
-    from .menu_builder import CommandMenuBuilder
-
-    def _cycle_func():
-        builder = CommandMenuBuilder.instance()
-        result = builder.cycle_action_group(group_name)
-        if result:
-            AppLogger.debug(f"Cycled to: {result}")
-
-    return CommandMeta(
-        path=f"cycle_{group_name}",
-        display=display,
-        func=_cycle_func,
-    )

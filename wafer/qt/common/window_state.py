@@ -2,6 +2,7 @@ import base64
 
 from PySide6 import QtCore, QtWidgets
 
+from ...core.logs import AppLogger
 from .geometry import keep_window_on_screen
 
 
@@ -110,5 +111,5 @@ class DialogLayoutStore:
             if raw and isinstance(raw, list):
                 try:
                     splitter.setSizes([int(s) for s in raw])
-                except (ValueError, TypeError):
-                    pass
+                except (ValueError, TypeError) as e:
+                    AppLogger.warning(f"Dialog layout: ignoring unreadable splitter sizes {self._key}/{name}={raw!r}", exc=e)

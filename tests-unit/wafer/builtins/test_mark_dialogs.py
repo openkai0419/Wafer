@@ -1,3 +1,6 @@
+import sqlite3
+
+import pytest
 from PySide6 import QtCore, QtWidgets
 
 from wafer.builtins.mark import dialogs
@@ -63,7 +66,7 @@ def test_prompt_new_mark_dialog_shows_scope_choices(qtbot, monkeypatch):
     assert "Create as:" in captured["labels"]
 
 
-def test_prompt_new_mark_uses_selected_scope(monkeypatch):
+def test_prompt_new_mark_uses_selected_scope(qtbot, monkeypatch):
     reg = MarkRegistry.instance()
 
     def fake_exec(self):
@@ -81,13 +84,98 @@ def test_prompt_new_mark_uses_selected_scope(monkeypatch):
             return "#123456"
 
     monkeypatch.setattr(dialogs.ColorPickerDialog, "get_color", lambda *args, **kwargs: _Color())
-    mark_id = dialogs.prompt_new_mark(scope="tag")
+    monkeypatch.setattr(dialogs, "has_stored_data", lambda mark_id: False)
+    mark_id = reg.id_for("Tag Scoped Mark")
+    dialogs.prompt_new_mark(scope="tag")
     try:
-        assert mark_id is not None
+        qtbot.waitUntil(lambda: reg.get(mark_id) is not None)
         assert reg.scope_of(mark_id) == "meta_info"
     finally:
-        if mark_id:
-            reg.remove(mark_id)
+        reg.remove(mark_id)
+
+
+@pytest.fixture
+def stored_mark_db(tmp_path, monkeypatch):
+    db_path = tmp_path / "db1.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE meta_info (path TEXT, key TEXT, value TEXT)")
+    conn.execute("CREATE TABLE tags (file_hash TEXT, key TEXT, value TEXT)")
+    conn.execute("INSERT INTO meta_info VALUES ('a.png', 'mark.revived', '1')")
+    conn.execute("INSERT INTO tags VALUES ('h1', 'mark.revived_tag', '1')")
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(dialogs, "list_setting_db_names", lambda: ["db1", "missing"])
+    monkeypatch.setattr(dialogs, "data_db_path", lambda name: tmp_path / f"{name}.db")
+    return db_path
+
+
+def test_has_stored_data_finds_leftover_meta_and_tag_rows(stored_mark_db):
+    assert dialogs.has_stored_data("revived") is True
+    assert dialogs.has_stored_data("revived_tag") is True
+    assert dialogs.has_stored_data("fresh") is False
+
+
+def _fake_new_mark_inputs(monkeypatch, name):
+    def fake_exec(self):
+        self.findChildren(QtWidgets.QLineEdit)[0].setText(name)
+        return QtWidgets.QDialog.Accepted
+
+    class _Color:
+        def name(self):
+            return "#123456"
+
+    monkeypatch.setattr(QtWidgets.QDialog, "exec", fake_exec)
+    monkeypatch.setattr(dialogs.ColorPickerDialog, "get_color", lambda *args, **kwargs: _Color())
+
+
+@pytest.mark.parametrize("choice", ["restore", "delete"])
+def test_prompt_new_mark_asks_when_a_removed_mark_left_data(qtbot, monkeypatch, stored_mark_db, choice):
+    reg = MarkRegistry.instance()
+    asked, purged = [], []
+    _fake_new_mark_inputs(monkeypatch, "Revived!")
+    monkeypatch.setattr(dialogs, "ask_stored_data", lambda parent, mark_id: asked.append(mark_id) or choice)
+    monkeypatch.setattr(dialogs, "_purge_mark_from_all_dbs", purged.append)
+    dialogs.prompt_new_mark()
+    try:
+        qtbot.waitUntil(lambda: reg.get("revived") is not None)
+        assert asked == ["revived"]
+        assert purged == (["revived"] if choice == "delete" else [])
+    finally:
+        reg.remove("revived")
+
+
+def test_prompt_new_mark_cancel_on_leftover_data_adds_nothing(qtbot, monkeypatch, stored_mark_db):
+    reg = MarkRegistry.instance()
+    asked = []
+    _fake_new_mark_inputs(monkeypatch, "revived")
+    monkeypatch.setattr(dialogs, "ask_stored_data", lambda parent, mark_id: asked.append(mark_id))
+    dialogs.prompt_new_mark()
+    qtbot.waitUntil(lambda: asked == ["revived"])
+    qtbot.wait(50)
+    assert reg.get("revived") is None
+
+
+def test_prompt_new_mark_without_leftover_data_does_not_ask(qtbot, monkeypatch, stored_mark_db):
+    reg = MarkRegistry.instance()
+    asked = []
+    _fake_new_mark_inputs(monkeypatch, "Fresh Mark")
+    monkeypatch.setattr(dialogs, "ask_stored_data", lambda parent, mark_id: asked.append(mark_id))
+    dialogs.prompt_new_mark()
+    try:
+        qtbot.waitUntil(lambda: reg.get("fresh_mark") is not None)
+        assert asked == []
+    finally:
+        reg.remove("fresh_mark")
+
+
+@pytest.mark.parametrize(("label", "expected"), [("Restore", "restore"), ("Delete", "delete"), ("Cancel", None)])
+def test_ask_stored_data_returns_the_clicked_choice(monkeypatch, label, expected):
+    def fake_exec(self):
+        next(b for b in self.buttons() if b.text().replace("&", "") == label).click()
+        return 0
+
+    monkeypatch.setattr(QtWidgets.QMessageBox, "exec", fake_exec)
+    assert dialogs.ask_stored_data(None, "revived") == expected
 
 
 def test_prompt_pick_shape_updates_shape_key(qtbot, monkeypatch):

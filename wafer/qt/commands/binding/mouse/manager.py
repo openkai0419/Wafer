@@ -257,6 +257,7 @@ class MouseEventDispatcher(QtCore.QObject):
             except Exception as e:
                 AppLogger.warning(f"installEventFilter failed for {type(w).__name__}", exc=e)
         self._dragging_button = None
+        self._press_moved = False
 
     @staticmethod
     def _collect_watch_targets(widget):
@@ -308,6 +309,7 @@ class MouseEventDispatcher(QtCore.QObject):
             return
         self._state.set_press_position(self._target, self._event_pos_in_target(event))
         self._dragging_button = MouseEventManager.map_qt_button(event.button())
+        self._press_moved = False
 
     def _handle_mouse_move(self, event):
         if self._state.is_event_processed(event):
@@ -323,6 +325,7 @@ class MouseEventDispatcher(QtCore.QObject):
             if press_pos is not None and self._dragging_button is not None:
                 pos = self._event_pos_in_target(event)
                 if self._state.check_drag_threshold(press_pos, pos):
+                    self._press_moved = True
                     held = MouseEventManager.get_held_buttons(event.buttons(), exclude=self._dragging_button)
                     mods = MouseEventManager.get_modifiers(MouseEventManager._qt_modifiers_for_event(event))
                     key = MouseActionKey(self._dragging_button, ClickType.DRAG_START, held, mods)
@@ -374,10 +377,12 @@ class MouseEventDispatcher(QtCore.QObject):
             return
 
         target_widget = self._find_target_widget(event)
-        if target_widget is None or not hasattr(target_widget, "_mouse_manager"):
+        if self._press_moved or target_widget is None or not hasattr(target_widget, "_mouse_manager"):
+            self._state.should_suppress_single(MouseEventManager.map_qt_button(event.button()))
             self._state.clear_press_position(self._target)
             self._state.clear_double_click_button(self._target)
             self._dragging_button = None
+            self._press_moved = False
             return
         is_double = self._state.get_double_click_button(target_widget) == event.button()
         if is_double:

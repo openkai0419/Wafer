@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import sqlite3
-from array import array
 
 from aiohttp import web
 
-from wafer.core.db.db_utils import open_readonly
-from wafer.core.db.path_scope import is_under
+from wafer.core.common.folder_scan import scan_children, scan_roots
+from wafer.core.db.path_scope import compile_ignore_patterns, path_in_scope
+from wafer.core.db.setting_db import read_folder_settings
 from wafer.plugin.query.handler import filter_registry, sort_registry
 from wafer.core.logs import AppLogger
 from wafer.core.common.formatting import format_file_entries, format_source_entries
@@ -46,14 +47,17 @@ async def post_query(request: web.Request):
     filters = body.get("filters") or []
     sort = body.get("sort", "none")
     ascending = bool(body.get("ascending", True))
+    previous = body.get("previous") or []
     if not db:
         raise web.HTTPBadRequest(reason="db is required")
     if not isinstance(filters, list):
         raise web.HTTPBadRequest(reason="filters must be a list")
     if not isinstance(sort, str):
         raise web.HTTPBadRequest(reason="sort must be a string")
+    if not isinstance(previous, list) or not all(isinstance(query_id, str) for query_id in previous):
+        raise web.HTTPBadRequest(reason="previous must be a list of query ids")
     try:
-        session = await request.app[QUERY_SERVICE].execute(db, filters, sort, ascending)
+        session = await request.app[QUERY_SERVICE].execute(db, filters, sort, ascending, previous)
     except KeyError:
         raise web.HTTPNotFound(reason=f"unknown db: {db}") from None
     except ValueError as e:
@@ -64,8 +68,15 @@ async def post_query(request: web.Request):
 @routes.get("/api/query/{query_id}/aspects")
 async def get_aspects(request: web.Request):
     session = get_session_or_404(request)
-    data = array("f", session.aspects).tobytes()
-    return web.Response(body=data, content_type="application/octet-stream")
+    return web.Response(body=session.aspects.tobytes(), content_type="application/octet-stream")
+
+
+def read_source_modified(engine, sources: list[str]) -> dict[str, float]:
+    unique = list(dict.fromkeys(sources))
+    if not unique or not engine._connect_if_needed():
+        return {}
+    placeholders = ",".join("?" * len(unique))
+    return {row[0]: row[1] for row in engine.fetch(f"SELECT source, modified FROM sources WHERE source IN ({placeholders})", unique)}
 
 
 @routes.get("/api/query/{query_id}/items")
@@ -76,16 +87,24 @@ async def get_items(request: web.Request):
         limit = min(max(int(request.query.get("limit", 200)), 1), ITEMS_LIMIT_MAX)
     except ValueError:
         raise web.HTTPBadRequest(reason="invalid offset/limit") from None
+    indices = range(offset, min(offset + limit, session.total))
+    try:
+        service = request.app[QUERY_SERVICE].db(session.db)
+    except KeyError:
+        raise web.HTTPNotFound(reason=f"unknown db: {session.db}") from None
+    modified = await service.run(read_source_modified, service.engine, [session.sources[i] for i in indices])
     items = []
-    for i in range(offset, min(offset + limit, session.total)):
+    for i in indices:
         path = session.paths[i]
+        source = session.sources[i]
         items.append(
             {
                 "i": i,
                 "path": path,
-                "source": session.sources[i],
+                "source": source,
                 "name": os.path.basename(path),
                 "kind": classify(path),
+                "mtime": modified.get(source),
             }
         )
     return web.json_response({"items": items, "db": session.db})
@@ -117,59 +136,20 @@ async def get_meta(request: web.Request):
     )
 
 
-def read_setting_folders(db_name: str) -> tuple[list[str], list[str]]:
+def read_setting_folders(db_name: str) -> tuple[list[str], set[str], re.Pattern[str] | None]:
     db_file = str(setting_db_path(db_name))
     if not os.path.isfile(db_file):
-        return [], []
+        return [], set(), None
     try:
-        con = open_readonly(db_file)
-        try:
-            roots = [r[0] for r in con.execute("SELECT path FROM parent_folders ORDER BY path")]
-            ignored = [r[0] for r in con.execute("SELECT path FROM ignore_folders ORDER BY path")]
-        finally:
-            con.close()
-        return roots, ignored
+        roots, ignored, patterns = read_folder_settings(db_file)
     except sqlite3.Error as e:
         AppLogger.warning(f"WebUI failed to read setting DB for {db_name}: {e}")
-        return [], []
+        return [], set(), None
+    return roots, {normalize_path(p) for p in ignored}, compile_ignore_patterns(patterns)
 
 
-def list_subfolders(parent: str, ignored: set[str]) -> list[str]:
-    result = []
-    try:
-        with os.scandir(parent) as it:
-            for entry in it:
-                if entry.is_dir(follow_symlinks=False):
-                    p = normalize_path(entry.path)
-                    if p not in ignored:
-                        result.append(p)
-    except OSError as e:
-        AppLogger.warning(f"WebUI folder scan failed for {parent}: {e}")
-    result.sort()
-    return result
-
-
-def has_subfolders(path: str, ignored: set[str]) -> bool:
-    try:
-        with os.scandir(path) as it:
-            for entry in it:
-                if entry.is_dir(follow_symlinks=False) and normalize_path(entry.path) not in ignored:
-                    return True
-    except OSError as e:
-        AppLogger.warning(f"WebUI folder probe failed for {path}: {e}")
-    return False
-
-
-def folder_entries(paths: list[str], ignored: set[str]) -> list[dict]:
-    return [{"path": path, "has_children": has_subfolders(path, ignored)} for path in paths]
-
-
-def scan_folder_entries(parent: str, ignored: set[str]) -> list[dict]:
-    return folder_entries(list_subfolders(parent, ignored), ignored)
-
-
-def is_under_roots(path: str, roots: list[str]) -> bool:
-    return any(is_under(path, root) for root in roots)
+def folder_entries(entries: list[tuple[str, bool]]) -> list[dict]:
+    return [{"path": path, "has_children": has_children} for path, has_children in entries]
 
 
 @routes.get("/api/folders")
@@ -180,19 +160,16 @@ async def get_folders(request: web.Request):
     if db not in request.app[QUERY_SERVICE].list_dbs():
         raise web.HTTPNotFound(reason=f"unknown db: {db}")
     loop = asyncio.get_running_loop()
-    roots, ignored = await loop.run_in_executor(None, read_setting_folders, db)
-    ignored_set = set(ignored)
+    roots, ignored, pattern = await loop.run_in_executor(None, read_setting_folders, db)
     parent = request.query.get("path", "")
     if not parent:
-        folders = await loop.run_in_executor(None, folder_entries, roots, ignored_set)
-        return web.json_response({"folders": folders})
+        return web.json_response({"folders": folder_entries(await loop.run_in_executor(None, scan_roots, roots, ignored, pattern))})
     parent = normalize_path(parent)
-    if not is_under_roots(parent, roots):
+    if not path_in_scope(parent, roots, ignored, pattern):
         raise web.HTTPForbidden(reason="path is outside of indexed folders")
-    if not safe_is_dir(parent):
+    if not await loop.run_in_executor(None, safe_is_dir, parent):
         raise web.HTTPNotFound(reason="folder not found")
-    folders = await loop.run_in_executor(None, scan_folder_entries, parent, ignored_set)
-    return web.json_response({"folders": folders})
+    return web.json_response({"folders": folder_entries(await loop.run_in_executor(None, scan_children, parent, ignored, pattern, roots))})
 
 
 @routes.get("/api/keys")

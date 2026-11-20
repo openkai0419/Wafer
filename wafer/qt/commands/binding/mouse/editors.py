@@ -10,6 +10,7 @@ from ...command.menu_builder import MenuBuilder
 from .store import MouseBindingStore
 from ...command.payload import CommandPayload
 from ..common import WidgetRef
+from ..manager import BindingManager
 from .....core.logs import AppLogger
 from ..editors_common import BindingEditorBase, ScopedPayloadSectionBase, clear_layout
 
@@ -129,7 +130,7 @@ class MouseBindingEditor(BindingEditorBase):
     def _reload_sections(self, skip_save: bool = False):
         if not skip_save:
             self._save_current_sections_to_draft()
-        self._clear_sections()
+        clear_layout(self.sections_layout, self, "MouseBindingEditor clear sections")
         self.sections.clear()
         b, c = self._current_action()
         data = self._merged_data()
@@ -154,31 +155,13 @@ class MouseBindingEditor(BindingEditorBase):
             scopes = d.get(key, {})
             self._draft.update(key, scopes)
 
-    def _clear_sections(self):
-        clear_layout(self.sections_layout, self, "MouseBindingEditor clear sections")
-        try:
-            self.panel.update()
-            self.scroll.viewport().update()
-            QtWidgets.QApplication.processEvents()
-        except Exception as e:
-            AppLogger.warning("MouseBindingEditor clear sections update failed", exc=e)
-
     def _apply(self):
         self._save_current_sections_to_draft()
-        data = self._merged_data()
-        self._store.set_all(data)
-        self._apply_to_widgets(data, "set_mouse_bindings")
-        from ..manager import BindingManager
-
-        self._save_store(BindingManager.instance().mouse_bindings_path())
+        self._store.set_all(self._merged_data())
+        manager = BindingManager.instance()
+        manager.apply_registered()
+        self._save_store(manager.mouse_bindings_path())
         self.accept()
-
-    def _reset_to_defaults(self):
-        try:
-            self._reset_draft_to_seed()
-            self._reload_sections()
-        except Exception as e:
-            AppLogger.warning("MouseBindingEditor reset_to_defaults failed", exc=e)
 
     def _reset_current_action(self):
         try:

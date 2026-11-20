@@ -302,8 +302,18 @@ def test_placing_encodes_each_distinct_value_once_with_the_same_result(monkeypat
     original = type(encoder).transform
     monkeypatch.setattr(type(encoder), "transform", lambda self, inputs: encoded.append(len(inputs)) or original(self, inputs))
     together = model.place(entries)
-    assert encoded == [3]
+    assert encoded == [2]
     assert np.allclose(together, separately, equal_nan=True)
+
+
+def test_placing_files_without_values_encodes_nothing(monkeypatch):
+    model = SpaceModel.fit(preset(), colored_values())
+    calls = []
+    for encoder in model.encoders:
+        monkeypatch.setattr(type(encoder), "transform", lambda self, inputs: calls.append(len(inputs)))
+    monkeypatch.setattr(projection.BlockReducer, "transform", lambda self, matrix: calls.append(matrix))
+    placed = model.place([{}, {"modified": PathValue("1", 1.0)}])
+    assert np.isnan(placed).all() and calls == []
 
 
 def test_placing_reuses_encoded_values_across_batches(monkeypatch):

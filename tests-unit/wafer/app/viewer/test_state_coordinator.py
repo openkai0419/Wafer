@@ -76,6 +76,10 @@ class TestUIStateCoordinator:
 
 
 class TestPathStateCoordinator:
+    @pytest.fixture(autouse=True)
+    def _databases(self, monkeypatch):
+        monkeypatch.setattr("wafer.app.viewer.state_coordinator.list_setting_db_names", lambda: ["default", "other"])
+
     def test_capture_returns_db_and_folders(self):
         w = _make_window()
         out = PathStateCoordinator(w).capture()
@@ -92,6 +96,12 @@ class TestPathStateCoordinator:
         PathStateCoordinator(w).restore({"database_name": "other", "expanded": [], "selected": []})
         w.reload_database.assert_called_once()
         assert w.reload_database.call_args[0][0] == "other"
+
+    def test_restore_of_a_deleted_database_opens_the_last_used_one(self):
+        w = _make_window(database_name="other")
+        PathStateCoordinator(w).restore({"database_name": "photos", "expanded": [], "selected": []})
+        w.reload_database.assert_called_once()
+        assert w.reload_database.call_args[0][0] == "default"
 
     def test_restore_invalid_calls_completion(self):
         w = _make_window()

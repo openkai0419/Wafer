@@ -184,3 +184,53 @@ def test_reset_state_keeps_entries_builder():
     svc.reset_state()
     result = svc.build_filter_entries()
     assert result[0][1]["keywords"] == "x"
+
+
+def _run_search_inline(svc, monkeypatch, execute):
+    monkeypatch.setattr(svc._dispatcher, "post", lambda fn, **kwargs: fn())
+    monkeypatch.setattr(svc._dispatcher, "invoke", lambda fn: fn())
+    monkeypatch.setattr(svc._composer, "execute", execute)
+    svc._start_search(("none", True, ()), [], None, True)
+
+
+def test_a_failed_search_clears_its_state_and_runs_the_pending_search(monkeypatch):
+    svc = _make_service()
+    failed, finished = [], []
+    svc.search_failed.connect(lambda: failed.append(True))
+    svc.search_finished.connect(lambda *a: finished.append(a))
+    svc._pending_snapshot = ("name", True, ())
+    rerun = []
+    monkeypatch.setattr(svc, "execute", lambda force=False: rerun.append(force))
+
+    def broken(*args):
+        raise RuntimeError("database is locked")
+
+    _run_search_inline(svc, monkeypatch, broken)
+
+    assert failed == [True]
+    assert finished == []
+    assert svc._current_cancel is None
+    assert svc._query_start_time is None
+    assert svc._last_snapshot is None
+    assert svc._pending_snapshot is None
+    assert rerun == [True]
+
+
+def test_a_search_closes_its_engine(monkeypatch):
+    svc = _make_service()
+    closed = []
+    monkeypatch.setattr("wafer.app.viewer.search.FileSearchEngine.close", lambda self: closed.append(self))
+
+    _run_search_inline(svc, monkeypatch, lambda *a: ([], [], []))
+
+    assert len(closed) == 1
+
+
+def test_a_search_sends_the_path_index_built_off_main(monkeypatch):
+    svc = _make_service()
+    finished = []
+    svc.search_finished.connect(lambda *a: finished.append(a))
+
+    _run_search_inline(svc, monkeypatch, lambda *a: (["a", "b"], ["sa", "sb"], [1.0, 2.0]))
+
+    assert finished == [(["a", "b"], ["sa", "sb"], [1.0, 2.0], {"a": 0, "b": 1})]

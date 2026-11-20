@@ -7,7 +7,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from wafer.qt.theme import ThemeManager
 from wafer.qt.common.icon_engine import icon_draw
-from wafer.plugin import BaseKeyValuePanelPlugin
+from wafer.plugin import BaseKeyValuePanelPlugin, KeyFilter
 from wafer.qt.meta.viewer import CollapsibleCard
 from wafer.qt.meta.searchable import SearchableMetaWidget
 from wafer.qt.common.dpi import dpix
@@ -125,7 +125,7 @@ class ComfyUiWorkflowPanelPlugin(BaseKeyValuePanelPlugin):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(dpix(4))
         self._export = WorkflowDragExport(container)
-        self._body = SearchableMetaWidget(container, scope=scope, prefix=self.PREFIX)
+        self._body = SearchableMetaWidget(container, scope=scope, prefix=self.PREFIX, delete_everywhere=KeyFilter.delete_key_everywhere)
         self._body.count_changed.connect(self._card.update_title_count)
         layout.addWidget(self._export)
         layout.addWidget(self._body)

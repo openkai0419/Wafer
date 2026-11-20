@@ -92,9 +92,6 @@ class CommandBindingMixin:
     def set_physical_shortcut_bindings(self, bindings: dict[Any, CommandPayload]):
         self._shortcut_manager.set_physical_bindings(self, bindings)
 
-    def set_key_bindings(self, bindings: dict[tuple, CommandPayload]):
-        self._shortcut_manager.set_key_bindings(self, bindings)
-
     def exec_command(self, cmd: Any, event=None, key: MouseActionKey | None = None, source: str | None = None, extra: dict[str, Any] | None = None):
         self._execute_payload(cmd, event=event, key=None, source=source, extra=extra)
 
@@ -103,25 +100,12 @@ class CommandBindingMixin:
 
     @profiler.profile
     def _execute_payload(self, cmd: CommandPayload, event=None, key: MouseActionKey | None = None, source: str | None = None, extra: dict[str, Any] | None = None):
+        from ..bridge import Command
+
         if not isinstance(cmd, CommandPayload):
             raise TypeError("Command payload must be CommandPayload")
-        if not self._registry.has_command(str(cmd.id)):
-            from ...common.notifier import Notifier
-
-            AppLogger.warning(f"Command not found: {cmd.id}")
-            Notifier.warning(f"Command not found: {cmd.id}")
-            return
         ctx = self._build_execution_context(cmd, event, key, source, extra)
-        args = self._merge_arguments(cmd, ctx, source)
-        cls = self._registry.get_command(str(cmd.id))
-        if cls and cls.meta.params:
-            full = {p.name: args.get(p.name, p.default) for p in cls.meta.params}
-            if any(p.required and not p.is_value_satisfied(full.get(p.name)) for p in cls.meta.params):
-                from ..bridge import Command
-
-                Command._show_options_for_required(str(cmd.id), cls, None, ctx=ctx)
-                return
-        self._registry.execute(str(cmd.id), ctx=ctx, **args)
+        Command.invoke(str(cmd.id), ctx=ctx, **(cmd.args or {}))
 
     def _build_execution_context(self, cmd: CommandPayload, event=None, key: MouseActionKey | None = None, source: str | None = None, extra: dict[str, Any] | None = None) -> CommandContext:
         ctx = CommandContext.create(self, self.binding_scope(), source=str(source or ""), event=event)
@@ -134,11 +118,3 @@ class CommandBindingMixin:
         if isinstance(extra, dict) and extra:
             ctx.merge(extra)
         return ctx
-
-    def _merge_arguments(self, cmd: CommandPayload, ctx: CommandContext, source: str | None) -> dict[str, Any]:
-        from ..command.state import CommandOptionStore
-
-        store = CommandOptionStore.instance()
-        stored_payload = store.get(cmd.id)
-        args = dict(cmd.args or {}) or dict(stored_payload.args or {})
-        return args

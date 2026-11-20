@@ -6,6 +6,7 @@ from ...qt.common.dpi import dpix
 from ...core.logs import AppLogger
 from ...qt.widgets.markdown_browser import MarkdownBrowser, render_to_html
 from ...qt.theme import ThemeManager
+from ...qt.palette import rgba
 from ...core.lang.manager import t
 from ...qt.common.color_utils import mix_colors
 from ...core.common.paths import get_plugin_dir
@@ -54,13 +55,6 @@ _CARD_STATUS_CONFIG: dict[CardStatus, tuple[str, str, bool]] = {
 }
 
 
-def _hex_to_rgba(hex_color: str, alpha: float) -> str:
-    r = int(hex_color[1:3], 16)
-    g = int(hex_color[3:5], 16)
-    b = int(hex_color[5:7], 16)
-    return f"rgba({r},{g},{b},{alpha})"
-
-
 class _InstantTooltipLabel(QtWidgets.QLabel):
     def enterEvent(self, event):
         text = self.toolTip()
@@ -80,7 +74,7 @@ class _PluginRow(QtWidgets.QWidget):
         tag_text = plugin_kind_label(registry_key)
         tag = QtWidgets.QLabel(tag_text)
         tag.setObjectName("plugin_kind_badge")
-        tag.setStyleSheet(f"color: {tag_color}; background: {_hex_to_rgba(tag_color, 0.15)}; font-size: {dpix(11)}px; font-weight: bold; padding: {dpix(2)}px {dpix(6)}px; border-radius: {dpix(3)}px;")
+        tag.setStyleSheet(f"color: {tag_color}; background: {rgba(tag_color, 0.15)}; font-size: {dpix(11)}px; font-weight: bold; padding: {dpix(2)}px {dpix(6)}px; border-radius: {dpix(3)}px;")
         tag.setFixedWidth(dpix(_PLUGIN_KIND_BADGE_WIDTH))
         tag.setAlignment(QtCore.Qt.AlignCenter)
 
@@ -99,7 +93,7 @@ class _PluginRow(QtWidgets.QWidget):
             ext_text = ", ".join(extensions) if extensions else ""
             ext_tooltip = ""
         ext_label = ElidingLabel(ext_text, minimum_hint_width=dpix(40), horizontal_policy=QtWidgets.QSizePolicy.Expanding)
-        ext_label.setStyleSheet(f"color: #888; font-size: {dpix(11)}px;")
+        ext_label.setStyleSheet(f"color: {ThemeManager.instance().palette.text_muted}; font-size: {dpix(11)}px;")
         if ext_tooltip:
             ext_label.setToolTip(ext_tooltip)
 
@@ -130,10 +124,9 @@ class _PluginRow(QtWidgets.QWidget):
 
     @staticmethod
     def _toggle_panel(panel_name: str):
-        from ...qt.commands.bridge import Command
+        from ..commands.panel import open_panel
 
-        slug = panel_name.lower().replace(" ", "_")
-        Command.run(f"panel.toggle_{slug}")
+        open_panel(name=panel_name, toggle=True)
 
 
 _BADGE_CONFIG: dict[ExtensionBadge, tuple[str, str | None]] = {
@@ -166,7 +159,8 @@ class _ExtensionCard(QtWidgets.QFrame):
         self._name_label.setStyleSheet(f"font-weight: bold; font-size: {dpix(13)}px;")
 
         self._summary_label = QtWidgets.QLabel(summary)
-        self._summary_label.setStyleSheet(f"color: #888; font-size: {dpix(11)}px;")
+        palette = ThemeManager.instance().palette
+        self._summary_label.setStyleSheet(f"color: {palette.text_muted}; font-size: {dpix(11)}px;")
         self._summary_label.setWordWrap(True)
         self._summary_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         self._summary_label.setContentsMargins(0, 0, 0, 0)
@@ -194,12 +188,12 @@ class _ExtensionCard(QtWidgets.QFrame):
         self._progress.hide()
 
         self._detail_label = QtWidgets.QLabel()
-        self._detail_label.setStyleSheet(f"color: #999; font-size: {dpix(11)}px;")
+        self._detail_label.setStyleSheet(f"color: {palette.text_tertiary}; font-size: {dpix(11)}px;")
         self._detail_label.hide()
 
         self._log_toggle = QtWidgets.QLabel(f"\u25b6 {t('Show Log')}")
         self._log_toggle.setCursor(QtCore.Qt.PointingHandCursor)
-        accent = ThemeManager.instance().palette.accent
+        accent = palette.accent
         self._log_toggle.setStyleSheet(f"color: {accent}; font-size: {dpix(11)}px; padding: {dpix(1)}px 0;")
         self._log_toggle.mousePressEvent = lambda _: self._toggle_log()
         self._log_toggle.hide()
@@ -249,7 +243,6 @@ class _ExtensionCard(QtWidgets.QFrame):
 
         self._md_entries: list[tuple[QtWidgets.QLabel, MarkdownBrowser, str, bool]] = []
         if md_files:
-            accent = ThemeManager.instance().palette.accent
             for md_name in md_files:
                 md_path = os.path.join(folder_path, md_name)
                 toggle = QtWidgets.QLabel(f"\u25b6 {md_name}")
@@ -620,9 +613,6 @@ class ExtensionsTab(QtWidgets.QWidget):
                 if key in (PLUGIN_KIND_COLLECTOR, PLUGIN_KIND_PARSER):
                     result[cls.NAME] = card.folder_name
         return result
-
-    def cancel_pending(self):
-        pass
 
     def revert(self, enabled_overrides: dict[str, bool]):
         self._enabled_overrides = dict(enabled_overrides)

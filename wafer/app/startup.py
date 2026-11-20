@@ -16,6 +16,17 @@ class StartupTasks:
             QtCore.QTimer.singleShot(0, self.prompt_plugin_setup)
 
     @staticmethod
+    def _skip_update_check() -> bool:
+        from ..core.common.profile import current_profile
+
+        if current_profile() is None:
+            return False
+        from ..core.logs import AppLogger
+
+        AppLogger.info("Update check skipped: a debug profile leaves updates alone")
+        return True
+
+    @staticmethod
     def _verify_resources() -> None:
         from ..core.logs import AppLogger
         from ..core.common.paths import get_resource_path
@@ -25,11 +36,15 @@ class StartupTasks:
             AppLogger.error(f"Resource directory is missing: {resources}. Translations, key bindings and icons will fail to load. Reinstall or run from the application root.")
 
     def _schedule_update_check(self) -> None:
+        if self._skip_update_check():
+            return
         from ..builtins.updater.startup import schedule_startup_update_check
 
         schedule_startup_update_check()
 
     def _log_update_check(self) -> None:
+        if self._skip_update_check():
+            return
         from ..builtins.updater.startup import log_startup_update_check
 
         log_startup_update_check()

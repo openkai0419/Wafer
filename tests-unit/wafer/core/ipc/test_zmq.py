@@ -1,12 +1,19 @@
+import socket
+import sys
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+import zmq
 
-from wafer.core.ipc.transport import Priority
-from wafer.core.ipc.broker import Broker, _CoalescingQueue, _PeerInfo
+from wafer.core.common.profile import current_profile
+from wafer.core.ipc import transport
+from wafer.core.ipc.transport import Priority, close_socket
+from wafer.core.logs import AppLogger
+from wafer.core.ipc.broker import DROP_WARN_INTERVAL, Broker, _CoalescingQueue, _PeerInfo
 from wafer.core.ipc.message import Message
 from wafer.core.ipc.node import Node
 from wafer.core.store.workspace import WindowSlot, WorkspaceStore
@@ -407,6 +414,19 @@ class TestReconnection:
                 node.stop()
                 broker2.stop()
 
+    def test_a_failed_heartbeat_does_not_stop_the_node(self):
+        broker = Broker()
+        broker.start()
+        try:
+            with patch("wafer.core.ipc.node.read_broker_port", side_effect=[PermissionError("locked")] + [broker.port] * 1000):
+                node = Node("viewer")
+                node.start(broker.port)
+                assert node.wait_registered(timeout=5.0)
+                assert node._io_thread.is_alive()
+        finally:
+            node.stop()
+            broker.stop()
+
     def test_node_stays_connected_while_broker_alive(self):
         broker = Broker()
         broker.start()
@@ -428,6 +448,88 @@ class TestReconnection:
             broker.stop()
 
 
+class _RouterWithFullPeers:
+    def __init__(self, full: set[bytes]):
+        self.full = full
+        self.delivered: list[bytes] = []
+        self.blocking_sends = 0
+
+    def send_multipart(self, frames, flags=0, copy=True):
+        if not flags & zmq.NOBLOCK:
+            self.blocking_sends += 1
+        if frames[0] in self.full:
+            raise zmq.Again()
+        self.delivered.append(frames[0])
+
+
+class TestFullPeer:
+    @pytest.fixture
+    def broker(self, monkeypatch):
+        broker = Broker()
+        real_router = broker._router
+        broker._router = _RouterWithFullPeers({b"full"})
+        broker._register_peer(b"full", "stalled", set(), "stalled-1")
+        yield broker
+        close_socket(real_router)
+
+    def test_sends_to_a_full_peer_neither_block_nor_hold_up_the_others(self, broker, caplog_applogger):
+        items = [(b"full", [b"x"])] * 50 + [(b"ok", [b"y"])]
+
+        broker._deliver_batch(items, False)
+
+        assert broker._router.blocking_sends == 0
+        assert broker._router.delivered == [b"ok"]
+        assert len(caplog_applogger.warnings) == 1
+        assert "stalled-1" in caplog_applogger.warnings[0]
+
+    def test_coalesced_broadcasts_skip_a_full_peer_without_blocking(self, broker):
+        broker._broadcast_q.put(("db.updated", "ALL", ""), ([b"full", b"ok"], [b"z"]))
+
+        broker._deliver_batch(broker._drain_broadcasts(), False)
+
+        assert broker._router.blocking_sends == 0
+        assert broker._router.delivered == [b"ok"]
+
+    def test_drops_are_counted_and_reported_again_after_the_interval(self, broker, caplog_applogger, monkeypatch):
+        monkeypatch.setattr("wafer.core.ipc.broker.DROP_WARN_INTERVAL", 0.0)
+        broker._deliver_batch([(b"full", [b"x"])], False)
+        monkeypatch.setattr("wafer.core.ipc.broker.DROP_WARN_INTERVAL", 3600.0)
+        broker._deliver_batch([(b"full", [b"x"])] * 5, False)
+        monkeypatch.setattr("wafer.core.ipc.broker.DROP_WARN_INTERVAL", 0.0)
+        broker._deliver_batch([(b"full", [b"x"])], False)
+
+        assert len(caplog_applogger.warnings) == 2
+        assert "6 message(s)" in caplog_applogger.warnings[1]
+
+    def test_drops_held_back_by_the_interval_are_reported_once_it_passes(self, broker, caplog_applogger):
+        broker._deliver_batch([(b"full", [b"x"])] * 4, False)
+        broker._report_drops(time.monotonic())
+        assert len(caplog_applogger.warnings) == 1
+
+        broker._report_drops(time.monotonic() + DROP_WARN_INTERVAL)
+
+        assert len(caplog_applogger.warnings) == 2
+        assert "3 message(s)" in caplog_applogger.warnings[1]
+
+    def test_drops_not_yet_reported_are_reported_when_the_peer_goes_away(self, broker, caplog_applogger):
+        broker._deliver_batch([(b"full", [b"x"])] * 3, False)
+
+        broker._unregister_peer(b"full")
+
+        assert "2 message(s)" in caplog_applogger.warnings[-1]
+
+    def test_a_drop_to_an_unregistered_peer_is_logged(self, broker, monkeypatch):
+        logged = []
+        monkeypatch.setattr("wafer.core.ipc.broker.debug_non_recursive", logged.append)
+
+        broker._deliver_batch([(b"stranger", [b"x"])], False)
+        broker._router.full.add(b"stranger")
+        broker._deliver_batch([(b"stranger", [b"x"])], False)
+
+        assert len(logged) == 1
+        assert "stranger" in logged[0]
+
+
 class TestStalledNode:
     """A plugin holding the GIL (a model load) stops the IO thread right after its poll returned empty."""
 
@@ -435,7 +537,7 @@ class TestStalledNode:
         node = Node("stalled")
         node.subscribe("work", handler)
         node._connect(broker.port)
-        node._send_to_broker("mgmt.register", {"role": node.role, "db": node.db, "session_id": ""})
+        node._send_to_broker("mgmt.register", node._register_payload())
         assert node._dealer.poll(3000)
         node._handle_received(Message.from_frames([bytes(f) for f in node._dealer.recv_multipart()]))
         assert node.is_registered
@@ -875,52 +977,490 @@ class TestBrokerLostTimeout:
             node.stop()
 
 
-class TestProfileReRegister:
-    def _make_broker(self, tmp_path, slot_ids=()):
-        from wafer.core.store.workspace import WorkspaceStore, WindowSlot
+DEBUG_PROFILE = "debug-x"
 
-        store_path = str(tmp_path / "workspace.json")
-        store = WorkspaceStore(path=store_path)
-        for sid in slot_ids:
-            store.save_slot(WindowSlot(slot_id=sid))
+
+def _free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+@pytest.fixture
+def caplog_applogger(monkeypatch):
+    logged = SimpleNamespace(warnings=[], infos=[])
+    monkeypatch.setattr(AppLogger, "warning", lambda text, exc=None: logged.warnings.append(text))
+    monkeypatch.setattr(AppLogger, "info", lambda text: logged.infos.append(text))
+    return logged
+
+
+@pytest.fixture
+def short_port_wait(monkeypatch):
+    real_read = transport.read_broker_port
+    monkeypatch.setattr("wafer.core.ipc.node.read_broker_port", lambda timeout=5.0, *, port_file=None: real_read(min(timeout, 0.2), port_file=port_file))
+
+
+@pytest.fixture
+def running_as_debug_profile(monkeypatch):
+    monkeypatch.setattr(sys, "argv", [sys.argv[0], "--profile", DEBUG_PROFILE])
+    current_profile.cache_clear()
+    yield
+    current_profile.cache_clear()
+
+
+@pytest.fixture
+def raw_dealer():
+    sockets = []
+
+    def connect(port: int, ident: str = "probe-1") -> zmq.Socket:
+        sock = zmq.Context.instance().socket(zmq.DEALER)
+        sock.setsockopt(zmq.IDENTITY, ident.encode())
+        sock.connect(f"tcp://127.0.0.1:{port}")
+        sockets.append(sock)
+        return sock
+
+    yield connect
+    for sock in sockets:
+        sock.close(linger=0)
+
+
+def _exchange(sock: zmq.Socket, msg: Message) -> Message:
+    sock.send_multipart(list(msg.to_frames()))
+    assert sock.poll(3000)
+    return Message.from_frames(sock.recv_multipart())
+
+
+def _register(sock: zmq.Socket, **identity) -> Message:
+    return _exchange(sock, Message.build("mgmt.register", {"role": "probe", "db": "", "session_id": "", **identity}, src="probe-1", dst="broker"))
+
+
+def _count_ticks(node: Node) -> list:
+    ticks = []
+    real_tick = node._heartbeat_tick
+
+    def tick():
+        real_tick()
+        ticks.append(time.monotonic())
+
+    node._heartbeat_tick = tick
+    return ticks
+
+
+def _worst_random_draw(monkeypatch):
+    real_bind = zmq.Socket.bind_to_random_port
+
+    def draw(sock, addr, min_port=49152, max_port=65536, max_tries=100):
+        if min_port <= transport.DEFAULT_PORT < max_port:
+            return transport.DEFAULT_PORT
+        return real_bind(sock, addr, min_port, max_port, max_tries)
+
+    monkeypatch.setattr(zmq.Socket, "bind_to_random_port", draw)
+
+
+class _FakeBroker:
+    def __init__(self, registered_payload: dict):
+        self._payload = registered_payload
+        self._sock = zmq.Context.instance().socket(zmq.ROUTER)
+        self.port = self._sock.bind_to_random_port("tcp://127.0.0.1")
+        self.topics: list[str] = []
+        self.idents: list[bytes] = []
+        self._outgoing: list[tuple[bytes, Message]] = []
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    @property
+    def registers(self) -> int:
+        with self._lock:
+            return self.topics.count("mgmt.register")
+
+    def send_to(self, ident: bytes, msg: Message):
+        with self._lock:
+            self._outgoing.append((ident, msg))
+
+    def _run(self):
+        while not self._stop.is_set():
+            if self._sock.poll(20):
+                frames = self._sock.recv_multipart()
+                msg = Message.from_frames(frames[1:])
+                with self._lock:
+                    self.topics.append(msg.topic)
+                    self.idents.append(frames[0])
+                if msg.topic == "mgmt.register":
+                    self._sock.send_multipart([frames[0], *msg.reply(self._payload, topic="mgmt.registered").to_frames()])
+            with self._lock:
+                outgoing, self._outgoing = self._outgoing, []
+            for ident, msg in outgoing:
+                self._sock.send_multipart([ident, *msg.to_frames()])
+
+    def close(self):
+        self._stop.set()
+        self._thread.join(timeout=2.0)
+        self._sock.close(linger=0)
+
+
+class TestPortFile:
+    def test_current_profile_uses_the_module_port_file(self, tmp_path, monkeypatch):
+        replaced = tmp_path / "elsewhere" / "broker.json"
+        monkeypatch.setattr("wafer.core.ipc.transport._PORT_FILE", replaced)
+        assert transport.port_file_for(None) == replaced
+
+    def test_other_profile_uses_its_data_root(self, tmp_path):
+        assert transport.port_file_for(DEBUG_PROFILE) == tmp_path / "profiles" / DEBUG_PROFILE / "ipc" / "broker.json"
+
+    def test_current_profile_in_another_case_uses_the_module_port_file(self, tmp_path, monkeypatch, running_as_debug_profile):
+        replaced = tmp_path / "elsewhere" / "broker.json"
+        monkeypatch.setattr("wafer.core.ipc.transport._PORT_FILE", replaced)
+        assert transport.port_file_for("debug-X") == replaced
+
+    def test_read_and_write_an_explicit_port_file(self, tmp_path):
+        port_file = tmp_path / "other" / "broker.json"
+        transport.write_broker_port(12345, port_file=port_file)
+        assert transport.read_broker_port(0.1, port_file=port_file) == 12345
+        assert transport.read_broker_port(0.1) is None
+
+
+class TestBrokerIdentity:
+    @pytest.mark.parametrize(("profile", "expected"), [(None, ""), (DEBUG_PROFILE, DEBUG_PROFILE)])
+    def test_registered_reply_carries_app_and_profile(self, profile, expected, raw_dealer):
+        broker = Broker(profile=profile)
+        broker.start()
+        try:
+            reply = _register(raw_dealer(broker.port), app="wafer", profile=expected)
+            assert reply.topic == "mgmt.registered"
+            assert reply.payload["app"] == "wafer"
+            assert reply.payload["profile"] == expected
+            assert broker.peer_counts() == {"probe": 1}
+        finally:
+            broker.stop()
+
+    @pytest.mark.parametrize(
+        ("profile", "identity"),
+        [
+            (None, {"app": "wafer", "profile": DEBUG_PROFILE}),
+            (None, {"app": "other", "profile": ""}),
+            (None, {"app": "other"}),
+            (DEBUG_PROFILE, {"app": "wafer", "profile": ""}),
+            (DEBUG_PROFILE, {}),
+        ],
+        ids=["other-profile", "other-app", "other-app-without-profile", "normal-wafer-at-a-profile", "legacy-wafer-at-a-profile"],
+    )
+    def test_broker_refuses_a_register_that_is_not_its_own(self, profile, identity, raw_dealer, caplog_applogger):
+        broker = Broker(profile=profile)
+        broker.start()
+        try:
+            sock = raw_dealer(broker.port)
+            for _ in range(2):
+                reply = _register(sock, **identity)
+                assert reply.topic == "mgmt.rejected"
+                assert reply.payload["app"] == "wafer"
+                assert reply.payload["profile"] == (profile or "")
+            assert broker.peer_counts() == {}
+            assert len([text for text in caplog_applogger.warnings if "probe-1" in text]) == 1
+        finally:
+            broker.stop()
+
+    def test_broker_accepts_its_profile_in_another_case(self, raw_dealer):
+        broker = Broker(profile="debug-foo")
+        broker.start()
+        try:
+            reply = _register(raw_dealer(broker.port), app="wafer", profile="debug-Foo")
+            assert reply.topic == "mgmt.registered"
+            assert reply.payload["profile"] == "debug-foo"
+            assert broker.peer_counts() == {"probe": 1}
+        finally:
+            broker.stop()
+
+    def test_normal_broker_accepts_a_node_from_before_profiles(self, raw_dealer):
+        broker = Broker(profile=None)
+        broker.start()
+        try:
+            reply = _register(raw_dealer(broker.port))
+            assert reply.topic == "mgmt.registered"
+            assert broker.peer_counts() == {"probe": 1}
+        finally:
+            broker.stop()
+
+    def test_broker_drops_messages_from_senders_that_are_not_registered(self, raw_dealer, flush_ipc):
         broker = Broker()
-        broker._restore_debounce_sec = 0.2
-        broker.set_workspace_store_factory(lambda: WorkspaceStore(path=store_path))
-        return broker, store
+        broker.start()
+        received = []
+        viewer = Node("viewer")
+        viewer.subscribe("ping", lambda m: received.append(m.payload) or True)
+        try:
+            viewer.start(broker.port)
+            assert viewer.wait_registered(3.0)
+            sock = raw_dealer(broker.port)
+            reply = _exchange(sock, Message.build("ping", "stranger", src="probe-1", dst="viewer", rid="rid-1"))
+            assert reply.topic == "mgmt.not_registered"
+            assert reply.request_id is None
+            flush_ipc(viewer)
+            assert received == []
+        finally:
+            viewer.stop()
+            broker.stop()
 
-    def test_re_register_updates_profile_id(self, tmp_path):
-        broker, store = self._make_broker(tmp_path, slot_ids=["p1", "p2"])
+    def test_profiled_broker_never_binds_default_port(self, monkeypatch):
+        _worst_random_draw(monkeypatch)
+        requested = _free_port()
+        broker = Broker(port=requested, profile=DEBUG_PROFILE)
+        try:
+            assert broker.port not in (requested, transport.DEFAULT_PORT)
+        finally:
+            close_socket(broker._router)
+
+    def test_fallback_port_is_never_the_default_port(self, monkeypatch):
+        _worst_random_draw(monkeypatch)
+        with socket.socket() as held:
+            held.bind(("127.0.0.1", 0))
+            held.listen()
+            requested = held.getsockname()[1]
+            broker = Broker(port=requested, profile=None)
+            try:
+                assert broker.port not in (requested, transport.DEFAULT_PORT)
+            finally:
+                close_socket(broker._router)
+
+    def test_profiled_broker_announces_on_its_own_port_file(self):
+        broker = Broker(profile=DEBUG_PROFILE)
         broker.start()
         try:
-            node = Node("viewer")
-            node.session_id = "p1"
-            node.start(broker.port)
-            assert node.wait_registered(timeout=5.0)
-            assert _wait_until(lambda: "p1" in broker.active_viewer_slot_ids())
+            assert transport.read_broker_port(1.0, port_file=transport.port_file_for(DEBUG_PROFILE)) == broker.port
+            assert transport.read_broker_port(0.1) is None
+        finally:
+            broker.stop()
+        assert not transport.port_file_for(DEBUG_PROFILE).exists()
 
-            node.re_register("p2")
-            assert node.wait_registered(timeout=5.0)
-            assert _wait_until(lambda: "p2" in broker.active_viewer_slot_ids())
-            active = broker.active_viewer_slot_ids()
-            assert "p2" in active
-            assert "p1" not in active
+
+@pytest.mark.usefixtures("fast_heartbeat")
+class TestNodeJoinsOnlyItsOwnBroker:
+    def test_node_registers_with_same_profile(self):
+        broker = Broker(profile=DEBUG_PROFILE)
+        broker.start()
+        node = Node("probe", profile=DEBUG_PROFILE)
+        try:
+            node.start()
+            assert node.wait_registered(3.0)
         finally:
             node.stop()
             broker.stop()
 
-    def test_re_register_syncs_active_and_restore(self, tmp_path):
-        broker, store = self._make_broker(tmp_path, slot_ids=["p1", "p2"])
+    def test_node_registers_with_its_profile_in_another_case(self):
+        broker = Broker(profile="debug-foo")
         broker.start()
+        node = Node("probe", profile="debug-Foo")
         try:
-            node = Node("viewer")
-            node.session_id = "p1"
-            node.start(broker.port)
-            assert node.wait_registered(timeout=5.0)
-            assert _wait_until(lambda: "p1" in store.get_active_slot_ids())
-
-            node.re_register("p2")
-            assert node.wait_registered(timeout=5.0)
-            assert _wait_until(lambda: "p2" in store.get_active_slot_ids() and "p2" in store.get_restore_slot_ids())
+            node.start()
+            assert node.wait_registered(3.0)
+            assert broker.peer_counts() == {"probe": 1}
         finally:
             node.stop()
             broker.stop()
+
+    def test_node_leaves_a_broker_of_another_profile_until_its_port_file_names_its_own(self, monkeypatch, caplog_applogger):
+        foreign = Broker(profile=DEBUG_PROFILE)
+        foreign.start()
+        monkeypatch.setattr("wafer.core.ipc.transport._PORT_FILE", transport.port_file_for(DEBUG_PROFILE))
+        node = Node("probe", profile=None)
+        ticks = _count_ticks(node)
+        own = None
+        try:
+            node.start()
+            assert node._current_port == foreign.port
+            assert _wait_until(lambda: node._dealer is None and node._current_port == 0)
+            seen = len(ticks)
+            assert _wait_until(lambda: len(ticks) >= seen + 3)
+            assert not node.is_registered
+            assert foreign.peer_counts() == {}
+            assert len([text for text in caplog_applogger.warnings if text.startswith("refused ")]) == 1
+            assert len([text for text in caplog_applogger.warnings if node.node_id in text and "disconnected" in text]) == 1
+
+            own = Broker(profile=None)
+            own.start()
+            assert node.wait_registered(5.0)
+            assert node._current_port == own.port
+        finally:
+            node.stop()
+            foreign.stop()
+            if own:
+                own.stop()
+
+    def test_normal_node_joins_a_broker_from_before_profiles(self):
+        fake = _FakeBroker({"status": "ok", "node_id": "probe"})
+        transport.write_broker_port(fake.port)
+        node = Node("probe", profile=None)
+        try:
+            node.start()
+            assert node.wait_registered(3.0)
+            assert node._current_port == fake.port
+        finally:
+            node.stop()
+            fake.close()
+
+    def test_profile_node_leaves_a_broker_from_before_profiles(self):
+        fake = _FakeBroker({"status": "ok", "node_id": "probe"})
+        transport.write_broker_port(fake.port, port_file=transport.port_file_for(DEBUG_PROFILE))
+        node = Node("probe", profile=DEBUG_PROFILE)
+        ticks = _count_ticks(node)
+        try:
+            node.start()
+            assert _wait_until(lambda: fake.registers == 1 and node._dealer is None)
+            seen = len(ticks)
+            assert _wait_until(lambda: len(ticks) >= seen + 3)
+            assert not node.is_registered
+            assert fake.registers == 1
+        finally:
+            node.stop()
+            fake.close()
+
+    def test_node_stays_away_from_a_rejected_broker_until_the_port_file_is_rewritten(self):
+        fake = _FakeBroker({"status": "ok", "node_id": "probe", "app": "other", "profile": ""})
+        transport.write_broker_port(fake.port)
+        received = []
+        node = Node("probe")
+        node.subscribe("ping", lambda m: received.append(m.payload) or True)
+        ticks = _count_ticks(node)
+        try:
+            node.start()
+            assert _wait_until(lambda: fake.registers == 1 and node._dealer is None)
+            fake.send_to(fake.idents[0], Message.build("ping", "from the foreign broker", src="foreign", dst="probe"))
+            node.send("work", "must stay here")
+            seen = len(ticks)
+            assert _wait_until(lambda: len(ticks) >= seen + 3)
+            assert fake.registers == 1
+            assert received == []
+
+            transport.write_broker_port(fake.port)
+            assert _wait_until(lambda: fake.registers == 2)
+            assert _wait_until(lambda: node._dealer is None)
+            seen = len(ticks)
+            assert _wait_until(lambda: len(ticks) >= seen + 3)
+            assert "work" not in fake.topics
+            assert received == []
+        finally:
+            node.stop()
+            fake.close()
+
+    def test_tooling_never_builds_a_node_for_the_normal_broker(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", [sys.argv[0], "--profile", "debug-tools"])
+        current_profile.cache_clear()
+        try:
+            with pytest.raises(RuntimeError, match="debug-tools"):
+                Node("debug", profile=None)
+            assert Node("debug", profile=DEBUG_PROFILE).profile == DEBUG_PROFILE
+            assert Node("debug").profile == "debug-tools"
+            monkeypatch.setattr(sys, "argv", [sys.argv[0], "--profile", "debug-Tools"])
+            current_profile.cache_clear()
+            with pytest.raises(RuntimeError, match="debug-tools"):
+                Node("debug", profile=None)
+        finally:
+            current_profile.cache_clear()
+
+    def test_node_follows_the_current_profile_when_omitted(self, running_as_debug_profile):
+        broker = Broker()
+        broker.start()
+        same = Node("probe")
+        plain = Node("plain", profile=None)
+        try:
+            assert broker.port != transport.DEFAULT_PORT
+            same.start()
+            plain.start(broker.port)
+            assert same.wait_registered(3.0)
+            assert not plain.wait_registered(1.0)
+        finally:
+            same.stop()
+            plain.stop()
+            broker.stop()
+
+    @pytest.mark.usefixtures("short_port_wait")
+    def test_node_without_port_file_does_not_connect(self):
+        node = Node("probe")
+        try:
+            node.start()
+            assert node._current_port == 0
+            assert node._dealer is None
+            assert not node.wait_registered(0.5)
+            assert node._current_port == 0
+        finally:
+            node.stop()
+
+    @pytest.mark.usefixtures("short_port_wait")
+    def test_node_connects_once_the_port_is_announced(self):
+        node = Node("probe")
+        node.start()
+        broker = Broker()
+        try:
+            broker.start()
+            assert node.wait_registered(5.0)
+            assert node._current_port == broker.port
+        finally:
+            node.stop()
+            broker.stop()
+
+    @pytest.mark.usefixtures("short_port_wait")
+    def test_node_keeps_its_heartbeat_while_the_port_file_cannot_be_read(self, monkeypatch):
+        broker = Broker()
+        broker.start()
+        denied = threading.Event()
+        denied.set()
+        real_read_text, real_read_bytes, real_stat = Path.read_text, Path.read_bytes, Path.stat
+        port_file = transport.port_file_for(None)
+
+        def guard(real):
+            def read(self, *args, **kwargs):
+                if denied.is_set() and self == port_file:
+                    raise PermissionError(13, "Access is denied", str(self))
+                return real(self, *args, **kwargs)
+
+            return read
+
+        monkeypatch.setattr(Path, "read_text", guard(real_read_text))
+        monkeypatch.setattr(Path, "read_bytes", guard(real_read_bytes))
+        monkeypatch.setattr(Path, "stat", guard(real_stat))
+        node = Node("probe")
+        ticks = _count_ticks(node)
+        try:
+            node.start()
+            assert _wait_until(lambda: len(ticks) >= 3)
+            assert node._io_thread.is_alive()
+            assert not node.is_registered
+
+            denied.clear()
+            assert node.wait_registered(5.0)
+            assert node._current_port == broker.port
+        finally:
+            node.stop()
+            broker.stop()
+
+    def test_node_warns_once_for_foreign_port(self, caplog_applogger):
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        listener.settimeout(0.2)
+        accepted = []
+        stop = threading.Event()
+
+        def accept_loop():
+            while not stop.is_set():
+                try:
+                    accepted.append(listener.accept()[0])
+                except TimeoutError:
+                    continue
+
+        acceptor = threading.Thread(target=accept_loop, daemon=True)
+        acceptor.start()
+        transport.write_broker_port(listener.getsockname()[1])
+        node = Node("probe")
+        try:
+            node.start()
+            assert _wait_until(lambda: len(accepted) >= 3, timeout=10.0)
+            assert not node.is_registered
+            assert len(caplog_applogger.warnings) == 1
+        finally:
+            node.stop()
+            stop.set()
+            acceptor.join(timeout=2.0)
+            for conn in accepted:
+                conn.close()
+            listener.close()

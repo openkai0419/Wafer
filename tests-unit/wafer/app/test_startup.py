@@ -22,6 +22,25 @@ def test_run_ui_schedules_update_and_prompt(monkeypatch):
     assert [fn for _, fn in timers] == [StartupTasks.prompt_plugin_setup]
 
 
+def test_update_check_not_scheduled_in_profile(monkeypatch):
+    from wafer.core.common.profile import current_profile
+
+    scheduled = []
+    logged = []
+    monkeypatch.setattr(updater_startup, "schedule_startup_update_check", lambda: scheduled.append("update"))
+    monkeypatch.setattr(updater_startup, "log_startup_update_check", lambda: logged.append("log"))
+    monkeypatch.setattr(QtCore.QTimer, "singleShot", staticmethod(lambda ms, fn: None))
+    monkeypatch.setattr("sys.argv", ["main.py", "--profile", "debug-a"])
+    current_profile.cache_clear()
+    try:
+        StartupTasks().run()
+        StartupTasks(headless=True).run()
+    finally:
+        current_profile.cache_clear()
+    assert scheduled == []
+    assert logged == []
+
+
 def test_run_ui_defers_prompt_to_on_ready(monkeypatch):
     scheduled = []
     timers = []

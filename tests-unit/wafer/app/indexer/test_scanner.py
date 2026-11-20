@@ -1,4 +1,7 @@
+import sys
 from unittest.mock import MagicMock
+
+import pytest
 
 from wafer.app.indexer.scanner import DirectoryScanner
 from wafer.core.common.paths import normalize_path
@@ -62,6 +65,45 @@ def test_scan_directory_skips_subdirectories_matching_ignore_pattern(tmp_path):
     results = dict(scanner._scan_directory(str(scan_dir)))
     assert normalize_path(str(scan_dir / "keep.txt")) in results
     assert normalize_path(str(scan_dir / "my_cache_dir" / "inside.txt")) not in results
+
+
+def test_files_in_scope_matches_a_full_scan(tmp_path):
+    from wafer.app.indexer.scanner import files_in_scope
+
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    for folder in (first / "keep", first / "skip", first / "my_cache_dir", second):
+        folder.mkdir(parents=True)
+    for path in (first / "a.png", first / "keep" / "b.png", first / "skip" / "c.png", first / "my_cache_dir" / "d.png", first / "e.cache", second / "f.png"):
+        path.write_text("x")
+    exclude_paths = [str(first / "skip")]
+    patterns = ["*cache*"]
+    scanner, *_ = _make_scanner(tmp_path)
+    scanner.set_exclusions(exclude_paths, patterns)
+    scanned = {path for root in (first, second) for path, _ in scanner._scan_directory(str(root))}
+
+    found = files_in_scope([str(first), str(second), str(first / "keep")], exclude_paths, patterns)
+
+    assert found == scanned
+    assert found == {normalize_path(str(p)) for p in (first / "a.png", first / "keep" / "b.png", second / "f.png")}
+
+
+def test_files_in_scope_never_walks_excluded_folders(tmp_path, monkeypatch):
+    import wafer.app.indexer.scanner as scanner_module
+    from wafer.app.indexer.scanner import files_in_scope
+
+    (tmp_path / "skip" / "deep").mkdir(parents=True)
+    (tmp_path / "skip" / "deep" / "x.png").write_text("x")
+    walked = []
+    real_scandir = scanner_module.os.scandir
+
+    def recording_scandir(path):
+        walked.append(normalize_path(path))
+        return real_scandir(path)
+
+    monkeypatch.setattr(scanner_module.os, "scandir", recording_scandir)
+    assert files_in_scope([str(tmp_path)], [str(tmp_path / "skip")], []) == set()
+    assert walked == [normalize_path(str(tmp_path))]
 
 
 def test_start_stop(tmp_path):
@@ -224,12 +266,12 @@ def test_loop_survives_exception(tmp_path):
     original_full_scan = scanner._do_full_scan
     call_count = 0
 
-    def failing_scan(data):
+    def failing_scan(data, partial=False):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
             raise RuntimeError("simulated scan error")
-        original_full_scan(data)
+        original_full_scan(data, partial)
 
     scanner._do_full_scan = failing_scan
     scan_dir = tmp_path / "data"
@@ -388,4 +430,206 @@ def test_full_scan_reports_changed_and_removed_files_but_not_new_ones(tmp_path, 
 
     progress.send_files_changed.assert_called_once_with(modified=[edited], removed=[gone])
     assert new not in progress.send_files_changed.call_args.kwargs["modified"]
+    scanner.stop()
+
+
+def _scanner_with_sources(tmp_path, sources, collectors=None):
+    from wafer.core.db.file_db import FileDB
+
+    db_path = tmp_path / "test.db"
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+    db.upsert_basic_sources([(s, f"h{i}", 1, 0.0) for i, s in enumerate(sources)], [(s, s, 1.0) for s in sources])
+    db.close()
+    progress = MagicMock()
+    scanner = DirectoryScanner(db_path, MagicMock(), MagicMock(), progress, collectors)
+    scanner.start()
+    return scanner, progress
+
+
+def _removed(progress):
+    return set(progress.send_files_changed.call_args.kwargs["removed"])
+
+
+def test_partial_scan_removes_only_missing_files_under_scanned_roots(tmp_path):
+    a, b = tmp_path / "A", tmp_path / "B"
+    (a / "sub").mkdir(parents=True)
+    b.mkdir()
+    kept = normalize_path(str(a / "sub" / "a.png"))
+    (a / "sub" / "a.png").write_text("x")
+    gone = normalize_path(str(a / "sub" / "gone.png"))
+    sibling = normalize_path(str(a / "x.png"))
+    other_root = normalize_path(str(b / "b.png"))
+    scanner, progress = _scanner_with_sources(tmp_path, [kept, gone, sibling, other_root])
+
+    scanner._do_full_scan([str(a / "sub")], partial=True)
+
+    assert _removed(progress) == {gone}
+    scanner.stop()
+
+
+def test_full_scan_still_removes_sources_outside_registered_roots(tmp_path):
+    a = tmp_path / "A"
+    a.mkdir()
+    outside = normalize_path(str(tmp_path / "unregistered" / "c.png"))
+    scanner, progress = _scanner_with_sources(tmp_path, [outside])
+
+    scanner._do_full_scan([str(a)])
+
+    assert _removed(progress) == {outside}
+    scanner.stop()
+
+
+def test_full_scan_keeps_sources_under_unreadable_roots(tmp_path, monkeypatch):
+    a = tmp_path / "A"
+    a.mkdir()
+    gone = normalize_path(str(a / "gone.png"))
+    offline = normalize_path(str(tmp_path / "offline" / "b.png"))
+    scanner, progress = _scanner_with_sources(tmp_path, [gone, offline])
+    warnings = []
+    monkeypatch.setattr("wafer.app.indexer.scanner.AppLogger.warning", lambda message, exc=None: warnings.append(message))
+
+    scanner._do_full_scan([str(a), str(tmp_path / "offline")])
+
+    assert _removed(progress) == {gone}
+    assert any("offline" in w for w in warnings)
+    scanner.stop()
+
+
+def test_full_scan_keeps_sources_under_unreadable_subfolder(tmp_path, monkeypatch):
+    import os
+
+    a = tmp_path / "A"
+    (a / "locked").mkdir(parents=True)
+    locked_file = normalize_path(str(a / "locked" / "c.png"))
+    scanner, progress = _scanner_with_sources(tmp_path, [locked_file])
+    real_scandir = os.scandir
+
+    def fake_scandir(path):
+        if normalize_path(path) == normalize_path(str(a / "locked")):
+            raise PermissionError("denied")
+        return real_scandir(path)
+
+    monkeypatch.setattr("wafer.app.indexer.scanner.os.scandir", fake_scandir)
+
+    scanner._do_full_scan([str(a)])
+
+    assert _removed(progress) == set()
+    scanner.stop()
+
+
+windows_only = pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions")
+
+
+def _junction(link, target):
+    import _winapi
+
+    _winapi.CreateJunction(str(target), str(link))
+
+
+def _write(*paths):
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x")
+
+
+def _capture_registered(scanner):
+    registered = []
+    scanner._register_and_submit = lambda paths, _info, _token: registered.extend(paths)
+    return registered
+
+
+@windows_only
+def test_scan_directory_does_not_follow_a_junction_loop(tmp_path):
+    scanner, *_ = _make_scanner(tmp_path)
+    root = tmp_path / "data"
+    _write(root / "f.png")
+    _junction(root / "loop", root)
+    _junction(root / "up", tmp_path)
+
+    results = dict(scanner._scan_directory(str(root)))
+
+    assert list(results) == [normalize_path(str(root / "f.png"))]
+
+
+@windows_only
+def test_scan_directory_follows_a_junction_to_a_folder_outside_the_roots(tmp_path):
+    scanner, *_ = _make_scanner(tmp_path)
+    root, outside = tmp_path / "Library", tmp_path / "OtherDrive" / "pics"
+    _write(root / "own.png", outside / "a.png", outside / "sub" / "b.png")
+    _junction(root / "linked", outside)
+
+    results = dict(scanner._scan_directory(str(root)))
+
+    assert sorted(results) == sorted(normalize_path(str(root / p)) for p in ("own.png", "linked/a.png", "linked/sub/b.png"))
+
+
+@windows_only
+def test_scan_directory_stops_junctions_that_point_at_each_other(tmp_path):
+    scanner, *_ = _make_scanner(tmp_path)
+    root, x, z = tmp_path / "root", tmp_path / "x", tmp_path / "z"
+    _write(x / "a.png", z / "b.png")
+    root.mkdir()
+    _junction(root / "j", x)
+    _junction(x / "to_z", z)
+    _junction(z / "to_x", x)
+
+    results = dict(scanner._scan_directory(str(root)))
+
+    assert sorted(results) == sorted(normalize_path(str(root / p)) for p in ("j/a.png", "j/to_z/b.png"))
+
+
+@windows_only
+def test_full_scan_skips_a_junction_into_another_root(tmp_path):
+    first, second = tmp_path / "first", tmp_path / "second"
+    _write(first / "a.png", second / "inner" / "b.png")
+    _junction(first / "to_second", second / "inner")
+    scanner, _ = _scanner_with_sources(tmp_path, [])
+    registered = _capture_registered(scanner)
+
+    scanner._do_full_scan([str(first), str(second)])
+
+    assert set(registered) == {normalize_path(str(first / "a.png")), normalize_path(str(second / "inner" / "b.png"))}
+    scanner.stop()
+
+
+@windows_only
+def test_full_scan_keeps_sources_under_a_followed_junction(tmp_path):
+    root, outside = tmp_path / "Library", tmp_path / "OtherDrive" / "pics"
+    _write(root / "own.png", outside / "a.png")
+    _junction(root / "linked", outside)
+    via_junction = normalize_path(str(root / "linked" / "a.png"))
+    scanner, progress = _scanner_with_sources(tmp_path, [via_junction, normalize_path(str(root / "own.png"))])
+
+    scanner._do_full_scan([str(root)])
+
+    assert _removed(progress) == set()
+    scanner.stop()
+
+
+@windows_only
+def test_partial_scan_skips_a_junction_into_a_root_it_was_not_asked_to_scan(tmp_path):
+    first, second = tmp_path / "first", tmp_path / "second"
+    _write(first / "sub" / "a.png", second / "b.png")
+    _junction(first / "sub" / "to_second", second)
+    scanner, _ = _scanner_with_sources(tmp_path, [])
+    scanner._do_full_scan([str(first), str(second)])
+    registered = _capture_registered(scanner)
+
+    scanner._do_full_scan([str(first / "sub")], partial=True)
+
+    assert set(registered) == {normalize_path(str(first / "sub" / "a.png"))}
+    scanner.stop()
+
+
+def test_backfill_selects_only_matching_extensions_in_sql(tmp_path):
+    sources = ["/a.jpg", "/b.txt", "/c.JPG", "/d_jpg", "/e.jpgx"]
+    scanner, _ = _scanner_with_sources(tmp_path, sources, collectors=[("image", [".jpg"])])
+
+    scanner._do_backfill()
+
+    tasks = [c[0][0] for c in scanner._scheduler.submit.call_args_list if c[0][0].name == "insert_pending"]
+    tasks[0].run()
+    scanner._writer.insert_pending.assert_called_once_with(["/a.jpg", "/c.JPG"], ["image"])
     scanner.stop()

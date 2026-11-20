@@ -72,3 +72,12 @@ def test_expander_only_on_folders_with_children(ready_page):
     assert child.inner_text().strip() == "sub"
     assert root.locator(".expander .icon").count() == 1
     assert child.locator(".expander .icon").count() == 0
+
+
+def test_a_missing_saved_folder_falls_back_to_all_files(ready_page):
+    page = ready_page
+    page.evaluate("const s = JSON.parse(localStorage.getItem('wafer.ui')) || {}; s.folder = 'Z:/missing'; localStorage.setItem('wafer.ui', JSON.stringify(s))")
+    page.reload()
+    _wait_total(page, "5")
+    page.wait_for_function("document.querySelector('.folder-node.selected')?.textContent.trim() === '(all files)'")
+    assert page.evaluate("JSON.parse(localStorage.getItem('wafer.ui')).folder") is None

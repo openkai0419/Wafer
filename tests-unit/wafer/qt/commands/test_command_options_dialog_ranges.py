@@ -55,3 +55,26 @@ def test_float_default_99_allows_100(qtbot, tmp_path):
         CommandOptionStore._instance = prev_instance
         CommandOptionStore._initialized = prev_initialized
         CommandOptionStore._default_path = prev_default_path
+
+
+def test_int_range_inferred_from_a_large_saved_value_stays_within_qt_int(qtbot, tmp_path):
+    from wafer.qt.commands.command.core import CommandMeta, CommandParam
+    from wafer.qt.commands.command.state import CommandOptionStore
+    from wafer.qt.commands.command.option_dialog import CommandOptionsDialog
+
+    prev = CommandOptionStore._instance, CommandOptionStore._default_path
+    try:
+        CommandOptionStore._instance = None
+        CommandOptionStore.configure(tmp_path / "command_options.json")
+
+        class _Cmd:
+            meta = CommandMeta(id="__test__cmd3", display="test", params=[CommandParam(name="big", value=10000), CommandParam(name="neg", value=-10000)])
+
+        d = CommandOptionsDialog(_Cmd)
+        qtbot.addWidget(d)
+        assert d.widgets["big"].maximum() == 2147483647
+        assert d.widgets["big"].value() == 10000
+        assert d.widgets["neg"].maximum() == 2147483647
+        assert d.widgets["neg"].value() == -10000
+    finally:
+        CommandOptionStore._instance, CommandOptionStore._default_path = prev

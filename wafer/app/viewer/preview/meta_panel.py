@@ -22,6 +22,7 @@ from ....qt.meta.viewer import (
 )
 from ....qt.meta.searchable import ScopedSearchKvAddDialog, SearchableMetaWidget
 from ....qt.meta.tag_edit_service import TagEditService
+from ....plugin.key_filter import KeyFilter
 
 _FIXED_SECTION_KEYS = ("file", "source")
 _TAG_PREFIX = "tag:"
@@ -456,7 +457,7 @@ class MetaViewerWidget(QtWidgets.QWidget):
     def _build_search_kv_card(self, title: str, section_id: str, *, prefix: str, scope: str, marker_kind: str) -> CollapsibleCard:
         card = CollapsibleCard(title, section_id, parent=self._inner)
         self._set_section_marker(card, marker_kind)
-        widget = SearchableMetaWidget(card, scope=scope, prefix=prefix)
+        widget = SearchableMetaWidget(card, scope=scope, prefix=prefix, delete_everywhere=KeyFilter.delete_key_everywhere)
         widget.count_changed.connect(card.update_title_count)
         card.set_content_widget(widget)
         card.toggled_card.connect(self._on_section_toggled)

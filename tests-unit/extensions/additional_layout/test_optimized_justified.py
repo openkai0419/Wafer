@@ -107,3 +107,12 @@ def test_optimized_justified_uniform_aspects_equal_row_heights():
     non_last_heights = sorted(row_y_to_height.items(), key=lambda x: x[0])
     for _, h in non_last_heights[:-1]:
         assert h == non_last_heights[0][1]
+
+
+def test_optimized_justified_wide_item_does_not_collapse_rows():
+    aspects = [1.0] * 20 + [20.0] + [1.0] * 20
+    calc = OptimizedJustifiedLayoutCalculator(aspects, 100, 5, 500, None, orientation=0)
+    calc.run()
+    layout = calc._result
+    rows = {layout[i].top() for i in range(len(layout))}
+    assert len(rows) > 5

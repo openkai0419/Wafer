@@ -215,7 +215,7 @@ class GridViewCommands(ActionKit.MenuBase):
         GridViewCommands.get_items(ctx).clear_selection()
 
     @staticmethod
-    def _scroll_by_wheel(ctx, direction: int):
+    def _scroll_by_wheel(ctx, direction: int, multiplier: float):
         view = GridViewCommands.get_view(ctx)
         scroll = getattr(view, "parent_scroll", None)
         if scroll is None or not hasattr(scroll, "_primary_bar"):
@@ -223,23 +223,20 @@ class GridViewCommands(ActionKit.MenuBase):
         if hasattr(scroll, "stop_auto_scroll") and callable(scroll.stop_auto_scroll):
             scroll.stop_auto_scroll()
         bar = scroll._primary_bar()
-        steps = int(ctx.get("wheel_steps") or 1)
+        steps = max(1, int(ctx.get("wheel_steps") or 1))
         step = int(getattr(bar, "singleStep", lambda: 25)() or 25)
-        multiplier = int(ctx.get("multiplier") or 4)
-        delta = max(1, step * max(1, multiplier)) * max(1, steps)
+        delta = max(1, int(step * float(multiplier) * steps))
         if hasattr(scroll, "_is_primary_reversed") and scroll._is_primary_reversed():
             direction = -direction
         bar.setValue(int(bar.value()) + int(direction) * int(delta))
 
     @staticmethod
-    def wheel_scroll_up(ctx, multiplier: int = 4):
-        ctx.put("multiplier", int(multiplier))
-        GridViewCommands._scroll_by_wheel(ctx, -1)
+    def wheel_scroll_up(ctx, multiplier: float = 1.5):
+        GridViewCommands._scroll_by_wheel(ctx, -1, multiplier)
 
     @staticmethod
-    def wheel_scroll_down(ctx, multiplier: int = 4):
-        ctx.put("multiplier", int(multiplier))
-        GridViewCommands._scroll_by_wheel(ctx, 1)
+    def wheel_scroll_down(ctx, multiplier: float = 1.5):
+        GridViewCommands._scroll_by_wheel(ctx, 1, multiplier)
 
     @staticmethod
     def _clamp(v: int, lo: int, hi: int) -> int:

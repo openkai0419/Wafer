@@ -7,22 +7,31 @@ from typing import Any
 
 import zmq
 
-from ..logs import AppLogger
+from ..logs import AppLogger, debug_non_recursive
 from .transport import (
+    APP_ID,
     BROKER_QUEUE_MAX,
+    CURRENT_PROFILE,
     DEFAULT_PORT,
+    EPHEMERAL_PORT_END,
+    EPHEMERAL_PORT_MIN,
     HEARTBEAT_TIMEOUT,
     POLL_BASE_MS,
     Priority,
     adaptive_poll,
     close_socket,
     drain_queue,
+    is_own_peer,
+    port_file_for,
     remove_broker_port,
+    resolve_profile,
     try_put,
     tune_socket,
     write_broker_port,
 )
 from .message import Message
+
+DROP_WARN_INTERVAL = 10.0
 
 
 class _PeerInfo:
@@ -70,7 +79,9 @@ class _CoalescingQueue:
 
 
 class Broker:
-    def __init__(self, port: int | None = None):
+    def __init__(self, port: int | None = None, *, profile: str | None | object = CURRENT_PROFILE):
+        self.profile = resolve_profile(profile)
+        self._port_file = port_file_for(self.profile)
         self._ctx = zmq.Context.instance()
         self._router = self._ctx.socket(zmq.ROUTER)
         tune_socket(self._router)
@@ -79,12 +90,7 @@ class Broker:
         except (zmq.ZMQError, AttributeError):
             pass
 
-        bind_port = port or DEFAULT_PORT
-        try:
-            self._router.bind(f"tcp://127.0.0.1:{bind_port}")
-            self.port = bind_port
-        except zmq.ZMQError:
-            self.port = self._router.bind_to_random_port("tcp://127.0.0.1")
+        self.port = self._bind(port)
 
         self._stop = threading.Event()
         self._direct_q: Queue = Queue(maxsize=BROKER_QUEUE_MAX)
@@ -97,6 +103,8 @@ class Broker:
         self._peers: dict[bytes, _PeerInfo] = {}
         self._by_role: dict[str, set[bytes]] = {}
         self._by_node_id: dict[str, bytes] = {}
+        self._refused: set[bytes] = set()
+        self._drops: dict[bytes, tuple[int, float | None]] = {}
         self._lock = threading.RLock()
         self._viewer_ids: dict[bytes, int] = {}
         self._restore_debounce: threading.Timer | None = None
@@ -108,9 +116,26 @@ class Broker:
         self._io_thread = threading.Thread(target=self._io_loop, daemon=True)
         self._prune_thread = threading.Thread(target=self._reaper_loop, daemon=True)
 
+    def _bind(self, port: int | None) -> int:
+        if self.profile is None:
+            bind_port = port or DEFAULT_PORT
+            try:
+                self._router.bind(f"tcp://127.0.0.1:{bind_port}")
+                return bind_port
+            except zmq.ZMQError as e:
+                AppLogger.info(f"Broker port {bind_port} unavailable ({e}), binding a free port")
+        return self._bind_free_port()
+
+    def _bind_free_port(self) -> int:
+        try:
+            return self._router.bind_to_random_port("tcp://127.0.0.1", min_port=DEFAULT_PORT + 1, max_port=EPHEMERAL_PORT_END)
+        except zmq.ZMQBindError as e:
+            AppLogger.info(f"no free broker port above {DEFAULT_PORT} ({e}), trying below it")
+            return self._router.bind_to_random_port("tcp://127.0.0.1", min_port=EPHEMERAL_PORT_MIN, max_port=DEFAULT_PORT)
+
     def start(self):
-        AppLogger.info(f"Broker bound: tcp://127.0.0.1:{self.port}")
-        write_broker_port(self.port)
+        AppLogger.info(f"Broker bound: tcp://127.0.0.1:{self.port} profile={self.profile or '-'}")
+        write_broker_port(self.port, port_file=self._port_file)
         self._io_thread.start()
         self._prune_thread.start()
 
@@ -122,7 +147,7 @@ class Broker:
         self._io_thread.join(timeout=2.0)
         self._prune_thread.join(timeout=2.0)
         close_socket(self._router)
-        remove_broker_port()
+        remove_broker_port(port_file=self._port_file)
 
     def dispatch(self, msg: Message):
         targets = self._resolve_targets(msg, sender_ident=None)
@@ -137,7 +162,6 @@ class Broker:
     def _register_peer(self, ident: bytes, role: str, db_set: set[str], node_id: str, session_id: str = "") -> int | None:
         with self._lock:
             old = self._peers.get(ident)
-            old_session_id = old.session_id if old else ""
             if old:
                 self._by_role.get(old.role, set()).discard(ident)
                 self._by_node_id.pop(old.node_id, None)
@@ -158,10 +182,7 @@ class Broker:
                         vid += 1
                     self._viewer_ids[ident] = vid
                     viewer_id = vid
-                if old_session_id and old_session_id != session_id:
-                    self._sync_active_slots()
-                else:
-                    self._on_viewer_connected(session_id)
+                self._on_viewer_connected(session_id)
             elif role == "webui" and session_id:
                 self._on_webui_connected()
             AppLogger.info(f"peer added: {node_id} role={role} db={db_set} session={session_id}")
@@ -176,6 +197,9 @@ class Broker:
             self._by_role.get(peer.role, set()).discard(ident)
             self._by_node_id.pop(peer.node_id, None)
             self._viewer_ids.pop(ident, None)
+            unreported, _ = self._drops.pop(ident, (0, None))
+            if unreported:
+                AppLogger.warning(f"broker: dropped {unreported} message(s) to {peer.node_id} before it went away")
             if peer.role == "viewer" or (peer.role == "webui" and peer.session_id):
                 self._on_restorable_peer_disconnected()
 
@@ -211,6 +235,11 @@ class Broker:
 
         if topic == "mgmt.register":
             payload = msg.payload if isinstance(msg.payload, dict) else {}
+            if not is_own_peer(payload, self.profile):
+                self._refuse(ident, msg, payload)
+                return
+            with self._lock:
+                self._refused.discard(ident)
             role = payload.get("role", "")
             db_raw = payload.get("db", "")
             session_id = payload.get("session_id", "")
@@ -222,7 +251,7 @@ class Broker:
             else:
                 db_set = set()
             viewer_id = self._register_peer(ident, role, db_set, node_id, session_id)
-            reply_payload = {"status": "ok", "node_id": node_id}
+            reply_payload = {"status": "ok", "node_id": node_id, "app": APP_ID, "profile": self.profile or ""}
             if viewer_id is not None:
                 reply_payload["viewer_id"] = viewer_id
             reply = msg.reply(reply_payload, topic="mgmt.registered")
@@ -252,6 +281,14 @@ class Broker:
             try_put(self._direct_q, (ident, reply.to_frames()), "broker.count_reply")
             return
 
+        with self._lock:
+            known = ident in self._peers
+        if not known:
+            debug_non_recursive(f"broker: dropped {topic} from unregistered {msg.source}")
+            reply = Message.build("mgmt.not_registered", src="broker", dst=msg.source)
+            try_put(self._direct_q, (ident, reply.to_frames()), "broker.not_registered")
+            return
+
         exclude = ident if topic != "dev.log" else None
         targets = self._resolve_targets(msg, sender_ident=exclude)
         if not targets:
@@ -277,17 +314,56 @@ class Broker:
             for t in targets:
                 try_put(self._mid_q, (t, frames), f"broker.mid:{topic}")
 
+    def _refuse(self, ident: bytes, msg: Message, payload: dict):
+        with self._lock:
+            first = ident not in self._refused
+            self._refused.add(ident)
+        if first:
+            AppLogger.warning(
+                f"refused {msg.source}: it is app={payload.get('app')!r} profile={payload.get('profile')!r}, "
+                f"this broker serves app={APP_ID!r} profile={self.profile or ''!r}; it belongs to another Wafer"
+            )
+        reply = msg.reply({"status": "rejected", "app": APP_ID, "profile": self.profile or ""}, topic="mgmt.rejected")
+        try_put(self._direct_q, (ident, reply.to_frames()), "broker.rejected")
+
     def _deliver_batch(self, items, did_work):
         for ident, frames in items:
             try:
-                self._router.send_multipart([ident, *frames], copy=False)
+                self._router.send_multipart([ident, *frames], flags=zmq.NOBLOCK, copy=False)
                 did_work = True
             except zmq.Again:
-                AppLogger.debug("broker: drop direct (timeout)")
+                self._note_drop(ident)
             except zmq.ZMQError as e:
                 if e.errno != zmq.EHOSTUNREACH:
                     AppLogger.debug(f"broker: send error {e}")
         return did_work
+
+    def _note_drop(self, ident: bytes):
+        with self._lock:
+            registered = ident in self._peers
+            if registered:
+                count, last_warned = self._drops.get(ident, (0, None))
+                self._drops[ident] = (count + 1, last_warned)
+        if not registered:
+            debug_non_recursive(f"broker: dropped a message to unregistered peer {ident!r}, it is not reading them")
+            return
+        self._report_drops(time.monotonic(), [ident])
+
+    def _report_drops(self, now: float, idents=None):
+        reports = []
+        with self._lock:
+            for ident in list(self._drops) if idents is None else idents:
+                peer = self._peers.get(ident)
+                count, last_warned = self._drops.get(ident, (0, None))
+                if peer is None or count == 0 or (last_warned is not None and now - last_warned < DROP_WARN_INTERVAL):
+                    continue
+                self._drops[ident] = (0, now)
+                reports.append((peer.node_id, count))
+        for node_id, count in reports:
+            AppLogger.warning(f"broker: dropped {count} message(s) to {node_id}, it is not reading them (busy or frozen)")
+
+    def _drain_broadcasts(self) -> list[tuple[bytes, list[bytes]]]:
+        return [(t, frames) for _key, (targets, frames) in self._broadcast_q.drain() for t in targets]
 
     def _io_loop(self):
         poller = zmq.Poller()
@@ -325,15 +401,7 @@ class Broker:
                 items, _ = drain_queue(q, self._sentinel)
                 did_work = self._deliver_batch(items, did_work)
 
-            for _key, (targets, frames) in self._broadcast_q.drain():
-                for t in targets:
-                    try:
-                        self._router.send_multipart([t, *frames], copy=False)
-                        did_work = True
-                    except zmq.Again:
-                        pass
-                    except zmq.ZMQError as e:
-                        AppLogger.debug(f"broker: bcast error {e}")
+            did_work = self._deliver_batch(self._drain_broadcasts(), did_work)
 
             low_items, _ = drain_queue(self._low_q, self._sentinel)
             did_work = self._deliver_batch(low_items, did_work)
@@ -348,6 +416,7 @@ class Broker:
             for ident, node_id in stale:
                 AppLogger.info(f"pruning stale peer: {node_id}")
                 self._unregister_peer(ident)
+            self._report_drops(now)
             self._stop.wait(1)
 
     def set_workspace_store_factory(self, factory):
@@ -443,12 +512,3 @@ class Broker:
                 self._record_restore_webui(store, webui_connected)
         except Exception as e:
             AppLogger.warning(f"_debounce_fire failed: {e}", exc=e)
-
-    def _sync_active_slots(self):
-        try:
-            active = self.active_viewer_slot_ids()
-            store = self._get_workspace_store()
-            store.set_active_slot_ids(active)
-            store.set_restore_slot_ids(list(active))
-        except Exception as e:
-            AppLogger.warning(f"_sync_active_slots failed: {e}", exc=e)

@@ -2,13 +2,16 @@ from PySide6 import QtCore, QtWidgets
 from ...core.profiling import profiler
 from ...core.logs import AppLogger
 from ...constants import APP_NAME
+from ...core.common.profile import current_profile, profile_label
 from ...qt.commands.bridge import Command, Context, Menu, UI
 from ...qt.commands.command.menu import MenuPath
 
 from ...qt.common.rate_limit import qt_debounce
 from ...core.ipc.broker import Broker
 from ...core.ipc.node import Node
+from ...core.ipc.outbox import DeadOutboxCleaner
 from ...core.platform.process import AppProcess
+from ..viewer.ipc_bridge import ViewerIpcBridge
 from ...core.store.settings import app_settings
 import threading
 
@@ -31,7 +34,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
     def __init__(self, icon, parent=None):
         super().__init__(icon, parent)
         AppLogger.info("TRAY APP EXECUTED")
-        self.setToolTip(f"{APP_NAME}")
+        self.setToolTip(f"{profile_label(current_profile())}{APP_NAME}")
         self.show_state = False
         self.shutting_down = False
         self.restart_requested = False
@@ -41,7 +44,10 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self._node = Node("tray")
         self._node.subscribe("app.quit_all", lambda msg: self._request_shutdown_all(then_restart=False) or True)
         self._node.subscribe("app.restart_all", lambda msg: self._request_shutdown_all(then_restart=True) or True)
+        self.update_bridge = ViewerIpcBridge.for_updates(self._node, parent=self)
         self._node.start(self.broker.port)
+        self._outbox_cleaner = DeadOutboxCleaner()
+        self._outbox_cleaner.start()
         app_settings.committed.connect(self._broadcast_settings)
         AppLogger.set_node(self._node, role="tray")
         UI.register_instance("Tray", self)
@@ -57,7 +63,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         spec = session.all_roots()
         if spec is None:
             return QtWidgets.QMenu()
-        return spec.hide([MenuPath.FILE, MenuPath.SELECTION]).build()
+        return spec.hide([MenuPath.FILE, MenuPath.SELECTION, MenuPath.FOLDER_TREE]).build()
 
     def _ctx(self):
         return Context.create_context(None, "Tray", source="tray", extras={"tray": self})
@@ -116,11 +122,13 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
 
     def on_quit(self):
         AppLogger.info("tray shutting down")
+        self.update_bridge.stop_updates()
+        self._outbox_cleaner.stop()
         try:
             self._node.stop()
         except Exception as e:
-            AppLogger.debug(f"TrayApp.node.stop failed: {e}")
+            AppLogger.warning("[Tray] Node stop failed", exc=e)
         try:
             self.broker.stop()
         except Exception as e:
-            AppLogger.debug(f"TrayApp.broker.stop failed: {e}")
+            AppLogger.warning("[Tray] Broker stop failed", exc=e)

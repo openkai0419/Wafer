@@ -68,23 +68,18 @@ class BindingManager:
                     store_physical[seq.to_tuple()] = cmd
                 else:
                     store_logical[seq] = cmd
-            if store_logical and hasattr(w, "set_shortcut_bindings"):
+            if hasattr(w, "set_shortcut_bindings"):
                 w.set_shortcut_bindings(store_logical)
-            if store_physical and hasattr(w, "set_physical_shortcut_bindings"):
+            if hasattr(w, "set_physical_shortcut_bindings"):
                 w.set_physical_shortcut_bindings(store_physical)
 
     def apply_registered(self) -> None:
+        from ..command.menu_builder import CommandMenuBuilder
+
+        CommandMenuBuilder.clear_menu_cache()
         ws = list(self._widgets)
         self.apply_mouse_bindings(ws)
         self.apply_key_bindings(ws)
-
-    def clear_shortcuts(self, widgets: list[QtWidgets.QWidget]) -> None:
-        for w in widgets:
-            if hasattr(w, "set_shortcut_bindings"):
-                w.set_shortcut_bindings({})
-
-    def clear_shortcuts_registered(self) -> None:
-        self.clear_shortcuts(list(self._widgets))
 
     def register(self, widget: QtWidgets.QWidget) -> None:
         try:

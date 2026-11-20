@@ -86,3 +86,21 @@ def test_extend_context_uses_active_batch_paths(qtbot):
     assert result["sources"] == ["archive.zip"]
     assert result["render_path"] == "cache/a.png"
     assert result["render_paths"] == ["cache/a.png", "cache/b.png"]
+
+
+def test_fit_in_view_padding_adds_margin(qtbot):
+    widget = ImageDisplayWidget()
+    qtbot.addWidget(widget)
+    widget.resize(400, 400)
+    widget.show()
+    image = QtGui.QImage(100, 100, QtGui.QImage.Format_ARGB32)
+    image.fill(QtGui.QColor("red"))
+    widget.set_images([image])
+
+    view = widget.view
+    view.fit_in_view(padding=0.0, mode="contain")
+    unpadded = view._current_scale()
+    view.fit_in_view(padding=20.0, mode="contain")
+
+    assert view._current_scale() < unpadded
+    widget.close()

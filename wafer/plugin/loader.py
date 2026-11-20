@@ -246,7 +246,7 @@ class PluginLoader:
         return bool(getattr(cls, "DEFAULT_ENABLED", False))
 
     @staticmethod
-    def discover_extension(folder: str) -> list[tuple[str, type]]:
+    def discover_extension(folder: str, failed: list[str] | None = None) -> list[tuple[str, type]]:
         name = os.path.basename(folder)
         extensions_dir = os.path.dirname(folder)
         packages_dir = os.path.join(extensions_dir, _PACKAGES_DIR)
@@ -254,8 +254,10 @@ class PluginLoader:
         if os.path.isdir(packages_dir) and packages_dir not in sys.path:
             sys.path.insert(0, packages_dir)
             added = True
+        _setup_packages_dll_directories(packages_dir)
+        _setup_dll_directory(folder)
         try:
-            return _import_extension(name, folder)
+            return _import_extension(name, folder, failed)
         finally:
             if added and packages_dir in sys.path:
                 sys.path.remove(packages_dir)

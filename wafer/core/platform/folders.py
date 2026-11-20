@@ -3,7 +3,7 @@ import sys
 import subprocess
 
 from ..logs import AppLogger
-from ..common.paths import containing_dir
+from ..common.paths import containing_dir, profile_allows_file_write
 from ..common.virtual_paths import is_virtual_path
 
 _explorer_argtypes_set = False
@@ -129,16 +129,6 @@ def first_entry(path: str) -> str | None:
     return None
 
 
-def open_file(path: str) -> None:
-    if not path:
-        return
-    if _reject_virtual_path(path, "open"):
-        return
-    from PySide6 import QtCore, QtGui
-
-    QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(path))
-
-
 _BATCH_SUFFIXES = (".bat", ".cmd")
 
 
@@ -174,6 +164,9 @@ def open_with(program: str, paths: list[str]) -> bool:
 
 def make_directory(path: str) -> str | None:
     if _reject_virtual_path(path, "mkdir"):
+        return None
+    if not profile_allows_file_write(path):
+        AppLogger.warning(f"[mkdir] refused outside the debug profile scratch area: {path}")
         return None
     os.makedirs(path, exist_ok=True)
     return path

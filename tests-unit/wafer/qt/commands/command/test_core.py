@@ -14,7 +14,7 @@ from wafer.qt.commands.command.core import (
     call_with_matching_args,
 )
 from wafer.qt.commands.command.context import CommandContext
-from wafer.qt.commands.command.state import CommandOptionStore, ActionGroupStateManager
+from wafer.qt.commands.command.state import CommandOptionStore
 
 
 @pytest.fixture(autouse=True)
@@ -43,14 +43,6 @@ def _isolate_option_store(tmp_path):
     yield
     CommandOptionStore._instance = prev_inst
     CommandOptionStore._default_path = prev_path
-
-
-@pytest.fixture(autouse=True)
-def _isolate_state_manager():
-    prev = ActionGroupStateManager._instance
-    ActionGroupStateManager._instance = None
-    yield
-    ActionGroupStateManager._instance = prev
 
 
 class TestDropAcceptRegistry:
@@ -173,29 +165,6 @@ class TestRegisterCommandDefs:
         )
         register_command_defs([meta])
         assert CommandRegistry.instance().has_command("test.drop_ok")
-
-    def test_action_group_registered(self):
-        meta = CommandMeta(
-            id="test.grp_member",
-            display="Member",
-            action_group="test_group",
-            checked=lambda: False,
-            func=lambda ctx: None,
-        )
-        register_command_defs([meta])
-        mgr = ActionGroupStateManager.instance()
-        assert "test.grp_member" in mgr.get_members("test_group")
-
-    def test_action_group_not_registered_without_checkable(self):
-        meta = CommandMeta(
-            id="test.grp_nochk",
-            display="NoCheck",
-            action_group="test_group",
-            func=lambda ctx: None,
-        )
-        register_command_defs([meta])
-        mgr = ActionGroupStateManager.instance()
-        assert "test.grp_nochk" not in mgr.get_members("test_group")
 
     def test_drop_acceptor_registered(self):
         acceptor = lambda event: True
@@ -400,6 +369,16 @@ class TestCommandParamEdgeCases:
     def test_resolve_choices_calls_fn(self):
         p = CommandParam(name="x", value=lambda: ["a", "b"])
         assert p.resolve_choices() == ["a", "b"]
+
+    def test_choices_fn_may_return_value_label_pairs(self):
+        p = CommandParam(name="x", value=lambda: [("id1", "Work"), ("id2", "Home")])
+        assert p.resolve_choices() == ["id1", "id2"]
+        assert p.choice_items() == [("id1", "Work"), ("id2", "Home")]
+
+    def test_plain_choices_label_themselves(self):
+        assert CommandParam(name="x", value=lambda: ["a", 2]).choice_items() == [("a", "a"), (2, "2")]
+        assert CommandParam(name="x", value=["a", "b"]).choice_items() == [("a", "a"), ("b", "b")]
+        assert CommandParam(name="x", value=5).choice_items() is None
 
     def test_callable_with_explicit_default(self):
         p = CommandParam(name="x", value=lambda: ["a", "b"], default="a")

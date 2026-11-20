@@ -1,12 +1,16 @@
 import webbrowser
 
+import psutil
+
 from ...qt.commands.bridge import ActionKit
 from ...qt.commands.binding.instance_registry import InstanceRegistry
 from ...app.webui.instance import WebUILock, replace_webui
 from ...core.platform.process import AppProcess
 from ...core.store.workspace import WorkspaceStore
 from ...plugin import installer_queue
-from ...core.common.paths import get_plugin_dir
+from ...core.common.paths import get_app_root_dir, get_plugin_dir
+from ...core.common.profile import current_profile
+from ...core.lang.manager import t
 from ...core.logs import AppLogger
 from ...qt.common.notifier import Notifier
 from .workspace import open_viewer
@@ -49,8 +53,23 @@ def restart_tray(ctx):
     if tray:
         tray.restart_self()
         return
-    AppProcess.terminate_cmd("--tray", wait=True)
+    _terminate_tray()
     AppProcess.new_main("--tray")
+
+
+def _terminate_tray():
+    pid = AppProcess.tray_pid()
+    if pid is None:
+        AppProcess.terminate_cmd("--tray", wait=True)
+        return
+    try:
+        AppProcess.terminate_and_wait([psutil.Process(pid)])
+    except psutil.NoSuchProcess:
+        AppLogger.info(f"restart_tray: tray {pid} already exited")
+
+
+def _tray_running():
+    return AppProcess.tray_pid() is not None or bool(AppProcess.get_by_args_subset("--tray"))
 
 
 def restart_viewer(ctx):
@@ -92,7 +111,7 @@ def _shutdown_via_tray(ctx, *, then_restart):
         return True
     host = _host(ctx)
     node = getattr(host, "_node", None) if host else None
-    if node and AppProcess.get_by_args_subset("--tray"):
+    if node and _tray_running():
         node.send("app.restart_all" if then_restart else "app.quit_all", dst="tray")
         return True
     return False
@@ -131,6 +150,17 @@ def open_webui(ctx=None):
     AppProcess.new_main("--webui")
 
 
+def _debug_tooling_available():
+    return current_profile() is None and (get_app_root_dir() / "debug" / "profile_setup.py").is_file()
+
+
+def open_debug(ctx=None):
+    root = get_app_root_dir()
+    cmd = [AppProcess.base_command()[0], "-m", "debug.profile_setup", "--profile", "debug-tools", "launch", "--checkout", str(root)]
+    AppProcess.spawn(cmd, cwd=root)
+    Notifier.info(t("Starting debug Wafer"))
+
+
 class WindowPanelCommands(ActionKit.MenuBase):
     NAME = ActionKit.MenuPath.WINDOW
     PRIORITY = 26
@@ -155,6 +185,7 @@ class WindowRestartCommands(ActionKit.MenuBase):
             ":Process",
             ActionKit.Command(path="ws.open_viewer", display="Open Viewer", func=open_viewer),
             ActionKit.Command(path="webui.open", display="Open WebUI", func=open_webui),
+            ActionKit.Command(path="debug.open", display="Open Debug Wafer", func=open_debug, hidden=not _debug_tooling_available()),
             "-",
             ":Restart",
             ActionKit.Command(path="win.restart_all", display="Restart All", func=restart_all),

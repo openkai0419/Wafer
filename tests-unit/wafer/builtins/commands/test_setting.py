@@ -59,3 +59,19 @@ class TestViewerThumbnailDefaultSize:
             set_viewer_thumbnail_default_size(ctx)
             assert grid_resolver.thumbnail_size == 1024
             mock_setting.save_immediate.assert_not_called()
+
+
+class TestToggleLanguage:
+    def test_toggling_twice_before_restart_returns_to_the_first_language(self):
+        from wafer.builtins.commands import setting as setting_mod
+
+        saved = {}
+        settings = MagicMock()
+        settings.get.side_effect = lambda key, default=None: saved.get(key, default)
+        settings.save_immediate.side_effect = saved.__setitem__
+        ctx = MagicMock()
+        with patch.object(setting_mod, "app_settings", settings), patch.object(setting_mod, "Notifier"), patch.object(setting_mod.t, "current_locale", "en"):
+            setting_mod.toggle_language(ctx)
+            assert saved["window/language"] == "ja"
+            setting_mod.toggle_language(ctx)
+            assert saved["window/language"] == "en"

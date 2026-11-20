@@ -10,6 +10,7 @@ from wafer.core.logs import AppLogger
 
 def decode_numpy(path: str, size: int | None = None) -> np.ndarray | None:
     ext = os.path.splitext(path)[-1].lower()
+    cv2_error = None
     try:
         try:
             data = np.fromfile(path, dtype=np.uint8)
@@ -19,40 +20,29 @@ def decode_numpy(path: str, size: int | None = None) -> np.ndarray | None:
         flags = _imread_flags_for_size(ext, size, data)
         arr = cv2.imdecode(data, flags)
 
-        if arr is None or _classify_opencv_array(arr, ext) != "opencv":
-            result = _pil_read_numpy(path, size)
-            if result is None:
-                AppLogger.debug(f"[image/loader] cv2+PIL both returned None: {path} (cv2_arr={'None' if arr is None else f'{arr.shape}/{arr.dtype}'}, data_len={len(data)})")
-            return result
-
-        if size is not None:
-            h, w = arr.shape[:2]
-            scale = max(size / w, size / h)
-            if abs(scale - 1.0) > 0.01:
-                new_w = max(1, round(w * scale))
-                new_h = max(1, round(h * scale))
-                interp = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LANCZOS4
-                arr = cv2.resize(arr, (new_w, new_h), interpolation=interp)
-
-        return _bgr_to_standard(arr)
-
+        if arr is not None and _classify_opencv_array(arr, ext) == "opencv":
+            if size is not None:
+                h, w = arr.shape[:2]
+                scale = max(size / w, size / h)
+                if abs(scale - 1.0) > 0.01:
+                    new_w = max(1, round(w * scale))
+                    new_h = max(1, round(h * scale))
+                    interp = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LANCZOS4
+                    arr = cv2.resize(arr, (new_w, new_h), interpolation=interp)
+            return _bgr_to_standard(arr)
     except Exception as e:
-        try:
-            result = _pil_read_numpy(path, size)
-            if result is not None:
-                return result
-        except Exception as pe:
-            AppLogger.warning(f"[image/loader] PIL fallback failed: {path} ({pe})")
-        AppLogger.warning(f"[image/loader] Failed to load image: {path} ({e})")
-        return None
+        cv2_error = e
 
-
-def _pil_read_numpy(path: str, size: int | None = None) -> np.ndarray | None:
     try:
-        img = Image.open(path)
-        img.load()
-    except Exception:
+        return _pil_read_numpy(path, size)
+    except Exception as pe:
+        AppLogger.warning(f"[image/loader] PIL fallback failed: {path} (cv2: {cv2_error or 'not decodable'}, PIL: {pe})", exc=pe)
         return None
+
+
+def _pil_read_numpy(path: str, size: int | None = None) -> np.ndarray:
+    img = Image.open(path)
+    img.load()
     if size is not None:
         w, h = img.size
         if w > 0 and h > 0:

@@ -163,3 +163,12 @@ class TestKeySpecCatalog:
     def test_key_sort_tuple_empty(self):
         t = self.catalog.key_sort_tuple("")
         assert t[0] == 9
+
+    def test_sort_main_keys_mixes_function_and_named_keys(self):
+        result = self.catalog.sort_main_keys(["Minus", "A", "Del", "F10", "1", "F2", "Up", "Esc"])
+        assert result == ["Esc", "F2", "F10", "Up", "Del", "1", "A", "Minus"]
+
+    def test_key_sort_tuple_uses_key_name_spelling(self):
+        assert self.catalog.key_sort_tuple("Del")[0] == 3
+        assert self.catalog.key_sort_tuple("PgDown")[0] == 3
+        assert self.catalog.key_sort_tuple("Esc")[0] == 1

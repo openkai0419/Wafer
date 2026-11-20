@@ -123,11 +123,14 @@ class TestCreateApp:
             patch("PySide6.QtWidgets.QApplication"),
             patch("wafer.qt.common.app_icon.get_icon"),
             patch("wafer.qt.common.tooltip.install_instant_tooltips"),
+            patch("main.AppLogger.on_uncaught_exception") as on_uncaught,
         ):
             from main import _create_app
+            from wafer.qt.widgets.dialogs import show_unexpected_error
 
             _create_app(shared_opengl=shared_opengl)
         assert enable.called is shared_opengl
+        on_uncaught.connect.assert_called_once_with(show_unexpected_error)
 
 
 class TestTrayStartup:
@@ -145,6 +148,7 @@ class TestTrayStartup:
                 plugin="image",
                 parent_pid=None,
                 slot=None,
+                profile=None,
             )
             from main import main
 
@@ -381,7 +385,7 @@ class TestPluginLoadingPerRole:
     def run_role(self, **role):
         import argparse
 
-        values = dict(tray=False, viewer=False, webui=False, indexer=None, collector=None, parser=None, plugin="image", parent_pid=None, slot=None)
+        values = dict(tray=False, viewer=False, webui=False, indexer=None, collector=None, parser=None, plugin="image", parent_pid=None, slot=None, profile=None)
         values.update(role)
         entries = MagicMock()
         with (
@@ -460,3 +464,14 @@ class TestOpenblasThreadDefault:
 
     def test_a_preset_value_is_kept(self):
         assert self.imported_value("1") == "1"
+
+
+def test_a_launch_without_a_console_discards_output_instead_of_keeping_it():
+    import os
+    import subprocess
+    import sys
+
+    code = "import sys; sys.stdout = None; sys.stderr = None; import main; sys.__stdout__.write(f'{getattr(sys.stdout, \"name\", None)}|{getattr(sys.stderr, \"name\", None)}')"
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=25, cwd=str(Path(__file__).resolve().parents[2]))
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().splitlines()[-1] == f"{os.devnull}|{os.devnull}"

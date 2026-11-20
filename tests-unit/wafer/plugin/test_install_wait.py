@@ -1,5 +1,9 @@
+import sys
 from unittest.mock import Mock, patch
 
+import pytest
+
+from wafer.core.common.profile import PROFILE_ARG, current_profile
 from wafer.plugin import install_wait
 
 
@@ -195,3 +199,50 @@ def test_describe_status_names_the_current_item():
     status = {"phase": "pip", "current": {"name": "wd14", "index": 1, "total": 2}}
     assert install_wait.describe_status(status) == "Installing wd14 (1/2)"
     assert install_wait.describe_status(None) == "Waiting"
+
+
+@pytest.fixture
+def debug_profile(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["main.py", PROFILE_ARG, "debug-x"])
+    current_profile.cache_clear()
+    install_wait._log_left_to_normal_wafer.cache_clear()
+    yield
+    current_profile.cache_clear()
+    install_wait._log_left_to_normal_wafer.cache_clear()
+
+
+def test_debug_profile_does_not_see_the_shared_pending_queue(debug_profile):
+    with (
+        patch.object(install_wait.installer_queue, "has_pending_queue", return_value=True),
+        patch.object(install_wait.AppLogger, "info") as info,
+    ):
+        assert install_wait.has_pending_install() is False
+        assert install_wait.has_pending_install() is False
+    assert info.call_count == 1
+
+
+def test_debug_profile_wait_returns_without_waiting_on_a_pending_queue(debug_profile):
+    wait_for_tray = Mock()
+    with (
+        patch.object(install_wait.installer_queue, "has_pending_queue", return_value=True),
+        patch.object(install_wait, "SafeProcessLock") as lock_cls,
+        patch.object(install_wait, "prepare_tray") as prepare,
+        patch.object(install_wait.time, "sleep") as sleep,
+    ):
+        install_wait.wait_for_install(restart_idle_tray=Mock(), wait_for_tray=wait_for_tray)
+        install_wait.wait_for_install_headless()
+        assert install_wait.is_install_finished(None, False) is True
+    lock_cls.assert_not_called()
+    prepare.assert_not_called()
+    wait_for_tray.assert_not_called()
+    sleep.assert_not_called()
+
+
+def test_no_profile_still_sees_the_pending_queue(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["main.py"])
+    current_profile.cache_clear()
+    try:
+        with patch.object(install_wait.installer_queue, "has_pending_queue", return_value=True):
+            assert install_wait.has_pending_install() is True
+    finally:
+        current_profile.cache_clear()

@@ -4,7 +4,6 @@ import pytest
 from wafer.plugin.settings import PluginSettings, _write_ini_value, default_enabled_per_db
 from wafer.plugin.installer import RestartScope
 from wafer.plugin.kinds import PLUGIN_KINDS
-import wafer.plugin.settings as settings_mod
 
 
 class DefaultEnabledPlugin:
@@ -28,7 +27,7 @@ class OnPerDbOnly:
 @pytest.fixture(autouse=True)
 def isolate_ini(tmp_path, monkeypatch):
     ini = str(tmp_path / "viewer_plugins.ini")
-    monkeypatch.setattr(settings_mod, "_ini_path", lambda: ini)
+    monkeypatch.setattr("wafer.plugin.config._ini_path", lambda: ini)
     yield ini
 
 
@@ -177,3 +176,24 @@ class TestIniLowLevel:
         assert not os.path.isfile(isolate_ini)
         _write_ini_value("section/key", "value")
         assert os.path.isfile(isolate_ini)
+
+    def test_failed_write_leaves_the_file_intact(self, isolate_ini, monkeypatch):
+        PluginSettings().set_enabled_overrides({"viewer:Video": False})
+        before = open(isolate_ini, encoding="utf-8").read()
+
+        def fail(path, parser):
+            raise OSError("disk full")
+
+        monkeypatch.setattr("wafer.plugin.config.write_ini", fail)
+        with pytest.raises(OSError):
+            PluginSettings().set_restart_scope(RestartScope.ALL)
+        assert open(isolate_ini, encoding="utf-8").read() == before
+        assert PluginSettings().enabled_overrides() == {"viewer:Video": False}
+
+    def test_shares_the_file_with_plugin_config(self):
+        from wafer.plugin.config import PluginConfig
+
+        PluginSettings().set_active_folders(["image"])
+        PluginConfig("wd14", {"a": 1}).save(a=3)
+        assert PluginSettings().active_folders() == ["image"]
+        assert PluginConfig("wd14", {"a": 1}).load() == {"a": 3}

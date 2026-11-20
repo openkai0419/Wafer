@@ -49,6 +49,7 @@ class IndexerProcess:
         self.parser_receiver = None
         self._progress = None
         self.parser_names: list[str] = []
+        self.stopped = False
         self.zmq = Node("indexer", db=name, consumer=True, broker_lost_timeout=BROKER_LOST_TIMEOUT)
         self.zmq.subscribe("cleanup", lambda msg: self.cleanup() or True)
         self.zmq.subscribe("rescan", lambda msg: self.rescan() or True)
@@ -101,33 +102,32 @@ class IndexerProcess:
         self.scanner = DirectoryScanner(db_path, self.scheduler, self.writer, progress, collectors)
         self.scanner.start()
 
-        self.receiver = CollectorReceiver(self.scheduler, self.writer, progress)
-        self.zmq.subscribe("collect.result", self.receiver.handle_result)
-
         self.dispatcher = CollectorDispatcher(
             self.db_name,
             db_path,
             self.scheduler,
             self.writer,
             progress,
-            collectors=collector_names,
+            plugins=collector_names,
             tray_pid=self._tray_pid,
         )
+        self.receiver = CollectorReceiver(self.scheduler, self.writer, progress, on_batch_done=self.dispatcher.batch_done)
+        self.zmq.subscribe("collect.result", self.receiver.handle_result)
         self.dispatcher.start(self.zmq)
 
         if parser_names:
             parser_resolver.bind_db(self.db_name)
-            self.parser_receiver = ParserReceiver(self.scheduler, self.writer, progress)
-            self.zmq.subscribe("parse.result", self.parser_receiver.handle_result)
             self.parser_dispatcher = ParserDispatcher(
                 self.db_name,
                 db_path,
                 self.scheduler,
                 self.writer,
                 progress,
-                parsers=parser_names,
+                plugins=parser_names,
                 tray_pid=self._tray_pid,
             )
+            self.parser_receiver = ParserReceiver(self.scheduler, self.writer, progress, on_batch_done=self.parser_dispatcher.batch_done)
+            self.zmq.subscribe("parse.result", self.parser_receiver.handle_result)
             self.parser_dispatcher.start(self.zmq)
             self.parser_receiver.set_request_dispatch(self.parser_dispatcher.request_dispatch)
             self.receiver.set_parser_dispatch(
@@ -150,7 +150,7 @@ class IndexerProcess:
         self.setting_watcher.start()
 
         if is_new:
-            self.zmq.send("db.created", self.db_name, dst="viewer")
+            self.zmq.send("db.created", self.db_name, dst="ALL")
 
     def _register_periodic_tasks(self, collector_names=(), parser_names=()):
         self.scheduler.set_idle_base_delay(self._child_idle_delay(collector_names, parser_names))
@@ -175,7 +175,7 @@ class IndexerProcess:
                 create_task=lambda: Task.create(
                     "reset_stale",
                     priority=TaskPriority.RETRY,
-                    run=lambda: self.writer.reset_stale(),
+                    run=self._reset_stale_dispatched,
                 ),
             )
         )
@@ -238,6 +238,11 @@ class IndexerProcess:
         delay = max(timeouts) + _IDLE_GRACE_SECONDS
         AppLogger.info(f"[Indexer] Idle task delay floor: {delay:.1f}s (child batch timeout max={max(timeouts):.1f}s)")
         return delay
+
+    def _reset_stale_dispatched(self):
+        for dispatcher in (self.dispatcher, self.parser_dispatcher):
+            if dispatcher:
+                dispatcher.reset_stale()
 
     def _request_backfill(self):
         if self.scanner:
@@ -326,7 +331,7 @@ class IndexerProcess:
             if scope_all:
                 self.rescan()
             elif prefixes and self.scanner:
-                self.scanner.request_scan(list(prefixes))
+                self.scanner.request_scan(list(prefixes), partial=True)
             elif sources and self.scanner:
                 self.scanner.request_update(list(sources))
             self._progress.send_event("update")
@@ -440,7 +445,7 @@ class IndexerProcess:
                     "request_id": request_id,
                     "db": self.db_name,
                 },
-                dst="viewer",
+                dst="ALL",
             )
             self._progress.send_event("update")
 
@@ -491,7 +496,7 @@ class IndexerProcess:
                     "upserted": int(data.get("upserted") or 0),
                     "source_deleted": int(data.get("source_deleted") or 0),
                 },
-                dst="viewer",
+                dst="ALL",
             )
             if self._progress is not None:
                 self._progress.send_event("update")
@@ -508,17 +513,22 @@ class IndexerProcess:
 
     def delete(self):
         AppLogger.info(f"indexer delete: {self.db_name}")
+        self.zmq.send("db.deleting", self.db_name, dst="ALL")
         self._stop_components()
         if self.setting_db:
             delete_database_files(self.setting_db.db_name, force=True)
         delete_database_files(data_db_path(self.db_name), force=True)
         remove_orphan_databases()
-        self.zmq.send("db.deleted", self.db_name, dst="viewer")
+        self.zmq.send("db.deleted", self.db_name, dst="ALL")
         self._stop_zmq()
+        self.stopped = True
         if self._stop_event:
             self._stop_event.set()
 
     def stop(self):
+        if self.stopped:
+            return
+        self.stopped = True
         AppLogger.info(f"indexer stop: {self.db_name}")
         self._stop_components()
         self._stop_zmq()
@@ -543,4 +553,4 @@ class IndexerProcess:
         try:
             self.zmq.stop()
         except Exception as e:
-            AppLogger.debug(f"zmq.stop failed: {e}")
+            AppLogger.warning(f"[Indexer] zmq.stop failed: {self.db_name}", exc=e)

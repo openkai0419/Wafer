@@ -4,9 +4,10 @@ import os
 import re
 import sqlite3
 import threading
+from functools import lru_cache
 
 from ...constants import VIRTUAL_PATH_SEPARATOR
-from .db_utils import apply_read_pragmas
+from .db_utils import escape_like, open_readonly
 from .key_value import SCOPE_ALL, SCOPE_META_INFO, SCOPE_TAG, iter_data_scopes, key_prefix_lookup_sql
 from ..common.paths import normalize_path
 from ..common.virtual_paths import build_virtual_path, is_virtual_path, split_virtual_path
@@ -21,6 +22,15 @@ STANDARD_KEYS_SOURCES = ("size", "modified", "created", "collected")
 STANDARD_KEYS = STANDARD_KEYS_FILES + STANDARD_KEYS_SOURCES
 
 ALL_PATHS_SQL = "SELECT path FROM files"
+
+
+@lru_cache(maxsize=64)
+def compiled_regex(pattern: str) -> re.Pattern:
+    return re.compile(pattern)
+
+
+def regexp(pattern: str, value) -> bool:
+    return value is not None and compiled_regex(pattern).search(str(value)) is not None
 
 
 def path_prefix_condition(column: str, prefix: str) -> tuple[str, list]:
@@ -155,7 +165,7 @@ class FileSearchEngine:
         try:
             if not os.path.exists(self.db_path):
                 return False
-            conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True, check_same_thread=False)
+            conn = open_readonly(self.db_path)
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
             required = ("meta_info", "tags", "files", "files_full")
@@ -165,7 +175,7 @@ class FileSearchEngine:
                     AppLogger.warning(f"Required table/view '{name}' not found in DB.")
                     conn.close()
                     return False
-            apply_read_pragmas(conn)
+            conn.create_function("regexp", 2, regexp, deterministic=True)
             self.conn = conn
             return True
         except sqlite3.OperationalError as e:
@@ -202,12 +212,14 @@ class FileSearchEngine:
         if scope not in (SCOPE_TAG, SCOPE_META_INFO, SCOPE_ALL):
             return result
         cur = self.conn.cursor()
-        like_pattern = f"{key_prefix}%"
+        like_pattern = f"{escape_like(key_prefix)}%"
 
         def _consume(rows):
             for row in rows:
                 key = row["key"]
-                suffix = key[len(key_prefix) :] if key else ""
+                if not key or not key.startswith(key_prefix):
+                    continue
+                suffix = key[len(key_prefix) :]
                 if not suffix:
                     continue
                 values = result.setdefault(row["path"], [])

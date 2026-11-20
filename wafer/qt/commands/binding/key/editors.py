@@ -4,6 +4,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ....common.dpi import dpix
 from ...command.payload import CommandPayload
 from ..common import WidgetRef
+from ..manager import BindingManager
 from .store import KeyBindingStore
 from .shortcutmanager import ShortcutManager
 from .sequence import KeySequence, KeySpecCatalog
@@ -216,12 +217,10 @@ class KeyBindingEditor(BindingEditorBase):
         self._select_lists_for_sequence(seq)
 
     def _apply(self):
-        data = self._merged_data()
-        self._store.set_all(data)
-        self._apply_to_widgets(data, "set_shortcut_bindings")
-        from ..manager import BindingManager
-
-        self._save_store(BindingManager.instance().key_bindings_path())
+        self._store.set_all(self._merged_data())
+        manager = BindingManager.instance()
+        manager.apply_registered()
+        self._save_store(manager.key_bindings_path())
         self.accept()
 
     def _search(self):

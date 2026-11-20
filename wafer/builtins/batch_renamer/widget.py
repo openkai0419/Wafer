@@ -20,7 +20,7 @@ from ...qt.widgets.popup import PopupBase
 from ...core.common.formatting import natural_key
 from ...qt.common.dpi import dpix
 from ...core.logs import AppLogger
-from ...core.common.paths import safe_is_file
+from ...core.common.paths import safe_exists, safe_is_file
 from ...core.db.path_values import fetch_path_values
 from .engine import RenameColumn, RenameEngine, RenameResult
 from .overlay import ThumbnailOverlay
@@ -157,6 +157,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         self._stack.setCurrentWidget(self._empty_page)
 
         self.setAcceptDrops(True)
+        self.destroyed.connect(lambda: self._cancel_all_pending())
 
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
         mime = event.mimeData()
@@ -770,7 +771,6 @@ class BatchRenameWidget(QtWidgets.QWidget):
             overlay.update()
 
     def hideEvent(self, event):
-        self._cancel_all_pending()
         BatchRenameWidget._saved_state = self._serialise_columns()
         super().hideEvent(event)
 
@@ -1197,6 +1197,9 @@ class BatchRenameWidget(QtWidgets.QWidget):
                     keys=keys,
                     initial_keys=initial_keys,
                 )
+                if cancel.is_cancelled():
+                    return
+                RenameEngine.check_files(paths, results)
                 if cancel.is_cancelled():
                     return
                 conflicts = sum(1 for r in results if r.conflict)
@@ -1639,16 +1642,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
             self._rename_btn.setEnabled(False)
             self._schedule_pending_update()
             return
-        if self._global_errors or any(r.conflict or r.errors for r in self._results):
-            return
-        missing = [p for p, r in zip(self._paths, self._results) if not p.exists()]
-        if missing:
-            self._refresh(auto_size=False)
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Rename",
-                f"{len(missing)} file(s) no longer exist",
-            )
+        if self._global_errors or any(r.conflict or r.errors or r.missing for r in self._results):
             return
         rename_map = self.get_rename_map()
         if not rename_map:
@@ -1693,33 +1687,31 @@ class BatchRenameWidget(QtWidgets.QWidget):
                 is_dir=False,
                 action="cut",
                 dst_default=Path(new),
-                conflict=False,
+                conflict=safe_exists(new),
                 suggested_dst=None,
             )
             for i, (old, new) in enumerate(items)
         ]
         results = execute_paste_plans_with_ui(
             plans=plans,
-            overwrite_mode="overwrite",
+            overwrite_mode="ask",
             parent=self,
         )
         succeeded: dict[str, str] = {}
         failed: list[tuple[str, str]] = []
+        skipped = 0
         for (old, new), result in zip(items, results):
             if result.status == "ok":
                 succeeded[old] = result.dst or new
-            elif result.status != "skipped":
+            elif result.status == "skipped":
+                skipped += 1
+            else:
                 AppLogger.warning(f"Rename failed: {old} -> {new} ({result.error})")
                 failed.append((Path(old).name, result.error or "unknown error"))
         self._apply_rename_results(succeeded)
-        total = len(succeeded) + len(failed)
-        if failed and succeeded:
-            text = f"Renamed {len(succeeded)}/{total} file(s). {len(failed)} failed."
-        elif failed:
-            text = f"All {len(failed)} rename(s) failed."
-        elif succeeded:
-            text = f"{len(succeeded)} file(s) renamed."
-        else:
+        counts = [(len(succeeded), "renamed"), (len(failed), "failed"), (skipped, "skipped")]
+        text = ", ".join(f"{n} file(s) {label}" for n, label in counts if n)
+        if not text:
             return
         if failed:
             QtWidgets.QMessageBox.warning(self, "Rename Result", text)
@@ -1741,14 +1733,12 @@ class BatchRenameWidget(QtWidgets.QWidget):
                 new_path = Path(succeeded[sp])
                 self._initial_paths[i] = new_path
                 self._initial_keys[i] = str(new_path).replace("\\", "/")
-        new_meta: dict[str, dict[str, str]] = {}
-        for key, meta in self._metadata.items():
-            matched = next((new for old, new in succeeded.items() if key == old or key == old.replace("\\", "/")), None)
-            if matched:
-                new_meta[matched.replace("\\", "/")] = meta
-            else:
-                new_meta[key] = meta
-        self._metadata = new_meta
+        moved: dict[str, str] = {}
+        for old, new in succeeded.items():
+            new_key = new.replace("\\", "/")
+            moved[old] = new_key
+            moved[old.replace("\\", "/")] = new_key
+        self._metadata = {moved.get(key, key): meta for key, meta in self._metadata.items()}
         self._thumbs.clear()
         self._thumb_visible.clear()
         self._title.setText(self._title_text())

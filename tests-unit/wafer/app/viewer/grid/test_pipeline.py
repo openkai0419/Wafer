@@ -310,3 +310,77 @@ class TestDispatchThumbnail:
             assert delivered["image"] is big_image
         finally:
             _mod.grid_resolver.load = orig
+
+
+class _InlineDispatcher:
+    def __init__(self):
+        self.invoked = []
+
+    def post(self, fn, priority=5, cancel=None):
+        fn()
+
+    def invoke(self, fn):
+        self.invoked.append(fn)
+
+
+class TestStaleDelivery:
+    def test_a_layout_cancelled_while_queued_is_not_emitted(self):
+        inline = _InlineDispatcher()
+        pipeline = GridPipeline(inline, inline, inline, FakeCache(), lambda i: None, lambda i, n: None, _noop_appear)
+        emitted = []
+        pipeline.layout_ready.connect(emitted.append)
+        pipeline.request_layout([1.0, 1.0], 100, 4, 800, 600)
+
+        pipeline.cancel_all()
+        inline.invoked[0]()
+
+        assert emitted == []
+
+    def test_an_image_for_a_replaced_index_is_not_delivered(self):
+        from PySide6.QtGui import QImage
+
+        inline = _InlineDispatcher()
+        widget = MagicMock()
+        cache = FakeCache()
+        cache["/old.png"] = QImage(300, 300, QImage.Format_ARGB32)
+        pipeline = GridPipeline(inline, inline, inline, cache, lambda i: widget, lambda i, n: None, _noop_appear)
+        old = CancelToken()
+        pipeline._active[0] = old
+        plan = RenderPlan(source="/old.png", path="/old.png", resolved_path="/old.png", handler=None)
+        pipeline._load_image(0, plan, QtCore.QSize(200, 200), lambda p, s=None: None, old)
+
+        pipeline.cancel_all()
+        pipeline._active[0] = CancelToken()
+        inline.invoked[0]()
+
+        widget.set_image.assert_not_called()
+
+    def test_a_thumbnail_for_a_replaced_index_is_not_delivered(self):
+        from PySide6.QtGui import QImage
+        from wafer.plugin.grid.base import WidgetGridPlugin
+
+        delivered = []
+
+        class FakePlugin(WidgetGridPlugin):
+            NAME = "fake_stale_thumb"
+            WIDGET_CLASS = MagicMock
+            REQUIRE_THUMBNAIL = True
+
+            def on_thumb_loaded(self, widget, image):
+                delivered.append(image)
+
+        inline = _InlineDispatcher()
+        cache = FakeCache()
+        cache["/old.mp4"] = QImage(300, 300, QImage.Format_ARGB32)
+        pipeline = GridPipeline(inline, inline, inline, cache, lambda i: MagicMock(), lambda i, n: None, _noop_appear)
+        plugin = FakePlugin()
+        old = CancelToken()
+        pipeline._active[0] = old
+        plan = RenderPlan(source="/old.mp4", path="/old.mp4", resolved_path="/old.mp4", handler=plugin)
+        pipeline._dispatch_thumbnail(0, plan, QtCore.QSize(200, 200), plugin, old)
+
+        pipeline.cancel_all()
+        pipeline._active[0] = CancelToken()
+        inline.invoked[0]()
+
+        assert delivered == []

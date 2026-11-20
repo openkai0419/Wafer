@@ -45,6 +45,15 @@ def try_float(v):
     return None
 
 
+def run_after(delay: float, fn: Callable[[], None]):
+    if delay <= 0:
+        fn()
+        return
+    timer = threading.Timer(delay, fn)
+    timer.daemon = True
+    timer.start()
+
+
 class ResultBuffer:
     def __init__(self, merge_fn: Callable[[list[dict[str, Any]]], dict[str, Any]]):
         self._merge_fn = merge_fn

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 from ....core.logs import AppLogger
 
@@ -103,6 +103,13 @@ def _wheel_steps_from_event(event: Any) -> int | None:
     return None
 
 
+class Lazy:
+    __slots__ = ("compute",)
+
+    def __init__(self, compute: Callable[[], Any]):
+        self.compute = compute
+
+
 @dataclass(slots=True)
 class CommandContext:
     pos: Any = None
@@ -192,15 +199,13 @@ class CommandContext:
     def get(self, key: str, default: Any = None) -> Any:
         k = str(key)
         if k in self.extras:
-            return self.extras[k]
+            value = self.extras[k]
+            if isinstance(value, Lazy):
+                value = self.extras[k] = value.compute()
+            return value
         if not k.startswith("_") and hasattr(self, k):
             return getattr(self, k)
         return default
-
-    def get_many(self, keys, default: Any = None) -> list:
-        if not keys:
-            return []
-        return [self.get(k, default) for k in keys]
 
     def get_instance(self, name: str, default: Any = None) -> Any:
         xs = self.get_instances(name)

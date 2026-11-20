@@ -1,4 +1,9 @@
+import socket
+import sys
+
 import pytest
+
+from wafer.core.common.profile import current_profile
 
 from wafer.app.webui.settings import (
     DEFAULT_HOST,
@@ -95,3 +100,34 @@ def test_thumb_cache_is_saved_next_to_the_bind(settings):
 def test_broken_thumb_cache_falls_back_to_the_default(settings, tmp_path):
     (tmp_path / "webui_settings.ini").write_text("[webui]\nthumb_cache_mb = lots\n", encoding="utf-8")
     assert settings.thumb_cache_mb() == 512
+
+
+@pytest.fixture
+def debug_profile(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["main.py", "--profile", "debug-port"])
+    current_profile.cache_clear()
+    yield
+    current_profile.cache_clear()
+
+
+def test_resolve_bind_uses_free_port_in_profile(settings, debug_profile):
+    settings.save(HOST_ALL, 9000)
+    host, port = settings.resolve_bind(None, None)
+    assert host == HOST_ALL
+    assert port not in (DEFAULT_PORT, 9000)
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", port))
+
+
+def test_resolve_bind_keeps_cli_port_in_profile(settings, debug_profile):
+    assert settings.resolve_bind(None, 8123) == (DEFAULT_HOST, 8123)
+
+
+def test_resolve_bind_keeps_configured_port_without_profile(settings, monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["main.py"])
+    current_profile.cache_clear()
+    try:
+        settings.save(HOST_ALL, 9000)
+        assert settings.resolve_bind(None, None) == (HOST_ALL, 9000)
+    finally:
+        current_profile.cache_clear()

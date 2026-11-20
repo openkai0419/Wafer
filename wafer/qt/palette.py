@@ -7,8 +7,11 @@ def _hex(color) -> str:
     return color.name()
 
 
-def _rgba(color, alpha: float) -> str:
-    return f"rgba({color.red()},{color.green()},{color.blue()},{alpha})"
+def rgba(color, alpha: float) -> str:
+    from PySide6 import QtGui
+
+    c = QtGui.QColor(color)
+    return f"rgba({c.red()},{c.green()},{c.blue()},{alpha})"
 
 
 def _mix(c1, c2, ratio: float = 0.5):
@@ -79,8 +82,8 @@ class ThemePalette:
             bg_secondary=_hex(base),
             bg_tertiary=_hex(_mix(window, base, 0.5)),
             bg_elevated=_hex(base),
-            bg_hover=_rgba(overlay, 0.08 if dark else 0.06),
-            bg_pressed=_rgba(overlay, 0.15 if dark else 0.12),
+            bg_hover=rgba(overlay, 0.08 if dark else 0.06),
+            bg_pressed=rgba(overlay, 0.15 if dark else 0.12),
             text_primary=_hex(window_text),
             text_secondary=_hex(mid if not dark else midlight),
             text_tertiary=_hex(_mix(window_text, mid if not dark else midlight, 0.5)),

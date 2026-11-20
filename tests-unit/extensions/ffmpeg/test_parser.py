@@ -1,3 +1,4 @@
+import pytest
 from extensions.ffmpeg.parser import flatten, _parse_frame_rate
 
 
@@ -121,6 +122,22 @@ class TestFlatten:
         meta, aspect = flatten(data)
         assert meta["VideoCodec"] == "h264"
         assert meta["Width"] == "1920"
+
+
+@pytest.mark.parametrize(
+    "rotation_fields, expected",
+    [
+        ({"side_data_list": [{"side_data_type": "Display Matrix", "rotation": -90}]}, 1080 / 1920),
+        ({"side_data_list": [{"rotation": 270}]}, 1080 / 1920),
+        ({"tags": {"rotate": "90"}}, 1080 / 1920),
+        ({"side_data_list": [{"rotation": 180}]}, 1920 / 1080),
+    ],
+)
+def test_rotated_video_aspect(rotation_fields, expected):
+    stream = {"codec_type": "video", "width": 1920, "height": 1080, **rotation_fields}
+    meta, aspect = flatten({"format": {}, "streams": [stream]})
+    assert abs(aspect - expected) < 0.001
+    assert (meta["Width"], meta["Height"]) == ("1920", "1080")
 
 
 def test_probe_runs_ffprobe_tied_to_this_process(monkeypatch):

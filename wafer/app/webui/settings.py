@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import os
 import re
+import socket
 import threading
 from configparser import ConfigParser
 
 from ...core.logs import AppLogger
 from ...core.common.ini_io import write_ini
 from ...core.common.paths import resolve_data_path
+from ...core.common.profile import current_profile
 from ...web.media import THUMB_CACHE_DEFAULT_MB
 
 _FILENAME = "webui_settings.ini"
@@ -55,6 +57,12 @@ def parse_allowed_hosts(text: str) -> tuple[str, ...]:
     return hosts
 
 
+def free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind((HOST_LOCAL, 0))
+        return probe.getsockname()[1]
+
+
 def _path() -> str:
     return resolve_data_path(_FILENAME)
 
@@ -100,5 +108,10 @@ class WebUISettings:
 
     def resolve_bind(self, cli_host: str | None, cli_port: int | None) -> tuple[str, int]:
         host = cli_host if cli_host is not None else self.host()
-        port = cli_port if cli_port is not None else self.port()
+        if cli_port is not None:
+            port = cli_port
+        elif current_profile() is not None:
+            port = free_port()
+        else:
+            port = self.port()
         return host, int(port)

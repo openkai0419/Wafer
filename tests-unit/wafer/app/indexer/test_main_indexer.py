@@ -42,8 +42,35 @@ class TestDelete:
         proc.setting_db = MagicMock()
         proc.setting_db.db_name = "test_setting.db"
         proc.delete()
-        node.send.assert_called_with("db.deleted", "test", dst="viewer")
+        node.send.assert_called_with("db.deleted", "test", dst="ALL")
         assert stop.is_set()
+
+    @patch("wafer.app.indexer.main_indexer.remove_orphan_databases")
+    @patch("wafer.app.indexer.main_indexer.delete_database_files")
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_stop_after_delete_does_nothing(self, mock_node_cls, mock_del_files, mock_orphan):
+        node = MagicMock()
+        mock_node_cls.return_value = node
+        proc = IndexerProcess("test", stop_event=threading.Event())
+        proc.dispatcher = MagicMock()
+        proc.delete()
+        proc.stop()
+        proc.dispatcher.stop.assert_called_once()
+        node.stop.assert_called_once()
+
+    @patch("wafer.app.indexer.main_indexer.remove_orphan_databases")
+    @patch("wafer.app.indexer.main_indexer.delete_database_files")
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_delete_announces_db_deleting_before_removing_files(self, mock_node_cls, mock_del_files, mock_orphan):
+        node = MagicMock()
+        mock_node_cls.return_value = node
+        order = []
+        node.send.side_effect = lambda topic, *a, **kw: topic != "dev.log" and order.append((topic, kw.get("dst")))
+        mock_del_files.side_effect = lambda *a, **kw: order.append(("delete_files", None))
+        proc = IndexerProcess("test")
+        proc.setting_db = None
+        proc.delete()
+        assert order[:2] == [("db.deleting", "ALL"), ("delete_files", None)]
 
     @patch("wafer.app.indexer.main_indexer.remove_orphan_databases")
     @patch("wafer.app.indexer.main_indexer.delete_database_files")
@@ -55,7 +82,7 @@ class TestDelete:
         proc.setting_db = None
         proc.delete()
         mock_del_files.assert_called_once()
-        node.send.assert_called_with("db.deleted", "test", dst="viewer")
+        node.send.assert_called_with("db.deleted", "test", dst="ALL")
 
 
 class TestPeriodicBackfill:
@@ -128,6 +155,21 @@ class TestPeriodicTaskConfig:
         assert tasks["idle_rescan"].idle_delay == 300.0
         assert tasks["idle_progress_reset"].idle_delay == 30.0
         assert tasks["cleanup_optimize"].idle_delay == 1800.0
+
+    @patch("wafer.app.indexer.main_indexer.Node")
+    def test_stale_reset_goes_through_both_dispatchers(self, mock_node_cls):
+        mock_node_cls.return_value = MagicMock()
+        proc = IndexerProcess("test")
+        proc.scheduler = MagicMock()
+        proc.dispatcher = MagicMock()
+        proc.parser_dispatcher = MagicMock()
+        proc.writer = MagicMock()
+        proc._register_periodic_tasks()
+        tasks = {call.args[0].name: call.args[0] for call in proc.scheduler.add_periodic_task.call_args_list}
+        tasks["retry_stale_dispatched"].create_task().run()
+        proc.dispatcher.reset_stale.assert_called_once_with()
+        proc.parser_dispatcher.reset_stale.assert_called_once_with()
+        proc.writer.reset_stale.assert_not_called()
 
     @patch("wafer.app.indexer.main_indexer.Node")
     def test_idle_base_delay_uses_grace_without_children(self, mock_node_cls):
@@ -216,7 +258,7 @@ class TestOnRecollect:
         task.run()
         proc.writer.delete_source_trees.assert_called_once_with(["/dir"])
         task.on_complete()
-        proc.scanner.request_scan.assert_called_once_with(["/dir"])
+        proc.scanner.request_scan.assert_called_once_with(["/dir"], partial=True)
 
     @patch("wafer.app.indexer.main_indexer.Node")
     def test_forget_all(self, mock_node_cls):
@@ -359,7 +401,7 @@ class TestOnKvConvertScope:
                 "upserted": 2,
                 "source_deleted": 1,
             },
-            dst="viewer",
+            dst="ALL",
         )
 
 

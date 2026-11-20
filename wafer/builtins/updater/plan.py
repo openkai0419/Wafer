@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -45,10 +44,6 @@ def update_dir(app_root: str | Path) -> Path:
 
 def next_dir(app_root: str | Path) -> Path:
     return update_dir(app_root) / NEXT_DIR_NAME
-
-
-def backup_dir(app_root: str | Path) -> Path:
-    return update_dir(app_root) / BACKUP_DIR_NAME
 
 
 def download_dir(app_root: str | Path) -> Path:
@@ -168,46 +163,3 @@ def read_plan(path: str | Path) -> list[PlanOp]:
             raise PlanError(f"invalid plan line: {raw!r}")
         ops.append(PlanOp(src=validate_plan_relpath(fields[2]), dst=validate_plan_relpath(fields[3]), optional=fields[1] == "1"))
     return ops
-
-
-def _resolve_within(root: Path, rel: str) -> Path:
-    path = (root / validate_plan_relpath(rel)).resolve(strict=False)
-    root_resolved = root.resolve(strict=False)
-    if path != root_resolved and root_resolved not in path.parents:
-        raise PlanError(f"plan path escapes app root: {rel!r}")
-    return path
-
-
-def execute_plan(ops: list[PlanOp], app_root: str | Path) -> None:
-    root = Path(app_root)
-    backup = backup_dir(root)
-    if backup.exists():
-        shutil.rmtree(backup)
-
-    executed: list[tuple[Path, Path]] = []
-    try:
-        for op in ops:
-            src = _resolve_within(root, op.src)
-            dst = _resolve_within(root, op.dst)
-            if not src.exists():
-                if op.optional:
-                    continue
-                raise PlanError(f"required source missing: {op.src}")
-            if dst.exists():
-                if op.optional:
-                    continue
-                raise PlanError(f"destination already exists: {op.dst}")
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            os.rename(src, dst)
-            executed.append((src, dst))
-    except Exception:
-        _rollback(executed)
-        raise
-
-
-def _rollback(executed: list[tuple[Path, Path]]) -> None:
-    for src, dst in reversed(executed):
-        try:
-            os.rename(dst, src)
-        except OSError as e:
-            AppLogger.error(f"[Updater] Rollback failed for {dst} -> {src}: {e}", exc=e)

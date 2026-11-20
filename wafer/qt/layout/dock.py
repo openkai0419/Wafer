@@ -28,12 +28,13 @@ class PanelDockWidget(QtWidgets.QDockWidget):
 class FloatingWindow(QtWidgets.QWidget):
     closed = QtCore.Signal(str)
 
-    def __init__(self, name: str, widget: QtWidgets.QWidget, parent: QtWidgets.QWidget | None = None):
+    def __init__(self, name: str, widget: QtWidgets.QWidget, parent: QtWidgets.QWidget | None = None, *, closable: bool = True):
         super().__init__(
             parent,
             QtCore.Qt.Window | QtCore.Qt.WindowCloseButtonHint | QtCore.Qt.WindowMinimizeButtonHint | QtCore.Qt.WindowMaximizeButtonHint,
         )
         self.panel_name = name
+        self.closable = closable
         self.setWindowTitle(name)
         layout = QtWidgets.QVBoxLayout(self)
         m = dpix(5)
@@ -42,8 +43,19 @@ class FloatingWindow(QtWidgets.QWidget):
         layout.addWidget(widget)
 
     def closeEvent(self, event):
+        if not self.closable:
+            event.ignore()
+            return
         self.closed.emit(self.panel_name)
         event.accept()
+
+    def force_close(self):
+        self.closable = True
+        try:
+            self.closed.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+        self.close()
 
 
 def create_dock(
@@ -66,8 +78,10 @@ def apply_floating(
     widget: QtWidgets.QWidget,
     state: FloatingState | None = None,
     parent: QtWidgets.QWidget | None = None,
+    *,
+    closable: bool = True,
 ) -> FloatingWindow:
-    win = FloatingWindow(name, widget, parent)
+    win = FloatingWindow(name, widget, parent, closable=closable)
     if state:
         rect = constrain_to_screens(QtCore.QRect(state.x, state.y, state.width, state.height))
         win.setGeometry(rect)

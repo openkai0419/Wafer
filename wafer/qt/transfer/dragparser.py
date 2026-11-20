@@ -2,12 +2,33 @@ import os
 import platform
 import re
 
-from PySide6.QtCore import QMimeData
+from PySide6.QtCore import QBuffer, QIODevice, QMimeData
 from PySide6.QtGui import QImage
 
 from ...core.logs import AppLogger
 from ...core.common.paths import normalize_path, safe_exists, safe_getsize
 from ...core.platform.path_utils import is_http_url, sanitize_filename
+
+
+_FILE_DESCRIPTOR_LAYOUTS = {
+    True: (592, 520, "utf-16le"),
+    False: (332, 260, "mbcs"),
+}
+
+
+def _file_group_descriptor_format(mime: QMimeData) -> str | None:
+    formats = [f for f in mime.formats() if f.startswith("application/x-qt-windows-mime") and "FileGroupDescriptor" in f]
+    return next((f for f in formats if "FileGroupDescriptorW" in f), formats[0] if formats else None)
+
+
+def _encode_png(image: QImage) -> bytes | None:
+    if image.isNull():
+        return None
+    buffer = QBuffer()
+    buffer.open(QIODevice.WriteOnly)
+    if not image.save(buffer, "PNG"):
+        return None
+    return bytes(buffer.data())
 
 
 class ParsedItem:
@@ -29,10 +50,8 @@ class MimeDataParser:
         for fmt in deny_formats or ():
             if fmt and mime.hasFormat(str(fmt)):
                 return False
-        if platform.system() == "Windows":
-            fmt = next((f for f in mime.formats() if f.startswith("application/x-qt-windows-mime") and "FileGroupDescriptor" in f), None)
-            if fmt:
-                return True
+        if platform.system() == "Windows" and _file_group_descriptor_format(mime):
+            return True
         if mime.hasImage():
             return True
         if mime.hasUrls():
@@ -70,7 +89,7 @@ class MimeDataParser:
             except (RuntimeError, AttributeError):
                 has_local_url = False
         if platform.system() == "Windows" and not has_local_url:
-            fmt = next((f for f in mime.formats() if f.startswith("application/x-qt-windows-mime") and "FileGroupDescriptor" in f), None)
+            fmt = _file_group_descriptor_format(mime)
             if fmt:
                 try:
                     items.extend(self._parse_windows_clipboard(mime, fmt))
@@ -79,15 +98,10 @@ class MimeDataParser:
                 if items:
                     return items
         if mime.hasImage():
-            qimage = QImage(mime.imageData())
-            buffer = qimage.bits().asstring(qimage.sizeInBytes())
-            size = len(buffer)
-            formats = [f.lower() for f in mime.formats()]
-            fmt = next((f.split("/")[1] for f in formats if f.startswith("image/")), "png")
-            filename = f"image.{fmt}"
-            items.append(ParsedItem(source=buffer, name=filename, is_binary=True, mime_type=f"image/{fmt}", size=size))
-            if items:
-                return items
+            data = _encode_png(QImage(mime.imageData()))
+            if data is not None:
+                return [ParsedItem(source=data, name="image.png", is_binary=True, mime_type="image/png", size=len(data))]
+            AppLogger.warning("Dropped image data could not be encoded as PNG")
         if mime.hasUrls():
             for url in mime.urls():
                 if url.isLocalFile():
@@ -116,25 +130,17 @@ class MimeDataParser:
         return items
 
     def _parse_windows_clipboard(self, mime, fmt):
+        record_size, name_size, codec = _FILE_DESCRIPTOR_LAYOUTS["FileGroupDescriptorW" in fmt]
         data = bytes(mime.data(fmt))
         if len(data) < 4:
             raise ValueError("Invalid FileGroupDescriptor")
         count = int.from_bytes(data[0:4], "little")
-        offset = 4
+        if len(data) < 4 + count * record_size:
+            raise ValueError(f"Truncated FileGroupDescriptor: {count} entries in {len(data)} bytes")
         results = []
         for i in range(count):
-            patterns = [(592, 72, 72 + 260, "utf-16le"), (592, 72, 72 + 260, "mbcs"), (852, 332, 332 + 520, "utf-16le")]
-            filename = None
-            for size, start, end, codec in patterns:
-                name_bytes = data[offset + start : offset + end]
-                try:
-                    decoded = name_bytes.decode(codec).split("\x00", 1)[0].strip()
-                    if os.path.splitext(decoded)[1]:
-                        filename = decoded
-                        offset += size
-                        break
-                except (UnicodeDecodeError, LookupError):
-                    continue
+            name_start = 4 + i * record_size + 72
+            filename = data[name_start : name_start + name_size].decode(codec, errors="replace").split("\x00", 1)[0].strip()
             if not filename:
                 raise ValueError(f"Failed to extract filename at index {i}")
             content_fmt = f'application/x-qt-windows-mime;value="FileContents";index={i}'

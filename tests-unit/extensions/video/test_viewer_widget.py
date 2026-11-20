@@ -411,6 +411,32 @@ class TestAutoplayObserver:
         assert w._autoplay_advance is None
         w.cleanup()
 
+    def test_backward_seek_while_looping_does_not_advance(self, qtbot, _patch_mpv_viewer):
+        from types import SimpleNamespace
+
+        from PySide6.QtWidgets import QApplication
+
+        from extensions.video.widget import MPV_EVENT_PLAYBACK_RESTART
+
+        w, player = self._make_widget(qtbot, _patch_mpv_viewer)
+        called = []
+        w._autoplay_advance = lambda: called.append(True)
+        w.looping = True
+        player.duration = 10.0
+        w._on_mpv_time_pos("time-pos", 9.0)
+        w.seek_absolute(0.5)
+        w._on_mpv_time_pos("time-pos", 9.1)
+        w._on_mpv_event(SimpleNamespace(event_id=SimpleNamespace(value=MPV_EVENT_PLAYBACK_RESTART)))
+        w._on_mpv_time_pos("time-pos", 0.5)
+        w._on_mpv_time_pos("time-pos", 0.6)
+        QApplication.processEvents()
+        assert called == []
+        w._on_mpv_time_pos("time-pos", 9.5)
+        w._on_mpv_time_pos("time-pos", 0.1)
+        QApplication.processEvents()
+        assert called == [True]
+        w.cleanup()
+
     def test_time_pos_no_wraparound_no_advance(self, qtbot, _patch_mpv_viewer):
         w, player = self._make_widget(qtbot, _patch_mpv_viewer)
         called = []

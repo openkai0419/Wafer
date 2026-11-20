@@ -134,3 +134,10 @@ def test_set_groups_reorders_and_recolors_without_losing_the_selection(qtbot):
     assert model.index(0, 0).data(QtCore.Qt.DecorationRole) is not None or model.colors[5] == blue
     assert widget.path_positions["c:/a.png"] == 5
     widget.close()
+
+
+def test_names_inside_an_archive_are_shown_unescaped(qtbot):
+    widget = FileList(Owner())
+    qtbot.addWidget(widget)
+    widget.set_rows(["c:/a.zip::dir/50%25.png", "c:/b.png"], np.array([0, 1]), [QtGui.QColor("red")] * 2)
+    assert [widget.model().index(r, 0).data() for r in range(2)] == ["50%.png", "b.png"]

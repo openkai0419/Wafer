@@ -3,6 +3,7 @@ from __future__ import annotations
 import _winapi
 import argparse
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -17,6 +18,8 @@ SHARED_GLOBS = ["extensions/*/lib"]
 READ_ONLY_COPIES = [".claude/rules", ".claude/structure.md"]
 RUNTIME_WRITTEN = ["_resources/translations.json"]
 REMOVING_SUFFIX = ".removing"
+DEBUG_PROFILE_SUFFIX = re.compile(r"[A-Za-z0-9_-]+")
+RESERVED_DEBUG_NAMES = {"main", "template-build", "tools"}
 
 
 class GitError(Exception):
@@ -114,6 +117,18 @@ def ensure_clean(tree: Path):
         sys.exit(f"{tree} has uncommitted changes.")
 
 
+def has_debug_profile(name: str) -> bool:
+    return bool(DEBUG_PROFILE_SUFFIX.fullmatch(name)) and name.casefold() not in RESERVED_DEBUG_NAMES
+
+
+def forget_debug_profile(root: Path, name: str):
+    if not (root / "debug" / "profile_setup.py").exists() or not has_debug_profile(name):
+        return
+    command = [sys.executable, "-m", "debug.profile_setup", "--profile", "debug-tools", "forget", f"debug-{name}"]
+    if subprocess.run(command, cwd=root).returncode != 0:
+        sys.exit(f"Could not stop and delete the debug profile debug-{name} (see the output above). Nothing was removed.")
+
+
 def worktrees(root: Path) -> list[tuple[Path, str]]:
     found = []
     for entry in git("worktree", "list", "--porcelain", cwd=root).split("\n\n"):
@@ -177,6 +192,7 @@ def remove(root: Path, name: str, force: bool = False):
     if tree is not None and tree.exists():
         if not force:
             ensure_clean(tree)
+        forget_debug_profile(root, name)
         ensure_unused(tree)
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(f"worktree.py remove {name}\n", encoding="utf-8")

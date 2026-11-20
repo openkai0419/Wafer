@@ -42,6 +42,8 @@ def values_reader(result: dict[str, dict[str, PathValue]], keys: Sequence[str] |
     tag_clause = f" AND t.key IN ({key_marks})" if key_list else ""
     key_params = key_list or []
     columns = ", ".join(f"s.{name}" for name in STANDARD_KEYS_SOURCES)
+    file_keys = frozenset(("path", "name", SYSTEM_FILE_HASH_KEY, *STANDARD_KEYS_SOURCES))
+    wanted = file_keys if key_list is None else file_keys.intersection(key_list)
 
     def read(conn: sqlite3.Connection, chunk: list[str], placeholders: str) -> None:
         if key_list is None or key_list:
@@ -52,18 +54,21 @@ def values_reader(result: dict[str, dict[str, PathValue]], keys: Sequence[str] |
                 [*chunk, *key_params],
             ):
                 result.setdefault(path, {})[key] = PathValue(value or "", number)
+        if not wanted:
+            return
         for path, name, file_hash, *numbers in conn.execute(
             f"SELECT i.path, i.name, s.file_hash, {columns} FROM files AS i JOIN sources AS s ON s.source = i.source WHERE i.path IN ({placeholders})",
             chunk,
         ):
             entry = result.setdefault(path, {})
-            entry["path"] = PathValue(path or "")
-            if name is not None:
+            if "path" in wanted:
+                entry["path"] = PathValue(path or "")
+            if name is not None and "name" in wanted:
                 entry["name"] = PathValue(str(name))
-            if file_hash:
+            if file_hash and SYSTEM_FILE_HASH_KEY in wanted:
                 entry[SYSTEM_FILE_HASH_KEY] = PathValue(str(file_hash))
             for key, value in zip(STANDARD_KEYS_SOURCES, numbers):
-                if value is not None:
+                if value is not None and key in wanted:
                     entry[key] = PathValue(str(value), float(value) if isinstance(value, (int, float)) else None)
 
     return read

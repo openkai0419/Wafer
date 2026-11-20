@@ -175,16 +175,12 @@ class BindingStoreBase(Generic[K]):
 
     def load_from_file(self, path: str) -> bool:
         data = read_json_file(Path(path), None)
-        if not isinstance(data, dict):
-            return False
-        items = data.get("items")
-        if not isinstance(items, list):
-            return False
-        try:
-            seed = self._seed_data()
-            diff = self._from_items(items)
-            self._data = self._apply_diff(seed, diff)
-            return True
-        except Exception as e:
-            AppLogger.warning(f"{type(self).__name__}.load_from_file failed: {path}", exc=e)
-            return False
+        items = data.get("items") if isinstance(data, dict) else None
+        if isinstance(items, list):
+            try:
+                self._data = self._apply_diff(self._seed_data(), self._from_items(items))
+                return True
+            except Exception as e:
+                AppLogger.warning(f"{type(self).__name__}.load_from_file failed, using the defaults: {path}", exc=e)
+        self._data = self._seed_data()
+        return False

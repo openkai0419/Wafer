@@ -6,7 +6,7 @@ from wafer.core.files.disk_cache import DiskCache
 from wafer.core.logs import AppLogger
 from wafer.core.common.paths import resolve_cache_path
 
-IMAGE_EXTS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif", ".avif", ".jfif"})
+IMAGE_EXTS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".avif", ".jfif"})
 VIDEO_EXTS = frozenset({".mp4", ".webm", ".m4v", ".ogv", ".mov", ".mkv", ".avi", ".wmv", ".flv", ".ts"})
 NATIVE_VIDEO_EXTS = frozenset({".mp4", ".webm", ".m4v", ".ogv"})
 

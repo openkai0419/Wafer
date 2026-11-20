@@ -3,6 +3,7 @@ import re
 import shutil
 import tempfile
 
+from wafer.core.logs import AppLogger
 from wafer.core.common.downloader import (
     safe_download,
     fetch_text,
@@ -27,19 +28,6 @@ _MAX_SHA256_RESPONSE = 256
 _USER_AGENT = "wafer-ffmpeg-plugin"
 
 _MANUAL_HINT = "Download ffmpeg essentials from https://www.gyan.dev/ffmpeg/builds/ and place ffprobe.exe + ffmpeg.exe in extensions/ffmpeg/lib/"
-
-
-def _log(msg, *, level="info", exc=None):
-    try:
-        from wafer.core.logs import AppLogger
-
-        fn = getattr(AppLogger, level, AppLogger.info)
-        if exc and level in ("error", "warning"):
-            fn(msg, exc=exc)
-        else:
-            fn(msg)
-    except (ImportError, AttributeError):
-        pass
 
 
 def _fetch_expected_sha256() -> str:
@@ -73,15 +61,15 @@ def ensure_ffmpeg(version: str = ""):
         return True
     tmp = tempfile.mkdtemp()
     try:
-        _log(f"[ffmpeg] Fetching checksum: {_SHA256_URL}")
+        AppLogger.info(f"[ffmpeg] Fetching checksum: {_SHA256_URL}")
         expected = _fetch_expected_sha256()
-        _log(f"[ffmpeg] Downloading ffmpeg essentials: {_ARCHIVE_URL}")
+        AppLogger.info(f"[ffmpeg] Downloading ffmpeg essentials: {_ARCHIVE_URL}")
         archive = os.path.join(tmp, "ffmpeg-essentials.7z")
         safe_download(_ARCHIVE_URL, archive, allowed_hosts=_ALLOWED_HOSTS, expected_sha256=expected)
-        _log("[ffmpeg] archive checksum verified")
+        AppLogger.info("[ffmpeg] archive checksum verified")
         extract_7z_members(archive, _LIB_DIR, _BINARIES)
         write_lib_version(_LIB_DIR, version)
-        _log("[ffmpeg] ffprobe + ffmpeg installed successfully")
+        AppLogger.info("[ffmpeg] ffprobe + ffmpeg installed successfully")
         return True
     except Exception as e:
         raise RuntimeError(f"Failed to acquire ffmpeg: {e}. {_MANUAL_HINT}") from e

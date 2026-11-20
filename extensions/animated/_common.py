@@ -102,7 +102,7 @@ def _decode_apng(path: str, size: QtCore.QSize | None, is_stale) -> tuple[list[Q
         data = frame.tobytes("raw", "RGBA")
         qimg = QtGui.QImage(data, frame.width, frame.height, QtGui.QImage.Format.Format_RGBA8888).copy()
         if size is not None and qimg.size() != size:
-            qimg = qimg.scaled(size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+            qimg = qimg.scaled(size, QtCore.Qt.KeepAspectRatioByExpanding, QtCore.Qt.SmoothTransformation)
         delay = int(pil_img.info.get("duration", 0))
         if delay < _MIN_DELAY:
             delay = _MIN_DELAY
@@ -131,7 +131,7 @@ def decode_frames(path: str, size: QtCore.QSize | None, is_stale) -> tuple[list[
         if delay < _MIN_DELAY:
             delay = _MIN_DELAY
         if size is not None and image.size() != size:
-            image = image.scaled(size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+            image = image.scaled(size, QtCore.Qt.KeepAspectRatioByExpanding, QtCore.Qt.SmoothTransformation)
         pixmaps.append(QtGui.QPixmap.fromImage(image))
         delays.append(delay)
     return pixmaps, delays

@@ -4,6 +4,7 @@ from PySide6 import QtCore
 
 from ....core.common.virtual_paths import source_path
 from ....core.profiling import profiler
+from ..grid.items import as_list, index_paths
 
 
 class FileViewModel(QtCore.QObject):
@@ -17,7 +18,7 @@ class FileViewModel(QtCore.QObject):
         self.sources: list[str] = []
         self._current_index: int | None = None
         self._display_path: str | None = None
-        self._path_to_index: dict[str, int] = {}
+        self.path_index: dict[str, int] = {}
         self._dbpath_getter = dbpath_getter
 
     @property
@@ -26,21 +27,18 @@ class FileViewModel(QtCore.QObject):
             return self._dbpath_getter()
         return None
 
-    def _rebuild_index(self):
-        self._path_to_index = {p: i for i, p in enumerate(self.paths)}
-
     def _normalize_lengths(self):
         n = len(self.paths)
         if len(self.sources) != n:
             self.sources = (self.sources[:n] + [""] * n)[:n]
 
     @profiler.profile
-    def set_items(self, paths: list[str] | None, sources: list[str] | None):
-        self.paths = list(paths or [])
-        self.sources = list(sources or [])
+    def set_items(self, paths: list[str] | None, sources: list[str] | None, path_index: dict[str, int] | None = None):
+        self.paths = as_list(paths)
+        self.sources = as_list(sources)
         self._normalize_lengths()
-        self._rebuild_index()
-        self._current_index = self._path_to_index.get(self._display_path)
+        self.path_index = index_paths(self.paths) if path_index is None else path_index
+        self._current_index = self.path_index.get(self._display_path)
         self.itemsChanged.emit()
         self.currentIndexChanged.emit(self._current_index)
 
@@ -54,7 +52,7 @@ class FileViewModel(QtCore.QObject):
         return self.source_at(self._current_index) or (source_path(self._display_path) if self._display_path else None)
 
     def index_of_path(self, path: str) -> int | None:
-        return self._path_to_index.get(path)
+        return self.path_index.get(path)
 
     def path_at(self, index: int | None) -> str | None:
         if index is None:
@@ -106,9 +104,9 @@ class FileViewModel(QtCore.QObject):
             self._current_index = idx
         else:
             insert_pos = (self._current_index + 1) if self._current_index is not None else len(self.paths)
-            self.paths.insert(insert_pos, path)
-            self.sources.insert(insert_pos, source_path(path))
-            self._rebuild_index()
+            self.paths = [*self.paths[:insert_pos], path, *self.paths[insert_pos:]]
+            self.sources = [*self.sources[:insert_pos], source_path(path), *self.sources[insert_pos:]]
+            self.path_index = index_paths(self.paths)
             self._current_index = insert_pos
         self.currentIndexChanged.emit(self._current_index)
         if path != old_path:

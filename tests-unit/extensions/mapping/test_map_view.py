@@ -672,3 +672,53 @@ def test_caption_sits_in_the_bottom_left_corner_of_the_map(view, qtbot):
     qtbot.waitUntil(lambda: view.viewport().height() - view.caption.geometry().bottom() < 20, timeout=1000)
     view.set_caption("")
     assert not view.caption.isVisible()
+
+
+def test_dots_are_drawn_in_row_order_as_if_one_sprite_at_a_time(view):
+    count = 60
+    rng = np.random.default_rng(3)
+    positions = (rng.random((count, 2)) * 0.1).astype(np.float32)
+    mapped = MapResult(
+        [f"c:/{i}.png" for i in range(count)],
+        positions,
+        rng.random(count) < 0.2,
+        np.zeros(count, dtype=bool),
+        rng.integers(-1, 8, count).astype(np.int32),
+        np.arange(count),
+        MapDiagnostics(),
+    )
+    view.set_thumbnails_visible(False)
+    view.set_point_size(10)
+    view.show_result(mapped, colors(count), keep_view=False)
+    view.select_rows(range(0, count, 7))
+    rows = np.arange(count)
+    projection = view.device_projection()
+
+    def paint(draw):
+        layer = QtGui.QPixmap(400, 400)
+        layer.fill(QtCore.Qt.transparent)
+        painter = QtGui.QPainter(layer)
+        draw(painter)
+        painter.end()
+        return layer.toImage()
+
+    def one_at_a_time(painter):
+        side = view.sprite_pixels()
+        corners = np.floor(projection.pixels(view.positions[rows]) - side / 2 + 0.5).astype(np.int64)
+        for row, (x, y) in zip(rows.tolist(), corners.tolist()):
+            painter.drawPixmap(x, y, view.sprite((int(view.color_ids[row]) << 2) | int(view.selected[row]) | (int(view.outliers[row]) << 1)))
+
+    assert paint(lambda painter: view.paint_dots(painter, projection, rows)) == paint(one_at_a_time)
+
+
+def test_dots_are_drawn_in_one_call(view, monkeypatch):
+    view.set_thumbnails_visible(False)
+    view.show_result(result(), colors(6), keep_view=False)
+    calls = []
+    original = QtGui.QPainter.drawPixmapFragments
+    monkeypatch.setattr(QtGui.QPainter, "drawPixmapFragments", lambda painter, fragments, count, pixmap: calls.append(count) or original(painter, fragments, count, pixmap))
+    layer = QtGui.QPixmap(10, 10)
+    painter = QtGui.QPainter(layer)
+    view.paint_dots(painter, view.device_projection(), np.arange(5))
+    painter.end()
+    assert calls == [5]

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import html
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,14 +11,12 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from ...core.common.formatting import display_prefixed_key
 from ..common.dpi import dpix
 from ...core.logs import AppLogger
-from ...core.common.paths import list_setting_db_names
 from ...core.lang.manager import t
 from ..theme import ThemeManager
 from ..commands.bridge import ActionKit, Menu
 from ..common.dispatcher import Dispatcher, CancelSlot
 from ..common.icon_engine import icon_draw, themed_icon
 from ..common.thread import utility_pool
-from ...plugin import KeyFilter
 from ..widgets.dialogs import ConfirmDialog
 from .tag_edit_service import TagEditService
 
@@ -396,8 +394,16 @@ class SearchableMetaWidget(QtWidgets.QWidget):
     count_changed = QtCore.Signal(int)
     DEBOUNCE_MS = 50
 
-    def __init__(self, parent: QtWidgets.QWidget | None = None, *, scope: str = "tag", prefix: str = "") -> None:
+    def __init__(
+        self,
+        parent: QtWidgets.QWidget | None = None,
+        *,
+        scope: str = "tag",
+        prefix: str = "",
+        delete_everywhere: Callable[[str, str], None] | None = None,
+    ) -> None:
         super().__init__(parent)
+        self._delete_everywhere = delete_everywhere
         self._base_data: dict[str, str] = {}
         self._base_locks: dict[str, bool] = {}
         self._data: dict[str, Any] = {}
@@ -799,34 +805,20 @@ class SearchableMetaWidget(QtWidgets.QWidget):
         this_only = t("Only from this file")
         all_dbs = t("From All databases + filter")
         cancel = t("Cancel")
-        has_prefix = bool(self._context.prefix)
+        prefix = self._context.prefix
+        can_delete_everywhere = bool(prefix) and self._delete_everywhere is not None
         result = ConfirmDialog.ask(
             t('Do you want to delete key:\n"{key}"\nfrom table?', key=display_key),
             title=t("Delete metadata"),
             buttons=(this_only, all_dbs, cancel),
-            disabled=() if has_prefix else (all_dbs,),
+            disabled=() if can_delete_everywhere else (all_dbs,),
             parent=parent or self,
         )
         if result == this_only:
             self._submit_delete(key)
-        elif result == all_dbs and has_prefix:
-            self._delete_key_everywhere(key)
+        elif result == all_dbs and can_delete_everywhere:
+            self._delete_everywhere(prefix, key)
         else:
             return
         if on_deleted is not None:
             on_deleted()
-
-    def _delete_key_everywhere(self, key: str):
-        prefix = self._context.prefix
-        if not prefix:
-            return
-        db_names = list_setting_db_names()
-        if not db_names:
-            AppLogger.warning("[SearchKV] delete-all aborted: no setting DBs")
-            return
-        full_key = self._to_full(key)
-        from ...core.db.recollect import Recollect
-
-        Recollect.reset(db_scope=list(db_names), collector=prefix, keys=[full_key], re_collect=False)
-        KeyFilter.apply_key_states(prefix, {key: False})
-        AppLogger.info(f"[SearchKV] delete-all submitted prefix={prefix} key={full_key} dbs={len(db_names)}")

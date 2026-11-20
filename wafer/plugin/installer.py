@@ -236,6 +236,8 @@ def install_requirements(plugin_dir: str, extensions_dir: str, on_progress=None,
             _write_install_stamp(_stamp_path(plugin_dir, ".installed"), _requirements_hash(req_file))
             AppLogger.info(f"[Installer] Dependencies installed: {os.path.basename(plugin_dir)}")
             return True
+        except InstallerCancelled:
+            raise
         except Exception as e:
             AppLogger.warning(f"[Installer] Failed for {os.path.basename(plugin_dir)}: {e}", exc=e)
             return False
@@ -322,20 +324,6 @@ def has_post_install_hooks(plugins: list[tuple[str, type]]) -> bool:
     return any(hasattr(cls, "post_install") and cls.post_install.__func__ is not PluginBase.post_install.__func__ for _, cls in plugins)
 
 
-def install_extension(
-    plugin_dir: str,
-    extensions_dir: str,
-    on_progress=None,
-    is_cancelled=None,
-    on_phase=None,
-    on_log=None,
-) -> InstallResult:
-    result = install_requirements_only(plugin_dir, extensions_dir, on_progress=on_progress, is_cancelled=is_cancelled, on_phase=on_phase, on_log=on_log)
-    if not result.success or result.cancelled:
-        return result
-    return run_post_install(plugin_dir, extensions_dir, on_progress=on_progress, is_cancelled=is_cancelled, on_phase=on_phase, on_log=on_log, base_result=result)
-
-
 def install_requirements_only(
     plugin_dir: str,
     extensions_dir: str,
@@ -371,9 +359,8 @@ def run_post_install(
     is_cancelled=None,
     on_phase=None,
     on_log=None,
-    base_result: InstallResult | None = None,
 ) -> InstallResult:
-    result = base_result or InstallResult(success=True)
+    result = InstallResult(success=True)
 
     if is_cancelled and is_cancelled():
         result.cancelled = True
@@ -382,7 +369,10 @@ def run_post_install(
 
     from .loader import PluginLoader
 
-    plugins = PluginLoader.discover_extension(plugin_dir)
+    failed: list[str] = []
+    plugins = PluginLoader.discover_extension(plugin_dir, failed)
+    if failed:
+        AppLogger.warning(f"[Installer] {os.path.basename(plugin_dir)}: setup is not complete because these modules failed to import (see the log above): {', '.join(failed)}")
 
     pkg_dir = _packages_dir(extensions_dir)
     path_added = []
@@ -390,7 +380,7 @@ def run_post_install(
         sys.path.insert(0, pkg_dir)
         path_added.append(pkg_dir)
 
-    post_install_ok = True
+    post_install_ok = not failed
     has_hooks = has_post_install_hooks(plugins)
     if has_hooks and on_phase:
         on_phase("post_installing")

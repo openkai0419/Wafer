@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 from ..logs import AppLogger
-from ..common.paths import safe_exists, safe_is_dir
+from ..common.paths import profile_allows_file_write, safe_exists, safe_is_dir
+from ..common.profile import current_profile
 from ..common.virtual_paths import is_virtual_path
 from .path_utils import check_copy_conflict, is_http_url, unique_path
 
@@ -31,8 +33,6 @@ def _advance(progress_callback: ProgressCallback | None, units: int = 1) -> None
 
 
 def _rmtree_onerror(func, path, exc_info):
-    import stat
-
     try:
         os.chmod(path, stat.S_IWRITE)
         func(path)
@@ -49,6 +49,58 @@ def _safe_remove(path: str | Path) -> None:
         return
     if p.is_dir():
         shutil.rmtree(p, onerror=_rmtree_onerror)
+
+
+def _staging_path(dst: Path, tag: str) -> Path:
+    return Path(unique_path(dst.parent, f"{dst.name}.{tag}"))
+
+
+def _put_back(staged: Path, original: Path) -> list[Path]:
+    if not os.path.lexists(staged):
+        return []
+    if not os.path.lexists(original):
+        try:
+            os.rename(staged, original)
+            return []
+        except OSError as e:
+            AppLogger.debug(f"put back by rename failed, restoring one by one: {staged} ({e})")
+    if os.path.lexists(original):
+        return _drop_staged_duplicate(staged, original)
+    try:
+        _move_any(staged, original)
+        return []
+    except OSError as e:
+        AppLogger.warning(f"could not put {original.name} back; it is kept at {staged}", exc=e)
+        if os.path.lexists(staged) and os.path.isfile(original):
+            try:
+                original.unlink()
+            except OSError as partial_error:
+                AppLogger.warning(f"an incomplete copy is left at {original}; the complete file is {staged}", exc=partial_error)
+        return [staged]
+
+
+def _drop_staged_duplicate(staged: Path, original: Path) -> list[Path]:
+    if original.is_dir() and not original.is_symlink():
+        return [staged]
+    try:
+        staged.unlink()
+        return []
+    except OSError as e:
+        AppLogger.warning(f"a copy of {original.name} is left at {staged}", exc=e)
+        return [staged]
+
+
+def _write_replacing(target: Path, chunks) -> None:
+    partial = _staging_path(target, "wafer-partial")
+    try:
+        with open(partial, "wb") as f:
+            for chunk in chunks:
+                if chunk:
+                    f.write(chunk)
+        os.replace(partial, target)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
 
 
 def _copy_file(src: Path, dst: Path, follow_symlinks: bool = True, progress_callback: ProgressCallback | None = None, cancel_check: CancelCheck | None = None) -> Path:
@@ -137,6 +189,14 @@ def _is_virtual_operation_path(path: str | Path | None) -> bool:
     return bool(path and is_virtual_path(str(path)))
 
 
+def _profile_refusal(action: str, paths: list[str | Path]) -> bool:
+    for p in paths:
+        if not profile_allows_file_write(str(p)):
+            AppLogger.warning(f"[{action}] refused outside the debug profile scratch area: {p}")
+            return True
+    return False
+
+
 def count_operation_units(src: Path, dst: Path, action: Literal["copy", "cut"], cancel_check: CancelCheck | None = None) -> int:
     if not src.is_dir():
         return 1
@@ -154,38 +214,34 @@ def count_operation_units(src: Path, dst: Path, action: Literal["copy", "cut"], 
     return max(1, total)
 
 
-def _save_remote_item(item: ParsedItem, target_path: str, *, move: bool = False) -> OperationResult:
+def _save_remote_item(item: ParsedItem, target_path: str) -> OperationResult:
     src_info = str(getattr(item, "source", ""))
     if _is_virtual_operation_path(target_path):
         AppLogger.warning(f"[save] virtual destination rejected: {target_path} (file ops must target source files)")
         return OperationResult(action="save", src=src_info, dst=str(target_path), status="skipped", error="virtual path rejected")
 
-    d = os.path.dirname(target_path)
-    if d:
-        os.makedirs(d, exist_ok=True)
-
+    target = Path(target_path)
     if getattr(item, "is_binary", False) and isinstance(getattr(item, "source", None), (bytes, bytearray)):
         try:
-            with open(target_path, "wb") as f:
-                f.write(item.source)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            _write_replacing(target, [item.source])
             AppLogger.info(f"Saved binary data to {target_path}")
             return OperationResult(action="save", src="(binary)", dst=target_path, status="ok")
         except Exception as e:
+            AppLogger.warning(f"Failed to save dropped data to {target_path}", exc=e)
             return OperationResult(action="save", src="(binary)", dst=target_path, status="error", error=repr(e))
 
-    if isinstance(src_info, str) and is_http_url(src_info):
+    if is_http_url(src_info):
         try:
             import requests
 
+            target.parent.mkdir(parents=True, exist_ok=True)
             session = requests.Session()
             session.max_redirects = 5
             with session.get(src_info, timeout=10, stream=True) as resp:
                 if resp.status_code != 200:
                     raise ValueError(f"HTTP {resp.status_code}")
-                with open(target_path, "wb") as f:
-                    for chunk in resp.iter_content(chunk_size=1024 * 256):
-                        if chunk:
-                            f.write(chunk)
+                _write_replacing(target, resp.iter_content(chunk_size=1024 * 256))
             AppLogger.info(f"Downloaded: {src_info} -> {target_path}")
             return OperationResult(action="download", src=src_info, dst=target_path, status="ok")
         except Exception as e:
@@ -233,57 +289,58 @@ class DropPlanItem:
 
 @dataclass
 class PasteDecision:
-    mode: Literal["overwrite", "rename", "skip", "merge"]
+    mode: Literal["create", "rename", "skip"]
     new_name_or_path: str | None = None
-    merge_decisions: dict[str, PasteDecision] | None = None
 
 
 class PasteCancelledError(Exception):
     pass
 
 
+CANCELLED = "cancelled"
+
+
 @dataclass
-class MergeConflictItem:
-    src: Path
+class PasteConflict:
+    src: Path | None
     dst: Path
-    rel_path: str
-    is_dir: bool
+    name: str
+    folders: bool
+    selected_item: bool
+    in_merge: bool
+    src_bytes: bytes | bytearray | None = None
 
 
-def _scan_merge_recursive(src: Path, dst: Path, root: Path, out: list[MergeConflictItem]) -> None:
-    try:
-        entries = sorted(src.iterdir(), key=lambda e: (not e.is_dir(), e.name))
-    except OSError:
-        return
-    for entry in entries:
-        d = dst / entry.name
-        if not d.exists() and not d.is_symlink():
-            continue
-        if entry.is_dir() and d.is_dir():
-            _scan_merge_recursive(entry, d, root, out)
-        else:
-            out.append(
-                MergeConflictItem(
-                    src=entry,
-                    dst=d,
-                    rel_path=str(entry.relative_to(root)),
-                    is_dir=entry.is_dir(),
-                )
-            )
+PasteAnswer = Literal["overwrite", "merge", "rename", "skip"]
+AskConflict = Callable[[PasteConflict], PasteAnswer]
 
 
-def scan_merge_conflicts(src_dir: Path, dst_dir: Path) -> list[MergeConflictItem]:
-    out: list[MergeConflictItem] = []
-    if src_dir.is_dir() and dst_dir.is_dir():
-        _scan_merge_recursive(src_dir, dst_dir, src_dir, out)
-    return out
+def keep_both(conflict: PasteConflict) -> PasteAnswer:
+    AppLogger.info(f"{conflict.dst} already exists, so it is kept and {conflict.name} is saved under a new name")
+    return "rename"
+
+
+def _destination_key(path: str | Path) -> str:
+    return os.path.normcase(os.path.abspath(str(path)))
 
 
 class FileExecutor:
-    def __init__(self, *, follow_symlinks: bool = True, progress_callback: ProgressCallback | None = None, cancel_check: CancelCheck | None = None):
+    def __init__(
+        self,
+        *,
+        follow_symlinks: bool = True,
+        progress_callback: ProgressCallback | None = None,
+        cancel_check: CancelCheck | None = None,
+        ask_conflict: AskConflict | None = None,
+        selection: Iterable[Path] = (),
+    ):
         self._follow_symlinks = follow_symlinks
         self._progress_callback = progress_callback
         self._cancel_check = cancel_check
+        self._ask_conflict = ask_conflict or keep_both
+        self._selection = {_destination_key(path) for path in selection}
+        self._written: set[str] = set()
+        self._cancelled = False
 
     def _advance(self, units: int = 1) -> None:
         _advance(self._progress_callback, units)
@@ -291,46 +348,78 @@ class FileExecutor:
     def _advance_item(self, src: Path, dst: Path, action: Literal["copy", "cut"]) -> None:
         self._advance(count_operation_units(src, dst, action))
 
+    def _record(self, path: Path) -> None:
+        self._written.add(_destination_key(path))
+
+    def _belongs_to_selection(self, path: Path) -> bool:
+        if not self._written and not self._selection:
+            return False
+        key = _destination_key(path)
+        while key not in self._written and key not in self._selection:
+            parent = os.path.dirname(key)
+            if parent == key:
+                return False
+            key = parent
+        return True
+
+    def _ask(self, src: Path | None, dst: Path, name: str, *, folders: bool, in_merge: bool, src_bytes: bytes | bytearray | None = None) -> PasteAnswer:
+        return self._ask_conflict(
+            PasteConflict(
+                src=src,
+                dst=dst,
+                name=name,
+                folders=folders,
+                selected_item=self._belongs_to_selection(dst),
+                in_merge=in_merge,
+                src_bytes=src_bytes,
+            )
+        )
+
     def execute_plans(
         self,
-        plans: list[PastePlanItem],
+        plans: list[PastePlanItem] | list[DropPlanItem],
         decisions: dict[int, PasteDecision],
     ) -> list[OperationResult]:
-        results: list[OperationResult] = []
-        for item in plans:
-            dec = decisions.get(item.index)
-            if dec is None:
-                dec = PasteDecision(mode="skip")
-            result = self._execute_item(item.src, item.dst_default, item.action, dec)
-            results.append(result)
-        return results
+        return [self.execute_one(plan, decisions.get(plan.index)) for plan in plans]
 
-    def execute_drop_plans(
-        self,
-        plans: list[DropPlanItem],
-        decisions: dict[int, PasteDecision],
-        *,
-        op: str,
-    ) -> list[OperationResult]:
-        action: Literal["copy", "cut"] = "cut" if op == "move" else "copy"
-        results: list[OperationResult] = []
-        for plan in plans:
-            dec = decisions.get(plan.index)
-            if dec is None or dec.mode == "skip":
-                results.append(OperationResult(action="skip", src=str(plan.src or ""), dst="", status="skipped"))
-                continue
-            if plan.src is not None:
-                result = self._execute_item(plan.src, plan.dst_default, action, dec)
-                results.append(result)
-            else:
-                dst_path = str(plan.dst_default)
-                if dec.mode == "rename" and plan.suggested_dst:
-                    dst_path = str(plan.suggested_dst)
-                elif dec.mode == "overwrite" and plan.conflict:
-                    _safe_remove(dst_path)
-                result = _save_remote_item(plan.parsed_item, dst_path, move=(op == "move"))
-                results.append(result)
-        return results
+    def execute_one(self, plan: PastePlanItem | DropPlanItem, decision: PasteDecision | None) -> OperationResult:
+        decision = decision or PasteDecision(mode="create")
+        if self._cancelled:
+            return OperationResult(action="skip", src=str(plan.src or ""), dst=str(plan.dst_default), status="skipped", error=CANCELLED)
+        if plan.src is not None:
+            result = self._execute_item(plan.src, plan.dst_default, plan.action, decision)
+        else:
+            result = self._execute_remote(plan, decision)
+        if result.error == CANCELLED:
+            self._cancelled = True
+        return result
+
+    def _execute_remote(self, plan: DropPlanItem, decision: PasteDecision) -> OperationResult:
+        if decision.mode == "skip":
+            self._advance()
+            return OperationResult(action="skip", src="", dst="", status="skipped")
+        final_dst = self._resolve_dst(plan.dst_default, decision)
+        if os.path.lexists(final_dst):
+            item = plan.parsed_item
+            src_bytes = item.source if getattr(item, "is_binary", False) and isinstance(getattr(item, "source", None), (bytes, bytearray)) else None
+            try:
+                answer = self._ask(None, final_dst, plan.name or final_dst.name, folders=False, in_merge=False, src_bytes=src_bytes)
+            except PasteCancelledError:
+                self._advance()
+                return OperationResult(action="save", src="(remote)", dst=str(final_dst), status="skipped", error=CANCELLED)
+            if answer == "skip":
+                self._advance()
+                return OperationResult(action="skip", src="", dst=str(final_dst), status="skipped")
+            if answer == "rename" or final_dst.is_dir():
+                final_dst = Path(unique_path(final_dst.parent, final_dst.name))
+        if _profile_refusal("save", [final_dst]):
+            self._advance()
+            return OperationResult(action="save", src="(remote)", dst=str(final_dst), status="error", error="refused by debug profile")
+        result = _save_remote_item(plan.parsed_item, str(final_dst))
+        if result.status == "ok":
+            self._record(final_dst)
+        self._advance()
+        return result
 
     def _execute_item(
         self,
@@ -339,110 +428,138 @@ class FileExecutor:
         action: Literal["copy", "cut"],
         decision: PasteDecision,
     ) -> OperationResult:
+        op = _operation_name(action)
         if _is_virtual_operation_path(src) or _is_virtual_operation_path(dst):
-            AppLogger.warning(f"[{_operation_name(action)}] virtual path rejected: {src} -> {dst} (file ops must target source files)")
-            return OperationResult(action=_operation_name(action), src=str(src), dst=str(dst), status="skipped", error="virtual path rejected")
+            AppLogger.warning(f"[{op}] virtual path rejected: {src} -> {dst} (file ops must target source files)")
+            return OperationResult(action=op, src=str(src), dst=str(dst), status="skipped", error="virtual path rejected")
         is_dir = src.is_dir()
         if decision.mode == "skip":
             self._advance_item(src, dst, action)
             return OperationResult(action="skip", src=str(src), dst="", status="skipped")
 
         final_dst = self._resolve_dst(dst, decision)
-        if final_dst is None:
-            return OperationResult(action="unknown", src=str(src), dst="", status="error", error=f"unknown mode: {decision.mode}")
         if _is_virtual_operation_path(final_dst):
-            AppLogger.warning(f"[{_operation_name(action)}] virtual destination rejected: {src} -> {final_dst} (file ops must target source files)")
-            return OperationResult(action=_operation_name(action), src=str(src), dst=str(final_dst), status="skipped", error="virtual path rejected")
+            AppLogger.warning(f"[{op}] virtual destination rejected: {src} -> {final_dst} (file ops must target source files)")
+            return OperationResult(action=op, src=str(src), dst=str(final_dst), status="skipped", error="virtual path rejected")
+        guarded = [final_dst, src] if action == "cut" else [final_dst]
+        if _profile_refusal(op, guarded):
+            return OperationResult(action=op, src=str(src), dst=str(final_dst), status="error", error="refused by debug profile")
 
         conflict = check_copy_conflict(src, final_dst)
         if conflict == "same_path":
-            if action == "cut" and str(src) != str(final_dst):
+            if action == "cut" and str(src) == str(final_dst):
+                self._advance_item(src, final_dst, action)
+                return OperationResult(action="skip", src=str(src), dst=str(final_dst), status="skipped")
+            if action == "cut":
                 try:
                     _check_cancel(self._cancel_check)
                     src.rename(final_dst)
                     self._advance()
+                    self._record(final_dst)
                     return OperationResult(action="move", src=str(src), dst=str(final_dst), status="ok")
+                except PasteCancelledError:
+                    return OperationResult(action="move", src=str(src), dst=str(final_dst), status="skipped", error=CANCELLED)
                 except Exception as e:
                     self._advance()
                     return OperationResult(action="move", src=str(src), dst=str(final_dst), status="error", error=repr(e))
-            if decision.mode in ("overwrite", "merge"):
-                self._advance_item(src, final_dst, action)
-                return OperationResult(action="skip", src=str(src), dst=str(final_dst), status="skipped")
             final_dst = Path(unique_path(final_dst.parent, final_dst.name))
-
-        if action == "cut" and is_dir and conflict in ("same_path", "subpath"):
-            self._advance_item(src, final_dst, action)
-            return OperationResult(action="move", src=str(src), dst=str(final_dst), status="skipped", error="cannot move into itself")
         if is_dir and conflict == "subpath":
             self._advance_item(src, final_dst, action)
-            return OperationResult(action="skip", src=str(src), dst=str(final_dst), status="skipped", error="cannot copy into itself")
+            error = "cannot move into itself" if action == "cut" else "cannot copy into itself"
+            return OperationResult(action=op, src=str(src), dst=str(final_dst), status="skipped", error=error)
 
         try:
-            if decision.mode == "overwrite" and final_dst.exists():
-                _safe_remove(final_dst)
-            if is_dir and decision.mode == "merge" and final_dst.exists():
-                self._merge_dir(src, final_dst, action=action, merge_decisions=decision.merge_decisions or {}, root_src=src)
-                return OperationResult(action="move" if action == "cut" else "copy", src=str(src), dst=str(final_dst), status="ok")
-            done = _copy_or_move(src, final_dst, action=action, follow_symlinks=self._follow_symlinks, progress_callback=self._progress_callback, cancel_check=self._cancel_check)
-            return OperationResult(action="move" if action == "cut" else "copy", src=str(src), dst=str(done), status="ok")
+            answer: PasteAnswer | None = None
+            if os.path.lexists(final_dst):
+                folders = is_dir and final_dst.is_dir() and not final_dst.is_symlink()
+                answer = self._ask(src, final_dst, src.name, folders=folders, in_merge=False)
+                if answer == "skip":
+                    self._advance_item(src, final_dst, action)
+                    return OperationResult(action="skip", src=str(src), dst=str(final_dst), status="skipped")
+                if answer == "rename":
+                    final_dst = Path(unique_path(final_dst.parent, final_dst.name))
+                    answer = None
+            if answer is not None and is_dir and final_dst.is_dir() and not final_dst.is_symlink():
+                self._merge_dir(src, final_dst, action=action)
+                return OperationResult(action=op, src=str(src), dst=str(final_dst), status="ok")
+            if answer is not None:
+                done = self._overwrite(src, final_dst, action)
+            else:
+                done = self._copy_or_move(src, final_dst, action)
+            self._record(done)
+            return OperationResult(action=op, src=str(src), dst=str(done), status="ok")
         except PasteCancelledError:
-            return OperationResult(action="move" if action == "cut" else "copy", src=str(src), dst=str(final_dst), status="skipped", error="cancelled")
+            return OperationResult(action=op, src=str(src), dst=str(final_dst), status="skipped", error=CANCELLED)
         except Exception as e:
             AppLogger.warning(f"copy/move failed: {src} -> {final_dst}", exc=e)
-            return OperationResult(action="move" if action == "cut" else "copy", src=str(src), dst=str(final_dst), status="error", error=repr(e))
+            return OperationResult(action=op, src=str(src), dst=str(final_dst), status="error", error=repr(e))
+
+    def _copy_or_move(self, src: Path, dst: Path, action: Literal["copy", "cut"]) -> Path:
+        return _copy_or_move(src, dst, action=action, follow_symlinks=self._follow_symlinks, progress_callback=self._progress_callback, cancel_check=self._cancel_check)
+
+    def _overwrite(self, src: Path, dst: Path, action: Literal["copy", "cut"]) -> Path:
+        if src.is_dir() or dst.is_dir():
+            renamed = Path(unique_path(dst.parent, dst.name))
+            AppLogger.info(f"[{_operation_name(action)}] {dst} is kept because a file and a folder share the name; saved as {renamed.name}")
+            return self._copy_or_move(src, renamed, action)
+        staged = _staging_path(dst, "wafer-partial")
+        try:
+            self._copy_or_move(src, staged, action)
+            os.replace(staged, dst)
+        except BaseException:
+            self._undo_staging(src, staged, action)
+            raise
+        return dst
 
     @staticmethod
-    def _resolve_dst(dst: Path, decision: PasteDecision) -> Path | None:
-        if decision.mode in ("overwrite", "merge"):
-            return dst
-        if decision.mode == "rename":
-            if decision.new_name_or_path:
-                p = Path(decision.new_name_or_path)
-                final = p if p.is_absolute() else (dst.parent / p)
-            else:
-                final = dst
-            if final.exists():
-                final = Path(unique_path(final.parent, final.name))
-            return final
-        if decision.mode == "skip":
-            return dst
-        return None
+    def _undo_staging(src: Path, staged: Path, action: Literal["copy", "cut"]) -> None:
+        if action != "cut":
+            _safe_remove(staged)
+            return
+        left = _put_back(staged, src)
+        if left:
+            AppLogger.error(f"[move] could not put {len(left)} item(s) back into {src}; they are kept in {staged}")
 
-    def _merge_dir(
-        self,
-        src: Path,
-        dst: Path,
-        *,
-        action: Literal["copy", "cut"],
-        merge_decisions: dict[str, PasteDecision],
-        root_src: Path,
-    ) -> None:
+    @staticmethod
+    def _resolve_dst(dst: Path, decision: PasteDecision) -> Path:
+        if decision.mode != "rename":
+            return dst
+        if decision.new_name_or_path:
+            p = Path(decision.new_name_or_path)
+            final = p if p.is_absolute() else (dst.parent / p)
+        else:
+            final = dst
+        if os.path.lexists(final):
+            final = Path(unique_path(final.parent, final.name))
+        return final
+
+    def _merge_dir(self, src: Path, dst: Path, *, action: Literal["copy", "cut"]) -> None:
         dst.mkdir(parents=True, exist_ok=True)
-        for entry in src.iterdir():
+        with os.scandir(src) as it:
+            entries = list(it)
+        for entry in entries:
+            source = Path(entry.path)
             d = dst / entry.name
-            is_dir = entry.is_dir()
-
-            if not d.exists() and not d.is_symlink():
-                _copy_or_move(entry, d, action=action, follow_symlinks=self._follow_symlinks, progress_callback=self._progress_callback, cancel_check=self._cancel_check)
+            try:
+                existing = os.lstat(d)
+            except FileNotFoundError:
+                self._record(self._copy_or_move(source, d, action))
                 continue
-
-            if is_dir and d.is_dir():
-                self._merge_dir(entry, d, action=action, merge_decisions=merge_decisions, root_src=root_src)
+            source_is_dir = entry.is_dir()
+            if source_is_dir and stat.S_ISDIR(existing.st_mode):
+                self._merge_dir(source, d, action=action)
                 continue
-
-            rel = str(entry.relative_to(root_src))
-            dec = merge_decisions.get(rel, PasteDecision(mode="overwrite"))
-
-            if dec.mode == "skip":
-                self._advance()
+            answer = self._ask(source, d, entry.name, folders=False, in_merge=True)
+            if answer == "skip":
+                if source_is_dir:
+                    self._advance_item(source, d, action)
+                else:
+                    self._advance()
                 continue
-            if dec.mode == "rename":
-                _copy_or_move(
-                    entry, Path(unique_path(d.parent, d.name)), action=action, follow_symlinks=self._follow_symlinks, progress_callback=self._progress_callback, cancel_check=self._cancel_check
-                )
+            if answer == "rename":
+                self._record(self._copy_or_move(source, Path(unique_path(d.parent, d.name)), action))
             else:
-                _safe_remove(d)
-                _copy_or_move(entry, d, action=action, follow_symlinks=self._follow_symlinks, progress_callback=self._progress_callback, cancel_check=self._cancel_check)
+                self._record(self._overwrite(source, d, action))
 
         if action == "cut":
             try:
@@ -506,21 +623,7 @@ def build_drop_plans(parsed_items: list[ParsedItem], dst_dir: str, op: str) -> l
     return plans
 
 
-class FileSaver:
-    def save(self, item: ParsedItem, target_path: str, move: bool = False) -> OperationResult:
-        if getattr(item, "is_local_file", lambda: False)():
-            src = Path(str(getattr(item, "source", "")))
-            dst = Path(target_path)
-            action: Literal["copy", "cut"] = "cut" if move else "copy"
-            plan = PastePlanItem(index=0, src=src, is_dir=safe_is_dir(src), action=action, dst_default=dst, conflict=safe_exists(dst), suggested_dst=None)
-            results = FileExecutor().execute_plans([plan], {0: PasteDecision(mode="overwrite")})
-            return results[0] if results else OperationResult(action="unknown", src=str(src), dst="", status="error")
-        return _save_remote_item(item, target_path, move=move)
-
-
 def delete_to_trash(paths: list[str | Path]) -> list[OperationResult]:
-    from ..common.virtual_paths import is_virtual_path
-
     physical = [p for p in paths if p and not is_virtual_path(str(p))]
     rejected = len(paths) - len(physical)
     if rejected:
@@ -531,33 +634,36 @@ def delete_to_trash(paths: list[str | Path]) -> list[OperationResult]:
         AppLogger.warning(f"[delete] duplicate sources dropped: {len(raw)} -> {len(norm)}")
     if not norm:
         return []
-    AppLogger.info(f"Deleting {len(norm)} files")
-    results: list[OperationResult] = []
-    try:
-        import send2trash as _s2t
+    guarded = current_profile() is not None
+    refused = {p for p in norm if guarded and not profile_allows_file_write(p)}
+    for p in norm:
+        if p in refused:
+            AppLogger.warning(f"[delete] refused outside the debug profile scratch area: {p}")
+    from send2trash import send2trash
 
-        for p in norm:
-            if not os.path.exists(p):
-                results.append(OperationResult(action="delete", src=p, dst="", status="skipped"))
-                continue
-            try:
-                _s2t.send2trash(p)
-                results.append(OperationResult(action="delete", src=p, dst="", status="ok"))
-            except Exception as e:
-                AppLogger.warning(f"send2trash failed: {p}", exc=e)
-                if os.path.isfile(p):
-                    os.remove(p)
-                    results.append(OperationResult(action="delete", src=p, dst="", status="ok"))
-                else:
-                    results.append(OperationResult(action="delete", src=p, dst="", status="error", error=f"send2trash failed for folder: {p}"))
-    except ImportError:
-        for p in norm:
-            if not os.path.exists(p):
-                results.append(OperationResult(action="delete", src=p, dst="", status="skipped"))
-                continue
-            if os.path.isfile(p):
-                os.remove(p)
-                results.append(OperationResult(action="delete", src=p, dst="", status="ok"))
-            else:
-                results.append(OperationResult(action="delete", src=p, dst="", status="error", error=f"Cannot delete folder without send2trash: {p}"))
-    return results
+    existing = [p for p in norm if p not in refused and os.path.lexists(p)]
+    results = {p: OperationResult(action="delete", src=p, dst="", status="skipped") for p in norm}
+    for p in refused:
+        results[p] = OperationResult(action="delete", src=p, dst="", status="error", error="refused by debug profile")
+    AppLogger.info(f"Deleting {len(existing)} files")
+    try:
+        if existing:
+            send2trash(existing)
+        for p in existing:
+            results[p] = OperationResult(action="delete", src=p, dst="", status="ok")
+    except Exception as e:
+        AppLogger.warning(f"send2trash failed for {len(existing)} items; retrying one by one", exc=e)
+        for p in existing:
+            results[p] = _trash_one(send2trash, p)
+    return [results[p] for p in norm]
+
+
+def _trash_one(send2trash, path: str) -> OperationResult:
+    if not os.path.lexists(path):
+        return OperationResult(action="delete", src=path, dst="", status="ok")
+    try:
+        send2trash(path)
+        return OperationResult(action="delete", src=path, dst="", status="ok")
+    except Exception as e:
+        AppLogger.warning(f"Could not move to the Recycle Bin, so it was not deleted: {path}", exc=e)
+        return OperationResult(action="delete", src=path, dst="", status="error", error=repr(e))

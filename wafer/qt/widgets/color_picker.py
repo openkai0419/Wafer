@@ -416,7 +416,7 @@ class ColorPickerWidget(QtWidgets.QWidget):
         hex_row.addWidget(hex_label)
         self._hex_edit = QtWidgets.QLineEdit()
         self._hex_edit.setMaxLength(9)
-        self._hex_edit.setPlaceholderText("#RRGGBB" + ("AA" if self._with_alpha else ""))
+        self._hex_edit.setPlaceholderText("#AARRGGBB" if self._with_alpha else "#RRGGBB")
         hex_row.addWidget(self._hex_edit, 1)
         right.addLayout(hex_row)
 

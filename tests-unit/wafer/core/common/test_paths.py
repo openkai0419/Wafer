@@ -13,6 +13,7 @@ from wafer.core.common.paths import (
     get_plugin_dir,
     list_files,
     normalize_path,
+    parent_folder,
     resolve_cache_path,
     resolve_config_path,
     resolve_temp_path,
@@ -28,6 +29,22 @@ from wafer.core.common.paths import (
 class _FakePlatformDirs:
     def __init__(self, appname=None):
         self.user_data_dir = "/tmp/wafer-data"
+
+
+CWD_DRIVE = os.path.splitdrive(os.getcwd())[0]
+
+
+def test_parent_folder_is_plain_string_work_on_the_current_drive():
+    assert parent_folder(f"{CWD_DRIVE}/a") == f"{CWD_DRIVE}/"
+    assert parent_folder(f"{CWD_DRIVE}/a/b") == f"{CWD_DRIVE}/a"
+    assert parent_folder(f"{CWD_DRIVE}/") == f"{CWD_DRIVE}/"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drive letters and UNC shares are Windows paths")
+def test_parent_folder_keeps_drive_and_share_roots():
+    assert parent_folder("Q:/x") == "Q:/"
+    assert parent_folder("//server/share/a") == "//server/share/"
+    assert parent_folder("//server/share/") == "//server/share/"
 
 
 def test_normalize_path():

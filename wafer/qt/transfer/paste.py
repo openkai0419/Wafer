@@ -3,7 +3,8 @@ from __future__ import annotations
 import re
 import struct
 import sys
-from pathlib import Path
+import threading
+from pathlib import Path, PureWindowsPath
 from typing import Literal
 from collections.abc import Callable
 
@@ -11,21 +12,25 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from ...core.logs import AppLogger
 from ..common.notifier import Notifier
+from ..common.dispatcher import CancelToken, Dispatcher
+from ..common.thread import utility_pool
 from ...core.lang.manager import t
 from ...core.store.settings import app_settings
 from ...core.common.paths import safe_exists, safe_is_dir
 from ...core.common.virtual_paths import is_virtual_path
 from ...core.platform.path_utils import unique_path
 from ...core.platform.file_operations import (
+    CANCELLED,
+    AskConflict,
     CutCopy,
     DropPlanItem,
     FileExecutor,
     OperationResult,
+    PasteAnswer,
     PasteCancelledError,
+    PasteConflict,
     PasteDecision,
     PastePlanItem,
-    _safe_remove,
-    _save_remote_item,
     build_drop_plans,
     count_operation_units,
 )
@@ -33,6 +38,9 @@ from ...core.platform.file_operations import (
 
 DROP_OPERATION_SETTING_KEY = "file/drop_operation"
 DropOperation = Literal["copy", "move", "ask"]
+
+_paste_dispatcher = Dispatcher(utility_pool)
+_paste_running = threading.Event()
 
 
 def normalize_drop_operation(value: object, default: Literal["copy", "move"] = "copy") -> Literal["copy", "move"]:
@@ -92,20 +100,15 @@ class ClipboardFilePaster:
             return None
         try:
             raw = bytes(md.data(fmt)).decode("utf-8", errors="replace")
-            lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
-            if not lines:
-                return None
-            action: Literal["copy", "cut"] = "cut" if lines[0].lower() == "cut" else "copy"
-            paths: list[Path] = []
-            for ln in lines[1:]:
-                url = QtCore.QUrl(ln)
-                if url.isLocalFile():
-                    p = Path(url.toLocalFile())
-                    if p.exists():
-                        paths.append(p)
-            return (action, paths) if paths else None
-        except (OSError, RuntimeError, UnicodeDecodeError):
+        except (RuntimeError, UnicodeDecodeError) as e:
+            AppLogger.warning(f"clipboard {fmt} decode failed", exc=e)
             return None
+        lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+        if not lines:
+            return None
+        action: Literal["copy", "cut"] = "cut" if lines[0].lower() == "cut" else "copy"
+        paths = [Path(QtCore.QUrl(ln).toLocalFile()) for ln in lines[1:] if QtCore.QUrl(ln).isLocalFile()]
+        return (action, paths) if paths else None
 
     def _parse_uri_list_text(self, text: str) -> list[Path]:
         paths: list[Path] = []
@@ -113,14 +116,9 @@ class ClipboardFilePaster:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            try:
-                url = QtCore.QUrl(line)
-                if url.isLocalFile():
-                    p = Path(url.toLocalFile())
-                    if p.exists():
-                        paths.append(p)
-            except (OSError, ValueError) as e:
-                AppLogger.warning(f"_parse_uri_list_text failed: {line}", exc=e)
+            url = QtCore.QUrl(line)
+            if url.isLocalFile():
+                paths.append(Path(url.toLocalFile()))
         return paths
 
     def _parse_plain_text_paths(self, text: str) -> list[Path]:
@@ -130,12 +128,9 @@ class ClipboardFilePaster:
         cand.extend(re.findall(r'(?:(?:[A-Za-z]:)?[\\/][^\s"\'<>|]+)', text))
         paths: list[Path] = []
         for s in cand:
-            try:
-                p = Path(s)
-                if p.exists():
-                    paths.append(p)
-            except (OSError, ValueError) as e:
-                AppLogger.warning(f"_parse_plain_text_paths failed: {s}", exc=e)
+            win = PureWindowsPath(s)
+            if win.drive and win.root:
+                paths.append(Path(s))
         return list(dict.fromkeys(paths))
 
     def collect_clipboard_files(self) -> CutCopy | None:
@@ -150,11 +145,7 @@ class ClipboardFilePaster:
 
         paths: list[Path] = []
         if md.hasUrls():
-            for url in md.urls():
-                if url.isLocalFile():
-                    p = Path(url.toLocalFile())
-                    if safe_exists(p):
-                        paths.append(p)
+            paths = [Path(url.toLocalFile()) for url in md.urls() if url.isLocalFile()]
         if not paths and md.hasFormat("text/uri-list"):
             try:
                 text = bytes(md.data("text/uri-list")).decode("utf-8", errors="replace")
@@ -170,38 +161,27 @@ class ClipboardFilePaster:
         action = self._extract_windows_drop_effect(md) or "copy"
         return (action, paths)
 
-    def build_paste_plan(self, destination_dir: Path | str) -> list[PastePlanItem]:
+    @staticmethod
+    def build_paste_plan(destination_dir: Path | str, extracted: CutCopy) -> list[PastePlanItem]:
         if _reject_virtual_destination(destination_dir, "paste"):
             return []
         dest_dir = Path(destination_dir)
         dest_dir.mkdir(parents=True, exist_ok=True)
 
-        extracted = self.collect_clipboard_files()
-        if not extracted:
-            return []
-
         action, paths = extracted
-        unique_paths: list[Path] = []
-        seen: set[str] = set()
-        for src in paths:
-            key = str(src)
-            if key in seen:
-                continue
-            seen.add(key)
-            unique_paths.append(src)
+        unique_paths = [src for src in dict.fromkeys(paths) if safe_exists(src)]
         if len(unique_paths) != len(paths):
-            AppLogger.warning(f"[paste] duplicate sources dropped: {len(paths)} -> {len(unique_paths)}")
+            AppLogger.warning(f"[paste] missing or duplicate sources dropped: {len(paths)} -> {len(unique_paths)}")
         plan: list[PastePlanItem] = []
         for i, src in enumerate(unique_paths):
             dst_default = dest_dir / src.name
             conflict = safe_exists(dst_default)
             suggested = Path(unique_path(dest_dir, src.name)) if conflict else None
-            is_dir = safe_is_dir(src)
             plan.append(
                 PastePlanItem(
                     index=i,
                     src=src,
-                    is_dir=is_dir,
+                    is_dir=safe_is_dir(src),
                     action=action,
                     dst_default=dst_default,
                     conflict=conflict,
@@ -268,26 +248,70 @@ def _confirm_action(message: str, parent: object | None) -> bool:
     )
 
 
-def _resolve_conflicts_with_ui(
-    plans: list[PastePlanItem] | list[DropPlanItem],
-    *,
-    op: str,
-    overwrite_mode: str = "ask",
-    parent: object | None = None,
-    folder_message: str = "Folder with the same name already exists. Proceed?",
-) -> dict[int, PasteDecision]:
+def _check_overwrite_mode(overwrite_mode: str) -> None:
     if overwrite_mode not in ("ask", "overwrite", "skip", "rename"):
         raise ValueError(f"Invalid overwrite_mode: {overwrite_mode}")
 
-    from .conflict_resolver import resolve_paste_plans_with_ui
 
-    return resolve_paste_plans_with_ui(
-        plans=plans,
-        overwrite_mode=overwrite_mode,
-        parent=parent,
-        op=op,
-        folder_message=folder_message,
-    )
+def _precheck_with_ui(
+    plans: list[PastePlanItem] | list[DropPlanItem],
+    *,
+    op: str,
+    overwrite_mode: str,
+    parent: object | None,
+) -> dict[int, PasteDecision]:
+    from .conflict_resolver import precheck_paste_plans_with_ui
+
+    return precheck_paste_plans_with_ui(plans=plans, overwrite_mode=overwrite_mode, parent=parent, op=op)
+
+
+def _conflict_asker(
+    plans: list[PastePlanItem] | list[DropPlanItem],
+    *,
+    op: str,
+    overwrite_mode: str,
+    parent: object | None,
+    folder_message: str,
+) -> AskConflict:
+    from .conflict_resolver import ConflictAsker
+
+    return ConflictAsker(op=op, overwrite_mode=overwrite_mode, parent=parent, item_count=len(plans), folder_message=folder_message)
+
+
+def _asked_on_main_thread(ask: AskConflict) -> AskConflict:
+    def ask_from_worker(conflict: PasteConflict) -> PasteAnswer:
+        done = threading.Event()
+        outcome: dict[str, object] = {}
+
+        def run():
+            try:
+                outcome["answer"] = ask(conflict)
+            except BaseException as e:
+                outcome["error"] = e
+            finally:
+                done.set()
+
+        _paste_dispatcher.invoke(run)
+        done.wait()
+        if "error" in outcome:
+            raise outcome["error"]
+        return outcome["answer"]
+
+    return ask_from_worker
+
+
+class _OperationProgressDialog(QtWidgets.QProgressDialog):
+    def __init__(self, label: str, parent: QtWidgets.QWidget | None):
+        super().__init__(label, t("Cancel"), 0, 0, parent)
+        self.canceled.disconnect(self.cancel)
+        self.setWindowModality(QtCore.Qt.WindowModal)
+        self.setMinimumDuration(0)
+        self.setAutoReset(False)
+        self.setAutoClose(False)
+
+    def closeEvent(self, event):
+        event.ignore()
+        self.canceled.emit()
 
 
 def _run_with_progress(
@@ -302,30 +326,21 @@ def _run_with_progress(
     if total == 0:
         return []
 
-    from ..common.dispatcher import CancelToken, Dispatcher
-    from ..common.thread import utility_pool
-
     token = CancelToken()
     results: list[OperationResult] = []
     progress_value = 0
     progress_limit: int | None = None
 
-    dialog = QtWidgets.QProgressDialog(label, t("Cancel"), 0, 0, parent)
-    dialog.setWindowModality(QtCore.Qt.WindowModal)
-    dialog.setMinimumDuration(0)
-    dialog.setAutoReset(False)
-    dialog.setAutoClose(False)
-    dialog.canceled.connect(token.cancel)
+    dialog = _OperationProgressDialog(label, parent)
+
+    def _on_cancel():
+        token.cancel()
+        dialog.setLabelText(t("Cancelling..."))
+
+    dialog.canceled.connect(_on_cancel)
     dialog.setValue(0)
 
     dispatcher = Dispatcher(utility_pool)
-
-    def _close_dialog():
-        try:
-            dialog.canceled.disconnect(token.cancel)
-        except RuntimeError:
-            pass
-        dialog.close()
 
     def _set_progress_limit(limit: int):
         nonlocal progress_limit, progress_value
@@ -343,93 +358,96 @@ def _run_with_progress(
             progress_value = min(progress_value, progress_limit)
         dispatcher.invoke(lambda v=progress_value: dialog.setValue(v))
 
-    def bg_task():
-        if progress_total_provider is not None:
-            try:
-                progress_total = progress_total_provider(token.is_cancelled)
-            except PasteCancelledError:
-                dispatcher.invoke(_close_dialog)
-                return
-            except Exception as e:
-                AppLogger.warning("progress total calculation failed", exc=e)
-                progress_total = total
-            if token.is_cancelled():
-                dispatcher.invoke(_close_dialog)
-                return
-            dispatcher.invoke(lambda value=progress_total: _set_progress_limit(value))
-        for i in range(total):
-            if token.is_cancelled():
-                break
+    def run_step(i: int) -> OperationResult:
+        try:
             if manual_progress:
-                result = execute_fn(i, advance, token.is_cancelled)
-            else:
-                result = execute_fn(i)
-                advance()
-            results.append(result)
-        dispatcher.invoke(_close_dialog)
+                return execute_fn(i, advance, token.is_cancelled)
+            result = execute_fn(i)
+            advance()
+            return result
+        except Exception as e:
+            AppLogger.warning(f"{label} item {i} failed", exc=e)
+            return OperationResult(action="unknown", src="", dst="", status="error", error=repr(e))
+
+    def bg_task():
+        try:
+            if progress_total_provider is not None:
+                try:
+                    progress_total = progress_total_provider(token.is_cancelled)
+                except PasteCancelledError:
+                    return
+                except Exception as e:
+                    AppLogger.warning("progress total calculation failed", exc=e)
+                    progress_total = total
+                if token.is_cancelled():
+                    return
+                dispatcher.invoke(lambda value=progress_total: _set_progress_limit(value))
+            for i in range(total):
+                if token.is_cancelled():
+                    break
+                result = run_step(i)
+                results.append(result)
+                if result.error == CANCELLED:
+                    token.cancel()
+                    break
+        finally:
+            dispatcher.invoke(dialog.accept)
 
     dispatcher.post(bg_task)
     dialog.exec()
+    dialog.deleteLater()
 
     ok_count = sum(1 for r in results if r.status == "ok")
+    failed_count = sum(1 for r in results if r.status == "error")
     if token.is_cancelled():
         Notifier.info(t("Operation cancelled ({count} completed)", count=ok_count))
     elif ok_count:
         Notifier.info(t("{count} file(s) processed", count=ok_count))
+    if failed_count:
+        Notifier.warning(t("{count} item(s) failed. See the log.", count=failed_count))
     return results
 
 
-def _execute_paste_items(
-    plans: list[PastePlanItem],
+def _execute_plans(
+    plans: list[PastePlanItem] | list[DropPlanItem],
     decisions: dict[int, PasteDecision],
     parent: QtWidgets.QWidget | None,
     op: str,
+    ask_conflict: AskConflict | None = None,
 ) -> list[OperationResult]:
     label = t("Moving files...") if op == "move" else t("Copying files...")
+    ask = _asked_on_main_thread(ask_conflict) if ask_conflict is not None else None
+    selection = [plan.src for plan in plans if plan.src is not None]
+    executor: FileExecutor | None = None
 
     def step(i: int, advance: Callable[[int], None], is_cancelled: Callable[[], bool]) -> OperationResult:
-        item = plans[i]
-        dec = decisions.get(item.index, PasteDecision(mode="skip"))
-        executor = FileExecutor(progress_callback=advance, cancel_check=is_cancelled)
-        return executor._execute_item(item.src, item.dst_default, item.action, dec)
-
-    def progress_total_provider(is_cancelled: Callable[[], bool]) -> int:
-        return sum(count_operation_units(item.src, item.dst_default, item.action, cancel_check=is_cancelled) for item in plans)
-
-    return _run_with_progress(parent, label, len(plans), step, progress_total_provider=progress_total_provider, manual_progress=True)
-
-
-def _execute_drop_items(
-    plans: list[DropPlanItem],
-    decisions: dict[int, PasteDecision],
-    parent: QtWidgets.QWidget | None,
-    op: str,
-) -> list[OperationResult]:
-    action: Literal["copy", "cut"] = "cut" if op == "move" else "copy"
-    label = t("Moving files...") if op == "move" else t("Copying files...")
-
-    def step(i: int, advance: Callable[[int], None], is_cancelled: Callable[[], bool]) -> OperationResult:
+        nonlocal executor
+        if executor is None:
+            executor = FileExecutor(progress_callback=advance, cancel_check=is_cancelled, ask_conflict=ask, selection=selection)
         plan = plans[i]
-        dec = decisions.get(plan.index)
-        if dec is None or dec.mode == "skip":
-            advance()
-            return OperationResult(action="skip", src=str(plan.src or ""), dst="", status="skipped")
-        if plan.src is not None:
-            executor = FileExecutor(progress_callback=advance, cancel_check=is_cancelled)
-            return executor._execute_item(plan.src, plan.dst_default, action, dec)
-        dst_path = str(plan.dst_default)
-        if dec.mode == "rename" and plan.suggested_dst:
-            dst_path = str(plan.suggested_dst)
-        elif dec.mode == "overwrite" and plan.conflict:
-            _safe_remove(dst_path)
-        result = _save_remote_item(plan.parsed_item, dst_path, move=(op == "move"))
-        advance()
-        return result
+        return executor.execute_one(plan, decisions.get(plan.index))
 
     def progress_total_provider(is_cancelled: Callable[[], bool]) -> int:
-        return sum(count_operation_units(plan.src, plan.dst_default, action, cancel_check=is_cancelled) if plan.src is not None else 1 for plan in plans)
+        return sum(count_operation_units(plan.src, plan.dst_default, plan.action, cancel_check=is_cancelled) if plan.src is not None else 1 for plan in plans)
 
     return _run_with_progress(parent, label, len(plans), step, progress_total_provider=progress_total_provider, manual_progress=True)
+
+
+def _paste_with_ui(
+    plans: list[PastePlanItem] | list[DropPlanItem],
+    *,
+    op: str,
+    overwrite_mode: str,
+    parent: object | None,
+    folder_message: str,
+) -> list[OperationResult] | None:
+    _check_overwrite_mode(overwrite_mode)
+    try:
+        decisions = _precheck_with_ui(plans, op=op, overwrite_mode=overwrite_mode, parent=parent)
+    except PasteCancelledError:
+        return None
+    ask = _conflict_asker(plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
+    return _execute_plans(plans, decisions, parent, op, ask)
 
 
 def paste_clipboard_files(
@@ -438,18 +456,40 @@ def paste_clipboard_files(
     overwrite_mode: str = "ask",
     parent: object | None = None,
     folder_message: str = "Folder with the same name already exists. Proceed?",
-) -> list[OperationResult]:
+) -> None:
     if _reject_virtual_destination(destination_dir, "paste"):
-        return []
-    plans = ClipboardFilePaster().build_paste_plan(destination_dir)
-    if not plans:
-        return []
-    op = "move" if plans[0].action == "cut" else "copy"
-    try:
-        decisions = _resolve_conflicts_with_ui(plans=plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
-    except PasteCancelledError:
-        return []
-    return _execute_paste_items(plans, decisions, parent, op)
+        return
+    if _paste_running.is_set():
+        Notifier.info(t("A paste is already running."))
+        return
+    extracted = ClipboardFilePaster().collect_clipboard_files()
+    if not extracted:
+        return
+    _paste_running.set()
+
+    def resolve_and_execute(plans: list[PastePlanItem]):
+        try:
+            if not plans:
+                return
+            op = "move" if plans[0].action == "cut" else "copy"
+            _paste_with_ui(plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
+        finally:
+            _paste_running.clear()
+
+    def build_in_background():
+        plans: list[PastePlanItem] = []
+        try:
+            plans = ClipboardFilePaster.build_paste_plan(destination_dir, extracted)
+        except Exception as e:
+            AppLogger.warning(f"Paste failed while checking the files to paste into {destination_dir}", exc=e)
+        finally:
+            _paste_dispatcher.invoke(lambda: resolve_and_execute(plans))
+
+    _paste_dispatcher.post(build_in_background)
+
+
+def paste_in_progress() -> bool:
+    return _paste_running.is_set()
 
 
 def execute_paste_plans_with_ui(
@@ -469,11 +509,9 @@ def execute_paste_plans_with_ui(
         return []
     accepted_plans = [item for _, item in accepted]
     op = "move" if accepted_plans[0].action == "cut" else "copy"
-    try:
-        decisions = _resolve_conflicts_with_ui(plans=accepted_plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
-    except PasteCancelledError:
+    accepted_results = _paste_with_ui(accepted_plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
+    if accepted_results is None:
         return []
-    accepted_results = _execute_paste_items(accepted_plans, decisions, parent, op)
     return _merge_paste_plan_results(len(plans), accepted, accepted_results, rejected)
 
 
@@ -499,8 +537,4 @@ def drop_files_with_ui(
         return []
     if op != "ask" and confirm_message and not _confirm_action(confirm_message, parent):
         return []
-    try:
-        decisions = _resolve_conflicts_with_ui(plans=plans, op=resolved_op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
-    except PasteCancelledError:
-        return []
-    return _execute_drop_items(plans, decisions, parent, resolved_op)
+    return _paste_with_ui(plans, op=resolved_op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message) or []

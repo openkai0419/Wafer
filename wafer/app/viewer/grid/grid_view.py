@@ -16,6 +16,7 @@ from .pipeline import GridPipeline
 from .items import GridItemModel
 from ....qt.theme import ThemeManager
 from ....qt.commands.bridge import ActionKit, Command
+from ....qt.commands.command.context import Lazy
 
 
 class _SelectionOverlay(QtWidgets.QWidget):
@@ -111,6 +112,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
 
         self.rects = LayoutData.empty()
         self.last_selections = []
+        self._last_anchor_path = None
         self._restore_scroll_path = None
         self._pending_scroll_index = None
         self._update_scroll = None
@@ -172,7 +174,6 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self.items.selectionChanged.connect(self._on_selection_changed)
         self.widgets = {}
         self._additional_widgets: dict[int, QtWidgets.QWidget] = {}
-        self._prev_selection_set: set[int] = set()
         self.visible_indices = set()
 
         self.verticalScrollBar().valueChanged.connect(self._on_scroll_bar_changed)
@@ -364,25 +365,22 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self._auto_scroll_anim.start()
 
     def extend_context(self, ctx, cmd, event=None, key=None, source=None):
-        paths = self.items.selected_paths()
-        path = self.items.last_selected_path()
-        sources = self.items.selected_sources()
-        return {"path": path, "paths": paths, "source": self.items.last_selected_source(), "sources": sources}
+        items = self.items
+        return {"path": items.last_selected_path(), "paths": Lazy(items.selected_paths), "source": items.last_selected_source(), "sources": Lazy(items.selected_sources)}
 
     @profiler.profile
-    def _on_selection_changed(self, current_selection):
-        newly_selected = current_selection - self._prev_selection_set
-        newly_deselected = self._prev_selection_set - current_selection
-        self._prev_selection_set = set(current_selection)
-        for i in newly_deselected:
-            widget = self._additional_widgets.get(i)
-            if widget is not None:
-                self._notifier.deselect(i, widget)
-        for i in newly_selected:
-            widget = self._additional_widgets.get(i)
-            if widget is not None:
+    def _on_selection_changed(self, changed):
+        widgets = self._additional_widgets
+        indices = changed if len(changed) <= len(widgets) else [i for i in widgets if i in changed]
+        for i in indices:
+            widget = widgets.get(i)
+            if widget is None:
+                continue
+            if self.items.is_selected(i):
                 self._notifier.select(i, widget)
-        self.last_selections = self.items.selected_paths()
+            else:
+                self._notifier.deselect(i, widget)
+        self.last_selections = []
         self._overlay.update()
 
     def _scene_view_rect(self):
@@ -445,7 +443,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self._overlay.update()
 
     @profiler.profile
-    def set_paths(self, path_list, sources, aspect_ratios, keep_scroll=True):
+    def set_paths(self, path_list, sources, aspect_ratios, keep_scroll=True, path_index=None):
         if not path_list:
             self.items.clear()
             self._clear_all_widgets()
@@ -455,6 +453,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self.layout_ready.emit()
             return
         self.last_selections = self.items.selected_paths()
+        self._last_anchor_path = self.items.last_selected_path()
         self._restore_scroll_path = None
         if keep_scroll:
             bar = self._primary_bar()
@@ -463,7 +462,7 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
             self._update_scroll = None
         self._clear_all_widgets()
         with self.items.selection_noemit():
-            self.items.set_items(path_list, sources, aspect_ratios)
+            self.items.set_items(path_list, sources, aspect_ratios, path_index)
         self._recalc_layout()
 
     @profiler.profile
@@ -477,7 +476,6 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self._notifier.clear()
         self._pipeline.cancel_all()
         self.visible_indices.clear()
-        self._sync_overlay_visible_paths()
         self.rects = LayoutData.empty()
         self._scene.setSceneRect(0, 0, 0, 0)
 
@@ -626,15 +624,15 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         if not animated or distance < 2:
             bar.setValue(target)
             return
-        if self._scroll_anim is not None:
-            self._scroll_anim.stop()
-        duration = min(int(40 * math.log2(distance + 1)) + 2, 500)
-        anim = QtCore.QPropertyAnimation(bar, b"value", self)
-        anim.setDuration(duration)
+        if self._scroll_anim is None:
+            self._scroll_anim = QtCore.QPropertyAnimation(bar, b"value", self)
+            self._scroll_anim.setEasingCurve(QtCore.QEasingCurve.OutQuad)
+        anim = self._scroll_anim
+        anim.stop()
+        anim.setTargetObject(bar)
+        anim.setDuration(min(int(40 * math.log2(distance + 1)) + 2, 500))
         anim.setStartValue(bar.value())
         anim.setEndValue(target)
-        anim.setEasingCurve(QtCore.QEasingCurve.OutQuad)
-        self._scroll_anim = anim
         anim.start()
 
     @profiler.profile
@@ -717,14 +715,13 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
         self._update_visible_items()
         self.layout_ready.emit()
         if self.last_selections:
-            indexes = [i for i in (self.items.index_of_path(p) for p in self.last_selections) if i is not None]
-            if indexes:
-                with self.items.selection_noemit():
-                    self.items.set_selected(indexes, last=-1)
-            else:
-                with self.items.selection_noemit():
-                    self.items.clear_selection()
-        self._prev_selection_set = set(self.items.selected_indices())
+            anchor = self.items.index_of_path(self._last_anchor_path)
+            indexes = [i for i in (self.items.index_of_path(p) for p in self.last_selections) if i is not None and i != anchor]
+            if anchor is not None:
+                indexes.append(anchor)
+            with self.items.selection_noemit():
+                self.items.set_selected(indexes, last=-1)
+            self.last_selections = []
         if self._restore_raw_scroll_if_needed():
             if was_scrolling:
                 self._start_auto_scroll_from_current()
@@ -807,7 +804,6 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 if i < len(self.rects):
                     self._setup_cell(i)
         self.visible_indices = new_visible
-        self._sync_overlay_visible_paths()
         self._sync_additional_widgets()
         if self.rects:
             margin = self._half_pos
@@ -819,13 +815,6 @@ class GridView(QtWidgets.QGraphicsView, ActionKit.UIMixin):
                 self._scene.setSceneRect(new_rect)
         self._overlay.raise_()
         self.viewport().update()
-
-    def _sync_overlay_visible_paths(self):
-        host = self._overlay_host or getattr(self.root, "grid_overlay_host", None)
-        if host is None:
-            return
-        paths = tuple(self.items.paths[i] for i in sorted(self.visible_indices) if 0 <= i < len(self.items.paths) and self.items.paths[i])
-        host.set_visible_paths(paths)
 
     def _paint_grid_overlays(self, painter, map_rect):
         host = self._overlay_host or getattr(self.root, "grid_overlay_host", None)

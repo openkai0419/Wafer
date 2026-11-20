@@ -148,18 +148,6 @@ def _order_resolver(ascending):
     return lambda: (_svc().get("ascending") if _svc() else False) == ascending
 
 
-_SORT_DISPLAY = {
-    "none": "None",
-    "path": "Path",
-    "name": "Name",
-    "created": "Created",
-    "modified": "Modified",
-    "collected": "Collected",
-    "size": "Size",
-    "random": "Random",
-}
-
-
 class QueryCommands(ActionKit.MenuBase):
     NAME = ActionKit.MenuPath.QUERY
     PRIORITY = 20
@@ -206,7 +194,7 @@ class QueryCommands(ActionKit.MenuBase):
             *[
                 ActionKit.Command(
                     path=f"Sort By/qry.sort_{k}",
-                    display=_SORT_DISPLAY[k],
+                    display=k.capitalize(),
                     func=_make_sort_func(k),
                     action_group=GROUP_SORT,
                     checked=_sort_resolver(k),

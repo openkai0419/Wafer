@@ -79,15 +79,18 @@ def test_viewer_select_folder(ready_page):
     page.wait_for_function("document.querySelector('#status').textContent.startsWith('1 ')")
 
 
-def test_viewer_next_survives_backend_session_loss(ready_page, webui_query_service):
+def test_viewer_next_uses_the_item_the_grid_already_has(ready_page):
     page = ready_page
     _open_first(page)
     page.wait_for_function("document.querySelector('#viewer-caption').textContent.startsWith('1/')")
+    fetched = []
+    page.on("request", lambda request: fetched.append(request.url) if "/items" in request.url else None)
 
-    webui_query_service._sessions.clear()
-
-    page.click("#viewer-next")
+    page.keyboard.press("ArrowRight")
     page.wait_for_function("document.querySelector('#viewer-caption').textContent.startsWith('2/')")
+    page.click("#viewer-next")
+    page.wait_for_function("document.querySelector('#viewer-caption').textContent.startsWith('3/')")
+    assert fetched == []
 
 
 def test_meta_panel_groups_keys_by_prefix(ready_page):

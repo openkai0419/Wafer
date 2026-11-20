@@ -8,6 +8,7 @@ from ...core.logs import AppLogger
 from ...constants import DEV_MODE
 from ...core.platform.process import AppProcess
 from ...core.ipc.message import Message
+from ...core.platform.workspace_lock import WorkspaceLock
 from ...core.store.workspace import WorkspaceStore
 
 
@@ -19,24 +20,13 @@ def _tray_send(ctx, topic: str, payload=None):
         AppLogger.warning(f"[{topic} notify failed] {e}")
 
 
-def get_viewer_count(ctx=None) -> int:
-    tray = ctx.get_instance("Tray")
-    try:
-        return tray.broker.peer_counts().get("viewer", 0)
-    except Exception as e:
-        AppLogger.warning(f"[viewer count failed] {e}")
-        return 0
-
-
 def send_show_toggle(ctx=None, flag: bool = False):
     _tray_send(ctx, "show_toggle", flag)
 
 
 def show_window(ctx=None):
-    tray = ctx.get_instance("Tray")
-    c = get_viewer_count(ctx)
-    if c < 1:
-        store = WorkspaceStore.instance()
+    store = WorkspaceStore.instance()
+    if not WorkspaceLock.open_slot_ids(slot.slot_id for slot in store.list_slots()):
         restore_ids = store.get_restore_slot_ids()
         if restore_ids:
             AppLogger.info(f"restoring {len(restore_ids)} viewer(s): {restore_ids}")
@@ -46,6 +36,7 @@ def show_window(ctx=None):
             AppProcess.new_main("--viewer")
         restore_webui()
         return
+    tray = ctx.get_instance("Tray")
     tray.show_state = not bool(getattr(tray, "show_state", False))
     send_show_toggle(ctx, tray.show_state)
 

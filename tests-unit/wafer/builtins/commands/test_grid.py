@@ -103,3 +103,27 @@ class TestFollowSelectionCommand:
         GridViewCommands.toggle_scroll_follow_selection(ctx)
 
         view.set_follow_selection_on_update.assert_called_once_with(True)
+
+
+class TestWheelScrollCommand:
+    @staticmethod
+    def _scroll(multiplier, wheel_steps=1, direction="down"):
+        from unittest.mock import MagicMock
+        from wafer.builtins.commands.grid import GridViewCommands
+
+        bar = MagicMock()
+        bar.singleStep.return_value = 20
+        bar.value.return_value = 1000
+        view = MagicMock()
+        view.parent_scroll._primary_bar.return_value = bar
+        view.parent_scroll._is_primary_reversed.return_value = False
+        ctx = MagicMock()
+        ctx.get_instance.return_value = view
+        ctx.get.side_effect = lambda key, default=None: wheel_steps if key == "wheel_steps" else default
+        getattr(GridViewCommands, f"wheel_scroll_{direction}")(ctx, multiplier=multiplier)
+        return bar.setValue.call_args.args[0] - 1000
+
+    def test_fractional_multiplier_is_kept(self):
+        assert self._scroll(1.5) == 30
+        assert self._scroll(0.5) == 10
+        assert self._scroll(0.5, wheel_steps=3, direction="up") == -30

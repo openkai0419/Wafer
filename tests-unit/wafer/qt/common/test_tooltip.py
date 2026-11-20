@@ -41,3 +41,24 @@ def test_instant_tooltip_filter_consumes_tooltip_event(qtbot, monkeypatch):
 
     assert tooltip_filter.eventFilter(button, event) is True
     assert shown == ["Hello"]
+
+
+def test_instant_tooltip_filter_skips_unrelated_events_before_reading_the_widget(qtbot):
+    from wafer.qt.common.tooltip import InstantTooltipEventFilter
+
+    class CountingButton(QtWidgets.QPushButton):
+        reads = 0
+
+        def toolTip(self):
+            CountingButton.reads += 1
+            return super().toolTip()
+
+    button = CountingButton()
+    button.setToolTip("Hello")
+    qtbot.addWidget(button)
+
+    tooltip_filter = InstantTooltipEventFilter()
+    assert tooltip_filter.eventFilter(button, QtCore.QEvent(QtCore.QEvent.Paint)) is False
+    assert tooltip_filter.eventFilter(button, QtCore.QEvent(QtCore.QEvent.Timer)) is False
+
+    assert CountingButton.reads == 0

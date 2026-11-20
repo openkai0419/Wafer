@@ -43,11 +43,8 @@ class MenuPlan:
         items = list(self._items)
         for t in ts:
             before = len(items)
-            if "/" in t:
-                items = [x for x in items if not (x.kind in ("cmd", "action") and (x.token.strip("/") == t or x.canonical_path.strip("/") == t))]
-            else:
-                prefix = t + "/"
-                items = [x for x in items if not (x.token.startswith(prefix) or (x.kind in ("cmd", "action") and (x.command_id == t or x.canonical_path.startswith(prefix))))]
+            prefix = t + "/"
+            items = [x for x in items if not (x.token.startswith(prefix) or (x.kind in ("cmd", "action") and (t in (x.command_id, x.token.strip("/"), x.canonical_path.strip("/")) or x.canonical_path.startswith(prefix))))]
             if len(items) == before:
                 AppLogger.warning(f"[MenuPlan.hide] target not found, skipped: {t}")
         return MenuPlan(self._hub, items, has_inline=self.has_inline)
@@ -141,10 +138,12 @@ class MenuMaker:
         if not action.path:
             raise ValueError("MenuAction.path is required")
         parts = split_menu_path(str(action.path))
-        if not parts or parts[-1] == MENU_SEPARATOR or str(parts[-1]).startswith(MENU_SECTION_PREFIX):
+        if not parts or parts[-1] == MENU_SEPARATOR:
             raise ValueError(f"Invalid menu action path: {action.path}")
-        command_id = parts[-1]
-        return _ResolvedItem(token=str(action.path), kind="action", command_id=command_id, canonical_path=str(action.path), action=action)
+        kind = "section" if str(parts[-1]).startswith(MENU_SECTION_PREFIX) else "action"
+        if kind == "section" and (not action.display or action.func is not None or action.checked is not None):
+            raise ValueError(f"A header action needs a display and takes no func or checked: {action.path}")
+        return _ResolvedItem(token=str(action.path), kind=kind, command_id=parts[-1], canonical_path=str(action.path), action=action)
 
     @staticmethod
     def _item_to_resolved(hub: MenuHub, token: str) -> _ResolvedItem:

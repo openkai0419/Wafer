@@ -47,11 +47,6 @@ def test_image_loader_load_nonexistent():
     assert result is None
 
 
-def test_is_widget_plugin_image():
-    assert not grid_resolver.is_widget_plugin("photo.jpg")
-    assert not grid_resolver.is_widget_plugin("file.xyz")
-
-
 def test_load_thumbnail_api(tmp_path):
     from wafer.plugin.grid.handler import load_thumbnail
 
@@ -296,18 +291,6 @@ class TestWidgetNotifier:
         plugin.on_thumb_loaded.assert_not_called()
 
 
-def test_imageloader_resolve_instance_by_path():
-    instance = image_loader_resolver.registry.resolve_instance("photo.jpg")
-    assert instance is not None
-    assert isinstance(instance, BaseImageLoader)
-
-
-def test_imageloader_resolve_instance_unknown():
-    from wafer.builtins.imageloader import SystemImageLoader
-
-    assert isinstance(image_loader_resolver.registry.resolve_instance("file.xyz"), SystemImageLoader)
-
-
 def test_resolve_chain_returns_priority_sorted():
     from wafer.plugin.registry import FilePluginRegistry
 
@@ -453,3 +436,41 @@ def test_all_classes_returns_name_cls_tuples():
     assert ("p1", P1) in result
     assert ("p2", P2) in result
     assert len(result) == 2
+
+
+def test_merged_chain_keeps_user_order_between_widgets(monkeypatch):
+    from wafer.plugin.grid.handler import GridResolver, IMAGE, WIDGET
+    from wafer.plugin.registry import FilePluginRegistry
+
+    class HighWidget(WidgetGridPlugin):
+        NAME = "high_widget"
+        EXTENSIONS = (".ord",)
+        PRIORITY = 100
+
+    class LowWidget(WidgetGridPlugin):
+        NAME = "low_widget"
+        EXTENSIONS = (".ord",)
+        PRIORITY = 50
+
+    class MidLoader(BaseImageLoader):
+        NAME = "mid_loader"
+        EXTENSIONS = (".ord",)
+        PRIORITY = 70
+
+    class TieLoader(BaseImageLoader):
+        NAME = "tie_loader"
+        EXTENSIONS = (".ord",)
+        PRIORITY = 50
+
+    loaders = FilePluginRegistry()
+    loaders.register(MidLoader)
+    loaders.register(TieLoader)
+    monkeypatch.setattr(image_loader_resolver, "registry", loaders)
+    resolver = GridResolver()
+    resolver.registry.register(HighWidget)
+    resolver.registry.register(LowWidget)
+
+    assert resolver.resolve_merged_chain("x.ord") == [(HighWidget, WIDGET), (MidLoader, IMAGE), (LowWidget, WIDGET), (TieLoader, IMAGE)]
+
+    resolver.registry.set_order(["low_widget", "high_widget"])
+    assert resolver.resolve_merged_chain("x.ord") == [(MidLoader, IMAGE), (LowWidget, WIDGET), (HighWidget, WIDGET), (TieLoader, IMAGE)]

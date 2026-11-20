@@ -1,5 +1,4 @@
-from wafer.builtins.mark import MarkRegistry
-from wafer.builtins.mark.registry import _normalize_id
+from wafer.builtins.mark.registry import MarkRegistry, _normalize_id
 from wafer.builtins.mark.shapes import DEFAULT_SHAPE_KEY
 
 import pytest

@@ -13,6 +13,9 @@ from .file import _ctx_sources
 
 
 def _current_db(ctx) -> str | None:
+    named = ctx.get("database_name") if hasattr(ctx, "get") else None
+    if named:
+        return named
     w = ctx.get_instance("MainWindow") if hasattr(ctx, "get_instance") else None
     return getattr(w, "database_name", None) if w else None
 

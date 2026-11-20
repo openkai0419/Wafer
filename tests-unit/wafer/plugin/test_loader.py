@@ -255,6 +255,26 @@ class TestDiscoverExtension:
         PluginLoader.discover_extension(stub_dir)
         assert registries["grid"].get("stub_test") is None
 
+    def test_discover_sets_dll_directories_before_importing(self, plugin_env, monkeypatch):
+        _, stub_dir = plugin_env
+        calls = []
+        monkeypatch.setattr(loader_module, "_setup_packages_dll_directories", lambda d: calls.append(("packages", d)))
+        monkeypatch.setattr(loader_module, "_setup_dll_directory", lambda d: calls.append(("lib", d)))
+        monkeypatch.setattr(loader_module, "_import_extension", lambda name, folder, failed=None: calls.append(("import", folder)) or [])
+
+        PluginLoader.discover_extension(stub_dir)
+
+        assert [kind for kind, _ in calls] == ["packages", "lib", "import"]
+        assert calls[1][1] == stub_dir
+
+    def test_discover_reports_failed_modules(self, plugin_dir):
+        folder = _write_extension(plugin_dir, "idx_a", broken="raise ImportError('missing dependency')\n")
+
+        failed = []
+        PluginLoader.discover_extension(str(folder), failed)
+
+        assert failed == ["_plugins_idx_a.broken"]
+
 
 class TestSetupPackagesDllDirectories:
     def test_registers_libs_dirs_on_windows(self, tmp_path, monkeypatch):

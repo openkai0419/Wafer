@@ -96,7 +96,7 @@ class ComfyUiParser(BaseSingletonParser):
         prompt, workflow, used = _extract(metadata)
         if prompt is None and workflow is None:
             if any(key in metadata for key in TRIGGER_KEYS):
-                return ParserResult(source=path, status=False)
+                return ParserResult(source=path, status=True)
             return None
 
         meta_info: dict[str, str] = {}

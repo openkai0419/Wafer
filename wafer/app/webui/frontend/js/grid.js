@@ -29,13 +29,13 @@ export class Grid {
     });
   }
 
-  setQuery(client, aspects) {
+  setQuery(client, aspects, keepScroll = false) {
     this.client = client;
     this.aspects = aspects;
     this.total = aspects.length;
     this.items.clear();
     this.pending.clear();
-    this.scroll.scrollTop = 0;
+    if (!keepScroll) this.scroll.scrollTop = 0;
     this.relayout();
   }
 
@@ -133,7 +133,7 @@ export class Grid {
     cell.title = item.name;
     const img = document.createElement('img');
     img.loading = 'lazy';
-    img.src = thumbUrl(this.client.db, item.path, size);
+    img.src = thumbUrl(this.client.db, item.path, size, item.mtime);
     img.onerror = () => {
       const label = document.createElement('div');
       label.className = `placeholder ${item.kind}`;
@@ -164,7 +164,7 @@ export class Grid {
     } catch (e) {
       console.error(e);
     } finally {
-      this.pending.delete(page);
+      if (client === this.client) this.pending.delete(page);
     }
   }
 

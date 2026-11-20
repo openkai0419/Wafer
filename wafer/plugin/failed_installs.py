@@ -61,8 +61,9 @@ def clear(extensions_dir: str, names) -> None:
         else:
             try:
                 os.remove(_failed_path(extensions_dir))
-            except OSError:
-                pass
+            except OSError as e:
+                AppLogger.warning(f"[FailedInstalls] Could not delete {_failed_path(extensions_dir)}, {removed} stay marked as failed until it can be deleted", exc=e)
+                return
         AppLogger.info(f"[FailedInstalls] cleared: {removed}")
 
 

@@ -309,16 +309,13 @@ class _Column(QtWidgets.QWidget):
     def restore_window_state(self) -> bool:
         return self.kind == _KIND_UI and self._restore_window_cb.isChecked()
 
-    def populate(self, items: list[tuple]):
+    def populate(self, items: list[tuple[str, str, str]]):
         while self._list_layout.count():
             it = self._list_layout.takeAt(0)
             if it.widget():
                 it.widget().deleteLater()
         mode_provider = self.query_mode if self.kind == _KIND_QUERY else None
-        for item in items:
-            preset_id = item[0]
-            name = item[1]
-            updated_at = item[3] if len(item) > 3 else (item[2] if len(item) > 2 and not str(item[2]).startswith("#") else "")
+        for preset_id, name, updated_at in items:
             row = _PresetItem(self.kind, preset_id, name, updated_at, mode_provider=mode_provider, parent=self._list_widget)
             row.apply_requested.connect(self.apply_requested.emit)
             row.overwrite_requested.connect(self.overwrite_requested.emit)

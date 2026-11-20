@@ -197,6 +197,12 @@ def test_drill_down_needs_three(mapping):
     assert mapping.message_text() == "Select at least 3 files."
 
 
+def test_setting_files_again_stops_the_layout_of_the_old_files(mapping):
+    token = mapping.levels[-1].layout_token
+    mapping.set_files(list(PATHS), "db")
+    assert token.is_cancelled()
+
+
 def test_remove_files(mapping, qtbot):
     mapping.remove_files(["c:/0.png"])
     qtbot.waitUntil(lambda: mapping.current_result() is not None and len(mapping.current_result().paths) == 29, timeout=5000)
@@ -543,7 +549,8 @@ def test_mapping_space_sets_the_base_groups_of_its_database(mapping, qtbot, fres
     previous = mapping.current_result()
     space.toolbar.sliders["size"].setValue(space.toolbar.sliders["size"].minimum())
     space.toolbar.fine_check.setChecked(True)
-    assert GroupingStore.instance().get("db") == Grouping(size=0.25, fine=1) == fresh_grouping_store["db"]
+    assert GroupingStore.instance().get("db") == Grouping(size=0.25, fine=1)
+    qtbot.waitUntil(lambda: fresh_grouping_store.get("db") == Grouping(size=0.25, fine=1))
     wait_for_new_result(qtbot, mapping, previous)
     assert mapping.toolbar.slider_values["subgroup_size"].text() == "\N{MULTIPLICATION SIGN}1/20"
     assert space.toolbar.slider_values["size"].text() == "\N{MULTIPLICATION SIGN}1/4"

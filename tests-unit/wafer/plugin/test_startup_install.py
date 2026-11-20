@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from wafer.core.common.profile import current_profile
 from wafer.plugin import installer_queue, startup_install
 from wafer.plugin.installer import InstallResult
 
@@ -161,9 +162,10 @@ def test_terminate_conflicting_kills_app_processes_and_spares_waiter(ext_dir):
     with (
         patch.object(startup_install.SafeProcessLock, "read_owner_pid", return_value=100),
         patch("wafer.core.platform.process.AppProcess.list_app", return_value=[waiter, old_viewer, other]),
+        patch("wafer.core.platform.process.AppProcess.list_debug_processes_sharing", return_value=[]),
         patch("wafer.core.platform.process.AppProcess.terminate_and_wait") as terminate,
     ):
-        _real_terminate()
+        _real_terminate(ext_dir)
 
     terminate.assert_called_once_with([old_viewer, other])
 
@@ -174,9 +176,10 @@ def test_terminate_conflicting_noop_when_only_waiter(ext_dir):
     with (
         patch.object(startup_install.SafeProcessLock, "read_owner_pid", return_value=100),
         patch("wafer.core.platform.process.AppProcess.list_app", return_value=[waiter]),
+        patch("wafer.core.platform.process.AppProcess.list_debug_processes_sharing", return_value=[]),
         patch("wafer.core.platform.process.AppProcess.terminate_and_wait") as terminate,
     ):
-        _real_terminate()
+        _real_terminate(ext_dir)
 
     terminate.assert_not_called()
 
@@ -187,11 +190,61 @@ def test_terminate_conflicting_kills_all_when_no_waiter(ext_dir):
     with (
         patch.object(startup_install.SafeProcessLock, "read_owner_pid", return_value=None),
         patch("wafer.core.platform.process.AppProcess.list_app", return_value=[old_viewer]),
+        patch("wafer.core.platform.process.AppProcess.list_debug_processes_sharing", return_value=[]),
         patch("wafer.core.platform.process.AppProcess.terminate_and_wait") as terminate,
     ):
-        _real_terminate()
+        _real_terminate(ext_dir)
 
     terminate.assert_called_once_with([old_viewer])
+
+
+def test_install_terminates_debug_processes_sharing_packages(ext_dir):
+    viewer = Mock(pid=200)
+    debug_viewer = Mock(pid=400)
+    seen = []
+
+    with (
+        patch.object(startup_install.SafeProcessLock, "read_owner_pid", return_value=None),
+        patch("wafer.core.platform.process.AppProcess.list_app", return_value=[viewer]),
+        patch("wafer.core.platform.process.AppProcess.list_debug_processes_sharing", side_effect=lambda d: seen.append(d) or [debug_viewer]),
+        patch("wafer.core.platform.process.AppProcess.terminate_and_wait") as terminate,
+    ):
+        _real_terminate(ext_dir)
+
+    assert seen == [os.path.join(ext_dir, ".packages")]
+    terminate.assert_called_once_with([viewer, debug_viewer])
+
+
+def test_terminate_conflicting_terminates_debug_processes_even_without_plain_ones(ext_dir):
+    debug_viewer = Mock(pid=400)
+
+    with (
+        patch.object(startup_install.SafeProcessLock, "read_owner_pid", return_value=None),
+        patch("wafer.core.platform.process.AppProcess.list_app", return_value=[]),
+        patch("wafer.core.platform.process.AppProcess.list_debug_processes_sharing", return_value=[debug_viewer]),
+        patch("wafer.core.platform.process.AppProcess.terminate_and_wait") as terminate,
+    ):
+        _real_terminate(ext_dir)
+
+    terminate.assert_called_once_with([debug_viewer])
+
+
+def test_pending_installs_are_skipped_in_profile(ext_dir, monkeypatch):
+    plugin_dir = _make_plugin(ext_dir, "ext_a")
+    installer_queue.enqueue(ext_dir, "ext_a", plugin_dir)
+    monkeypatch.setattr("sys.argv", ["main.py", "--profile", "debug-a"])
+    current_profile.cache_clear()
+    try:
+        pa, pb = _patch_phases(True, True)
+        with pa as ma, pb as mb:
+            result = startup_install.run_pending_installs(ext_dir)
+    finally:
+        current_profile.cache_clear()
+
+    assert result is False
+    ma.assert_not_called()
+    mb.assert_not_called()
+    assert len(installer_queue.read_queue(ext_dir)) == 1
 
 
 def test_status_writer_created_before_lock_scan(ext_dir):
@@ -215,7 +268,7 @@ def test_status_writer_created_before_lock_scan(ext_dir):
     cancelled_result = InstallResult(success=False, cancelled=True)
     with (
         patch.object(startup_install, "InstallStatusWriter", Writer),
-        patch.object(startup_install, "_terminate_conflicting_processes", side_effect=lambda: events.append(("terminate",))),
+        patch.object(startup_install, "_terminate_conflicting_processes", side_effect=lambda *a: events.append(("terminate",))),
         patch.object(startup_install, "install_requirements_only", return_value=cancelled_result),
         patch.object(startup_install, "run_post_install") as mb,
         patch("wafer.plugin.startup_install.Notifier"),

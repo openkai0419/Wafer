@@ -63,6 +63,7 @@ def _make_tab(qtbot, sync_dispatcher, rows=None):
 
         tab = DataTab(sync_dispatcher)
         qtbot.addWidget(tab)
+        tab.show()
         return tab
 
 
@@ -152,8 +153,26 @@ class TestApplyRows:
 
 
 class TestShowHideEvent:
+    def test_loads_only_when_first_shown(self, qtbot, sync_dispatcher):
+        with (
+            patch(f"{MODULE}.list_setting_db_names", return_value=["db1"]),
+            patch(f"{MODULE}._build_rows", return_value=SAMPLE_ROWS) as build_rows,
+            patch("wafer.app.viewer.ipc_bridge.ViewerIpcBridge.instance", return_value=None),
+        ):
+            from wafer.builtins.database_manager.data_tab import DataTab
+
+            tab = DataTab(sync_dispatcher)
+            qtbot.addWidget(tab)
+            assert build_rows.call_count == 0
+            tab.show()
+            tab.hide()
+            tab.show()
+        assert build_rows.call_count == 1
+        assert tab._collector_table.table.rowCount() == 3
+
     def test_show_with_dirty_flag_triggers_poll(self, qtbot, sync_dispatcher):
         tab = _make_tab(qtbot, sync_dispatcher, SAMPLE_ROWS)
+        tab.hide()
         tab._dirty = True
         new_rows = [("db1", "exif", 999, 999, "Collector", "Active", True)]
         with patch(f"{MODULE}.list_setting_db_names", return_value=["db1"]), patch(f"{MODULE}._build_rows", return_value=new_rows):
@@ -162,6 +181,7 @@ class TestShowHideEvent:
 
     def test_show_without_dirty_does_not_poll(self, qtbot, sync_dispatcher):
         tab = _make_tab(qtbot, sync_dispatcher, SAMPLE_ROWS)
+        tab.hide()
         tab._dirty = False
         assert tab._collector_table.table.rowCount() == 3
         tab.show()
@@ -512,6 +532,7 @@ class TestLoadFromDbs:
 
         tab = DataTab(dispatcher)
         qtbot.addWidget(tab)
+        tab.show()
         qtbot.waitUntil(lambda: tab._collector_table.table.rowCount() > 0, timeout=5000)
         assert tab._collector_table.table.rowCount() >= 1
         assert tab._collector_table.table.item(0, 1).text() == "exif"

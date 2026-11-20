@@ -821,31 +821,31 @@ class TestPlaybackSlotManager:
         assert overlay is not None
         assert manager._cooled_down is False
 
-    def test_touch_resets_timer(self, manager, parent):
-        manager._touch()
-        first_timer = manager._idle_timer
-        assert first_timer is not None
-        assert first_timer.is_alive()
-        manager._touch()
-        assert manager._idle_timer is not first_timer
-        assert not first_timer.is_alive()
-        assert manager._idle_timer.is_alive()
+    def test_touch_restarts_main_thread_timer(self, manager, parent):
+        from PySide6.QtCore import QTimer
 
-    def test_cleanup_cancels_idle_timer(self, manager, parent):
         manager._touch()
-        timer = manager._idle_timer
+        assert isinstance(manager._idle_timer, QTimer)
+        assert manager._idle_timer.isActive()
+        assert manager._idle_timer.thread() is parent.thread()
+
+    def test_cleanup_stops_idle_timer(self, manager, parent):
+        manager._touch()
         manager.cleanup()
-        assert timer.finished.is_set()
-        assert manager._idle_timer is None
+        assert not manager._idle_timer.isActive()
 
-    def test_check_idle_with_recent_activity_noop(self, manager, parent, monkeypatch):
-        import time as _time
-
-        manager._last_activity = _time.monotonic()
-        pool_before = list(manager._pool)
-        manager._check_idle()
-        assert manager._cooled_down is False
-        assert manager._pool == pool_before
+    def test_idle_timeout_disposes_pool_overlays(self, manager, parent, qtbot):
+        overlay = manager._pool[0]
+        calls = []
+        overlay.makeCurrent = lambda: calls.append("makeCurrent")
+        overlay.cleanup = lambda: calls.append("cleanup")
+        overlay.doneCurrent = lambda: calls.append("doneCurrent")
+        overlay.destroyed.connect(lambda: calls.append("destroyed"))
+        manager._idle_timer.setInterval(1)
+        manager._touch()
+        qtbot.waitUntil(lambda: "destroyed" in calls, timeout=2000)
+        assert manager._cooled_down is True
+        assert calls == ["makeCurrent", "cleanup", "doneCurrent", "destroyed"]
 
 
 def test_players_only_open_local_media():

@@ -66,13 +66,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._folder_callout: CalloutOverlay | None = None
         if icon:
             self.setWindowIcon(icon)
-        self.setWindowTitle(APP_NAME)
+        self.setWindowTitle(window_title("", [], ""))
         self.resize(dpix(1000), dpix(700))
         self.database_name = None
         self.database_path = None
         self.setting_db = None
         self.window_state = WindowStateController(self)
         self._last_paths = None
+        self._last_aspects = None
         self._folder_changed = False
         self._dispatcher = Dispatcher(utility_pool)
         self._db_reload_cancel: CancelToken | None = None
@@ -80,6 +81,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.search_service = SearchService(lambda: self.database_path, parent=self)
         self.search_service.search_started.connect(self._on_search_started)
         self.search_service.search_finished.connect(self._on_search_finished)
+        self.search_service.search_failed.connect(self._hide_loading)
         UI.register_instance("SearchService", self.search_service)
         t.set_locale(app_settings.get("window/language", "en"))
         UI.register_instance("MainWindow", self)
@@ -181,9 +183,8 @@ class MainWindow(QtWidgets.QMainWindow):
         def task():
             try:
                 sdb = SettingDB(db_path)
-                roots = sdb.get_all_parent_folders()
-                excluded = sdb.get_all_ignore_folders()
-                ignore_pattern_re = compile_ignore_patterns(sdb.get_all_ignore_patterns())
+                roots, excluded, ignore_patterns = sdb.get_all_folder_settings()
+                ignore_pattern_re = compile_ignore_patterns(ignore_patterns)
                 if cancel.is_cancelled():
                     return
                 self._dispatcher.invoke(lambda: self._apply_db_reload(sdb, roots, excluded, ignore_pattern_re, cancel, refresh))
@@ -199,7 +200,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._db_reload_cancel = None
         self.setting_db = sdb
         self.folder_view.set_folders(roots, excluded, ignore_pattern_re)
-        self.grid_overlay_host.reload()
         self._run_db_reload_callbacks()
         if refresh:
             self.refresh_search()
@@ -564,26 +564,20 @@ class MainWindow(QtWidgets.QMainWindow):
     @QtCore.Slot()
     def _reload_folderlist_now(self):
         AppLogger.debug("[RUNNING] reload_folderlist")
-        if self.setting_db:
-            roots, excluded, ignore_patterns = self.setting_db.get_all_folder_settings()
-            ignore_pattern_re = compile_ignore_patterns(ignore_patterns)
-            if self.folder_view.is_structure_current(roots, excluded, ignore_pattern_re):
-                if roots:
-                    self._dismiss_folder_callout()
-                return
-            if self.folder_view.defer_reload_if_editing(self._reload_folderlist_now, strong=True):
-                return
-            scroll_state = self.folder_view.capture_scroll_state()
-            state = self.folder_view.get_state()
-            self.folder_view.set_folders(roots, excluded, ignore_pattern_re)
-            self.folder_view.set_state(state, scroll_to_selection=False)
-            self.folder_view.restore_scroll_state(scroll_state)
-            if roots:
-                self._dismiss_folder_callout()
-        else:
-            if self.folder_view.defer_reload_if_editing(self.folder_view.reload_tree):
-                return
+        setting_db = self.setting_db
+        if not setting_db:
             self.folder_view.reload_tree()
+            return
+
+        def load_settings():
+            roots, excluded, ignore_patterns = setting_db.get_all_folder_settings()
+            return roots, excluded, compile_ignore_patterns(ignore_patterns)
+
+        self.folder_view.reload_folders_async(load_settings, on_complete=self._on_folderlist_reloaded)
+
+    def _on_folderlist_reloaded(self, roots):
+        if roots:
+            self._dismiss_folder_callout()
 
     @QtCore.Slot()
     @qt_debounce(1000)
@@ -722,8 +716,8 @@ class MainWindow(QtWidgets.QMainWindow):
         TagEditService.instance().handle_ack(payload)
         self.grid_overlay_host.reload()
 
-    @QtCore.Slot(str)
-    def _on_folder_changed_ipc(self, db: str):
+    @QtCore.Slot(str, list)
+    def _on_folder_changed_ipc(self, db: str, _paths: list):
         if not self._is_my_db(db):
             return
         self.reload_folderlist()
@@ -773,9 +767,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_search_started(self):
         self._show_loading()
 
-    @QtCore.Slot(object, object, object)
+    @QtCore.Slot(object, object, object, object)
     @profiler.profile
-    def _on_search_finished(self, paths, sources, aspects):
+    def _on_search_finished(self, paths, sources, aspects, path_index=None):
         keep_scroll = not self._folder_changed
         self._folder_changed = False
         self.search_row_widget.run_folder_worker(
@@ -785,12 +779,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self.search_service.get("include_contained_files", True),
         )
         self.grid_overlay_host.reload()
-        if paths == self._last_paths:
+        paths_changed = paths != self._last_paths
+        if not paths_changed and aspects == self._last_aspects:
             self.grid_view.layout_ready.emit()
             return
         self._last_paths = paths
-        self.grid_view.set_paths(paths, sources, aspects, keep_scroll=keep_scroll)
-        self.file_list_provider.on_search_results(paths, sources)
+        self._last_aspects = aspects
+        self.grid_view.set_paths(paths, sources, aspects, keep_scroll=keep_scroll, path_index=path_index)
+        if paths_changed:
+            self.file_list_provider.on_search_results(paths, sources, path_index)
 
     def _restore_from_slot(self, entry: WindowSlot, skip_window_state=False, on_complete=None):
         def after_path():
@@ -850,7 +847,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 AppLogger.info("on_close [STOPPING]")
                 self._bridge.stop()
         except Exception as e:
-            AppLogger.debug(f"on_close bridge.stop failed: {e}")
+            AppLogger.warning(f"on_close bridge.stop failed, the IPC thread may stay alive: {e}", exc=e)
         self.release_workspace()
 
     def release_workspace(self):

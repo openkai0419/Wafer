@@ -12,7 +12,7 @@ import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
-from wafer.core.common.paths import data_db_path, list_data_db_names, safe_getsize, setting_db_path
+from wafer.core.common.paths import data_db_path, safe_getsize, setting_db_path
 from wafer.core.db.db_utils import open_readonly
 from wafer.core.db.path_values import PathValue, fetch_path_values, fetch_sources
 from wafer.core.db.query import STANDARD_KEYS, SYSTEM_FILE_HASH_KEY, FileSearchEngine
@@ -28,6 +28,7 @@ from wafer.qt.common.dpi import dpix
 from wafer.qt.common.rate_limit import qt_debounce
 from wafer.qt.common.thread import utility_pool
 from wafer.qt.theme import ThemeManager
+from wafer.qt.widgets.database_box import DatabaseBox
 
 from .encoders import detect_encoder, value_input
 from .feature_bar import FeatureBar
@@ -145,39 +146,6 @@ def file_count_box(value_range: tuple[int, int], value: int) -> QtWidgets.QSpinB
     box.setValue(value)
     box.setSuffix(" " + t("files"))
     return box
-
-
-class DatabaseBox(QtWidgets.QComboBox):
-    def __init__(self, can_open: Callable[[str], bool], parent=None):
-        super().__init__(parent)
-        self.can_open = can_open
-
-    def showPopup(self) -> None:
-        self.reload()
-        super().showPopup()
-
-    def add_name(self, name: str) -> None:
-        self.addItem(name)
-        self.model().item(self.count() - 1).setEnabled(self.can_open(name))
-
-    def reload(self) -> None:
-        current = self.currentText()
-        names = sorted(set(list_data_db_names()) | ({current} if current else set()))
-        self.blockSignals(True)
-        self.clear()
-        for name in names:
-            self.add_name(name)
-        self.setCurrentText(current)
-        self.blockSignals(False)
-
-    def show_quietly(self, name: str) -> None:
-        if not name:
-            return
-        self.blockSignals(True)
-        if self.findText(name) < 0:
-            self.add_name(name)
-        self.setCurrentText(name)
-        self.blockSignals(False)
 
 
 def section_title(text: str) -> QtWidgets.QLabel:

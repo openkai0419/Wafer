@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import PurePath
 
 from ....constants import APP_NAME
+from ....core.common.profile import current_profile, profile_label
 from ....core.lang.manager import t
 from ....core.logs import AppLogger
 from ....core.store.workspace import WindowSlot
@@ -56,6 +57,10 @@ def slot_tooltip(slot: WindowSlot) -> str:
 
 
 def window_title(name: str, selected_dirs: list[str], database_name: str) -> str:
+    return profile_label(current_profile()) + _base_window_title(name, selected_dirs, database_name)
+
+
+def _base_window_title(name: str, selected_dirs: list[str], database_name: str) -> str:
     name = (name or "").strip()
     if name:
         return name

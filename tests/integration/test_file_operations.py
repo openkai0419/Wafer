@@ -6,8 +6,6 @@ from wafer.core.platform.file_operations import (
     OperationResult,
     PastePlanItem,
     PasteDecision,
-    MergeConflictItem,
-    scan_merge_conflicts,
     _safe_remove,
 )
 
@@ -24,7 +22,7 @@ class TestFileExecutorCopy:
         src = _write_file(tmp_path / "src" / "a.txt", "content_a")
         dst = tmp_path / "dst" / "a.txt"
         plans = [PastePlanItem(index=0, src=src, is_dir=False, action="copy", dst_default=dst, conflict=False, suggested_dst=None)]
-        decisions = {0: PasteDecision(mode="overwrite")}
+        decisions = {0: PasteDecision(mode="create")}
         executor = FileExecutor()
         results = executor.execute_plans(plans, decisions)
         assert len(results) == 1
@@ -37,7 +35,7 @@ class TestFileExecutorCopy:
         _write_file(src_dir / "inner.txt", "inside")
         dst_dir = tmp_path / "dst" / "mydir"
         plans = [PastePlanItem(index=0, src=src_dir, is_dir=True, action="copy", dst_default=dst_dir, conflict=False, suggested_dst=None)]
-        decisions = {0: PasteDecision(mode="overwrite")}
+        decisions = {0: PasteDecision(mode="create")}
         executor = FileExecutor()
         results = executor.execute_plans(plans, decisions)
         assert results[0].status == "ok"
@@ -50,7 +48,7 @@ class TestFileExecutorCut:
         src = _write_file(tmp_path / "src" / "move_me.txt", "data")
         dst = tmp_path / "dst" / "move_me.txt"
         plans = [PastePlanItem(index=0, src=src, is_dir=False, action="cut", dst_default=dst, conflict=False, suggested_dst=None)]
-        decisions = {0: PasteDecision(mode="overwrite")}
+        decisions = {0: PasteDecision(mode="create")}
         executor = FileExecutor()
         results = executor.execute_plans(plans, decisions)
         assert results[0].status == "ok"
@@ -73,9 +71,8 @@ class TestFileExecutorConflict:
         src = _write_file(tmp_path / "src" / "a.txt", "new_content")
         dst = _write_file(tmp_path / "dst" / "a.txt", "old_content")
         plans = [PastePlanItem(index=0, src=src, is_dir=False, action="copy", dst_default=dst, conflict=True, suggested_dst=None)]
-        decisions = {0: PasteDecision(mode="overwrite")}
-        executor = FileExecutor()
-        results = executor.execute_plans(plans, decisions)
+        executor = FileExecutor(ask_conflict=lambda conflict: "overwrite")
+        results = executor.execute_plans(plans, {})
         assert results[0].status == "ok"
         assert dst.read_text(encoding="utf-8") == "new_content"
 
@@ -94,13 +91,15 @@ class TestFileExecutorConflict:
         assert new_dst.read_text(encoding="utf-8") == "renamed"
         assert (dst_dir / "a.txt").read_text(encoding="utf-8") == "existing"
 
-    def test_no_decision_defaults_skip(self, tmp_path):
+    def test_no_decision_pastes_and_keeps_an_existing_file(self, tmp_path):
         src = _write_file(tmp_path / "src" / "a.txt", "data")
-        dst = tmp_path / "dst" / "a.txt"
+        dst = _write_file(tmp_path / "dst" / "a.txt", "existing")
         plans = [PastePlanItem(index=0, src=src, is_dir=False, action="copy", dst_default=dst, conflict=False, suggested_dst=None)]
         executor = FileExecutor()
         results = executor.execute_plans(plans, decisions={})
-        assert results[0].status == "skipped"
+        assert results[0].status == "ok"
+        assert dst.read_text(encoding="utf-8") == "existing"
+        assert Path(results[0].dst).read_text(encoding="utf-8") == "data"
 
 
 class TestFileExecutorMultiFile:
@@ -112,7 +111,7 @@ class TestFileExecutorMultiFile:
             files.append((src, dst))
 
         plans = [PastePlanItem(index=i, src=src, is_dir=False, action="copy", dst_default=dst, conflict=False, suggested_dst=None) for i, (src, dst) in enumerate(files)]
-        decisions = {i: PasteDecision(mode="overwrite") for i in range(5)}
+        decisions = {i: PasteDecision(mode="create") for i in range(5)}
 
         executor = FileExecutor()
         results = executor.execute_plans(plans, decisions)
@@ -121,33 +120,37 @@ class TestFileExecutorMultiFile:
             assert dst.read_text(encoding="utf-8") == f"content_{i}"
 
 
-class TestScanMergeConflicts:
-    def test_no_conflicts(self, tmp_path):
+class TestMergeAsksAtEachConflict:
+    def _merge(self, src, dst):
+        asked = []
+
+        def ask(conflict):
+            asked.append(conflict)
+            return "merge" if conflict.folders else "skip"
+
+        plans = [PastePlanItem(index=0, src=src, is_dir=True, action="copy", dst_default=dst, conflict=True, suggested_dst=None)]
+        results = FileExecutor(ask_conflict=ask).execute_plans(plans, {})
+        return results, asked
+
+    def test_files_without_a_conflict_are_added_without_asking(self, tmp_path):
         src = tmp_path / "src_dir"
         dst = tmp_path / "dst_dir"
         _write_file(src / "a.txt", "a")
         dst.mkdir()
-        conflicts = scan_merge_conflicts(src, dst)
-        assert conflicts == []
+        results, asked = self._merge(src, dst)
+        assert results[0].status == "ok"
+        assert [c.folders for c in asked] == [True]
+        assert (dst / "a.txt").read_text(encoding="utf-8") == "a"
 
-    def test_file_conflict_detected(self, tmp_path):
-        src = tmp_path / "src_dir"
-        dst = tmp_path / "dst_dir"
-        _write_file(src / "same.txt", "from_src")
-        _write_file(dst / "same.txt", "from_dst")
-        conflicts = scan_merge_conflicts(src, dst)
-        assert len(conflicts) == 1
-        assert conflicts[0].rel_path == "same.txt"
-        assert not conflicts[0].is_dir
-
-    def test_nested_conflict(self, tmp_path):
+    def test_a_nested_conflict_is_asked_where_it_is_found(self, tmp_path):
         src = tmp_path / "src_dir"
         dst = tmp_path / "dst_dir"
         _write_file(src / "sub" / "nested.txt", "src")
         _write_file(dst / "sub" / "nested.txt", "dst")
-        conflicts = scan_merge_conflicts(src, dst)
-        rel_paths = [c.rel_path for c in conflicts]
-        assert any("nested.txt" in r for r in rel_paths)
+        results, asked = self._merge(src, dst)
+        assert results[0].status == "ok"
+        assert [(c.dst, c.in_merge, c.selected_item) for c in asked[1:]] == [(dst / "sub" / "nested.txt", True, False)]
+        assert (dst / "sub" / "nested.txt").read_text(encoding="utf-8") == "dst"
 
 
 class TestSafeRemove:

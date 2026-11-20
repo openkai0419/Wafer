@@ -61,13 +61,21 @@ def staged_version(app_root: str | Path | None = None) -> str:
     return normalize_version(str(data.get("target_version", "")))
 
 
-def discard_staged(app_root: str | Path | None = None) -> None:
-    root = Path(app_root) if app_root else get_app_root_dir()
+def _unmark_ready(root: Path) -> None:
     for path in (update_plan.plan_path(root), ready_path(root)):
         path.unlink(missing_ok=True)
+
+
+def _log_rmtree_error(func, path, exc_info) -> None:
+    AppLogger.warning(f"[Updater] Failed to remove {path}: {exc_info[1]}")
+
+
+def discard_staged(app_root: str | Path | None = None) -> None:
+    root = Path(app_root) if app_root else get_app_root_dir()
+    _unmark_ready(root)
     for directory in (update_plan.next_dir(root), update_plan.download_dir(root)):
         if directory.is_dir():
-            shutil.rmtree(directory, ignore_errors=True)
+            shutil.rmtree(directory, onerror=_log_rmtree_error)
 
 
 def stage_update(target_tag: str, target_version: str, *, on_progress=None, on_phase=None, is_cancelled=None) -> str:
@@ -97,6 +105,7 @@ def _emit_phase(on_phase, phase: str) -> None:
 
 
 def _stage_locked(root: Path, target_tag: str, target_version: str, on_progress, on_phase, is_cancelled) -> str:
+    _unmark_ready(root)
     release = read_cached_latest_release()
     if not isinstance(release, dict) or normalize_version(str(release.get("tag_name", ""))) != normalize_version(target_tag):
         raise StageError("Cached release info is outdated. Run the update check again")
@@ -218,19 +227,24 @@ def claim_result_file(path: Path) -> str | None:
         claimed.unlink(missing_ok=True)
 
 
-def process_apply_results() -> None:
+def _run_now(fn) -> None:
+    fn()
+
+
+def process_apply_results(invoke=None) -> None:
+    invoke = invoke or _run_now
     root = get_app_root_dir()
     base = update_plan.update_dir(root)
     version = claim_result_file(base / update_plan.APPLIED_FILENAME)
     if version is not None:
         AppLogger.info(f"[Updater] Update applied successfully: v{version}")
-        Notifier.info(f"Updated to v{version}")
+        invoke(lambda: Notifier.info(f"Updated to v{version}"))
         discard_staged(root)
         return
     detail = claim_result_file(base / update_plan.FAILED_FILENAME)
     if detail is not None:
         AppLogger.error(f"[Updater] Update apply failed and was rolled back: {detail}. See {base / update_plan.APPLY_LOG_FILENAME} for details")
-        Notifier.error("Update failed. Previous version was restored")
+        invoke(lambda: Notifier.error("Update failed. Previous version was restored"))
         discard_staged(root)
         return
     version = staged_version(root)

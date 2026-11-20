@@ -5,6 +5,9 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 _FILTER_PROPERTY = "_wafer_instant_tooltip_filter"
 _DISABLED_PROPERTY = "wafer_disable_instant_tooltip"
+_SHOW_EVENTS = frozenset({QtCore.QEvent.Enter, QtCore.QEvent.HoverEnter, QtCore.QEvent.MouseMove, QtCore.QEvent.HoverMove})
+_HIDE_EVENTS = frozenset({QtCore.QEvent.Leave, QtCore.QEvent.HoverLeave, QtCore.QEvent.Hide, QtCore.QEvent.FocusOut, QtCore.QEvent.WindowDeactivate})
+_HANDLED_EVENTS = _SHOW_EVENTS | _HIDE_EVENTS | {QtCore.QEvent.ToolTip}
 
 
 def _tooltip_text(target) -> str:
@@ -29,6 +32,9 @@ class InstantTooltipEventFilter(QtCore.QObject):
     def eventFilter(self, obj, event):
         if not isinstance(event, QtCore.QEvent):
             return False
+        event_type = event.type()
+        if event_type not in _HANDLED_EVENTS:
+            return False
         if not isinstance(obj, (QtWidgets.QWidget, QtWidgets.QGraphicsObject, QtWidgets.QGraphicsWidget)):
             return False
         if bool(getattr(obj, "property", lambda *_: False)(_DISABLED_PROPERTY)):
@@ -41,14 +47,13 @@ class InstantTooltipEventFilter(QtCore.QObject):
                 self._current_target = None
             return False
 
-        event_type = event.type()
-        if event_type in (QtCore.QEvent.Enter, QtCore.QEvent.HoverEnter, QtCore.QEvent.MouseMove, QtCore.QEvent.HoverMove):
+        if event_type in _SHOW_EVENTS:
             self._show_tooltip(obj, text, _global_pos(event))
             return False
         if event_type == QtCore.QEvent.ToolTip:
             self._show_tooltip(obj, text, _global_pos(event))
             return True
-        if event_type in (QtCore.QEvent.Leave, QtCore.QEvent.HoverLeave, QtCore.QEvent.Hide, QtCore.QEvent.FocusOut, QtCore.QEvent.WindowDeactivate):
+        if event_type in _HIDE_EVENTS:
             if self._current_target is obj:
                 QtWidgets.QToolTip.hideText()
                 self._current_target = None

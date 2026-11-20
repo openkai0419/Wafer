@@ -386,6 +386,8 @@ class _KeySelectorPopup(PopupBase):
         return list(self._catalog_data)
 
     def set_catalog(self, datas: list[tuple[str, int]]):
+        if datas == self._catalog_data:
+            return
         self._catalog_data = list(datas)
         count_map = dict(datas)
         for key, item in self._active_items.items():
@@ -593,19 +595,15 @@ class TextFilterWidget(QtWidgets.QWidget):
 
         self._option_popup = _TextFilterPopup(self)
         self._option_popup.changed.connect(self.changed)
-        self._bound_key_store = None
+        self._key_store_connection = None
 
     def bind_key_store(self, key_store):
-        prev = self._bound_key_store
-        if prev is not None:
-            try:
-                prev.updated.disconnect(self.keys_combo.remake)
-            except (TypeError, RuntimeError):
-                pass
-        self._bound_key_store = key_store
+        if self._key_store_connection is not None:
+            QtCore.QObject.disconnect(self._key_store_connection)
+            self._key_store_connection = None
         if key_store is None:
             return
-        key_store.updated.connect(self.keys_combo.remake)
+        self._key_store_connection = key_store.updated.connect(self.keys_combo.remake)
         if key_store.data:
             self.keys_combo.remake(key_store.data)
 

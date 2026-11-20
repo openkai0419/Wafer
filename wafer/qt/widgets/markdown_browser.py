@@ -65,8 +65,10 @@ class MarkdownBrowser(QtWidgets.QWidget):
         self._rendered_html = ""
         self._base_url = QtCore.QUrl()
         self._allowed_dir: Path | None = None
-        self._theme_conn = ThemeManager.instance().on_theme_changed.connect(self._on_theme_changed)
-        self.destroyed.connect(self._disconnect_theme)
+        theme_changed = ThemeManager.instance().on_theme_changed
+        on_theme_changed = self._on_theme_changed
+        theme_changed.connect(on_theme_changed)
+        self.destroyed.connect(lambda: theme_changed.disconnect(on_theme_changed))
 
     def load_file(self, path: str) -> bool:
         try:
@@ -109,14 +111,6 @@ class MarkdownBrowser(QtWidgets.QWidget):
         if self._source_md:
             self.set_markdown(self._source_md)
 
-    def _disconnect_theme(self):
-        tm = ThemeManager.instance()
-        with tm.on_theme_changed._lock:
-            try:
-                tm.on_theme_changed._callbacks.remove(self._on_theme_changed)
-            except ValueError:
-                pass
-
     def _can_update_html(self) -> bool:
         view = getattr(self, "_view", None)
         page = getattr(self, "_page", None)
@@ -129,4 +123,4 @@ class MarkdownBrowser(QtWidgets.QWidget):
         self._view.setHtml(_build_full_html(body_html, dark), self._base_url)
 
     def cleanup(self):
-        self._disconnect_theme()
+        ThemeManager.instance().on_theme_changed.disconnect(self._on_theme_changed)

@@ -226,6 +226,8 @@ class MappingWidget(QtWidgets.QWidget):
         self.db_path = db_path
         self.db_name = db_name_from_path(db_path) if db_path else ""
         self.paths = list(dict.fromkeys(paths))
+        for level in self.levels:
+            level.drop_layout()
         self.levels = []
         self.stack.setCurrentWidget(self.page)
         self.fetch()

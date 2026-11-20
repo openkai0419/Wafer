@@ -181,7 +181,7 @@ def test_flush_applies_hash_updates_before_writing_and_retriggers():
         _parse_batch([{"source": "/a.png", "update_hash": "full1", "status": True, "parser": "_test_det_a"}]),
         1,
     )
-    with patch("wafer.app.indexer.receivers.parser_receiver.FLUSH_DELAY", 0), patch("wafer.app.indexer.receivers.parser_receiver.trigger_parser_pending") as trigger:
+    with patch("wafer.app.indexer.receivers.parser_receiver.trigger_parser_pending") as trigger:
         receiver._flush()
 
     writer.update_source_hashes.assert_called_once_with([("/a.png", "full1")])
@@ -195,3 +195,14 @@ def test_parse_batch_delete_entries_are_keyed_by_source():
     ]
     parsed = _parse_batch(results)
     assert parsed["delete_entries"] == [("/a.zip::b.png", "/a.zip", [], ["sd.x"])]
+
+
+def test_each_result_message_ends_one_batch_of_its_parser():
+    from types import SimpleNamespace
+
+    from wafer.app.indexer.receivers.parser_receiver import ParserReceiver
+
+    done = MagicMock()
+    receiver = ParserReceiver(MagicMock(), MagicMock(), MagicMock(), on_batch_done=done)
+    receiver.handle_result(SimpleNamespace(payload={"parser": "novelai", "results": []}))
+    done.assert_called_once_with("novelai")

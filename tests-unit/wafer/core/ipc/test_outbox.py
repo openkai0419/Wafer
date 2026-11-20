@@ -5,12 +5,16 @@ import threading
 import time
 from unittest.mock import patch, MagicMock
 
+import psutil
+
 from wafer.core.ipc.transport import Priority
 from wafer.core.ipc.message import Message
 from wafer.core.ipc.node import Node
 from wafer.core.ipc.outbox import (
     _SCHEMA,
+    DeadOutboxCleaner,
     OutboxStore,
+    owner_alive,
     _extract_pid,
     _delete_db_files,
     scan_all_outbox,
@@ -206,7 +210,7 @@ class TestOutboxStore:
                 store.close()
                 assert os.path.exists(db_path)
 
-                with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=False):
+                with patch("wafer.core.ipc.outbox.owner_alive", return_value=False):
                     cleanup_dead_outbox_files()
                 assert not os.path.exists(db_path)
 
@@ -225,7 +229,7 @@ class TestOutboxStore:
         with tempfile.TemporaryDirectory() as tmp:
             with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
                 db_path = self._store_with_old_row("viewer-99999", days_old=31)
-                with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=False):
+                with patch("wafer.core.ipc.outbox.owner_alive", return_value=False):
                     cleanup_dead_outbox_files()
                 assert not os.path.exists(db_path)
 
@@ -233,7 +237,7 @@ class TestOutboxStore:
         with tempfile.TemporaryDirectory() as tmp:
             with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
                 self._store_with_old_row("viewer-99999", days_old=29)
-                with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=False):
+                with patch("wafer.core.ipc.outbox.owner_alive", return_value=False):
                     cleanup_dead_outbox_files()
                 assert len(scan_all_outbox()) == 1
 
@@ -241,7 +245,7 @@ class TestOutboxStore:
         with tempfile.TemporaryDirectory() as tmp:
             with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
                 self._store_with_old_row("viewer-12345", days_old=31)
-                with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=True):
+                with patch("wafer.core.ipc.outbox.owner_alive", return_value=True):
                     cleanup_dead_outbox_files()
                 assert len(scan_all_outbox()) == 1
 
@@ -252,7 +256,7 @@ class TestOutboxStore:
                 store.push("t", "data", "indexer")
                 db_path = store._path
                 store.close()
-                with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=False), patch("wafer.core.ipc.outbox._drop_expired_rows", side_effect=sqlite3.OperationalError("database is locked")):
+                with patch("wafer.core.ipc.outbox.owner_alive", return_value=False), patch("wafer.core.ipc.outbox._drop_expired_rows", side_effect=sqlite3.OperationalError("database is locked")):
                     cleanup_dead_outbox_files()
                 assert os.path.exists(db_path)
 
@@ -262,7 +266,7 @@ class TestOutboxStore:
                 db_path = os.path.join(tmp, "viewer-99999.db")
                 with open(db_path, "wb") as f:
                     f.write(b"not a database" * 100)
-                with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=False):
+                with patch("wafer.core.ipc.outbox.owner_alive", return_value=False):
                     cleanup_dead_outbox_files()
                 assert not os.path.exists(db_path)
 
@@ -273,7 +277,7 @@ class TestOutboxStore:
                 db_path = store._path
                 store.close()
 
-                with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=True):
+                with patch("wafer.core.ipc.outbox.owner_alive", return_value=True):
                     cleanup_dead_outbox_files()
                 assert os.path.exists(db_path)
 
@@ -285,7 +289,7 @@ class TestOutboxStore:
                 db_path = store._path
                 store.close()
 
-                with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=False):
+                with patch("wafer.core.ipc.outbox.owner_alive", return_value=False):
                     cleanup_dead_outbox_files()
                 assert os.path.exists(db_path)
 
@@ -307,6 +311,106 @@ class TestHelpers:
             _delete_db_files(base)
             for suffix in ("", "-wal", "-shm"):
                 assert not os.path.exists(base + suffix)
+
+
+class TestOwnerAlive:
+    @staticmethod
+    def _outbox_file(tmp, node_id):
+        base = os.path.join(tmp, f"{node_id}.db")
+        with open(base, "wb") as f:
+            f.write(b"x")
+        st = os.stat(base)
+        return base, getattr(st, "st_birthtime", st.st_ctime)
+
+    @staticmethod
+    def _process_started_at(started):
+        process = MagicMock()
+        process.create_time.return_value = started
+        return patch("wafer.core.ipc.outbox.psutil.Process", return_value=process)
+
+    def test_the_process_that_created_the_file_is_alive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path, created = self._outbox_file(tmp, "collector-color-4242")
+            with self._process_started_at(created - 10):
+                assert owner_alive(db_path)
+
+    def test_a_pid_reused_after_the_owner_died_is_not_the_owner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path, created = self._outbox_file(tmp, "indexer-2208")
+            with self._process_started_at(created + 10):
+                assert not owner_alive(db_path)
+
+    def test_a_reader_writing_to_a_dead_file_does_not_revive_a_reused_pid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path, created = self._outbox_file(tmp, "indexer-2208")
+            os.utime(db_path, (created + 100, created + 100))
+            with self._process_started_at(created + 10):
+                assert not owner_alive(db_path)
+
+    def test_a_pid_with_no_process_is_dead(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path, _ = self._outbox_file(tmp, "viewer-4242")
+            with patch("wafer.core.ipc.outbox.psutil.Process", side_effect=psutil.NoSuchProcess(4242)):
+                assert not owner_alive(db_path)
+
+    def test_a_process_it_cannot_inspect_is_left_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path, _ = self._outbox_file(tmp, "viewer-4242")
+            with patch("wafer.core.ipc.outbox.psutil.Process", side_effect=psutil.AccessDenied(4242)):
+                assert owner_alive(db_path)
+
+    def test_a_name_without_a_pid_has_no_owner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path, _ = self._outbox_file(tmp, "tray")
+            assert not owner_alive(db_path)
+
+    def test_this_process_owns_the_outbox_it_opened(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
+                store = OutboxStore(f"indexer-{os.getpid()}")
+                try:
+                    assert owner_alive(store._path)
+                finally:
+                    store.close()
+
+
+class TestDeadOutboxCleaner:
+    def test_it_cleans_at_once_and_again_after_the_interval(self):
+        calls = threading.Semaphore(0)
+        with patch("wafer.core.ipc.outbox.cleanup_dead_outbox_files", side_effect=lambda: calls.release()):
+            cleaner = DeadOutboxCleaner(interval=0.01)
+            cleaner.start()
+            try:
+                assert calls.acquire(timeout=5)
+                assert calls.acquire(timeout=5)
+            finally:
+                cleaner.stop()
+        assert not cleaner._thread.is_alive()
+
+    def test_a_failed_cleanup_does_not_stop_the_next(self):
+        calls = threading.Semaphore(0)
+
+        def fail_once():
+            calls.release()
+            raise PermissionError("busy")
+
+        with patch("wafer.core.ipc.outbox.cleanup_dead_outbox_files", side_effect=fail_once):
+            cleaner = DeadOutboxCleaner(interval=0.01)
+            cleaner.start()
+            try:
+                assert calls.acquire(timeout=5)
+                assert calls.acquire(timeout=5)
+            finally:
+                cleaner.stop()
+
+    def test_stopping_before_it_runs_again_returns_at_once(self):
+        with patch("wafer.core.ipc.outbox.cleanup_dead_outbox_files"):
+            cleaner = DeadOutboxCleaner(interval=3600)
+            cleaner.start()
+            started = time.monotonic()
+            cleaner.stop()
+        assert time.monotonic() - started < 5
+        assert not cleaner._thread.is_alive()
 
 
 class TestConsumeOutbox:
@@ -467,7 +571,7 @@ class TestOpeningTheOutbox:
 
                 records = read_outbox_of({"sender-99999"}, dst_filter={"indexer"})
                 remove_outbox_batch_from(db_path, [r.id for r in records])
-                with patch("wafer.core.ipc.outbox.psutil.pid_exists", return_value=False):
+                with patch("wafer.core.ipc.outbox.owner_alive", return_value=False):
                     cleanup_dead_outbox_files()
                 assert [r.payload for r in scan_all_outbox()] == ["y"]
 
@@ -520,12 +624,14 @@ class TestNotifiedSenders:
                     node.stop()
                 assert received.is_set()
 
-    def test_only_a_full_scan_cleans_up_dead_files(self):
+    def test_a_consumer_reads_a_dead_sender_but_leaves_its_file_to_the_tray(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch("wafer.core.ipc.outbox._OUTBOX_DIR", tmp):
-                node = Node("consumer", consumer=True)
-                with patch("wafer.core.ipc.node.cleanup_dead_outbox_files") as cleanup:
-                    node._process_outbox({"sender-1"})
-                    cleanup.assert_not_called()
+                self._push("indexer-99999", "undelivered", dst="indexer")
+                received = []
+                node = Node("indexer", consumer=True)
+                node.subscribe("work", lambda msg: received.append(msg.payload) or True)
+                with patch("wafer.core.ipc.outbox.owner_alive", return_value=False):
                     node._process_outbox()
-                    cleanup.assert_called_once_with()
+                assert received == ["undelivered"]
+                assert os.path.exists(os.path.join(tmp, "indexer-99999.db"))

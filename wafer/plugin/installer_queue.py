@@ -1,15 +1,16 @@
 import json
 import os
-import threading
 import time
 from dataclasses import dataclass, asdict
 
+from ..core.common.json_io import write_json_file
+from ..core.common.profile import current_profile
 from ..core.logs import AppLogger
+from ..core.platform.process_lock import file_lock
 
 
 _QUEUE_DIR = ".installer_queue"
 _QUEUE_FILE = "queue.json"
-_lock = threading.Lock()
 
 
 @dataclass
@@ -27,6 +28,10 @@ def _queue_path(extensions_dir: str) -> str:
     return os.path.join(_queue_dir(extensions_dir), _QUEUE_FILE)
 
 
+def _lock(extensions_dir: str):
+    return file_lock(f"{_queue_path(extensions_dir)}.lock")
+
+
 def _read(extensions_dir: str) -> list[QueueEntry]:
     path = _queue_path(extensions_dir)
     if not os.path.isfile(path):
@@ -40,24 +45,24 @@ def _read(extensions_dir: str) -> list[QueueEntry]:
         return []
 
 
-def _write(extensions_dir: str, entries: list[QueueEntry]):
-    path = _queue_path(extensions_dir)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump([asdict(e) for e in entries], f, ensure_ascii=False, indent=2)
+def _write(extensions_dir: str, entries: list[QueueEntry]) -> bool:
+    return write_json_file(_queue_path(extensions_dir), [asdict(e) for e in entries])
 
 
 def enqueue(extensions_dir: str, name: str, plugin_dir: str) -> None:
-    with _lock:
+    if current_profile() is not None:
+        AppLogger.warning("Extensions cannot be installed from a debug profile")
+        return
+    with _lock(extensions_dir):
         entries = _read(extensions_dir)
         entries = [e for e in entries if e.name != name]
         entries.append(QueueEntry(name=name, plugin_dir=plugin_dir, requested_at=time.time()))
-        _write(extensions_dir, entries)
-        AppLogger.info(f"[InstallerQueue] Enqueued: {name}")
+        if _write(extensions_dir, entries):
+            AppLogger.info(f"[InstallerQueue] Enqueued: {name}")
 
 
 def dequeue(extensions_dir: str, name: str) -> bool:
-    with _lock:
+    with _lock(extensions_dir):
         entries = _read(extensions_dir)
         new_entries = [e for e in entries if e.name != name]
         if len(new_entries) == len(entries):
@@ -71,14 +76,13 @@ def dequeue(extensions_dir: str, name: str) -> bool:
 
 
 def read_queue(extensions_dir: str) -> list[QueueEntry]:
-    with _lock:
-        return _read(extensions_dir)
+    return _read(extensions_dir)
 
 
 def remove_entries(extensions_dir: str, names: list[str]) -> None:
     if not names:
         return
-    with _lock:
+    with _lock(extensions_dir):
         names_set = set(names)
         entries = _read(extensions_dir)
         new_entries = [e for e in entries if e.name not in names_set]
@@ -89,8 +93,7 @@ def remove_entries(extensions_dir: str, names: list[str]) -> None:
 
 
 def has_pending_queue(extensions_dir: str) -> bool:
-    with _lock:
-        return bool(_read(extensions_dir))
+    return bool(_read(extensions_dir))
 
 
 def queued_names(extensions_dir: str) -> set[str]:
@@ -98,7 +101,7 @@ def queued_names(extensions_dir: str) -> set[str]:
 
 
 def clear_queue(extensions_dir: str) -> None:
-    with _lock:
+    with _lock(extensions_dir):
         _clear_unlocked(extensions_dir)
 
 
@@ -107,8 +110,5 @@ def _clear_unlocked(extensions_dir: str):
     try:
         if os.path.isfile(path):
             os.remove(path)
-        qdir = _queue_dir(extensions_dir)
-        if os.path.isdir(qdir) and not os.listdir(qdir):
-            os.rmdir(qdir)
     except OSError as e:
         AppLogger.warning(f"[InstallerQueue] Failed to clear queue: {path}", exc=e)

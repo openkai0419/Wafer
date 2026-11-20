@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -131,3 +132,11 @@ class RenameEngine:
                 if results[idx].new_name.lower() != paths[idx].name.lower():
                     results[idx].conflict = True
         return results, regex_errors
+
+    @staticmethod
+    def check_files(paths: list[Path], results: list[RenameResult]) -> None:
+        for p, r in zip(paths, results):
+            if not os.path.exists(p):
+                r.missing = True
+            elif not r.errors and r.new_name.lower() != p.name.lower() and os.path.exists(p.parent / r.new_name):
+                r.conflict = True

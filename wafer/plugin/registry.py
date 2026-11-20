@@ -160,13 +160,6 @@ class FilePluginRegistry(PluginRegistry):
         self._chain_cache[cache_key] = candidates
         return candidates
 
-    def resolve_instance(self, path: str, mode: str = DISPATCH_NORMAL) -> BasePlugin | None:
-        cls = self.resolve(path, mode)
-        return self.instance(cls.NAME) if cls else None
-
-    def resolve_all(self, path: str) -> list[type[BasePlugin]]:
-        return [p for p in self.list_all() if p.match(path) and p.can_handle(path)]
-
     def all_classes(self) -> list[tuple[str, type[BasePlugin]]]:
         return [(p.NAME, p) for p in self.list_all()]
 

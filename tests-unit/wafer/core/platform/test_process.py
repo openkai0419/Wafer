@@ -103,6 +103,19 @@ def test_find_by_args_subset_matches_windows_case_and_separator(monkeypatch):
     assert [p.pid for p in matcher.find_by_args_subset()] == [4321]
 
 
+def test_unrelated_processes_skip_the_file_system_checks(monkeypatch):
+    exe = r"C:\App\python\wafer-pythonw.exe"
+    script = r"C:\App\main.py"
+    matcher = ProcessMatcher([exe, script])
+    others = [_FakeProc(pid, [rf"C:\Windows\proc{pid}.exe", "--flag"]) for pid in range(100)]
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: [*others, _FakeProc(4321, [exe, script, "--viewer"])])
+    checked = []
+    real_same_executable = ProcessMatcher._same_executable
+    monkeypatch.setattr(ProcessMatcher, "_same_executable", staticmethod(lambda path, expected: checked.append(path) or real_same_executable(path, expected)))
+    assert [p.pid for p in matcher.find_by_args_subset()] == [4321]
+    assert checked == [exe, script]
+
+
 def test_list_viewers_captures_relative_root_and_excludes_workers(monkeypatch):
     # End-to-end guard for the reported bug: a dev root viewer launched with a
     # relative "main.py" must be enumerated by list_viewers(), while tray and
@@ -456,3 +469,203 @@ class TestTerminatePidTree:
         from wafer.core.platform.process import terminate_pid_tree
 
         terminate_pid_tree(0x7FFFFFF0)
+
+
+EXE = sys.executable
+MAIN = os.path.abspath("main.py")
+
+
+@pytest.fixture
+def fake_procs(monkeypatch):
+    def install(cmdlines):
+        procs = [_FakeProc(i + 1, cmd) for i, cmd in enumerate(cmdlines)]
+        monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: procs)
+
+    return install
+
+
+def _pids(procs):
+    return [p.pid for p in procs]
+
+
+def test_plain_matcher_ignores_profiled_processes(fake_procs):
+    fake_procs([[EXE, MAIN, "--tray"], [EXE, MAIN, "--tray", "--profile", "debug-a"]])
+    assert _pids(ProcessMatcher([EXE, MAIN, "--tray"]).find_by_args_subset()) == [1]
+
+
+def test_profiled_matcher_sees_only_its_profile(fake_procs):
+    fake_procs([[EXE, MAIN, "--tray"], [EXE, MAIN, "--tray", "--profile", "debug-a"], [EXE, MAIN, "--profile", "debug-b"]])
+    assert _pids(ProcessMatcher([EXE, MAIN, "--profile", "debug-a"]).find_by_args_subset()) == [2]
+
+
+def test_profiled_matcher_subset_ignores_profile_position(fake_procs):
+    fake_procs([[EXE, MAIN, "--profile", "debug-a", "--tray"], [EXE, MAIN, "--tray", "--profile", "debug-a"]])
+    assert _pids(ProcessMatcher([EXE, MAIN, "--tray", "--profile", "debug-a"]).find_by_args_subset()) == [1, 2]
+
+
+def test_profiled_exact_match_ignores_profile_tokens(fake_procs):
+    fake_procs([[EXE, MAIN, "--tray", "--profile", "debug-a"], [EXE, MAIN, "--tray", "--viewer", "--profile", "debug-a"]])
+    assert _pids(ProcessMatcher([EXE, MAIN, "--tray", "--profile", "debug-a"]).find_by_args_exact()) == [1]
+
+
+def test_invalid_profile_in_process_is_not_matched(fake_procs):
+    fake_procs([[EXE, MAIN, "--tray", "--profile", "bad name"], [EXE, MAIN, "--tray", "--profile"], [EXE, MAIN, "--tray"]])
+    assert _pids(ProcessMatcher([EXE, MAIN, "--tray"]).find_by_args_subset()) == [3]
+
+
+def test_matchers_read_the_equals_form_as_the_profile(fake_procs):
+    fake_procs([[EXE, MAIN, "--tray", "--profile=debug-a"], [EXE, MAIN, "--tray"]])
+    assert _pids(ProcessMatcher([EXE, MAIN, "--tray"]).find_by_args_subset()) == [2]
+    assert _pids(ProcessMatcher([EXE, MAIN, "--tray", "--profile", "debug-a"]).find_by_args_exact()) == [1]
+    assert _pids(AppProcess.list_profile_processes("debug-a")) == [1]
+
+
+def test_repeated_profile_in_process_is_never_matched(fake_procs):
+    fake_procs([
+        [EXE, MAIN, "--tray", "--profile", "debug-a", "--profile", "debug-a"],
+        [EXE, MAIN, "--tray", "--profile", "debug-a", "--profile=debug-b"],
+        [EXE, MAIN, "--tray"],
+        [EXE, MAIN, "--tray", "--profile", "debug-a"],
+    ])
+    assert _pids(ProcessMatcher([EXE, MAIN, "--tray"]).find_by_args_subset()) == [3]
+    assert _pids(ProcessMatcher([EXE, MAIN, "--tray", "--profile", "debug-a"]).find_by_args_subset()) == [4]
+    assert _pids(AppProcess.list_profile_processes("debug-a")) == [4]
+    packages = os.path.join(os.path.dirname(MAIN), "extensions", ".packages")
+    assert _pids(AppProcess.list_debug_processes_sharing(packages)) == [4]
+
+
+def test_profile_names_differing_only_in_case_are_one_profile(fake_procs):
+    fake_procs([
+        [EXE, MAIN, "--tray", "--profile", "debug-foo"],
+        [EXE, MAIN, "--profile", "debug-Foo"],
+        [EXE, MAIN, "--tray", "--profile", "debug-bar"],
+        [EXE, MAIN, "--tray"],
+    ])
+    assert _pids(ProcessMatcher([EXE, MAIN, "--tray", "--profile", "debug-Foo"]).find_by_args_exact()) == [1]
+    assert _pids(ProcessMatcher([EXE, MAIN, "--profile", "debug-FOO"]).find_by_args_subset()) == [1, 2]
+    assert _pids(AppProcess.list_profile_processes("debug-Foo")) == [1, 2]
+    assert _pids(AppProcess.list_profile_processes("debug-foo")) == [1, 2]
+
+
+def test_list_viewers_stays_inside_profile(fake_procs, monkeypatch):
+    fake_procs([[EXE, MAIN], [EXE, MAIN, "--profile", "debug-a"], [EXE, MAIN, "--tray", "--profile", "debug-a"]])
+    monkeypatch.setattr(AppProcess, "base_command", staticmethod(lambda: [EXE, MAIN, "--profile", "debug-a"]))
+    assert _pids(AppProcess.list_viewers(exclude_self=False)) == [2]
+
+
+def test_list_profile_processes_crosses_checkouts(fake_procs):
+    other = os.path.join("X:\\", "other", "main.py")
+    fake_procs([
+        [EXE, MAIN, "--profile", "debug-a"],
+        [r"C:\Other\python.exe", other, "--tray", "--profile", "debug-a"],
+        [EXE, MAIN, "--profile", "debug-b"],
+        [EXE, MAIN],
+        [EXE, "-m", "pytest", "--profile", "debug-a"],
+        [EXE, MAIN, "--profile", "bad name"],
+    ])
+    assert _pids(AppProcess.list_profile_processes("debug-a")) == [1, 2]
+
+
+def test_list_debug_processes_sharing_matches_packages_realpath(fake_procs, tmp_path):
+    checkout_a = tmp_path / "a"
+    checkout_b = tmp_path / "b"
+    for checkout in (checkout_a, checkout_b):
+        (checkout / "extensions" / ".packages").mkdir(parents=True)
+    packages = checkout_a / "extensions" / ".packages"
+    fake_procs([
+        [EXE, str(checkout_a / "main.py"), "--profile", "debug-a"],
+        [EXE, str(checkout_a / "main.py"), "--tray"],
+        [EXE, str(checkout_b / "main.py"), "--profile", "debug-b"],
+        [EXE, str(checkout_a / "main.py"), "--tray", "--profile", "debug-a"],
+    ])
+    assert _pids(AppProcess.list_debug_processes_sharing(str(packages))) == [1, 4]
+
+
+def test_list_debug_processes_sharing_resolves_relative_script_against_process_cwd(fake_procs, tmp_path, monkeypatch):
+    checkout = tmp_path / "a"
+    (checkout / "extensions" / ".packages").mkdir(parents=True)
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    monkeypatch.chdir(other)
+    fake_procs([[EXE, "main.py", "--profile", "debug-a"], [EXE, "main.py", "--profile", "debug-b"], [EXE, "main.py", "--profile", "debug-c"]])
+    procs = psutil.process_iter()
+    procs[0].cwd = lambda: str(checkout)
+    procs[1].cwd = lambda: str(other)
+
+    def denied():
+        raise psutil.AccessDenied(3)
+
+    procs[2].cwd = denied
+    assert _pids(AppProcess.list_debug_processes_sharing(str(checkout / "extensions" / ".packages"))) == [1]
+
+
+def test_list_debug_processes_sharing_skips_process_gone_while_reading_cwd(fake_procs, tmp_path):
+    (tmp_path / "extensions" / ".packages").mkdir(parents=True)
+    fake_procs([[EXE, "main.py", "--profile", "debug-a"]])
+    proc = psutil.process_iter()[0]
+
+    def gone():
+        raise psutil.NoSuchProcess(1)
+
+    proc.cwd = gone
+    assert AppProcess.list_debug_processes_sharing(str(tmp_path / "extensions" / ".packages")) == []
+
+
+def test_main_script_name_is_case_insensitive_on_windows(fake_procs):
+    fake_procs([[EXE, MAIN.replace("main.py", "Main.py"), "--profile", "debug-a"], [EXE, MAIN.replace("main.py", "MAIN.PY"), "--profile", "debug-a"]])
+    expected = [1, 2] if os.name == "nt" else []
+    assert _pids(AppProcess.list_profile_processes("debug-a")) == expected
+
+
+def test_list_profile_processes_rejects_invalid_profile(fake_procs):
+    fake_procs([[EXE, MAIN, "--tray"]])
+    with pytest.raises(ValueError):
+        AppProcess.list_profile_processes(None)
+    with pytest.raises(ValueError):
+        AppProcess.list_profile_processes("bad name")
+
+
+def test_base_command_carries_current_profile(monkeypatch):
+    from wafer.core.common.profile import current_profile
+
+    monkeypatch.setattr(sys, "argv", ["main.py", "--profile", "debug-a"])
+    current_profile.cache_clear()
+    try:
+        assert AppProcess.base_command()[2:] == ["--profile", "debug-a"]
+    finally:
+        current_profile.cache_clear()
+
+
+def test_new_main_goes_through_spawn_with_profile(monkeypatch):
+    captured = {}
+
+    class _P:
+        pid = 9
+
+    def fake_spawn(cmd, *, extra_env=None, **kw):
+        captured["cmd"] = cmd
+        return _P()
+
+    monkeypatch.setattr(AppProcess, "base_command", staticmethod(lambda: ["exe", "main.py", "--profile", "debug-a"]))
+    monkeypatch.setattr(AppProcess, "spawn", staticmethod(fake_spawn))
+    AppProcess.new_main("--tray")
+    assert captured["cmd"] == ["exe", "main.py", "--profile", "debug-a", "--tray"]
+
+
+def test_spawn_merges_extra_env_and_detaches(monkeypatch):
+    captured = {}
+
+    class _P:
+        pid = 9
+
+    def fake_popen(cmd, env=None, **kw):
+        captured.update(cmd=cmd, env=env, kw=kw)
+        return _P()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    AppProcess.spawn(["exe", "main.py"], extra_env={"K": "V"})
+    assert captured["cmd"] == ["exe", "main.py"]
+    assert captured["env"]["K"] == "V"
+    assert captured["kw"]["stdin"] is subprocess.DEVNULL
+    if sys.platform == "win32":
+        assert captured["kw"]["creationflags"] & subprocess.DETACHED_PROCESS

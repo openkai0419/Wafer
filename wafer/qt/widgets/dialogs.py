@@ -1,22 +1,16 @@
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QButtonGroup, QCheckBox, QComboBox, QDialog, QFileIconProvider, QHBoxLayout, QLabel, QLineEdit, QPushButton, QRadioButton, QSizePolicy, QStyle, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileIconProvider, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QRadioButton, QSizePolicy, QStyle, QVBoxLayout
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtCore import QFileInfo
+from shiboken6 import isValid
 from ..common.dpi import dpix
 from ...core.logs import AppLogger
 from ..common.image import pil_to_qimage
 from ...core.platform.thumbnails import FileThumbnailer
 from ..common.dispatcher import Dispatcher
-from ..common.thread import SimpleThreadPool
+from ..common.thread import utility_pool
 import os
 from ...core.lang.manager import t
-
-_thumb_pool = SimpleThreadPool("dialog_thumb")
-_thumb_dispatcher = Dispatcher(_thumb_pool)
-
-
-def _pil_to_qpixmap(img) -> QPixmap:
-    return QPixmap.fromImage(pil_to_qimage(img))
 
 
 def _split_path(path: str, fallback_name: str = ""):
@@ -49,21 +43,32 @@ def _image_for_source(path: str, data, size: int) -> QImage | None:
     return None
 
 
-def _pixmap_for_source(path: str, data, size: int) -> QPixmap:
-    img = _image_for_source(path, data, size)
+def _apply_thumb(label: QLabel, img: QImage | None, path: str, size: int):
+    if not isValid(label):
+        return
     if img is not None and not img.isNull():
-        return QPixmap.fromImage(img)
-    prov = QFileIconProvider()
-    p = str(path or "")
-    ico = prov.icon(QFileInfo(p)) if p else prov.icon(QFileIconProvider.File)
-    return ico.pixmap(size, size)
-
-
-def _set_thumb(label: QLabel, path: str, data, size: int):
-    pix = _pixmap_for_source(path, data, size)
+        pix = QPixmap.fromImage(img)
+    else:
+        prov = QFileIconProvider()
+        pix = (prov.icon(QFileInfo(path)) if path else prov.icon(QFileIconProvider.File)).pixmap(size, size)
     label.setPixmap(pix)
-    if pix is not None and not pix.isNull():
+    if not pix.isNull():
         label.setFixedSize(pix.size())
+
+
+def thumbnail_label(dispatcher: Dispatcher, path: str, size: int, data=None) -> QLabel:
+    label = QLabel()
+    label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+    label.setScaledContents(False)
+    label.setFixedSize(size, size)
+    path = str(path or "")
+
+    def task():
+        img = _image_for_source(path, data, size)
+        dispatcher.invoke(lambda: _apply_thumb(label, img, path, size))
+
+    dispatcher.post(task)
+    return label
 
 
 class BaseDialog(QDialog):
@@ -123,6 +128,11 @@ class BaseDialog(QDialog):
         self.accept()
 
 
+def show_unexpected_error():
+    if QApplication.instance():
+        QMessageBox.critical(None, "Unexpected Error", "An unexpected error occurred. Please check the log file.")
+
+
 class ConfirmDialog(BaseDialog):
     @staticmethod
     def ask(message, title="Confirm", buttons=("OK", "Cancel"), parent=None, disabled=()):
@@ -138,15 +148,12 @@ class ThumbnailConfirmDialog(BaseDialog):
         if not ps:
             return
         size = dpix(256)
+        dispatcher = Dispatcher(utility_pool, self)
         row = QHBoxLayout()
         row.addStretch(1)
         for p in ps:
             col = QVBoxLayout()
-            thumb = QLabel()
-            thumb.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-            thumb.setScaledContents(False)
-            thumb.setFixedSize(size, size)
-            self._load_thumb_async(thumb, p, size)
+            thumb = thumbnail_label(dispatcher, p, size)
             _, name = _split_path(p, "")
             label = QLabel(name)
             label.setAlignment(Qt.AlignHCenter)
@@ -158,25 +165,6 @@ class ThumbnailConfirmDialog(BaseDialog):
         self.content_layout.addStretch(1)
         self.content_layout.addLayout(row)
         self.content_layout.addStretch(1)
-
-    @staticmethod
-    def _load_thumb_async(label: QLabel, path: str, size: int):
-        def task():
-            img = _image_for_source(path, None, size)
-            _thumb_dispatcher.invoke(lambda: _apply_thumb(label, img, path, size))
-
-        def _apply_thumb(lbl: QLabel, img: QImage | None, p: str, sz: int):
-            if img is not None and not img.isNull():
-                pix = QPixmap.fromImage(img)
-            else:
-                prov = QFileIconProvider()
-                ico = prov.icon(QFileInfo(p)) if p else prov.icon(QFileIconProvider.File)
-                pix = ico.pixmap(sz, sz)
-            lbl.setPixmap(pix)
-            if not pix.isNull():
-                lbl.setFixedSize(pix.size())
-
-        _thumb_dispatcher.post(task)
 
     @staticmethod
     def ask(message, *, paths=None, title="Confirm", buttons=("OK", "Cancel"), parent=None):
@@ -292,7 +280,62 @@ class DropTargetDialog(BaseDialog):
         return dialog.selected_path
 
 
-class FileConflictDialog(BaseDialog):
+class ConflictDialog(BaseDialog):
+    CHOICE_LABELS = {
+        "overwrite": "Overwrite",
+        "merge": "Merge",
+        "rename": "Rename",
+        "skip": "Skip",
+        "cancel": "Cancel",
+        "ok": "OK",
+    }
+
+    def __init__(self, message, *, choices, apply_all_text: str, show_apply_all: bool = True, title="Confirm", parent=None):
+        self.choice_by_label = {t(self.CHOICE_LABELS[c]): c for c in choices}
+        super().__init__(message, title, buttons=tuple(self.choice_by_label), icon_type=QStyle.SP_MessageBoxWarning, parent=parent)
+        self.thumb_dispatcher = Dispatcher(utility_pool, self)
+        self.apply_all_checkbox = QCheckBox(apply_all_text) if show_apply_all else None
+
+    def add_columns(self, *columns: tuple[str, QLabel, str, str]):
+        row = QHBoxLayout()
+        for i, (heading, icon, path, name) in enumerate(columns):
+            if i:
+                row.addSpacing(dpix(12))
+            folder, file_name = _split_path(path, name)
+            dir_label = QLabel(folder)
+            dir_label.setWordWrap(True)
+            col = QVBoxLayout()
+            col.addStretch(1)
+            col.addWidget(QLabel(heading), alignment=Qt.AlignHCenter)
+            col.addWidget(icon, alignment=Qt.AlignHCenter)
+            col.addStretch(1)
+            col.addWidget(dir_label)
+            col.addWidget(QLabel(file_name))
+            row.addLayout(col)
+        self.content_layout.addLayout(row)
+        self.content_layout.setSpacing(dpix(4))
+        self.content_layout.addSpacing(dpix(2))
+        if self.apply_all_checkbox is not None:
+            self.content_layout.addWidget(self.apply_all_checkbox)
+
+    def choice(self) -> str | None:
+        return self.choice_by_label.get(self.result_text)
+
+    def apply_all(self) -> bool:
+        return self.apply_all_checkbox is not None and self.apply_all_checkbox.isChecked()
+
+    def run(self) -> tuple[str | None, bool]:
+        self.exec()
+        return self.choice(), self.apply_all()
+
+
+def _side_titles(op: str) -> tuple[str, str]:
+    if op == "move":
+        return t("Move Source"), t("Move Target")
+    return t("Copy Source"), t("Copy Target")
+
+
+class FileConflictDialog(ConflictDialog):
     def __init__(
         self,
         message,
@@ -304,201 +347,53 @@ class FileConflictDialog(BaseDialog):
         src_bytes=None,
         op: str = "copy",
         show_apply_all: bool = True,
-        buttons=None,
+        choices=("overwrite", "rename", "skip", "cancel"),
         title="Confirm",
         parent=None,
     ):
-        super().__init__(message, title, buttons=buttons or ("上書き", "別名で保存", "スキップ", "キャンセル"), icon_type=QStyle.SP_MessageBoxWarning, parent=parent)
-        self.apply_all_checkbox = None
-        if show_apply_all:
-            self.apply_all_checkbox = QCheckBox("同じ処理を以降すべての競合に適用")
-            self.apply_all_checkbox.setChecked(False)
-
-        thumb_size = dpix(256)
-        self.src_thumb = QLabel()
-        self.dst_thumb = QLabel()
-        self.src_thumb.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.dst_thumb.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.src_thumb.setScaledContents(False)
-        self.dst_thumb.setScaledContents(False)
-
-        src_dir, src_file = _split_path(src_path, src_name)
-        dst_dir, dst_file = _split_path(dst_path, dst_name)
-
-        self.src_dir_label = QLabel(src_dir)
-        self.src_file_label = QLabel(src_file)
-        self.dst_dir_label = QLabel(dst_dir)
-        self.dst_file_label = QLabel(dst_file)
-        self.src_dir_label.setWordWrap(True)
-        self.dst_dir_label.setWordWrap(True)
-        self.src_file_label.setWordWrap(False)
-        self.dst_file_label.setWordWrap(False)
-
-        _set_thumb(self.src_thumb, src_path, src_bytes, thumb_size)
-        _set_thumb(self.dst_thumb, dst_path, None, thumb_size)
-
-        row = QHBoxLayout()
-        left = QVBoxLayout()
-        right = QVBoxLayout()
-        src_title = "移動元" if op == "move" else "コピー元"
-        dst_title = "移動先" if op == "move" else "コピー先"
-        left.addStretch(1)
-        left.addWidget(QLabel(src_title), alignment=Qt.AlignHCenter)
-        left.addWidget(self.src_thumb, alignment=Qt.AlignHCenter)
-        left.addStretch(1)
-        left.addWidget(self.src_dir_label)
-        left.addWidget(self.src_file_label)
-        right.addStretch(1)
-        right.addWidget(QLabel(dst_title), alignment=Qt.AlignHCenter)
-        right.addWidget(self.dst_thumb, alignment=Qt.AlignHCenter)
-        right.addStretch(1)
-        right.addWidget(self.dst_dir_label)
-        right.addWidget(self.dst_file_label)
-        row.addLayout(left)
-        row.addSpacing(dpix(12))
-        row.addLayout(right)
-        self.content_layout.addLayout(row)
-        self.content_layout.setSpacing(dpix(4))
-        self.content_layout.addSpacing(dpix(2))
-        if self.apply_all_checkbox is not None:
-            self.content_layout.addWidget(self.apply_all_checkbox)
-
-    @staticmethod
-    def ask(
-        message, *, src_path: str, dst_path: str, src_name: str = "", dst_name: str = "", src_bytes=None, op: str = "copy", show_apply_all: bool = True, buttons=None, title="Confirm", parent=None
-    ):
-        dialog = FileConflictDialog(
-            message, src_path=src_path, dst_path=dst_path, src_name=src_name, dst_name=dst_name, src_bytes=src_bytes, op=op, show_apply_all=show_apply_all, buttons=buttons, title=title, parent=parent
+        super().__init__(message, choices=choices, apply_all_text=t("Apply to all remaining conflicts"), show_apply_all=show_apply_all, title=title, parent=parent)
+        size = dpix(256)
+        src_title, dst_title = _side_titles(op)
+        self.add_columns(
+            (src_title, thumbnail_label(self.thumb_dispatcher, src_path, size, src_bytes), src_path, src_name),
+            (dst_title, thumbnail_label(self.thumb_dispatcher, dst_path, size), dst_path, dst_name),
         )
-        dialog.exec()
-        return dialog.result_text, bool(dialog.apply_all_checkbox.isChecked()) if dialog.apply_all_checkbox is not None else False
 
     @staticmethod
-    def parse_choice(result_text: str | None) -> str | None:
-        t = str(result_text or "")
-        if not t:
-            return None
-        if t in ("キャンセル", "Cancel"):
-            return "cancel"
-        if t in ("スキップ", "Skip"):
-            return "skip"
-        if t in ("別名で保存", "Rename"):
-            return "rename"
-        if t in ("上書き", "上書きする", "Overwrite"):
-            return "overwrite"
-        return None
+    def ask(message, **kwargs) -> tuple[str | None, bool]:
+        return FileConflictDialog(message, **kwargs).run()
 
 
-class FolderConflictDialog(BaseDialog):
+class FolderConflictDialog(ConflictDialog):
     def __init__(self, message, *, src_path: str, dst_path: str, src_name: str = "", dst_name: str = "", op: str = "copy", show_apply_all: bool = True, title="Confirm", parent=None):
-        super().__init__(message, title, buttons=("マージ", "別名で保存", "スキップ", "キャンセル"), icon_type=QStyle.SP_MessageBoxWarning, parent=parent)
-        self.apply_all_checkbox = None
-        if show_apply_all:
-            self.apply_all_checkbox = QCheckBox("同じ処理を以降すべてのフォルダ競合に適用")
-            self.apply_all_checkbox.setChecked(False)
-
-        src_dir, src_file = _split_path(src_path, src_name)
-        dst_dir, dst_file = _split_path(dst_path, dst_name)
-
-        self.src_dir_label = QLabel(src_dir)
-        self.src_file_label = QLabel(src_file)
-        self.dst_dir_label = QLabel(dst_dir)
-        self.dst_file_label = QLabel(dst_file)
-        self.src_dir_label.setWordWrap(True)
-        self.dst_dir_label.setWordWrap(True)
-        self.src_file_label.setWordWrap(False)
-        self.dst_file_label.setWordWrap(False)
-
-        prov = QFileIconProvider()
-        folder_pix = prov.icon(QFileIconProvider.Folder).pixmap(dpix(64), dpix(64))
-
-        row = QHBoxLayout()
-        left = QVBoxLayout()
-        right = QVBoxLayout()
-        src_title = "移動元" if op == "move" else "コピー元"
-        dst_title = "移動先" if op == "move" else "コピー先"
-        src_icon = QLabel()
-        src_icon.setPixmap(folder_pix)
-        dst_icon = QLabel()
-        dst_icon.setPixmap(folder_pix)
-        left.addStretch(1)
-        left.addWidget(QLabel(src_title), alignment=Qt.AlignHCenter)
-        left.addWidget(src_icon, alignment=Qt.AlignHCenter)
-        left.addStretch(1)
-        left.addWidget(self.src_dir_label)
-        left.addWidget(self.src_file_label)
-        right.addStretch(1)
-        right.addWidget(QLabel(dst_title), alignment=Qt.AlignHCenter)
-        right.addWidget(dst_icon, alignment=Qt.AlignHCenter)
-        right.addStretch(1)
-        right.addWidget(self.dst_dir_label)
-        right.addWidget(self.dst_file_label)
-        row.addLayout(left)
-        row.addSpacing(dpix(12))
-        row.addLayout(right)
-        self.content_layout.addLayout(row)
-        self.content_layout.setSpacing(dpix(4))
-        self.content_layout.addSpacing(dpix(2))
-        if self.apply_all_checkbox is not None:
-            self.content_layout.addWidget(self.apply_all_checkbox)
+        super().__init__(
+            message,
+            choices=("merge", "rename", "skip", "cancel"),
+            apply_all_text=t("Apply to all remaining folder conflicts"),
+            show_apply_all=show_apply_all,
+            title=title,
+            parent=parent,
+        )
+        folder_pix = QFileIconProvider().icon(QFileIconProvider.Folder).pixmap(dpix(64), dpix(64))
+        icons = []
+        for _ in range(2):
+            icon = QLabel()
+            icon.setPixmap(folder_pix)
+            icons.append(icon)
+        src_title, dst_title = _side_titles(op)
+        self.add_columns((src_title, icons[0], src_path, src_name), (dst_title, icons[1], dst_path, dst_name))
 
     @staticmethod
-    def ask(message, *, src_path: str, dst_path: str, src_name: str = "", dst_name: str = "", op: str = "copy", show_apply_all: bool = True, title="Confirm", parent=None):
-        dialog = FolderConflictDialog(message, src_path=src_path, dst_path=dst_path, src_name=src_name, dst_name=dst_name, op=op, show_apply_all=show_apply_all, title=title, parent=parent)
-        dialog.exec()
-        return dialog.result_text, bool(dialog.apply_all_checkbox.isChecked()) if dialog.apply_all_checkbox is not None else False
-
-    @staticmethod
-    def parse_choice(result_text: str | None) -> str | None:
-        t = str(result_text or "")
-        if not t:
-            return None
-        if t in ("キャンセル", "Cancel"):
-            return "cancel"
-        if t in ("スキップ", "Skip"):
-            return "skip"
-        if t in ("別名で保存", "Rename"):
-            return "rename"
-        if t in ("マージ", "Merge"):
-            return "merge"
-        return None
+    def ask(message, **kwargs) -> tuple[str | None, bool]:
+        return FolderConflictDialog(message, **kwargs).run()
 
 
-class SingleFileConflictDialog(BaseDialog):
+class SingleFileConflictDialog(ConflictDialog):
     def __init__(self, message, *, path: str, name: str = "", src_bytes=None, op: str = "copy", show_apply_all: bool = True, title="Confirm", parent=None):
-        super().__init__(message, title, buttons=("OK",), icon_type=QStyle.SP_MessageBoxWarning, parent=parent)
-        self.apply_all_checkbox = None
-        if show_apply_all:
-            self.apply_all_checkbox = QCheckBox("同じ処理を以降すべての同一パスに適用")
-            self.apply_all_checkbox.setChecked(False)
-
-        thumb_size = dpix(256)
-        self.thumb = QLabel()
-        self.thumb.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.thumb.setScaledContents(False)
-
-        d, n = _split_path(path, name)
-        self.dir_label = QLabel(d)
-        self.file_label = QLabel(n)
-        self.dir_label.setWordWrap(True)
-        self.file_label.setWordWrap(False)
-        _set_thumb(self.thumb, path, src_bytes, thumb_size)
-
-        col = QVBoxLayout()
-        col.addStretch(1)
-        col.addWidget(QLabel(t("Move Target") if op == "move" else t("Copy Target")), alignment=Qt.AlignHCenter)
-        col.addWidget(self.thumb, alignment=Qt.AlignHCenter)
-        col.addStretch(1)
-        col.addWidget(self.dir_label)
-        col.addWidget(self.file_label)
-        self.content_layout.addLayout(col)
-        self.content_layout.setSpacing(dpix(4))
-        self.content_layout.addSpacing(dpix(2))
-        if self.apply_all_checkbox is not None:
-            self.content_layout.addWidget(self.apply_all_checkbox)
+        super().__init__(message, choices=("ok",), apply_all_text=t("Apply to all remaining conflicts"), show_apply_all=show_apply_all, title=title, parent=parent)
+        heading = t("Move Target") if op == "move" else t("Copy Target")
+        self.add_columns((heading, thumbnail_label(self.thumb_dispatcher, path, dpix(256), src_bytes), path, name))
 
     @staticmethod
-    def ask(message, *, path: str, name: str = "", src_bytes=None, op: str = "copy", show_apply_all: bool = True, title="Confirm", parent=None):
-        dialog = SingleFileConflictDialog(message, path=path, name=name, src_bytes=src_bytes, op=op, show_apply_all=show_apply_all, title=title, parent=parent)
-        dialog.exec()
-        return dialog.result_text, bool(dialog.apply_all_checkbox.isChecked()) if dialog.apply_all_checkbox is not None else False
+    def ask(message, **kwargs) -> tuple[str | None, bool]:
+        return SingleFileConflictDialog(message, **kwargs).run()

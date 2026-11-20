@@ -34,9 +34,8 @@ class TestContainedFilesListOption:
         assert provider.mode == ListMode.FIX
         assert provider.open_contained_files_as_list is False
 
-    @patch.object(FileListProvider, "_has_contained_children", return_value=True)
     @patch.object(FileListProvider, "_query_contained_files")
-    def test_container_path_triggers_contained_query_when_enabled(self, mock_query, _mock_has_children, provider, file_model):
+    def test_container_path_triggers_contained_query_when_enabled(self, mock_query, provider, file_model):
         file_model._dbpath_getter = lambda: ":memory:"
         provider.set_open_contained_files_as_list(True)
 
@@ -63,15 +62,38 @@ class TestContainedFilesListOption:
         mock_query.assert_not_called()
         assert file_model.path() == "C:/data/temp.zip"
 
-    @patch.object(FileListProvider, "_query_contained_files")
-    def test_physical_non_container_sets_path_immediately(self, mock_query, provider, file_model):
+    def test_physical_file_is_checked_off_the_main_thread_and_opened_when_it_has_no_children(self, provider, file_model, monkeypatch):
         file_model._dbpath_getter = lambda: ":memory:"
         provider.set_open_contained_files_as_list(True)
+        engines = []
+        monkeypatch.setattr("wafer.app.viewer.preview.file_list_provider.FileSearchEngine", lambda dbpath: engines.append(MagicMock()) or engines[-1])
+        posted = []
+        monkeypatch.setattr(provider._dispatcher, "post", lambda fn, **kwargs: posted.append(fn))
+        monkeypatch.setattr(provider._dispatcher, "invoke", lambda fn: fn())
+        monkeypatch.setattr(provider._composer, "execute", lambda *a: ([], [], []))
+
+        provider.on_file_set("C:/data/plain.png")
+
+        assert engines == []
+        assert file_model.path() is None
+        posted[0]()
+        assert file_model.path() == "C:/data/plain.png"
+        engines[0].close.assert_called_once_with()
+
+    def test_a_failed_contained_query_still_opens_the_file(self, provider, file_model, monkeypatch):
+        file_model._dbpath_getter = lambda: ":memory:"
+        provider.set_open_contained_files_as_list(True)
+        monkeypatch.setattr(provider._dispatcher, "post", lambda fn, **kwargs: fn())
+        monkeypatch.setattr(provider._dispatcher, "invoke", lambda fn: fn())
+
+        def broken(*a):
+            raise RuntimeError("database is locked")
+
+        monkeypatch.setattr(provider._composer, "execute", broken)
 
         provider.on_file_set("C:/data/plain.png")
 
         assert file_model.path() == "C:/data/plain.png"
-        mock_query.assert_not_called()
 
     def test_on_contained_ready_sets_first_child_for_container(self, provider, file_model):
         archive = "C:/data/temp.zip"
@@ -126,6 +148,14 @@ class TestContainedFilesListOption:
 
 
 class TestSyncMode:
+    def test_sync_shares_the_grid_index(self, provider, file_model, grid_items):
+        grid_items.set_items(["g0", "g1"], ["s0", "s1"], [1.0, 1.0])
+        provider.set_mode(ListMode.SYNC)
+        assert file_model.path_index is grid_items.path_index
+        index = {"a": 0}
+        provider.on_search_results(["a"], ["sa"], index)
+        assert file_model.path_index is index
+
     def test_on_search_results_updates_file_model(self, provider, file_model):
         provider.set_mode(ListMode.SYNC)
         provider.on_search_results(["a", "b", "c"], ["s1", "s2", "s3"])
@@ -203,6 +233,22 @@ class TestFixMode:
         provider.on_file_set("y")
         assert file_model.paths == ["x", "y", "z"]
         assert file_model.path() == "y"
+
+
+    def test_fix_mode_reuses_the_grid_list_until_it_changes(self, provider, file_model, grid_items):
+        grid_items.set_items(["a", "b", "c"], ["s1", "s2", "s3"], [1.0, 1.0, 1.0])
+        provider.set_mode(ListMode.FIX)
+        provider.on_file_set("a")
+        changed = []
+        file_model.itemsChanged.connect(lambda: changed.append(True))
+        provider.on_file_set("b")
+        assert changed == []
+        assert file_model.path_index is grid_items.path_index
+        grid_items.set_items(["x", "b"], ["sx", "s2"], [1.0, 1.0])
+        provider.on_file_set("b")
+        assert changed == [True]
+        assert file_model.paths == ["x", "b"]
+        assert file_model.current_index() == 1
 
 
 class TestDirMode:

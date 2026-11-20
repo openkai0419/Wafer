@@ -1,6 +1,9 @@
+import sqlite3
+import sys
+
 import pytest
 
-from wafer.core.db.setting_db import SettingDB
+from wafer.core.db.setting_db import SettingDB, read_folder_settings
 
 TEST_DB_NAME = None
 
@@ -96,6 +99,22 @@ def test_get_all_folder_settings(setting_db):
     assert patterns == setting_db.get_all_ignore_patterns()
 
 
+def test_reading_folder_settings_never_creates_a_missing_database(tmp_path):
+    with pytest.raises(sqlite3.OperationalError):
+        read_folder_settings(tmp_path / "gone.db")
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_reading_folder_settings_leaves_the_database_unchanged(tmp_path):
+    path = tmp_path / "settings.db"
+    db = SettingDB(str(path))
+    db.add_parent_folder("C:/photos")
+    before = path.read_bytes()
+
+    assert read_folder_settings(path) == (["C:/photos"], [], [])
+    assert path.read_bytes() == before
+
 def test_enabled_collectors_default_none(setting_db):
     assert setting_db.get_enabled_collectors() is None
 
@@ -109,3 +128,43 @@ def test_enabled_collectors_roundtrip(setting_db):
 def test_enabled_collectors_invalid_type(setting_db):
     setting_db.set_setting("enabled_collectors", "not_a_list")
     assert setting_db.get_enabled_collectors() is None
+
+
+@pytest.mark.parametrize("name", ["Photos #1.db", "a%41b.db"])
+def test_reads_a_database_whose_name_has_uri_characters(tmp_path, name):
+    db = SettingDB(str(tmp_path / name))
+    db.add_parent_folder("C:/photos")
+
+    assert db.get_all_parent_folders() == ["C:/photos"]
+    assert sorted(p.name for p in tmp_path.iterdir() if p.suffix == ".db") == [name]
+
+
+def _use_profile(monkeypatch, profile):
+    from wafer.core.common.profile import current_profile
+
+    argv = ["main.py"] if profile is None else ["main.py", "--profile", profile]
+    monkeypatch.setattr(sys, "argv", argv)
+    current_profile.cache_clear()
+
+
+@pytest.fixture
+def _profile_cache_reset():
+    from wafer.core.common.profile import current_profile
+
+    current_profile.cache_clear()
+    yield
+    current_profile.cache_clear()
+
+
+def test_add_parent_folder_refuses_outside_sample_in_profile(setting_db, monkeypatch, tmp_path, _profile_cache_reset):
+    sample = tmp_path / "s"
+    monkeypatch.setenv("WAFER_DEBUG_SAMPLE_ROOT", str(sample))
+    _use_profile(monkeypatch, "debug-sdb")
+    assert setting_db.add_parent_folder(str(tmp_path / "real")) is False
+    assert setting_db.add_parent_folder(str(sample / "a")) is True
+    assert len(setting_db.get_all_parent_folders()) == 1
+
+
+def test_add_parent_folder_unchanged_without_profile(setting_db, monkeypatch, tmp_path, _profile_cache_reset):
+    _use_profile(monkeypatch, None)
+    assert setting_db.add_parent_folder(str(tmp_path / "real")) is True

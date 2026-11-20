@@ -189,6 +189,9 @@ class MarkRegistry(QtCore.QObject):
             i += 1
         return f"{base} {i}"
 
+    def id_for(self, name: str) -> str:
+        return self._unique_id(_normalize_id(self._unique_name(str(name).strip())))
+
     def add(self, name: str, color: str = "#888888", mark_id: str | None = None, *, storage_scope: str = SCOPE_META_INFO, shape_key: str = DEFAULT_SHAPE_KEY) -> str:
         display = str(name).strip()
         if not display:

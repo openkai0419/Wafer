@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from calendar import monthrange
-from datetime import datetime, timezone, UTC
+from datetime import datetime
 
 from wafer.plugin import BaseFilterPlugin
 from wafer.core.profiling import profiler
@@ -38,7 +38,7 @@ def _resolve_date_value(val: str, end_of_day: bool = False) -> float | None:
     if not val:
         return None
     if val == _TODAY:
-        dt = datetime.now(tz=UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        dt = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         if end_of_day:
             dt = dt.replace(hour=23, minute=59, second=59)
         return dt.timestamp()
@@ -48,7 +48,7 @@ def _resolve_date_value(val: str, end_of_day: bool = False) -> float | None:
 def _preset_to_epoch(value: float, unit: str, ref_time: float | None = None) -> float:
     base = ref_time if ref_time is not None else time.time()
     if unit == "months":
-        dt = datetime.fromtimestamp(base, tz=UTC)
+        dt = datetime.fromtimestamp(base)
         months_back = int(value)
         y = dt.year
         m = dt.month - months_back
@@ -56,14 +56,14 @@ def _preset_to_epoch(value: float, unit: str, ref_time: float | None = None) -> 
             m += 12
             y -= 1
         d = min(dt.day, monthrange(y, m)[1])
-        start = datetime(y, m, d, dt.hour, dt.minute, dt.second, tzinfo=UTC)
+        start = datetime(y, m, d, dt.hour, dt.minute, dt.second)
         return start.timestamp()
     if unit == "years":
-        dt = datetime.fromtimestamp(base, tz=UTC)
+        dt = datetime.fromtimestamp(base)
         y = dt.year - int(value)
         m = dt.month
         d = min(dt.day, monthrange(y, m)[1])
-        start = datetime(y, m, d, dt.hour, dt.minute, dt.second, tzinfo=UTC)
+        start = datetime(y, m, d, dt.hour, dt.minute, dt.second)
         return start.timestamp()
     secs = _UNIT_SECONDS.get(unit, 86400)
     return base - value * secs
@@ -74,7 +74,6 @@ def _date_str_to_epoch(date_str: str, end_of_day: bool = False) -> float | None:
         return None
     try:
         dt = datetime.strptime(date_str.strip(), "%Y/%m/%d")
-        dt = dt.replace(tzinfo=UTC)
         if end_of_day:
             dt = dt.replace(hour=23, minute=59, second=59)
         return dt.timestamp()
@@ -154,10 +153,13 @@ class DateRangeFilter(BaseFilterPlugin):
             ref = _resolve_preset_ref(params.get("preset_ref", _TODAY))
             return _preset_to_epoch(value, unit, ref_time=ref), ref
         if mode == "range":
-            epoch_from = _resolve_date_value(params.get("range_from", ""), end_of_day=True)
-            epoch_to = _resolve_date_value(params.get("range_to", ""), end_of_day=False)
+            range_from = params.get("range_from", "")
+            range_to = params.get("range_to", "")
+            epoch_from = _resolve_date_value(range_from, end_of_day=True)
+            epoch_to = _resolve_date_value(range_to)
             if epoch_from is not None and epoch_to is not None:
-                return min(epoch_from, epoch_to), max(epoch_from, epoch_to)
+                older, newer = sorted((range_from, range_to), key=_resolve_date_value)
+                return _resolve_date_value(older), _resolve_date_value(newer, end_of_day=True)
             if epoch_from is not None:
                 return None, epoch_from
             if epoch_to is not None:

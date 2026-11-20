@@ -6,6 +6,7 @@ from PySide6 import QtWidgets
 from wafer.app.viewer.preview.meta_panel import MetaViewerWidget, _FIXED_SECTION_KEYS
 from wafer.qt.meta.searchable import ScopedSearchKvAddDialog, SearchableMetaWidget
 from wafer.qt.meta.tag_edit_service import TagEditService
+from wafer.plugin.key_filter import KeyFilter
 from wafer.qt.meta.viewer import CollapsibleCard, MetaRowWidget
 from wafer.qt.meta.viewer import SECTION_MARKER_META_PREFIX, SECTION_MARKER_META_ROOT, SECTION_MARKER_TAG_PREFIX, SECTION_MARKER_TAG_ROOT
 
@@ -376,6 +377,7 @@ def test_tag_prefixed_falls_back_to_search_kv(qtbot):
     widget = card.content_widget()
     assert isinstance(widget, SearchableMetaWidget)
     assert widget._context.prefix == "custom"
+    assert widget._delete_everywhere == KeyFilter.delete_key_everywhere
 
 
 def test_tag_and_meta_same_prefix_create_two_cards(qtbot):

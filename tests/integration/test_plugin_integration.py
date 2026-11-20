@@ -101,21 +101,12 @@ class TestCollectorPluginResolution:
         names = collector_resolver.names()
         assert "exiftool" in names
 
-    def test_jpg_triggers_exif_collector(self):
-        collectors = collector_resolver.collectors_for_path("photo.jpg")
-        assert "exiftool" in collectors
-
-    def test_png_triggers_exif_collector(self):
-        collectors = collector_resolver.collectors_for_path("icon.png")
-        assert "exiftool" in collectors
-
-    def test_txt_no_exif_collector(self):
-        collectors = collector_resolver.collectors_for_path("readme.txt")
-        assert "exiftool" not in collectors
-
-    def test_unknown_no_collector(self):
-        collectors = collector_resolver.collectors_for_path("data.xyz123")
-        assert len(collectors) == 0 or "exiftool" not in collectors
+    def test_exif_collector_extensions(self):
+        exts = dict(collector_resolver.summary())["exiftool"]
+        assert ".jpg" in exts
+        assert ".png" in exts
+        assert ".txt" not in exts
+        assert ".xyz123" not in exts
 
 
 class TestCollectorProcessExecution:

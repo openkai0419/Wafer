@@ -25,6 +25,7 @@ from wafer.builtins.rename_sources import (
 from wafer.builtins.batch_renamer.widget import BatchRenamerPlugin
 from wafer.core.db.file_db import FileDB
 from wafer.qt.common.dpi import dpix
+from wafer.qt.common.dispatcher import CancelToken
 
 
 @pytest.fixture(autouse=True)
@@ -78,37 +79,46 @@ class TestWidgetInit:
 
 class TestFileExistenceCheck:
     @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_refresh_no_missing_without_os_check(self, mock_init, qtbot, tmp_files):
+    def test_refresh_flags_missing_file(self, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
-        qtbot.addWidget(dlg)
         tmp_files[1].unlink()
+        dlg._results = []
         dlg._rebuild()
-        qtbot.waitUntil(lambda: len(dlg._results) > 0, timeout=5000)
-        assert all(not r.missing for r in dlg._results)
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        assert [r.missing for r in dlg._results] == [False, True, False]
+        assert "1 missing file(s)" in dlg._status.text()
+        assert not dlg._rename_btn.isEnabled()
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_refresh_flags_existing_file_outside_batch(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files[:1])
+        dlg._columns[0].overrides[str(tmp_files[0])] = "b"
+        dlg._results = []
+        dlg._refresh()
+        qtbot.waitUntil(lambda: len(dlg._results) == 1, timeout=5000)
+        assert dlg._results[0].new_name == "b.jpg"
+        assert dlg._results[0].conflict
+        assert not dlg._rename_btn.isEnabled()
         dlg.close()
 
 
 class TestExecuteChecksExistence:
     @patch.object(BatchRenameWidget, "_start_async_init")
-    @patch("wafer.builtins.batch_renamer.widget.QtWidgets.QMessageBox.warning")
-    def test_execute_recheck_missing(self, mock_warn, mock_init, qtbot, tmp_files):
+    def test_execute_skips_missing_without_touching_disk(self, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.set_files(tmp_files)
-        qtbot.addWidget(dlg)
-        results, _ = RenameEngine.preview(
-            tmp_files,
-            dlg._columns,
-            dlg._ext_column,
-            {},
-        )
-        dlg._on_refresh_done(results, list(tmp_files), list(dlg._keys), (0, 0, 0))
-        tmp_files[0].unlink()
-        dlg._execute()
-        mock_warn.assert_called_once()
-        assert "no longer exist" in mock_warn.call_args[0][2]
+        results, _ = RenameEngine.preview(tmp_files, dlg._columns, dlg._ext_column, {})
+        results[0].missing = True
+        dlg._on_refresh_done(results, list(tmp_files), list(dlg._keys), (0, 0, 1))
+        with patch.object(dlg, "_confirm_rename") as confirm, patch.object(Path, "exists", side_effect=AssertionError("main-thread exists()")):
+            dlg._execute()
+        confirm.assert_not_called()
         dlg.close()
 
 
@@ -437,6 +447,38 @@ class TestRenameExecution:
         assert len(plans) == 3
         assert all(plan.action == "cut" for plan in plans)
         assert not any(plan.conflict for plan in plans)
+        assert mock_execute.call_args[1]["overwrite_mode"] == "ask"
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    @patch("wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui")
+    def test_existing_target_outside_batch_is_a_conflict(self, mock_execute, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files[:1])
+        outside = tmp_files[0].parent / "outside.jpg"
+        outside.write_bytes(b"keep")
+        mock_execute.return_value = [OperationResult(action="skip", src=str(tmp_files[0]), dst="", status="skipped")]
+
+        with patch("wafer.builtins.batch_renamer.widget.QtWidgets.QMessageBox.information"):
+            dlg._do_rename({str(tmp_files[0]): str(outside)})
+
+        assert mock_execute.call_args[1]["plans"][0].conflict
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    @patch("wafer.builtins.batch_renamer.widget.QtWidgets.QMessageBox.information")
+    @patch("wafer.builtins.batch_renamer.widget.execute_paste_plans_with_ui")
+    def test_skipped_renames_are_reported(self, mock_execute, mock_info, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        mock_execute.return_value = [OperationResult(action="skip", src=str(tmp_files[0]), dst="", status="skipped")]
+
+        dlg._do_rename({str(tmp_files[0]): str(tmp_files[0].parent / "A.jpg")})
+
+        mock_info.assert_called_once()
+        assert "1 file(s) skipped" in mock_info.call_args[0][2]
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
@@ -730,14 +772,27 @@ class TestProgressiveThumbnailLoading:
         dlg.close()
 
     @patch.object(BatchRenameWidget, "_start_async_init")
-    def test_close_cancels_thumbnail_loading(self, mock_init, qtbot, tmp_files):
+    def test_hide_keeps_loading(self, mock_init, qtbot, tmp_files):
         dlg = BatchRenameWidget()
         qtbot.addWidget(dlg)
         dlg.show()
         dlg.set_files(tmp_files)
-        with patch.object(dlg._thumbs, "cancel_all", wraps=dlg._thumbs.cancel_all) as spy:
-            dlg.close()
-        spy.assert_called()
+        dlg._init_cancel = init_cancel = CancelToken()
+        with patch.object(dlg._thumbs, "cancel_all") as spy:
+            dlg.hide()
+        spy.assert_not_called()
+        assert not init_cancel.is_cancelled()
+        dlg.close()
+
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_destroy_cancels_loading(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.set_files(tmp_files)
+        dlg._init_cancel = init_cancel = CancelToken()
+        dlg.destroyed.emit()
+        assert init_cancel.is_cancelled()
+        dlg.close()
 
 
 class TestSegTableSelectionSync:

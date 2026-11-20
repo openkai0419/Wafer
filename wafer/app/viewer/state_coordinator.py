@@ -5,6 +5,7 @@ from collections.abc import Callable
 
 from PySide6 import QtCore
 
+from ...core.common.paths import list_setting_db_names
 from ...core.store.state import StateStore
 from ...core.logs import AppLogger
 
@@ -57,7 +58,9 @@ class PathStateCoordinator:
             if on_complete:
                 on_complete()
             return
-        db_name = path.get("database_name") or self._w.get_last_used_db_name()
+        db_name = path.get("database_name")
+        if db_name not in list_setting_db_names():
+            db_name = self._w.get_last_used_db_name()
         expanded = path.get("expanded") or []
         selected = path.get("selected") or []
 

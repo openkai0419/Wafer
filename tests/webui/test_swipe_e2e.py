@@ -280,10 +280,22 @@ def test_a_video_ending_during_a_drag_moves_on_after_it(page, webui_base_url):
     wait_for(page, "2/")
 
 
-def test_a_late_item_keeps_the_neighbor_under_the_finger(viewer_page):
-    page = viewer_page
+def test_a_late_item_keeps_the_neighbor_under_the_finger(page, webui_base_url):
     held_items = []
-    page.route("**/api/query/*/items*", lambda route: held_items.append(route))
+
+    def without_the_second(route):
+        if parse_qs(urlparse(route.request.url).query)["limit"][0] == "1":
+            held_items.append(route)
+            return
+        response = route.fetch()
+        data = response.json()
+        data["items"] = [item for item in data["items"] if item["i"] != 1]
+        route.fulfill(response=response, json=data)
+
+    page.route("**/api/query/*/items*", without_the_second)
+    page.goto(webui_base_url)
+    page.wait_for_selector("#grid-canvas .cell")
+    open_first(page)
     page.keyboard.press("ArrowRight")
     wait_for(page, "2/")
     touch = Touch(page)

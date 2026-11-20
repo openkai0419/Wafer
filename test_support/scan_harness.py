@@ -113,9 +113,9 @@ def track_full_scans(scanner):
     completed = []
     run_full_scan = scanner._do_full_scan
 
-    def tracked(root_paths):
+    def tracked(root_paths, partial=False):
         try:
-            run_full_scan(root_paths)
+            run_full_scan(root_paths, partial)
         finally:
             completed.append(root_paths)
 

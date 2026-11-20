@@ -6,6 +6,7 @@ from pathlib import Path
 from PySide6 import QtCore
 
 from ....core.db.query import FileSearchEngine
+from ....core.logs import AppLogger
 from ....qt.common.dispatcher import Dispatcher, CancelToken
 from ....qt.common.thread import utility_pool
 from ....plugin.query.composer import SearchComposer
@@ -47,7 +48,7 @@ class FileListProvider(QtCore.QObject):
         return self._open_contained_files_as_list
 
     def _sync_from_grid(self):
-        self._file_model.set_items(self._grid_items.paths, self._grid_items.sources)
+        self._file_model.set_items(self._grid_items.paths, self._grid_items.sources, self._grid_items.path_index)
 
     def set_mode(self, mode: ListMode):
         self._cancel_pending()
@@ -87,12 +88,14 @@ class FileListProvider(QtCore.QObject):
                 return None
         return None
 
-    def on_search_results(self, paths: list[str], sources: list[str]):
+    def on_search_results(self, paths: list[str], sources: list[str], path_index: dict[str, int] | None = None):
         if self._mode == ListMode.SYNC:
-            self._file_model.set_items(paths, sources)
+            self._file_model.set_items(paths, sources, path_index)
 
     def on_file_set(self, path: str):
-        if self._open_contained_files_as_list and self._query_contained_files_if_available(path):
+        if self._open_contained_files_as_list and self._file_model.dbpath:
+            source = source_path(path) if is_virtual_path(path) else path
+            self._query_contained_files(source, path)
             return
         self._set_file_by_mode(path)
 
@@ -101,38 +104,12 @@ class FileListProvider(QtCore.QObject):
             case ListMode.SYNC:
                 self._file_model.set_path(path)
             case ListMode.FIX:
-                self._file_model.set_items(
-                    list(self._grid_items.paths),
-                    list(self._grid_items.sources),
-                )
+                if self._file_model.paths is not self._grid_items.paths:
+                    self._sync_from_grid()
                 self._file_model.set_path(path)
             case ListMode.DIR:
                 self._file_model.set_path(path)
                 self._query_directory(path)
-
-    def _has_contained_children(self, path: str) -> bool:
-        dbpath = self._file_model.dbpath
-        if not dbpath:
-            return False
-        engine = FileSearchEngine(dbpath)
-        try:
-            return engine.has_source_children(path)
-        finally:
-            engine.close()
-
-    def _contained_source(self, path: str) -> str | None:
-        if is_virtual_path(path):
-            return source_path(path)
-        return path if self._has_contained_children(path) else None
-
-    def _query_contained_files_if_available(self, path: str) -> bool:
-        if not self._file_model.dbpath:
-            return False
-        source = self._contained_source(path)
-        if not source:
-            return False
-        self._query_contained_files(source, path)
-        return True
 
     def _query_contained_files(self, source: str, requested_path: str):
         self._cancel_pending()
@@ -145,9 +122,12 @@ class FileListProvider(QtCore.QObject):
         self._dir_cancel = cancel
 
         def task():
-            engine = FileSearchEngine(dbpath)
             entries = [(SourceChildrenFilter, {"source": source}, None)]
-            result = self._composer.execute(engine, entries, sort_plugin, ascending)
+            try:
+                result = self._execute(dbpath, entries, sort_plugin, ascending)
+            except Exception as e:
+                AppLogger.warning(f"Contained files query failed, opening the file alone: {source}", exc=e)
+                result = ([], [], [])
             if not cancel.is_cancelled():
                 self._dispatcher.invoke(lambda r=result: self._on_contained_ready(r, cancel, requested_path))
 
@@ -165,7 +145,6 @@ class FileListProvider(QtCore.QObject):
         self._dir_cancel = cancel
 
         def task():
-            engine = FileSearchEngine(dbpath)
             entries = [
                 (
                     DirectoryFilter,
@@ -176,11 +155,18 @@ class FileListProvider(QtCore.QObject):
                     None,
                 )
             ]
-            result = self._composer.execute(engine, entries, sort_plugin, ascending)
+            result = self._execute(dbpath, entries, sort_plugin, ascending)
             if not cancel.is_cancelled():
                 self._dispatcher.invoke(lambda r=result: self._on_dir_ready(r, cancel))
 
         self._dispatcher.post(task, cancel=cancel)
+
+    def _execute(self, dbpath, entries, sort_plugin, ascending):
+        engine = FileSearchEngine(dbpath)
+        try:
+            return self._composer.execute(engine, entries, sort_plugin, ascending)
+        finally:
+            engine.close()
 
     def _on_dir_ready(self, result, cancel):
         if cancel.is_cancelled():

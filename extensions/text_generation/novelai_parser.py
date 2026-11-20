@@ -24,7 +24,7 @@ class NovelAiImageParser(BaseSingletonParser):
         else:
             return None
         if not isinstance(raw, str) or not raw.lstrip().startswith("{"):
-            return ParserResult(source=path, status=False)
+            return ParserResult(source=path, status=True)
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError as exc:

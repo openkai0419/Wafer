@@ -1,12 +1,19 @@
 import os
+from collections.abc import Callable, Iterable
 
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
 
-from ...qt.commands.bridge import ActionKit, Menu
+from ...qt.commands.bridge import ActionKit, Command, Menu
 from ...core.lang.manager import t
 from ...core.common.paths import normalize_path
 from ...core.logs import AppLogger
+from ...qt.common.dispatcher import CancelSlot, CancelToken, Dispatcher
+from ...qt.common.notifier import Notifier
+from ...qt.common.thread import utility_pool
 from ...qt.widgets.dialogs import ConfirmDialog
+from .folder_files import disk_files
+
+COLLECTING_NOTICE_MS = 400
 
 
 def _ctx_tree(ctx):
@@ -99,6 +106,126 @@ def ignore_folder(ctx):
         root.setting_db.add_ignore_folder(p)
 
 
+_dispatcher: Dispatcher | None = None
+
+
+def _files_dispatcher() -> Dispatcher:
+    global _dispatcher
+    if _dispatcher is None:
+        _dispatcher = Dispatcher(utility_pool)
+    return _dispatcher
+
+
+_files_slot = CancelSlot()
+
+
+def run_on_folder_files(ctx, command_id: str, collect: Callable[[list[str], CancelToken], list[str]]) -> None:
+    folders = _ctx_normalized_paths(ctx)
+    if not folders:
+        return
+    notify = ctx.get("notify") or Notifier.info
+    dispatcher = _files_dispatcher()
+    token = _files_slot.renew()
+    collecting = [True]
+
+    def work():
+        sources = collect(folders, token)
+        if not token.is_cancelled():
+            dispatcher.invoke(lambda: finish(sources))
+
+    def finish(sources: list[str]) -> None:
+        collecting[0] = False
+        if not token.is_cancelled():
+            _apply_to_sources(command_id, sources, notify)
+
+    def notice() -> None:
+        if collecting[0] and not token.is_cancelled():
+            notify("Collecting files…")
+
+    dispatcher.post(work, cancel=token)
+    QtCore.QTimer.singleShot(COLLECTING_NOTICE_MS, notice)
+
+
+def run_on_disk_files(ctx, command_id: str, recursive: bool) -> None:
+    run_on_folder_files(ctx, command_id, lambda folders, cancel: disk_files(folders, recursive, cancel))
+
+
+def _apply_to_sources(command_id: str, sources: list[str], notify: Callable[[str], None]) -> None:
+    if not sources:
+        notify("No files")
+        return
+    Command.invoke(command_id, extras={"sources": sources, "paths": sources})
+
+
+def cut_direct_files(ctx):
+    run_on_disk_files(ctx, "file.cut", False)
+
+
+def copy_direct_files(ctx):
+    run_on_disk_files(ctx, "file.copy", False)
+
+
+def cut_all_files(ctx):
+    run_on_disk_files(ctx, "file.cut", True)
+
+
+def copy_all_files(ctx):
+    run_on_disk_files(ctx, "file.copy", True)
+
+
+def show_in_tree(ctx):
+    path = _ctx_normalized_path(ctx)
+    if not path:
+        return
+    ctx.get_instance("FolderTree").expand_and_select_path(path)
+
+
+def folder_menu_sections(path: str) -> dict[str, list]:
+    if not os.path.isdir(path):
+        return {"File": ["file.copy_path"]}
+    return {
+        "File": [
+            "file.show_explorer",
+            "file.shell_context_menu",
+            "-",
+            "file.copy_path",
+            "-",
+            "file.cut",
+            "file.copy",
+            "file.delete",
+            "-",
+            "file.paste",
+            "file.new_folder",
+        ],
+        "Selection": [
+            "file.select_path",
+            "Recollect/:Recollect",
+            "Recollect/file.recollect.folder.reset_prefix",
+            "Recollect/file.recollect.folder.reset_all",
+            "Recollect/file.recollect.folder.forget",
+        ],
+        "FolderTree": [
+            "Files in Folder/:All files on disk",
+            "Files in Folder/ft.files.cut_direct",
+            "Files in Folder/ft.files.copy_direct",
+            "Files in Folder/ft.files.cut_all",
+            "Files in Folder/ft.files.copy_all",
+        ],
+    }
+
+
+def menu_sections(sections: Iterable[tuple[str, list]]) -> list:
+    items = []
+    for title, section in sections:
+        if not section:
+            continue
+        if items:
+            items.append("-")
+        items.append(f":{title}")
+        items.extend(section)
+    return items
+
+
 def show_context_menu(ctx):
     tree = _ctx_tree(ctx)
     if tree is None:
@@ -106,54 +233,20 @@ def show_context_menu(ctx):
     path = _ctx_normalized_path(ctx)
     if not path:
         return
-    exists = os.path.isdir(path)
     if hasattr(tree, "folder_selected"):
         try:
             tree.folder_selected.emit()
         except Exception as e:
             AppLogger.debug(f"folder_selected emit failed: {e}")
-    items = []
-    if exists:
-        items.extend(
-            [
-                ":Path",
-                "file.show_explorer",
-                "file.shell_context_menu",
-                "-",
-                "file.copy_path",
-                "-",
-                "file.select_path",
-                "-",
-                "-",
-                "file.cut",
-                "file.copy",
-                "file.delete",
-                "-",
-                "file.paste",
-                "file.new_folder",
-                "-",
-                "Recollect/:Recollect",
-                "Recollect/file.recollect.folder.reset_prefix",
-                "Recollect/file.recollect.folder.reset_all",
-                "Recollect/file.recollect.folder.forget",
-                "-",
-            ]
-        )
-    else:
-        items.extend(
-            [
-                "file.copy_path",
-                "-",
-            ]
-        )
+    sections = folder_menu_sections(path)
     if hasattr(tree, "roots") and path in tree.roots:
-        items.append(ActionKit.Action(path="inline.folder.remove_from_view", display="Remove from view", func=remove_from_view))
+        sections["Exclude"] = [ActionKit.Action(path="inline.folder.remove_from_view", display="Remove from view", func=remove_from_view)]
     else:
-        items.append(ActionKit.Action(path="inline.folder.ignore", display="Ignore this folder", func=ignore_folder))
+        sections["Exclude"] = [ActionKit.Action(path="inline.folder.ignore", display="Ignore this folder", func=ignore_folder)]
     s = Menu.from_context(ctx)
     if s is None:
         return
-    s.menu(items).exec()
+    s.menu(menu_sections(sections.items())).exec()
 
 
 def reload_tree(ctx):
@@ -262,6 +355,23 @@ class FolderTreeCommands(ActionKit.MenuBase):
             ),
             "-",
             ActionKit.Command(path="ft.reload_tree", display="Reload Tree", func=reload_tree),
+            ActionKit.Command(path="ft.show_in_tree", display="Show in FolderTree", func=show_in_tree, hidden=True),
             "-",
             ActionKit.Command(path="ft.add_folder", display="Add Folder", func=add_folder),
+        ]
+
+
+class FolderFilesCommands(ActionKit.MenuBase):
+    NAME = ActionKit.MenuPath.FOLDER_TREE
+    PRIORITY = 31
+    SCOPE = "*"
+
+    @classmethod
+    def commands(cls):
+        return [
+            ":All files on disk",
+            ActionKit.Command(path="ft.files.cut_direct", display="Cut direct files", func=cut_direct_files),
+            ActionKit.Command(path="ft.files.copy_direct", display="Copy direct files", func=copy_direct_files),
+            ActionKit.Command(path="ft.files.cut_all", display="Cut all files below", func=cut_all_files),
+            ActionKit.Command(path="ft.files.copy_all", display="Copy all files below", func=copy_all_files),
         ]

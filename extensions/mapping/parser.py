@@ -9,6 +9,7 @@ import numpy as np
 
 from wafer.core.common.paths import data_db_path
 from wafer.core.db.path_values import fetch_path_values, read_path_values
+from wafer.core.db.query import SYSTEM_FILE_HASH_KEY
 from wafer.core.logs import AppLogger
 from wafer.plugin import BaseParserPlugin, ParserResult
 
@@ -121,7 +122,7 @@ class MappingParser(BaseParserPlugin):
             if trained is not None:
                 return trained
         try:
-            entry = self.read_db(lambda conn: read_path_values(conn, [path], keys=model.preset.value_keys()), {}).get(path)
+            entry = self.read_db(lambda conn: read_path_values(conn, [path], keys=[SYSTEM_FILE_HASH_KEY, *model.preset.value_keys()]), {}).get(path)
         except sqlite3.Error as e:
             AppLogger.warning(f"[Mapping] Reading the values of {path} failed; it is placed on the next run", exc=e)
             entry = None

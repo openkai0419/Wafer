@@ -12,11 +12,11 @@ export async function getJson(path, params) {
   return res.json();
 }
 
-export async function postQuery(db, filters, sort, ascending) {
+export async function postQuery(db, filters, sort, ascending, previous = []) {
   const res = await fetch('/api/query', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ db, filters, sort, ascending }),
+    body: JSON.stringify({ db, filters, sort, ascending, previous }),
   });
   if (!res.ok) throw new ApiError(`query: ${res.status}`, res.status);
   return res.json();
@@ -39,8 +39,10 @@ export function fileUrl(db, path) {
 export const THUMB_SIZE_DEFAULT = 256;
 export const THUMB_STEPS = [128, 160, 192, 224, 256, 320, 384, 448, 512, 640, 768, 896, 1024];
 
-export function thumbUrl(db, path, size) {
-  return `/api/thumb?${new URLSearchParams({ db, path, size })}`;
+export function thumbUrl(db, path, size, mtime) {
+  const params = new URLSearchParams({ db, path, size });
+  if (mtime != null) params.set('v', String(mtime));
+  return `/api/thumb?${params}`;
 }
 
 export function getKeys(db) {

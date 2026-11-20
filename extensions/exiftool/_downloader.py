@@ -5,6 +5,7 @@ import shutil
 import tempfile
 import zipfile
 
+from wafer.core.logs import AppLogger
 from wafer.core.common.downloader import (
     safe_download,
     fetch_text,
@@ -29,19 +30,6 @@ _MAX_CHECKSUMS_RESPONSE = 16 * 1024
 _USER_AGENT = "wafer-exiftool-plugin"
 
 _MANUAL_HINT = "Download ExifTool from https://exiftool.org/ and place exiftool.exe + exiftool_files/ in extensions/exiftool/lib/"
-
-
-def _log(msg, *, level="info", exc=None):
-    try:
-        from wafer.core.logs import AppLogger
-
-        fn = getattr(AppLogger, level, AppLogger.info)
-        if exc and level in ("error", "warning"):
-            fn(msg, exc=exc)
-        else:
-            fn(msg)
-    except (ImportError, AttributeError):
-        pass
 
 
 def _extract(archive_path: str):
@@ -127,11 +115,11 @@ def ensure_exiftool(version: str = ""):
         write_lib_version(_LIB_DIR, version)
         return True
     if os.path.isfile(_EXIFTOOL_PATH) and not os.path.isfile(_EXIFTOOL_PL):
-        _log("[exiftool] exiftool.exe found but exiftool.pl missing — removing broken install", level="warning")
+        AppLogger.warning("[exiftool] exiftool.exe found but exiftool.pl missing — removing broken install")
         try:
             os.remove(_EXIFTOOL_PATH)
-        except OSError:
-            pass
+        except OSError as e:
+            AppLogger.warning(f"[exiftool] Could not remove the broken exiftool.exe, close programs using it: {e}", exc=e)
     if platform.system() != "Windows":
         if shutil.which("exiftool"):
             return True
@@ -140,17 +128,17 @@ def ensure_exiftool(version: str = ""):
     try:
         remote_version = _fetch_latest_version()
         archive_url = _ARCHIVE_URL_TEMPLATE.format(version=remote_version)
-        _log(f"[exiftool] Fetching checksum for v{remote_version}")
+        AppLogger.info(f"[exiftool] Fetching checksum for v{remote_version}")
         expected = _fetch_expected_sha256(remote_version)
-        _log(f"[exiftool] Downloading ExifTool v{remote_version}: {archive_url}")
+        AppLogger.info(f"[exiftool] Downloading ExifTool v{remote_version}: {archive_url}")
         archive = os.path.join(tmp, "exiftool.zip")
         safe_download(archive_url, archive, allowed_hosts=_ALLOWED_HOSTS, expected_sha256=expected)
-        _log("[exiftool] archive checksum verified")
+        AppLogger.info("[exiftool] archive checksum verified")
         _extract(archive)
         if not os.path.isfile(_EXIFTOOL_PATH):
             raise FileNotFoundError(f"{_EXIFTOOL_EXE} not found after extraction")
         write_lib_version(_LIB_DIR, version)
-        _log("[exiftool] ExifTool installed successfully")
+        AppLogger.info("[exiftool] ExifTool installed successfully")
         return True
     except Exception as e:
         raise RuntimeError(f"Failed to acquire ExifTool: {e}. {_MANUAL_HINT}") from e

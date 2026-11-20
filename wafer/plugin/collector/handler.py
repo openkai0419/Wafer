@@ -12,9 +12,6 @@ class CollectorResolver:
     def summary(self):
         return self.registry.summary()
 
-    def collectors_for_path(self, path):
-        return [p.NAME for p in self.registry.resolve_all(path)]
-
     def singleton_names(self) -> list[str]:
         return [p.NAME for p in self.registry.list_all() if issubclass(p, BaseSingletonCollector)]
 

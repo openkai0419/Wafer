@@ -21,6 +21,7 @@ class OverlayHelper(QtCore.QObject):
         self._cache: dict[str, tuple[str, ...]] = {}
         self._host = None
         self._bound_update = None
+        self._bound_connection = None
         self._seq = 0
         self._loaded = False
         self._last_paths: tuple[str, ...] | None = None
@@ -28,14 +29,11 @@ class OverlayHelper(QtCore.QObject):
 
     def bind_host(self, host) -> None:
         self._host = host
-        if self._bound_update is not None and self._bound_update != host.request_update:
-            try:
-                self.changed.disconnect(self._bound_update)
-            except (TypeError, RuntimeError):
-                pass
         if self._bound_update == host.request_update:
             return
-        self.changed.connect(host.request_update)
+        if self._bound_connection is not None:
+            QtCore.QObject.disconnect(self._bound_connection)
+        self._bound_connection = self.changed.connect(host.request_update)
         self._bound_update = host.request_update
 
     def values_for(self, path: str) -> tuple[str, ...]:

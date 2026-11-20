@@ -123,3 +123,78 @@ def test_finish_fast_forwards_and_removes(root):
     worktree.finish(root, "task")
     assert (root / "app.py").read_text(encoding="utf-8") == "print(2)\n"
     assert not tree.exists() and shared_files_are_intact(root)
+
+
+def test_remove_forgets_debug_profile_first(root, monkeypatch):
+    tree = worktree.new(root, "task")
+    (root / "debug").mkdir()
+    (root / "debug" / "profile_setup.py").write_text("", encoding="utf-8")
+    calls = []
+    real_run = subprocess.run
+
+    def fake_run(cmd, **kwargs):
+        if cmd[0] == "git":
+            return real_run(cmd, **kwargs)
+        calls.append((cmd, kwargs.get("cwd"), tree.exists()))
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(worktree.subprocess, "run", fake_run)
+    worktree.remove(root, "task")
+    assert calls == [([worktree.sys.executable, "-m", "debug.profile_setup", "--profile", "debug-tools", "forget", "debug-task"], root, True)]
+    assert not tree.exists()
+
+
+def test_remove_stops_when_forgetting_the_debug_profile_fails(root, monkeypatch):
+    tree = worktree.new(root, "task")
+    (root / "debug").mkdir()
+    (root / "debug" / "profile_setup.py").write_text("", encoding="utf-8")
+    real_run = subprocess.run
+    monkeypatch.setattr(worktree.subprocess, "run", lambda cmd, **kwargs: real_run(cmd, **kwargs) if cmd[0] == "git" else subprocess.CompletedProcess(cmd, 1))
+    with pytest.raises(SystemExit, match="debug profile"):
+        worktree.remove(root, "task")
+    assert tree.exists() and worktree.missing_links(root, tree) == []
+
+
+@pytest.mark.parametrize("name", ["fix-v1.2", "tools", "Main", "template-build"])
+def test_remove_skips_forget_for_names_that_never_have_a_debug_profile(root, monkeypatch, name):
+    tree = worktree.new(root, name)
+    (root / "debug").mkdir()
+    (root / "debug" / "profile_setup.py").write_text("", encoding="utf-8")
+    real_run = subprocess.run
+    monkeypatch.setattr(worktree.subprocess, "run", lambda cmd, **kwargs: real_run(cmd, **kwargs) if cmd[0] == "git" else pytest.fail(f"unexpected subprocess {cmd}"))
+    worktree.remove(root, name)
+    assert not tree.exists()
+
+
+def test_debug_profile_names_match_the_profile_rules():
+    from debug.profile_setup import RESERVED_WORKTREE_NAMES
+    from wafer.core.common.profile import PROFILE_PREFIX, same_profile, validate_profile_name
+
+    assert worktree.RESERVED_DEBUG_NAMES == set(RESERVED_WORKTREE_NAMES)
+    for name in ["task", "fix-v1.2", "a b", "x_y-Z9", "tools", "Tools", "MAIN", "Template-Build", ""]:
+        try:
+            profile = validate_profile_name(f"{PROFILE_PREFIX}{name}")
+            reserved = any(same_profile(profile, f"{PROFILE_PREFIX}{r}") for r in RESERVED_WORKTREE_NAMES)
+        except ValueError:
+            profile, reserved = None, False
+        assert worktree.has_debug_profile(name) == (profile is not None and not reserved), name
+
+
+def test_finish_skips_forget_for_a_name_that_is_not_a_profile_suffix(root, monkeypatch):
+    tree = worktree.new(root, "fix-v1.2")
+    (tree / "app.py").write_text("print(2)\n", encoding="utf-8")
+    run_git(tree, "commit", "-am", "change")
+    (root / "debug").mkdir()
+    (root / "debug" / "profile_setup.py").write_text("", encoding="utf-8")
+    real_run = subprocess.run
+    monkeypatch.setattr(worktree.subprocess, "run", lambda cmd, **kwargs: real_run(cmd, **kwargs) if cmd[0] == "git" else pytest.fail(f"unexpected subprocess {cmd}"))
+    worktree.finish(root, "fix-v1.2")
+    assert (root / "app.py").read_text(encoding="utf-8") == "print(2)\n"
+    assert not tree.exists()
+
+
+def test_remove_skips_forget_without_debug_tooling(root, monkeypatch):
+    worktree.new(root, "task")
+    real_run = subprocess.run
+    monkeypatch.setattr(worktree.subprocess, "run", lambda cmd, **kwargs: real_run(cmd, **kwargs) if cmd[0] == "git" else pytest.fail("unexpected subprocess"))
+    worktree.remove(root, "task")

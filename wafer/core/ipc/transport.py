@@ -9,7 +9,8 @@ from typing import Any
 import zmq
 
 from ..logs import debug_non_recursive
-from ..common.paths import resolve_data_path
+from ..common.paths import profile_data_root, resolve_data_path
+from ..common.profile import current_profile, same_profile
 
 
 class Priority:
@@ -24,14 +25,41 @@ NODE_TIMEOUT = 5
 POLL_BASE_MS = 10
 POLL_MAX_MS = 50
 DEFAULT_PORT = 57556
+EPHEMERAL_PORT_MIN = 49152
+EPHEMERAL_PORT_END = 65536
 BROKER_QUEUE_MAX = 1000
 NODE_QUEUE_MAX = 200
 RECONNECT_FORCE_INTERVAL = 5.0
 BROKER_LOST_TIMEOUT = 20
 ZMQ_SNDTIMEO_MS = 800
 ZMQ_RCVTIMEO_MS = 800
+PORT_FILE_REPLACE_RETRIES = 20
+PORT_FILE_REPLACE_RETRY_SEC = 0.05
+APP_ID = "wafer"
 
 _PORT_FILE = Path(resolve_data_path("ipc/broker.json"))
+CURRENT_PROFILE = object()
+
+
+def resolve_profile(profile: str | None | object) -> str | None:
+    return current_profile() if profile is CURRENT_PROFILE else profile
+
+
+def peer_identity(payload: dict) -> tuple[Any, Any]:
+    if "app" not in payload:
+        return APP_ID, ""
+    return payload.get("app"), payload.get("profile")
+
+
+def is_own_peer(payload: dict, profile: str | None) -> bool:
+    app, peer_profile = peer_identity(payload)
+    return app == APP_ID and isinstance(peer_profile, str) and same_profile(peer_profile, profile)
+
+
+def port_file_for(profile: str | None) -> Path:
+    if same_profile(profile, current_profile()):
+        return _PORT_FILE
+    return profile_data_root(profile) / "ipc" / "broker.json"
 
 
 def tune_socket(sock: zmq.Socket) -> None:
@@ -94,28 +122,70 @@ def adaptive_poll(did_work: bool, idle_streak: int) -> tuple[int, int]:
     return idle_streak, min(POLL_BASE_MS + idle_streak, POLL_MAX_MS)
 
 
-def write_broker_port(port: int):
-    _PORT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = _PORT_FILE.with_suffix(".tmp")
+def write_broker_port(port: int, *, port_file: Path | None = None):
+    path = port_file if port_file is not None else _PORT_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps({"port": port}))
-    tmp.replace(_PORT_FILE)
+    for _ in range(PORT_FILE_REPLACE_RETRIES):
+        try:
+            tmp.replace(path)
+            return
+        except PermissionError:
+            time.sleep(PORT_FILE_REPLACE_RETRY_SEC)
+    tmp.replace(path)
 
 
-def read_broker_port(timeout: float = 5.0) -> int | None:
+_unreadable_port_files: set[Path] = set()
+
+
+def _note_unreadable(path: Path, error: OSError) -> None:
+    if path in _unreadable_port_files:
+        return
+    _unreadable_port_files.add(path)
+    from ..logs import AppLogger
+
+    AppLogger.info(f"{path} cannot be read yet, so the broker port is not available yet: {error}")
+
+
+def _note_readable(path: Path) -> None:
+    _unreadable_port_files.discard(path)
+
+
+def read_broker_port(timeout: float = 5.0, *, port_file: Path | None = None) -> int | None:
+    path = port_file if port_file is not None else _PORT_FILE
     end = time.time() + timeout
     while True:
         try:
-            data = json.loads(_PORT_FILE.read_text())
-            return int(data["port"])
+            data = json.loads(path.read_text())
+            port = int(data["port"])
+            _note_readable(path)
+            return port
         except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError):
-            if time.time() > end:
-                return None
-            time.sleep(0.1)
+            pass
+        except OSError as e:
+            _note_unreadable(path, e)
+        if time.time() > end:
+            return None
+        time.sleep(0.1)
 
 
-def remove_broker_port():
+def port_file_stamp(port_file: Path) -> tuple[int, bytes] | None:
     try:
-        _PORT_FILE.unlink(missing_ok=True)
+        stamp = port_file.stat().st_mtime_ns, port_file.read_bytes()
+    except FileNotFoundError:
+        return None
+    except OSError as e:
+        _note_unreadable(port_file, e)
+        return None
+    _note_readable(port_file)
+    return stamp
+
+
+def remove_broker_port(*, port_file: Path | None = None):
+    path = port_file if port_file is not None else _PORT_FILE
+    try:
+        path.unlink(missing_ok=True)
     except Exception as e:
         from ..logs import AppLogger
 

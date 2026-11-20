@@ -8,8 +8,8 @@ import threading
 import zipfile
 import zlib
 from collections import OrderedDict
-from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack, closing, contextmanager
 from dataclasses import dataclass
 from typing import BinaryIO
 
@@ -128,14 +128,15 @@ def open_zip_member(zip_path: str, member: str) -> Iterator[BinaryIO]:
 
 @contextmanager
 def open_zip_member_record(zip_path: str | os.PathLike, record: ZipMemberRecord) -> Iterator[BinaryIO]:
-    zf = _open_zip_with_encoding(zip_path, record.metadata_encoding)
-    src: BinaryIO | _RawZipMemberReader | None = None
+    with open_member_records(zip_path, record.metadata_encoding) as open_member, closing(open_member(record)) as src:
+        yield src
+
+
+@contextmanager
+def open_member_records(zip_path: str | os.PathLike, metadata_encoding: str | None) -> Iterator[Callable[[ZipMemberRecord], BinaryIO]]:
+    zf = _open_zip_with_encoding(zip_path, metadata_encoding)
     try:
-        src = _open_member_stream(zip_path, zf, record.info)
-        try:
-            yield src
-        finally:
-            src.close()
+        yield lambda record: _open_member_stream(zip_path, zf, record.info)
     finally:
         zf.close()
 

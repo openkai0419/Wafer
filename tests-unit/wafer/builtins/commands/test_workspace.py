@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from wafer.builtins.commands import workspace as workspace_commands
-from wafer.core.store.workspace import BarSpec, QueryPreset, UIPreset, WindowSlot
+from wafer.core.store.workspace import BarSpec, PathPreset, QueryPreset, UIPreset, WindowSlot
 
 
 class _Ctx:
@@ -296,3 +296,61 @@ class TestWorkspaceCommands:
         assert "ws.rename_slot" in paths
         assert "ws.reset_panel_layout" not in paths
         assert LayoutManager._command_id("Workspace") not in items
+
+
+class TestSavePresetWithExistingName:
+    def save(self, answer, name="Work"):
+        win = MagicMock()
+        win.ui_coord.capture.return_value = {"window_state": {"geometry": "new"}, "component_states": {}}
+        store = MagicMock()
+        store.list_ui_presets.return_value = [UIPreset(preset_id="p1", name="Work")]
+        store.update_ui_preset.return_value = True
+        with (
+            patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store),
+            patch.object(workspace_commands.ConfirmDialog, "ask", return_value=answer) as ask,
+        ):
+            result = workspace_commands.ui_preset_save_current(_Ctx(win), name=name)
+        return store, ask, result
+
+    def test_confirmed_save_overwrites_the_preset_with_that_name(self):
+        store, ask, result = self.save(workspace_commands.t("Overwrite"))
+        ask.assert_called_once()
+        store.save_ui_preset.assert_not_called()
+        store.update_ui_preset.assert_called_once_with("p1", {"geometry": "new"}, {})
+        assert result == "p1"
+
+    def test_cancelled_save_changes_nothing(self):
+        store, _, result = self.save(workspace_commands.t("Cancel"))
+        store.save_ui_preset.assert_not_called()
+        store.update_ui_preset.assert_not_called()
+        assert result == ""
+
+    def test_new_name_saves_without_asking(self):
+        store, ask, _ = self.save(None, name="Home")
+        ask.assert_not_called()
+        assert store.save_ui_preset.call_args[0][0].name == "Home"
+
+
+class TestPresetIdParam:
+    def params(self, path):
+        meta = next(i for i in workspace_commands.WorkspaceCommands.commands() if getattr(i, "path", "") == path)
+        return {p.name: p for p in meta.params}
+
+    @pytest.mark.parametrize("kind", ["ui", "path", "query"])
+    @pytest.mark.parametrize("action", ["apply", "rename", "delete", "overwrite"])
+    def test_menu_lists_presets_by_name_and_passes_the_id(self, kind, action, tmp_path):
+        store = workspace_commands.WorkspaceStore(str(tmp_path / "workspace.json"))
+        preset_cls = {"ui": UIPreset, "path": PathPreset, "query": QueryPreset}[kind]
+        for preset_id in ("p1", "p2"):
+            getattr(store, f"save_{kind}_preset")(preset_cls(preset_id=preset_id, name="Work"))
+        param = self.params(f"{kind}_preset.{action}")["preset_id"]
+        with patch.object(workspace_commands.WorkspaceStore, "instance", return_value=store):
+            assert param.choice_items() == [("p1", "Work"), ("p2", "Work")]
+            assert param.is_value_satisfied("p2") is True
+            assert param.is_value_satisfied("") is False
+        assert param.required is True
+        assert param.persist is False
+
+    @pytest.mark.parametrize("kind", ["ui", "path", "query"])
+    def test_rename_does_not_remember_the_new_name(self, kind):
+        assert self.params(f"{kind}_preset.rename")["name"].persist is False

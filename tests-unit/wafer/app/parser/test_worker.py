@@ -1,3 +1,4 @@
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -140,3 +141,92 @@ def test_process_batch_passes_source_key_unchanged(make_worker):
 
     assert received == [key]
     assert worker._node.send_reliable.call_args[0][1]["results"][0]["source"] == key
+
+
+def test_failed_and_empty_results_are_sent_as_failures(make_worker):
+    from wafer.plugin.parser.base import ParserResult
+
+    worker = make_worker()
+
+    def process(path, file_info, metadata):
+        if path == "/raise.png":
+            raise RuntimeError("boom")
+        if path == "/none.png":
+            return None
+        return ParserResult(source=path, status=True)
+
+    worker._plugin.process = process
+    worker._process_batch(["/ok.png", "/raise.png", "/none.png"], {}, {}, "test_db")
+
+    statuses = {r["source"]: r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]}
+    assert statuses == {"/ok.png": True, "/raise.png": False, "/none.png": False}
+
+
+def test_timed_out_batch_leaves_paths_that_never_started_dispatched(make_worker, monkeypatch):
+    import threading
+
+    from wafer.plugin.parser.base import ParserResult
+
+    monkeypatch.setattr(parser_resolver, "max_workers", lambda name: 1)
+    worker = make_worker()
+    worker._batch_timeout = 0.2
+    release = threading.Event()
+    started = []
+
+    def process(path, file_info, metadata):
+        started.append(path)
+        release.wait(5)
+        return ParserResult(source=path, status=True)
+
+    worker._plugin.process = process
+    try:
+        worker._process_batch(["/slow.png", "/queued1.png", "/queued2.png"], {}, {}, "test_db")
+    finally:
+        release.set()
+
+    statuses = {r["source"]: r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]}
+    assert started == ["/slow.png"]
+    assert statuses == {"/slow.png": False}
+
+
+def test_stop_ends_a_batch_with_queued_paths_at_once_and_sends_finished_results(make_worker, monkeypatch):
+    import threading
+
+    from wafer.plugin.parser.base import ParserResult
+
+    monkeypatch.setattr(parser_resolver, "max_workers", lambda name: 1)
+    worker = make_worker()
+    worker._batch_timeout = 20
+    busy = threading.Event()
+    interrupted = threading.Event()
+
+    def process(path, file_info, metadata):
+        if path == "/busy.png":
+            busy.set()
+            if interrupted.wait(10):
+                raise RuntimeError("tool killed by shutdown")
+        return ParserResult(source=path, status=True)
+
+    worker._plugin.process = process
+    worker._plugin.shutdown = interrupted.set
+    batch = threading.Thread(target=worker._process_batch, args=(["/ok.png", "/busy.png", "/queued.png"], {}, {}, "test_db"))
+    batch.start()
+    assert busy.wait(5)
+    started = time.monotonic()
+    worker.stop()
+    batch.join(5)
+    stopped_in = time.monotonic() - started
+
+    assert not batch.is_alive()
+    assert stopped_in < 2
+    statuses = {r["source"]: r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]}
+    assert statuses == {"/ok.png": True}
+
+
+def test_batch_with_only_failures_is_still_sent(make_worker):
+    worker = make_worker()
+    worker._plugin.process = lambda path, file_info, metadata: None
+
+    worker._process_batch(["/none.png"], {}, {}, "test_db")
+
+    assert worker._node.send_reliable.call_args[0][1]["results"] == [{"source": "/none.png", "status": False}]

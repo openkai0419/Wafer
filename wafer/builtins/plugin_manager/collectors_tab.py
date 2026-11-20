@@ -39,19 +39,13 @@ class CollectorsTab(QtWidgets.QWidget):
         self._collector_names: list[str] = list(collector_names)
         self._parser_names: list[str] = list(parser_names)
         self._heavy_collectors: dict[str, str] = heavy_collectors or {}
-        self._db_names: list[str] = list_setting_db_names()
+        self._db_names: list[str] = []
         self._default_checks: dict[str, QtWidgets.QCheckBox] = {}
         self._matrix: dict[tuple[str, str], QtWidgets.QCheckBox] = {}
-
-        self._initial_defaults = self._load_defaults() & set(self._all_names)
+        self._initial_defaults: set[str] = set()
         self._initial_state: dict[str, set[str]] = {}
-        for db in self._db_names:
-            sdb = SettingDB(setting_db_path(db))
-            enabled = sdb.get_enabled_collectors()
-            if enabled is not None:
-                self._initial_state[db] = set(enabled)
-            else:
-                self._initial_state[db] = set(self._initial_defaults)
+        self._dbs_following_defaults: set[str] = set()
+        self._load_initial_state()
 
         outer = QtWidgets.QVBoxLayout(self)
         outer.setSpacing(dpix(8))
@@ -62,6 +56,23 @@ class CollectorsTab(QtWidgets.QWidget):
         outer.addWidget(self._content, 1)
 
         self._build_ui()
+
+    def _load_initial_state(self):
+        self._initial_defaults = self._load_defaults() & set(self._all_names)
+        self._db_names = list_setting_db_names()
+        live = set(self._db_names)
+        for gone in set(self._initial_state) - live:
+            del self._initial_state[gone]
+        self._dbs_following_defaults &= live
+        for db in self._db_names:
+            if db not in self._initial_state:
+                enabled = SettingDB(setting_db_path(db)).get_enabled_collectors()
+                if enabled is not None:
+                    self._initial_state[db] = set(enabled)
+                    continue
+                self._dbs_following_defaults.add(db)
+            if db in self._dbs_following_defaults:
+                self._initial_state[db] = set(self._initial_defaults)
 
     def _load_defaults(self) -> set[str]:
         from ...plugin.settings import PluginSettings
@@ -173,11 +184,24 @@ class CollectorsTab(QtWidgets.QWidget):
         return group
 
     def _toggle_all(self, name: str):
-        any_unchecked = any(not self._matrix[(name, db)].isChecked() for db in self._db_names if (name, db) in self._matrix)
-        for db in self._db_names:
-            cb = self._matrix.get((name, db))
-            if cb:
-                cb.setChecked(any_unchecked)
+        boxes = {db: cb for db in self._db_names if (cb := self._matrix.get((name, db)))}
+        checked = any(not cb.isChecked() for cb in boxes.values())
+        changed = [db for db, cb in boxes.items() if cb.isChecked() != checked]
+        for db in changed:
+            self._set_checked_silently(boxes[db], checked)
+        if not checked or not changed:
+            return
+        if name in self._heavy_collectors:
+            self._on_heavy_toggled(QtCore.Qt.Checked.value, name)
+        if name in self._parser_names:
+            for db in changed:
+                self._on_parser_toggled(QtCore.Qt.Checked.value, name, db)
+
+    @staticmethod
+    def _set_checked_silently(cb: QtWidgets.QCheckBox, checked: bool):
+        cb.blockSignals(True)
+        cb.setChecked(checked)
+        cb.blockSignals(False)
 
     def _on_heavy_toggled(self, state: int, name: str):
         if state != QtCore.Qt.Checked.value:
@@ -246,41 +270,23 @@ class CollectorsTab(QtWidgets.QWidget):
                 w.deleteLater()
 
     def refresh(self, collector_names: list[str], parser_names: list[str], heavy_collectors: dict[str, str] | None = None):
-        if self._matrix:
-            saved = self.get_per_db_collectors()
-            known = set(self._all_names)
-            for db in self._db_names:
-                prev = self._initial_state.get(db, set())
-                ui_state = set(saved.get(db, []))
-                self._initial_state[db] = ui_state | (prev - known)
-
-        if self._default_checks:
-            ui_defaults = set(self.get_default_collectors())
-            old_known = set(self._all_names)
-            saved = self._load_defaults()
-            self._initial_defaults = ui_defaults | (saved - old_known)
-        else:
-            self._initial_defaults = self._load_defaults()
+        shown = set(self._all_names)
+        ui_state = self.get_per_db_collectors()
+        ui_defaults = set(self.get_default_collectors())
 
         self._collector_names = list(collector_names)
         self._parser_names = list(parser_names)
         if heavy_collectors is not None:
             self._heavy_collectors = heavy_collectors
-        self._initial_defaults &= set(self._all_names)
-
-        self._db_names = list_setting_db_names()
-        live = set(self._db_names)
-        for gone in set(self._initial_state) - live:
-            del self._initial_state[gone]
-        for db in self._db_names:
-            if db not in self._initial_state:
-                sdb = SettingDB(setting_db_path(db))
-                enabled = sdb.get_enabled_collectors()
-                if enabled is not None:
-                    self._initial_state[db] = set(enabled)
-                else:
-                    self._initial_state[db] = set(self._initial_defaults)
+        self._load_initial_state()
         self._build_ui()
+
+        for name, cb in self._default_checks.items():
+            if name in shown:
+                self._set_checked_silently(cb, name in ui_defaults)
+        for (name, db), cb in self._matrix.items():
+            if name in shown and db in ui_state:
+                self._set_checked_silently(cb, name in ui_state[db])
 
     def get_per_db_collectors(self) -> dict[str, list[str]]:
         result: dict[str, list[str]] = {}
@@ -315,13 +321,9 @@ class CollectorsTab(QtWidgets.QWidget):
 
     def revert(self):
         for name, cb in self._default_checks.items():
-            cb.blockSignals(True)
-            cb.setChecked(name in self._initial_defaults)
-            cb.blockSignals(False)
+            self._set_checked_silently(cb, name in self._initial_defaults)
         for (name, db), cb in self._matrix.items():
-            cb.blockSignals(True)
-            cb.setChecked(name in self._initial_state.get(db, set()))
-            cb.blockSignals(False)
+            self._set_checked_silently(cb, name in self._initial_state.get(db, set()))
 
     def get_newly_disabled(self) -> list[tuple[str, str]]:
         disabled = []
@@ -336,8 +338,7 @@ class CollectorsTab(QtWidgets.QWidget):
     def confirm_and_save(self) -> bool:
         disabled = self.get_newly_disabled()
         if not disabled:
-            self.save_to_dbs()
-            self.save_defaults()
+            self._save()
             return True
 
         dlg = QtWidgets.QDialog(self)
@@ -367,8 +368,14 @@ class CollectorsTab(QtWidgets.QWidget):
             return False
 
         to_delete = [(db, name) for cb, db, name in delete_checks if cb.isChecked()]
-        self.save_to_dbs()
-        self.save_defaults()
+        self._save()
         if to_delete:
             self.delete_requested.emit(to_delete, False)
         return True
+
+    def _save(self):
+        self.save_to_dbs()
+        self.save_defaults()
+        self._initial_state = {db: set(names) for db, names in self.get_per_db_collectors().items()}
+        self._initial_defaults = set(self.get_default_collectors())
+        self._dbs_following_defaults.clear()

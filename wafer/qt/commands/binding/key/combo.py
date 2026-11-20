@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore
 
+from .....core.logs import AppLogger
 from .runtime import KeyNameResolver, KeySpec
 from .sequence import KeySequence
 
@@ -33,28 +34,10 @@ class ComboParser:
         return tuple(xs)
 
     def from_sequence(self, seq: KeySequence) -> KeyCombo:
-        tokens: list[int] = []
-        for key_name in seq.to_tuple():
-            tokens.append(self._resolver.to_key_code(self._resolver.normalize_token(key_name)))
-        xs = [t for t in tokens if t]
-        return self._validate(xs)
-
-    def from_string(self, s: str) -> KeyCombo:
-        if not s:
+        xs = [self._resolver.to_key_code(name) for name in seq.to_tuple()]
+        if not all(xs):
+            AppLogger.warning(f"Key binding ignored, unknown key name in '{seq}'. Reassign it in Key Bindings.")
             return tuple()
-        head = s.split(",")[0].strip()
-        if not head:
-            return tuple()
-        parts = [p.strip() for p in head.replace("&", "+").split("+") if p.strip()]
-        tokens: list[int] = []
-        for p in parts:
-            tokens.append(self._resolver.to_key_code(self._resolver.normalize_token(p)))
-        xs = [t for t in tokens if t]
-        return self._validate(xs)
-
-    def from_spec(self, spec: KeyChordSpec) -> KeyCombo:
-        xs = [self._resolver.to_key_code(x) for x in spec]
-        xs = [x for x in xs if x]
         return self._validate(xs)
 
     def from_sc_spec(self, spec: KeyChordSpec) -> KeyCombo:

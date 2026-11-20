@@ -73,7 +73,7 @@ class TestBuiltinExpectedPlugins:
     EXPECTED_FILTER = {"text", "directory"}
     EXPECTED_SORT = {"path", "name", "modified", "created", "size", "collected", "random"}
     EXPECTED_LAYOUT = {"justified", "masonry"}
-    EXPECTED_PANEL = {"database_manager", "batch_renamer", "plugin_manager"}
+    EXPECTED_PANEL = {"database_manager", "batch_renamer", "plugin_manager", "folder_manager"}
     EXPECTED_RENAME = {"name", "fixed", "seq", "datetime", "meta", "random", "ext"}
 
     def _collect_names_by_key(self):

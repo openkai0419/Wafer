@@ -12,13 +12,13 @@ from ...qt.transfer.copy import ClipboardFileTransfer
 from ...qt.transfer.paste import paste_clipboard_files, execute_paste_plans_with_ui
 from ...core.platform.path_utils import unique_path, get_os_new_folder_name, validate_filename
 from ...core.platform.file_operations import PastePlanItem, delete_to_trash
-from ...core.platform.folders import show_in_explorer as reveal_in_explorer, open_file as platform_open_file, open_with as platform_open_with, make_directory
+from ...core.platform.folders import show_in_explorer as reveal_in_explorer, open_with as platform_open_with, make_directory
 from ...core.logs import AppLogger
 from ...qt.common.notifier import Notifier
 from ...core.common.paths import containing_dir, normalize_path
 from ...app.viewer.path_reveal import scroll_grid_to_path
 from ...core.common.virtual_paths import is_virtual_path
-from ...qt.common.dispatcher import Dispatcher
+from ...qt.common.dispatcher import CancelToken, Dispatcher
 from ...qt.common.thread import SimpleThreadPool
 
 _file_cmd_pool = SimpleThreadPool("file_cmd")
@@ -76,7 +76,7 @@ def open_file(ctx):
     path = _ctx_source(ctx)
     if not path:
         return
-    platform_open_file(path)
+    QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(path))
 
 
 def open_with(ctx, program: str = ""):
@@ -129,15 +129,21 @@ def cut_files(ctx):
     ClipboardFileTransfer().set_files(paths, cut=True)
 
 
-def _count_files_in_path(path: str) -> int:
-    if os.path.isfile(path):
-        return 1
-    if not os.path.isdir(path):
-        return 0
-    count = 0
-    for _, _, files in os.walk(path):
-        count += len(files)
-    return count
+def _count_delete_targets(paths: list[str], token: CancelToken) -> tuple[int, bool] | None:
+    files = 0
+    has_dir = False
+    for p in paths:
+        if token.is_cancelled():
+            return None
+        if os.path.isdir(p):
+            has_dir = True
+            for _, _, names in os.walk(p):
+                if token.is_cancelled():
+                    return None
+                files += len(names)
+        elif os.path.isfile(p):
+            files += 1
+    return files, has_dir
 
 
 def _confirm_delete(ctx, paths) -> bool:
@@ -147,37 +153,37 @@ def _confirm_delete(ctx, paths) -> bool:
     title = "Delete"
     head = "Are you sure to delete"
 
-    dir_count = sum(1 for p in paths if os.path.isdir(p))
-    file_count = sum(1 for p in paths if os.path.isfile(p))
-
     shown = "\n".join(paths[:5])
     more = f"\n+{len(paths) - 5} more" if len(paths) > 5 else ""
     i = "item" if len(paths) == 1 else "items"
-    if dir_count > 0:
-        msg = f"{head} {len(paths)} {i} (counting...) ?\n{shown}{more}"
-    else:
-        msg = f"{head} {len(paths)} {i} ?\n{shown}{more}"
     thumbs = [p for p in paths if p][:4]
-    dialog = ThumbnailConfirmDialog(msg, paths=thumbs, title=title, buttons=("Delete", "Cancel"), parent=parent)
+    dialog = ThumbnailConfirmDialog(f"{head} {len(paths)} {i} (counting...) ?\n{shown}{more}", paths=thumbs, title=title, buttons=("Delete", "Cancel"), parent=parent)
+    token = CancelToken()
 
-    if dir_count > 0:
+    def count_task():
+        counted = _count_delete_targets(paths, token)
+        if counted is None:
+            return
+        files, has_dir = counted
+        count = f" ({files} files)" if has_dir else ""
+        updated = f"{head} {len(paths)} {i}{count} ?\n{shown}{more}"
+        _file_cmd_dispatcher.invoke(lambda: _update_if_open(updated))
 
-        def count_task():
-            total = file_count
-            for p in paths:
-                if os.path.isdir(p):
-                    total += _count_files_in_path(p)
-            updated = f"{head} {len(paths)} {i} ({total} files) ?\n{shown}{more}"
-            _file_cmd_dispatcher.invoke(lambda: _update_if_open(updated))
+    def _update_if_open(text):
+        if not token.is_cancelled():
+            dialog.message_label.setText(text)
 
-        def _update_if_open(text):
-            if dialog.result_text is None:
-                dialog.message_label.setText(text)
-
-        _file_cmd_dispatcher.post(count_task)
-
+    _file_cmd_dispatcher.post(count_task, cancel=token)
     dialog.exec()
+    token.cancel()
     return dialog.result_text == "Delete"
+
+
+def _delete_and_report(paths: list[str]) -> None:
+    for r in delete_to_trash(paths):
+        if r.status == "error":
+            AppLogger.warning(f"Delete failed: {r.src} ({r.error})")
+            _file_cmd_dispatcher.invoke(lambda name=os.path.basename(r.src): Notifier.warning(f"Delete failed: {name}"))
 
 
 def delete_files(ctx):
@@ -186,11 +192,7 @@ def delete_files(ctx):
         return
     if not _confirm_delete(ctx, paths):
         return
-    results = delete_to_trash(paths)
-    for r in results:
-        if r.status == "error":
-            AppLogger.warning(f"Delete failed: {r.src} ({r.error})")
-            Notifier.warning(f"Delete failed: {os.path.basename(r.src)}")
+    _file_cmd_dispatcher.post(lambda: _delete_and_report(paths))
 
 
 def paste_here(ctx, overwrite_mode: str = "skip"):

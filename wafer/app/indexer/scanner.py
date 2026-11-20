@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import os
+import re
 import stat
 import threading
 import time
 from pathlib import Path
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Sequence
 
-from ...core.db.db_utils import build_basic_entries, open_readonly
-from ...core.db.file_db import SOURCE_TRIGGER_KEYS
+from ...core.db.db_utils import build_basic_entries, escape_like, open_readonly
+from ...core.db.file_db import SOURCE_TRIGGER_KEYS, read_existing_sources
 from ...core.logs import AppLogger
-from ...core.common.paths import normalize_path
+from ...core.common.folder_scan import JunctionFilter
+from ...core.common.paths import child_prefix, normalize_path
 from ...core.profiling import profiler
 from .db_writer import DatabaseWriter
 from .receivers.parser_receiver import trigger_parser_pending
@@ -21,6 +23,7 @@ from .runtime.scheduler import TaskScheduler
 from .runtime.task import CancelToken, Task, TaskPriority
 
 _CHUNK = 400
+_LIKE_SUFFIX = "s.source LIKE ? ESCAPE '\\'"
 
 
 class DirectoryScanner:
@@ -41,6 +44,7 @@ class DirectoryScanner:
         self._exclude_paths: list[str] = []
         self._ignore_patterns: list[str] = []
         self._ignore_pattern_re = None
+        self._roots: list[str] = []
         self._read_conn = None
         self._stop = threading.Event()
         self._request_queue: list[tuple[str, object]] = []
@@ -63,10 +67,10 @@ class DirectoryScanner:
             self._read_conn.close()
             self._read_conn = None
 
-    def request_scan(self, folders: list[str]):
+    def request_scan(self, folders: list[str], *, partial: bool = False):
         self._cancel_current()
         with self._request_lock:
-            self._request_queue.append(("rescan", folders))
+            self._request_queue.append(("rescan", (folders, partial)))
         self._request_event.set()
 
     def request_update(self, paths: list[str]):
@@ -120,7 +124,7 @@ class DirectoryScanner:
                     break
                 try:
                     if kind == "rescan":
-                        self._do_full_scan(data)
+                        self._do_full_scan(*data)
                     elif kind == "update":
                         self._do_update_files(data)
                     elif kind == "backfill":
@@ -129,32 +133,39 @@ class DirectoryScanner:
                     AppLogger.error(f"[Scanner] request failed ({kind}): {e}", exc=e)
 
     def _is_excluded(self, path: str) -> bool:
-        if contains_path_prefix(self._exclude_paths, path):
-            return True
-        return self._ignore_pattern_re is not None and self._ignore_pattern_re.match(path) is not None
+        return is_excluded(path, self._exclude_paths, self._ignore_pattern_re)
 
     @profiler.profile
-    def _do_full_scan(self, root_paths: Sequence[str]):
-        AppLogger.info(f"[Scanner] Full scan: {len(root_paths)} folders")
+    def _do_full_scan(self, root_paths: Sequence[str], partial: bool = False):
+        AppLogger.info(f"[Scanner] Full scan: {len(root_paths)} folders{' (partial)' if partial else ''}")
         token = self._current_token
-        current_compare: dict[str, tuple] = {}
         file_info: dict[str, tuple] = {}
+        unreadable: list[str] = []
+        if not partial:
+            self._roots = [normalize_path(p) for p in root_paths]
+        junctions = self._junctions(root_paths)
         self._progress.increment(0, 1)
         for path in root_paths:
             if token.is_cancelled:
                 return
-            for norm_p, info in self._scan_directory(path):
-                mtime, fsize, ctime = info
-                current_compare[norm_p] = (mtime, fsize)
-                file_info[norm_p] = (mtime, fsize, ctime)
+            file_info.update(scan_directory(path, self._is_excluded, self._progress, unreadable, junctions))
         self._progress.increment(1, 0)
 
         if token.is_cancelled:
             return
 
         previous = self._load_existing_sources()
-        added_or_modified = [p for p in current_compare if p not in previous or current_compare[p] != previous[p]]
-        removed = [p for p in previous if p not in current_compare]
+        if partial:
+            in_roots = _under_any(normalize_path(p) for p in root_paths)
+            previous = {p: v for p, v in previous.items() if in_roots(p)}
+        added_or_modified = [p for p in file_info if p not in previous or file_info[p][:2] != previous[p]]
+        removed = [p for p in previous if p not in file_info]
+        if unreadable and removed:
+            in_unreadable = _under_any(unreadable)
+            kept = [p for p in removed if in_unreadable(p)]
+            if kept:
+                removed = [p for p in removed if not in_unreadable(p)]
+                AppLogger.warning(f"[Scanner] Kept {len(kept)} files under {len(unreadable)} unreadable folders (e.g. {unreadable[0]}); reconnect the drive or remove the folder from the database to update them")
         self._progress.increment(0, len(added_or_modified) + len(removed))
         AppLogger.info(f"[Scanner] added/modified: {len(added_or_modified)}, removed: {len(removed)}")
         self._progress.send_files_changed(modified=[p for p in added_or_modified if p in previous], removed=removed)
@@ -320,18 +331,16 @@ class DirectoryScanner:
         if self._collectors:
             cur = self._read_conn.cursor()
             for name, extensions in self._collectors:
+                extension_filter = f" AND ({' OR '.join([_LIKE_SUFFIX] * len(extensions))})" if extensions else ""
                 cur.execute(
-                    """SELECT s.source FROM sources s
+                    f"""SELECT s.source FROM sources s
                     WHERE NOT EXISTS (
                         SELECT 1 FROM collection_status cs
                         WHERE cs.source = s.source AND cs.collector = ?
-                    )""",
-                    (name,),
+                    ){extension_filter}""",
+                    (name, *(f"%{escape_like(ext)}" for ext in extensions)),
                 )
                 sources = [row[0] for row in cur.fetchall()]
-                if extensions:
-                    ext_set = set(extensions)
-                    sources = [p for p in sources if os.path.splitext(p)[1].lower() in ext_set]
                 if not sources:
                     continue
                 for i in range(0, len(sources), _CHUNK):
@@ -368,42 +377,79 @@ class DirectoryScanner:
             AppLogger.info(f'[Scanner] Backfill parser: {len(sources)} pending for "{status_name}"')
 
     def _load_existing_sources(self) -> dict[str, tuple[float, int]]:
-        result: dict[str, tuple[float, int]] = {}
         try:
-            cur = self._read_conn.cursor()
-            cur.execute("SELECT source, modified, size FROM sources")
-            for source, mtime, size in cur.fetchall():
-                result[source] = (mtime, size)
-            cur.close()
+            return read_existing_sources(self._read_conn)
         except Exception as e:
             AppLogger.warning(f"[Scanner] Failed to load existing sources: {e}", exc=e)
-        return result
+            return {}
 
-    def _scan_directory(self, root_path: str):
-        stack = [str(root_path)]
-        while stack:
-            current = stack.pop()
-            self._progress.increment(0, 1)
-            full_path = normalize_path(current)
-            if self._is_excluded(full_path):
-                self._progress.increment(1, 0)
-                continue
-            try:
-                with os.scandir(current) as it:
-                    for entry in it:
-                        if entry.is_file(follow_symlinks=False):
-                            file_path = normalize_path(entry.path)
-                            if self._is_excluded(file_path):
-                                continue
-                            yield (file_path, _get_stat(entry.stat()))
-                        elif entry.is_dir(follow_symlinks=False):
-                            stack.append(entry.path)
-                self._progress.increment(1, 0)
-            except Exception as e:
-                AppLogger.debug(f"[Scanner] scan error: {current} ({e})")
-                self._progress.increment(1, 0)
+    def _scan_directory(self, root_path: str, unreadable: list[str] | None = None):
+        return scan_directory(root_path, self._is_excluded, self._progress, unreadable, self._junctions([root_path]))
+
+    def _junctions(self, root_paths: Sequence[str]) -> JunctionFilter:
+        return JunctionFilter(self._roots or [normalize_path(p) for p in root_paths])
 
 
 def _get_stat(stat_result):
     ctime = stat_result.st_birthtime if hasattr(stat_result, "st_birthtime") else stat_result.st_ctime
     return (stat_result.st_mtime, stat_result.st_size, ctime)
+
+
+def _under_any(folders: Iterable[str]) -> Callable[[str], bool]:
+    roots = set(folders)
+    children = tuple(child_prefix(root) for root in roots)
+    return lambda path: path in roots or path.startswith(children)
+
+
+class _NoProgress:
+    def increment(self, current_inc=0, total_inc=0):
+        return None
+
+
+_NO_PROGRESS = _NoProgress()
+
+
+def is_excluded(path: str, exclude_prefixes: Sequence[str], ignore_pattern_re: re.Pattern[str] | None) -> bool:
+    if contains_path_prefix(exclude_prefixes, path):
+        return True
+    return ignore_pattern_re is not None and ignore_pattern_re.match(path) is not None
+
+
+def scan_directory(root_path: str, excluded: Callable[[str], bool], progress=_NO_PROGRESS, unreadable: list[str] | None = None, junctions: JunctionFilter | None = None):
+    junctions = junctions or JunctionFilter([root_path])
+    stack = [str(root_path)]
+    while stack:
+        current = stack.pop()
+        progress.increment(0, 1)
+        full_path = normalize_path(current)
+        if excluded(full_path):
+            progress.increment(1, 0)
+            continue
+        try:
+            with os.scandir(current) as it:
+                for entry in it:
+                    if entry.is_file(follow_symlinks=False):
+                        file_path = normalize_path(entry.path)
+                        if excluded(file_path):
+                            continue
+                        yield (file_path, _get_stat(entry.stat()))
+                    elif entry.is_dir(follow_symlinks=False) and not junctions.skips(entry):
+                        stack.append(entry.path)
+            progress.increment(1, 0)
+        except OSError as e:
+            AppLogger.warning(f"[Scanner] Cannot read folder: {full_path}", exc=e)
+            if unreadable is not None:
+                unreadable.append(full_path)
+            progress.increment(1, 0)
+
+
+def files_in_scope(roots: Sequence[str], exclude_paths: Sequence[str], ignore_patterns: Sequence[str]) -> set[str]:
+    exclude_prefixes = normalize_prefixes(exclude_paths)
+    ignore_pattern_re = compile_ignore_patterns(ignore_patterns)
+
+    def excluded(path: str) -> bool:
+        return is_excluded(path, exclude_prefixes, ignore_pattern_re)
+
+    prefixes = normalize_prefixes(roots)
+    junctions = JunctionFilter(prefixes)
+    return {path for root in prefixes for path, _ in scan_directory(root, excluded, junctions=junctions)}

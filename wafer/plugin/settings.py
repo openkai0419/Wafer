@@ -1,55 +1,30 @@
-import json
-import os
-from configparser import ConfigParser
-from ..core.common.paths import resolve_data_path
 from ..core.common.helpers import try_json_loads
-from .config import ini_lock
+from .config import format_ini_value, read_ini, update_ini
 from .installer import RestartScope
 from . import installer_queue
 
 
-_INI_FILENAME = "viewer_plugins.ini"
-
-
-def _ini_path() -> str:
-    return resolve_data_path(_INI_FILENAME)
+def _split_key(key: str) -> tuple[str, str]:
+    section, _, option = key.partition("/")
+    if not option:
+        return "General", section
+    return section, option
 
 
 def _read_ini_value(key: str, default=None):
-    path = _ini_path()
-    if not os.path.isfile(path):
-        return default
-    cp = ConfigParser()
-    cp.read(path, encoding="utf-8")
-    section, _, option = key.partition("/")
-    if not option:
-        section, option = "General", section
-    if not cp.has_section(section):
-        return default
-    raw = cp.get(section, option, fallback=None)
+    section, option = _split_key(key)
+    raw = read_ini().get(section, option, fallback=None)
     if raw is None:
         return default
     return try_json_loads(raw, raw)
 
 
 def _write_ini_value(key: str, value):
-    with ini_lock:
-        path = _ini_path()
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        cp = ConfigParser()
-        if os.path.isfile(path):
-            cp.read(path, encoding="utf-8")
-        section, _, option = key.partition("/")
-        if not option:
-            section, option = "General", section
+    section, option = _split_key(key)
+    with update_ini() as cp:
         if not cp.has_section(section):
             cp.add_section(section)
-        if isinstance(value, (dict, list, tuple)):
-            cp.set(section, option, json.dumps(value, ensure_ascii=False))
-        else:
-            cp.set(section, option, str(value))
-        with open(path, "w", encoding="utf-8") as f:
-            cp.write(f)
+        cp.set(section, option, format_ini_value(value))
 
 
 def default_enabled_per_db(cls) -> bool:

@@ -423,6 +423,43 @@ class TestFsWatchToDb:
             scheduler.stop()
             writer.close()
 
+    def test_viewers_and_the_tray_are_told_which_folders_and_new_files_changed(self, tmp_path):
+        img_dir = tmp_path / "watched"
+        for folder in ("old", "a/moving", "b"):
+            (img_dir / folder).mkdir(parents=True)
+        _create_test_image(img_dir / "keep.png", 100, 80, fmt="PNG")
+
+        db_path, writer, scheduler, scanner, watcher = _build_watcher_stack(tmp_path)
+        node = scanner._progress._node
+        scheduler.start()
+        scanner.start()
+
+        def folders():
+            return {path for method, args, kw in node.sent if args[0] == "folderchanged" and isinstance(args[1], dict) for path in args[1]["paths"]}
+
+        def created(role):
+            return {path for method, args, kw in node.sent if args[0] == "files.changed" and kw["dst"] == role for path in args[1]["created"]}
+
+        try:
+            watcher.start([str(img_dir)])
+            assert _wait_for_condition(lambda: _source_count(writer.db) == 1)
+            assert _wait_for_condition(lambda: scheduler_drained(scheduler))
+
+            (img_dir / "new").mkdir()
+            shutil.rmtree(img_dir / "old")
+            (img_dir / "a" / "moving").rename(img_dir / "b" / "moving")
+            _create_test_image(img_dir / "fresh.png", 100, 80, fmt="PNG")
+
+            expected = {normalize_path(str(img_dir / name)) for name in ("new", "old", "a/moving", "b/moving")}
+            fresh = normalize_path(str(img_dir / "fresh.png"))
+            assert _wait_for_condition(lambda: expected <= folders() and all(fresh in created(role) for role in ("viewer", "tray")), timeout=20.0), node.sent
+            assert all(method == "send" for method, args, _kw in node.sent if args[0] == "folderchanged")
+        finally:
+            watcher.stop()
+            scanner.stop()
+            scheduler.stop()
+            writer.close()
+
     def test_rescan_recovers_full_state(self, tmp_path):
         img_dir = tmp_path / "watched"
         img_dir.mkdir()

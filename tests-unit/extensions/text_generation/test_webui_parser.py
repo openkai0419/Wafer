@@ -58,14 +58,16 @@ class TestWebUiImageParser:
         assert meta["Hashes/model"] == "abc"
         assert meta["Hashes/lora:x"] == "def"
 
-    def test_novelai_json_rejected(self):
+    def test_novelai_json_is_not_webui(self):
         data = {"prompt": "a cat", "steps": 28}
         result = self.parser.process("img.png", (100, 1.0), {"exiftool.ExifIFD:UserComment": json.dumps(data)})
-        assert result.status is False
+        assert result.status is True
+        assert result.meta_info is None
 
-    def test_plain_text_without_params_rejected(self):
+    def test_plain_text_without_params_is_not_webui(self):
         result = self.parser.process("img.png", (100, 1.0), {"exiftool.PNG:Parameters": "just a caption"})
-        assert result.status is False
+        assert result.status is True
+        assert result.meta_info is None
 
     def test_missing_key(self):
         assert self.parser.process("img.png", (100, 1.0), {}) is None

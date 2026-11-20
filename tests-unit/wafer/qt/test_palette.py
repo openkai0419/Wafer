@@ -18,3 +18,12 @@ class TestThemePalette:
 
         monkeypatch.setattr(QtGui.QGuiApplication, "instance", staticmethod(lambda: None))
         assert ThemePalette.from_system() is DARK
+
+
+def test_rgba_accepts_hex_and_qcolor():
+    from PySide6 import QtGui
+    from wafer.qt.palette import rgba
+
+    assert rgba("#3B80FF", 0.15) == "rgba(59,128,255,0.15)"
+    assert rgba("#ccc", 0.5) == "rgba(204,204,204,0.5)"
+    assert rgba(QtGui.QColor(1, 2, 3), 1) == "rgba(1,2,3,1)"

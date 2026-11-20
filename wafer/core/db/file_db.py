@@ -9,7 +9,9 @@ from collections.abc import Sequence
 
 from .db_utils import apply_read_pragmas, apply_write_pragmas, connect_with_retry, escape_like
 from .key_value import SCOPE_ALL, SCOPE_META_INFO, SCOPE_TAG, conversion_spec, normalize_data_scope, scope_spec
+from .query import path_prefix_condition
 from ...constants import VIRTUAL_PATH_SEPARATOR
+from ..common.paths import child_prefix
 from ..common.virtual_paths import display_name
 from ..profiling import profiler
 from ..logs import AppLogger
@@ -120,10 +122,40 @@ def _split_trigger_keys(trigger_keys: Sequence[str]) -> tuple[list[str], list[st
     return source_columns, [key for key in trigger_keys if key not in SOURCE_TRIGGER_KEYS]
 
 
+def source_tree_condition(prefix: str) -> tuple[str, list[str]]:
+    clause, args = path_prefix_condition("source", child_prefix(prefix))
+    return f"(source = ? OR {clause})", [prefix, *args]
+
+
 def _chunked(values: Sequence, size: int = 900):
     values = list(values)
     for i in range(0, len(values), size):
         yield values[i : i + size]
+
+
+def read_existing_sources(conn: sqlite3.Connection) -> dict[str, tuple[float, int]]:
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT source, modified, size FROM sources")
+        return {source: (mtime, size) for source, mtime, size in cur.fetchall()}
+    finally:
+        cur.close()
+
+
+def read_pending_sources(conn: sqlite3.Connection, collector: str, limit: int) -> list[tuple[str, float, int, str]]:
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """SELECT cs.source, s.modified, s.size, s.file_hash
+            FROM collection_status cs
+            JOIN sources s ON s.source = cs.source
+            WHERE cs.collector = ? AND cs.status = 'pending'
+            LIMIT ?""",
+            (collector, limit),
+        )
+        return cur.fetchall()
+    finally:
+        cur.close()
 
 
 _SQL_UPSERT_SOURCES = """INSERT INTO sources (source, file_hash, size, modified, created, collected)
@@ -380,43 +412,44 @@ class FileDB:
 
         backup_names = {name: f"__old__{name}" for name in ordered_tables}
         self.conn.execute("PRAGMA foreign_keys=OFF")
+        isolation_level = self.conn.isolation_level
+        self.conn.isolation_level = None
         try:
-            for name in reversed(ordered_tables):
-                backup_name = backup_names[name]
-                self.conn.execute(f"DROP TABLE IF EXISTS {_quote_identifier(backup_name)}")
-                self.conn.execute(f"ALTER TABLE {_quote_identifier(name)} RENAME TO {_quote_identifier(backup_name)}")
+            self.conn.execute("BEGIN")
+            try:
+                for name in reversed(ordered_tables):
+                    backup_name = backup_names[name]
+                    self.conn.execute(f"DROP TABLE IF EXISTS {_quote_identifier(backup_name)}")
+                    self.conn.execute(f"ALTER TABLE {_quote_identifier(name)} RENAME TO {_quote_identifier(backup_name)}")
 
-            for _, _, sql in _TABLES:
-                self.conn.execute(sql)
+                for _, _, sql in _TABLES:
+                    self.conn.execute(sql)
 
-            for name in ordered_tables:
-                backup_name = backup_names[name]
-                columns = [column for column in _table_columns(self.conn, backup_name) if column in set(_table_columns(self.conn, name))]
-                if columns:
-                    columns_sql = ", ".join(_quote_identifier(column) for column in columns)
-                    self.conn.execute(f"INSERT INTO {_quote_identifier(name)} ({columns_sql}) SELECT {columns_sql} FROM {_quote_identifier(backup_name)}")
+                for name in ordered_tables:
+                    backup_name = backup_names[name]
+                    columns = [column for column in _table_columns(self.conn, backup_name) if column in set(_table_columns(self.conn, name))]
+                    if columns:
+                        columns_sql = ", ".join(_quote_identifier(column) for column in columns)
+                        self.conn.execute(f"INSERT INTO {_quote_identifier(name)} ({columns_sql}) SELECT {columns_sql} FROM {_quote_identifier(backup_name)}")
 
-            for name in reversed(ordered_tables):
-                self.conn.execute(f"DROP TABLE IF EXISTS {_quote_identifier(backup_names[name])}")
+                for name in reversed(ordered_tables):
+                    self.conn.execute(f"DROP TABLE IF EXISTS {_quote_identifier(backup_names[name])}")
 
-            self.conn.commit()
+                self.conn.execute("COMMIT")
+            except BaseException:
+                self.conn.execute("ROLLBACK")
+                raise
         finally:
+            self.conn.isolation_level = isolation_level
             self.conn.execute("PRAGMA foreign_keys=ON")
 
     @profiler.profile
     def load_existing_sources(self) -> dict[str, tuple[float, int]]:
-        result: dict[str, tuple[float, int]] = {}
         try:
-            cur = self.get_reader_cursor()
-            try:
-                cur.execute("SELECT source, modified, size FROM sources")
-                for source, mtime, size in cur.fetchall():
-                    result[source] = (mtime, size)
-            finally:
-                cur.close()
+            return read_existing_sources(self.read_conn)
         except Exception as e:
             AppLogger.warning(f"Failed to load previous data from DB: {e}", exc=e)
-        return result
+            return {}
 
     @staticmethod
     def _hashes_of_sources(cur, sources: Sequence[str]) -> set[str]:
@@ -465,16 +498,10 @@ class FileDB:
                     existing.update(row[0] for row in rows)
                     cur.executemany("DELETE FROM sources WHERE source = ?", [(path,) for path in chunk])
                 for prefix in (path for path in prefixes if path not in existing):
-                    child_pattern = f"{escape_like(prefix if prefix.endswith('/') else prefix + '/')}%"
-                    rows = cur.execute(
-                        "SELECT file_hash FROM sources WHERE source = ? OR source LIKE ? ESCAPE '\\'",
-                        (prefix, child_pattern),
-                    ).fetchall()
+                    condition, args = source_tree_condition(prefix)
+                    rows = cur.execute(f"SELECT file_hash FROM sources WHERE {condition}", args).fetchall()
                     hashes.update(file_hash for (file_hash,) in rows if file_hash)
-                    cur.execute(
-                        "DELETE FROM sources WHERE source = ? OR source LIKE ? ESCAPE '\\'",
-                        (prefix, child_pattern),
-                    )
+                    cur.execute(f"DELETE FROM sources WHERE {condition}", args)
                 return self._sources_sharing_hashes(cur, hashes)
             finally:
                 cur.close()
@@ -489,6 +516,8 @@ class FileDB:
             try:
                 cur.execute("PRAGMA foreign_keys=ON")
                 for old, new in pairs:
+                    if old != new:
+                        cur.execute("DELETE FROM sources WHERE source = ? AND EXISTS (SELECT 1 FROM sources WHERE source = ?)", (new, old))
                     path_map = self._renamed_file_paths(cur, old, new)
                     cur.execute("UPDATE sources SET source = ? WHERE source = ?", (new, old))
                     if cur.rowcount == 0:
@@ -769,19 +798,7 @@ class FileDB:
 
     @profiler.profile
     def get_pending_sources(self, collector, limit=5000):
-        cur = self.get_reader_cursor()
-        try:
-            cur.execute(
-                """SELECT cs.source, s.modified, s.size
-                FROM collection_status cs
-                JOIN sources s ON s.source = cs.source
-                WHERE cs.collector = ? AND cs.status = 'pending'
-                LIMIT ?""",
-                (collector, limit),
-            )
-            return cur.fetchall()
-        finally:
-            cur.close()
+        return read_pending_sources(self.read_conn, collector, limit)
 
     @profiler.profile
     def mark_dispatched(self, sources, collector):
@@ -898,8 +915,7 @@ class FileDB:
                 yield f"source IN ({placeholders})", list(chunk)
         elif prefixes:
             for prefix in dict.fromkeys(p for p in prefixes if p):
-                child = f"{escape_like(prefix if prefix.endswith('/') else prefix + '/')}%"
-                yield "(source = ? OR source LIKE ? ESCAPE '\\')", [prefix, child]
+                yield source_tree_condition(prefix)
 
     def _delete_keys_cur(self, cur, keys: list[str]) -> tuple[int, int]:
         meta_deleted = tags_deleted = 0
@@ -915,8 +931,7 @@ class FileDB:
     def _delete_collection_cur(self, cur, collector: str | None, sources: Sequence[str] | None, prefixes: Sequence[str] | None, *, drop_status: bool) -> tuple[int, int, int]:
         key_clause, key_arg = "", []
         if collector:
-            escaped = collector.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            key_clause, key_arg = " AND key LIKE ? ESCAPE '\\'", [f"{escaped}.%"]
+            key_clause, key_arg = " AND key LIKE ? ESCAPE '\\'", [f"{escape_like(collector)}.%"]
         child_clause = "source_extension = ?" if collector else "source_extension IS NOT NULL"
         child_arg = [collector] if collector else []
         cs_clause = " AND collector = ?" if collector else ""
@@ -1282,18 +1297,18 @@ class FileDB:
             if meta_keys:
                 placeholders = ",".join(["?"] * len(meta_keys))
                 cur.execute(
-                    f"""SELECT DISTINCT mi.path FROM meta_info mi
+                    f"""SELECT i.source FROM meta_info mi
+                    JOIN files i ON i.path = mi.path
                     WHERE mi.key IN ({placeholders})
-                    AND mi.path NOT IN (
+                    AND i.source NOT IN (
                         SELECT cs.source FROM collection_status cs
                         WHERE cs.collector = ?
                     )
                     UNION
-                    SELECT DISTINCT i.path FROM tags t
+                    SELECT s.source FROM tags t
                     JOIN sources s ON s.file_hash = t.file_hash
-                    JOIN files i ON i.source = s.source
                     WHERE t.key IN ({placeholders})
-                    AND i.path NOT IN (
+                    AND s.source NOT IN (
                         SELECT cs.source FROM collection_status cs
                         WHERE cs.collector = ?
                     )""",

@@ -12,12 +12,14 @@ export class FolderTree {
     this.el = el;
     this.onSelect = onSelect;
     this.db = '';
+    this.generation = 0;
     this.selected = null;
     this.expanded = new Set(load('expanded', []));
     this.branches = new Map();
   }
 
   async load(db, restorePath) {
+    const generation = ++this.generation;
     this.db = db;
     this.selected = null;
     this.branches.clear();
@@ -29,15 +31,18 @@ export class FolderTree {
       this.selected = all;
     }
     const data = await getJson('/api/folders', { db });
+    if (generation !== this.generation) return;
     for (const entry of data.folders) this.el.appendChild(this.makeBranch(entry, 0));
-    if (restorePath != null) await this.reveal(restorePath);
+    if (restorePath != null && !(await this.reveal(restorePath)) && generation === this.generation) this.select(all, null);
   }
 
   async reveal(path) {
+    const generation = this.generation;
     const parts = path.split('/');
     for (let i = 1; i < parts.length; i++) {
       const branch = this.branches.get(parts.slice(0, i).join('/'));
       if (branch) await branch.expand(true);
+      if (generation !== this.generation) return false;
     }
     const target = this.branches.get(path);
     if (!target) return false;
@@ -54,6 +59,13 @@ export class FolderTree {
     const children = document.createElement('div');
     children.className = 'children hidden';
     wrap.appendChild(children);
+    const generation = this.generation;
+    let loading = null;
+    const loadChildren = async () => {
+      const data = await getJson('/api/folders', { db: this.db, path });
+      if (generation !== this.generation) return;
+      for (const child of data.folders) children.appendChild(this.makeBranch(child, depth + 1));
+    };
     const expand = async (open) => {
       const nowOpen = open === undefined ? children.classList.contains('hidden') : open;
       children.classList.toggle('hidden', !nowOpen);
@@ -61,8 +73,11 @@ export class FolderTree {
       nowOpen ? this.expanded.add(path) : this.expanded.delete(path);
       save('expanded', [...this.expanded]);
       if (nowOpen && children.childElementCount === 0) {
-        const data = await getJson('/api/folders', { db: this.db, path });
-        for (const child of data.folders) children.appendChild(this.makeBranch(child, depth + 1));
+        loading ??= loadChildren().catch((e) => {
+          loading = null;
+          throw e;
+        });
+        await loading;
       }
     };
     if (entry.has_children) {

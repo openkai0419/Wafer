@@ -4,6 +4,7 @@ from functools import partial
 
 from PySide6 import QtCore, QtGui
 
+from wafer.core.common.virtual_paths import display_name
 from wafer.plugin.grid.thumbnail_loader import ThumbnailLoader
 from wafer.qt.common.dispatcher import Dispatcher
 from wafer.qt.common.dpi import dpix
@@ -106,7 +107,7 @@ class MapHost(QtCore.QObject):
         if same:
             self.preview.place(global_pos)
             return
-        self.preview.show_image(pixmap, path.replace("\\", "/").split("/")[-1], global_pos, self.hover_size)
+        self.preview.show_image(pixmap, display_name(path), global_pos, self.hover_size)
 
     def hide_hover(self) -> None:
         self.hover_path = None

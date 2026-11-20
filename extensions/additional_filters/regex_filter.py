@@ -2,86 +2,43 @@ from __future__ import annotations
 
 import re
 from functools import partial
+from re import _constants as sre, _parser as re_parser
 
 from wafer.core.db.db_utils import escape_like
-from wafer.core.db.query import ALL_PATHS_SQL, key_path_queries
+from wafer.core.db.query import compiled_regex, key_path_queries
 from wafer.plugin import BaseFilterPlugin
 from wafer.core.profiling import profiler
+
+_REPEATS = (sre.MAX_REPEAT, sre.MIN_REPEAT, sre.POSSESSIVE_REPEAT)
 
 
 def _extract_literal_hints(pattern):
     try:
-        re.compile(pattern)
+        parsed = re_parser.parse(pattern)
     except re.error:
         return []
-
-    runs = []
-    current = []
-    i = 0
-    n = len(pattern)
-    group_stack = []
-
-    while i < n:
-        c = pattern[i]
-
-        if c == "\\" and i + 1 < n:
-            nc = pattern[i + 1]
-            if nc in "dDwWsSbBAZG" or (nc.isdigit() and nc != "0"):
-                _flush(current, runs)
-                i += 2
-                continue
-            current.append(nc)
-            i += 2
-        elif c in "*+?":
-            if c in "*?":
-                if current:
-                    current.pop()
-            _flush(current, runs)
-            i += 1
-            if i < n and pattern[i] in "+?":
-                i += 1
-        elif c == "{":
-            end = pattern.find("}", i)
-            if end != -1:
-                min_count = _parse_quantifier_min(pattern[i + 1 : end])
-                if min_count == 0 and current:
-                    current.pop()
-                _flush(current, runs)
-                i = end + 1
-            else:
-                current.append(c)
-                i += 1
-        elif c == "[":
-            _flush(current, runs)
-            i = _skip_char_class(pattern, i + 1, n)
-        elif c == "(":
-            _flush(current, runs)
-            group_stack.append((len(runs), False))
-            i += 1
-            i = _skip_group_modifier(pattern, i, n)
-        elif c == ")":
-            _flush(current, runs)
-            if group_stack:
-                start_idx, has_alt = group_stack.pop()
-                if has_alt:
-                    del runs[start_idx:]
-            i += 1
-        elif c == "|":
-            _flush(current, runs)
-            if group_stack:
-                group_stack[-1] = (group_stack[-1][0], True)
-            else:
-                return []
-            i += 1
-        elif c in ".^$":
-            _flush(current, runs)
-            i += 1
-        else:
-            current.append(c)
-            i += 1
-
+    runs: list[str] = []
+    current: list[str] = []
+    _collect_runs(parsed, current, runs, ignore_case=False)
     _flush(current, runs)
-    return [r for r in runs if r]
+    return runs
+
+
+def _collect_runs(items, current, runs, *, ignore_case):
+    for op, av in items:
+        if op is sre.LITERAL and not (ignore_case and av > 127):
+            current.append(chr(av))
+        elif op is sre.SUBPATTERN:
+            _group, add_flags, del_flags, body = av
+            group_ignore_case = (ignore_case or bool(add_flags & re.IGNORECASE)) and not del_flags & re.IGNORECASE
+            _collect_runs(body, current, runs, ignore_case=group_ignore_case)
+        elif op is sre.ATOMIC_GROUP:
+            _collect_runs(av, current, runs, ignore_case=ignore_case)
+        elif op in _REPEATS and av[0] >= 1:
+            _collect_runs(av[2], current, runs, ignore_case=ignore_case)
+            _flush(current, runs)
+        else:
+            _flush(current, runs)
 
 
 def _flush(current, runs):
@@ -90,63 +47,10 @@ def _flush(current, runs):
         current.clear()
 
 
-def _parse_quantifier_min(text):
-    try:
-        parts = text.split(",")
-        return int(parts[0]) if parts[0].strip() else 0
-    except (ValueError, IndexError):
-        return 0
-
-
-def _skip_char_class(pattern, i, n):
-    if i < n and pattern[i] in "^":
-        i += 1
-    if i < n and pattern[i] == "]":
-        i += 1
-    while i < n and pattern[i] != "]":
-        if pattern[i] == "\\" and i + 1 < n:
-            i += 2
-        else:
-            i += 1
-    return i + 1 if i < n else i
-
-
-def _skip_group_modifier(pattern, i, n):
-    if i >= n or pattern[i] != "?":
-        return i
-    i += 1
-    if i >= n:
-        return i
-    c = pattern[i]
-    if c in ":=!":
-        return i + 1
-    if c == "P":
-        i += 1
-        if i < n and pattern[i] == "<":
-            end = pattern.find(">", i)
-            return end + 1 if end != -1 else n
-        if i < n and pattern[i] == "=":
-            end = pattern.find(")", i)
-            return end if end != -1 else n
-        return i
-    if c == "<":
-        i += 1
-        if i < n and pattern[i] in "=!":
-            return i + 1
-        end = pattern.find(">", i)
-        return end + 1 if end != -1 else n
-    return i
-
-
-def _build_like_conditions(field, hints):
-    if not hints:
-        return [], []
-    clauses = []
-    params = []
-    for h in hints:
-        clauses.append(f"{field} LIKE ? ESCAPE '\\'")
-        params.append(f"%{escape_like(h)}%")
-    return clauses, params
+def _build_value_conditions(field, hints, pattern):
+    clauses = [f"{field} LIKE ? ESCAPE '\\'" for _ in hints]
+    params = [f"%{escape_like(h)}%" for h in hints]
+    return [*clauses, f"{field} REGEXP ?"], [*params, pattern]
 
 
 class RegexFilter(BaseFilterPlugin):
@@ -190,54 +94,22 @@ class RegexFilter(BaseFilterPlugin):
         if not pattern:
             return None, []
 
-        flags = re.IGNORECASE if params.get("ignore_case", False) else 0
+        hints = _extract_literal_hints(pattern)
+        if params.get("ignore_case", False):
+            pattern = f"(?i){pattern}"
         try:
-            compiled = re.compile(pattern, flags)
+            compiled = compiled_regex(pattern)
         except re.error:
             return None, []
 
-        params["_compiled"] = compiled
-
-        keys, _ignore_case = cls._normalize_params(params)
-        require_keys = params.get("require_keys", True)
-        if require_keys and not keys:
+        keys = params.get("keys") or []
+        if isinstance(keys, str):
+            keys = [keys]
+        if params.get("require_keys", True) and not keys:
             return "SELECT path FROM files WHERE 0", []
 
-        hints = _extract_literal_hints(pattern)
-        parts, all_params = key_path_queries(keys, partial(_build_like_conditions, hints=hints))
-        if not parts:
-            return None, []
-        if parts == [ALL_PATHS_SQL]:
-            return ALL_PATHS_SQL, []
-
+        if compiled.flags & re.IGNORECASE:
+            hints = [h for h in hints if h.isascii()]
+        parts, all_params = key_path_queries(list(keys), partial(_build_value_conditions, hints=hints, pattern=pattern))
         subquery = " UNION ALL ".join(parts)
         return f"SELECT DISTINCT path FROM ({subquery})", all_params
-
-    @classmethod
-    def _normalize_params(cls, params):
-        keys = params.get("keys") or []
-        if isinstance(keys, str):
-            keys = [keys]
-        else:
-            keys = list(keys)
-        ignore_case = params.get("ignore_case", False)
-        return keys, ignore_case
-
-    @classmethod
-    def post_filter(cls, params, rows):
-        compiled = params.get("_compiled")
-        if compiled is None:
-            return rows
-
-        keys = params.get("keys") or []
-        if isinstance(keys, str):
-            keys = [keys]
-
-        has_path = "path" in keys
-        other_keys = [k for k in keys if k != "path"]
-        query_all = not keys
-
-        if has_path and not other_keys and not query_all:
-            return [r for r in rows if compiled.search(r["path"])]
-
-        return rows

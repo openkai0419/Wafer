@@ -2,6 +2,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from PySide6 import QtCore, QtGui, QtWidgets
 from ...common.dpi import dpix
+from ...common.icon_engine import themed_icon
 from ....core.profiling import profiler
 from ....core.logs import AppLogger
 
@@ -132,7 +133,7 @@ class CommandMenuRow(QtWidgets.QWidget):
         if self._has_options and self._options_btn is None:
             try:
                 btn = QtWidgets.QToolButton(self)
-                btn.setText("□")
+                btn.setIcon(themed_icon("options"))
                 btn.setAutoRaise(True)
                 btn.setFixedWidth(px["opt"])
                 btn.setCursor(QtCore.Qt.PointingHandCursor)
@@ -170,4 +171,4 @@ class CommandMenuRow(QtWidgets.QWidget):
             return max(0, min(int(icon_sz), int(dpix(22))))
         except Exception as e:
             AppLogger.warning("CommandMenuRow gutter metric lookup failed", exc=e)
-            return 22
+            return dpix(22)

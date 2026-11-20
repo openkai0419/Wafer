@@ -51,7 +51,7 @@ def toggle_language(ctx):
     w = ctx.get_instance("MainWindow")
     if not w:
         return
-    new_locale = "ja" if t.current_locale == "en" else "en"
+    new_locale = "ja" if app_settings.get("window/language", t.current_locale) == "en" else "en"
     app_settings.save_immediate("window/language", new_locale)
     Notifier.info(f"Language set to '{new_locale}'. Restart to apply.")
 

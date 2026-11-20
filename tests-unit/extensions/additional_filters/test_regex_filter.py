@@ -6,7 +6,8 @@ import re
 import sqlite3
 
 
-from wafer.core.db.db_utils import apply_read_pragmas, apply_write_pragmas
+from wafer.core.db.db_utils import apply_write_pragmas
+from wafer.core.db.query import FileSearchEngine
 
 from extensions.additional_filters.regex_filter import (
     RegexFilter,
@@ -69,15 +70,12 @@ def _query(db_path, params):
     sql, bind = RegexFilter.build_path_query(params, lambda p: p)
     if sql is None:
         return set()
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    apply_read_pragmas(conn)
-    rows = conn.execute(sql, bind).fetchall()
-    conn.close()
-
-    result_rows = [dict(r) for r in rows]
-    result_rows = RegexFilter.post_filter(params, result_rows)
-    return {r["path"] for r in result_rows}
+    engine = FileSearchEngine(str(db_path))
+    try:
+        assert engine._connect_if_needed()
+        return {r["path"] for r in engine.conn.execute(sql, bind)}
+    finally:
+        engine.close()
 
 
 class TestExtractLiteralHints:
@@ -155,17 +153,47 @@ class TestExtractLiteralHints:
         assert _extract_literal_hints(r"[a-z]+") == []
 
     def test_non_capturing_group(self):
-        hints = _extract_literal_hints(r"(?:abc)_test")
-        assert "abc" in hints
-        assert "_test" in hints
+        assert _extract_literal_hints(r"(?:abc)_test") == ["abc_test"]
 
     def test_lookahead(self):
         hints = _extract_literal_hints(r"abc(?=def)")
         assert "abc" in hints
 
+    def test_lookaround_text_is_never_a_hint(self):
+        assert _extract_literal_hints(r"abc(?=def)") == ["abc"]
+        assert _extract_literal_hints(r"foo(?!bar)") == ["foo"]
+        assert _extract_literal_hints(r"(?<=x)abc") == ["abc"]
+        assert _extract_literal_hints(r"(?<!x)abc") == ["abc"]
+        assert _extract_literal_hints(r"(?<=pre)mid(?!post)end") == ["mid", "end"]
+
+    def test_groups_nested_in_lookaround_are_never_hints(self):
+        assert _extract_literal_hints(r"foo(?!(?:bar)baz)") == ["foo"]
+        assert _extract_literal_hints(r"foo(?!b(ar)(?=z)q)") == ["foo"]
+        assert _extract_literal_hints(r"(?:foo(?<!xfoo))end") == ["foo", "end"]
+
     def test_lazy_quantifier(self):
         hints = _extract_literal_hints(r"ab+?c")
         assert "ab" in hints
+
+    def test_optional_groups_are_never_hints(self):
+        for pattern in (r"(abc)?def", r"(abc)*def", r"(abc){0,2}def", r"(?:abc)??def"):
+            assert _extract_literal_hints(pattern) == ["def"], pattern
+
+    def test_escapes_are_hinted_as_the_character_they_match(self):
+        assert _extract_literal_hints(r"foo\nbar") == ["foo\nbar"]
+        assert _extract_literal_hints(r"a\tb") == ["a\tb"]
+        assert _extract_literal_hints(r"\x41BC") == ["ABC"]
+        assert _extract_literal_hints(r"あx") == ["あx"]
+
+    def test_verbose_patterns_and_comments_are_hinted_as_matched(self):
+        assert _extract_literal_hints(r"(?x)a b  # note") == ["ab"]
+        assert _extract_literal_hints(r"x(?#comment)y") == ["xy"]
+
+    def test_conditional_groups_are_never_hints(self):
+        assert _extract_literal_hints(r"(a)?(?(1)b|c)") == []
+
+    def test_text_under_local_ignore_case_keeps_only_ascii(self):
+        assert _extract_literal_hints("x(?i:abあ)y") == ["xab", "y"]
 
 
 class TestInheritableParams:
@@ -440,6 +468,36 @@ class TestMetaFiltering:
         )
         assert "c:/a.jpg" in result
 
+    def test_lookaround_text_does_not_exclude_matches(self, tmp_path):
+        db = _setup_db(
+            tmp_path,
+            files=["c:/a.jpg", "c:/b.jpg", "c:/c.jpg"],
+            meta=[
+                ("c:/a.jpg", "desc", "foobaz"),
+                ("c:/b.jpg", "desc", "foobar"),
+                ("c:/c.jpg", "desc", "yabc"),
+            ],
+        )
+        assert _query(db, {"pattern": r"foo(?!bar)", "keys": ["desc"]}) == {"c:/a.jpg"}
+        assert _query(db, {"pattern": r"foo(?=baz)", "keys": ["desc"]}) == {"c:/a.jpg"}
+        assert _query(db, {"pattern": r"(?<!x)abc", "keys": ["desc"]}) == {"c:/c.jpg"}
+        assert _query(db, {"pattern": r"(?<=y)abc", "keys": ["desc"]}) == {"c:/c.jpg"}
+
+    def test_patterns_whose_text_is_optional_or_escaped_keep_every_match(self, tmp_path):
+        db = _setup_db(
+            tmp_path,
+            files=["c:/a.jpg", "c:/b.jpg", "c:/c.jpg"],
+            meta=[
+                ("c:/a.jpg", "desc", "def only"),
+                ("c:/b.jpg", "desc", "line1\nline2"),
+                ("c:/c.jpg", "desc", "ABC"),
+            ],
+        )
+        assert _query(db, {"pattern": r"(abc)?def", "keys": ["desc"]}) == {"c:/a.jpg"}
+        assert _query(db, {"pattern": r"line1\nline2", "keys": ["desc"]}) == {"c:/b.jpg"}
+        assert _query(db, {"pattern": r"(?x) def \s only", "keys": ["desc"]}) == {"c:/a.jpg"}
+        assert _query(db, {"pattern": r"\x41BC", "keys": ["desc"]}) == {"c:/c.jpg"}
+
     def test_tag_value_like_match(self, tmp_path):
         db = _setup_db(
             tmp_path,
@@ -481,7 +539,7 @@ class TestMetaFiltering:
         assert _query(db, {"pattern": target[:12], "keys": ["file_hash"]}) == {"c:/b.jpg"}
 
 
-class TestPostFilter:
+class TestMixedKeys:
     def test_mixed_keys_no_path_stripping(self, tmp_path):
         db = _setup_db(
             tmp_path,
@@ -510,7 +568,7 @@ class TestEdgeCases:
         )
         assert result == set()
 
-    def test_like_false_positive_filtered_by_post(self, tmp_path):
+    def test_like_false_positive_filtered_by_regex(self, tmp_path):
         db = _setup_db(
             tmp_path,
             files=[
@@ -580,3 +638,57 @@ class TestEdgeCases:
             },
         )
         assert expected == result
+
+
+class TestValueRegex:
+    def test_meta_value_must_match_pattern(self, tmp_path):
+        db = _setup_db(
+            tmp_path,
+            files=["c:/a.jpg", "c:/b.jpg", "c:/c.jpg"],
+            meta=[
+                ("c:/a.jpg", "desc", "seed 1234"),
+                ("c:/b.jpg", "desc", "seed abcd"),
+            ],
+        )
+        assert _query(db, {"pattern": r"seed \d+", "keys": ["desc"]}) == {"c:/a.jpg"}
+
+    def test_meta_value_without_hints_is_evaluated(self, tmp_path):
+        db = _setup_db(
+            tmp_path,
+            files=["c:/a.jpg", "c:/b.jpg"],
+            meta=[("c:/a.jpg", "steps", "28"), ("c:/b.jpg", "steps", "x")],
+        )
+        assert _query(db, {"pattern": r"^\d+$", "keys": ["steps"]}) == {"c:/a.jpg"}
+
+    def test_ignore_case_on_meta_value(self, tmp_path):
+        db = _setup_db(
+            tmp_path,
+            files=["c:/a.jpg", "c:/b.jpg"],
+            meta=[("c:/a.jpg", "desc", "SUNSET"), ("c:/b.jpg", "desc", "sunrise")],
+        )
+        assert _query(db, {"pattern": "sunset", "keys": ["desc"]}) == set()
+        assert _query(db, {"pattern": "sunset", "keys": ["desc"], "ignore_case": True}) == {"c:/a.jpg"}
+
+    def test_inline_flags_are_not_hints(self):
+        assert _extract_literal_hints("(?i)abc") == ["abc"]
+        assert _extract_literal_hints("(?s:ab)cd") == ["abcd"]
+
+    def test_path_regex_keeps_or_combined_results(self, tmp_path):
+        from wafer.builtins.sorts import NoSort
+        from wafer.plugin.query.composer import SearchComposer
+
+        db = _setup_db(
+            tmp_path,
+            files=["c:/x/match.jpg", "c:/y/other.jpg", "c:/z/none.jpg"],
+            meta=[("c:/y/other.jpg", "desc", "sunset")],
+        )
+        engine = FileSearchEngine(str(db))
+        try:
+            entries = [
+                (RegexFilter, {"pattern": "match", "keys": ["path"]}, None),
+                (RegexFilter, {"pattern": "sun", "keys": ["desc"]}, "OR"),
+            ]
+            paths, _sources, _aspects = SearchComposer().execute(engine, entries, NoSort, True)
+        finally:
+            engine.close()
+        assert set(paths) == {"c:/x/match.jpg", "c:/y/other.jpg"}

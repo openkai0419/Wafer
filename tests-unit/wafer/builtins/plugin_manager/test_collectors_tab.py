@@ -370,6 +370,81 @@ class TestCollectorsTab:
         assert tab._default_checks["wd14"].isChecked()
 
 
+    def test_default_following_db_keeps_defaults_after_async_discovery(self, qtbot, _patch_paths):
+        setup, paths = _patch_paths
+        setup({"default": None})
+
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+
+        with patch.object(CollectorsTab, "_load_defaults", return_value={"exif", "wd14"}):
+            tab = CollectorsTab(collector_names=[], parser_names=[])
+            qtbot.addWidget(tab)
+            tab.refresh(["exif"], [])
+            tab.refresh(["exif", "wd14"], [])
+
+        assert tab._matrix[("exif", "default")].isChecked()
+        assert tab._matrix[("wd14", "default")].isChecked()
+        assert not tab.has_changes()
+        assert SettingDB(paths["default"]).get_enabled_collectors() is None
+
+    def test_refresh_keeps_unsaved_change_as_change(self, qtbot, _patch_paths):
+        setup, _ = _patch_paths
+        setup({"db1": ["exif", "wd14"]})
+
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+
+        tab = CollectorsTab(collector_names=["exif", "wd14"], parser_names=[])
+        qtbot.addWidget(tab)
+
+        tab._matrix[("wd14", "db1")].setChecked(False)
+        tab.refresh(["exif", "wd14"], [])
+
+        assert not tab._matrix[("wd14", "db1")].isChecked()
+        assert tab.has_changes()
+        assert tab.get_newly_disabled() == [("db1", "wd14")]
+
+    def test_save_updates_initial_state(self, qtbot, _patch_paths):
+        setup, paths = _patch_paths
+        setup({"photos": ["exif", "wd14"]})
+
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+
+        with patch.object(CollectorsTab, "_load_defaults", return_value={"exif"}):
+            tab = CollectorsTab(collector_names=["exif", "wd14"], parser_names=[])
+        qtbot.addWidget(tab)
+
+        tab._matrix[("exif", "photos")].setChecked(False)
+        with patch.object(CollectorsTab, "save_defaults"), patch.object(QtWidgets.QDialog, "exec", return_value=QtWidgets.QDialog.Accepted):
+            assert tab.confirm_and_save()
+
+        assert SettingDB(paths["photos"]).get_enabled_collectors() == ["wd14"]
+        assert not tab.has_changes()
+        assert tab.get_newly_disabled() == []
+        tab.revert()
+        assert not tab._matrix[("exif", "photos")].isChecked()
+
+    def test_toggle_all_heavy_warns_once(self, qtbot, _patch_paths, monkeypatch):
+        setup, _ = _patch_paths
+        setup({"db1": [], "db2": [], "db3": []})
+
+        from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab
+
+        tab = CollectorsTab(
+            collector_names=["tagger", "caption"],
+            parser_names=[],
+            heavy_collectors={"tagger": "wd14", "caption": "florence"},
+        )
+        qtbot.addWidget(tab)
+        tab._matrix[("caption", "db1")].setChecked(True)
+
+        warnings = []
+        monkeypatch.setattr(QtWidgets.QMessageBox, "warning", lambda *args, **kwargs: warnings.append(args[2]))
+        tab._toggle_all("tagger")
+
+        assert all(tab._matrix[("tagger", db)].isChecked() for db in ("db1", "db2", "db3"))
+        assert len(warnings) == 1
+
+
 class TestParserRequirement:
     def _tab(self, qtbot, collector_names, parser_names):
         from wafer.builtins.plugin_manager.collectors_tab import CollectorsTab

@@ -1,10 +1,7 @@
 import pytest
 
-from wafer.builtins.updater import plan as update_plan
 from wafer.builtins.updater.plan import (
     PlanError,
-    PlanOp,
-    execute_plan,
     generate_plan,
     read_plan,
     validate_plan_relpath,
@@ -146,50 +143,3 @@ class TestPlanSerialization:
         path.write_text("wafer-update-plan 1\nmove\t0\t../evil\tb\n", encoding="utf-8")
         with pytest.raises(PlanError):
             read_plan(path)
-
-
-class TestExecutePlan:
-    def test_full_apply(self, app_root):
-        ops = generate_plan(app_root)
-        execute_plan(ops, app_root)
-
-        assert (app_root / "python/wafer-pythonw.exe").read_text(encoding="utf-8") == "new-python"
-        assert (app_root / "main.py").read_text(encoding="utf-8") == "new-main"
-        assert (app_root / "Wafer.exe").read_text(encoding="utf-8") == "new-launcher"
-        assert (app_root / "Uninstaller.exe").read_text(encoding="utf-8") == "new-uninstaller"
-        assert "2.0.0" in (app_root / "wafer/_version.py").read_text(encoding="utf-8")
-        assert (app_root / "extensions/image/__init__.py").read_text(encoding="utf-8") == "new-image"
-        assert (app_root / "extensions/ffmpeg/lib/ffmpeg.exe").read_text(encoding="utf-8") == "ffmpeg-bin"
-        assert (app_root / "extensions/myext/__init__.py").read_text(encoding="utf-8") == "user-ext"
-        assert (app_root / "extensions/.packages/numpy/__init__.py").read_text(encoding="utf-8") == "site-package"
-        assert (app_root / ".update/backup/python/wafer-pythonw.exe").read_text(encoding="utf-8") == "old-python"
-        assert (app_root / ".update/backup/Wafer.exe").read_text(encoding="utf-8") == "old-launcher"
-
-    def test_rollback_restores_original(self, app_root):
-        ops = generate_plan(app_root)
-        broken = ops[:6] + [PlanOp(src=".update/next/does_not_exist", dst="ghost")] + ops[6:]
-        with pytest.raises(PlanError):
-            execute_plan(broken, app_root)
-
-        assert (app_root / "python/wafer-pythonw.exe").read_text(encoding="utf-8") == "old-python"
-        assert (app_root / "main.py").read_text(encoding="utf-8") == "old-main"
-        assert (app_root / "Wafer.exe").read_text(encoding="utf-8") == "old-launcher"
-        assert (app_root / ".update/next/python/wafer-pythonw.exe").read_text(encoding="utf-8") == "new-python"
-
-    def test_optional_missing_source_skipped(self, app_root):
-        (app_root / "README.md").unlink()
-        ops = generate_plan(app_root)
-        execute_plan(ops, app_root)
-        assert (app_root / "README.md").read_text(encoding="utf-8") == "new-readme"
-        assert not (app_root / ".update/backup/README.md").exists()
-
-    def test_clears_previous_backup(self, app_root):
-        stale = app_root / ".update/backup/old_junk.txt"
-        stale.parent.mkdir(parents=True, exist_ok=True)
-        stale.write_text("junk", encoding="utf-8")
-        execute_plan(generate_plan(app_root), app_root)
-        assert not stale.exists()
-
-    def test_escaping_path_rejected(self, app_root):
-        with pytest.raises(PlanError):
-            execute_plan([PlanOp(src="..", dst="x")], app_root)

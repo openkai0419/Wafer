@@ -6,7 +6,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 
 from ...core.db.file_db import FileDB
-from ...core.common.hashes import HASH_FAILED, fast_signature_hash
+from ...core.common.hashes import FULL_HASH_LENGTH, HASH_FAILED, fast_signature_hash, full_hash
 from ...core.logs import AppLogger
 from ...core.common.paths import normalize_path
 from ...core.profiling import profiler
@@ -66,9 +66,11 @@ class DatabaseWriter:
             return []
 
         old_by_signature: dict[tuple[str, int | None], list[str]] = defaultdict(list)
+        full_hash_by_size: dict[int | None, set[bool]] = defaultdict(set)
         for path, (file_hash, size) in old_signatures.items():
             if file_hash and file_hash != HASH_FAILED:
                 old_by_signature[(file_hash, size)].append(path)
+                full_hash_by_size[size].add(len(file_hash) == FULL_HASH_LENGTH)
 
         new_by_signature: dict[tuple[str, int | None], list[str]] = defaultdict(list)
         for path in new_paths:
@@ -78,9 +80,10 @@ class DatabaseWriter:
                 continue
             if not os.path.isfile(path):
                 continue
-            file_hash = fast_signature_hash(path, stat_result.st_size, 256)
-            if file_hash and file_hash != HASH_FAILED:
-                new_by_signature[(file_hash, stat_result.st_size)].append(path)
+            for use_full_hash in full_hash_by_size.get(stat_result.st_size, ()):
+                file_hash = full_hash(path) if use_full_hash else fast_signature_hash(path, stat_result.st_size, 256)
+                if file_hash and file_hash != HASH_FAILED:
+                    new_by_signature[(file_hash, stat_result.st_size)].append(path)
 
         pairs = self._pair_sources_by_signature(old_by_signature, new_by_signature)
         if pairs:

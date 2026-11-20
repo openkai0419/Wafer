@@ -153,9 +153,7 @@ class TestExtractLiteralHints:
         assert _extract_literal_hints(r"[a-z]+") == []
 
     def test_non_capturing_group(self):
-        hints = _extract_literal_hints(r"(?:abc)_test")
-        assert "abc" in hints
-        assert "_test" in hints
+        assert _extract_literal_hints(r"(?:abc)_test") == ["abc_test"]
 
     def test_lookahead(self):
         hints = _extract_literal_hints(r"abc(?=def)")
@@ -176,6 +174,26 @@ class TestExtractLiteralHints:
     def test_lazy_quantifier(self):
         hints = _extract_literal_hints(r"ab+?c")
         assert "ab" in hints
+
+    def test_optional_groups_are_never_hints(self):
+        for pattern in (r"(abc)?def", r"(abc)*def", r"(abc){0,2}def", r"(?:abc)??def"):
+            assert _extract_literal_hints(pattern) == ["def"], pattern
+
+    def test_escapes_are_hinted_as_the_character_they_match(self):
+        assert _extract_literal_hints(r"foo\nbar") == ["foo\nbar"]
+        assert _extract_literal_hints(r"a\tb") == ["a\tb"]
+        assert _extract_literal_hints(r"\x41BC") == ["ABC"]
+        assert _extract_literal_hints(r"あx") == ["あx"]
+
+    def test_verbose_patterns_and_comments_are_hinted_as_matched(self):
+        assert _extract_literal_hints(r"(?x)a b  # note") == ["ab"]
+        assert _extract_literal_hints(r"x(?#comment)y") == ["xy"]
+
+    def test_conditional_groups_are_never_hints(self):
+        assert _extract_literal_hints(r"(a)?(?(1)b|c)") == []
+
+    def test_text_under_local_ignore_case_keeps_only_ascii(self):
+        assert _extract_literal_hints("x(?i:abあ)y") == ["xab", "y"]
 
 
 class TestInheritableParams:
@@ -465,6 +483,21 @@ class TestMetaFiltering:
         assert _query(db, {"pattern": r"(?<!x)abc", "keys": ["desc"]}) == {"c:/c.jpg"}
         assert _query(db, {"pattern": r"(?<=y)abc", "keys": ["desc"]}) == {"c:/c.jpg"}
 
+    def test_patterns_whose_text_is_optional_or_escaped_keep_every_match(self, tmp_path):
+        db = _setup_db(
+            tmp_path,
+            files=["c:/a.jpg", "c:/b.jpg", "c:/c.jpg"],
+            meta=[
+                ("c:/a.jpg", "desc", "def only"),
+                ("c:/b.jpg", "desc", "line1\nline2"),
+                ("c:/c.jpg", "desc", "ABC"),
+            ],
+        )
+        assert _query(db, {"pattern": r"(abc)?def", "keys": ["desc"]}) == {"c:/a.jpg"}
+        assert _query(db, {"pattern": r"line1\nline2", "keys": ["desc"]}) == {"c:/b.jpg"}
+        assert _query(db, {"pattern": r"(?x) def \s only", "keys": ["desc"]}) == {"c:/a.jpg"}
+        assert _query(db, {"pattern": r"\x41BC", "keys": ["desc"]}) == {"c:/c.jpg"}
+
     def test_tag_value_like_match(self, tmp_path):
         db = _setup_db(
             tmp_path,
@@ -638,7 +671,7 @@ class TestValueRegex:
 
     def test_inline_flags_are_not_hints(self):
         assert _extract_literal_hints("(?i)abc") == ["abc"]
-        assert _extract_literal_hints("(?s:ab)cd") == ["ab", "cd"]
+        assert _extract_literal_hints("(?s:ab)cd") == ["abcd"]
 
     def test_path_regex_keeps_or_combined_results(self, tmp_path):
         from wafer.builtins.sorts import NoSort

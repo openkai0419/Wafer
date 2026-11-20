@@ -6,7 +6,7 @@ import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 from ..logs import AppLogger
 from ..common.paths import profile_allows_file_write, safe_exists, safe_is_dir
@@ -306,7 +306,7 @@ class PasteConflict:
     dst: Path
     name: str
     folders: bool
-    from_this_paste: bool
+    selected_item: bool
     in_merge: bool
     src_bytes: bytes | bytearray | None = None
 
@@ -332,11 +332,13 @@ class FileExecutor:
         progress_callback: ProgressCallback | None = None,
         cancel_check: CancelCheck | None = None,
         ask_conflict: AskConflict | None = None,
+        selection: Iterable[Path] = (),
     ):
         self._follow_symlinks = follow_symlinks
         self._progress_callback = progress_callback
         self._cancel_check = cancel_check
         self._ask_conflict = ask_conflict or keep_both
+        self._selection = {_destination_key(path) for path in selection}
         self._written: set[str] = set()
         self._cancelled = False
 
@@ -349,11 +351,11 @@ class FileExecutor:
     def _record(self, path: Path) -> None:
         self._written.add(_destination_key(path))
 
-    def _from_this_paste(self, path: Path) -> bool:
-        if not self._written:
+    def _belongs_to_selection(self, path: Path) -> bool:
+        if not self._written and not self._selection:
             return False
         key = _destination_key(path)
-        while key not in self._written:
+        while key not in self._written and key not in self._selection:
             parent = os.path.dirname(key)
             if parent == key:
                 return False
@@ -367,7 +369,7 @@ class FileExecutor:
                 dst=dst,
                 name=name,
                 folders=folders,
-                from_this_paste=self._from_this_paste(dst),
+                selected_item=self._belongs_to_selection(dst),
                 in_merge=in_merge,
                 src_bytes=src_bytes,
             )

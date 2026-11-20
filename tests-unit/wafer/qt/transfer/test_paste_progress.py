@@ -540,3 +540,22 @@ class TestConflictsAskedDuringTheCopy:
 
         assert [r.error for r in results] == [CANCELLED]
         assert [(dst_dir / f"f{i}.txt").read_text(encoding="utf-8") for i in range(3)] == ["old 0", "old 1", "old 2"]
+
+    def test_a_selected_item_already_in_the_destination_is_reported_as_selected(self, qapp, tmp_path):
+        from wafer.qt.transfer.paste import ClipboardFilePaster, _execute_plans
+
+        (tmp_path / "S1").mkdir()
+        (tmp_path / "S2").mkdir()
+        (tmp_path / "S1" / "img.png").write_text("S1", encoding="utf-8")
+        (tmp_path / "S2" / "img.png").write_text("S2", encoding="utf-8")
+        plans = ClipboardFilePaster.build_paste_plan(tmp_path / "S1", ("copy", [tmp_path / "S1" / "img.png", tmp_path / "S2" / "img.png"]))
+        selected = []
+
+        def ask(conflict):
+            selected.append(conflict.selected_item)
+            return "skip"
+
+        _execute_plans(plans, {plans[0].index: PasteDecision(mode="skip")}, None, "copy", ask)
+
+        assert selected == [True]
+        assert (tmp_path / "S1" / "img.png").read_text(encoding="utf-8") == "S1"

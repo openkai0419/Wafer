@@ -5,7 +5,6 @@ from collections.abc import Iterable
 
 from PySide6 import QtWidgets
 
-from ...core.logs import AppLogger
 from ...core.common.paths import normalize_path
 from ...core.platform.file_operations import PasteAnswer, PasteCancelledError, PasteConflict, PasteDecision
 from ...core.platform.path_utils import check_copy_conflict
@@ -100,28 +99,21 @@ class ConflictAsker:
         self._item_count = item_count
         self._folder_message = folder_message
         self._folder_apply_all: PasteAnswer | None = None
-        self._file_apply_all: PasteAnswer | None = None
+        self._existing_file_apply_all: PasteAnswer | None = None
+        self._selected_file_apply_all: PasteAnswer | None = None
 
     def __call__(self, conflict: PasteConflict) -> PasteAnswer:
         if conflict.folders:
             return self._folder(conflict)
-        return self._file(conflict)
-
-    def _protects(self, conflict: PasteConflict) -> bool:
-        return conflict.from_this_paste and (self._op == "move" or conflict.src is None)
-
-    def _keep_both(self, conflict: PasteConflict) -> PasteAnswer:
-        AppLogger.info(f"[{self._op}] {conflict.dst} was placed by this paste and has no other copy, so it is kept and {conflict.name} is saved under a new name")
-        return "rename"
+        if conflict.selected_item:
+            return self._selected_file(conflict)
+        return self._existing_file(conflict)
 
     def _dialog_parent(self):
         return QtWidgets.QApplication.activeModalWidget() or self._parent
 
     def _show_apply_all(self, conflict: PasteConflict) -> bool:
         return self._item_count > 1 or conflict.in_merge
-
-    def _message(self, conflict: PasteConflict, existing: str) -> str:
-        return t("Another selected item has the same name.") if conflict.from_this_paste else existing
 
     def _folder(self, conflict: PasteConflict) -> PasteAnswer:
         if self._overwrite_mode == "overwrite":
@@ -131,8 +123,9 @@ class ConflictAsker:
         if self._folder_apply_all is not None:
             return self._folder_apply_all
 
+        message = t("Another selected item has the same name.") if conflict.selected_item else t(self._folder_message)
         choice, apply_all = FolderConflictDialog.ask(
-            self._message(conflict, t(self._folder_message)),
+            message,
             src_path=normalize_path(str(conflict.src)),
             dst_path=normalize_path(str(conflict.dst)),
             src_name=conflict.name,
@@ -147,35 +140,43 @@ class ConflictAsker:
             self._folder_apply_all = answer
         return answer
 
-    def _file(self, conflict: PasteConflict) -> PasteAnswer:
+    def _existing_file(self, conflict: PasteConflict) -> PasteAnswer:
+        if self._overwrite_mode in ("overwrite", "rename", "skip"):
+            return self._overwrite_mode
+        if self._existing_file_apply_all is not None:
+            return self._existing_file_apply_all
+        answer, apply_all = self._ask_file(conflict, t("An item with the same name already exists."))
+        if apply_all:
+            self._existing_file_apply_all = answer
+        return answer
+
+    def _selected_file(self, conflict: PasteConflict) -> PasteAnswer:
         if self._overwrite_mode in ("rename", "skip"):
             return self._overwrite_mode
-        if self._overwrite_mode == "overwrite":
-            return self._keep_both(conflict) if self._protects(conflict) else "overwrite"
-        if self._file_apply_all is not None:
-            if self._file_apply_all == "overwrite" and self._protects(conflict):
-                return self._keep_both(conflict)
-            return self._file_apply_all
+        if self._selected_file_apply_all is not None:
+            return self._selected_file_apply_all
+        answer, apply_all = self._ask_file(conflict, t("Another selected item has the same name."))
+        if apply_all:
+            self._selected_file_apply_all = answer
+        return answer
 
-        choices = ("rename", "skip", "cancel") if self._protects(conflict) else ("overwrite", "rename", "skip", "cancel")
+    def _ask_file(self, conflict: PasteConflict, message: str) -> tuple[PasteAnswer, bool]:
         src = str(conflict.src) if conflict.src is not None else ""
         choice, apply_all = FileConflictDialog.ask(
-            self._message(conflict, t("An item with the same name already exists.")),
+            message,
             src_path=normalize_path(src) if src else "",
             dst_path=normalize_path(str(conflict.dst)),
             src_name=conflict.name,
             src_bytes=conflict.src_bytes,
             op=self._op,
             show_apply_all=self._show_apply_all(conflict),
-            choices=choices,
+            choices=("overwrite", "rename", "skip", "cancel"),
             parent=self._dialog_parent(),
         )
         if choice in (None, "cancel"):
             raise PasteCancelledError()
         answer: PasteAnswer = choice if choice in ("overwrite", "skip") else "rename"
-        if apply_all:
-            self._file_apply_all = answer
-        return answer
+        return answer, apply_all
 
 
 def precheck_paste_plans_with_ui(

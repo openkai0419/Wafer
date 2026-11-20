@@ -417,12 +417,13 @@ def _execute_plans(
 ) -> list[OperationResult]:
     label = t("Moving files...") if op == "move" else t("Copying files...")
     ask = _asked_on_main_thread(ask_conflict) if ask_conflict is not None else None
+    selection = [plan.src for plan in plans if plan.src is not None]
     executor: FileExecutor | None = None
 
     def step(i: int, advance: Callable[[int], None], is_cancelled: Callable[[], bool]) -> OperationResult:
         nonlocal executor
         if executor is None:
-            executor = FileExecutor(progress_callback=advance, cancel_check=is_cancelled, ask_conflict=ask)
+            executor = FileExecutor(progress_callback=advance, cancel_check=is_cancelled, ask_conflict=ask, selection=selection)
         plan = plans[i]
         return executor.execute_one(plan, decisions.get(plan.index))
 

@@ -3,6 +3,17 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _no_real_dialogs(monkeypatch):
+    from wafer.qt.transfer import conflict_resolver as r
+
+    def unexpected(message, **kwargs):
+        raise AssertionError(f"unexpected dialog: {message}")
+
+    for dialog in (r.FileConflictDialog, r.FolderConflictDialog, r.SingleFileConflictDialog):
+        monkeypatch.setattr(dialog, "ask", staticmethod(unexpected))
+
+
 def _make_plan(index, src, dst, is_dir=False, conflict=True, action="copy"):
     from wafer.core.platform.file_operations import PastePlanItem
 
@@ -15,7 +26,8 @@ def _paste(plans, *, op, overwrite_mode="ask"):
 
     decisions = r.precheck_paste_plans_with_ui(plans=plans, overwrite_mode=overwrite_mode, parent=None, op=op)
     asker = r.ConflictAsker(op=op, overwrite_mode=overwrite_mode, parent=None, item_count=len(plans))
-    return FileExecutor(ask_conflict=asker).execute_plans(plans, decisions)
+    selection = [plan.src for plan in plans if plan.src is not None]
+    return FileExecutor(ask_conflict=asker, selection=selection).execute_plans(plans, decisions)
 
 
 def _record_dialog(monkeypatch, dialog_name, answers):
@@ -227,7 +239,7 @@ def test_rename_mode_keeps_the_existing_file(tmp_path):
     assert sorted(text for _, text in _files_under(dst_dir)) == ["new a.txt", "old a.txt"]
 
 
-def test_moving_same_named_files_asks_about_the_moved_first_and_does_not_offer_overwrite(monkeypatch, tmp_path):
+def test_moving_same_named_files_asks_about_the_moved_first_with_every_choice(monkeypatch, tmp_path):
     from wafer.core.common.paths import normalize_path
 
     asked = _record_dialog(monkeypatch, "FileConflictDialog", [("rename", False)])
@@ -240,8 +252,46 @@ def test_moving_same_named_files_asks_about_the_moved_first_and_does_not_offer_o
     assert asked[0]["src_path"] == normalize_path(str(sources[1]))
     assert asked[0]["dst_path"] == normalize_path(str(dst_dir / "image.png"))
     assert asked[0]["message"] == "Another selected item has the same name."
-    assert "overwrite" not in asked[0]["choices"]
+    assert asked[0]["choices"] == ("overwrite", "rename", "skip", "cancel")
     assert sorted(text for _, text in _files_under(dst_dir)) == ["from A", "from B"]
+
+
+def test_moving_a_same_named_file_over_the_first_replaces_it_when_answered(monkeypatch, tmp_path):
+    _record_dialog(monkeypatch, "FileConflictDialog", [("overwrite", False)])
+    sources, dst_dir = _same_named_sources(tmp_path)
+
+    _paste(_paste_plans(dst_dir, "cut", sources), op="move")
+
+    assert _files_under(dst_dir) == [("image.png", "from B")]
+
+
+def test_a_selected_item_already_in_the_destination_is_asked_before_it_is_replaced(monkeypatch, tmp_path):
+    from wafer.core.common.paths import normalize_path
+
+    for op, action in (("copy", "copy"), ("move", "cut")):
+        root = tmp_path / op
+        (root / "S1").mkdir(parents=True)
+        (root / "S2").mkdir()
+        (root / "S1" / "img.png").write_text("S1 original", encoding="utf-8")
+        (root / "S2" / "img.png").write_text("S2 original", encoding="utf-8")
+        same_path = _record_dialog(monkeypatch, "FileConflictDialog", [("skip", False), ("rename", False)])
+
+        _paste(_paste_plans(root / "S1", action, [root / "S1" / "img.png", root / "S2" / "img.png"]), op=op, overwrite_mode="ask")
+
+        assert same_path[1]["message"] == "Another selected item has the same name."
+        assert same_path[1]["dst_path"] == normalize_path(str(root / "S1" / "img.png"))
+        assert sorted(text for _, text in _files_under(root / "S1")) == ["S1 original", "S2 original"]
+
+
+def test_overwrite_mode_still_asks_before_replacing_a_selected_item(monkeypatch, tmp_path):
+    asked = _record_dialog(monkeypatch, "FileConflictDialog", [("rename", False)])
+    files, dst_dir = _same_named_sources(tmp_path / "files")
+    folders, folder_dst = _same_named_sources(tmp_path / "folders", is_dir=True)
+
+    for sources, dst in ((files, dst_dir), (folders, folder_dst)):
+        _paste(_paste_plans(dst, "cut", sources), op="move", overwrite_mode="overwrite")
+        assert sorted(text for _, text in _files_under(dst)) == ["from A", "from B"]
+    assert [a["message"] for a in asked] == ["Another selected item has the same name."] * 2
 
 
 def test_copying_same_named_files_offers_overwrite(monkeypatch, tmp_path):
@@ -274,7 +324,7 @@ def test_each_same_named_item_saved_under_a_new_name_is_asked(monkeypatch, tmp_p
     assert sorted(text for _, text in _files_under(dst_dir)) == ["from A", "from B", "from C"]
 
 
-def test_moving_same_named_folders_merges_without_offering_to_overwrite_moved_files(monkeypatch, tmp_path):
+def test_moving_same_named_folders_merges_and_asks_about_moved_files_with_every_choice(monkeypatch, tmp_path):
     from wafer.core.common.paths import normalize_path
 
     folder_asked = _record_dialog(monkeypatch, "FolderConflictDialog", [("merge", False)])
@@ -286,21 +336,12 @@ def test_moving_same_named_folders_merges_without_offering_to_overwrite_moved_fi
     assert [res.status for res in results] == ["ok", "ok"]
     assert [a["dst_path"] for a in folder_asked] == [normalize_path(str(dst_dir / "image.png"))]
     assert [a["dst_path"] for a in file_asked] == [normalize_path(str(dst_dir / "image.png" / "inner.txt"))]
-    assert "overwrite" not in file_asked[0]["choices"]
+    assert file_asked[0]["choices"] == ("overwrite", "rename", "skip", "cancel")
     assert sorted(text for _, text in _files_under(dst_dir)) == ["from A", "from B"]
 
 
-def test_overwrite_mode_keeps_both_same_named_moved_items(tmp_path):
-    files, dst_dir = _same_named_sources(tmp_path / "files")
-    folders, folder_dst = _same_named_sources(tmp_path / "folders", is_dir=True)
-
-    for sources, dst in ((files, dst_dir), (folders, folder_dst)):
-        _paste(_paste_plans(dst, "cut", sources), op="move", overwrite_mode="overwrite")
-        assert sorted(text for _, text in _files_under(dst)) == ["from A", "from B"]
-
-
-def test_overwrite_applied_to_all_never_overwrites_another_moved_item(monkeypatch, tmp_path):
-    asked = _record_dialog(monkeypatch, "FileConflictDialog", [("overwrite", True)])
+def test_overwrite_for_all_existing_files_still_asks_before_replacing_a_selected_item(monkeypatch, tmp_path):
+    asked = _record_dialog(monkeypatch, "FileConflictDialog", [("overwrite", True), ("rename", False)])
     sources, dst_dir = _same_named_sources(tmp_path)
     other = tmp_path / "A" / "other.png"
     other.write_text("new other", encoding="utf-8")
@@ -308,11 +349,11 @@ def test_overwrite_applied_to_all_never_overwrites_another_moved_item(monkeypatc
 
     _paste(_paste_plans(dst_dir, "cut", [other, *sources]), op="move")
 
-    assert len(asked) == 1
+    assert [a["message"] for a in asked] == ["An item with the same name already exists.", "Another selected item has the same name."]
     assert sorted(text for _, text in _files_under(dst_dir)) == ["from A", "from B", "new other"]
 
 
-def test_overwrite_applied_to_all_overwrites_each_same_named_copy(monkeypatch, tmp_path):
+def test_overwrite_applied_to_all_same_named_copies_overwrites_each_of_them(monkeypatch, tmp_path):
     asked = _record_dialog(monkeypatch, "FileConflictDialog", [("overwrite", True)])
     sources, dst_dir = _same_named_sources(tmp_path, ("A", "B", "C"))
 
@@ -323,17 +364,19 @@ def test_overwrite_applied_to_all_overwrites_each_same_named_copy(monkeypatch, t
     assert [src.read_text(encoding="utf-8") for src in sources] == ["from A", "from B", "from C"]
 
 
-def test_apply_to_all_answers_every_remaining_file_conflict(monkeypatch, tmp_path):
+def test_apply_to_all_answers_only_the_same_kind_of_conflict(monkeypatch, tmp_path):
     asked = _record_dialog(monkeypatch, "FileConflictDialog", [("rename", True)])
-    sources, dst_dir = _same_named_sources(tmp_path)
+    sources, dst_dir = _same_named_sources(tmp_path, ("A", "B", "C"))
     other = tmp_path / "B" / "other.png"
     other.write_text("new other", encoding="utf-8")
     (dst_dir / "other.png").write_text("old other", encoding="utf-8")
+    third = tmp_path / "C" / "other.png"
+    third.write_text("third other", encoding="utf-8")
 
-    _paste(_paste_plans(dst_dir, "copy", [*sources, other]), op="copy")
+    _paste(_paste_plans(dst_dir, "copy", [*sources, other, third]), op="copy")
 
-    assert len(asked) == 1
-    assert sorted(text for _, text in _files_under(dst_dir)) == ["from A", "from B", "new other", "old other"]
+    assert [a["message"] for a in asked] == ["Another selected item has the same name.", "An item with the same name already exists."]
+    assert sorted(text for _, text in _files_under(dst_dir)) == ["from A", "from B", "from C", "new other", "old other", "third other"]
 
 
 def test_same_named_drops_of_files_are_asked(monkeypatch, tmp_path):
@@ -351,7 +394,7 @@ def test_same_named_drops_of_files_are_asked(monkeypatch, tmp_path):
     assert sources[1].read_text(encoding="utf-8") == "from B"
 
 
-def test_same_named_dropped_data_is_never_overwritten(monkeypatch, tmp_path):
+def test_same_named_dropped_data_is_asked_with_every_choice_in_any_mode(monkeypatch, tmp_path):
     from wafer.core.platform.file_operations import build_drop_plans
     from wafer.qt.transfer.dragparser import ParsedItem
 
@@ -364,9 +407,8 @@ def test_same_named_dropped_data_is_never_overwritten(monkeypatch, tmp_path):
         _paste(build_drop_plans(items, str(dst), "copy"), op="copy", overwrite_mode=mode)
 
         assert sorted(p.read_bytes() for p in dst.iterdir()) == [b"first", b"second"]
-    assert len(asked) == 1
-    assert asked[0]["message"] == "Another selected item has the same name."
-    assert "overwrite" not in asked[0]["choices"]
+    assert [a["message"] for a in asked] == ["Another selected item has the same name."] * 2
+    assert all(a["choices"] == ("overwrite", "rename", "skip", "cancel") for a in asked)
 
 
 @pytest.mark.parametrize(("answer", "mode"), [("skip", "skip"), ("rename", "rename")])
@@ -422,3 +464,189 @@ def test_precheck_of_no_plans_is_empty():
     from wafer.qt.transfer.conflict_resolver import precheck_paste_plans_with_ui
 
     assert precheck_paste_plans_with_ui(plans=[], overwrite_mode="ask", parent=None) == {}
+
+
+SELECTED = "Another selected item has the same name."
+EXISTING = "An item with the same name already exists."
+FOLDER = "Folder with the same name already exists. Proceed?"
+FILE_CHOICES = ("overwrite", "rename", "skip", "cancel")
+
+ARRANGEMENTS = {
+    "same_named": {"existing": [], "items": [("X", "n"), ("Y", "n"), ("Z", "n")]},
+    "selected_at_destination": {"existing": [], "items": [("D", "n"), ("X", "n")]},
+    "existing_and_selected": {"existing": ["n"], "items": [("X", "n"), ("Y", "n")]},
+    "mixed": {"existing": ["e"], "items": [("X", "e"), ("Y", "n"), ("Z", "n")]},
+}
+SOURCES = [("copy", "files"), ("copy", "folders"), ("move", "files"), ("move", "folders"), ("drop", "files")]
+MODES = [
+    ("overwrite", "overwrite", False),
+    ("overwrite", "overwrite", True),
+    ("overwrite", "rename", False),
+    ("rename", None, False),
+    ("skip", None, False),
+    *[("ask", answer, apply_all) for answer in ("overwrite", "rename", "skip", "cancel", "cycle") for apply_all in (False, True)],
+]
+
+
+def _combinations():
+    for source, kind in SOURCES:
+        for arrangement in ARRANGEMENTS:
+            if source == "drop" and arrangement == "selected_at_destination":
+                continue
+            for reverse in (False, True):
+                for mode, answer, apply_all in MODES:
+                    same_path_answers = ("rename", "skip") if arrangement == "selected_at_destination" and mode == "ask" else (None,)
+                    for same_path_answer in same_path_answers:
+                        yield pytest.param(
+                            source,
+                            kind,
+                            arrangement,
+                            reverse,
+                            mode,
+                            answer,
+                            apply_all,
+                            same_path_answer,
+                            id=f"{source}-{kind}-{arrangement}-{'reverse' if reverse else 'forward'}-{mode}-{answer}-{'all' if apply_all else 'one'}-{same_path_answer}",
+                        )
+
+
+def _write_item(path, label, kind):
+    if kind == "folders":
+        path.mkdir(parents=True)
+        (path / "inner.txt").write_text(f"{label}:inner", encoding="utf-8")
+        (path / f"only_{label.replace('/', '_')}.txt").write_text(f"{label}:only", encoding="utf-8")
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{label}:file", encoding="utf-8")
+
+
+def _all_contents(root):
+    return sorted(p.read_text(encoding="utf-8") for p in root.rglob("*") if p.is_file())
+
+
+def _held_at(path):
+    if path.is_dir():
+        return _all_contents(path)
+    return [path.read_text(encoding="utf-8")] if path.is_file() else []
+
+
+@pytest.mark.parametrize(("source", "kind", "arrangement", "reverse", "mode", "answer", "apply_all", "same_path_answer"), list(_combinations()))
+def test_every_combination_loses_only_what_was_answered_overwrite(monkeypatch, tmp_path, source, kind, arrangement, reverse, mode, answer, apply_all, same_path_answer):
+    from wafer.core.common.paths import normalize_path
+    from wafer.core.platform.file_operations import CANCELLED, FileExecutor, PasteCancelledError, build_drop_plans
+    from wafer.qt.transfer import conflict_resolver as r
+    from wafer.qt.transfer.dragparser import ParsedItem
+
+    spec = ARRANGEMENTS[arrangement]
+    dst = tmp_path / "D"
+    dst.mkdir()
+    for name in spec["existing"]:
+        _write_item(dst / name, f"D/{name}", kind)
+    items = list(reversed(spec["items"])) if reverse else spec["items"]
+    selected_sources = []
+    dropped = []
+    if source == "drop":
+        parsed = [ParsedItem(source=f"{folder}/{name}:drop".encode(), name=name, is_binary=True) for folder, name in items]
+        plans = build_drop_plans(parsed, str(dst), "copy")
+        dropped = [f"{folder}/{name}:drop" for folder, name in items]
+    else:
+        for folder, name in items:
+            path = tmp_path / folder / name
+            if not path.exists():
+                _write_item(path, f"{folder}/{name}", kind)
+            selected_sources.append(path)
+        plans = _paste_plans(dst, "cut" if source == "move" else "copy", selected_sources)
+    originals = set(_all_contents(tmp_path)) | set(dropped)
+    existed_before = set(tmp_path.rglob("*"))
+    selected_labels = {f"{folder}/{name}" for folder, name in items}
+    op = "move" if source == "move" else "copy"
+
+    def really_selected(path):
+        if any(path == s or s in path.parents for s in selected_sources):
+            return True
+        if path.is_dir():
+            return path not in existed_before
+        return path.read_text(encoding="utf-8").rsplit(":", 1)[0] in selected_labels
+
+    current = {}
+    dialogs = []
+    cycle = iter(["overwrite", "rename", "skip"] * 100)
+
+    def next_answer():
+        return next(cycle) if answer == "cycle" else answer
+
+    def file_dialog(message, **kw):
+        if "overwrite" not in kw["choices"]:
+            dialogs.append({"kind": "same_path", "choice": same_path_answer})
+            return (same_path_answer, False)
+        conflict = current["conflict"]
+        assert kw["choices"] == FILE_CHOICES
+        assert message == (SELECTED if conflict.selected_item else EXISTING)
+        assert kw["dst_path"] == normalize_path(str(conflict.dst))
+        choice = next_answer()
+        dialogs.append({"kind": "file", "message": message, "choice": choice})
+        return (choice, apply_all)
+
+    def folder_dialog(message, **kw):
+        conflict = current["conflict"]
+        assert message == (SELECTED if conflict.selected_item else FOLDER)
+        assert kw["dst_path"] == normalize_path(str(conflict.dst))
+        choice = next_answer()
+        choice = "merge" if choice == "overwrite" else choice
+        dialogs.append({"kind": "folder", "message": message, "choice": choice})
+        return (choice, apply_all)
+
+    monkeypatch.setattr(r.FileConflictDialog, "ask", staticmethod(file_dialog))
+    monkeypatch.setattr(r.FolderConflictDialog, "ask", staticmethod(folder_dialog))
+
+    asker = r.ConflictAsker(op=op, overwrite_mode=mode, parent=None, item_count=len(plans))
+    asked = []
+
+    wrong = []
+
+    def recording_asker(conflict):
+        selected = really_selected(conflict.dst)
+        if conflict.selected_item != selected:
+            wrong.append(f"{conflict.dst}: selected_item={conflict.selected_item}, really {selected}")
+        current["conflict"] = conflict
+        held = _held_at(conflict.dst)
+        dialogs_before = len(dialogs)
+        try:
+            result = asker(conflict)
+        except AssertionError as e:
+            wrong.append(str(e))
+            raise PasteCancelledError() from e
+        asked.append({"conflict": conflict, "selected": selected, "answer": result, "held": held, "by_dialog": len(dialogs) > dialogs_before})
+        return result
+
+    try:
+        decisions = r.precheck_paste_plans_with_ui(plans=plans, overwrite_mode=mode, parent=None, op=op)
+        results = FileExecutor(ask_conflict=recording_asker, selection=selected_sources).execute_plans(plans, decisions)
+    except PasteCancelledError:
+        results = []
+
+    assert wrong == []
+    assert [res for res in results if res.status == "error"] == []
+    not_saved_by_choice ={dropped[i] for i, result in enumerate(results) if dropped and result.status == "skipped"}
+    lost = originals - set(_all_contents(tmp_path)) - not_saved_by_choice
+    answered_overwrite = {text for a in asked if a["answer"] == "overwrite" for text in a["held"]}
+    assert lost <= answered_overwrite, f"lost without an overwrite answer: {sorted(lost - answered_overwrite)}"
+
+    selected_overwrite_applied_to_all = False
+    for a in asked:
+        if a["selected"] and not a["conflict"].folders and a["answer"] == "overwrite":
+            assert a["by_dialog"] or selected_overwrite_applied_to_all, f"{a['conflict'].dst} was a selected item and was overwritten without a dialog"
+            if a["by_dialog"] and apply_all:
+                selected_overwrite_applied_to_all = True
+
+    if mode in ("rename", "skip"):
+        assert dialogs == []
+        assert lost == set()
+    if mode == "overwrite":
+        assert [d for d in dialogs if d["kind"] == "file" and d["message"] != SELECTED] == []
+
+    cancelled_at = next((i for i, d in enumerate(dialogs) if d.get("choice") == "cancel"), None)
+    if cancelled_at is not None:
+        assert len(dialogs) == cancelled_at + 1
+        assert results[-1].error == CANCELLED
+    assert [p for p in tmp_path.rglob("*") if "wafer-partial" in p.name] == []

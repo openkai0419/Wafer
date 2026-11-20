@@ -149,7 +149,7 @@ class TestMergeAsksAtEachConflict:
         _write_file(dst / "sub" / "nested.txt", "dst")
         results, asked = self._merge(src, dst)
         assert results[0].status == "ok"
-        assert [(c.dst, c.in_merge, c.from_this_paste) for c in asked[1:]] == [(dst / "sub" / "nested.txt", True, False)]
+        assert [(c.dst, c.in_merge, c.selected_item) for c in asked[1:]] == [(dst / "sub" / "nested.txt", True, False)]
         assert (dst / "sub" / "nested.txt").read_text(encoding="utf-8") == "dst"
 
 

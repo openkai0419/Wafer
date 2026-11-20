@@ -186,7 +186,7 @@ class TestExecutePasteItems:
                 suggested_dst=None,
             )
         ]
-        decisions = {0: PasteDecision(mode="overwrite")}
+        decisions = {0: PasteDecision(mode="create")}
         results = _execute_plans(plans, decisions, None, "move")
         assert len(results) == 1
         assert results[0].status == "ok"
@@ -239,7 +239,7 @@ class TestExecutePasteItems:
                     suggested_dst=None,
                 )
             )
-            decisions[i] = PasteDecision(mode="overwrite")
+            decisions[i] = PasteDecision(mode="create")
 
         results = _execute_plans(plans, decisions, None, "copy")
         assert len(results) == 5
@@ -270,7 +270,7 @@ class TestDirectoryProgress:
         dst = tmp_path / "dst"
         advances = []
 
-        result = FileExecutor(progress_callback=lambda n: advances.append(n))._execute_item(src, dst, "copy", PasteDecision(mode="overwrite"))
+        result = FileExecutor(progress_callback=lambda n: advances.append(n))._execute_item(src, dst, "copy", PasteDecision(mode="create"))
 
         assert result.status == "ok"
         assert sum(advances) == 2
@@ -303,7 +303,7 @@ class TestDirectoryProgress:
         advances = []
         monkeypatch.setattr(file_operations, "_same_device", lambda src_path, dst_path: True)
 
-        result = FileExecutor(progress_callback=lambda n: advances.append(n))._execute_item(src, dst, "cut", PasteDecision(mode="overwrite"))
+        result = FileExecutor(progress_callback=lambda n: advances.append(n))._execute_item(src, dst, "cut", PasteDecision(mode="create"))
 
         assert result.status == "ok"
         assert sum(advances) == 1
@@ -322,7 +322,7 @@ class TestDirectoryProgress:
         advances = []
         monkeypatch.setattr(file_operations, "_same_device", lambda src_path, dst_path: False)
 
-        result = FileExecutor(progress_callback=lambda n: advances.append(n))._execute_item(src, dst, "cut", PasteDecision(mode="overwrite"))
+        result = FileExecutor(progress_callback=lambda n: advances.append(n))._execute_item(src, dst, "cut", PasteDecision(mode="create"))
 
         assert result.status == "ok"
         assert sum(advances) == 2
@@ -497,3 +497,46 @@ class TestClipboardPaste:
         _process_events_until(lambda: len(builds) == 2 and not paste.paste_in_progress())
 
         assert len(builds) == 2
+
+
+class TestConflictsAskedDuringTheCopy:
+    def _conflicting_plans(self, tmp_path, count):
+        dst_dir = tmp_path / "dst"
+        dst_dir.mkdir()
+        plans = []
+        for i in range(count):
+            src = tmp_path / f"f{i}.txt"
+            src.write_text(f"new {i}", encoding="utf-8")
+            (dst_dir / src.name).write_text(f"old {i}", encoding="utf-8")
+            plans.append(PastePlanItem(index=i, src=src, is_dir=False, action="copy", dst_default=dst_dir / src.name, conflict=True, suggested_dst=None))
+        return plans, dst_dir
+
+    def test_a_conflict_is_asked_on_the_main_thread_and_its_answer_is_applied(self, qapp, tmp_path):
+        from wafer.qt.transfer.paste import _execute_plans
+
+        plans, dst_dir = self._conflicting_plans(tmp_path, 1)
+        on_main = []
+
+        def ask(conflict):
+            on_main.append(threading.current_thread() is threading.main_thread())
+            return "overwrite"
+
+        results = _execute_plans(plans, {}, None, "copy", ask)
+
+        assert on_main == [True]
+        assert results[0].status == "ok"
+        assert (dst_dir / "f0.txt").read_text(encoding="utf-8") == "new 0"
+
+    def test_cancelling_a_conflict_stops_the_items_after_it(self, qapp, tmp_path):
+        from wafer.core.platform.file_operations import CANCELLED
+        from wafer.qt.transfer.paste import _execute_plans
+
+        plans, dst_dir = self._conflicting_plans(tmp_path, 3)
+
+        def ask(conflict):
+            raise PasteCancelledError()
+
+        results = _execute_plans(plans, {}, None, "copy", ask)
+
+        assert [r.error for r in results] == [CANCELLED]
+        assert [(dst_dir / f"f{i}.txt").read_text(encoding="utf-8") for i in range(3)] == ["old 0", "old 1", "old 2"]

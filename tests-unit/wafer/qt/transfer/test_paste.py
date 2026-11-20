@@ -78,7 +78,7 @@ def test_execute_paste_plans_with_ui_rejects_virtual_plan(monkeypatch, tmp_path)
     def fail_if_called(**_kwargs):
         raise AssertionError("virtual plan should be rejected before conflict UI")
 
-    monkeypatch.setattr(paste, "_resolve_conflicts_with_ui", fail_if_called)
+    monkeypatch.setattr(paste, "_precheck_with_ui", fail_if_called)
     virtual_src = build_virtual_path(str(tmp_path / "archive.zip"), "image.png")
     plan = PastePlanItem(
         index=0,
@@ -103,16 +103,16 @@ def test_execute_paste_plans_with_ui_preserves_result_order_with_virtual_plan(mo
 
     called = {}
 
-    def fake_resolve_conflicts_with_ui(*, plans, **_kwargs):
+    def fake_precheck_with_ui(plans, **_kwargs):
         called["resolve_indices"] = [plan.index for plan in plans]
-        return {plan.index: PasteDecision(mode="overwrite") for plan in plans}
+        return {}
 
-    def fake_execute_paste_items(plans, decisions, parent, op):
+    def fake_execute_paste_items(plans, decisions, parent, op, ask_conflict=None):
         called["execute_indices"] = [plan.index for plan in plans]
         called["op"] = op
         return [OperationResult(action="copy", src=str(plan.src), dst=str(plan.dst_default), status="ok") for plan in plans]
 
-    monkeypatch.setattr(paste, "_resolve_conflicts_with_ui", fake_resolve_conflicts_with_ui)
+    monkeypatch.setattr(paste, "_precheck_with_ui", fake_precheck_with_ui)
     monkeypatch.setattr(paste, "_execute_plans", fake_execute_paste_items)
 
     valid_a = tmp_path / "a.txt"

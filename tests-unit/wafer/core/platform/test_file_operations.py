@@ -9,7 +9,19 @@ import pytest
 from wafer.core.common.virtual_paths import build_virtual_path
 
 
-def test_file_executor_overwrite_same_path_is_noop(tmp_path):
+
+def _answers(*, folder="merge", files=None, default="overwrite"):
+    files = files or {}
+
+    def ask(conflict):
+        if conflict.folders:
+            return folder
+        return files.get(conflict.name, default)
+
+    return ask
+
+
+def test_pasting_a_file_onto_itself_keeps_it_and_saves_a_copy(tmp_path):
     from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
 
     src = tmp_path / "a.txt"
@@ -25,10 +37,11 @@ def test_file_executor_overwrite_same_path_is_noop(tmp_path):
         suggested_dst=None,
     )
 
-    res = FileExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
-    assert src.exists()
+    res = FileExecutor(ask_conflict=_answers()).execute_plans([item], {})
     assert src.read_text(encoding="utf-8") == "x"
-    assert res and res[0].status == "skipped"
+    assert res and res[0].status == "ok"
+    assert Path(res[0].dst) != src
+    assert Path(res[0].dst).read_text(encoding="utf-8") == "x"
 
 
 def test_build_drop_plans_rejects_virtual_destination(tmp_path):
@@ -63,7 +76,7 @@ def test_file_executor_rejects_virtual_source(tmp_path):
         suggested_dst=None,
     )
 
-    res = FileExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
+    res = FileExecutor(ask_conflict=_answers()).execute_plans([item], {0: PasteDecision(mode="create")})
 
     assert res and res[0].status == "skipped"
     assert res[0].error == "virtual path rejected"
@@ -115,7 +128,7 @@ def test_file_executor_overwrite_replaces_existing_file(tmp_path):
         suggested_dst=None,
     )
 
-    res = FileExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
+    res = FileExecutor(ask_conflict=_answers()).execute_plans([item], {0: PasteDecision(mode="create")})
     assert dst.read_text(encoding="utf-8") == "new"
     assert res and res[0].status == "ok"
 
@@ -138,7 +151,7 @@ def test_file_executor_copy_dir_subpath_is_skipped(tmp_path):
         suggested_dst=None,
     )
 
-    res = FileExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
+    res = FileExecutor(ask_conflict=_answers()).execute_plans([item], {0: PasteDecision(mode="create")})
     assert not dst.exists()
     assert res and res[0].status == "skipped"
 
@@ -264,7 +277,7 @@ def test_file_executor_copy_dir_rename_on_conflict(tmp_path):
     assert res and res[0].status == "ok"
 
 
-def test_file_executor_overwrite_replaces_existing_dir(tmp_path):
+def test_a_folder_pasted_onto_a_same_named_folder_is_merged(tmp_path):
     from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
 
     src = tmp_path / "srcdir"
@@ -287,14 +300,13 @@ def test_file_executor_overwrite_replaces_existing_dir(tmp_path):
         suggested_dst=None,
     )
 
-    res = FileExecutor().execute_plans([item], {0: PasteDecision(mode="overwrite")})
+    res = FileExecutor(ask_conflict=_answers()).execute_plans([item], {0: PasteDecision(mode="create")})
     assert (dst / "a.txt").read_text(encoding="utf-8") == "x"
-    assert not (dst / "old.txt").exists()
+    assert (dst / "old.txt").read_text(encoding="utf-8") == "old"
     assert res and res[0].status == "ok"
 
 
 def test_file_executor_merge_dir_overwrite_child(tmp_path):
-    import os
     from wafer.core.platform.file_operations import FileExecutor, PasteDecision, PastePlanItem
 
     src = tmp_path / "folder"
@@ -311,11 +323,6 @@ def test_file_executor_merge_dir_overwrite_child(tmp_path):
     (dst / "sub").mkdir()
     (dst / "sub" / "b.txt").write_text("oldb", encoding="utf-8")
 
-    merge_decisions = {
-        "a.txt": PasteDecision(mode="overwrite"),
-        os.path.join("sub", "b.txt"): PasteDecision(mode="overwrite"),
-    }
-
     item = PastePlanItem(
         index=0,
         src=Path(src),
@@ -326,7 +333,7 @@ def test_file_executor_merge_dir_overwrite_child(tmp_path):
         suggested_dst=None,
     )
 
-    res = FileExecutor().execute_plans([item], {0: PasteDecision(mode="merge", merge_decisions=merge_decisions)})
+    res = FileExecutor(ask_conflict=_answers()).execute_plans([item], {})
     assert (dst / "a.txt").read_text(encoding="utf-8") == "new"
     assert (dst / "sub" / "b.txt").read_text(encoding="utf-8") == "newb"
     assert res and res[0].status == "ok"
@@ -355,44 +362,9 @@ def test_file_executor_merge_dir_skip_child(tmp_path):
         suggested_dst=None,
     )
 
-    res = FileExecutor().execute_plans([item], {0: PasteDecision(mode="merge", merge_decisions={"a.txt": PasteDecision(mode="skip")})})
+    res = FileExecutor(ask_conflict=_answers(files={"a.txt": "skip"})).execute_plans([item], {})
     assert (dst / "a.txt").read_text(encoding="utf-8") == "old"
     assert res and res[0].status == "ok"
-
-
-def test_scan_merge_conflicts_detects_files(tmp_path):
-    from wafer.core.platform.file_operations import scan_merge_conflicts
-
-    src = tmp_path / "src"
-    dst = tmp_path / "dst"
-    src.mkdir()
-    dst.mkdir()
-    (src / "a.txt").write_text("x", encoding="utf-8")
-    (src / "b.txt").write_text("y", encoding="utf-8")
-    (dst / "a.txt").write_text("old", encoding="utf-8")
-    (dst / "b.txt").write_text("old", encoding="utf-8")
-
-    conflicts = scan_merge_conflicts(src, dst)
-    assert len(conflicts) == 2
-    rel_paths = {c.rel_path for c in conflicts}
-    assert "a.txt" in rel_paths
-    assert "b.txt" in rel_paths
-
-
-def test_scan_merge_conflicts_recurses_into_dirs(tmp_path):
-    import os
-    from wafer.core.platform.file_operations import scan_merge_conflicts
-
-    src = tmp_path / "src"
-    dst = tmp_path / "dst"
-    (src / "sub").mkdir(parents=True)
-    (dst / "sub").mkdir(parents=True)
-    (src / "sub" / "c.txt").write_text("x", encoding="utf-8")
-    (dst / "sub" / "c.txt").write_text("old", encoding="utf-8")
-
-    conflicts = scan_merge_conflicts(src, dst)
-    assert len(conflicts) == 1
-    assert conflicts[0].rel_path == os.path.join("sub", "c.txt")
 
 
 def test_file_executor_merge_dir_rename_child(tmp_path):
@@ -418,7 +390,7 @@ def test_file_executor_merge_dir_rename_child(tmp_path):
         suggested_dst=None,
     )
 
-    res = FileExecutor().execute_plans([item], {0: PasteDecision(mode="merge", merge_decisions={"a.txt": PasteDecision(mode="rename")})})
+    res = FileExecutor(ask_conflict=_answers(files={"a.txt": "rename"})).execute_plans([item], {})
     assert (dst / "a.txt").read_text(encoding="utf-8") == "old"
     renamed = [f for f in dst.iterdir() if f.name != "a.txt" and f.suffix == ".txt"]
     assert len(renamed) == 1
@@ -449,7 +421,7 @@ def test_file_executor_merge_adds_new_files(tmp_path):
         suggested_dst=None,
     )
 
-    res = FileExecutor().execute_plans([item], {0: PasteDecision(mode="merge", merge_decisions={})})
+    res = FileExecutor(ask_conflict=_answers()).execute_plans([item], {})
     assert (dst / "existing.txt").read_text(encoding="utf-8") == "keep"
     assert (dst / "new.txt").read_text(encoding="utf-8") == "added"
     assert res and res[0].status == "ok"
@@ -462,7 +434,7 @@ def test_execute_item_case_rename(tmp_path):
     src.write_text("content", encoding="utf-8")
 
     dst = tmp_path / "Hello.txt"
-    res = FileExecutor()._execute_item(src, dst, "cut", PasteDecision(mode="overwrite"))
+    res = FileExecutor(ask_conflict=_answers())._execute_item(src, dst, "cut", PasteDecision(mode="create"))
     assert res.status == "ok"
     actual = [f for f in tmp_path.iterdir() if f.suffix == ".txt"]
     assert len(actual) == 1
@@ -475,7 +447,7 @@ def test_execute_item_same_path_cut_noop(tmp_path):
     src = tmp_path / "a.txt"
     src.write_text("x", encoding="utf-8")
 
-    res = FileExecutor()._execute_item(src, src, "cut", PasteDecision(mode="overwrite"))
+    res = FileExecutor(ask_conflict=_answers())._execute_item(src, src, "cut", PasteDecision(mode="create"))
     assert res.status == "skipped"
     assert src.exists()
     assert src.read_text(encoding="utf-8") == "x"
@@ -496,7 +468,7 @@ def test_overwrite_cancelled_before_copy_keeps_the_old_file(tmp_path):
     dst = tmp_path / "a.txt"
     dst.write_text("old", encoding="utf-8")
 
-    res = FileExecutor(cancel_check=lambda: True).execute_one(_overwrite_plan(src, dst), PasteDecision(mode="overwrite"))
+    res = FileExecutor(ask_conflict=_answers(), cancel_check=lambda: True).execute_one(_overwrite_plan(src, dst), PasteDecision(mode="create"))
 
     assert res.error == "cancelled"
     assert dst.read_text(encoding="utf-8") == "old"
@@ -509,7 +481,7 @@ def test_overwrite_with_unreadable_source_keeps_the_old_file(tmp_path):
     dst = tmp_path / "a.txt"
     dst.write_text("old", encoding="utf-8")
 
-    res = FileExecutor()._execute_item(tmp_path / "missing" / "a.txt", dst, "copy", PasteDecision(mode="overwrite"))
+    res = FileExecutor(ask_conflict=_answers())._execute_item(tmp_path / "missing" / "a.txt", dst, "copy", PasteDecision(mode="create"))
 
     assert res.status == "error"
     assert dst.read_text(encoding="utf-8") == "old"
@@ -525,28 +497,11 @@ def test_overwrite_replaces_the_file(tmp_path):
     dst = tmp_path / "a.txt"
     dst.write_text("old", encoding="utf-8")
 
-    res = FileExecutor().execute_one(_overwrite_plan(src, dst), PasteDecision(mode="overwrite"))
+    res = FileExecutor(ask_conflict=_answers()).execute_one(_overwrite_plan(src, dst), PasteDecision(mode="create"))
 
     assert res.status == "ok"
     assert dst.read_text(encoding="utf-8") == "new"
     assert sorted(p.name for p in tmp_path.iterdir()) == ["a.txt", "src"]
-
-
-def test_overwrite_replaces_a_folder_with_a_folder(tmp_path):
-    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
-
-    src = tmp_path / "src" / "d"
-    src.mkdir(parents=True)
-    (src / "new.txt").write_text("new", encoding="utf-8")
-    dst = tmp_path / "out" / "d"
-    dst.mkdir(parents=True)
-    (dst / "old.txt").write_text("old", encoding="utf-8")
-
-    res = FileExecutor()._execute_item(src, dst, "copy", PasteDecision(mode="overwrite"))
-
-    assert res.status == "ok"
-    assert [p.name for p in dst.iterdir()] == ["new.txt"]
-    assert [p.name for p in dst.parent.iterdir()] == ["d"]
 
 
 def test_overwrite_never_replaces_a_folder_with_a_file(tmp_path):
@@ -559,7 +514,7 @@ def test_overwrite_never_replaces_a_folder_with_a_file(tmp_path):
     folder.mkdir()
     (folder / "keep.txt").write_text("keep", encoding="utf-8")
 
-    res = FileExecutor().execute_one(_overwrite_plan(src, folder), PasteDecision(mode="overwrite"))
+    res = FileExecutor(ask_conflict=_answers()).execute_one(_overwrite_plan(src, folder), PasteDecision(mode="create"))
 
     assert res.status == "ok"
     assert (folder / "keep.txt").read_text(encoding="utf-8") == "keep"
@@ -577,7 +532,7 @@ def test_merge_overwrite_keeps_a_folder_that_shares_a_file_name(tmp_path):
     (dst / "x").mkdir(parents=True)
     (dst / "x" / "keep.txt").write_text("keep", encoding="utf-8")
 
-    res = FileExecutor()._execute_item(src, dst, "copy", PasteDecision(mode="merge", merge_decisions={}))
+    res = FileExecutor(ask_conflict=_answers())._execute_item(src, dst, "copy", PasteDecision(mode="create"))
 
     assert res.status == "ok"
     assert (dst / "x" / "keep.txt").read_text(encoding="utf-8") == "keep"
@@ -596,8 +551,8 @@ def test_merge_cancel_keeps_every_destination_file(tmp_path):
         (dst / f"f{i}").write_text(f"old{i}", encoding="utf-8")
     copies = []
 
-    executor = FileExecutor(progress_callback=copies.append, cancel_check=lambda: len(copies) >= 1)
-    res = executor._execute_item(src, dst, "copy", PasteDecision(mode="merge", merge_decisions={}))
+    executor = FileExecutor(progress_callback=copies.append, cancel_check=lambda: len(copies) >= 1, ask_conflict=_answers())
+    res = executor._execute_item(src, dst, "copy", PasteDecision(mode="create"))
 
     assert res.error == "cancelled"
     assert sorted(p.name for p in dst.iterdir()) == ["f0", "f1", "f2"]
@@ -630,7 +585,7 @@ windows_only = pytest.mark.skipif(sys.platform != "win32", reason="an open file 
 
 
 @windows_only
-def test_overwrite_move_of_a_folder_with_an_open_file_loses_nothing(tmp_path):
+def test_merging_a_moved_folder_with_an_open_file_loses_nothing(tmp_path):
     from wafer.core.platform.file_operations import FileExecutor, PasteDecision
 
     src = tmp_path / "src" / "album"
@@ -638,11 +593,11 @@ def test_overwrite_move_of_a_folder_with_an_open_file_loses_nothing(tmp_path):
     originals = {**_album(src, ["a.txt", "b.txt", "c.txt"], "new"), **_album(dst, ["old.txt"], "old")}
 
     with open(src / "b.txt", "rb"):
-        res = FileExecutor()._execute_item(src, dst, "cut", PasteDecision(mode="overwrite"))
+        res = FileExecutor(ask_conflict=_answers())._execute_item(src, dst, "cut", PasteDecision(mode="create"))
 
     assert res.status == "error"
     _assert_nothing_lost(originals, src, dst)
-    assert sorted(p.name for p in src.iterdir()) == ["a.txt", "b.txt", "c.txt"]
+    assert "b.txt" in [p.name for p in src.iterdir()]
     assert sorted(p.name for p in dst.parent.iterdir()) == ["album"]
 
 
@@ -658,59 +613,12 @@ def test_overwrite_move_of_an_open_file_loses_nothing(tmp_path):
     dst.write_text("old", encoding="utf-8")
 
     with open(src, "rb"):
-        res = FileExecutor()._execute_item(src, dst, "cut", PasteDecision(mode="overwrite"))
+        res = FileExecutor(ask_conflict=_answers())._execute_item(src, dst, "cut", PasteDecision(mode="create"))
 
     assert res.status == "error"
     assert src.read_text(encoding="utf-8") == "new"
     assert dst.read_text(encoding="utf-8") == "old"
     assert [p.name for p in dst.parent.iterdir()] == ["a.txt"]
-
-
-@windows_only
-def test_failed_swap_after_a_partial_cross_drive_move_puts_every_file_back(tmp_path, monkeypatch):
-    from wafer.core.platform import file_operations
-    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
-
-    def failing_swap(staged, dst):
-        raise PermissionError("destination is in use")
-
-    monkeypatch.setattr(file_operations, "_same_device", lambda a, b: False)
-    monkeypatch.setattr(file_operations, "_swap_into_place", failing_swap)
-    src = tmp_path / "src" / "album"
-    dst = tmp_path / "dst" / "album"
-    originals = {**_album(src, ["a.txt", "b.txt", "c.txt"], "new"), **_album(dst, ["old.txt"], "old")}
-
-    with open(src / "b.txt", "rb"):
-        res = FileExecutor()._execute_item(src, dst, "cut", PasteDecision(mode="overwrite"))
-
-    assert res.status == "error"
-    _assert_nothing_lost(originals, src, dst)
-    assert sorted(p.name for p in src.iterdir()) == ["a.txt", "b.txt", "c.txt"]
-    assert sorted(p.name for p in dst.parent.iterdir()) == ["album"]
-
-
-def test_overwrite_move_that_fails_midway_keeps_the_staged_files(tmp_path, monkeypatch):
-    import shutil
-
-    from wafer.core.platform import file_operations
-    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
-
-    def move_that_stops_deleting(src, dst):
-        shutil.copytree(src, dst)
-        Path(src, "a.txt").unlink()
-        raise PermissionError("b.txt is in use")
-
-    monkeypatch.setattr(file_operations.shutil, "move", move_that_stops_deleting)
-    src = tmp_path / "src" / "album"
-    dst = tmp_path / "dst" / "album"
-    originals = {**_album(src, ["a.txt", "b.txt"], "new"), **_album(dst, ["old.txt"], "old")}
-
-    res = FileExecutor()._execute_item(src, dst, "cut", PasteDecision(mode="overwrite"))
-
-    assert res.status == "error"
-    _assert_nothing_lost(originals, src, dst)
-    assert sorted(p.name for p in src.iterdir()) == ["a.txt", "b.txt"]
-    assert sorted(p.name for p in dst.parent.iterdir()) == ["album"]
 
 
 def test_create_saves_under_a_new_name_when_the_destination_appeared(tmp_path):
@@ -801,7 +709,7 @@ def test_remote_overwrite_keeps_the_old_file_when_the_download_fails(tmp_path, m
     (tmp_path / "image.png").write_bytes(b"old")
     monkeypatch.setattr(requests.Session, "get", lambda self, url, **kw: _FakeResponse(403))
 
-    res = FileExecutor().execute_one(_remote_plan(tmp_path, "https://example.com/image.png"), PasteDecision(mode="overwrite"))
+    res = FileExecutor(ask_conflict=_answers()).execute_one(_remote_plan(tmp_path, "https://example.com/image.png"), PasteDecision(mode="create"))
 
     assert res.status == "error"
     assert (tmp_path / "image.png").read_bytes() == b"old"
@@ -816,7 +724,7 @@ def test_remote_overwrite_replaces_the_file_after_download(tmp_path, monkeypatch
     (tmp_path / "image.png").write_bytes(b"old")
     monkeypatch.setattr(requests.Session, "get", lambda self, url, **kw: _FakeResponse(200, [b"ne", b"w"]))
 
-    res = FileExecutor().execute_one(_remote_plan(tmp_path, "https://example.com/image.png"), PasteDecision(mode="overwrite"))
+    res = FileExecutor(ask_conflict=_answers()).execute_one(_remote_plan(tmp_path, "https://example.com/image.png"), PasteDecision(mode="create"))
 
     assert res.status == "ok"
     assert (tmp_path / "image.png").read_bytes() == b"new"
@@ -834,7 +742,7 @@ def test_remote_drop_failure_mid_download_leaves_no_partial_file(tmp_path, monke
 
     monkeypatch.setattr(requests.Session, "get", lambda self, url, **kw: _FakeResponse(200, broken_chunks()))
 
-    res = FileExecutor().execute_one(_remote_plan(tmp_path, "https://example.com/image.png"), PasteDecision(mode="overwrite"))
+    res = FileExecutor(ask_conflict=_answers()).execute_one(_remote_plan(tmp_path, "https://example.com/image.png"), PasteDecision(mode="create"))
 
     assert res.status == "error"
     assert list(tmp_path.iterdir()) == []
@@ -899,7 +807,7 @@ def test_paste_into_scratch_is_allowed_in_profile(debug_profile):
     src.write_text("x", encoding="utf-8")
     dst = scratch / "a.txt"
     plan = PastePlanItem(index=0, src=src, is_dir=False, action="copy", dst_default=dst, conflict=False, suggested_dst=None)
-    results = FileExecutor().execute_plans([plan], {0: PasteDecision(mode="overwrite")})
+    results = FileExecutor(ask_conflict=_answers()).execute_plans([plan], {0: PasteDecision(mode="create")})
     assert results[0].status == "ok"
     assert dst.read_text(encoding="utf-8") == "x"
 
@@ -914,7 +822,7 @@ def test_paste_outside_scratch_is_refused_in_profile(debug_profile, tmp_path):
     cut_plan = PastePlanItem(index=1, src=sample / "b.txt", is_dir=False, action="cut", dst_default=scratch / "b.txt", conflict=False, suggested_dst=None)
     (sample / "b.txt").write_text("y", encoding="utf-8")
     copy_plan = PastePlanItem(index=0, src=src, is_dir=False, action="copy", dst_default=copy_dst, conflict=False, suggested_dst=None)
-    results = FileExecutor().execute_plans([copy_plan, cut_plan], {0: PasteDecision(mode="overwrite"), 1: PasteDecision(mode="overwrite")})
+    results = FileExecutor(ask_conflict=_answers()).execute_plans([copy_plan, cut_plan], {0: PasteDecision(mode="create"), 1: PasteDecision(mode="create")})
     assert [r.status for r in results] == ["error", "error"]
     assert not copy_dst.exists()
     assert (sample / "b.txt").exists()
@@ -926,7 +834,7 @@ def test_file_operations_unchanged_without_profile(tmp_path):
     src = tmp_path / "a.txt"
     src.write_text("x", encoding="utf-8")
     plan = PastePlanItem(index=0, src=src, is_dir=False, action="copy", dst_default=tmp_path / "b.txt", conflict=False, suggested_dst=None)
-    assert FileExecutor().execute_plans([plan], {0: PasteDecision(mode="overwrite")})[0].status == "ok"
+    assert FileExecutor(ask_conflict=_answers()).execute_plans([plan], {0: PasteDecision(mode="create")})[0].status == "ok"
 
 
 def test_remote_drop_outside_scratch_is_refused_in_profile(debug_profile, monkeypatch):
@@ -937,8 +845,8 @@ def test_remote_drop_outside_scratch_is_refused_in_profile(debug_profile, monkey
     sample, scratch = debug_profile
     monkeypatch.setattr(requests.Session, "get", lambda self, url, **kw: _FakeResponse(200, [b"new"]))
 
-    refused = FileExecutor().execute_one(_remote_plan(sample, "https://example.com/image.png"), PasteDecision(mode="overwrite"))
-    allowed = FileExecutor().execute_one(_remote_plan(scratch, "https://example.com/image.png"), PasteDecision(mode="overwrite"))
+    refused = FileExecutor(ask_conflict=_answers()).execute_one(_remote_plan(sample, "https://example.com/image.png"), PasteDecision(mode="create"))
+    allowed = FileExecutor(ask_conflict=_answers()).execute_one(_remote_plan(scratch, "https://example.com/image.png"), PasteDecision(mode="create"))
 
     assert refused.status == "error"
     assert not (sample / "image.png").exists()

@@ -20,11 +20,15 @@ from ...core.common.paths import safe_exists, safe_is_dir
 from ...core.common.virtual_paths import is_virtual_path
 from ...core.platform.path_utils import unique_path
 from ...core.platform.file_operations import (
+    CANCELLED,
+    AskConflict,
     CutCopy,
     DropPlanItem,
     FileExecutor,
     OperationResult,
+    PasteAnswer,
     PasteCancelledError,
+    PasteConflict,
     PasteDecision,
     PastePlanItem,
     build_drop_plans,
@@ -244,26 +248,56 @@ def _confirm_action(message: str, parent: object | None) -> bool:
     )
 
 
-def _resolve_conflicts_with_ui(
-    plans: list[PastePlanItem] | list[DropPlanItem],
-    *,
-    op: str,
-    overwrite_mode: str = "ask",
-    parent: object | None = None,
-    folder_message: str = "Folder with the same name already exists. Proceed?",
-) -> dict[int, PasteDecision]:
+def _check_overwrite_mode(overwrite_mode: str) -> None:
     if overwrite_mode not in ("ask", "overwrite", "skip", "rename"):
         raise ValueError(f"Invalid overwrite_mode: {overwrite_mode}")
 
-    from .conflict_resolver import resolve_paste_plans_with_ui
 
-    return resolve_paste_plans_with_ui(
-        plans=plans,
-        overwrite_mode=overwrite_mode,
-        parent=parent,
-        op=op,
-        folder_message=folder_message,
-    )
+def _precheck_with_ui(
+    plans: list[PastePlanItem] | list[DropPlanItem],
+    *,
+    op: str,
+    overwrite_mode: str,
+    parent: object | None,
+) -> dict[int, PasteDecision]:
+    from .conflict_resolver import precheck_paste_plans_with_ui
+
+    return precheck_paste_plans_with_ui(plans=plans, overwrite_mode=overwrite_mode, parent=parent, op=op)
+
+
+def _conflict_asker(
+    plans: list[PastePlanItem] | list[DropPlanItem],
+    *,
+    op: str,
+    overwrite_mode: str,
+    parent: object | None,
+    folder_message: str,
+) -> AskConflict:
+    from .conflict_resolver import ConflictAsker
+
+    return ConflictAsker(op=op, overwrite_mode=overwrite_mode, parent=parent, item_count=len(plans), folder_message=folder_message)
+
+
+def _asked_on_main_thread(ask: AskConflict) -> AskConflict:
+    def ask_from_worker(conflict: PasteConflict) -> PasteAnswer:
+        done = threading.Event()
+        outcome: dict[str, object] = {}
+
+        def run():
+            try:
+                outcome["answer"] = ask(conflict)
+            except BaseException as e:
+                outcome["error"] = e
+            finally:
+                done.set()
+
+        _paste_dispatcher.invoke(run)
+        done.wait()
+        if "error" in outcome:
+            raise outcome["error"]
+        return outcome["answer"]
+
+    return ask_from_worker
 
 
 class _OperationProgressDialog(QtWidgets.QProgressDialog):
@@ -351,7 +385,11 @@ def _run_with_progress(
             for i in range(total):
                 if token.is_cancelled():
                     break
-                results.append(run_step(i))
+                result = run_step(i)
+                results.append(result)
+                if result.error == CANCELLED:
+                    token.cancel()
+                    break
         finally:
             dispatcher.invoke(dialog.accept)
 
@@ -375,17 +413,40 @@ def _execute_plans(
     decisions: dict[int, PasteDecision],
     parent: QtWidgets.QWidget | None,
     op: str,
+    ask_conflict: AskConflict | None = None,
 ) -> list[OperationResult]:
     label = t("Moving files...") if op == "move" else t("Copying files...")
+    ask = _asked_on_main_thread(ask_conflict) if ask_conflict is not None else None
+    executor: FileExecutor | None = None
 
     def step(i: int, advance: Callable[[int], None], is_cancelled: Callable[[], bool]) -> OperationResult:
+        nonlocal executor
+        if executor is None:
+            executor = FileExecutor(progress_callback=advance, cancel_check=is_cancelled, ask_conflict=ask)
         plan = plans[i]
-        return FileExecutor(progress_callback=advance, cancel_check=is_cancelled).execute_one(plan, decisions.get(plan.index))
+        return executor.execute_one(plan, decisions.get(plan.index))
 
     def progress_total_provider(is_cancelled: Callable[[], bool]) -> int:
         return sum(count_operation_units(plan.src, plan.dst_default, plan.action, cancel_check=is_cancelled) if plan.src is not None else 1 for plan in plans)
 
     return _run_with_progress(parent, label, len(plans), step, progress_total_provider=progress_total_provider, manual_progress=True)
+
+
+def _paste_with_ui(
+    plans: list[PastePlanItem] | list[DropPlanItem],
+    *,
+    op: str,
+    overwrite_mode: str,
+    parent: object | None,
+    folder_message: str,
+) -> list[OperationResult] | None:
+    _check_overwrite_mode(overwrite_mode)
+    try:
+        decisions = _precheck_with_ui(plans, op=op, overwrite_mode=overwrite_mode, parent=parent)
+    except PasteCancelledError:
+        return None
+    ask = _conflict_asker(plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
+    return _execute_plans(plans, decisions, parent, op, ask)
 
 
 def paste_clipboard_files(
@@ -410,11 +471,7 @@ def paste_clipboard_files(
             if not plans:
                 return
             op = "move" if plans[0].action == "cut" else "copy"
-            try:
-                decisions = _resolve_conflicts_with_ui(plans=plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
-            except PasteCancelledError:
-                return
-            _execute_plans(plans, decisions, parent, op)
+            _paste_with_ui(plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
         finally:
             _paste_running.clear()
 
@@ -451,11 +508,9 @@ def execute_paste_plans_with_ui(
         return []
     accepted_plans = [item for _, item in accepted]
     op = "move" if accepted_plans[0].action == "cut" else "copy"
-    try:
-        decisions = _resolve_conflicts_with_ui(plans=accepted_plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
-    except PasteCancelledError:
+    accepted_results = _paste_with_ui(accepted_plans, op=op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
+    if accepted_results is None:
         return []
-    accepted_results = _execute_plans(accepted_plans, decisions, parent, op)
     return _merge_paste_plan_results(len(plans), accepted, accepted_results, rejected)
 
 
@@ -481,8 +536,4 @@ def drop_files_with_ui(
         return []
     if op != "ask" and confirm_message and not _confirm_action(confirm_message, parent):
         return []
-    try:
-        decisions = _resolve_conflicts_with_ui(plans=plans, op=resolved_op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message)
-    except PasteCancelledError:
-        return []
-    return _execute_plans(plans, decisions, parent, resolved_op)
+    return _paste_with_ui(plans, op=resolved_op, overwrite_mode=overwrite_mode, parent=parent, folder_message=folder_message) or []

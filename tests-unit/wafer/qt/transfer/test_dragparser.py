@@ -23,7 +23,7 @@ class _Saver:
             suggested_dst=None,
             parsed_item=item,
         )
-        return FileExecutor().execute_one(plan, PasteDecision(mode="overwrite"))
+        return FileExecutor(ask_conflict=lambda conflict: "overwrite").execute_one(plan, PasteDecision(mode="create"))
 
 
 def test_mimedata_parser_parse_collects_all_local_urls(tmp_path):

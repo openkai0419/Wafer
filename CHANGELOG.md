@@ -37,7 +37,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Inter-process messaging no longer stalls on one busy process, cleans dead outboxes once from the Tray, and logs dropped messages.
 - Extensions: video loop seek, rotated video aspect, sharp animated grid frames, Florence variant and retry, wd14 + Florence installable together, and panels no longer delay thumbnails.
 - Layout: floating panels that cannot close stay open, the only docked panel regains its width, Esc-closed standalone windows reopen, and the Content Viewer shrinks below 200 px.
-- Theme colors for the progress bar, tooltips, notices and menu headers; image fit padding adds a margin instead of cropping.
+- Theme colors for tooltips, notices and menu headers; image fit padding adds a margin instead of cropping.
+- The Viewer's progress bar uses the WebUI's green and no longer stays full and still after a job that ends right after it starts.
 
 ## [v0.8.3]
 ### Fixed

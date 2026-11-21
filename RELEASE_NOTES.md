@@ -15,6 +15,7 @@ User-facing highlights for each Wafer release. These notes are shown in the Upda
 - Paste, drop, move and rename no longer lose files: conflicts are asked as they happen, overwrites keep the original until done, and Delete always uses the Recycle Bin.
 - Indexing is more reliable: no files lost under junctions or unreadable folders, no endless retries, and faster stops.
 - Many fixes for key and mouse bindings, Batch Renamer, presets, Plugin Manager, the WebUI and the folder tree.
+- The progress bar is green like the WebUI's and no longer stays full after a short job.
 
 ## [v0.8.3]
 

@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.8.4]
+### Added
+- Folder Manager panel (Setting → Folder Manager, also from the Tray): a folder tree with Files / All files / Folders / All folders counts from disk, its own database picker, and live updates.
+- Folder Manager rules: name, color, optional search query and count conditions; matching folders get a badge, and Select matches / Matches only / Collapse all are bindable commands.
+- Files in Folder (folder right-click in FolderTree and Folder Manager): cut or copy the direct files or all files below, or only a rule's matches.
+- Adding a mark with the name of a deleted mark that left data asks whether to restore or delete that data.
+
+### Changed
+- Paste and drop ask about each conflict when the copy reaches it, with overwrite / rename / skip / cancel and separate "apply to all" for existing files, selected items and folders; closing the dialog cancels.
+- Folder right-click menus are grouped under the Viewer menu's section headers; the Tray no longer shows the FolderTree menu.
+- Preset Apply / Rename / Delete / Overwrite from the menu pick the preset by name, and saving over an existing name asks first.
+- Mapping draws all dots in one call and reads only the columns it needs, so large maps draw much faster.
+- Folder lookups use an index range, and the key list is no longer rebuilt per text filter row on folder changes.
+- The Regex filter tests the real pattern in SQL, so lookarounds, optional groups and inline flags no longer hide matches.
+- ZIP archives are indexed in one pass from one open archive, skipping non-image members.
+- Restart Tray and Quit All check the Tray lock before scanning every process.
+
+### Fixed
+- Overwrites go through a temporary copy, a file never replaces a folder, case-only renames work, Delete always uses the Recycle Bin off the UI thread, and only one paste runs at a time.
+- Batch Renamer flags missing files and existing names, asks before overwriting, and reports skipped renames.
+- Key and mouse bindings: symbol keys save and work, a drag no longer fires a click, edited bindings apply without a restart, and menus show new shortcuts at once.
+- Grid Scroll Up/Down use the fractional multiplier (1.5) instead of rounding it down.
+- A partial rescan keeps files outside its folder, unreadable folders keep their files, and junctions are walked without loops or duplicates.
+- Indexing: timed-out files are not retried forever, unrun files are retried, a slow worker no longer takes every pending file, moves with a full hash are detected, and the indexer stops faster.
+- Database names with `#` or `%` work, an interrupted schema upgrade no longer empties tables, and reading folder settings no longer recreates a deleted database.
+- Search: archive members stay in results without subfolders, date filters use local days with both Between ends, and an extension's sort no longer drops the Query menu.
+- WebUI: receives indexer events, no longer stalls a database delete, keeps scroll and viewer when a session expires, follows the Viewer's ignore patterns and sort, explains a busy port, and offers TIFF as a download.
+- FolderTree reloads off the UI thread, rejects rename names that leave the folder, and keeps its state after a late expand.
+- Settings, workspace, plugin settings, install queue and translations are written atomically under a lock; unreadable files are set aside instead of overwritten.
+- Plugin Manager keeps collector defaults and plugin order after Save, and Open works in its standalone window.
+- Inter-process messaging no longer stalls on one busy process, cleans dead outboxes once from the Tray, and logs dropped messages.
+- Extensions: video loop seek, rotated video aspect, sharp animated grid frames, Florence variant and retry, wd14 + Florence installable together, and panels no longer delay thumbnails.
+- Layout: floating panels that cannot close stay open, the only docked panel regains its width, Esc-closed standalone windows reopen, and the Content Viewer shrinks below 200 px.
+- Theme colors for the progress bar, tooltips, notices and menu headers; image fit padding adds a margin instead of cropping.
+
 ## [v0.8.3]
 ### Fixed
 - An Indexer no longer stops sending collection and parsing work until a restart after its message queue stays locked for over 5 seconds.

@@ -362,12 +362,10 @@ def _point_in(widget: QtWidgets.QWidget, x: int | None, y: int | None) -> QtCore
 
 
 def _pointer_receiver(widget: QtWidgets.QWidget, point: QtCore.QPoint) -> tuple[QtWidgets.QWidget, QtCore.QPoint]:
-    if isinstance(widget, QtWidgets.QAbstractScrollArea):
-        viewport = widget.viewport()
-        local = viewport.mapFrom(widget, point)
-        if viewport.rect().contains(local):
-            return viewport, local
-    return widget, point
+    child = widget.childAt(point)
+    if child is None:
+        return widget, point
+    return child, child.mapFrom(widget, point)
 
 
 def _mouse_click(widget: QtWidgets.QWidget, button: QtCore.Qt.MouseButton, modifiers: QtCore.Qt.KeyboardModifier, point: QtCore.QPoint) -> None:

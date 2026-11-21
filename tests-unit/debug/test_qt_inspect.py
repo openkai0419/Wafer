@@ -305,6 +305,15 @@ def test_mouse_right_click_opens_the_context_menu(qtbot, long_list):
     assert long_list.contextMenuRequested[0] == long_list.viewport().mapFrom(long_list, QtCore.QPoint(20, 10))
 
 
+def test_mouse_on_a_window_reaches_the_child_under_the_point(qtbot, window, long_list):
+    inside_list = QtCore.QPoint(20, 10)
+    point = long_list.mapTo(window, inside_list)
+    result = qt_inspect.mouse("panel", button="right", x=point.x(), y=point.y())
+    assert result["position"] == [point.x(), point.y()]
+    qtbot.waitUntil(lambda: len(long_list.contextMenuRequested) == 1)
+    assert long_list.contextMenuRequested[0] == long_list.viewport().mapFrom(long_list, inside_list)
+
+
 def test_mouse_double_click_on_a_list_item(qtbot, long_list):
     activated = []
     long_list.itemDoubleClicked.connect(lambda item: activated.append(item.text()))

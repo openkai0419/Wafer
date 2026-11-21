@@ -189,7 +189,6 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.notice = ""
         self.pending_select = False
         self.auto_select_tree = False
-        self.sent_selection: tuple[str, ...] = ()
         self.build_ui()
         self.apply_rules(load_rules())
         self.apply_columns(load_columns())
@@ -889,27 +888,29 @@ class FolderManagerWidget(QtWidgets.QWidget):
             return
         save_auto_select(on)
         self.apply_auto_select(on)
+        if on:
+            self.auto_select_timer.start()
 
     def apply_auto_select(self, on: bool) -> None:
         if on == self.auto_select_tree:
             return
         self.auto_select_tree = on
         self.auto_select_button.setChecked(on)
-        self.auto_select_timer.stop()
-        if on:
-            self.sent_selection = ()
-            self.auto_select_timer.start()
+        if not on:
+            self.auto_select_timer.stop()
 
     def on_selection_changed(self, *_) -> None:
         if self.auto_select_tree:
             self.auto_select_timer.start()
 
     def auto_select_foldertree(self) -> None:
-        paths = tuple(self.view.get_selected_paths())
-        if not paths or paths == self.sent_selection or not self.host_shows_database():
+        paths = self.view.get_selected_paths()
+        if not paths or not self.host_shows_database():
             return
-        self.sent_selection = paths
-        Command.invoke("file.select_path", extras={"sources": list(paths)})
+        tree = InstanceRegistry.instance().get_one("FolderTree")
+        if tree is None or {normalize_path(p) for p in tree.get_selected_paths()} == {normalize_path(p) for p in paths}:
+            return
+        Command.invoke("file.select_path", extras={"sources": paths})
 
     def on_matches_changed(self) -> None:
         self.matches_version += 1

@@ -8,6 +8,7 @@ from .rules import METRICS, HighlightRule, default_rules
 RULES_KEY = "folder_manager/rules"
 COLUMNS_KEY = "folder_manager/columns"
 DATABASE_KEY = "folder_manager/database"
+AUTO_SELECT_KEY = "folder_manager/auto_select_foldertree"
 DEFAULT_COLUMNS = {"files": True, "all_files": True, "folders": True, "all_folders": False}
 
 
@@ -50,6 +51,14 @@ def load_columns() -> dict[str, bool]:
 
 def save_columns(columns: dict[str, bool]) -> None:
     write(COLUMNS_KEY, dict(columns))
+
+
+def load_auto_select() -> bool:
+    return read(AUTO_SELECT_KEY, None) is True
+
+
+def save_auto_select(on: bool) -> None:
+    write(AUTO_SELECT_KEY, on)
 
 
 def load_last_database() -> str:

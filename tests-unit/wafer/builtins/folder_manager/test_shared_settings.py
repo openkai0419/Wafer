@@ -1,22 +1,26 @@
 import pytest
+from PySide6 import QtCore
 
 from wafer.builtins.folder_manager import shared_settings
 from wafer.builtins.folder_manager.rules import HighlightRule, default_rules
 from wafer.builtins.folder_manager.shared_settings import (
+    AUTO_SELECT_KEY,
     COLUMNS_KEY,
     DATABASE_KEY,
     DEFAULT_COLUMNS,
     RULES_KEY,
+    load_auto_select,
     load_columns,
     load_last_database,
     load_rules,
+    save_auto_select,
     save_columns,
     save_last_database,
     save_rules,
 )
 from wafer.core.store.settings import app_settings
 
-KEYS = (RULES_KEY, COLUMNS_KEY, DATABASE_KEY)
+KEYS = (RULES_KEY, COLUMNS_KEY, DATABASE_KEY, AUTO_SELECT_KEY)
 
 
 def clear_keys() -> None:
@@ -37,6 +41,7 @@ def test_keys():
     assert RULES_KEY == "folder_manager/rules"
     assert COLUMNS_KEY == "folder_manager/columns"
     assert DATABASE_KEY == "folder_manager/database"
+    assert AUTO_SELECT_KEY == "folder_manager/auto_select_foldertree"
 
 
 def test_missing_rules_give_default_rules():
@@ -103,3 +108,24 @@ def test_unreadable_rules_fall_back_to_the_default_rules_with_a_warning(monkeypa
 
     assert [r.to_dict() for r in loaded] == [r.to_dict() for r in default_rules()]
     assert len(warnings) == 1
+
+
+def reopened_settings():
+    app_settings.settings.sync()
+    return QtCore.QSettings(str(app_settings.ini_path), QtCore.QSettings.IniFormat)
+
+
+def test_auto_select_is_off_by_default_and_round_trips():
+    assert load_auto_select() is False
+    save_auto_select(True)
+    assert load_auto_select() is True
+    save_auto_select(False)
+    assert load_auto_select() is False
+
+
+def test_auto_select_written_by_another_process_reads_back_as_written():
+    for written, expected in (("true", True), ("false", False)):
+        writer = reopened_settings()
+        writer.setValue(AUTO_SELECT_KEY, written)
+        writer.sync()
+        assert load_auto_select() is expected

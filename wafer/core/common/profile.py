@@ -31,7 +31,7 @@ def split_profile_args(argv: list[str]) -> tuple[str | None, list[str]]:
             index += 2
             continue
         if arg.startswith(_PROFILE_ASSIGN):
-            values.append(arg[len(_PROFILE_ASSIGN):])
+            values.append(arg[len(_PROFILE_ASSIGN) :])
         else:
             rest.append(arg)
         index += 1

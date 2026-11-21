@@ -509,14 +509,16 @@ def build_server(session: DebugSession) -> MCPServer:
 
     @tool(
         "Mouse input on a widget, sent like a user's: kind click/double/press/release/move, button left/right/middle, "
-        "x and y inside the widget (its center when omitted), modifiers like 'Ctrl+Shift'. A right click also opens the context menu; "
+        "x and y inside the widget (its center when omitted), modifiers like 'Ctrl+Shift'. It reaches the child under the point, "
+        "so a window title and x, y reach a widget without an objectName. After a press, move and release go to the pressed child "
+        "until the release, so a drag works across calls. A right click also opens the context menu; "
         f"read it with modal_state and pick an item with modal_click. Runs after the reply. {WIDGET_HELP} {TARGET_HELP}"
     )
     def mouse(widget: str, kind: str = "click", button: str = "left", x: int | None = None, y: int | None = None, modifiers: str = "", target: str | None = None) -> Any:
         return agent("mouse", target, target=widget, kind=kind, button=button, x=x, y=y, modifiers=modifiers)
 
     @tool(
-        "Scroll the mouse wheel over a widget: dy/dx in notches (negative dy scrolls down), at x and y inside the widget "
+        "Scroll the mouse wheel over a widget, reaching the child under the point and passing up to its parents while they ignore it: dy/dx in notches (negative dy scrolls down), at x and y inside the widget "
         f"(its center when omitted), with modifiers like 'Ctrl' (e.g. Ctrl+wheel resizes thumbnails). Runs after the reply. {WIDGET_HELP} {TARGET_HELP}"
     )
     def wheel(widget: str, dy: int = 0, dx: int = 0, x: int | None = None, y: int | None = None, modifiers: str = "", target: str | None = None) -> Any:

@@ -75,8 +75,7 @@ def _move_aside(path: str, reason: Exception) -> None:
         suffix += 1
     retry_while_in_use(lambda: os.replace(path, bad_path))
     AppLogger.warning(
-        f"[PluginConfig] {path} was unreadable ({reason}). It was moved to {bad_path} and plugin settings were "
-        f"reset. To restore them, fix that file and rename it back.",
+        f"[PluginConfig] {path} was unreadable ({reason}). It was moved to {bad_path} and plugin settings were reset. To restore them, fix that file and rename it back.",
         exc=reason,
     )
 

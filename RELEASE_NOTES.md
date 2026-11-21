@@ -2,6 +2,21 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.8.4]
+
+### Highlights
+- Folder Manager (Setting → Folder Manager): a folder tree with file and folder counts, and rules that mark folders by count and search query.
+- Right-click a folder → Files in Folder to cut or copy every file in it or below it.
+
+### Improvements
+- Mapping, folder searches and the Regex filter are faster on large libraries, and Regex now matches the full pattern.
+
+### Fixes
+- Paste, drop, move and rename no longer lose files: conflicts are asked as they happen, overwrites keep the original until done, and Delete always uses the Recycle Bin.
+- Indexing is more reliable: no files lost under junctions or unreadable folders, no endless retries, and faster stops.
+- Many fixes for key and mouse bindings, Batch Renamer, presets, Plugin Manager, the WebUI and the folder tree.
+- The progress bar is green like the WebUI's and no longer stays full after a short job.
+
 ## [v0.8.3]
 
 ### Fixes

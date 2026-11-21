@@ -156,7 +156,5 @@ def _terminate_conflicting_processes(extensions_dir: str) -> None:
     if not targets:
         return
     names = ", ".join(f"pid={p.pid}" for p in targets)
-    AppLogger.info(
-        f"[StartupInstall] terminating {len(targets)} app process(es) ({len(debug_targets)} debug) before install (waiter={waiter_pid}): {names}"
-    )
+    AppLogger.info(f"[StartupInstall] terminating {len(targets)} app process(es) ({len(debug_targets)} debug) before install (waiter={waiter_pid}): {names}")
     AppProcess.terminate_and_wait(targets)

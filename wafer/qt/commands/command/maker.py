@@ -44,7 +44,11 @@ class MenuPlan:
         for t in ts:
             before = len(items)
             prefix = t + "/"
-            items = [x for x in items if not (x.token.startswith(prefix) or (x.kind in ("cmd", "action") and (t in (x.command_id, x.token.strip("/"), x.canonical_path.strip("/")) or x.canonical_path.startswith(prefix))))]
+            items = [
+                x
+                for x in items
+                if not (x.token.startswith(prefix) or (x.kind in ("cmd", "action") and (t in (x.command_id, x.token.strip("/"), x.canonical_path.strip("/")) or x.canonical_path.startswith(prefix))))
+            ]
             if len(items) == before:
                 AppLogger.warning(f"[MenuPlan.hide] target not found, skipped: {t}")
         return MenuPlan(self._hub, items, has_inline=self.has_inline)

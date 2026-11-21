@@ -17,7 +17,6 @@ from ...qt.widgets.restart_prompt import ask_restart_all
 from ...core.lang.manager import t
 
 
-
 def _build_stylesheet() -> str:
     p = ThemeManager.instance().palette
     r = dpix(4)

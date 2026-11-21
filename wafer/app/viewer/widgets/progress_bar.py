@@ -128,9 +128,13 @@ class ThinProgressBar(QtWidgets.QWidget):
             self.update()
 
     def _fadeTo(self, target_opacity):
-        if self._color_opacity == target_opacity:
+        fading = self._opacity_animation.state() == QtCore.QAbstractAnimation.Running
+        if (self._opacity_animation.endValue() if fading else self._color_opacity) == target_opacity:
             return
         self._opacity_animation.stop()
+        if self._color_opacity == target_opacity:
+            self.setColorOpacity(target_opacity)
+            return
         self._opacity_animation.setStartValue(self._color_opacity)
         self._opacity_animation.setEndValue(target_opacity)
         self._opacity_animation.start()
@@ -171,7 +175,7 @@ class ThinProgressBar(QtWidgets.QWidget):
         rect = self.rect()
         ratio = self._animated_value / self._maximum if self._maximum else 0
         bar_width = rect.width() * ratio
-        base_color = QtGui.QColor(ThemeManager.instance().palette.accent)
+        base_color = QtGui.QColor(ThemeManager.instance().palette.success)
         base_color.setAlphaF(self._color_opacity)
         painter.setBrush(QtGui.QBrush(base_color))
         painter.setPen(QtCore.Qt.NoPen)

@@ -17,6 +17,7 @@ DEFAULT_TREE_DEPTH = 3
 DEFAULT_SCREENSHOT_SIDE = 1600
 FIELD_TYPES = (QtWidgets.QLineEdit, QtWidgets.QComboBox, QtWidgets.QAbstractSpinBox, QtWidgets.QPlainTextEdit, QtWidgets.QTextEdit)
 WHEEL_NOTCH = 120
+_pressed_widget: dict[str, QtWidgets.QWidget] = {}
 MOUSE_BUTTONS = {"left": QtCore.Qt.LeftButton, "right": QtCore.Qt.RightButton, "middle": QtCore.Qt.MiddleButton}
 MODIFIER_NAMES = {
     "ctrl": QtCore.Qt.ControlModifier,
@@ -191,6 +192,7 @@ def mouse(target: str, kind: str = "click", button: str = "left", x: int | None 
         raise ValueError(f"button must be one of {sorted(MOUSE_BUTTONS)}, not {button!r}")
     qt_modifiers = _modifiers(modifiers)
     widget, point, receiver, local = _pointer_target(target, x, y)
+    receiver, local = _follow_press(kind, widget, point, receiver, local)
     _later(receiver, lambda: send(receiver, qt_button, qt_modifiers, local), f"mouse {kind} {target!r}")
     return {**_describe(widget), "position": [point.x(), point.y()], "deferred": True}
 
@@ -368,6 +370,19 @@ def _pointer_receiver(widget: QtWidgets.QWidget, point: QtCore.QPoint) -> tuple[
     return child, child.mapFrom(widget, point)
 
 
+def _follow_press(kind: str, widget: QtWidgets.QWidget, point: QtCore.QPoint, receiver: QtWidgets.QWidget, local: QtCore.QPoint) -> tuple[QtWidgets.QWidget, QtCore.QPoint]:
+    pressed = _pressed_widget.get("widget")
+    if pressed is not None and not shiboken6.isValid(pressed):
+        pressed = None
+    if kind in ("move", "release") and pressed is not None:
+        receiver, local = pressed, pressed.mapFromGlobal(widget.mapToGlobal(point))
+    if kind == "press":
+        _pressed_widget["widget"] = receiver
+    elif kind != "move":
+        _pressed_widget.pop("widget", None)
+    return receiver, local
+
+
 def _mouse_click(widget: QtWidgets.QWidget, button: QtCore.Qt.MouseButton, modifiers: QtCore.Qt.KeyboardModifier, point: QtCore.QPoint) -> None:
     QTest.mousePress(widget, button, modifiers, point)
     _mouse_release(widget, button, modifiers, point)
@@ -395,9 +410,15 @@ MOUSE_KINDS = {"click": _mouse_click, "double": _mouse_double, "press": QTest.mo
 
 
 def _send_wheel(receiver: QtWidgets.QWidget, local: QtCore.QPoint, delta: QtCore.QPoint, modifiers: QtCore.Qt.KeyboardModifier) -> None:
-    position = QtCore.QPointF(local)
-    event = QtGui.QWheelEvent(position, QtCore.QPointF(receiver.mapToGlobal(local)), QtCore.QPoint(), delta, QtCore.Qt.NoButton, modifiers, QtCore.Qt.NoScrollPhase, False)
-    QtWidgets.QApplication.sendEvent(receiver, event)
+    widget, point = receiver, local
+    while True:
+        event = QtGui.QWheelEvent(QtCore.QPointF(point), QtCore.QPointF(widget.mapToGlobal(point)), QtCore.QPoint(), delta, QtCore.Qt.NoButton, modifiers, QtCore.Qt.NoScrollPhase, False)
+        QtWidgets.QApplication.sendEvent(widget, event)
+        parent = widget.parentWidget()
+        if event.isAccepted() or parent is None or widget.isWindow() or widget.testAttribute(QtCore.Qt.WA_NoMousePropagation):
+            return
+        point = widget.mapToParent(point)
+        widget = parent
 
 
 def _invoke_command(command_id: str, kwargs: dict) -> None:

@@ -346,6 +346,76 @@ def test_wheel_scrolls_a_list(qtbot, long_list):
     qtbot.waitUntil(lambda: bar.value() > 0)
 
 
+def test_wheel_over_a_child_that_ignores_it_scrolls_the_area_around_it(qtbot, window):
+    area = QtWidgets.QScrollArea()
+    area.setObjectName("area")
+    area.setFixedHeight(80)
+    content = QtWidgets.QWidget()
+    QtWidgets.QVBoxLayout(content)
+    for i in range(60):
+        content.layout().addWidget(QtWidgets.QLabel(f"row {i}"))
+    area.setWidget(content)
+    window.layout().addWidget(area)
+    qtbot.waitUntil(area.isVisible)
+    bar = area.verticalScrollBar()
+    label = content.layout().itemAt(1).widget()
+    point = label.mapTo(area, label.rect().center())
+    assert area.childAt(point) is label
+
+    qt_inspect.wheel("area", dy=-3, x=point.x(), y=point.y())
+
+    qtbot.waitUntil(lambda: bar.value() > 0)
+
+
+def test_wheel_stops_at_the_child_that_takes_it(qtbot, window):
+    holder = QtWidgets.QWidget()
+    holder.setObjectName("holder")
+    holder.wheels = []
+    holder.wheelEvent = lambda event: holder.wheels.append(event.angleDelta())
+    QtWidgets.QVBoxLayout(holder)
+    inner = Pad()
+    holder.layout().addWidget(inner)
+    window.layout().addWidget(holder)
+    qtbot.waitUntil(inner.isVisible)
+    point = inner.mapTo(holder, inner.rect().center())
+
+    qt_inspect.wheel("holder", dy=1, x=point.x(), y=point.y())
+
+    qtbot.waitUntil(lambda: len(inner.events) == 1)
+    assert holder.wheels == []
+
+
+@pytest.fixture
+def two_pads(qtbot, window):
+    row = QtWidgets.QWidget()
+    row.setObjectName("row")
+    QtWidgets.QHBoxLayout(row)
+    left, right = Pad(), Pad()
+    left.setObjectName("left")
+    right.setObjectName("right")
+    for pad in (left, right):
+        pad.setMouseTracking(True)
+        row.layout().addWidget(pad)
+    window.layout().addWidget(row)
+    qtbot.waitUntil(right.isVisible)
+    return row, left, right
+
+
+def test_a_drag_across_calls_stays_with_the_pressed_child(qtbot, two_pads):
+    row, left, right = two_pads
+    start = left.mapTo(row, QtCore.QPoint(10, 10))
+    end = right.mapTo(row, QtCore.QPoint(20, 30))
+
+    qt_inspect.mouse("row", kind="press", x=start.x(), y=start.y())
+    qt_inspect.mouse("row", kind="move", x=end.x(), y=end.y())
+    qt_inspect.mouse("row", kind="release", x=end.x(), y=end.y())
+
+    qtbot.waitUntil(lambda: "release" in [e[0] for e in left.events])
+    outside = left.mapFrom(row, end)
+    assert [(e[0], e[2]) for e in left.events] == [("press", QtCore.QPoint(10, 10)), ("move", outside), ("release", outside)]
+    assert right.events == []
+
+
 def test_wheel_sends_notches_position_and_modifiers(qtbot, pad):
     qt_inspect.wheel("pad", dy=2, dx=-1, x=7, y=8, modifiers="Ctrl")
     qtbot.waitUntil(lambda: len(pad.events) == 1)

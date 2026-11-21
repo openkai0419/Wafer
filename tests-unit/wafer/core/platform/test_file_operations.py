@@ -748,6 +748,89 @@ def test_remote_drop_failure_mid_download_leaves_no_partial_file(tmp_path, monke
     assert list(tmp_path.iterdir()) == []
 
 
+def _held_briefly_on_first_replace(monkeypatch, pick_held):
+    import threading
+
+    from wafer.core.platform import file_operations
+
+    real_replace = os.replace
+    attempts = []
+
+    def replace(src, dst):
+        if not attempts:
+            handle = open(pick_held(src, dst), "rb")
+            threading.Timer(0.1, handle.close).start()
+        attempts.append(src)
+        real_replace(src, dst)
+
+    monkeypatch.setattr(file_operations.os, "replace", replace)
+    return attempts
+
+
+@windows_only
+def test_a_drop_waits_while_another_program_reads_the_unfinished_file(tmp_path, monkeypatch):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    attempts = _held_briefly_on_first_replace(monkeypatch, lambda src, dst: src)
+
+    res = FileExecutor().execute_one(_remote_plan(tmp_path, b"new", binary=True), PasteDecision(mode="create"))
+
+    assert res.status == "ok"
+    assert len(attempts) > 1
+    assert [p.name for p in tmp_path.iterdir()] == ["image.png"]
+    assert (tmp_path / "image.png").read_bytes() == b"new"
+
+
+@windows_only
+def test_an_overwrite_waits_while_another_program_reads_the_old_file(tmp_path, monkeypatch):
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    src = tmp_path / "src" / "a.txt"
+    src.parent.mkdir()
+    src.write_text("new", encoding="utf-8")
+    dst = tmp_path / "dst" / "a.txt"
+    dst.parent.mkdir()
+    dst.write_text("old", encoding="utf-8")
+    attempts = _held_briefly_on_first_replace(monkeypatch, lambda src, dst: dst)
+
+    res = FileExecutor(ask_conflict=_answers())._execute_item(src, dst, "copy", PasteDecision(mode="create"))
+
+    assert res.status == "ok"
+    assert len(attempts) > 1
+    assert [p.name for p in dst.parent.iterdir()] == ["a.txt"]
+    assert dst.read_text(encoding="utf-8") == "new"
+
+
+@windows_only
+def test_a_drop_that_stays_blocked_fails_and_names_the_leftover(tmp_path, monkeypatch):
+    from wafer.core.common import atomic_file
+    from wafer.core.logs import AppLogger
+    from wafer.core.platform.file_operations import FileExecutor, PasteDecision
+
+    monkeypatch.setattr(atomic_file, "_IN_USE_TIMEOUT", 0.0)
+    warnings = []
+    monkeypatch.setattr(AppLogger, "warning", lambda msg, *a, **kw: warnings.append(msg))
+    real_replace = os.replace
+    handles = []
+
+    def replace_while_held(src, dst):
+        handles.append(open(src, "rb"))
+        real_replace(src, dst)
+
+    from wafer.core.platform import file_operations
+
+    monkeypatch.setattr(file_operations.os, "replace", replace_while_held)
+    try:
+        res = FileExecutor().execute_one(_remote_plan(tmp_path, b"new", binary=True), PasteDecision(mode="create"))
+    finally:
+        for handle in handles:
+            handle.close()
+
+    assert res.status == "error"
+    assert [p.name for p in tmp_path.iterdir()] == ["image.png.wafer-partial"]
+    assert any("image.png.wafer-partial" in w for w in warnings)
+
+
 def test_binary_drop_skip_and_rename(tmp_path):
     from wafer.core.platform.file_operations import FileExecutor, PasteDecision
 

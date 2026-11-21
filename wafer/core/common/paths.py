@@ -5,6 +5,11 @@ from ...constants import APP_DATA_DIR_NAME
 from .profile import PROFILE_PREFIX, TOOLS_PROFILE, current_profile, same_profile
 
 DEBUG_PROFILES_DIR_NAME = f"{APP_DATA_DIR_NAME}-debug"
+STAGING_SUFFIX = ".wafer-partial"
+
+
+def is_staging_file(path) -> bool:
+    return str(path).lower().endswith(STAGING_SUFFIX)
 
 
 def normalize_path(p):

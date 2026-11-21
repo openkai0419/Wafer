@@ -5,7 +5,7 @@ import time
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from ....core.logs import AppLogger
-from ....core.common.paths import normalize_path
+from ....core.common.paths import is_staging_file, normalize_path
 from ....core.profiling import profiler
 from ..db_writer import DatabaseWriter
 from ....core.db.path_scope import compile_ignore_patterns
@@ -371,7 +371,7 @@ class FolderWatcher:
                 self._pending_deletes.pop(norm, None)
 
     def _is_in_scope(self, path: str) -> bool:
-        if not contains_path_prefix(self._folders, path) or contains_path_prefix(self._ignore_paths, path):
+        if is_staging_file(path) or not contains_path_prefix(self._folders, path) or contains_path_prefix(self._ignore_paths, path):
             return False
         if self._ignore_pattern_re is None:
             return True

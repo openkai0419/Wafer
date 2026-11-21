@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING, Literal
 from collections.abc import Callable, Iterable
 
 from ..logs import AppLogger
-from ..common.paths import profile_allows_file_write, safe_exists, safe_is_dir
+from ..common.atomic_file import retry_while_in_use
+from ..common.paths import STAGING_SUFFIX, profile_allows_file_write, safe_exists, safe_is_dir
 from ..common.profile import current_profile
 from ..common.virtual_paths import is_virtual_path
 from .path_utils import check_copy_conflict, is_http_url, unique_path
@@ -40,19 +41,21 @@ def _rmtree_onerror(func, path, exc_info):
         AppLogger.warning(f"rmtree fallback failed: {path} ({e})")
 
 
-def _safe_remove(path: str | Path) -> None:
-    p = Path(path)
-    if not p.exists() and not p.is_symlink():
-        return
-    if p.is_symlink() or p.is_file():
-        p.unlink(missing_ok=True)
-        return
-    if p.is_dir():
-        shutil.rmtree(p, onerror=_rmtree_onerror)
+def _staging_path(dst: Path) -> Path:
+    return Path(unique_path(dst.parent, f"{dst.name}{STAGING_SUFFIX}"))
 
 
-def _staging_path(dst: Path, tag: str) -> Path:
-    return Path(unique_path(dst.parent, f"{dst.name}.{tag}"))
+def _replace_staged(staged: Path, dst: Path) -> None:
+    retry_while_in_use(lambda: os.replace(staged, dst))
+
+
+def _remove_staged(staged: Path) -> None:
+    if not os.path.lexists(staged):
+        return
+    try:
+        retry_while_in_use(lambda: os.unlink(staged))
+    except OSError as e:
+        AppLogger.warning(f"an unfinished copy is left at {staged}; delete it once the other program releases it", exc=e)
 
 
 def _put_back(staged: Path, original: Path) -> list[Path]:
@@ -91,15 +94,15 @@ def _drop_staged_duplicate(staged: Path, original: Path) -> list[Path]:
 
 
 def _write_replacing(target: Path, chunks) -> None:
-    partial = _staging_path(target, "wafer-partial")
+    partial = _staging_path(target)
     try:
         with open(partial, "wb") as f:
             for chunk in chunks:
                 if chunk:
                     f.write(chunk)
-        os.replace(partial, target)
+        _replace_staged(partial, target)
     except BaseException:
-        partial.unlink(missing_ok=True)
+        _remove_staged(partial)
         raise
 
 
@@ -502,10 +505,10 @@ class FileExecutor:
             renamed = Path(unique_path(dst.parent, dst.name))
             AppLogger.info(f"[{_operation_name(action)}] {dst} is kept because a file and a folder share the name; saved as {renamed.name}")
             return self._copy_or_move(src, renamed, action)
-        staged = _staging_path(dst, "wafer-partial")
+        staged = _staging_path(dst)
         try:
             self._copy_or_move(src, staged, action)
-            os.replace(staged, dst)
+            _replace_staged(staged, dst)
         except BaseException:
             self._undo_staging(src, staged, action)
             raise
@@ -514,7 +517,7 @@ class FileExecutor:
     @staticmethod
     def _undo_staging(src: Path, staged: Path, action: Literal["copy", "cut"]) -> None:
         if action != "cut":
-            _safe_remove(staged)
+            _remove_staged(staged)
             return
         left = _put_back(staged, src)
         if left:

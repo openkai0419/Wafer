@@ -6,7 +6,6 @@ from wafer.core.platform.file_operations import (
     OperationResult,
     PastePlanItem,
     PasteDecision,
-    _safe_remove,
 )
 
 
@@ -151,19 +150,3 @@ class TestMergeAsksAtEachConflict:
         assert results[0].status == "ok"
         assert [(c.dst, c.in_merge, c.selected_item) for c in asked[1:]] == [(dst / "sub" / "nested.txt", True, False)]
         assert (dst / "sub" / "nested.txt").read_text(encoding="utf-8") == "dst"
-
-
-class TestSafeRemove:
-    def test_remove_file(self, tmp_path):
-        f = _write_file(tmp_path / "del.txt")
-        _safe_remove(f)
-        assert not f.exists()
-
-    def test_remove_directory(self, tmp_path):
-        d = tmp_path / "deldir"
-        _write_file(d / "inner.txt")
-        _safe_remove(d)
-        assert not d.exists()
-
-    def test_remove_nonexistent(self, tmp_path):
-        _safe_remove(tmp_path / "ghost.txt")

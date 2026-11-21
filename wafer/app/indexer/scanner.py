@@ -12,7 +12,7 @@ from ...core.db.db_utils import build_basic_entries, escape_like, open_readonly
 from ...core.db.file_db import SOURCE_TRIGGER_KEYS, read_existing_sources
 from ...core.logs import AppLogger
 from ...core.common.folder_scan import JunctionFilter
-from ...core.common.paths import child_prefix, normalize_path
+from ...core.common.paths import child_prefix, is_staging_file, normalize_path
 from ...core.profiling import profiler
 from .db_writer import DatabaseWriter
 from .receivers.parser_receiver import trigger_parser_pending
@@ -412,7 +412,7 @@ _NO_PROGRESS = _NoProgress()
 
 
 def is_excluded(path: str, exclude_prefixes: Sequence[str], ignore_pattern_re: re.Pattern[str] | None) -> bool:
-    if contains_path_prefix(exclude_prefixes, path):
+    if is_staging_file(path) or contains_path_prefix(exclude_prefixes, path):
         return True
     return ignore_pattern_re is not None and ignore_pattern_re.match(path) is not None
 

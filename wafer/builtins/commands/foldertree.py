@@ -173,13 +173,6 @@ def copy_all_files(ctx):
     run_on_disk_files(ctx, "file.copy", True)
 
 
-def show_in_tree(ctx):
-    path = _ctx_normalized_path(ctx)
-    if not path:
-        return
-    ctx.get_instance("FolderTree").expand_and_select_path(path)
-
-
 def folder_menu_sections(path: str) -> dict[str, list]:
     if not os.path.isdir(path):
         return {"File": ["file.copy_path"]}
@@ -355,7 +348,6 @@ class FolderTreeCommands(ActionKit.MenuBase):
             ),
             "-",
             ActionKit.Command(path="ft.reload_tree", display="Reload Tree", func=reload_tree),
-            ActionKit.Command(path="ft.show_in_tree", display="Show in FolderTree", func=show_in_tree, hidden=True),
             "-",
             ActionKit.Command(path="ft.add_folder", display="Add Folder", func=add_folder),
         ]

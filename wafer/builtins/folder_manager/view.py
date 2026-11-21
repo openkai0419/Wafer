@@ -216,7 +216,7 @@ class FolderManagerTreeView(LazyFolderTreeView):
         super().__init__(roots, excluded, ignore_pattern_re, instance_name="FolderManagerTree")
         self.rules_source: Callable[[], list[HighlightRule]] = list
         self.database_name = ""
-        self.show_in_tree_available: Callable[[], bool] = lambda: False
+        self.window_shows_database: Callable[[], bool] = lambda: False
         self.notify: Callable[[str], None] = Notifier.info
         self.hidden_columns: set[int] = set()
         self.expand_serials: dict[str, int] = {}
@@ -288,11 +288,10 @@ class FolderManagerTreeView(LazyFolderTreeView):
         if not path:
             return
         sections = {"Folder Manager": list(PANEL_COMMANDS), **folder_menu_sections(normalize_path(path))}
-        if "Selection" in sections:
+        if "Selection" in sections and not self.window_shows_database():
             sections["Selection"] = [item for item in sections["Selection"] if item != "file.select_path"]
         if "FolderTree" in sections:
-            show_in_tree = ["ft.show_in_tree"] if self.show_in_tree_available() else []
-            sections["FolderTree"] = [*show_in_tree, *sections["FolderTree"], *self.rule_file_actions()]
+            sections["FolderTree"] = [*sections["FolderTree"], *self.rule_file_actions()]
         session = Menu.from_context(ctx)
         if session is None:
             return

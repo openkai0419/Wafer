@@ -1244,17 +1244,17 @@ def test_plugin_without_host_or_last_database_starts_on_the_first(qtbot, monkeyp
     assert widget.database_name == "a"
 
 
-def test_show_in_tree_is_offered_only_when_the_window_shows_the_panel_database(qtbot, monkeypatch):
+def test_select_foldertree_is_offered_only_when_the_window_shows_the_panel_database(qtbot, monkeypatch):
     host = HostWindow("main")
     monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: host)
     panel = FolderManagerWidget()
     qtbot.addWidget(panel)
     panel.set_database("main")
-    assert panel.view.show_in_tree_available()
+    assert panel.view.window_shows_database()
     host.database_name = "other"
-    assert not panel.view.show_in_tree_available()
+    assert not panel.view.window_shows_database()
     monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: None)
-    assert not panel.view.show_in_tree_available()
+    assert not panel.view.window_shows_database()
 
 
 def test_select_matches_only_looks_under_the_selected_folders(qtbot, tmp_path, monkeypatch, query_calls):

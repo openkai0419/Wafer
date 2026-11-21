@@ -200,7 +200,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         layout.addWidget(self.rules_area)
         self.view = FolderManagerTreeView()
         self.view.set_rules_source(lambda: self.rules)
-        self.view.show_in_tree_available = self.host_shows_database
+        self.view.window_shows_database = self.host_shows_database
         self.view.notify = self.notify
         self.model.paths_changed.connect(self.on_paths_changed)
         self.view.folders_set.connect(self.on_folders_set)

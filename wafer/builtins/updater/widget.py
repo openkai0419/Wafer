@@ -23,7 +23,6 @@ from .versioning import normalize_version
 PANEL_DISPLAY_NAME = "Update"
 
 
-
 def _phase_status(phase: str) -> str:
     if phase == "extract":
         return t("Extracting...")

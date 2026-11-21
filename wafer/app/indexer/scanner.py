@@ -165,7 +165,9 @@ class DirectoryScanner:
             kept = [p for p in removed if in_unreadable(p)]
             if kept:
                 removed = [p for p in removed if not in_unreadable(p)]
-                AppLogger.warning(f"[Scanner] Kept {len(kept)} files under {len(unreadable)} unreadable folders (e.g. {unreadable[0]}); reconnect the drive or remove the folder from the database to update them")
+                AppLogger.warning(
+                    f"[Scanner] Kept {len(kept)} files under {len(unreadable)} unreadable folders (e.g. {unreadable[0]}); reconnect the drive or remove the folder from the database to update them"
+                )
         self._progress.increment(0, len(added_or_modified) + len(removed))
         AppLogger.info(f"[Scanner] added/modified: {len(added_or_modified)}, removed: {len(removed)}")
         self._progress.send_files_changed(modified=[p for p in added_or_modified if p in previous], removed=removed)

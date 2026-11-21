@@ -209,8 +209,8 @@ class LazyFolderTreeModel(QtGui.QStandardItemModel):
         self.append_roots(scan_roots(roots, self.excluded, self.ignore_pattern_re))
 
     def append_roots(self, root_entries):
-        for root, has_subfolders in root_entries:
-            self.insert_root(root, has_subfolders)
+        for root, has_children in root_entries:
+            self.insert_root(root, has_children)
 
     def insert_root(self, path, has_subfolders):
         row = self.make_row(path)

@@ -1,5 +1,21 @@
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileIconProvider, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QRadioButton, QSizePolicy, QStyle, QVBoxLayout
+from PySide6.QtWidgets import (
+    QApplication,
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFileIconProvider,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QRadioButton,
+    QSizePolicy,
+    QStyle,
+    QVBoxLayout,
+)
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtCore import QFileInfo
 from shiboken6 import isValid

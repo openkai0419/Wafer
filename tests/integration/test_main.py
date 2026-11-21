@@ -471,7 +471,7 @@ def test_a_launch_without_a_console_discards_output_instead_of_keeping_it():
     import subprocess
     import sys
 
-    code = "import sys; sys.stdout = None; sys.stderr = None; import main; sys.__stdout__.write(f'{getattr(sys.stdout, \"name\", None)}|{getattr(sys.stderr, \"name\", None)}')"
+    code = 'import sys; sys.stdout = None; sys.stderr = None; import main; sys.__stdout__.write(f\'{getattr(sys.stdout, "name", None)}|{getattr(sys.stderr, "name", None)}\')'
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=25, cwd=str(Path(__file__).resolve().parents[2]))
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip().splitlines()[-1] == f"{os.devnull}|{os.devnull}"

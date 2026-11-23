@@ -285,12 +285,12 @@ def test_process_batch_passes_source_key_unchanged(make_worker):
     assert worker._node.send_reliable.call_args[0][1]["results"][0]["source"] == key
 
 
-def test_timed_out_and_empty_paths_are_sent_as_failures(make_worker, monkeypatch):
+def test_empty_result_and_timeout_are_retried_and_exception_fails(make_worker, monkeypatch):
     import threading
     from unittest.mock import MagicMock
     from wafer.plugin.collector.base import CollectorResult
 
-    monkeypatch.setattr(collector_resolver, "max_workers", lambda name: 3)
+    monkeypatch.setattr(collector_resolver, "max_workers", lambda name: 5)
     worker = make_worker()
     worker._node = MagicMock()
     worker._batch_timeout = 0.2
@@ -301,20 +301,24 @@ def test_timed_out_and_empty_paths_are_sent_as_failures(make_worker, monkeypatch
             release.wait(5)
         if path == "/test/empty.jpg":
             return []
+        if path == "/test/none.jpg":
+            return None
+        if path == "/test/raise.jpg":
+            raise RuntimeError("boom")
         return CollectorResult(source=path, status=True)
 
     worker._plugin.process = process
-    paths = ["/test/ok.jpg", "/test/slow.jpg", "/test/empty.jpg"]
+    paths = ["/test/ok.jpg", "/test/slow.jpg", "/test/empty.jpg", "/test/none.jpg", "/test/raise.jpg"]
     try:
         worker._process_batch(paths, {}, {}, "test_db")
     finally:
         release.set()
 
     statuses = {r["source"]: r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]}
-    assert statuses == {"/test/ok.jpg": True, "/test/slow.jpg": False, "/test/empty.jpg": False}
+    assert statuses == {"/test/ok.jpg": True, "/test/raise.jpg": False}
 
 
-def test_timed_out_batch_leaves_paths_that_never_started_dispatched(make_worker, monkeypatch):
+def test_timed_out_batch_leaves_started_and_queued_paths_dispatched(make_worker, monkeypatch):
     import threading
     from unittest.mock import MagicMock
     from wafer.plugin.collector.base import CollectorResult
@@ -338,9 +342,64 @@ def test_timed_out_batch_leaves_paths_that_never_started_dispatched(make_worker,
     finally:
         release.set()
 
-    statuses = {r["source"]: r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]}
     assert started == ["/test/slow.jpg"]
-    assert statuses == {"/test/slow.jpg": False}
+    assert worker._node.send_reliable.call_args[0][1]["results"] == []
+
+
+def run_batched_collector(reply, paths, timeout=None):
+    from unittest.mock import MagicMock
+    from wafer.plugin.collector.base import BaseCollectorPlugin
+
+    class _Batched(BaseCollectorPlugin):
+        NAME = "_test_worker_batched_semantics"
+        DEFAULT_ENABLED = True
+
+        def process(self, path, file_info):
+            raise AssertionError("process must not be called for a batched collector")
+
+        def process_batch(self, paths, file_info):
+            return reply(paths)
+
+    collector_resolver.registry.register(_Batched)
+    worker = CollectorWorker("test_db", _Batched.NAME)
+    worker._node = MagicMock()
+    if timeout:
+        worker._batch_timeout = timeout
+    try:
+        worker._process_batch(paths, {}, {}, "test_db")
+    finally:
+        worker._stop.set()
+        worker._executor.shutdown(wait=True, cancel_futures=True)
+        collector_resolver.registry._plugins.pop(_Batched.NAME, None)
+        collector_resolver.registry._instances.pop(_Batched.NAME, None)
+    return {r["source"]: r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]}
+
+
+def test_batched_collector_paths_without_a_result_are_not_sent():
+    from wafer.plugin.collector.base import CollectorResult
+
+    replied = run_batched_collector(lambda paths: [CollectorResult(source="/a.png", status=True), None], ["/a.png", "/b.png"])
+
+    assert replied == {"/a.png": True}
+
+
+def test_batched_collector_timeout_sends_nothing():
+    import threading
+
+    release = threading.Event()
+    try:
+        replied = run_batched_collector(lambda paths: release.wait(10) and [], ["/a.png", "/b.png"], timeout=0.2)
+    finally:
+        release.set()
+
+    assert replied == {}
+
+
+def test_batched_collector_error_fails_every_path():
+    def boom(paths):
+        raise RuntimeError("boom")
+
+    assert run_batched_collector(boom, ["/a.png", "/b.png"]) == {"/a.png": False, "/b.png": False}
 
 
 def test_stop_ends_a_batch_with_queued_paths_at_once_and_sends_finished_results(make_worker, monkeypatch):

@@ -124,5 +124,7 @@ class TestNovelAiImageParser:
             assert result.meta_info is None
 
     def test_missing_key(self):
-        assert self.parser.process("img.png", (100, 1.0), {}) is None
-        assert self.parser.process("img.png", (100, 1.0), {"exiftool.PNG:Comment": None}) is None
+        for metadata in ({}, {"exiftool.PNG:Comment": None}):
+            result = self.parser.process("img.png", (100, 1.0), metadata)
+            assert result.status is True
+            assert result.meta_info is None

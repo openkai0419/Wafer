@@ -143,7 +143,7 @@ def test_process_batch_passes_source_key_unchanged(make_worker):
     assert worker._node.send_reliable.call_args[0][1]["results"][0]["source"] == key
 
 
-def test_failed_and_empty_results_are_sent_as_failures(make_worker):
+def test_raised_path_fails_and_none_is_retried(make_worker):
     from wafer.plugin.parser.base import ParserResult
 
     worker = make_worker()
@@ -159,10 +159,10 @@ def test_failed_and_empty_results_are_sent_as_failures(make_worker):
     worker._process_batch(["/ok.png", "/raise.png", "/none.png"], {}, {}, "test_db")
 
     statuses = {r["source"]: r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]}
-    assert statuses == {"/ok.png": True, "/raise.png": False, "/none.png": False}
+    assert statuses == {"/ok.png": True, "/raise.png": False}
 
 
-def test_timed_out_batch_leaves_paths_that_never_started_dispatched(make_worker, monkeypatch):
+def test_timed_out_batch_leaves_started_and_queued_paths_dispatched(make_worker, monkeypatch):
     import threading
 
     from wafer.plugin.parser.base import ParserResult
@@ -186,7 +186,7 @@ def test_timed_out_batch_leaves_paths_that_never_started_dispatched(make_worker,
 
     statuses = {r["source"]: r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]}
     assert started == ["/slow.png"]
-    assert statuses == {"/slow.png": False}
+    assert statuses == {}
 
 
 def test_stop_ends_a_batch_with_queued_paths_at_once_and_sends_finished_results(make_worker, monkeypatch):
@@ -264,14 +264,14 @@ def test_batched_parser_receives_the_whole_batch_in_one_call(batched_worker):
     assert sent_statuses(batched_worker) == {"/a.png": True, "/b.png": True}
 
 
-def test_batched_parser_paths_without_a_result_are_sent_as_failures(batched_worker):
+def test_batched_parser_paths_without_a_result_are_not_sent(batched_worker):
     from wafer.plugin.parser.base import ParserResult
 
     batched_worker._plugin.reply = lambda paths: [ParserResult(source="/a.png", status=True), None]
 
     batched_worker._process_batch(["/a.png", "/b.png"], {}, {}, "test_db")
 
-    assert sent_statuses(batched_worker) == {"/a.png": True, "/b.png": False}
+    assert sent_statuses(batched_worker) == {"/a.png": True}
 
 
 def test_batched_parser_duplicate_path_gets_one_result(batched_worker):
@@ -284,7 +284,7 @@ def test_batched_parser_duplicate_path_gets_one_result(batched_worker):
     assert [r["status"] for r in results if r["source"] == "/a.png"] == [True]
 
 
-def test_batched_parser_timeout_fails_the_whole_batch(batched_worker):
+def test_batched_parser_timeout_sends_nothing(batched_worker):
     import threading
 
     release = threading.Event()
@@ -295,10 +295,10 @@ def test_batched_parser_timeout_fails_the_whole_batch(batched_worker):
     finally:
         release.set()
 
-    assert sent_statuses(batched_worker) == {"/a.png": False, "/b.png": False}
+    assert sent_statuses(batched_worker) == {}
 
 
-def test_batched_parser_error_fails_the_whole_batch(batched_worker):
+def test_batched_parser_error_fails_every_path(batched_worker):
     def boom(paths):
         raise RuntimeError("boom")
 
@@ -321,10 +321,10 @@ def test_default_process_batch_calls_process_for_each_path():
     assert [(r.source, r.status, r.meta_info) for r in results] == [("/a.png", True, {"x": 1}), ("/b.png", False, {})]
 
 
-def test_batch_with_only_failures_is_still_sent(make_worker):
+def test_batch_with_only_none_results_is_still_sent(make_worker):
     worker = make_worker()
     worker._plugin.process = lambda path, file_info, metadata: None
 
     worker._process_batch(["/none.png"], {}, {}, "test_db")
 
-    assert worker._node.send_reliable.call_args[0][1]["results"] == [{"source": "/none.png", "status": False}]
+    assert worker._node.send_reliable.call_args[0][1]["results"] == []

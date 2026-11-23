@@ -57,11 +57,8 @@ def cancel_not_started(futures: dict, not_done) -> set:
     return {path for f in not_done if f.cancel() for path in futures[f]}
 
 
-def failed_results(paths, results, not_started=()) -> list[dict]:
-    """Paths left out stay 'dispatched' and go back to pending through reset_stale_dispatched."""
-    reported = {r.get("source") for r in results}
-    reported.update(not_started)
-    return [{"source": p, "status": False} for p in paths if p not in reported]
+def failure_results(paths) -> list[dict]:
+    return [{"source": p, "status": False} for p in paths]
 
 
 class PluginWorker:
@@ -174,14 +171,14 @@ class PluginWorker:
                     return self.process_path(p, file_info[p], metadata[p])
                 except Exception as e:
                     AppLogger.warning(f"[{self.label}] process failed: {p}: {e}", exc=e)
-                    return []
+                    return [] if self._stop.is_set() else failure_results([p])
 
             def process_all():
                 try:
                     return self.process_paths(paths, file_info, metadata)
                 except Exception as e:
                     AppLogger.warning(f"[{self.label}] process_batch failed for {len(paths)} paths: {e}", exc=e)
-                    return []
+                    return [] if self._stop.is_set() else failure_results(paths)
 
             if self._batched:
                 futures = {self._executor.submit(process_all): paths}
@@ -198,11 +195,6 @@ class PluginWorker:
             if not_done:
                 unfinished = sum(len(futures[f]) for f in not_done) - len(not_started)
                 AppLogger.warning(f"[{self.label}] batch timeout: {unfinished}/{len(paths)} unfinished, {len(not_started)} not started (retried later)")
-            failures = failed_results(paths, results, not_started)
-            if failures and self._stop.is_set():
-                AppLogger.info(f"[{self.label}] Stopping: {len(failures)} paths without a result are retried later")
-            else:
-                results.extend(failures)
             self._node.send_reliable(
                 self.RESULT_TOPIC,
                 {self.KIND: self.status_name, "results": results},

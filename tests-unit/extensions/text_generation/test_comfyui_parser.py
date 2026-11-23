@@ -92,7 +92,8 @@ class TestComfyUiParser:
 
     def test_missing_keys(self):
         result = self.parser.process("a.png", (100, 1.0), {})
-        assert result is None
+        assert result.status is True
+        assert result.meta_info is None
 
     def test_invalid_json(self):
         metadata = {"exiftool.PNG:Prompt": "not json"}

@@ -10,6 +10,7 @@ import pytest
 from wafer.core.platform.process import AppProcess
 from wafer.core.platform.process_checker import ParentProcessChecker
 from wafer.core.platform.process_lock import SafeProcessLock
+from wafer.plugin.retry import RetryLater
 
 
 def _base_cmd():
@@ -198,7 +199,9 @@ class TestParserWorkerLifecycle:
             broker.stop()
 
 
-class _RecordingPlugin:
+class _RecordingPlugin(RetryLater):
+    NAME = "_test_recording"
+
     def __init__(self):
         self.paths = []
 

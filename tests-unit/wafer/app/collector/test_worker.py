@@ -445,3 +445,75 @@ def test_stop_ends_a_batch_with_queued_paths_at_once_and_sends_finished_results(
     assert stopped_in < 2
     statuses = {r["source"]: r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]}
     assert statuses == {"/test/ok.png": True}
+
+
+def test_on_error_list_result_is_sent_with_the_rest_of_the_batch(make_worker):
+    from unittest.mock import MagicMock
+    from wafer.plugin.collector.base import CollectorResult
+
+    worker = make_worker()
+    worker._node = MagicMock()
+
+    def process(path, info):
+        if path == "/bad.zip":
+            raise RuntimeError("boom")
+        return CollectorResult(source=path, status=True)
+
+    worker._plugin.process = process
+    worker._plugin.on_error = lambda path, error: [CollectorResult(source=path, status=False)]
+    worker._process_batch(["/bad.zip", "/ok.zip"], {}, {}, "test_db")
+
+    results = worker._node.send_reliable.call_args[0][1]["results"]
+    assert {r["source"]: r["status"] for r in results} == {"/ok.zip": True, "/bad.zip": False}
+
+
+def test_failing_on_error_is_retried(make_worker):
+    from unittest.mock import MagicMock
+    from wafer.plugin.collector.base import CollectorResult
+
+    worker = make_worker()
+    worker._node = MagicMock()
+
+    def process(path, info):
+        if path == "/bad.zip":
+            raise RuntimeError("boom")
+        return CollectorResult(source=path, status=True)
+
+    def on_error(path, error):
+        raise ValueError("on_error broke")
+
+    worker._plugin.process = process
+    worker._plugin.on_error = on_error
+    worker._process_batch(["/bad.zip", "/ok.zip"], {}, {}, "test_db")
+
+    results = worker._node.send_reliable.call_args[0][1]["results"]
+    assert {r["source"]: r["status"] for r in results} == {"/ok.zip": True}
+
+
+def test_error_after_timeout_is_not_counted(make_worker):
+    import threading
+    from unittest.mock import MagicMock
+
+    worker = make_worker()
+    worker._node = MagicMock()
+    worker._batch_timeout = 0.2
+    release = threading.Event()
+    finished = threading.Event()
+    worker._plugin.on_error = MagicMock()
+
+    def process(path, info):
+        try:
+            release.wait(5)
+            raise RuntimeError("late failure")
+        finally:
+            finished.set()
+
+    worker._plugin.process = process
+    try:
+        worker._process_batch(["/slow.jpg"], {}, {}, "test_db")
+    finally:
+        release.set()
+    assert finished.wait(5)
+    worker._executor.shutdown(wait=True)
+
+    worker._plugin.on_error.assert_not_called()

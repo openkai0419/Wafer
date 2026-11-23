@@ -5,7 +5,10 @@ from ..worker_lifecycle import PluginWorker
 
 
 def result_dicts(results) -> list[dict]:
-    return [r.to_dict() if isinstance(r, CollectorResult) else r for r in results or () if r is not None]
+    flat = []
+    for item in results or ():
+        flat.extend(item if isinstance(item, list) else [item])
+    return [r.to_dict() if isinstance(r, CollectorResult) else r for r in flat if r is not None]
 
 
 class CollectorWorker(PluginWorker):
@@ -21,8 +24,7 @@ class CollectorWorker(PluginWorker):
         self._node.subscribe("service.request", self._on_service_request)
 
     def process_path(self, path, file_info, metadata) -> list[dict]:
-        result = self._plugin.process(path, file_info)
-        return result_dicts(result if isinstance(result, list) else [result])
+        return result_dicts([self._plugin.process(path, file_info)])
 
     def process_paths(self, paths, file_info, metadata) -> list[dict]:
         return result_dicts(self._plugin.process_batch(paths, file_info))

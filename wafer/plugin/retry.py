@@ -29,7 +29,7 @@ class RetryCounter:
         if fail_after is not None:
             AppLogger.warning(f"[{self.name}] Failed {failures} times; not collected again until the file changes: {path}")
             return True
-        AppLogger.warning(f"[{self.name}] Failed {failures} times; paused until the next restart: {path}")
+        AppLogger.warning(f"[{self.name}] Failed {failures} times; paused until Wafer restarts (Restart All): {path}")
         return False
 
     def is_paused(self, path: str) -> bool:

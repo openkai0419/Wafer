@@ -173,19 +173,21 @@ class PluginWorker:
             file_info = {p: tuple(file_info_raw.get(p, (0.0, 0))) for p in paths}
             metadata = {p: metadata.get(p, {}) for p in paths}
 
+            returned = threading.Event()
+
             def process_one(p):
                 try:
                     return self.process_path(p, file_info[p], metadata[p])
                 except Exception as e:
                     AppLogger.warning(f"[{self.label}] process failed: {p}: {e}", exc=e)
-                    return [] if self._stop.is_set() else self.error_results([p], e)
+                    return [] if self._stop.is_set() or returned.is_set() else self.error_results([p], e)
 
             def process_all():
                 try:
                     return self.process_paths(paths, file_info, metadata)
                 except Exception as e:
                     AppLogger.warning(f"[{self.label}] process_batch failed for {len(paths)} paths: {e}", exc=e)
-                    return [] if self._stop.is_set() else self.error_results(paths, e)
+                    return [] if self._stop.is_set() or returned.is_set() else self.error_results(paths, e)
 
             if not paths:
                 futures = {}
@@ -194,6 +196,7 @@ class PluginWorker:
             else:
                 futures = {self._executor.submit(process_one, p): [p] for p in paths}
             done, not_done = self._wait_unless_stopped(futures)
+            returned.set()
             results = []
             for fut in done:
                 try:

@@ -92,7 +92,7 @@ class TestComfyUiParser:
 
     def test_missing_keys(self):
         result = self.parser.process("a.png", (100, 1.0), {})
-        assert result.status is True
+        assert result.status is False
         assert result.meta_info is None
 
     def test_invalid_json(self):

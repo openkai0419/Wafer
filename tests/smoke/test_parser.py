@@ -140,7 +140,7 @@ class TestSmokeParser:
     def test_plugin_fail_on_missing_key(self):
         plugin = parser_resolver.registry.instance("novelai")
         result = plugin.process("/fake/image.png", (1.0, 100), {})
-        assert result.status is True
+        assert result.status is False
         assert result.meta_info is None
 
 
@@ -214,5 +214,5 @@ class TestSmokeWebUiParser:
     def test_plugin_fail_on_missing_key(self):
         plugin = parser_resolver.registry.instance("webui")
         result = plugin.process("/fake/image.png", (1.0, 100), {})
-        assert result.status is True
+        assert result.status is False
         assert result.meta_info is None

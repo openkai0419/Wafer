@@ -95,7 +95,7 @@ class ComfyUiParser(BaseSingletonParser):
     def process(self, path: str, file_info: tuple, metadata: dict) -> ParserResult:
         prompt, workflow, used = _extract(metadata)
         if prompt is None and workflow is None:
-            return ParserResult(source=path, status=True)
+            return ParserResult(source=path, status=any(key in metadata for key in TRIGGER_KEYS))
 
         meta_info: dict[str, str] = {}
         graph = _as_dict(prompt)

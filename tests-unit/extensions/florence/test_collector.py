@@ -437,7 +437,7 @@ class TestBatchInference:
         self.collector.shutdown()
         with pytest.raises(RuntimeError, match="stopping"):
             self.collector.load_engine("base")
-        assert self.collector._engine_failed is False
+        assert self.collector.engine_failed_at is None
 
     def test_batch_size_is_a_multiple_of_the_inference_batch(self):
         from extensions.florence.collector import INFER_BATCH
@@ -465,3 +465,33 @@ class TestBatchInference:
         assert results == []
         assert calls == TASKS[:1]
         assert self.collector._engines == {}
+
+    def test_engine_load_failure_leaves_the_batch_for_retry(self):
+        self.collector._hash_cache["hash-/cached.jpg"] = {"caption": "cached"}
+        paths = ["/cached.jpg"] + [f"/img/{i}.jpg" for i in range(6)]
+        with patch("extensions.florence.collector.ensure_model", side_effect=RuntimeError("network down")) as ensure:
+            results, _ = run_batch(self.collector, paths)
+        assert [(r.source, r.status) for r in results] == [("/cached.jpg", True)]
+        assert ensure.call_count == 1
+
+    def test_failed_engine_is_tried_again_after_the_retry_interval(self, monkeypatch):
+        from extensions.florence import collector as collector_module
+
+        now = [1000.0]
+        monkeypatch.setattr(collector_module.time, "monotonic", lambda: now[0])
+        engine = echo_engine()
+        inference = MagicMock()
+        inference.FlorenceInference.return_value = engine
+        paths = [f"/img/{i}.jpg" for i in range(2)]
+        with (
+            patch("extensions.florence.collector.ensure_model", side_effect=[RuntimeError("network down"), "/fake/model"]) as ensure,
+            patch.dict("sys.modules", {"extensions.florence._inference": inference}),
+        ):
+            assert run_batch(self.collector, paths)[0] == []
+            now[0] += collector_module.ENGINE_RETRY_INTERVAL - 1
+            assert run_batch(self.collector, paths)[0] == []
+            assert ensure.call_count == 1
+            now[0] += 2
+            results, _ = run_batch(self.collector, paths)
+        assert ensure.call_count == 2
+        assert [r.status for r in results] == [True, True]

@@ -22,7 +22,7 @@ class NovelAiImageParser(BaseSingletonParser):
             if raw:
                 break
         else:
-            return ParserResult(source=path, status=True)
+            return ParserResult(source=path, status=False)
         if not isinstance(raw, str) or not raw.lstrip().startswith("{"):
             return ParserResult(source=path, status=True)
         try:

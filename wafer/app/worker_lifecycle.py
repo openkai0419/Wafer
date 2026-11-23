@@ -194,7 +194,10 @@ class PluginWorker:
             not_started = cancel_not_started(futures, not_done)
             if not_done:
                 unfinished = sum(len(futures[f]) for f in not_done) - len(not_started)
-                AppLogger.warning(f"[{self.label}] batch timeout: {unfinished}/{len(paths)} unfinished, {len(not_started)} not started (retried later)")
+                if self._stop.is_set():
+                    AppLogger.info(f"[{self.label}] Stopping: {unfinished + len(not_started)}/{len(paths)} paths are retried later")
+                else:
+                    AppLogger.warning(f"[{self.label}] batch timeout: {unfinished}/{len(paths)} unfinished, {len(not_started)} not started (retried later)")
             self._node.send_reliable(
                 self.RESULT_TOPIC,
                 {self.KIND: self.status_name, "results": results},

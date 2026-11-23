@@ -395,6 +395,10 @@ def test_batched_collector_timeout_sends_nothing():
     assert replied == {}
 
 
+def test_batched_collector_returning_none_sends_an_empty_message():
+    assert run_batched_collector(lambda paths: None, ["/a.png", "/b.png"]) == {}
+
+
 def test_batched_collector_error_fails_every_path():
     def boom(paths):
         raise RuntimeError("boom")

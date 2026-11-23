@@ -35,7 +35,7 @@ class CollectorWorker(PluginWorker):
 
 
 def result_dicts(results) -> list[dict]:
-    return [r.to_dict() if isinstance(r, CollectorResult) else r for r in results if r is not None]
+    return [r.to_dict() if isinstance(r, CollectorResult) else r for r in results or () if r is not None]
 
 
 run_collector = CollectorWorker.run

@@ -24,7 +24,7 @@ class ParserWorker(PluginWorker):
 
 
 def result_dicts(results) -> list[dict]:
-    return [r.to_dict() if isinstance(r, ParserResult) else r for r in results if r]
+    return [r.to_dict() if isinstance(r, ParserResult) else r for r in results or () if r]
 
 
 run_parser = ParserWorker.run

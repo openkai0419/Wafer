@@ -298,6 +298,26 @@ def test_batched_parser_timeout_sends_nothing(batched_worker):
     assert sent_statuses(batched_worker) == {}
 
 
+def test_batched_parser_returning_none_sends_an_empty_message(batched_worker):
+    batched_worker._plugin.reply = lambda paths: None
+
+    batched_worker._process_batch(["/a.png", "/b.png"], {}, {}, "test_db")
+
+    assert batched_worker._node.send_reliable.call_args[0][1]["results"] == []
+
+
+def test_batched_parser_error_while_stopping_is_not_sent(batched_worker):
+    def boom(paths):
+        batched_worker._stop.set()
+        raise RuntimeError("tool killed by shutdown")
+
+    batched_worker._plugin.reply = boom
+
+    batched_worker._process_batch(["/a.png", "/b.png"], {}, {}, "test_db")
+
+    assert sent_statuses(batched_worker) == {}
+
+
 def test_batched_parser_error_fails_every_path(batched_worker):
     def boom(paths):
         raise RuntimeError("boom")

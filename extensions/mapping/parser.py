@@ -58,7 +58,7 @@ class MappingParser(BaseParserPlugin):
         self.preset_loaded = -math.inf
 
     def process(self, path, file_info, metadata):
-        return self.process_batch([path], file_info, metadata)[0]
+        return self.process_batch([path], {path: file_info}, {path: metadata})[0]
 
     def process_batch(self, paths, file_info, metadata):
         preset = self.current_preset()
@@ -122,8 +122,8 @@ class MappingParser(BaseParserPlugin):
         )
         return model
 
-    def positions(self, model: SpaceModel, paths: list[str]) -> dict[str, tuple[float, ...] | None | object]:
-        points: dict[str, tuple[float, ...] | None | object] = {}
+    def positions(self, model: SpaceModel, paths: list[str]):
+        points = {}
         try:
             stored = self.read_db(lambda conn: read_path_values(conn, paths, keys=[KEY_MODEL]), {})
             current = str(model.version)

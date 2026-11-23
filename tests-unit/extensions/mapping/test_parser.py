@@ -298,11 +298,12 @@ def test_batch_matches_one_by_one(env):
     run(plugin, "c:/0.png")
     add_new(db, ["n0", "n1"])
     db.upsert_basic_sources([("c:/empty.png", "he", 1, 1.0, 1.0, 1.0)], [("c:/empty.png", "c:/empty.png", "empty.png", 1.0, None)])
-    paths = ["c:/1.png", "c:/n0.png", "c:/empty.png", "c:/missing.png", "c:/n1.png"]
+    db.upsert_collection_results([], [("c:/2.png", "mapping.model", "1", None)], [], [])
+    paths = ["c:/1.png", "c:/2.png", "c:/n0.png", "c:/empty.png", "c:/missing.png", "c:/n1.png"]
     together = batch(plugin, paths)
     alone = [run(plugin, p) for p in paths]
     assert [(r.status, r.meta_info, r.delete_meta_keys) for r in together] == [(r.status, r.meta_info, r.delete_meta_keys) for r in alone]
-    assert [r.status for r in together] == [True, True, True, False, True]
+    assert [r.status for r in together] == [True, True, True, True, False, True]
 
 
 def test_batch_places_new_files_with_one_call_on_one_thread(env, monkeypatch):
@@ -323,7 +324,7 @@ def test_batch_places_new_files_with_one_call_on_one_thread(env, monkeypatch):
         def __exit__(self, *exc):
             return False
 
-    monkeypatch.setattr(parser_module, "threadpool_limits", Limit, raising=False)
+    monkeypatch.setattr(parser_module, "threadpool_limits", Limit)
     batch(plugin, ["c:/1.png", "c:/n0.png", "c:/n1.png", "c:/n2.png"])
     assert calls == [3]
     assert limits == [1]
@@ -343,3 +344,22 @@ def test_failed_value_read_keeps_trained_coordinates(env, monkeypatch):
     trained, new = batch(plugin, ["c:/1.png", "c:/new.png"])
     assert trained.status and set(trained.meta_info) == {"2d", "group", "model"}
     assert new.status is False and not new.delete_meta_keys
+
+
+def test_failed_version_read_leaves_the_whole_batch_for_the_next_run(env, monkeypatch):
+    plugin, _db, _tmp = env
+    run(plugin, "c:/0.png")
+    real = parser_module.read_path_values
+
+    def broken_version(conn, paths, keys=None):
+        if keys == [KEY_MODEL]:
+            raise sqlite3.OperationalError("database is locked")
+        return real(conn, paths, keys=keys)
+
+    warnings = []
+    monkeypatch.setattr(parser_module, "read_path_values", broken_version)
+    monkeypatch.setattr(parser_module.AppLogger, "warning", lambda *a, **k: warnings.append(a))
+    results = batch(plugin, ["c:/1.png", "c:/2.png", "c:/new.png"])
+    assert [r.status for r in results] == [False, False, False]
+    assert not any(r.delete_meta_keys for r in results)
+    assert len(warnings) == 1

@@ -137,7 +137,7 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
     def process(self, path: str, file_info: tuple) -> CollectorResult | None:
         proc = self._ensure_process()
         if proc is None:
-            return None if self._closed.is_set() else CollectorResult(source=path, status=False)
+            return None
         self._touch()
 
         data = proc.query(path)

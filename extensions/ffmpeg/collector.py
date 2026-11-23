@@ -1,3 +1,5 @@
+import subprocess
+
 from wafer.plugin import BaseCollectorPlugin, CollectorResult
 from wafer.core.logs import AppLogger
 
@@ -57,11 +59,15 @@ class FfmpegCollectorPlugin(BaseCollectorPlugin):
     def process(self, path: str, file_info: tuple) -> CollectorResult | None:
         ffprobe = self._resolve_ffprobe()
         if ffprobe is None:
-            return CollectorResult(source=path, status=False)
+            return None
 
         from .parser import probe, flatten
 
-        data = probe(path, ffprobe)
+        try:
+            data = probe(path, ffprobe)
+        except subprocess.TimeoutExpired as e:
+            AppLogger.warning(f"[ffmpeg] ffprobe timed out; collected again later: {path}", exc=e)
+            return None
         if data is None:
             return CollectorResult(source=path, status=False)
 

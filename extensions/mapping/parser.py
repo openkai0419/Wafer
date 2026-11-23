@@ -76,7 +76,7 @@ class MappingParser(BaseParserPlugin):
                 points = self.positions(model, paths)
             finally:
                 self.touch()
-        return [self.result_for(path, points[path], model) for path in paths]
+        return [self.result_for(path, points[path], model) for path in paths if path in points]
 
     def result_for(self, path: str, point, model: SpaceModel) -> ParserResult:
         if point is UNREAD:
@@ -128,7 +128,7 @@ class MappingParser(BaseParserPlugin):
     def positions(self, model: SpaceModel, paths: list[str]):
         points = {}
         try:
-            stored = self.read_db(lambda conn: read_path_values(conn, paths, keys=[KEY_MODEL]), {})
+            stored = self.read_db(lambda conn: read_path_values(conn, paths, keys=[KEY_MODEL]))
             current = str(model.version)
             for path in paths:
                 version = stored.get(path, {}).get(KEY_MODEL)
@@ -137,10 +137,10 @@ class MappingParser(BaseParserPlugin):
                     if trained is not None:
                         points[path] = trained
             pending = [path for path in paths if path not in points]
-            values = self.read_db(lambda conn: read_path_values(conn, pending, keys=[SYSTEM_FILE_HASH_KEY, *model.preset.value_keys()]), {}) if pending else {}
+            values = self.read_db(lambda conn: read_path_values(conn, pending, keys=[SYSTEM_FILE_HASH_KEY, *model.preset.value_keys()])) if pending else {}
         except sqlite3.Error as e:
             AppLogger.warning(f"[Mapping] Reading the values of {len(paths)} files failed; the unplaced ones are placed on the next run", exc=e)
-            return {path: points.get(path, UNREAD) for path in paths}
+            return points
         found = [path for path in pending if path in values]
         if found:
             with threadpool_limits(limits=1):

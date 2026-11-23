@@ -4,6 +4,7 @@ from wafer.plugin.parser.base import (
     BaseParserPlugin,
     BaseSingletonParser,
     ParserResult,
+    ReaderClosed,
     required_collectors,
 )
 
@@ -142,6 +143,66 @@ def test_query_db_reads_assigned_database(tmp_path, monkeypatch):
     finally:
         parser.shutdown()
     assert parser._reader is None
+
+
+def reader_parser(tmp_path, monkeypatch, name):
+    from wafer.core.db.file_db import FileDB
+    import wafer.core.common.paths as paths
+
+    db_path = tmp_path / f"{name}.db"
+    db = FileDB(db_path)
+    db.start()
+    db.initialize_database()
+    db.close()
+    monkeypatch.setattr(paths, "data_db_path", lambda _name: str(db_path))
+    parser = DummyParser()
+    parser.db_name = name
+    parser.query_db("SELECT 1")
+    return parser
+
+
+def test_read_after_shutdown_raises_instead_of_reopening(tmp_path, monkeypatch):
+    parser = reader_parser(tmp_path, monkeypatch, "closed_reader")
+    parser.shutdown()
+    with pytest.raises(ReaderClosed):
+        parser.query_db("SELECT 1")
+    assert parser._reader is None
+
+
+def test_read_waiting_while_the_reader_closes_raises(tmp_path, monkeypatch):
+    import threading
+
+    parser = reader_parser(tmp_path, monkeypatch, "closing_reader")
+    reader = parser._reader
+    outcome = []
+    waiting = threading.Event()
+    lock = threading.Lock()
+
+    class WaitingLock:
+        def __enter__(self):
+            waiting.set()
+            lock.acquire()
+
+        def __exit__(self, *exc):
+            lock.release()
+
+    parser._reader_lock = WaitingLock()
+    lock.acquire()
+
+    def read():
+        try:
+            outcome.append(parser.read_db(lambda conn: "read"))
+        except ReaderClosed as e:
+            outcome.append(e)
+
+    thread = threading.Thread(target=read)
+    thread.start()
+    assert waiting.wait(5)
+    parser._reader = None
+    lock.release()
+    thread.join(5)
+    reader.close()
+    assert len(outcome) == 1 and isinstance(outcome[0], ReaderClosed)
 
 
 def test_base_classes_are_abstract():

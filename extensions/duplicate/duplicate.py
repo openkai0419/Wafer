@@ -19,7 +19,7 @@ class DuplicateParser(BaseParserPlugin):
 
     def process_batch(self, paths: list[str], file_info: dict[str, tuple], metadata: dict[str, dict]) -> list[ParserResult]:
         hashes = {path: self.valid_hash(file_info[path]) for path in paths}
-        counts, tagged = self.read_db(lambda conn: self.read_hash_state(conn, list(dict.fromkeys(h for h in hashes.values() if h))), ({}, set()))
+        counts, tagged = self.read_db(lambda conn: self.read_hash_state(conn, list(dict.fromkeys(h for h in hashes.values() if h))))
         results = []
         for path in paths:
             file_hash = hashes[path]

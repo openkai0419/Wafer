@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import threading
-import time
 from typing import TYPE_CHECKING
 
-from wafer.plugin import BaseInferenceCollector, CollectorResult
+from wafer.plugin import BaseInferenceCollector, CollectorResult, EngineUnavailable
 from wafer.core.logs import AppLogger
 
 if TYPE_CHECKING:
@@ -17,11 +15,6 @@ from .settings import TAG_MAP, enabled_tasks, florence_config
 
 POST_INSTALL_VERSION = "1"
 INFER_BATCH = 4
-ENGINE_RETRY_INTERVAL = 300.0
-
-
-class EngineUnavailable(RuntimeError):
-    pass
 
 
 class FlorenceCollector(BaseInferenceCollector):
@@ -44,32 +37,10 @@ class FlorenceCollector(BaseInferenceCollector):
             on_progress(phase="Downloading Florence-2 model…")
         ensure_model(version=POST_INSTALL_VERSION)
 
-    def __init__(self):
-        super().__init__()
-        self.engine_failed_at: float | None = None
-        self.stopping = threading.Event()
-
     def load_engine(self, model: str) -> FlorenceInference:
-        if self.stopping.is_set():
-            raise RuntimeError("Florence-2 engine is not loaded while stopping")
-        if self.engine_failed_at is not None and time.monotonic() - self.engine_failed_at < ENGINE_RETRY_INTERVAL:
-            raise RuntimeError("Florence-2 engine initialization previously failed")
         from ._inference import FlorenceInference
 
-        try:
-            engine = FlorenceInference(ensure_model(model, version=POST_INSTALL_VERSION))
-        except Exception as exc:
-            self.engine_failed_at = time.monotonic()
-            AppLogger.error(f"Florence-2 engine initialization failed; it is tried again in {ENGINE_RETRY_INTERVAL:.0f}s: {exc}")
-            raise
-        self.engine_failed_at = None
-        return engine
-
-    def engine_for(self, model: str) -> FlorenceInference:
-        try:
-            return self.engine(model)
-        except Exception as e:
-            raise EngineUnavailable(str(e)) from e
+        return FlorenceInference(ensure_model(model, version=POST_INSTALL_VERSION))
 
     def run_tasks(self, engine: FlorenceInference, image, settings: dict) -> dict:
         max_new_tokens = settings.get("max_new_tokens", 1024)
@@ -83,7 +54,7 @@ class FlorenceCollector(BaseInferenceCollector):
         for task in enabled_tasks(settings):
             if self.stopping.is_set():
                 return None
-            texts[TAG_MAP[task]] = self.engine_for(model).predict_batch(images, task, max_new_tokens=max_new_tokens, num_beams=num_beams)
+            texts[TAG_MAP[task]] = self.engine(model).predict_batch(images, task, max_new_tokens=max_new_tokens, num_beams=num_beams)
         return [{key: values[i] for key, values in texts.items()} for i in range(len(images))]
 
     def infer_each(self, model: str, waiting: dict) -> list[dict | None] | None:
@@ -91,7 +62,7 @@ class FlorenceCollector(BaseInferenceCollector):
         for thumb, owners in waiting.values():
             if self.stopping.is_set():
                 return None
-            inferred.append(self.infer_or_none(self.engine_for(model), thumb, model, owners[0][0]))
+            inferred.append(self.infer_or_none(self.engine(model), thumb, model, owners[0][0]))
         return inferred
 
     def process_batch(self, paths: list[str], file_info: dict[str, tuple]) -> list[CollectorResult]:
@@ -118,13 +89,12 @@ class FlorenceCollector(BaseInferenceCollector):
             except Exception as e:
                 if self.stopping.is_set():
                     break
-                AppLogger.warning(f"{self.NAME} group failed: {[path for path, _ in group]}", exc=e)
-                results.update({path: CollectorResult(source=path, status=False) for path, _ in group})
+                AppLogger.warning(f"{self.NAME} group failed; collected again later: {[path for path, _ in group]}", exc=e)
         return [results[path] for path in paths if path in results]
 
     def process_group(self, group: list[tuple[str, str | None]]) -> dict[str, CollectorResult]:
         model = self.model
-        engine = self.engine_for(model)
+        engine = self.engine(model)
         results: dict[str, CollectorResult] = {}
         waiting: dict[str, tuple[Image.Image, list[tuple[str, str | None]]]] = {}
         for path, file_hash in group:
@@ -154,34 +124,18 @@ class FlorenceCollector(BaseInferenceCollector):
         if inferred is None:
             return results
         for (pixel_hash, (_, owners)), tags in zip(waiting.items(), inferred):
+            if tags is None:
+                continue
             for path, file_hash in owners:
-                if tags is None:
-                    results[path] = CollectorResult(source=path, status=False)
-                else:
-                    self.remember(file_hash, pixel_hash, tags)
-                    results[path] = CollectorResult(source=path, status=True, tags=tags)
+                self.remember(file_hash, pixel_hash, tags)
+                results[path] = CollectorResult(source=path, status=True, tags=tags)
         return results
-
-    def infer_or_none(self, engine: FlorenceInference, thumb, model: str, path: str) -> dict | None:
-        try:
-            return self.infer(engine, thumb, model)
-        except Exception as e:
-            AppLogger.warning(f"{self.NAME} '{model}' inference failed: {path}", exc=e)
-            return None
 
     def infer(self, engine: FlorenceInference, thumb, model: str) -> dict:
         return self.run_tasks(engine, thumb, self._settings)
 
     def preview(self, engine: FlorenceInference, thumb, settings: dict) -> dict:
         return {"tags": self.run_tasks(engine, thumb, settings or self._settings)}
-
-    def shutdown(self):
-        self.stopping.set()
-        super().shutdown()
-
-    def on_notify(self, payload=None) -> None:
-        self.engine_failed_at = None
-        super().on_notify(payload)
 
     def device_info(self) -> dict:
         try:

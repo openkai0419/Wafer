@@ -2,6 +2,7 @@ import pytest
 
 from extensions.duplicate.duplicate import TAG, DuplicateParser
 from wafer.core.db.file_db import FileDB
+from wafer.plugin.parser.base import ReaderClosed
 
 TAG_KEY = f"{DuplicateParser.NAME}.{TAG}"
 
@@ -89,7 +90,13 @@ def test_batch_matches_one_by_one(parser):
     expected = [parser.process(p, info[p], {}) for p in paths]
     assert parser.process_batch(paths, info, {p: {} for p in paths}) == expected
     assert [(r.status, r.tags, r.delete_tag_keys) for r in expected] == [
-        (True, {TAG: "1"}, None), (True, {TAG: "1"}, None), (True, None, [TAG_KEY]), (True, None, None), (False, None, None), (False, None, None)]
+        (True, {TAG: "1"}, None),
+        (True, {TAG: "1"}, None),
+        (True, None, [TAG_KEY]),
+        (True, None, None),
+        (False, None, None),
+        (False, None, None),
+    ]
 
 
 def test_batch_reads_the_database_once(parser, monkeypatch):
@@ -97,7 +104,16 @@ def test_batch_reads_the_database_once(parser, monkeypatch):
         _add_source(parser.db, f"/{i}.png", f"h{i % 2}")
     calls = []
     original = parser.read_db
-    monkeypatch.setattr(parser, "read_db", lambda read, default=None: calls.append(1) or original(read, default))
+    monkeypatch.setattr(parser, "read_db", lambda read: calls.append(1) or original(read))
     paths = [f"/{i}.png" for i in range(5)]
     parser.process_batch(paths, {p: (1.0, 100, f"h{i % 2}") for i, p in enumerate(paths)}, {p: {} for p in paths})
     assert len(calls) == 1
+
+
+def test_closed_reader_raises_instead_of_reporting_no_duplicates(parser):
+    _add_source(parser.db, "/a.png", "h1")
+    _add_source(parser.db, "/b.png", "h1")
+    parser.query_db("SELECT 1")
+    parser.shutdown()
+    with pytest.raises(ReaderClosed):
+        parser.process_batch(["/a.png", "/b.png"], {"/a.png": (1.0, 100, "h1"), "/b.png": (1.0, 100, "h1")}, {"/a.png": {}, "/b.png": {}})

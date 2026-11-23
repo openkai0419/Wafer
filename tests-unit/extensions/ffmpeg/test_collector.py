@@ -46,12 +46,19 @@ class TestFfmpegCollectorPlugin:
         assert abs(result.aspect - (640 / 480)) < 0.001
 
     @patch("extensions.ffmpeg.collector.FfmpegCollectorPlugin._resolve_ffprobe")
-    def test_process_no_ffprobe(self, mock_resolve):
+    def test_process_without_ffprobe_is_collected_again(self, mock_resolve):
         mock_resolve.return_value = None
 
         plugin = FfmpegCollectorPlugin()
-        result = plugin.process("/test/video.mp4", (1.0, 1000))
-        assert result.status is False
+        assert plugin.process("/test/video.mp4", (1.0, 1000)) is None
+
+    @patch("extensions.ffmpeg.collector.FfmpegCollectorPlugin._resolve_ffprobe")
+    def test_process_timeout_is_collected_again(self, mock_resolve):
+        import subprocess
+
+        mock_resolve.return_value = "/fake/ffprobe.exe"
+        with patch("extensions.ffmpeg.parser.run_external", side_effect=subprocess.TimeoutExpired("ffprobe", 30)):
+            assert FfmpegCollectorPlugin().process("/test/video.mp4", (1.0, 1000)) is None
 
     @patch("extensions.ffmpeg.collector.FfmpegCollectorPlugin._resolve_ffprobe")
     def test_process_probe_failure(self, mock_resolve):

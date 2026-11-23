@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import subprocess
 from fractions import Fraction
 
 from wafer.core.logs import AppLogger
@@ -55,6 +56,8 @@ def probe(path: str, ffprobe_path: str) -> dict | None:
             AppLogger.debug(f"[ffmpeg] ffprobe returned empty stdout for {path}")
             return None
         return json.loads(result.stdout)
+    except subprocess.TimeoutExpired:
+        raise
     except Exception as e:
         AppLogger.debug(f"[ffmpeg] ffprobe failed for {path}: {e}")
         return None

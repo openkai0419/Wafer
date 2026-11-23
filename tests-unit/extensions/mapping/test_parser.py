@@ -226,8 +226,7 @@ def test_a_broken_read_leaves_the_file_for_the_next_run(env, monkeypatch):
         raise sqlite3.OperationalError("database is locked")
 
     monkeypatch.setattr(parser_module, "read_path_values", broken)
-    result = run(plugin, "c:/new.png")
-    assert result.status is False and not result.delete_meta_keys
+    assert run(plugin, "c:/new.png") is None
 
 
 def test_new_files_are_placed_through_the_shared_reader(env, monkeypatch):
@@ -353,9 +352,19 @@ def test_failed_value_read_keeps_trained_coordinates(env, monkeypatch):
         return real(conn, paths, keys=keys)
 
     monkeypatch.setattr(parser_module, "read_path_values", broken_values)
-    trained, new = batch(plugin, ["c:/1.png", "c:/new.png"])
+    (trained,) = batch(plugin, ["c:/1.png", "c:/new.png"])
+    assert trained.source == "c:/1.png"
     assert trained.status and set(trained.meta_info) == {"2d", "group", "model"}
-    assert new.status is False and not new.delete_meta_keys
+
+
+def test_closed_reader_raises_instead_of_failing_the_batch(env):
+    from wafer.plugin.parser.base import ReaderClosed
+
+    plugin, _db, _tmp = env
+    run(plugin, "c:/0.png")
+    plugin.shutdown()
+    with pytest.raises(ReaderClosed):
+        batch(plugin, ["c:/1.png", "c:/new.png"])
 
 
 def test_failed_version_read_leaves_the_whole_batch_for_the_next_run(env, monkeypatch):
@@ -371,7 +380,5 @@ def test_failed_version_read_leaves_the_whole_batch_for_the_next_run(env, monkey
     warnings = []
     monkeypatch.setattr(parser_module, "read_path_values", broken_version)
     monkeypatch.setattr(parser_module.AppLogger, "warning", lambda *a, **k: warnings.append(a))
-    results = batch(plugin, ["c:/1.png", "c:/2.png", "c:/new.png"])
-    assert [r.status for r in results] == [False, False, False]
-    assert not any(r.delete_meta_keys for r in results)
+    assert batch(plugin, ["c:/1.png", "c:/2.png", "c:/new.png"]) == []
     assert len(warnings) == 1

@@ -7,6 +7,7 @@ from PIL import Image
 
 from extensions.florence._downloader import MODELS, ensure_model
 from extensions.florence.collector import FlorenceCollector
+from wafer.plugin import EngineUnavailable
 
 _ENGINE_IDLE_TIMEOUT = FlorenceCollector.ENGINE_IDLE_TIMEOUT
 
@@ -92,7 +93,7 @@ class TestSettings:
         settings = {"enable_caption": True, "enable_detailed": False, "enable_more_detailed": False}
         assert enabled_tasks(settings) == ["<CAPTION>"]
 
-    def test_inference_error_returns_failure(self):
+    def test_inference_error_is_collected_again(self):
         collector = FlorenceCollector()
         thumb = Image.new("RGB", (10, 10), (128, 128, 128))
 
@@ -104,7 +105,7 @@ class TestSettings:
             with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
                 mock_resolver.load_pil.return_value = thumb
                 result = collector.process("/test/file.jpg", (1000.0, 500, "err_hash"))
-            assert result.status is False
+            assert result is None
         finally:
             collector.shutdown()
 
@@ -240,7 +241,7 @@ class TestIdleTimeout:
         ):
             with pytest.raises(RuntimeError):
                 self.collector.engine("base")
-            with pytest.raises(RuntimeError, match="previously failed"):
+            with pytest.raises(EngineUnavailable, match="failed to load recently"):
                 self.collector.engine("base")
             self.collector.on_notify()
             self.collector.engine("base")
@@ -343,7 +344,7 @@ class TestBatchInference:
         engine.predict.side_effect = predict
         self.collector._engines["base"] = engine
         results, _ = run_batch(self.collector, paths, images=images)
-        assert [r.status for r in results] == [True, False, True, True]
+        assert [(r.source, r.status) for r in results] == [(path, True) for path in paths if path != paths[1]]
 
     def test_stop_between_groups_skips_the_rest(self):
         engine = echo_engine()
@@ -394,7 +395,7 @@ class TestBatchInference:
         assert len({tuple(sorted(r.tags.items())) for r in results}) == 1
         assert [r.source for r in results] == paths
 
-    def test_group_exception_fails_only_that_group(self):
+    def test_group_exception_leaves_only_that_group_for_retry(self):
         engine = self.collector._engines["base"] = echo_engine()
         paths = [f"/img/{i}.jpg" for i in range(8)]
         real = self.collector.process_group
@@ -408,7 +409,7 @@ class TestBatchInference:
 
         with patch.object(self.collector, "process_group", side_effect=process_group):
             results, _ = run_batch(self.collector, paths)
-        assert [(r.source, r.status) for r in results] == [(path, False) for path in paths[:4]] + [(path, True) for path in paths[4:]]
+        assert [(r.source, r.status) for r in results] == [(path, True) for path in paths[4:]]
 
     def test_group_exception_while_stopping_returns_no_results(self):
         self.collector._engines["base"] = echo_engine()
@@ -433,10 +434,10 @@ class TestBatchInference:
         assert results == []
         warning.assert_not_called()
 
-    def test_load_engine_refuses_while_stopping(self):
+    def test_engine_refuses_to_load_while_stopping(self):
         self.collector.shutdown()
-        with pytest.raises(RuntimeError, match="stopping"):
-            self.collector.load_engine("base")
+        with pytest.raises(EngineUnavailable, match="stopping"):
+            self.collector.engine("base")
         assert self.collector.engine_failed_at is None
 
     def test_batch_size_is_a_multiple_of_the_inference_batch(self):
@@ -475,10 +476,8 @@ class TestBatchInference:
         assert ensure.call_count == 1
 
     def test_failed_engine_is_tried_again_after_the_retry_interval(self, monkeypatch):
-        from extensions.florence import collector as collector_module
-
         now = [1000.0]
-        monkeypatch.setattr(collector_module.time, "monotonic", lambda: now[0])
+        monkeypatch.setattr("wafer.plugin.collector.inference.time.monotonic", lambda: now[0])
         engine = echo_engine()
         inference = MagicMock()
         inference.FlorenceInference.return_value = engine
@@ -488,7 +487,7 @@ class TestBatchInference:
             patch.dict("sys.modules", {"extensions.florence._inference": inference}),
         ):
             assert run_batch(self.collector, paths)[0] == []
-            now[0] += collector_module.ENGINE_RETRY_INTERVAL - 1
+            now[0] += self.collector.ENGINE_RETRY_INTERVAL - 1
             assert run_batch(self.collector, paths)[0] == []
             assert ensure.call_count == 1
             now[0] += 2

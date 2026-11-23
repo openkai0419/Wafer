@@ -47,11 +47,10 @@ class TestExifToolCollector:
             assert plugin.process("test.jpg", (1000.0, 500)) is None
         resolve.assert_not_called()
 
-    def test_process_no_exiftool(self):
+    def test_process_without_exiftool_is_collected_again(self):
         plugin = ExifToolCollectorPlugin()
         with patch.object(plugin, "_ensure_process", return_value=None):
-            result = plugin.process("test.jpg", (1000.0, 500))
-        assert result.status is False
+            assert plugin.process("test.jpg", (1000.0, 500)) is None
 
     def test_ensure_process_no_download(self):
         plugin = ExifToolCollectorPlugin()

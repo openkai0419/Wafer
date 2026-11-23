@@ -192,10 +192,22 @@ def test_shutdown_interrupts_training_without_blocking(env, monkeypatch):
     plugin.shutdown()
     worker.join(5)
     assert not worker.is_alive()
-    assert results[0].status is False
+    assert results == [None]
     assert read_status(tmp / "cache" / "mapping" / "map").state == "training"
     assert plugin.blocked is None
     assert plugin.idle_timer is None
+
+
+def test_batch_interrupted_by_shutdown_returns_no_results(env, monkeypatch):
+    plugin, _db, _tmp = env
+
+    def interrupted(cls, preset, values, *, cancelled=lambda: False):
+        plugin.shutdown()
+        raise MapError("Cancelled")
+
+    monkeypatch.setattr(space.SpaceModel, "fit", classmethod(interrupted))
+    paths = ["c:/0.png", "c:/1.png"]
+    assert plugin.process_batch(paths, {path: (1.0, 100, "h") for path in paths}, {path: {} for path in paths}) == []
 
 
 def test_failed_read_keeps_coordinates(env, monkeypatch):

@@ -58,7 +58,8 @@ class MappingParser(BaseParserPlugin):
         self.preset_loaded = -math.inf
 
     def process(self, path, file_info, metadata):
-        return self.process_batch([path], {path: file_info}, {path: metadata})[0]
+        results = self.process_batch([path], {path: file_info}, {path: metadata})
+        return results[0] if results else None
 
     def process_batch(self, paths, file_info, metadata):
         preset = self.current_preset()
@@ -68,6 +69,8 @@ class MappingParser(BaseParserPlugin):
             try:
                 model = self.ensure_model(preset)
                 if model is None:
+                    if self.stopping.is_set() and (self.blocked is None or self.blocked[0] != preset.version):
+                        return []
                     status = self.blocked == (preset.version, True)
                     return [ParserResult(source=path, status=status) for path in paths]
                 points = self.positions(model, paths)

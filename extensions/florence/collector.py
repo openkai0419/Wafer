@@ -61,11 +61,23 @@ class FlorenceCollector(BaseInferenceCollector):
         num_beams = settings.get("num_beams", 3)
         return {TAG_MAP[task]: engine.predict(image, task, max_new_tokens=max_new_tokens, num_beams=num_beams) for task in enabled_tasks(settings)}
 
-    def run_tasks_batch(self, engine: FlorenceInference, images: list, settings: dict) -> list[dict]:
+    def run_tasks_batch(self, model: str, images: list, settings: dict) -> list[dict] | None:
         max_new_tokens = settings.get("max_new_tokens", 1024)
         num_beams = settings.get("num_beams", 3)
-        texts = {TAG_MAP[task]: engine.predict_batch(images, task, max_new_tokens=max_new_tokens, num_beams=num_beams) for task in enabled_tasks(settings)}
+        texts = {}
+        for task in enabled_tasks(settings):
+            if self.stopping.is_set():
+                return None
+            texts[TAG_MAP[task]] = self.engine(model).predict_batch(images, task, max_new_tokens=max_new_tokens, num_beams=num_beams)
         return [{key: values[i] for key, values in texts.items()} for i in range(len(images))]
+
+    def infer_each(self, model: str, waiting: dict) -> list[dict | None] | None:
+        inferred = []
+        for thumb, owners in waiting.values():
+            if self.stopping.is_set():
+                return None
+            inferred.append(self.infer_or_none(self.engine(model), thumb, model, owners[0][0]))
+        return inferred
 
     def process_batch(self, paths: list[str], file_info: dict[str, tuple]) -> list[CollectorResult]:
         results: dict[str, CollectorResult] = {}
@@ -105,10 +117,12 @@ class FlorenceCollector(BaseInferenceCollector):
             return results
         thumbs = [thumb for thumb, _ in waiting.values()]
         try:
-            inferred = self.run_tasks_batch(engine, thumbs, self._settings)
+            inferred = self.run_tasks_batch(model, thumbs, self._settings)
         except Exception as e:
             AppLogger.warning(f"{self.NAME} '{model}' batch inference failed, retrying one by one: {[path for _, owners in waiting.values() for path, _ in owners]}", exc=e)
-            inferred = [self.infer_or_none(engine, thumb, model, owners[0][0]) for thumb, owners in waiting.values()]
+            inferred = self.infer_each(model, waiting)
+        if inferred is None:
+            return results
         for (pixel_hash, (_, owners)), tags in zip(waiting.items(), inferred):
             for path, file_hash in owners:
                 if tags is None:

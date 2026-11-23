@@ -352,7 +352,8 @@ class TestBatchInference:
 
         def predict_batch(images, task, **kw):
             calls.append(len(images))
-            self.collector.shutdown()
+            if len(calls) == len(TASKS):
+                self.collector.shutdown()
             return [text_of(image, task) for image in images]
 
         engine.predict_batch.side_effect = predict_batch
@@ -366,4 +367,35 @@ class TestBatchInference:
             results, _ = run_batch(self.collector, paths)
         assert [r.source for r in results] == paths[:4]
         assert calls == [4] * len(TASKS)
+        assert self.collector._engines == {}
+
+    def test_engine_stays_loaded_while_groups_outlast_the_idle_timeout(self):
+        self.collector.ENGINE_IDLE_TIMEOUT = 0.2
+        engine = echo_engine()
+        engine.predict_batch.side_effect = lambda images, task, **kw: (time.sleep(0.1), [text_of(image, task) for image in images])[1]
+        paths = [f"/img/{i}.jpg" for i in range(12)]
+        with patch.object(self.collector, "load_engine", return_value=engine) as load:
+            results, _ = run_batch(self.collector, paths)
+        assert load.call_count == 1
+        assert all(r.status is True for r in results)
+
+    def test_stop_between_tasks_abandons_the_group(self):
+        engine = echo_engine()
+        calls = []
+
+        def predict_batch(images, task, **kw):
+            calls.append(task)
+            self.collector.shutdown()
+            return [text_of(image, task) for image in images]
+
+        engine.predict_batch.side_effect = predict_batch
+        self.collector._engines["base"] = engine
+
+        def no_load(model):
+            raise AssertionError("engine must not be reloaded while stopping")
+
+        with patch.object(self.collector, "load_engine", side_effect=no_load):
+            results, _ = run_batch(self.collector, [f"/img/{i}.jpg" for i in range(4)])
+        assert results == []
+        assert calls == TASKS[:1]
         assert self.collector._engines == {}

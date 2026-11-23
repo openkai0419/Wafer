@@ -610,20 +610,20 @@ def test_mark_dispatched_only_affects_pending(tmp_path):
 def test_reset_stale_dispatched(tmp_path):
     db = _setup_db_with_pending(tmp_path)
     db.mark_dispatched(["src0", "src1"], "exif")
-    changed = db.reset_stale_dispatched(["exif"])
-    assert changed == 2
+    reset = db.reset_stale_dispatched(["exif"])
+    assert {name: sorted(sources) for name, sources in reset.items()} == {"exif": ["src0", "src1"]}
     pending = db.get_pending_sources("exif")
     assert len(pending) == 3
     db.close()
 
 
-def test_reset_stale_dispatched_no_collectors(tmp_path):
+def test_reset_stale_dispatched_keeps_the_given_sources_dispatched(tmp_path):
     db = _setup_db_with_pending(tmp_path)
-    db.mark_dispatched(["src0"], "exif")
-    changed = db.reset_stale_dispatched()
-    assert changed == 1
-    pending = db.get_pending_sources("exif")
-    assert len(pending) == 3
+    db.mark_dispatched(["src0", "src1"], "exif")
+    reset = db.reset_stale_dispatched(["exif"], keep={"exif": {"src0"}})
+    assert reset == {"exif": ["src1"]}
+    status = db.read_conn.execute("SELECT status FROM collection_status WHERE source='src0'").fetchone()
+    assert status[0] == "dispatched"
     db.close()
 
 
@@ -632,8 +632,8 @@ def test_reset_stale_dispatched_does_not_affect_ok(tmp_path):
     db.conn.execute("UPDATE collection_status SET status='ok' WHERE source='src0'")
     db.conn.commit()
     db.mark_dispatched(["src1"], "exif")
-    changed = db.reset_stale_dispatched(["exif"])
-    assert changed == 1
+    reset = db.reset_stale_dispatched(["exif"])
+    assert reset == {"exif": ["src1"]}
     ok = db.read_conn.execute("SELECT status FROM collection_status WHERE source='src0'").fetchone()
     assert ok[0] == "ok"
     db.close()

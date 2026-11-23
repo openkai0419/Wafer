@@ -106,7 +106,7 @@ class ParserReceiver:
             return True
         parser = payload.get("parser", "")
         if self._on_batch_done:
-            self._on_batch_done(parser)
+            self._on_batch_done(parser, payload.get("paused", []))
         results = payload.get("results", [])
         if results:
             for r in results:

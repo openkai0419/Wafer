@@ -224,7 +224,7 @@ def test_stale_rows_are_reset_before_the_first_dispatch(tmp_path, monkeypatch):
     monkeypatch.setattr(plugin_dispatcher, "_DISPATCH_INTERVAL", 0.01)
     calls = []
     writer = MagicMock()
-    writer.reset_stale.side_effect = lambda names: calls.append(("reset", names))
+    writer.reset_stale.side_effect = lambda names, keep: calls.append(("reset", names)) or {}
     dispatcher = ParserDispatcher("testdb", tmp_path / "test.db", MagicMock(), writer, MagicMock(), plugins=["sample"])
     dispatched = threading.Event()
 

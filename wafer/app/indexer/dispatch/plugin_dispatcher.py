@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 from ....core.db.db_utils import open_readonly
@@ -17,6 +18,7 @@ from ..runtime.worker_shutdown import WORKER_SHUTDOWN_TIMEOUT, wait_workers_stop
 
 _DISPATCH_INTERVAL = 2.0
 MAX_IN_FLIGHT_BATCHES = 4
+BATCH_GRACE_SECONDS = 60.0
 
 
 class PluginDispatcher:
@@ -50,6 +52,9 @@ class PluginDispatcher:
         self._thread: threading.Thread | None = None
         self._worker_procs: dict[str, subprocess.Popen] = {}
         self._in_flight: dict[str, int] = {}
+        self._last_sent: dict[str, float] = {}
+        self._paused: dict[str, set[str]] = {}
+        self._retried: dict[str, set[str]] = {}
         self._in_flight_lock = threading.Lock()
         self._tag = f"[{type(self).__name__}]"
 
@@ -76,14 +81,42 @@ class PluginDispatcher:
     def status_name(self, plugin: str) -> str:
         return plugin
 
-    def batch_done(self, status_name: str):
+    def batch_done(self, status_name: str, paused=()):
         with self._in_flight_lock:
             self._in_flight[status_name] = max(0, self._in_flight.get(status_name, 0) - 1)
+            if paused:
+                self._paused.setdefault(status_name, set()).update(paused)
+
+    def resume_paused(self):
+        with self._in_flight_lock:
+            self._paused.clear()
 
     def reset_stale(self):
         with self._in_flight_lock:
-            self._writer.reset_stale([self.status_name(p) for p in self._plugins])
-            self._in_flight.clear()
+            self._reset([self.status_name(p) for p in self._plugins])
+
+    def retry_stale(self):
+        with self._in_flight_lock:
+            quiet = [self.status_name(p) for p in self._plugins if self._no_batch_running(p)]
+            reset = self._reset(quiet)
+            for status_name in quiet:
+                self._retried[status_name] = set(reset.get(status_name, ()))
+
+    def _reset(self, status_names: list[str]) -> dict[str, list[str]]:
+        if not status_names:
+            return {}
+        reset = self._writer.reset_stale(status_names, keep=self._paused)
+        for status_name in status_names:
+            self._in_flight.pop(status_name, None)
+        return reset
+
+    def _no_batch_running(self, plugin: str) -> bool:
+        status_name = self.status_name(plugin)
+        in_flight = self._in_flight.get(status_name, 0)
+        if not in_flight:
+            return True
+        longest = in_flight * self.resolver.batch_timeout(plugin) + BATCH_GRACE_SECONDS
+        return time.monotonic() - self._last_sent.get(status_name, 0.0) >= longest
 
     def _start_workers(self):
         my_pid = str(os.getpid())
@@ -160,6 +193,14 @@ class PluginDispatcher:
                     self._writer.unmark_dispatched(paths, status_name)
                     raise
                 self._in_flight[status_name] = self._in_flight.get(status_name, 0) + 1
+                self._last_sent[status_name] = time.monotonic()
+                self._paused.get(status_name, set()).difference_update(paths)
+                retried = self._retried.get(status_name, set())
+                is_retry = retried.issuperset(paths)
+                retried.difference_update(paths)
+            if is_retry:
+                AppLogger.info(f"{self._tag} Sent {len(paths)} paths to {dst} again")
+                continue
             self._scheduler.note_activity()
             self._progress.increment(0, len(paths))
             AppLogger.info(f"{self._tag} Sent {len(paths)} paths to {dst}")

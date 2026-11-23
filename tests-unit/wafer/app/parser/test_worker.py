@@ -204,6 +204,25 @@ def test_rescan_resumes_paused_paths(make_worker):
     assert worker._node.send_reliable.call_args[0][1]["results"] == [{"source": "/busy.png", "status": True}]
 
 
+def test_paused_paths_are_reported_from_the_batch_that_pauses_them(make_worker):
+    from wafer.plugin.parser.base import ParserResult
+
+    worker = make_worker()
+
+    def process(path, file_info, metadata):
+        if path == "/busy.png":
+            return worker._plugin.retry_later(path, pause_after=2)
+        return ParserResult(source=path, status=True)
+
+    worker._plugin.process = process
+    reported = []
+    for _ in range(3):
+        worker._process_batch(["/ok.png", "/busy.png"], {}, {}, "test_db")
+        reported.append(worker._node.send_reliable.call_args[0][1]["paused"])
+
+    assert reported == [[], ["/busy.png"], ["/busy.png"]]
+
+
 def test_result_resets_the_failure_count(make_worker):
     from wafer.plugin.parser.base import ParserResult
 

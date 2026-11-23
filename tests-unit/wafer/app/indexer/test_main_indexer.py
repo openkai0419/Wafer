@@ -3,6 +3,8 @@ from unittest.mock import MagicMock, patch
 
 from types import SimpleNamespace
 
+import pytest
+
 from wafer.app.indexer.main_indexer import IndexerProcess, saved_parser_names
 from wafer.app.indexer.runtime.task import TaskPriority
 
@@ -167,8 +169,8 @@ class TestPeriodicTaskConfig:
         proc._register_periodic_tasks()
         tasks = {call.args[0].name: call.args[0] for call in proc.scheduler.add_periodic_task.call_args_list}
         tasks["retry_stale_dispatched"].create_task().run()
-        proc.dispatcher.reset_stale.assert_called_once_with()
-        proc.parser_dispatcher.reset_stale.assert_called_once_with()
+        proc.dispatcher.retry_stale.assert_called_once_with()
+        proc.parser_dispatcher.retry_stale.assert_called_once_with()
         proc.writer.reset_stale.assert_not_called()
 
     @patch("wafer.app.indexer.main_indexer.Node")
@@ -178,6 +180,107 @@ class TestPeriodicTaskConfig:
         proc.scheduler = MagicMock()
         proc._register_periodic_tasks()
         proc.scheduler.set_idle_base_delay.assert_called_once_with(60.0)
+
+
+@patch("wafer.app.indexer.main_indexer.Node")
+def test_rescan_resumes_paused_rows_in_both_dispatchers(mock_node_cls):
+    node = MagicMock()
+    mock_node_cls.return_value = node
+    proc = IndexerProcess("test")
+    proc.dispatcher = MagicMock()
+    proc.parser_dispatcher = MagicMock()
+    proc.folder_watcher = MagicMock()
+    handlers = {call.args[0]: call.args[1] for call in node.subscribe.call_args_list}
+
+    assert handlers["rescan"](MagicMock()) is True
+
+    proc.dispatcher.resume_paused.assert_called_once_with()
+    proc.parser_dispatcher.resume_paused.assert_called_once_with()
+    proc.folder_watcher.rescan_all.assert_called_once_with()
+
+
+class TestIdleTasksWhileRowsAreCollectedAgain:
+    SIX_HOURS = 6 * 60 * 60
+    RESULT_DELAY = 5
+
+    @pytest.fixture
+    def indexer(self, tmp_path, monkeypatch):
+        from wafer.app.indexer.db_writer import DatabaseWriter
+        from wafer.app.indexer.dispatch import plugin_dispatcher
+        from wafer.app.indexer.dispatch.collector_dispatcher import CollectorDispatcher
+        from wafer.app.indexer.runtime import scheduler as scheduler_module
+        from wafer.app.indexer.runtime.scheduler import TaskScheduler
+        from wafer.core.db.db_utils import open_readonly
+
+        now = [10_000.0]
+        fake_time = SimpleNamespace(monotonic=lambda: now[0])
+        monkeypatch.setattr(scheduler_module, "time", fake_time)
+        monkeypatch.setattr(plugin_dispatcher, "time", fake_time)
+
+        writer = DatabaseWriter(tmp_path / "test.db")
+        writer.start()
+        writer.initialize()
+        with patch("wafer.app.indexer.main_indexer.Node"):
+            proc = IndexerProcess("test")
+        proc.scheduler = TaskScheduler()
+        proc.writer = writer
+        proc.scanner = MagicMock()
+        proc.folder_watcher = MagicMock()
+        proc._progress = MagicMock(maximum=0)
+        proc.dispatcher = CollectorDispatcher("test", tmp_path / "test.db", proc.scheduler, writer, proc._progress, plugins=["exif"])
+        proc.dispatcher._node = MagicMock()
+        proc.dispatcher._node.nudge_undelivered.return_value = False
+        proc.dispatcher._read_conn = open_readonly(tmp_path / "test.db")
+        proc._register_periodic_tasks(["exif"])
+        yield proc, now
+        proc.dispatcher._read_conn.close()
+        writer.close()
+
+    def _run(self, proc, now, sources, paused=()):
+        proc.writer.db.upsert_basic_sources([(s, f"hash-{s}", 1, 1.0) for s in sources], [])
+        proc.writer.insert_pending(sources, ["exif"])
+        scheduler = proc.scheduler
+        node = proc.dispatcher._node
+        replies = []
+        start = now[0]
+        while now[0] - start < self.SIX_HOURS:
+            scheduler._check_periodic_tasks()
+            while not scheduler._background_queue.empty():
+                task = scheduler._background_queue.get_nowait()
+                task.run()
+                if task.priority <= TaskPriority.DISPATCH:
+                    scheduler.note_activity()
+            if int(now[0]) % 2 == 0:
+                sent_before = node.send_reliable.call_count
+                proc.dispatcher._dispatch_pending()
+                for call in node.send_reliable.call_args_list[sent_before:]:
+                    batch_paused = [p for p in call.args[1]["paths"] if p in paused]
+                    replies.append((now[0] + self.RESULT_DELAY, batch_paused))
+            for reply in [r for r in replies if r[0] <= now[0]]:
+                replies.remove(reply)
+                proc.dispatcher.batch_done("exif", reply[1])
+            now[0] += 1
+        return [p for call in node.send_reliable.call_args_list for p in call.args[1]["paths"]]
+
+    def test_baseline_without_rows_collected_again(self, indexer):
+        proc, now = indexer
+        self._run(proc, now, [])
+        assert proc.scanner.backfill_pending.call_count >= 30
+        assert proc.folder_watcher.refresh_watch.call_count >= 10
+
+    def test_a_row_that_returns_nothing_does_not_hold_off_the_idle_tasks(self, indexer):
+        proc, now = indexer
+        sent = self._run(proc, now, ["none.png"])
+        assert sent.count("none.png") >= 30
+        assert proc.scanner.backfill_pending.call_count >= 30
+        assert proc.folder_watcher.refresh_watch.call_count >= 10
+
+    def test_a_paused_row_is_not_sent_again_and_does_not_hold_off_the_idle_tasks(self, indexer):
+        proc, now = indexer
+        sent = self._run(proc, now, ["paused.png"], paused={"paused.png"})
+        assert sent.count("paused.png") == 1
+        assert proc.scanner.backfill_pending.call_count >= 30
+        assert proc.folder_watcher.refresh_watch.call_count >= 10
 
 
 class TestOnRecollect:

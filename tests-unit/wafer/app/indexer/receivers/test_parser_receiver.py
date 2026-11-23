@@ -204,5 +204,5 @@ def test_each_result_message_ends_one_batch_of_its_parser():
 
     done = MagicMock()
     receiver = ParserReceiver(MagicMock(), MagicMock(), MagicMock(), on_batch_done=done)
-    receiver.handle_result(SimpleNamespace(payload={"parser": "novelai", "results": []}))
-    done.assert_called_once_with("novelai")
+    receiver.handle_result(SimpleNamespace(payload={"parser": "novelai", "results": [], "paused": ["/a.png"]}))
+    done.assert_called_once_with("novelai", ["/a.png"])

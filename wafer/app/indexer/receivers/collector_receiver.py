@@ -82,7 +82,7 @@ class CollectorReceiver:
             return True
         collector = payload.get("collector", "")
         if self._on_batch_done:
-            self._on_batch_done(collector)
+            self._on_batch_done(collector, payload.get("paused", []))
         results = payload.get("results", [])
         if results:
             for r in results:

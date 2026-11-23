@@ -14,14 +14,13 @@ from .db_writer import DatabaseWriter
 from .dispatch.parser_dispatcher import ParserDispatcher
 from .receivers.parser_receiver import ParserReceiver
 from .dispatch.collector_dispatcher import CollectorDispatcher
+from .dispatch.plugin_dispatcher import BATCH_GRACE_SECONDS
 from .runtime.progress_aggregator import ProgressAggregator
 from .scanner import DirectoryScanner
 from .runtime.scheduler import TaskScheduler, PeriodicTask
 from .runtime.task import Task, TaskPriority
 from .watch.folder_watcher import FolderWatcher
 from .watch.setting_watcher import SettingWatcher
-
-_IDLE_GRACE_SECONDS = 60.0
 
 
 def saved_parser_names(all_parsers, collector_names, enabled) -> list[str]:
@@ -52,7 +51,7 @@ class IndexerProcess:
         self.stopped = False
         self.zmq = Node("indexer", db=name, consumer=True, broker_lost_timeout=BROKER_LOST_TIMEOUT)
         self.zmq.subscribe("cleanup", lambda msg: self.cleanup() or True)
-        self.zmq.subscribe("rescan", lambda msg: self.rescan() or True)
+        self.zmq.subscribe("rescan", self._on_rescan)
         self.zmq.subscribe("db.delete", lambda msg: self._on_delete_requested() or True)
         self.zmq.subscribe("recollect", self._on_recollect)
         self.zmq.subscribe("keyfilter.reload", self._on_keyfilter_reload)
@@ -175,7 +174,7 @@ class IndexerProcess:
                 create_task=lambda: Task.create(
                     "reset_stale",
                     priority=TaskPriority.RETRY,
-                    run=self._reset_stale_dispatched,
+                    run=self._retry_stale_dispatched,
                 ),
             )
         )
@@ -234,15 +233,23 @@ class IndexerProcess:
         timeouts = [collector_resolver.batch_timeout(name) for name in collector_names]
         timeouts.extend(parser_resolver.batch_timeout(name) for name in parser_names)
         if not timeouts:
-            return _IDLE_GRACE_SECONDS
-        delay = max(timeouts) + _IDLE_GRACE_SECONDS
+            return BATCH_GRACE_SECONDS
+        delay = max(timeouts) + BATCH_GRACE_SECONDS
         AppLogger.info(f"[Indexer] Idle task delay floor: {delay:.1f}s (child batch timeout max={max(timeouts):.1f}s)")
         return delay
 
-    def _reset_stale_dispatched(self):
-        for dispatcher in (self.dispatcher, self.parser_dispatcher):
-            if dispatcher:
-                dispatcher.reset_stale()
+    def _retry_stale_dispatched(self):
+        for dispatcher in self._dispatchers():
+            dispatcher.retry_stale()
+
+    def _dispatchers(self):
+        return [d for d in (self.dispatcher, self.parser_dispatcher) if d]
+
+    def _on_rescan(self, msg) -> bool:
+        for dispatcher in self._dispatchers():
+            dispatcher.resume_paused()
+        self.rescan()
+        return True
 
     def _request_backfill(self):
         if self.scanner:

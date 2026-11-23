@@ -22,6 +22,13 @@ def test_auto_reset_on_completion():
     assert p.maximum == 0
 
 
+def test_results_without_a_total_do_not_count_toward_the_next_work():
+    p = ProgressAggregator("db", _StubNode())
+    p.increment(3, 0)
+    p.increment(0, 5)
+    assert (p.current, p.maximum) == (0, 5)
+
+
 def test_explicit_reset():
     p = ProgressAggregator("db", _StubNode())
     p.increment(0, 10)

@@ -171,10 +171,10 @@ class PluginWorker:
             done |= finished
         return done, not_done
 
-    def _process_batch(self, paths, file_info_raw, metadata, db):
+    def _process_batch(self, batch_paths, file_info_raw, metadata, db):
         try:
             retries = self._plugin.retries
-            paths = [p for p in paths if not retries.is_paused(p)]
+            paths = [p for p in batch_paths if not retries.is_paused(p)]
             file_info = {p: tuple(file_info_raw.get(p, (0.0, 0))) for p in paths}
             metadata = {p: metadata.get(p, {}) for p in paths}
 
@@ -216,9 +216,10 @@ class PluginWorker:
                 else:
                     AppLogger.warning(f"[{self.label}] batch timeout: {unfinished}/{len(paths)} unfinished, {len(not_started)} not started (retried later)")
             retries.forget(r["source"] for r in results)
+            paused = [p for p in batch_paths if retries.is_paused(p)]
             self._node.send_reliable(
                 self.RESULT_TOPIC,
-                {self.KIND: self.status_name, "results": results},
+                {self.KIND: self.status_name, "results": results, "paused": paused},
                 dst="indexer",
                 db=db,
             )

@@ -275,10 +275,27 @@ def test_batched_parser_paths_without_a_result_are_sent_as_failures(batched_work
 
 
 def test_batched_parser_duplicate_path_gets_one_result(batched_worker):
+    from wafer.plugin.parser.base import ParserResult
+
+    batched_worker._plugin.reply = lambda paths: [ParserResult(source="/a.png", status=True)]
     batched_worker._process_batch(["/a.png", "/a.png"], {}, {}, "test_db")
 
     results = batched_worker._node.send_reliable.call_args[0][1]["results"]
-    assert [r["status"] for r in results if r["source"] == "/a.png"] == [True, True]
+    assert [r["status"] for r in results if r["source"] == "/a.png"] == [True]
+
+
+def test_batched_parser_timeout_fails_the_whole_batch(batched_worker):
+    import threading
+
+    release = threading.Event()
+    batched_worker._batch_timeout = 0.2
+    batched_worker._plugin.reply = lambda paths: release.wait(10) and []
+    try:
+        batched_worker._process_batch(["/a.png", "/b.png"], {}, {}, "test_db")
+    finally:
+        release.set()
+
+    assert sent_statuses(batched_worker) == {"/a.png": False, "/b.png": False}
 
 
 def test_batched_parser_error_fails_the_whole_batch(batched_worker):

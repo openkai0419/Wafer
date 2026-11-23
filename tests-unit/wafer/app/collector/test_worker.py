@@ -118,14 +118,16 @@ def test_batched_collector_receives_the_whole_batch_and_may_return_child_files()
             return [CollectorResult(source=p, status=True) for p in paths] + [CollectorResult(source="/a.zip", path="/a.zip::x.png", status=True)]
 
     collector_resolver.registry.register(_BatchedCollector)
-    worker = CollectorWorker("test_db", _BatchedCollector.NAME)
-    worker._node = MagicMock()
+    worker = None
     try:
+        worker = CollectorWorker("test_db", _BatchedCollector.NAME)
+        worker._node = MagicMock()
         worker._process_batch(["/a.zip", "/b.png"], {"/a.zip": [1.0, 2]}, {}, "test_db")
         results = worker._node.send_reliable.call_args[0][1]["results"]
     finally:
-        worker._stop.set()
-        worker._executor.shutdown(wait=True, cancel_futures=True)
+        if worker:
+            worker._stop.set()
+            worker._executor.shutdown(wait=True, cancel_futures=True)
         collector_resolver.registry._plugins.pop(_BatchedCollector.NAME, None)
         collector_resolver.registry._instances.pop(_BatchedCollector.NAME, None)
 

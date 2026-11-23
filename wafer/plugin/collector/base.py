@@ -31,7 +31,7 @@ class BaseCollector(BasePlugin):
         results: list[CollectorResult] = []
         for path in paths:
             result = self.process(path, file_info[path])
-            results.extend(result if isinstance(result, list) else [result])
+            results.extend(r for r in (result if isinstance(result, list) else [result]) if r is not None)
         return results
 
     def on_notify(self, payload: dict | None = None) -> None:

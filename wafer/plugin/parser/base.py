@@ -60,7 +60,8 @@ class BaseParser(BasePlugin):
     def process(self, path: str, file_info: tuple, metadata: dict) -> ParserResult: ...
 
     def process_batch(self, paths: list[str], file_info: dict[str, tuple], metadata: dict[str, dict]) -> list[ParserResult]:
-        return [self.process(path, file_info[path], metadata[path]) for path in paths]
+        results = (self.process(path, file_info[path], metadata[path]) for path in paths)
+        return [r for r in results if r is not None]
 
     def query_db(self, sql: str, params: Sequence[Any] = ()) -> list[tuple]:
         return self.read_db(lambda conn: _fetch_all(conn, sql, params), [])

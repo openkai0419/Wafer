@@ -193,7 +193,7 @@ class PluginWorker:
                 try:
                     results.extend(fut.result())
                 except Exception as e:
-                    AppLogger.warning(f"[{self.label}] future failed: {futures[fut]}: {e}", exc=e)
+                    AppLogger.warning(f"[{self.label}] future failed: {len(futures[fut])} paths from {futures[fut][0]}: {e}", exc=e)
             not_started = cancel_not_started(futures, not_done)
             if not_done:
                 unfinished = sum(len(futures[f]) for f in not_done) - len(not_started)

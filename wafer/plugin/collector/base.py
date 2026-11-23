@@ -27,6 +27,13 @@ class BaseCollector(BasePlugin):
     @abstractmethod
     def process(self, path: str, file_info: tuple[float, int]) -> CollectorResult | list[CollectorResult]: ...
 
+    def process_batch(self, paths: list[str], file_info: dict[str, tuple]) -> list[CollectorResult]:
+        results: list[CollectorResult] = []
+        for path in paths:
+            result = self.process(path, file_info[path])
+            results.extend(result if isinstance(result, list) else [result])
+        return results
+
     def on_notify(self, payload: dict | None = None) -> None:
         pass
 

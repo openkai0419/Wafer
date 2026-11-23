@@ -223,6 +223,87 @@ def test_stop_ends_a_batch_with_queued_paths_at_once_and_sends_finished_results(
     assert statuses == {"/ok.png": True}
 
 
+@pytest.fixture
+def batched_worker():
+    from wafer.app.parser.worker import ParserWorker
+    from wafer.plugin.parser.base import BaseParserPlugin, ParserResult
+
+    class _BatchedParser(BaseParserPlugin):
+        NAME = "_test_worker_batched"
+        MAX_WORKERS = 4
+
+        def __init__(self):
+            self.calls = []
+            self.reply = lambda paths: [ParserResult(source=p, status=True) for p in paths]
+
+        def process(self, path, file_info, metadata):
+            raise AssertionError("process must not be called for a batched parser")
+
+        def process_batch(self, paths, file_info, metadata):
+            self.calls.append((list(paths), dict(file_info), dict(metadata)))
+            return self.reply(paths)
+
+    parser_resolver.registry.register(_BatchedParser)
+    worker = ParserWorker("test_db", _BatchedParser.NAME)
+    worker._node = MagicMock()
+    yield worker
+    worker._stop.set()
+    worker._executor.shutdown(wait=True, cancel_futures=True)
+    parser_resolver.registry._plugins.pop(_BatchedParser.NAME, None)
+    parser_resolver.registry._instances.pop(_BatchedParser.NAME, None)
+
+
+def sent_statuses(worker):
+    return {r["source"]: r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]}
+
+
+def test_batched_parser_receives_the_whole_batch_in_one_call(batched_worker):
+    batched_worker._process_batch(["/a.png", "/b.png"], {"/a.png": [1.0, 2, "h"]}, {"/b.png": {"k": "v"}}, "test_db")
+
+    assert batched_worker._plugin.calls == [(["/a.png", "/b.png"], {"/a.png": (1.0, 2, "h"), "/b.png": (0.0, 0)}, {"/a.png": {}, "/b.png": {"k": "v"}})]
+    assert sent_statuses(batched_worker) == {"/a.png": True, "/b.png": True}
+
+
+def test_batched_parser_paths_without_a_result_are_sent_as_failures(batched_worker):
+    from wafer.plugin.parser.base import ParserResult
+
+    batched_worker._plugin.reply = lambda paths: [ParserResult(source="/a.png", status=True), None]
+
+    batched_worker._process_batch(["/a.png", "/b.png"], {}, {}, "test_db")
+
+    assert sent_statuses(batched_worker) == {"/a.png": True, "/b.png": False}
+
+
+def test_batched_parser_duplicate_path_gets_one_result(batched_worker):
+    batched_worker._process_batch(["/a.png", "/a.png"], {}, {}, "test_db")
+
+    results = batched_worker._node.send_reliable.call_args[0][1]["results"]
+    assert [r["status"] for r in results if r["source"] == "/a.png"] == [True, True]
+
+
+def test_batched_parser_error_fails_the_whole_batch(batched_worker):
+    def boom(paths):
+        raise RuntimeError("boom")
+
+    batched_worker._plugin.reply = boom
+
+    batched_worker._process_batch(["/a.png", "/b.png"], {}, {}, "test_db")
+
+    assert sent_statuses(batched_worker) == {"/a.png": False, "/b.png": False}
+
+
+def test_default_process_batch_calls_process_for_each_path():
+    from wafer.plugin.parser.base import BaseParserPlugin, ParserResult
+
+    class _OneByOne(BaseParserPlugin):
+        def process(self, path, file_info, metadata):
+            return ParserResult(source=path, status=bool(file_info[0]), meta_info=metadata)
+
+    results = _OneByOne().process_batch(["/a.png", "/b.png"], {"/a.png": (1.0, 0), "/b.png": (0.0, 0)}, {"/a.png": {"x": 1}, "/b.png": {}})
+
+    assert [(r.source, r.status, r.meta_info) for r in results] == [("/a.png", True, {"x": 1}), ("/b.png", False, {})]
+
+
 def test_batch_with_only_failures_is_still_sent(make_worker):
     worker = make_worker()
     worker._plugin.process = lambda path, file_info, metadata: None

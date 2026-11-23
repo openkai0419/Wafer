@@ -99,6 +99,40 @@ def test_process_batch_uses_db_from_argument(make_worker):
     assert call_kwargs["db"] == "other_db"
 
 
+def test_batched_collector_receives_the_whole_batch_and_may_return_child_files():
+    from unittest.mock import MagicMock
+    from wafer.plugin.collector.base import BaseCollectorPlugin, CollectorResult
+
+    class _BatchedCollector(BaseCollectorPlugin):
+        NAME = "_test_worker_batched_collector"
+        DEFAULT_ENABLED = True
+
+        def __init__(self):
+            self.calls = []
+
+        def process(self, path, file_info):
+            raise AssertionError("process must not be called for a batched collector")
+
+        def process_batch(self, paths, file_info):
+            self.calls.append((list(paths), dict(file_info)))
+            return [CollectorResult(source=p, status=True) for p in paths] + [CollectorResult(source="/a.zip", path="/a.zip::x.png", status=True)]
+
+    collector_resolver.registry.register(_BatchedCollector)
+    worker = CollectorWorker("test_db", _BatchedCollector.NAME)
+    worker._node = MagicMock()
+    try:
+        worker._process_batch(["/a.zip", "/b.png"], {"/a.zip": [1.0, 2]}, {}, "test_db")
+        results = worker._node.send_reliable.call_args[0][1]["results"]
+    finally:
+        worker._stop.set()
+        worker._executor.shutdown(wait=True, cancel_futures=True)
+        collector_resolver.registry._plugins.pop(_BatchedCollector.NAME, None)
+        collector_resolver.registry._instances.pop(_BatchedCollector.NAME, None)
+
+    assert worker._plugin.calls == [(["/a.zip", "/b.png"], {"/a.zip": (1.0, 2), "/b.png": (0.0, 0)})]
+    assert [(r["source"], r.get("path")) for r in results] == [("/a.zip", None), ("/b.png", None), ("/a.zip", "/a.zip::x.png")]
+
+
 def test_non_singleton_node_uses_db_name(make_worker):
     name = next(iter(collector_resolver.per_indexer_names()))
     worker = make_worker(db_name="mydb", plugin_name=name)

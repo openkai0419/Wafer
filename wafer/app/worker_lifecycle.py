@@ -54,7 +54,7 @@ class PluginWorkerLifecycle:
 
 
 def cancel_not_started(futures: dict, not_done) -> set:
-    return {futures[f] for f in not_done if f.cancel()}
+    return {path for f in not_done if f.cancel() for path in futures[f]}
 
 
 def failed_results(paths, results, not_started=()) -> list[dict]:
@@ -68,6 +68,7 @@ class PluginWorker:
     KIND = ""
     BATCH_TOPIC = ""
     RESULT_TOPIC = ""
+    PLUGIN_BASE: type = object
     resolver = None
 
     def __init__(self, db_name: str, plugin_name: str):
@@ -79,6 +80,7 @@ class PluginWorker:
         if not self._plugin:
             raise ValueError(f"Unknown {self.KIND} plugin: {plugin_name}")
         self._singleton = plugin_name in self.resolver.singleton_names()
+        self._batched = type(self._plugin).process_batch is not self.PLUGIN_BASE.process_batch
         node_db = "" if self._singleton else db_name
         self._node = Node(f"{self.KIND}-{plugin_name}", db=node_db, consumer=True, outbox_poll=None, broker_lost_timeout=BROKER_LOST_TIMEOUT)
         self._node.subscribe(self.BATCH_TOPIC, self._handle_batch)
@@ -93,6 +95,9 @@ class PluginWorker:
         self._batch_thread = threading.Thread(target=self._batch_loop, daemon=True)
 
     def process_path(self, path: str, file_info: tuple, metadata: dict) -> list[dict]:
+        raise NotImplementedError
+
+    def process_paths(self, paths: list[str], file_info: dict[str, tuple], metadata: dict[str, dict]) -> list[dict]:
         raise NotImplementedError
 
     def start(self):
@@ -161,16 +166,27 @@ class PluginWorker:
 
     def _process_batch(self, paths, file_info_raw, metadata, db):
         try:
-            file_info = {p: tuple(v) for p, v in file_info_raw.items()}
+            file_info = {p: tuple(file_info_raw.get(p, (0.0, 0))) for p in paths}
+            metadata = {p: metadata.get(p, {}) for p in paths}
 
             def process_one(p):
                 try:
-                    return self.process_path(p, file_info.get(p, (0.0, 0)), metadata.get(p, {}))
+                    return self.process_path(p, file_info[p], metadata[p])
                 except Exception as e:
                     AppLogger.warning(f"[{self.label}] process failed: {p}: {e}", exc=e)
                     return []
 
-            futures = {self._executor.submit(process_one, p): p for p in paths}
+            def process_all():
+                try:
+                    return self.process_paths(paths, file_info, metadata)
+                except Exception as e:
+                    AppLogger.warning(f"[{self.label}] process_batch failed for {len(paths)} paths: {e}", exc=e)
+                    return []
+
+            if self._batched:
+                futures = {self._executor.submit(process_all): paths}
+            else:
+                futures = {self._executor.submit(process_one, p): [p] for p in paths}
             done, not_done = self._wait_unless_stopped(futures)
             results = []
             for fut in done:
@@ -180,7 +196,8 @@ class PluginWorker:
                     AppLogger.warning(f"[{self.label}] future failed: {futures[fut]}: {e}", exc=e)
             not_started = cancel_not_started(futures, not_done)
             if not_done:
-                AppLogger.warning(f"[{self.label}] batch timeout: {len(not_done) - len(not_started)}/{len(paths)} unfinished, {len(not_started)} not started (retried later)")
+                unfinished = sum(len(futures[f]) for f in not_done) - len(not_started)
+                AppLogger.warning(f"[{self.label}] batch timeout: {unfinished}/{len(paths)} unfinished, {len(not_started)} not started (retried later)")
             failures = failed_results(paths, results, not_started)
             if failures and self._stop.is_set():
                 AppLogger.info(f"[{self.label}] Stopping: {len(failures)} paths without a result are retried later")

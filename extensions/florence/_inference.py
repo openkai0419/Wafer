@@ -50,21 +50,7 @@ class FlorenceInference:
         lang.prepare_inputs_for_generation = _patched
 
     def predict(self, image: Image.Image, task: str, *, max_new_tokens: int = 1024, num_beams: int = 3) -> str:
-        image = image.convert("RGB")
-        inputs = self.processor(text=task, images=image, return_tensors="pt").to(self.device, self.dtype)
-        with torch.inference_mode():
-            output_ids = self.model.generate(
-                input_ids=inputs["input_ids"],
-                pixel_values=inputs["pixel_values"],
-                max_new_tokens=max_new_tokens,
-                early_stopping=False,
-                do_sample=False,
-                num_beams=num_beams,
-            )
-        decoded = self.processor.batch_decode(output_ids, skip_special_tokens=False)[0]
-        parsed = self.processor.post_process_generation(decoded, task=task, image_size=(image.width, image.height))
-        result = parsed.get(task, decoded)
-        return result if isinstance(result, str) else str(result)
+        return self.predict_batch([image], task, max_new_tokens=max_new_tokens, num_beams=num_beams)[0]
 
     def predict_batch(self, images: list[Image.Image], task: str, *, max_new_tokens: int = 1024, num_beams: int = 3) -> list[str]:
         images = [image.convert("RGB") for image in images]

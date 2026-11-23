@@ -3,8 +3,7 @@ from __future__ import annotations
 import threading
 from typing import TYPE_CHECKING
 
-from wafer.plugin import BaseInferenceCollector
-from wafer.plugin.collector.base import CollectorResult
+from wafer.plugin import BaseInferenceCollector, CollectorResult
 from wafer.core.logs import AppLogger
 
 if TYPE_CHECKING:
@@ -23,7 +22,7 @@ class FlorenceCollector(BaseInferenceCollector):
     NAME = "florence"
     EXTENSIONS = ()
     PRIORITY = 50
-    BATCH_SIZE = 50
+    BATCH_SIZE = 12
     MAX_WORKERS = 1
     MAX_TIMEOUT = 1200.0
     DEFAULT_ENABLED = False
@@ -45,6 +44,8 @@ class FlorenceCollector(BaseInferenceCollector):
         self.stopping = threading.Event()
 
     def load_engine(self, model: str) -> FlorenceInference:
+        if self.stopping.is_set():
+            raise RuntimeError("Florence-2 engine is not loaded while stopping")
         if self._engine_failed:
             raise RuntimeError("Florence-2 engine initialization previously failed")
         from ._inference import FlorenceInference
@@ -93,7 +94,14 @@ class FlorenceCollector(BaseInferenceCollector):
         for start in range(0, len(pending), INFER_BATCH):
             if self.stopping.is_set():
                 break
-            results.update(self.process_group(pending[start : start + INFER_BATCH]))
+            group = pending[start : start + INFER_BATCH]
+            try:
+                results.update(self.process_group(group))
+            except Exception as e:
+                if self.stopping.is_set():
+                    break
+                AppLogger.warning(f"{self.NAME} group failed: {[path for path, _ in group]}", exc=e)
+                results.update({path: CollectorResult(source=path, status=False) for path, _ in group})
         return [results[path] for path in paths if path in results]
 
     def process_group(self, group: list[tuple[str, str | None]]) -> dict[str, CollectorResult]:

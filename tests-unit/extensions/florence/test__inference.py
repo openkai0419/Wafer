@@ -24,3 +24,11 @@ def test_predict_batch_strips_padding():
     assert texts == ["</s><s>a cat</s>", "</s><s>a dog on grass</s>"]
     assert inference.processor.call_args.kwargs["text"] == ["<CAPTION>"] * 2
     inference.model.generate.assert_called_once()
+
+def test_predict_delegates_to_predict_batch():
+    inference = FlorenceInference.__new__(FlorenceInference)
+    image = Image.new("RGB", (8, 8))
+    inference.predict_batch = MagicMock(return_value=["a cat"])
+
+    assert inference.predict(image, "<CAPTION>", max_new_tokens=5, num_beams=2) == "a cat"
+    inference.predict_batch.assert_called_once_with([image], "<CAPTION>", max_new_tokens=5, num_beams=2)

@@ -369,15 +369,70 @@ class TestBatchInference:
         assert calls == [4] * len(TASKS)
         assert self.collector._engines == {}
 
-    def test_engine_stays_loaded_while_groups_outlast_the_idle_timeout(self):
-        self.collector.ENGINE_IDLE_TIMEOUT = 0.2
+    def test_engine_stays_loaded_while_groups_outlast_the_idle_timeout(self, monkeypatch):
+        clock = [time.monotonic()]
+        monkeypatch.setattr("wafer.plugin.collector.inference.time.monotonic", lambda: clock[0])
         engine = echo_engine()
-        engine.predict_batch.side_effect = lambda images, task, **kw: (time.sleep(0.1), [text_of(image, task) for image in images])[1]
+
+        def predict_batch(images, task, **kw):
+            clock[0] += self.collector.ENGINE_IDLE_TIMEOUT * 0.4
+            self.collector.unload_idle_engines()
+            return [text_of(image, task) for image in images]
+
+        engine.predict_batch.side_effect = predict_batch
         paths = [f"/img/{i}.jpg" for i in range(12)]
         with patch.object(self.collector, "load_engine", return_value=engine) as load:
             results, _ = run_batch(self.collector, paths)
         assert load.call_count == 1
         assert all(r.status is True for r in results)
+
+    def test_same_pixels_in_a_group_are_inferred_once(self):
+        engine = self.collector._engines["base"] = echo_engine()
+        paths = [f"/img/{i}.jpg" for i in range(4)]
+        same = Image.new("RGB", (8, 8), (5, 5, 5))
+        results, _ = run_batch(self.collector, paths, images={path: same for path in paths})
+        assert [len(call.args[0]) for call in engine.predict_batch.call_args_list] == [1] * len(TASKS)
+        assert len({tuple(sorted(r.tags.items())) for r in results}) == 1
+        assert [r.source for r in results] == paths
+
+    def test_group_exception_fails_only_that_group(self):
+        engine = self.collector._engines["base"] = echo_engine()
+        paths = [f"/img/{i}.jpg" for i in range(8)]
+        real = self.collector.process_group
+        calls = []
+
+        def process_group(group):
+            calls.append(len(group))
+            if len(calls) == 1:
+                raise RuntimeError("boom")
+            return real(group)
+
+        with patch.object(self.collector, "process_group", side_effect=process_group):
+            results, _ = run_batch(self.collector, paths)
+        assert [(r.source, r.status) for r in results] == [(path, False) for path in paths[:4]] + [(path, True) for path in paths[4:]]
+
+    def test_group_exception_while_stopping_returns_no_results(self):
+        self.collector._engines["base"] = echo_engine()
+
+        def process_group(group):
+            self.collector.shutdown()
+            raise RuntimeError("interrupted")
+
+        with patch.object(self.collector, "process_group", side_effect=process_group):
+            results, _ = run_batch(self.collector, [f"/img/{i}.jpg" for i in range(4)])
+        assert results == []
+
+    def test_load_engine_refuses_while_stopping(self):
+        self.collector.shutdown()
+        with pytest.raises(RuntimeError, match="stopping"):
+            self.collector.load_engine("base")
+        assert self.collector._engine_failed is False
+
+    def test_batch_size_is_a_multiple_of_the_inference_batch(self):
+        from extensions.florence.collector import INFER_BATCH
+
+        assert self.collector.BATCH_SIZE == 12
+        assert self.collector.BATCH_SIZE % INFER_BATCH == 0
 
     def test_stop_between_tasks_abandons_the_group(self):
         engine = echo_engine()

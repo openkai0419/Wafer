@@ -18,8 +18,8 @@ class DuplicateParser(BaseParserPlugin):
         return self.process_batch([path], {path: file_info}, {path: metadata})[0]
 
     def process_batch(self, paths: list[str], file_info: dict[str, tuple], metadata: dict[str, dict]) -> list[ParserResult]:
-        hashes = {path: self._valid_hash(file_info[path]) for path in paths}
-        counts, tagged = self.read_db(lambda conn: self._read_hash_state(conn, list(dict.fromkeys(h for h in hashes.values() if h))), ({}, set()))
+        hashes = {path: self.valid_hash(file_info[path]) for path in paths}
+        counts, tagged = self.read_db(lambda conn: self.read_hash_state(conn, list(dict.fromkeys(h for h in hashes.values() if h))), ({}, set()))
         results = []
         for path in paths:
             file_hash = hashes[path]
@@ -34,11 +34,11 @@ class DuplicateParser(BaseParserPlugin):
         return results
 
     @staticmethod
-    def _valid_hash(file_info: tuple) -> str | None:
+    def valid_hash(file_info: tuple) -> str | None:
         file_hash = file_info[2] if len(file_info) > 2 else None
         return None if not file_hash or file_hash == HASH_FAILED else file_hash
 
-    def _read_hash_state(self, conn, hashes: list[str]) -> tuple[dict[str, int], set[str]]:
+    def read_hash_state(self, conn, hashes: list[str]) -> tuple[dict[str, int], set[str]]:
         counts: dict[str, int] = {}
         tagged: set[str] = set()
         tag_key = f"{self.NAME}.{TAG}"

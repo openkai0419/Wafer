@@ -57,10 +57,6 @@ def cancel_not_started(futures: dict, not_done) -> set:
     return {path for f in not_done if f.cancel() for path in futures[f]}
 
 
-def failure_results(paths) -> list[dict]:
-    return [{"source": p, "status": False} for p in paths]
-
-
 class PluginWorker:
     KIND = ""
     BATCH_TOPIC = ""
@@ -96,6 +92,15 @@ class PluginWorker:
 
     def process_paths(self, paths: list[str], file_info: dict[str, tuple], metadata: dict[str, dict]) -> list[dict]:
         raise NotImplementedError
+
+    def error_results(self, paths: list[str], error: Exception) -> list[dict]:
+        results = []
+        for path in paths:
+            try:
+                results.append(self._plugin.on_error(path, error))
+            except Exception as e:
+                AppLogger.error(f"[{self.label}] on_error failed; collected again later: {path}", exc=e)
+        return self.result_dicts(results)
 
     def start(self):
         self._node.start()
@@ -173,14 +178,14 @@ class PluginWorker:
                     return self.process_path(p, file_info[p], metadata[p])
                 except Exception as e:
                     AppLogger.warning(f"[{self.label}] process failed: {p}: {e}", exc=e)
-                    return [] if self._stop.is_set() else failure_results([p])
+                    return [] if self._stop.is_set() else self.error_results([p], e)
 
             def process_all():
                 try:
                     return self.process_paths(paths, file_info, metadata)
                 except Exception as e:
                     AppLogger.warning(f"[{self.label}] process_batch failed for {len(paths)} paths: {e}", exc=e)
-                    return [] if self._stop.is_set() else failure_results(paths)
+                    return [] if self._stop.is_set() else self.error_results(paths, e)
 
             if not paths:
                 futures = {}

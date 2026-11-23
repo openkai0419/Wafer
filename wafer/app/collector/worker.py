@@ -4,12 +4,17 @@ from ...plugin.collector.handler import collector_resolver
 from ..worker_lifecycle import PluginWorker
 
 
+def result_dicts(results) -> list[dict]:
+    return [r.to_dict() if isinstance(r, CollectorResult) else r for r in results or () if r is not None]
+
+
 class CollectorWorker(PluginWorker):
     KIND = "collector"
     BATCH_TOPIC = "collect.batch"
     RESULT_TOPIC = "collect.result"
     PLUGIN_BASE = BaseCollector
     resolver = collector_resolver
+    result_dicts = staticmethod(result_dicts)
 
     def __init__(self, db_name: str, plugin_name: str):
         super().__init__(db_name, plugin_name)
@@ -32,10 +37,6 @@ class CollectorWorker(PluginWorker):
             result = {"error": str(e)}
         self._node.enqueue(msg.reply(result))
         return True
-
-
-def result_dicts(results) -> list[dict]:
-    return [r.to_dict() if isinstance(r, CollectorResult) else r for r in results or () if r is not None]
 
 
 run_collector = CollectorWorker.run

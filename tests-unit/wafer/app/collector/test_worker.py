@@ -41,20 +41,26 @@ def test_all_registered_plugins_constructable(make_worker):
         assert worker._batch_timeout == collector_resolver.batch_timeout(name)
 
 
-def test_process_one_error_is_sent_as_failure(make_worker):
+def test_process_one_error_is_retried_and_paused_on_the_third_time(make_worker):
     from unittest.mock import MagicMock
 
     worker = make_worker()
     worker._node = MagicMock()
+    path = "/nonexistent/test.jpg"
+    calls = []
 
-    def always_fail(path, info):
+    def always_fail(p, info):
+        calls.append(p)
         raise RuntimeError("simulated plugin error")
 
     worker._plugin.process = always_fail
-    worker._process_batch(["/nonexistent/test.jpg"], {"/nonexistent/test.jpg": [0.0, 0]}, {}, "test_db")
-    assert worker._node.send_reliable.called
-    payload = worker._node.send_reliable.call_args[0][1]
-    assert payload["results"] == [{"source": "/nonexistent/test.jpg", "status": False}]
+    for _ in range(3):
+        worker._process_batch([path], {path: [0.0, 0]}, {}, "test_db")
+        assert worker._node.send_reliable.call_args[0][1]["results"] == []
+    assert worker._plugin.retries.is_paused(path)
+
+    worker._process_batch([path], {path: [0.0, 0]}, {}, "test_db")
+    assert len(calls) == 3
 
 
 def test_process_batch_partial_failure(make_worker):
@@ -82,7 +88,7 @@ def test_process_batch_partial_failure(make_worker):
     assert worker._node.send_reliable.called
     payload = worker._node.send_reliable.call_args[0][1]
     statuses = {r["source"]: r["status"] for r in payload["results"]}
-    assert statuses == {"/test/a.jpg": True, "/test/b.jpg": False, "/test/c.jpg": True}
+    assert statuses == {"/test/a.jpg": True, "/test/c.jpg": True}
 
 
 def test_process_batch_uses_db_from_argument(make_worker):
@@ -285,7 +291,7 @@ def test_process_batch_passes_source_key_unchanged(make_worker):
     assert worker._node.send_reliable.call_args[0][1]["results"][0]["source"] == key
 
 
-def test_empty_result_and_timeout_are_retried_and_exception_fails(make_worker, monkeypatch):
+def test_empty_result_and_timeout_are_retried_and_exception_is_retried(make_worker, monkeypatch):
     import threading
     from unittest.mock import MagicMock
     from wafer.plugin.collector.base import CollectorResult
@@ -315,7 +321,7 @@ def test_empty_result_and_timeout_are_retried_and_exception_fails(make_worker, m
         release.set()
 
     statuses = {r["source"]: r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]}
-    assert statuses == {"/test/ok.jpg": True, "/test/raise.jpg": False}
+    assert statuses == {"/test/ok.jpg": True}
 
 
 def test_timed_out_batch_leaves_started_and_queued_paths_dispatched(make_worker, monkeypatch):
@@ -399,11 +405,11 @@ def test_batched_collector_returning_none_sends_an_empty_message():
     assert run_batched_collector(lambda paths: None, ["/a.png", "/b.png"]) == {}
 
 
-def test_batched_collector_error_fails_every_path():
+def test_batched_collector_error_retries_every_path():
     def boom(paths):
         raise RuntimeError("boom")
 
-    assert run_batched_collector(boom, ["/a.png", "/b.png"]) == {"/a.png": False, "/b.png": False}
+    assert run_batched_collector(boom, ["/a.png", "/b.png"]) == {}
 
 
 def test_stop_ends_a_batch_with_queued_paths_at_once_and_sends_finished_results(make_worker, monkeypatch):

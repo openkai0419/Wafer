@@ -58,7 +58,7 @@ class _FaultyCollector(BaseCollectorPlugin):
 
 
 class TestCollectorExceptionMarksFailure:
-    def test_exception_in_collector_produces_fail_status(self, tmp_path):
+    def test_false_status_produces_fail_status(self, tmp_path):
         img_dir = tmp_path / "photos"
         img_dir.mkdir()
         _create_test_image(img_dir / "test.jpg")

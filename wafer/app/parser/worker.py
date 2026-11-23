@@ -3,12 +3,17 @@ from ...plugin.parser.handler import parser_resolver
 from ..worker_lifecycle import PluginWorker
 
 
+def result_dicts(results) -> list[dict]:
+    return [r.to_dict() if isinstance(r, ParserResult) else r for r in results or () if r]
+
+
 class ParserWorker(PluginWorker):
     KIND = "parser"
     BATCH_TOPIC = "parse.batch"
     RESULT_TOPIC = "parse.result"
     PLUGIN_BASE = BaseParser
     resolver = parser_resolver
+    result_dicts = staticmethod(result_dicts)
 
     def __init__(self, db_name: str, plugin_name: str):
         super().__init__(db_name, plugin_name)
@@ -21,10 +26,6 @@ class ParserWorker(PluginWorker):
 
     def process_paths(self, paths, file_info, metadata) -> list[dict]:
         return result_dicts(self._plugin.process_batch(paths, file_info, metadata))
-
-
-def result_dicts(results) -> list[dict]:
-    return [r.to_dict() if isinstance(r, ParserResult) else r for r in results or () if r]
 
 
 run_parser = ParserWorker.run

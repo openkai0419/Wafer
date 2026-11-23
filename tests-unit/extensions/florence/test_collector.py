@@ -217,7 +217,6 @@ class TestIdleTimeout:
             self.collector.engine(self.collector.model)
             mock_ensure.assert_called_once_with("large", version=POST_INSTALL_VERSION)
 
-
     def test_preview_uses_the_panel_variant(self):
         mock_inference_mod = MagicMock()
         mock_inference_mod.FlorenceInference.return_value.predict.return_value = "caption"
@@ -421,6 +420,18 @@ class TestBatchInference:
         with patch.object(self.collector, "process_group", side_effect=process_group):
             results, _ = run_batch(self.collector, [f"/img/{i}.jpg" for i in range(4)])
         assert results == []
+
+    def test_stop_during_batch_inference_logs_no_warning(self):
+        self.collector._engines["base"] = echo_engine()
+
+        def stop_then_fail(model, images, settings):
+            self.collector.shutdown()
+            raise RuntimeError("stopping")
+
+        with patch.object(self.collector, "run_tasks_batch", side_effect=stop_then_fail), patch("extensions.florence.collector.AppLogger.warning") as warning:
+            results, _ = run_batch(self.collector, [f"/img/{i}.jpg" for i in range(4)])
+        assert results == []
+        warning.assert_not_called()
 
     def test_load_engine_refuses_while_stopping(self):
         self.collector.shutdown()

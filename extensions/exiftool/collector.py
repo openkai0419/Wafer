@@ -135,8 +135,6 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
         return exe_path
 
     def process(self, path: str, file_info: tuple) -> CollectorResult | None:
-        if self._closed.is_set():
-            return None
         proc = self._ensure_process()
         if proc is None:
             return None if self._closed.is_set() else CollectorResult(source=path, status=False)

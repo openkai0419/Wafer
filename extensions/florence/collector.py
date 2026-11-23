@@ -127,6 +127,8 @@ class FlorenceCollector(BaseInferenceCollector):
         try:
             inferred = self.run_tasks_batch(model, thumbs, self._settings)
         except Exception as e:
+            if self.stopping.is_set():
+                return results
             AppLogger.warning(f"{self.NAME} '{model}' batch inference failed, retrying one by one: {[path for _, owners in waiting.values() for path, _ in owners]}", exc=e)
             inferred = self.infer_each(model, waiting)
         if inferred is None:

@@ -25,6 +25,7 @@ def test_predict_batch_strips_padding():
     assert inference.processor.call_args.kwargs["text"] == ["<CAPTION>"] * 2
     inference.model.generate.assert_called_once()
 
+
 def test_predict_delegates_to_predict_batch():
     inference = FlorenceInference.__new__(FlorenceInference)
     image = Image.new("RGB", (8, 8))

@@ -162,6 +162,58 @@ def test_raised_path_fails_and_none_is_retried(make_worker):
     assert statuses == {"/ok.png": True, "/raise.png": False}
 
 
+def test_paused_path_is_not_processed_and_stays_dispatched(make_worker):
+    from wafer.plugin.parser.base import ParserResult
+
+    worker = make_worker()
+    received = []
+
+    def process(path, file_info, metadata):
+        received.append(path)
+        if path == "/busy.png":
+            return worker._plugin.retry_later(path, pause_after=2)
+        return ParserResult(source=path, status=True)
+
+    worker._plugin.process = process
+    for _ in range(3):
+        worker._process_batch(["/ok.png", "/busy.png"], {}, {}, "test_db")
+
+    assert received.count("/busy.png") == 2
+    assert received.count("/ok.png") == 3
+    assert worker._node.send_reliable.call_args[0][1]["results"] == [{"source": "/ok.png", "status": True}]
+
+
+def test_all_paused_batch_still_reports_back(make_worker):
+    worker = make_worker()
+    worker._plugin.retries.count_failure("/busy.png", pause_after=1)
+    worker._plugin.process = MagicMock()
+
+    worker._process_batch(["/busy.png"], {}, {}, "test_db")
+
+    worker._plugin.process.assert_not_called()
+    assert worker._node.send_reliable.call_args[0][1]["results"] == []
+
+
+def test_result_resets_the_failure_count(make_worker):
+    from wafer.plugin.parser.base import ParserResult
+
+    worker = make_worker()
+    outcomes = iter(["retry", "ok", "retry", "retry"])
+    statuses = []
+
+    def process(path, file_info, metadata):
+        if next(outcomes) == "ok":
+            return ParserResult(source=path, status=True)
+        return worker._plugin.retry_later(path, fail_after=2)
+
+    worker._plugin.process = process
+    for _ in range(4):
+        worker._process_batch(["/flaky.png"], {}, {}, "test_db")
+        statuses.append([r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]])
+
+    assert statuses == [[], [True], [], [False]]
+
+
 def test_timed_out_batch_leaves_started_and_queued_paths_dispatched(make_worker, monkeypatch):
     import threading
 

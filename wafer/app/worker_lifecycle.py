@@ -163,6 +163,8 @@ class PluginWorker:
 
     def _process_batch(self, paths, file_info_raw, metadata, db):
         try:
+            retries = self._plugin.retries
+            paths = [p for p in paths if not retries.is_paused(p)]
             file_info = {p: tuple(file_info_raw.get(p, (0.0, 0))) for p in paths}
             metadata = {p: metadata.get(p, {}) for p in paths}
 
@@ -180,7 +182,9 @@ class PluginWorker:
                     AppLogger.warning(f"[{self.label}] process_batch failed for {len(paths)} paths: {e}", exc=e)
                     return [] if self._stop.is_set() else failure_results(paths)
 
-            if self._batched:
+            if not paths:
+                futures = {}
+            elif self._batched:
                 futures = {self._executor.submit(process_all): paths}
             else:
                 futures = {self._executor.submit(process_one, p): [p] for p in paths}
@@ -198,6 +202,7 @@ class PluginWorker:
                     AppLogger.info(f"[{self.label}] Stopping: {unfinished + len(not_started)}/{len(paths)} paths are retried later")
                 else:
                     AppLogger.warning(f"[{self.label}] batch timeout: {unfinished}/{len(paths)} unfinished, {len(not_started)} not started (retried later)")
+            retries.forget(r["source"] for r in results)
             self._node.send_reliable(
                 self.RESULT_TOPIC,
                 {self.KIND: self.status_name, "results": results},

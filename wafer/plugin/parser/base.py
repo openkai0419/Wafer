@@ -8,6 +8,7 @@ from collections.abc import Callable, Sequence
 from typing import Any, TypeVar
 
 from ..registry import BasePlugin
+from ..retry import RetryLater
 
 _READER_INIT_LOCK = threading.Lock()
 T = TypeVar("T")
@@ -48,9 +49,10 @@ class ReaderClosed(RuntimeError):
     pass
 
 
-class BaseParser(BasePlugin):
+class BaseParser(RetryLater, BasePlugin):
     SCOPE: str = "tray"
     TRIGGER_KEYS: tuple[str, ...] = ()
+    RESULT_TYPE = ParserResult
 
     db_name: str = ""
     _reader: sqlite3.Connection | None = None

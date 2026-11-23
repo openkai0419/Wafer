@@ -61,6 +61,17 @@ class TestFfmpegCollectorPlugin:
             assert FfmpegCollectorPlugin().process("/test/video.mp4", (1.0, 1000)) is None
 
     @patch("extensions.ffmpeg.collector.FfmpegCollectorPlugin._resolve_ffprobe")
+    def test_process_fails_on_the_fifth_timeout(self, mock_resolve):
+        import subprocess
+
+        mock_resolve.return_value = "/fake/ffprobe.exe"
+        plugin = FfmpegCollectorPlugin()
+        with patch("extensions.ffmpeg.parser.run_external", side_effect=subprocess.TimeoutExpired("ffprobe", 30)):
+            results = [plugin.process("/test/video.mp4", (1.0, 1000)) for _ in range(5)]
+        assert results[:4] == [None] * 4
+        assert (results[4].source, results[4].status) == ("/test/video.mp4", False)
+
+    @patch("extensions.ffmpeg.collector.FfmpegCollectorPlugin._resolve_ffprobe")
     def test_process_probe_failure(self, mock_resolve):
         mock_resolve.return_value = "/fake/ffprobe.exe"
 

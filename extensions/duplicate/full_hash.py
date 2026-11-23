@@ -21,7 +21,7 @@ class FullHashParser(BaseParserPlugin):
             digest = read_full_hash(path)
         except PermissionError as e:
             AppLogger.warning(f"[full_hash] File is in use; collected again later: {path}", exc=e)
-            return None
+            return self.retry_later(path, pause_after=5)
         except (OSError, ValueError) as e:
             AppLogger.warning(f"[full_hash] Cannot read the file: {path}", exc=e)
             return ParserResult(source=path, status=False)

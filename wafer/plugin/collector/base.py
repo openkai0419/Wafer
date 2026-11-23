@@ -5,6 +5,7 @@ from dataclasses import dataclass, asdict
 from typing import Any
 
 from ..registry import BasePlugin
+from ..retry import RetryLater
 
 
 @dataclass
@@ -21,8 +22,9 @@ class CollectorResult:
         return {k: v for k, v in asdict(self).items() if v is not None}
 
 
-class BaseCollector(BasePlugin):
+class BaseCollector(RetryLater, BasePlugin):
     SCOPE: str = "tray"
+    RESULT_TYPE = CollectorResult
 
     @abstractmethod
     def process(self, path: str, file_info: tuple[float, int]) -> CollectorResult | list[CollectorResult]: ...

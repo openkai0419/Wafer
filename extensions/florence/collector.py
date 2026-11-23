@@ -90,6 +90,7 @@ class FlorenceCollector(BaseInferenceCollector):
                 if self.stopping.is_set():
                     break
                 AppLogger.warning(f"{self.NAME} group failed; collected again later: {[path for path, _ in group]}", exc=e)
+                results.update(self.inference_failures(path for path, _ in group))
         return [results[path] for path in paths if path in results]
 
     def process_group(self, group: list[tuple[str, str | None]]) -> dict[str, CollectorResult]:
@@ -125,11 +126,15 @@ class FlorenceCollector(BaseInferenceCollector):
             return results
         for (pixel_hash, (_, owners)), tags in zip(waiting.items(), inferred):
             if tags is None:
+                results.update(self.inference_failures(path for path, _ in owners))
                 continue
             for path, file_hash in owners:
                 self.remember(file_hash, pixel_hash, tags)
                 results[path] = CollectorResult(source=path, status=True, tags=tags)
         return results
+
+    def inference_failures(self, paths) -> dict[str, CollectorResult]:
+        return {path: result for path in paths if (result := self.inference_failed(path))}
 
     def infer(self, engine: FlorenceInference, thumb, model: str) -> dict:
         return self.run_tasks(engine, thumb, self._settings)

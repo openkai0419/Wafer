@@ -5,6 +5,7 @@ import pytest
 from PIL import Image
 
 from wafer.plugin import BaseInferenceCollector, EngineUnavailable
+from wafer.plugin.collector.inference import INFERENCE_PAUSE_AFTER
 from wafer.plugin.config import PluginConfig
 
 
@@ -96,6 +97,25 @@ def test_unreadable_image_fails(collector, resolver):
 def test_inference_failure_is_collected_again(collector, resolver):
     collector.engine("a").predict = MagicMock(side_effect=RuntimeError("out of memory"))
     assert collector.process("/a.png", (0.0, 1)) is None
+
+
+def test_inference_failure_pauses_after_five_failures(collector, resolver):
+    collector.engine("a").predict = MagicMock(side_effect=RuntimeError("out of memory"))
+    assert [collector.process("/a.png", (0.0, 1)) for _ in range(INFERENCE_PAUSE_AFTER)] == [None] * INFERENCE_PAUSE_AFTER
+    assert collector.retries.is_paused("/a.png")
+
+
+def test_unavailable_engine_and_stopping_are_not_counted(collector, resolver, monkeypatch):
+    monkeypatch.setattr(collector, "load_engine", MagicMock(side_effect=RuntimeError("missing model")))
+    for _ in range(INFERENCE_PAUSE_AFTER):
+        collector.process("/a.png", (0.0, 1))
+    collector.engine_failed_at = None
+    monkeypatch.setattr(collector, "load_engine", Engine)
+    collector.engine("a").predict = MagicMock(side_effect=RuntimeError("interrupted"))
+    collector.stopping.set()
+    for _ in range(INFERENCE_PAUSE_AFTER):
+        collector.process("/a.png", (0.0, 1))
+    assert not collector.retries.is_paused("/a.png")
 
 
 def test_engine_load_failure_is_collected_again_and_retried_after_the_interval(collector, resolver, monkeypatch):

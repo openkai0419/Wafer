@@ -8,6 +8,7 @@ from PIL import Image
 from extensions.florence._downloader import MODELS, ensure_model
 from extensions.florence.collector import FlorenceCollector
 from wafer.plugin import EngineUnavailable
+from wafer.plugin.collector.inference import INFERENCE_PAUSE_AFTER
 
 _ENGINE_IDLE_TIMEOUT = FlorenceCollector.ENGINE_IDLE_TIMEOUT
 
@@ -345,6 +346,26 @@ class TestBatchInference:
         self.collector._engines["base"] = engine
         results, _ = run_batch(self.collector, paths, images=images)
         assert [(r.source, r.status) for r in results] == [(path, True) for path in paths if path != paths[1]]
+
+        assert self.collector.retries.is_paused(paths[1]) is False
+
+    def test_failed_image_pauses_after_five_failures(self):
+        engine = echo_engine()
+        engine.predict_batch.side_effect = RuntimeError("out of memory")
+        engine.predict.side_effect = RuntimeError("bad image")
+        self.collector._engines["base"] = engine
+        for _ in range(INFERENCE_PAUSE_AFTER):
+            results, _ = run_batch(self.collector, ["/img/bad.jpg"], images={"/img/bad.jpg": Image.new("RGB", (8, 8))})
+            assert results == []
+        assert self.collector.retries.is_paused("/img/bad.jpg")
+
+    def test_failed_group_pauses_after_five_failures(self):
+        self.collector._engines["base"] = echo_engine()
+        paths = [f"/img/{i}.jpg" for i in range(2)]
+        with patch.object(self.collector, "process_group", side_effect=RuntimeError("boom")):
+            for _ in range(INFERENCE_PAUSE_AFTER):
+                run_batch(self.collector, paths)
+        assert all(self.collector.retries.is_paused(path) for path in paths)
 
     def test_stop_between_groups_skips_the_rest(self):
         engine = echo_engine()

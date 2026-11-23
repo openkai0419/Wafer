@@ -17,6 +17,9 @@ if TYPE_CHECKING:
     from ..config import PluginConfig
 
 
+INFERENCE_PAUSE_AFTER = 5
+
+
 class EngineUnavailable(RuntimeError):
     pass
 
@@ -185,6 +188,11 @@ class BaseInferenceCollector(BaseSingletonCollector):
                 AppLogger.warning(f"{self.NAME} '{model}' inference failed; collected again later: {path}", exc=e)
             return None
 
+    def inference_failed(self, path: str) -> CollectorResult | None:
+        if self.stopping.is_set():
+            return None
+        return self.retry_later(path, pause_after=INFERENCE_PAUSE_AFTER)
+
     def remember(self, file_hash: str | None, pixel_hash: str, tags: dict) -> None:
         self.cache_put(self._pixel_cache, pixel_hash, tags)
         if file_hash:
@@ -211,6 +219,6 @@ class BaseInferenceCollector(BaseSingletonCollector):
         if tags is None:
             tags = self.infer_or_none(engine, thumb, model, path)
             if tags is None:
-                return None
+                return self.inference_failed(path)
         self.remember(file_hash, pixel_hash, tags)
         return CollectorResult(source=path, status=True, tags=tags)

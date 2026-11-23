@@ -67,7 +67,7 @@ class FfmpegCollectorPlugin(BaseCollectorPlugin):
             data = probe(path, ffprobe)
         except subprocess.TimeoutExpired as e:
             AppLogger.warning(f"[ffmpeg] ffprobe timed out; collected again later: {path}", exc=e)
-            return None
+            return self.retry_later(path, fail_after=5)
         if data is None:
             return CollectorResult(source=path, status=False)
 

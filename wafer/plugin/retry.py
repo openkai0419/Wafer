@@ -6,6 +6,9 @@ from collections.abc import Iterable
 from ..core.logs import AppLogger
 
 
+ERROR_PAUSE_AFTER = 3
+
+
 class RetryCounter:
     def __init__(self, name: str):
         self.name = name
@@ -63,3 +66,6 @@ class RetryLater:
         if self.retries.count_failure(path, pause_after=pause_after, fail_after=fail_after):
             return self.RESULT_TYPE(source=path, status=False)
         return None
+
+    def on_error(self, path: str, error: Exception):
+        return self.retry_later(path, pause_after=ERROR_PAUSE_AFTER)

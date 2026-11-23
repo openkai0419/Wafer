@@ -101,6 +101,15 @@ def test_retry_later_returns_the_plugins_failure_result(plugin_class, result_typ
     assert (result.source, result.status) == ("/a", False)
 
 
+@pytest.mark.parametrize("plugin_class", [_Collector, _Parser])
+def test_on_error_pauses_on_the_third_error_by_default(plugin_class):
+    plugin = plugin_class()
+    error = RuntimeError("boom")
+
+    assert [plugin.on_error("/a", error) for _ in range(3)] == [None, None, None]
+    assert plugin.retries.is_paused("/a")
+
+
 def test_each_plugin_instance_has_its_own_counter():
     first, second = _Collector(), _Collector()
 

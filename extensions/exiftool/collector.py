@@ -134,14 +134,18 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
             kill_orphans(exe_path)
         return exe_path
 
-    def process(self, path: str, file_info: tuple) -> CollectorResult:
+    def process(self, path: str, file_info: tuple) -> CollectorResult | None:
+        if self._closed.is_set():
+            return None
         proc = self._ensure_process()
         if proc is None:
-            return CollectorResult(source=path, status=False)
+            return None if self._closed.is_set() else CollectorResult(source=path, status=False)
         self._touch()
 
         data = proc.query(path)
         if data is None:
+            return None
+        if not data:
             return CollectorResult(source=path, status=False)
 
         try:

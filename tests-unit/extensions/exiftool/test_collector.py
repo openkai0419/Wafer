@@ -29,8 +29,23 @@ class TestExifToolCollector:
         mock_proc.alive = True
         mock_proc.query.return_value = None
         plugin._process = mock_proc
+        assert plugin.process("bad.jpg", (1000.0, 0)) is None
+
+    def test_process_unreadable_file_fails(self):
+        plugin = ExifToolCollectorPlugin()
+        mock_proc = MagicMock()
+        mock_proc.alive = True
+        mock_proc.query.return_value = {}
+        plugin._process = mock_proc
         result = plugin.process("bad.jpg", (1000.0, 0))
         assert result.status is False
+
+    def test_process_after_shutdown_returns_none(self):
+        plugin = ExifToolCollectorPlugin()
+        plugin.shutdown()
+        with patch.object(plugin, "_resolve_exe", return_value="exiftool.exe") as resolve:
+            assert plugin.process("test.jpg", (1000.0, 500)) is None
+        resolve.assert_not_called()
 
     def test_process_no_exiftool(self):
         plugin = ExifToolCollectorPlugin()
@@ -182,8 +197,7 @@ def test_shutdown_prevents_further_process_spawn(monkeypatch):
 
     assert plugin._ensure_process() is None
     assert resolved == []
-    result = plugin.process("photo.jpg", (0.0, 0))
-    assert result.status is False
+    assert plugin.process("photo.jpg", (0.0, 0)) is None
     assert plugin._process is None
 
 

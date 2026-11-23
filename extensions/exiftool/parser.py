@@ -132,7 +132,7 @@ class ExifToolProcess:
                 AppLogger.warning(f"[exiftool] Process ended unexpectedly, restarting: {path}")
                 self._discard(proc)
                 return None
-            return _parse_json_output("\n".join(lines))
+            return _parse_json_output("\n".join(lines)) or {}
 
     def _discard(self, proc: subprocess.Popen):
         if self._proc is proc:

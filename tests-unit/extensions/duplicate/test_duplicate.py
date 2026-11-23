@@ -73,3 +73,31 @@ def test_fails_on_failed_hash_sentinel(parser):
     result = parser.process("/a.png", (1.0, 100, HASH_FAILED), {})
     assert result.status is False
     assert result.tags is None
+
+
+def test_batch_matches_one_by_one(parser):
+    _add_source(parser.db, "/a.png", "h1")
+    _add_source(parser.db, "/b.png", "h1")
+    _add_source(parser.db, "/c.png", "h2")
+    _add_source(parser.db, "/d.png", "h3")
+    _add_source(parser.db, "/e.png", "h3")
+    parser.db.upsert_collection_results([], [], [("/c.png", TAG_KEY, "1", 1.0), ("/d.png", TAG_KEY, "1", 1.0)], [])
+    from wafer.core.common.hashes import HASH_FAILED
+
+    info = {"/a.png": (1.0, 100, "h1"), "/b.png": (1.0, 100, "h1"), "/c.png": (1.0, 100, "h2"), "/d.png": (1.0, 100, "h3"), "/x.png": (1.0, 100), "/f.png": (1.0, 100, HASH_FAILED)}
+    paths = list(info)
+    expected = [parser.process(p, info[p], {}) for p in paths]
+    assert parser.process_batch(paths, info, {p: {} for p in paths}) == expected
+    assert [(r.status, r.tags, r.delete_tag_keys) for r in expected] == [
+        (True, {TAG: "1"}, None), (True, {TAG: "1"}, None), (True, None, [TAG_KEY]), (True, None, None), (False, None, None), (False, None, None)]
+
+
+def test_batch_reads_the_database_once(parser, monkeypatch):
+    for i in range(5):
+        _add_source(parser.db, f"/{i}.png", f"h{i % 2}")
+    calls = []
+    original = parser.read_db
+    monkeypatch.setattr(parser, "read_db", lambda read, default=None: calls.append(1) or original(read, default))
+    paths = [f"/{i}.png" for i in range(5)]
+    parser.process_batch(paths, {p: (1.0, 100, f"h{i % 2}") for i, p in enumerate(paths)}, {p: {} for p in paths})
+    assert len(calls) == 1

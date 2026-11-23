@@ -136,29 +136,49 @@ class BaseInferenceCollector(BaseSingletonCollector):
             return {"error": str(e)}
         return {**result, "path": path, "model": model, "elapsed_ms": round((time.perf_counter() - started) * 1000)}
 
-    def process(self, path: str, file_info: tuple) -> CollectorResult:
-        file_hash = file_info[2] if len(file_info) >= 3 else None
-        if file_hash and file_hash in self._hash_cache:
-            self._hash_cache.move_to_end(file_hash)
-            return CollectorResult(source=path, status=True, tags=self._hash_cache[file_hash])
+    def cached_tags(self, file_hash: str | None) -> dict | None:
+        if not file_hash or file_hash not in self._hash_cache:
+            return None
+        self._hash_cache.move_to_end(file_hash)
+        return self._hash_cache[file_hash]
 
-        model = self.model
-        engine = self.engine(model)
-        thumb = image_loader_resolver.load_pil(path, size=engine.input_size)
-        if thumb is None:
-            return CollectorResult(source=path, status=False)
+    def load_thumb(self, path: str, engine) -> Image.Image | None:
+        return image_loader_resolver.load_pil(path, size=engine.input_size)
 
-        pixel_hash = hashlib.sha256(thumb.tobytes(), usedforsecurity=False).hexdigest()[:16]
+    @staticmethod
+    def pixel_key(thumb: Image.Image) -> str:
+        return hashlib.sha256(thumb.tobytes(), usedforsecurity=False).hexdigest()[:16]
+
+    def pixel_tags(self, pixel_hash: str) -> dict | None:
         tags = self._pixel_cache.get(pixel_hash)
         if tags is not None:
             self._pixel_cache.move_to_end(pixel_hash)
-        else:
+        return tags
+
+    def remember(self, file_hash: str | None, pixel_hash: str, tags: dict) -> None:
+        self.cache_put(self._pixel_cache, pixel_hash, tags)
+        if file_hash:
+            self.cache_put(self._hash_cache, file_hash, tags)
+
+    def process(self, path: str, file_info: tuple) -> CollectorResult:
+        file_hash = file_info[2] if len(file_info) >= 3 else None
+        tags = self.cached_tags(file_hash)
+        if tags is not None:
+            return CollectorResult(source=path, status=True, tags=tags)
+
+        model = self.model
+        engine = self.engine(model)
+        thumb = self.load_thumb(path, engine)
+        if thumb is None:
+            return CollectorResult(source=path, status=False)
+
+        pixel_hash = self.pixel_key(thumb)
+        tags = self.pixel_tags(pixel_hash)
+        if tags is None:
             try:
                 tags = self.infer(engine, thumb, model)
             except Exception as e:
                 AppLogger.warning(f"{self.NAME} '{model}' inference failed: {path}", exc=e)
                 return CollectorResult(source=path, status=False)
-            self.cache_put(self._pixel_cache, pixel_hash, tags)
-        if file_hash:
-            self.cache_put(self._hash_cache, file_hash, tags)
+        self.remember(file_hash, pixel_hash, tags)
         return CollectorResult(source=path, status=True, tags=tags)

@@ -253,3 +253,117 @@ class TestPostInstall:
         with patch("extensions.florence.collector.ensure_model", side_effect=RuntimeError("dl failed")):
             with pytest.raises(RuntimeError, match="dl failed"):
                 FlorenceCollector.post_install("/fake/dir")
+
+
+TASKS = ["<CAPTION>", "<DETAILED_CAPTION>", "<MORE_DETAILED_CAPTION>"]
+
+
+def color_of(path: str) -> tuple[int, int, int]:
+    value = sum(path.encode()) % 256
+    return (value, 255 - value, 7)
+
+
+def fake_load_pil(images: dict):
+    return lambda path, size=None: images[path] if path in images else Image.new("RGB", (8, 8), color_of(path))
+
+
+def text_of(image, task: str) -> str:
+    return f"{task}:{image.getpixel((0, 0))}"
+
+
+def echo_engine() -> MagicMock:
+    engine = MagicMock()
+    engine.input_size = 384
+    engine.predict.side_effect = lambda image, task, **kw: text_of(image, task)
+    engine.predict_batch.side_effect = lambda images, task, **kw: [text_of(image, task) for image in images]
+    return engine
+
+
+def run_batch(collector, paths, info=None, images=None):
+    info = info or {path: (1.0, 1, f"hash-{path}") for path in paths}
+    with patch("wafer.plugin.collector.inference.image_loader_resolver") as resolver:
+        resolver.load_pil.side_effect = fake_load_pil(images or {})
+        return collector.process_batch(paths, info), resolver
+
+
+class TestBatchInference:
+    def setup_method(self):
+        self.collector = FlorenceCollector()
+
+    def teardown_method(self):
+        self.collector.shutdown()
+
+    def test_batch_infers_four_images_per_call(self):
+        engine = self.collector._engines["base"] = echo_engine()
+        paths = [f"/img/{i}.jpg" for i in range(6)]
+        results, _ = run_batch(self.collector, paths)
+        sizes = [len(call.args[0]) for call in engine.predict_batch.call_args_list]
+        assert sizes == [4] * len(TASKS) + [2] * len(TASKS)
+        assert [r.source for r in results] == paths
+        assert all(r.status is True for r in results)
+        engine.predict.assert_not_called()
+
+    def test_batch_matches_one_by_one(self):
+        paths = ["/cached.jpg", "/broken.jpg", "/pixel.jpg", "/new1.jpg", "/new2.jpg"]
+        info = {path: (1.0, 1, f"hash-{path}") for path in paths}
+        pixel_image = Image.new("RGB", (8, 8), (9, 9, 9))
+        images = {"/pixel.jpg": pixel_image, "/broken.jpg": None}
+
+        def prepare(collector):
+            collector._engines["base"] = echo_engine()
+            collector._hash_cache["hash-/cached.jpg"] = {"caption": "cached"}
+            collector._pixel_cache[collector.pixel_key(pixel_image)] = {"caption": "pixel"}
+
+        batched = FlorenceCollector()
+        single = FlorenceCollector()
+        try:
+            prepare(batched)
+            prepare(single)
+            batch_results, resolver = run_batch(batched, paths, info, images)
+            with patch("wafer.plugin.collector.inference.image_loader_resolver") as resolver_single:
+                resolver_single.load_pil.side_effect = fake_load_pil(images)
+                single_results = [single.process(path, info[path]) for path in paths]
+            loaded = [call.args[0] for call in resolver.load_pil.call_args_list]
+            assert "/cached.jpg" not in loaded
+            assert [(r.source, r.status, r.tags) for r in batch_results] == [(r.source, r.status, r.tags) for r in single_results]
+        finally:
+            batched.shutdown()
+            single.shutdown()
+
+    def test_failed_batch_retries_one_by_one(self):
+        engine = echo_engine()
+        engine.predict_batch.side_effect = RuntimeError("out of memory")
+        paths = [f"/img/{i}.jpg" for i in range(4)]
+        images = {path: Image.new("RGB", (8, 8), (i * 40, 0, 0)) for i, path in enumerate(paths)}
+
+        def predict(image, task, **kw):
+            if image is images[paths[1]]:
+                raise RuntimeError("bad image")
+            return text_of(image, task)
+
+        engine.predict.side_effect = predict
+        self.collector._engines["base"] = engine
+        results, _ = run_batch(self.collector, paths, images=images)
+        assert [r.status for r in results] == [True, False, True, True]
+
+    def test_stop_between_groups_skips_the_rest(self):
+        engine = echo_engine()
+        calls = []
+
+        def predict_batch(images, task, **kw):
+            calls.append(len(images))
+            self.collector.shutdown()
+            return [text_of(image, task) for image in images]
+
+        engine.predict_batch.side_effect = predict_batch
+        self.collector._engines["base"] = engine
+        paths = [f"/img/{i}.jpg" for i in range(8)]
+
+        def no_load(model):
+            raise AssertionError("engine must not be reloaded while stopping")
+
+        with patch.object(self.collector, "load_engine", side_effect=no_load):
+            results, _ = run_batch(self.collector, paths)
+        assert [r.source for r in results] == paths[:4]
+        assert calls == [4] * len(TASKS)
+        assert self.collector._engines == {}

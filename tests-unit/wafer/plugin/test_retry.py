@@ -51,6 +51,17 @@ def test_forget_starts_the_count_again():
     assert counter.count_failure("/a", fail_after=2) is True
 
 
+def test_reset_resumes_paused_paths_and_counts_from_zero():
+    counter = RetryCounter("test")
+
+    counter.count_failure("/a", pause_after=1)
+    counter.count_failure("/b", fail_after=2)
+    counter.reset()
+
+    assert not counter.is_paused("/a")
+    assert counter.count_failure("/b", fail_after=2) is False
+
+
 def test_forget_keeps_paused_paths():
     counter = RetryCounter("test")
 

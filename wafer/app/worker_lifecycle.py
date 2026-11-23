@@ -79,6 +79,7 @@ class PluginWorker:
         self._node.subscribe(self.BATCH_TOPIC, self._handle_batch)
         self._node.subscribe("plugin.notify", self._on_notify)
         self._node.subscribe("worker.shutdown", self._on_shutdown)
+        self._node.subscribe("rescan", self._on_rescan)
         self._max_workers = self.resolver.max_workers(plugin_name)
         self._batch_timeout = self.resolver.batch_timeout(plugin_name)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=self._max_workers)
@@ -123,6 +124,10 @@ class PluginWorker:
     def _on_notify(self, msg) -> bool:
         self._plugin.on_notify(msg.payload if isinstance(msg.payload, dict) else None)
         AppLogger.info(f"[{self.label}] Notified: {self.plugin_name}")
+        return True
+
+    def _on_rescan(self, msg) -> bool:
+        self._plugin.retries.reset()
         return True
 
     def _on_shutdown(self, msg) -> bool:

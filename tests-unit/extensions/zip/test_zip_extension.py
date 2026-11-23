@@ -483,14 +483,16 @@ def test_zip_collector_retries_an_archive_in_use(monkeypatch):
     assert ZipCollectorPlugin().process("busy.zip", (0.0, 0)) is None
 
 
-def test_zip_collector_pauses_an_archive_in_use_after_five_failures(monkeypatch):
+def test_zip_collector_pauses_an_archive_in_use_after_ten_failures(monkeypatch):
     def in_use(_path):
         raise PermissionError(13, "The process cannot access the file because it is being used by another process")
 
     monkeypatch.setattr("extensions.zip.collector.list_entries", in_use)
     collector = ZipCollectorPlugin()
 
-    assert [collector.process("busy.zip", (0.0, 0)) for _ in range(5)] == [None] * 5
+    assert [collector.process("busy.zip", (0.0, 0)) for _ in range(9)] == [None] * 9
+    assert not collector.retries.is_paused("busy.zip")
+    assert collector.process("busy.zip", (0.0, 0)) is None
     assert collector.retries.is_paused("busy.zip")
 
 

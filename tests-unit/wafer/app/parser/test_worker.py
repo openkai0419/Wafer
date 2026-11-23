@@ -194,6 +194,16 @@ def test_all_paused_batch_still_reports_back(make_worker):
     assert worker._node.send_reliable.call_args[0][1]["results"] == []
 
 
+def test_rescan_resumes_paused_paths(make_worker):
+    worker = make_worker()
+    worker._plugin.retries.count_failure("/busy.png", pause_after=1)
+
+    worker._on_rescan(MagicMock())
+    worker._process_batch(["/busy.png"], {}, {}, "test_db")
+
+    assert worker._node.send_reliable.call_args[0][1]["results"] == [{"source": "/busy.png", "status": True}]
+
+
 def test_result_resets_the_failure_count(make_worker):
     from wafer.plugin.parser.base import ParserResult
 

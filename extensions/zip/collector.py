@@ -33,7 +33,7 @@ class ZipCollectorPlugin(BaseSingletonCollector):
             entries = list_entries(path)
         except PermissionError as e:
             AppLogger.warning(f"[zip] Archive is in use; collected again later: {path}", exc=e)
-            return self.retry_later(path, pause_after=5)
+            return self.retry_later(path, pause_after=10)
         except (OSError, UnicodeDecodeError, zipfile.BadZipFile) as e:
             AppLogger.warning(f"[zip] Failed to enumerate archive: {path}", exc=e)
             return [CollectorResult(source=path, status=False)]

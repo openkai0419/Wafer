@@ -3,6 +3,7 @@ import weakref
 from unittest.mock import MagicMock, patch
 import time
 import pytest
+from test_support.file_lock import held_exclusively
 from extensions.exiftool.collector import ExifToolCollectorPlugin, _IDLE_TIMEOUT
 
 
@@ -39,6 +40,17 @@ class TestExifToolCollector:
         plugin._process = mock_proc
         result = plugin.process("bad.jpg", (1000.0, 0))
         assert result.status is False
+
+    def test_process_file_in_use_is_collected_again(self, tmp_path):
+        path = tmp_path / "held.jpg"
+        path.write_bytes(b"image")
+        plugin = ExifToolCollectorPlugin()
+        mock_proc = MagicMock()
+        mock_proc.alive = True
+        mock_proc.query.return_value = {}
+        plugin._process = mock_proc
+        with held_exclusively(path):
+            assert plugin.process(str(path), (1000.0, 0)) is None
 
     def test_process_after_shutdown_returns_none(self):
         plugin = ExifToolCollectorPlugin()

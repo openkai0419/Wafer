@@ -75,5 +75,16 @@ class RetryLater:
             return self.RESULT_TYPE(source=path, status=False)
         return None
 
+    def fail_unless_in_use(self, path: str, *, pause_after: int):
+        try:
+            with open(path, "rb"):
+                pass
+        except PermissionError as e:
+            AppLogger.warning(f"[{self.NAME}] File is in use; collected again later: {path}", exc=e)
+            return self.retry_later(path, pause_after=pause_after)
+        except OSError as e:
+            AppLogger.warning(f"[{self.NAME}] Cannot open the file: {path}", exc=e)
+        return self.RESULT_TYPE(source=path, status=False)
+
     def on_error(self, path: str, error: Exception):
         return self.retry_later(path, pause_after=ERROR_PAUSE_AFTER)

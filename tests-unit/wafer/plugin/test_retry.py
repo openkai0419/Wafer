@@ -6,6 +6,8 @@ from wafer.plugin.collector.base import BaseCollectorPlugin, CollectorResult
 from wafer.plugin.parser.base import BaseParserPlugin, ParserResult
 from wafer.plugin.retry import RetryCounter
 
+from test_support.file_lock import held_exclusively
+
 
 class _Collector(BaseCollectorPlugin):
     def process(self, path, file_info):
@@ -129,3 +131,26 @@ def test_each_plugin_instance_has_its_own_counter():
     assert first.retries.is_paused("/a")
     assert not second.retries.is_paused("/a")
     assert first.retries is first.retries
+
+
+@pytest.mark.parametrize(("plugin_class", "result_type"), [(_Collector, CollectorResult), (_Parser, ParserResult)])
+def test_fail_unless_in_use_fails_a_file_nobody_holds(tmp_path, plugin_class, result_type):
+    path = tmp_path / "a.jpg"
+    path.write_bytes(b"broken")
+
+    for target in (str(path), str(tmp_path / "missing.jpg")):
+        result = plugin_class().fail_unless_in_use(target, pause_after=2)
+        assert type(result) is result_type
+        assert (result.source, result.status) == (target, False)
+
+
+def test_fail_unless_in_use_collects_a_held_file_again_and_pauses_on_the_limit(tmp_path):
+    path = tmp_path / "a.jpg"
+    path.write_bytes(b"image")
+    plugin = _Collector()
+
+    with held_exclusively(path):
+        assert plugin.fail_unless_in_use(str(path), pause_after=2) is None
+        assert not plugin.retries.is_paused(str(path))
+        assert plugin.fail_unless_in_use(str(path), pause_after=2) is None
+    assert plugin.retries.is_paused(str(path))

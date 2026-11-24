@@ -7,6 +7,7 @@ from wafer.core.logs import AppLogger
 from wafer.core.logs import debug_non_recursive
 
 _IDLE_TIMEOUT = 120.0
+IN_USE_PAUSE_AFTER = 5
 
 POST_INSTALL_VERSION = "1"
 
@@ -144,7 +145,7 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
         if data is None:
             return None
         if not data:
-            return CollectorResult(source=path, status=False)
+            return self.fail_unless_in_use(path, pause_after=IN_USE_PAUSE_AFTER)
 
         try:
             from .parser import flatten

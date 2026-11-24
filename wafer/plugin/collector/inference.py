@@ -4,7 +4,9 @@ import hashlib
 import threading
 import time
 from abc import abstractmethod
-from collections import OrderedDict
+from collections import Counter, OrderedDict
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from ...core.logs import AppLogger
@@ -37,12 +39,13 @@ class BaseInferenceCollector(BaseSingletonCollector):
     def __init__(self):
         self._engines: dict[str, Any] = {}
         self._last_used: dict[str, float] = {}
+        self._in_use: Counter[str] = Counter()
         self._engine_lock = threading.Lock()
         self._idle_timer: threading.Timer | None = None
         self._hash_cache: OrderedDict[str, dict] = OrderedDict()
         self._pixel_cache: OrderedDict[str, dict] = OrderedDict()
         self._settings = self.plugin_config.load()
-        self.engine_failed_at: float | None = None
+        self.engine_failed_at: dict[str, float] = {}
         self.stopping = threading.Event()
 
     @abstractmethod
@@ -71,10 +74,23 @@ class BaseInferenceCollector(BaseSingletonCollector):
                 self._start_idle_timer(self.ENGINE_IDLE_TIMEOUT)
         return engine
 
+    @contextmanager
+    def engine_in_use(self, model: str) -> Iterator[Any]:
+        engine = self.engine(model)
+        with self._engine_lock:
+            self._in_use[model] += 1
+        try:
+            yield engine
+        finally:
+            with self._engine_lock:
+                self._in_use[model] -= 1
+                self._last_used[model] = time.monotonic()
+
     def load_engine_or_raise(self, model: str):
         if self.stopping.is_set():
             raise EngineUnavailable(f"{self.NAME} engine is not loaded while stopping")
-        if self.engine_failed_at is not None and time.monotonic() - self.engine_failed_at < self.ENGINE_RETRY_INTERVAL:
+        failed_at = self.engine_failed_at.get(model)
+        if failed_at is not None and time.monotonic() - failed_at < self.ENGINE_RETRY_INTERVAL:
             raise EngineUnavailable(f"{self.NAME} engine '{model}' failed to load recently")
         keep = self.model if self.KEEP_ACTIVE_ENGINE else None
         for loaded in [m for m in self._engines if m != keep]:
@@ -83,10 +99,10 @@ class BaseInferenceCollector(BaseSingletonCollector):
         try:
             engine = self.load_engine(model)
         except Exception as e:
-            self.engine_failed_at = time.monotonic()
+            self.engine_failed_at[model] = time.monotonic()
             AppLogger.error(f"{self.NAME} engine '{model}' failed to load; files are collected again and loading is retried in {self.ENGINE_RETRY_INTERVAL:.0f}s", exc=e)
             raise EngineUnavailable(str(e)) from e
-        self.engine_failed_at = None
+        self.engine_failed_at.pop(model, None)
         return engine
 
     def _start_idle_timer(self, delay: float):
@@ -98,11 +114,11 @@ class BaseInferenceCollector(BaseSingletonCollector):
         now = time.monotonic()
         with self._engine_lock:
             self._idle_timer = None
-            idle = [m for m in self._engines if now - self._last_used.get(m, 0.0) >= self.ENGINE_IDLE_TIMEOUT]
+            idle = [m for m in self._engines if not self._in_use[m] and now - self._last_used.get(m, 0.0) >= self.ENGINE_IDLE_TIMEOUT]
             for model in idle:
                 del self._engines[model]
             if self._engines:
-                oldest = min(self._last_used.get(m, now) for m in self._engines)
+                oldest = min(now if self._in_use[m] else self._last_used.get(m, now) for m in self._engines)
                 self._start_idle_timer(oldest + self.ENGINE_IDLE_TIMEOUT - now)
         for model in idle:
             AppLogger.info(f"{self.NAME} engine '{model}' unloaded (idle timeout)")
@@ -123,7 +139,7 @@ class BaseInferenceCollector(BaseSingletonCollector):
     def on_notify(self, payload=None) -> None:
         old_model = self.model
         self._settings = self.plugin_config.load()
-        self.engine_failed_at = None
+        self.engine_failed_at.clear()
         self._hash_cache.clear()
         self._pixel_cache.clear()
         if self.model != old_model:
@@ -149,16 +165,16 @@ class BaseInferenceCollector(BaseSingletonCollector):
         if not path:
             return {"error": "no_path"}
         model = settings.get(self.MODEL_KEY) or self.model
-        engine = self.engine(model)
-        thumb = image_loader_resolver.load_pil(path, size=engine.input_size)
-        if thumb is None:
-            return {"error": "thumbnail_failed"}
-        started = time.perf_counter()
-        try:
-            result = self.preview(engine, thumb, settings)
-        except Exception as e:
-            AppLogger.warning(f"{self.NAME} '{model}' preview failed: {path}", exc=e)
-            return {"error": str(e)}
+        with self.engine_in_use(model) as engine:
+            thumb = image_loader_resolver.load_pil(path, size=engine.input_size)
+            if thumb is None:
+                return {"error": "thumbnail_failed"}
+            started = time.perf_counter()
+            try:
+                result = self.preview(engine, thumb, settings)
+            except Exception as e:
+                AppLogger.warning(f"{self.NAME} '{model}' preview failed: {path}", exc=e)
+                return {"error": str(e)}
         return {**result, "path": path, "model": model, "elapsed_ms": round((time.perf_counter() - started) * 1000)}
 
     def cached_tags(self, file_hash: str | None) -> dict | None:
@@ -206,10 +222,13 @@ class BaseInferenceCollector(BaseSingletonCollector):
 
         model = self.model
         try:
-            engine = self.engine(model)
+            with self.engine_in_use(model) as engine:
+                return self.collect(path, file_hash, engine, model)
         except EngineUnavailable as e:
             AppLogger.debug(f"{self.NAME} engine is unavailable; collected again later: {path}: {e}")
             return None
+
+    def collect(self, path: str, file_hash: str | None, engine, model: str) -> CollectorResult | None:
         thumb = self.load_thumb(path, engine)
         if thumb is None:
             return CollectorResult(source=path, status=False)

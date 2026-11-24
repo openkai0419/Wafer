@@ -109,7 +109,7 @@ def test_unavailable_engine_and_stopping_are_not_counted(collector, resolver, mo
     monkeypatch.setattr(collector, "load_engine", MagicMock(side_effect=RuntimeError("missing model")))
     for _ in range(INFERENCE_PAUSE_AFTER):
         collector.process("/a.png", (0.0, 1))
-    collector.engine_failed_at = None
+    collector.engine_failed_at.clear()
     monkeypatch.setattr(collector, "load_engine", Engine)
     collector.engine("a").predict = MagicMock(side_effect=RuntimeError("interrupted"))
     collector.stopping.set()
@@ -137,7 +137,21 @@ def test_engine_load_failure_is_collected_again_and_retried_after_the_interval(c
     now[0] += 2
     assert collector.process("/c.png", (0.0, 1)).status is True
     assert len(attempts) == 2
-    assert collector.engine_failed_at is None
+    assert collector.engine_failed_at == {}
+
+
+def test_a_model_that_fails_to_load_does_not_block_other_models(collector, monkeypatch):
+    def load(model):
+        if model == "broken":
+            raise RuntimeError("corrupt model file")
+        return Engine(model)
+
+    monkeypatch.setattr(collector, "load_engine", load)
+    with pytest.raises(EngineUnavailable):
+        collector.engine("broken")
+    assert collector.engine("b").model == "b"
+    with pytest.raises(EngineUnavailable, match="recently"):
+        collector.engine("broken")
 
 
 def test_settings_change_retries_a_failed_engine_at_once(collector, resolver, monkeypatch):
@@ -217,6 +231,16 @@ def test_idle_check_waits_only_for_the_remaining_time(collector):
     collector.unload_idle_engines()
     assert "a" in collector._engines
     assert collector._idle_timer.interval == pytest.approx(3.0, abs=0.5)
+
+
+def test_engine_in_use_is_not_unloaded_by_the_idle_timer(collector):
+    with collector.engine_in_use("a") as engine:
+        collector._last_used["a"] -= collector.ENGINE_IDLE_TIMEOUT + 1
+        collector.unload_idle_engines()
+        assert collector._engines == {"a": engine}
+        assert collector._idle_timer.interval == pytest.approx(collector.ENGINE_IDLE_TIMEOUT, abs=0.5)
+    collector.unload_idle_engines()
+    assert collector._engines == {"a": engine}
 
 
 def test_idle_engines_unload_and_reload(collector):

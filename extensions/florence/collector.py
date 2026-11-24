@@ -95,7 +95,10 @@ class FlorenceCollector(BaseInferenceCollector):
 
     def process_group(self, group: list[tuple[str, str | None]]) -> dict[str, CollectorResult]:
         model = self.model
-        engine = self.engine(model)
+        with self.engine_in_use(model) as engine:
+            return self.process_group_with(engine, model, group)
+
+    def process_group_with(self, engine: FlorenceInference, model: str, group: list[tuple[str, str | None]]) -> dict[str, CollectorResult]:
         results: dict[str, CollectorResult] = {}
         waiting: dict[str, tuple[Image.Image, list[tuple[str, str | None]]]] = {}
         for path, file_hash in group:

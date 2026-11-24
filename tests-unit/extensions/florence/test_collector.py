@@ -390,13 +390,13 @@ class TestBatchInference:
         assert calls == [4] * len(TASKS)
         assert self.collector._engines == {}
 
-    def test_engine_stays_loaded_while_groups_outlast_the_idle_timeout(self, monkeypatch):
+    def test_engine_stays_loaded_while_each_call_outlasts_the_idle_timeout(self, monkeypatch):
         clock = [time.monotonic()]
         monkeypatch.setattr("wafer.plugin.collector.inference.time.monotonic", lambda: clock[0])
         engine = echo_engine()
 
         def predict_batch(images, task, **kw):
-            clock[0] += self.collector.ENGINE_IDLE_TIMEOUT * 0.4
+            clock[0] += self.collector.ENGINE_IDLE_TIMEOUT * 1.1
             self.collector.unload_idle_engines()
             return [text_of(image, task) for image in images]
 
@@ -459,7 +459,7 @@ class TestBatchInference:
         self.collector.shutdown()
         with pytest.raises(EngineUnavailable, match="stopping"):
             self.collector.engine("base")
-        assert self.collector.engine_failed_at is None
+        assert self.collector.engine_failed_at == {}
 
     def test_batch_size_is_a_multiple_of_the_inference_batch(self):
         from extensions.florence.collector import INFER_BATCH

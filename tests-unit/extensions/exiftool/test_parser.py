@@ -326,7 +326,7 @@ def test_query_without_output_keeps_process_alive(monkeypatch):
     kills = []
     tool, proc = _make_tool(monkeypatch, ["{ready1}\n"], kills)
 
-    assert tool.query("unreadable.png") is None
+    assert tool.query("unreadable.png") == {}
     assert kills == []
     assert tool._proc is proc
     assert proc.stdin.closed is False

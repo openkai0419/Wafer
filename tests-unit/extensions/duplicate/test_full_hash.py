@@ -37,3 +37,39 @@ def test_fails_on_unreadable_file(tmp_path):
     result = parser.process(str(tmp_path / "missing.bin"), (1.0, 100, "fast"), {})
     assert result.status is False
     assert result.update_hash is None
+
+
+def test_file_in_use_is_collected_again(image, monkeypatch):
+    import extensions.duplicate.full_hash as module
+
+    def in_use(path):
+        raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+
+    monkeypatch.setattr(module, "read_full_hash", in_use)
+    assert FullHashParser().process(image, (1.0, 100, "fast"), {}) is None
+
+
+def test_file_in_use_pauses_after_five_failures(image, monkeypatch):
+    import extensions.duplicate.full_hash as module
+
+    def in_use(path):
+        raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+
+    monkeypatch.setattr(module, "read_full_hash", in_use)
+    parser = FullHashParser()
+    assert [parser.process(image, (1.0, 100, "fast"), {}) for _ in range(5)] == [None] * 5
+    assert parser.retries.is_paused(image)
+
+
+def test_locked_file_is_collected_again(image):
+    import msvcrt
+    import os
+
+    size = os.path.getsize(image)
+    with open(image, "r+b") as handle:
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, size)
+        try:
+            assert FullHashParser().process(image, (1.0, 100, "fast"), {}) is None
+        finally:
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, size)

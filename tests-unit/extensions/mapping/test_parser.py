@@ -9,7 +9,7 @@ from extensions.mapping import parser as parser_module
 from extensions.mapping import projection, space
 from extensions.mapping.params import TrainParams
 from extensions.mapping.parser import MappingParser
-from extensions.mapping.session import FeatureSpec, MapError, coordinate_values
+from extensions.mapping.session import KEY_MODEL, FeatureSpec, MapError, coordinate_values
 from extensions.mapping.space import Preset, SpaceStatus, read_status, save_preset, write_status
 from wafer.core.db.file_db import FileDB
 
@@ -192,10 +192,22 @@ def test_shutdown_interrupts_training_without_blocking(env, monkeypatch):
     plugin.shutdown()
     worker.join(5)
     assert not worker.is_alive()
-    assert results[0].status is False
+    assert results == [None]
     assert read_status(tmp / "cache" / "mapping" / "map").state == "training"
     assert plugin.blocked is None
     assert plugin.idle_timer is None
+
+
+def test_batch_interrupted_by_shutdown_returns_no_results(env, monkeypatch):
+    plugin, _db, _tmp = env
+
+    def interrupted(cls, preset, values, *, cancelled=lambda: False):
+        plugin.shutdown()
+        raise MapError("Cancelled")
+
+    monkeypatch.setattr(space.SpaceModel, "fit", classmethod(interrupted))
+    paths = ["c:/0.png", "c:/1.png"]
+    assert plugin.process_batch(paths, {path: (1.0, 100, "h") for path in paths}, {path: {} for path in paths}) == []
 
 
 def test_failed_read_keeps_coordinates(env, monkeypatch):
@@ -214,8 +226,7 @@ def test_a_broken_read_leaves_the_file_for_the_next_run(env, monkeypatch):
         raise sqlite3.OperationalError("database is locked")
 
     monkeypatch.setattr(parser_module, "read_path_values", broken)
-    result = run(plugin, "c:/new.png")
-    assert result.status is False and not result.delete_meta_keys
+    assert run(plugin, "c:/new.png") is None
 
 
 def test_new_files_are_placed_through_the_shared_reader(env, monkeypatch):
@@ -282,3 +293,92 @@ def test_timer_is_armed_again_after_a_release(env, monkeypatch):
     assert plugin.model is None and plugin.idle_timer is None
     run(plugin, "c:/1.png")
     assert plugin.model is not None and plugin.idle_timer is not None
+
+
+def batch(plugin, paths):
+    return plugin.process_batch(paths, {p: (1.0, 100, "h") for p in paths}, {p: {} for p in paths})
+
+
+def add_new(db, names, tags="cat, sky"):
+    db.upsert_basic_sources([(f"c:/{n}.png", f"n{n}", 100, 1.0, 1.0, 1.0) for n in names], [(f"c:/{n}.png", f"c:/{n}.png", f"{n}.png", 1.0, None) for n in names])
+    db.upsert_collection_results([], [], [(f"c:/{n}.png", "wd14.tags", tags, None) for n in names], [])
+
+
+def test_batch_matches_one_by_one(env):
+    plugin, db, _tmp = env
+    run(plugin, "c:/0.png")
+    add_new(db, ["n0", "n1"])
+    db.upsert_basic_sources([("c:/empty.png", "he", 1, 1.0, 1.0, 1.0)], [("c:/empty.png", "c:/empty.png", "empty.png", 1.0, None)])
+    db.upsert_collection_results([], [("c:/2.png", "mapping.model", "1", None)], [], [])
+    paths = ["c:/1.png", "c:/2.png", "c:/n0.png", "c:/empty.png", "c:/missing.png", "c:/n1.png"]
+    together = batch(plugin, paths)
+    alone = [run(plugin, p) for p in paths]
+    assert [(r.status, r.meta_info, r.delete_meta_keys) for r in together] == [(r.status, r.meta_info, r.delete_meta_keys) for r in alone]
+    assert [r.status for r in together] == [True, True, True, True, False, True]
+
+
+def test_batch_places_new_files_with_one_call_on_one_thread(env, monkeypatch):
+    plugin, db, _tmp = env
+    run(plugin, "c:/0.png")
+    add_new(db, ["n0", "n1", "n2"])
+    calls, limits = [], []
+    original = plugin.model.place
+    monkeypatch.setattr(plugin.model, "place", lambda entries, *a: calls.append(len(entries)) or original(entries, *a))
+
+    class Limit:
+        def __init__(self, limits=None):
+            self.limits = limits
+
+        def __enter__(self):
+            limits.append(self.limits)
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(parser_module, "threadpool_limits", Limit)
+    batch(plugin, ["c:/1.png", "c:/n0.png", "c:/n1.png", "c:/n2.png"])
+    assert calls == [3]
+    assert limits == [1]
+
+
+def test_failed_value_read_keeps_trained_coordinates(env, monkeypatch):
+    plugin, _db, _tmp = env
+    run(plugin, "c:/0.png")
+    real = parser_module.read_path_values
+
+    def broken_values(conn, paths, keys=None):
+        if keys != [KEY_MODEL]:
+            raise sqlite3.OperationalError("database is locked")
+        return real(conn, paths, keys=keys)
+
+    monkeypatch.setattr(parser_module, "read_path_values", broken_values)
+    (trained,) = batch(plugin, ["c:/1.png", "c:/new.png"])
+    assert trained.source == "c:/1.png"
+    assert trained.status and set(trained.meta_info) == {"2d", "group", "model"}
+
+
+def test_closed_reader_raises_instead_of_failing_the_batch(env):
+    from wafer.plugin.parser.base import ReaderClosed
+
+    plugin, _db, _tmp = env
+    run(plugin, "c:/0.png")
+    plugin.shutdown()
+    with pytest.raises(ReaderClosed):
+        batch(plugin, ["c:/1.png", "c:/new.png"])
+
+
+def test_failed_version_read_leaves_the_whole_batch_for_the_next_run(env, monkeypatch):
+    plugin, _db, _tmp = env
+    run(plugin, "c:/0.png")
+    real = parser_module.read_path_values
+
+    def broken_version(conn, paths, keys=None):
+        if keys == [KEY_MODEL]:
+            raise sqlite3.OperationalError("database is locked")
+        return real(conn, paths, keys=keys)
+
+    warnings = []
+    monkeypatch.setattr(parser_module, "read_path_values", broken_version)
+    monkeypatch.setattr(parser_module.AppLogger, "warning", lambda *a, **k: warnings.append(a))
+    assert batch(plugin, ["c:/1.png", "c:/2.png", "c:/new.png"]) == []
+    assert len(warnings) == 1

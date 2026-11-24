@@ -1,23 +1,33 @@
 from ...core.logs import AppLogger
-from ...plugin.collector.base import CollectorResult
+from ...plugin.collector.base import BaseCollector, CollectorResult
 from ...plugin.collector.handler import collector_resolver
 from ..worker_lifecycle import PluginWorker
+
+
+def result_dicts(results) -> list[dict]:
+    flat = []
+    for item in results or ():
+        flat.extend(item if isinstance(item, list) else [item])
+    return [r.to_dict() if isinstance(r, CollectorResult) else r for r in flat if r is not None]
 
 
 class CollectorWorker(PluginWorker):
     KIND = "collector"
     BATCH_TOPIC = "collect.batch"
     RESULT_TOPIC = "collect.result"
+    PLUGIN_BASE = BaseCollector
     resolver = collector_resolver
+    result_dicts = staticmethod(result_dicts)
 
     def __init__(self, db_name: str, plugin_name: str):
         super().__init__(db_name, plugin_name)
         self._node.subscribe("service.request", self._on_service_request)
 
     def process_path(self, path, file_info, metadata) -> list[dict]:
-        result = self._plugin.process(path, file_info)
-        items = result if isinstance(result, list) else [result]
-        return [r.to_dict() if isinstance(r, CollectorResult) else r for r in items if r is not None]
+        return result_dicts([self._plugin.process(path, file_info)])
+
+    def process_paths(self, paths, file_info, metadata) -> list[dict]:
+        return result_dicts(self._plugin.process_batch(paths, file_info))
 
     def _on_service_request(self, msg) -> bool:
         action = msg.payload.get("action", "") if isinstance(msg.payload, dict) else ""

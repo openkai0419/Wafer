@@ -7,6 +7,7 @@ from wafer.core.logs import AppLogger
 from wafer.core.logs import debug_non_recursive
 
 _IDLE_TIMEOUT = 120.0
+IN_USE_PAUSE_AFTER = 5
 
 POST_INSTALL_VERSION = "1"
 
@@ -134,15 +135,17 @@ class ExifToolCollectorPlugin(BaseCollectorPlugin):
             kill_orphans(exe_path)
         return exe_path
 
-    def process(self, path: str, file_info: tuple) -> CollectorResult:
+    def process(self, path: str, file_info: tuple) -> CollectorResult | None:
         proc = self._ensure_process()
         if proc is None:
-            return CollectorResult(source=path, status=False)
+            return None
         self._touch()
 
         data = proc.query(path)
         if data is None:
-            return CollectorResult(source=path, status=False)
+            return None
+        if not data:
+            return self.fail_unless_in_use(path, pause_after=IN_USE_PAUSE_AFTER)
 
         try:
             from .parser import flatten

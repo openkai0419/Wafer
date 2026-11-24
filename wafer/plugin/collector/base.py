@@ -5,6 +5,7 @@ from dataclasses import dataclass, asdict
 from typing import Any
 
 from ..registry import BasePlugin
+from ..retry import RetryLater
 
 
 @dataclass
@@ -21,11 +22,19 @@ class CollectorResult:
         return {k: v for k, v in asdict(self).items() if v is not None}
 
 
-class BaseCollector(BasePlugin):
+class BaseCollector(RetryLater, BasePlugin):
     SCOPE: str = "tray"
+    RESULT_TYPE = CollectorResult
 
     @abstractmethod
     def process(self, path: str, file_info: tuple[float, int]) -> CollectorResult | list[CollectorResult]: ...
+
+    def process_batch(self, paths: list[str], file_info: dict[str, tuple]) -> list[CollectorResult]:
+        results: list[CollectorResult] = []
+        for path in paths:
+            result = self.process(path, file_info[path])
+            results.extend(r for r in (result if isinstance(result, list) else [result]) if r is not None)
+        return results
 
     def on_notify(self, payload: dict | None = None) -> None:
         pass

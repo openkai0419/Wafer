@@ -458,6 +458,29 @@ def test_is_in_scope_respects_ignore_pattern(tmp_path):
     assert not wf._is_in_scope(str(root / "my_cache_dir" / "file.jpg"))
 
 
+def test_an_unfinished_copy_is_not_announced_and_its_replace_updates_the_target(tmp_path):
+    from wafer.core.common.paths import normalize_path
+
+    root = tmp_path / "watched"
+    root.mkdir()
+    target = root / "a.png"
+    staged = root / "a.png.wafer-partial"
+    staged.write_bytes(b"new")
+    wf, scheduler, writer, scanner, progress = _make_watcher()
+    _set_scope(wf, [root])
+    writer.rename_paths.return_value = [normalize_path(str(target))]
+
+    assert not wf._is_in_scope(str(staged))
+    wf._flush({str(staged)}, set(), {}, created={str(staged)})
+    assert all("created" not in c.kwargs for c in progress.send_files_changed.call_args_list)
+
+    staged.replace(target)
+    wf._flush(set(), set(), {str(staged): str(target)}, created=set())
+    for task in [c[0][0] for c in scheduler.submit.call_args_list]:
+        task.run()
+    assert scanner.request_update.call_args_list[-1][0][0] == [normalize_path(str(target))]
+
+
 def test_is_in_scope_skips_normalize_when_no_ignore_pattern(monkeypatch):
     import wafer.app.indexer.watch.folder_watcher as folder_watcher_module
 

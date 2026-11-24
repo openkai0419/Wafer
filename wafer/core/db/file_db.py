@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 import os
 import shutil
 import sqlite3
@@ -842,28 +843,28 @@ class FileDB:
                 cur.close()
 
     @profiler.profile
-    def reset_stale_dispatched(self, collectors=None):
+    def reset_stale_dispatched(self, collectors, keep=None) -> dict[str, list[str]]:
+        keep = keep or {}
+        reset = {}
         with self._write_lock, self.conn:
             cur = self.conn.cursor()
             try:
-                if collectors:
-                    for c in collectors:
-                        cur.execute(
-                            """UPDATE collection_status SET status = 'pending'
-                            WHERE collector = ? AND status = 'dispatched' """,
-                            (c,),
-                        )
-                else:
-                    cur.execute(
+                for c in collectors:
+                    rows = cur.execute(
                         """UPDATE collection_status SET status = 'pending'
-                        WHERE status = 'dispatched' """,
-                    )
-                changed = cur.execute("SELECT changes()").fetchone()[0]
+                        WHERE collector = ? AND status = 'dispatched'
+                        AND source NOT IN (SELECT value FROM json_each(?))
+                        RETURNING source""",
+                        (c, json.dumps(sorted(keep.get(c, ())))),
+                    ).fetchall()
+                    if rows:
+                        reset[c] = [row[0] for row in rows]
             finally:
                 cur.close()
+        changed = sum(len(sources) for sources in reset.values())
         if changed:
             AppLogger.info(f"[DB] Reset {changed} stale dispatched entries to pending")
-        return changed
+        return reset
 
     @profiler.profile
     def delete_orphan_records(self):

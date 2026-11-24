@@ -3,6 +3,7 @@ import weakref
 from unittest.mock import MagicMock, patch
 import time
 import pytest
+from test_support.file_lock import held_exclusively
 from extensions.exiftool.collector import ExifToolCollectorPlugin, _IDLE_TIMEOUT
 
 
@@ -29,14 +30,39 @@ class TestExifToolCollector:
         mock_proc.alive = True
         mock_proc.query.return_value = None
         plugin._process = mock_proc
+        assert plugin.process("bad.jpg", (1000.0, 0)) is None
+
+    def test_process_unreadable_file_fails(self):
+        plugin = ExifToolCollectorPlugin()
+        mock_proc = MagicMock()
+        mock_proc.alive = True
+        mock_proc.query.return_value = {}
+        plugin._process = mock_proc
         result = plugin.process("bad.jpg", (1000.0, 0))
         assert result.status is False
 
-    def test_process_no_exiftool(self):
+    def test_process_file_in_use_is_collected_again(self, tmp_path):
+        path = tmp_path / "held.jpg"
+        path.write_bytes(b"image")
+        plugin = ExifToolCollectorPlugin()
+        mock_proc = MagicMock()
+        mock_proc.alive = True
+        mock_proc.query.return_value = {}
+        plugin._process = mock_proc
+        with held_exclusively(path):
+            assert plugin.process(str(path), (1000.0, 0)) is None
+
+    def test_process_after_shutdown_returns_none(self):
+        plugin = ExifToolCollectorPlugin()
+        plugin.shutdown()
+        with patch.object(plugin, "_resolve_exe", return_value="exiftool.exe") as resolve:
+            assert plugin.process("test.jpg", (1000.0, 500)) is None
+        resolve.assert_not_called()
+
+    def test_process_without_exiftool_is_collected_again(self):
         plugin = ExifToolCollectorPlugin()
         with patch.object(plugin, "_ensure_process", return_value=None):
-            result = plugin.process("test.jpg", (1000.0, 500))
-        assert result.status is False
+            assert plugin.process("test.jpg", (1000.0, 500)) is None
 
     def test_ensure_process_no_download(self):
         plugin = ExifToolCollectorPlugin()
@@ -182,8 +208,7 @@ def test_shutdown_prevents_further_process_spawn(monkeypatch):
 
     assert plugin._ensure_process() is None
     assert resolved == []
-    result = plugin.process("photo.jpg", (0.0, 0))
-    assert result.status is False
+    assert plugin.process("photo.jpg", (0.0, 0)) is None
     assert plugin._process is None
 
 

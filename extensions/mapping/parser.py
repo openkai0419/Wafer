@@ -6,6 +6,7 @@ import threading
 import time
 
 import numpy as np
+from threadpoolctl import threadpool_limits
 
 from wafer.core.common.paths import data_db_path
 from wafer.core.db.path_values import fetch_path_values, read_path_values
@@ -57,17 +58,27 @@ class MappingParser(BaseParserPlugin):
         self.preset_loaded = -math.inf
 
     def process(self, path, file_info, metadata):
+        results = self.process_batch([path], {path: file_info}, {path: metadata})
+        return results[0] if results else None
+
+    def process_batch(self, paths, file_info, metadata):
         preset = self.current_preset()
         if preset is None or not preset.features:
-            return ParserResult(source=path, status=True)
+            return [ParserResult(source=path, status=True) for path in paths]
         with self.lock:
             try:
                 model = self.ensure_model(preset)
                 if model is None:
-                    return ParserResult(source=path, status=self.blocked == (preset.version, True))
-                point = self.position(model, path)
+                    if self.stopping.is_set() and (self.blocked is None or self.blocked[0] != preset.version):
+                        return []
+                    status = self.blocked == (preset.version, True)
+                    return [ParserResult(source=path, status=status) for path in paths]
+                points = self.positions(model, paths)
             finally:
                 self.touch()
+        return [self.result_for(path, points[path], model) for path in paths if path in points]
+
+    def result_for(self, path: str, point, model: SpaceModel) -> ParserResult:
         if point is UNREAD:
             return ParserResult(source=path, status=False)
         if point is None:
@@ -114,22 +125,29 @@ class MappingParser(BaseParserPlugin):
         )
         return model
 
-    def position(self, model: SpaceModel, path: str):
-        rows = self.query_db("SELECT value FROM meta_info WHERE path = ? AND key = ?", (path, KEY_MODEL))
-        stored = rows[0][0] if rows else None
-        if stored != str(model.version):
-            trained = model.coords_for(path)
-            if trained is not None:
-                return trained
+    def positions(self, model: SpaceModel, paths: list[str]):
+        points = {}
         try:
-            entry = self.read_db(lambda conn: read_path_values(conn, [path], keys=[SYSTEM_FILE_HASH_KEY, *model.preset.value_keys()]), {}).get(path)
+            stored = self.read_db(lambda conn: read_path_values(conn, paths, keys=[KEY_MODEL]))
+            current = str(model.version)
+            for path in paths:
+                version = stored.get(path, {}).get(KEY_MODEL)
+                if version is None or version.text != current:
+                    trained = model.coords_for(path)
+                    if trained is not None:
+                        points[path] = trained
+            pending = [path for path in paths if path not in points]
+            values = self.read_db(lambda conn: read_path_values(conn, pending, keys=[SYSTEM_FILE_HASH_KEY, *model.preset.value_keys()])) if pending else {}
         except sqlite3.Error as e:
-            AppLogger.warning(f"[Mapping] Reading the values of {path} failed; it is placed on the next run", exc=e)
-            entry = None
-        if entry is None:
-            return UNREAD
-        point = model.place([entry])[0]
-        return None if np.isnan(point).any() else tuple(float(value) for value in point)
+            AppLogger.warning(f"[Mapping] Reading the values of {len(paths)} files failed; the unplaced ones are placed on the next run", exc=e)
+            return points
+        found = [path for path in pending if path in values]
+        if found:
+            with threadpool_limits(limits=1):
+                placed = model.place([values[path] for path in found])
+            for path, point in zip(found, placed):
+                points[path] = None if np.isnan(point).any() else tuple(float(value) for value in point)
+        return {path: points.get(path, UNREAD) for path in paths}
 
     def touch(self):
         self.last_used = time.monotonic()

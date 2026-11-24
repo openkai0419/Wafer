@@ -34,16 +34,20 @@ def fast_signature_hash(path: str, size=None, part_bytes=256) -> str:
         return HASH_FAILED
 
 
+def read_full_hash(path: str, threads: int | None = None) -> str:
+    hasher = blake3(max_threads=threads or os.cpu_count())
+    with open(path, "rb", buffering=8 * 1024 * 1024) as f:
+        while True:
+            b = f.read(8 * 1024 * 1024)
+            if not b:
+                break
+            hasher.update(b)
+    return hasher.hexdigest()
+
+
 def full_hash(path: str, threads: int | None = None) -> str:
     try:
-        hasher = blake3(max_threads=threads or os.cpu_count())
-        with open(path, "rb", buffering=8 * 1024 * 1024) as f:
-            while True:
-                b = f.read(8 * 1024 * 1024)
-                if not b:
-                    break
-                hasher.update(b)
-        return hasher.hexdigest()
+        return read_full_hash(path, threads)
     except (OSError, ValueError) as e:
         AppLogger.warning(f"full_hash failed: {path}", exc=e)
         return HASH_FAILED

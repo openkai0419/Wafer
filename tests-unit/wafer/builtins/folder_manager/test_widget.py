@@ -17,7 +17,7 @@ from wafer.builtins.folder_manager import widget as widget_module
 from wafer.builtins.folder_manager.database import FolderSettings
 from wafer.builtins.folder_manager.rules import Condition, HighlightRule
 from wafer.builtins.folder_manager.rule_editor import describe_rule
-from wafer.builtins.folder_manager.shared_settings import COLUMNS_KEY, DATABASE_KEY, RULES_KEY, load_columns, load_last_database, load_rules, save_last_database
+from wafer.builtins.folder_manager.shared_settings import AUTO_SELECT_KEY, COLUMNS_KEY, DATABASE_KEY, RULES_KEY, load_auto_select, load_columns, load_last_database, load_rules, save_last_database
 from wafer.builtins.folder_manager.stats import DiskTree, FolderValues
 from wafer.builtins.folder_manager.widget import FolderManagerPlugin, FolderManagerWidget
 from wafer.core.common.paths import data_db_path, normalize_path, parent_folder
@@ -42,7 +42,7 @@ class QueryLog(list):
 
 def clear_shared_settings() -> None:
     app_settings.discard()
-    for key in (RULES_KEY, COLUMNS_KEY, DATABASE_KEY):
+    for key in (RULES_KEY, COLUMNS_KEY, DATABASE_KEY, AUTO_SELECT_KEY):
         app_settings.settings.remove(key)
     app_settings.settings.sync()
 
@@ -1186,6 +1186,8 @@ def test_bar_stays_one_row_with_the_new_buttons(qtbot):
     bar_widgets = [panel.flow.itemAt(n).widget() for n in range(panel.flow.count())]
     assert bar_widgets.index(panel.matches_button) == bar_widgets.index(panel.select_button) + 1
     assert bar_widgets.index(panel.collapse_button) == bar_widgets.index(panel.matches_button) + 1
+    assert bar_widgets.index(panel.auto_select_button) == bar_widgets.index(panel.collapse_button) + 1
+    assert panel.auto_select_button.isCheckable() and not panel.auto_select_button.text()
     panel.scanning = True
     panel.update_status()
     row = panel.flow.single_line_size()
@@ -1244,17 +1246,196 @@ def test_plugin_without_host_or_last_database_starts_on_the_first(qtbot, monkeyp
     assert widget.database_name == "a"
 
 
-def test_show_in_tree_is_offered_only_when_the_window_shows_the_panel_database(qtbot, monkeypatch):
+def test_select_foldertree_is_offered_only_when_the_window_shows_the_panel_database(qtbot, monkeypatch):
     host = HostWindow("main")
     monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: host)
     panel = FolderManagerWidget()
     qtbot.addWidget(panel)
     panel.set_database("main")
-    assert panel.view.show_in_tree_available()
+    assert panel.view.window_shows_database()
     host.database_name = "other"
-    assert not panel.view.show_in_tree_available()
+    assert not panel.view.window_shows_database()
     monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: None)
-    assert not panel.view.show_in_tree_available()
+    assert not panel.view.window_shows_database()
+
+
+class WindowFolderTree:
+    def __init__(self):
+        self.selected: list[str] = []
+
+    def get_selected_paths(self):
+        return list(self.selected)
+
+
+class TreeSelections(list):
+    tree: WindowFolderTree
+
+
+@pytest.fixture
+def tree_selections(monkeypatch):
+    sent = TreeSelections()
+    sent.tree = WindowFolderTree()
+    real_get_one = InstanceRegistry.get_one
+    monkeypatch.setattr(InstanceRegistry, "get_one", lambda self, name: sent.tree if name == "FolderTree" else real_get_one(self, name))
+    monkeypatch.setattr(widget_module, "AUTO_SELECT_DELAY_MS", 0)
+
+    def invoke(command_id, extras=None, **kwargs):
+        sent.append((command_id, extras))
+        sent.tree.selected = list(extras["sources"])
+
+    monkeypatch.setattr(widget_module.Command, "invoke", invoke)
+    return sent
+
+
+def auto_select_panel(qtbot, tmp_path, monkeypatch):
+    host = HostWindow("test")
+    monkeypatch.setattr(InstanceRegistry, "get_host_window", lambda self: host)
+    root = make_folders(tmp_path / "root", {"": 0, "a": 1, "b": 1, "c": 1})
+    panel = make_panel(qtbot)
+    bind(qtbot, panel, [root])
+    panel.view.expand(panel.view.model_.index(0, 0))
+    qtbot.waitUntil(lambda: all(panel.view.item_index(f"{root}/{name}") is not None for name in "abc"), timeout=5000)
+    return panel, root, host
+
+
+def select_rows(panel, paths):
+    selection = QtCore.QItemSelection()
+    for path in paths:
+        index = panel.view.item_index(path)
+        selection.select(index, index)
+    panel.view.selectionModel().select(selection, QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows)
+
+
+def wait_auto_select(qtbot, panel):
+    qtbot.waitUntil(lambda: not panel.auto_select_timer.isActive(), timeout=2000)
+    qtbot.wait(10)
+
+
+def test_auto_select_waits_200ms_by_default():
+    assert widget_module.AUTO_SELECT_DELAY_MS == 200
+
+
+def test_auto_select_sends_every_selected_folder_to_the_foldertree(qtbot, tmp_path, monkeypatch, tree_selections):
+    panel, root, _host = auto_select_panel(qtbot, tmp_path, monkeypatch)
+    panel.set_auto_select_tree(True)
+    select_rows(panel, [f"{root}/a", f"{root}/b"])
+    qtbot.waitUntil(lambda: tree_selections == [("file.select_path", {"sources": [f"{root}/a", f"{root}/b"]})], timeout=2000)
+
+
+def test_auto_select_follows_select_matches(qtbot, tmp_path, monkeypatch, tree_selections):
+    panel, root, _host = auto_select_panel(qtbot, tmp_path, monkeypatch)
+    panel.set_auto_select_tree(True)
+    panel.view.select_folders([f"{root}/a", f"{root}/c"])
+    qtbot.waitUntil(lambda: tree_selections == [("file.select_path", {"sources": [f"{root}/a", f"{root}/c"]})], timeout=2000)
+
+
+def test_auto_select_stays_quiet_when_off_for_another_database_or_without_a_selection(qtbot, tmp_path, monkeypatch, tree_selections):
+    panel, root, host = auto_select_panel(qtbot, tmp_path, monkeypatch)
+    select_rows(panel, [f"{root}/a"])
+    wait_auto_select(qtbot, panel)
+    assert tree_selections == []
+
+    host.database_name = "other"
+    panel.set_auto_select_tree(True)
+    select_rows(panel, [f"{root}/b"])
+    wait_auto_select(qtbot, panel)
+    assert tree_selections == []
+
+    host.database_name = "test"
+    select_rows(panel, [f"{root}/c"])
+    qtbot.waitUntil(lambda: len(tree_selections) == 1, timeout=2000)
+    panel.view.clearSelection()
+    wait_auto_select(qtbot, panel)
+    assert tree_selections == [("file.select_path", {"sources": [f"{root}/c"]})]
+
+
+def test_auto_select_sends_only_what_the_foldertree_does_not_already_show(qtbot, tmp_path, monkeypatch, tree_selections):
+    panel, root, _host = auto_select_panel(qtbot, tmp_path, monkeypatch)
+    panel.set_auto_select_tree(True)
+    select_rows(panel, [f"{root}/a"])
+    qtbot.waitUntil(lambda: len(tree_selections) == 1, timeout=2000)
+    panel.view.clearSelection()
+    select_rows(panel, [f"{root}/a"])
+    wait_auto_select(qtbot, panel)
+    assert len(tree_selections) == 1
+
+    tree_selections.tree.selected = [f"{root}/c"]
+    panel.view.clearSelection()
+    select_rows(panel, [f"{root}/a"])
+    qtbot.waitUntil(lambda: len(tree_selections) == 2, timeout=2000)
+
+    tree_selections.tree.selected = [f"{root}/b", f"{root}/a"]
+    select_rows(panel, [f"{root}/a", f"{root}/b"])
+    assert panel.view.get_selected_paths() == [f"{root}/a", f"{root}/b"]
+    wait_auto_select(qtbot, panel)
+    assert len(tree_selections) == 2
+
+
+def test_reloading_the_tree_does_not_resend_reordered_folders(qtbot, tmp_path, monkeypatch, tree_selections):
+    panel, root, _host = auto_select_panel(qtbot, tmp_path, monkeypatch)
+    panel.set_auto_select_tree(True)
+    select_rows(panel, [f"{root}/a", f"{root}/b"])
+    qtbot.waitUntil(lambda: len(tree_selections) == 1, timeout=2000)
+    tree_selections.tree.selected = [f"{root}/b", f"{root}/a"]
+    reselected = []
+    panel.view.selectionModel().selectionChanged.connect(lambda *_: reselected.append(tuple(panel.view.get_selected_paths())))
+
+    panel.view.reload_tree()
+    qtbot.waitUntil(lambda: bool(reselected) and set(reselected[-1]) == {f"{root}/a", f"{root}/b"}, timeout=5000)
+    wait_auto_select(qtbot, panel)
+    assert len(tree_selections) == 1
+
+
+def test_auto_select_does_nothing_without_a_window_foldertree(qtbot, tmp_path, monkeypatch, tree_selections):
+    panel, root, _host = auto_select_panel(qtbot, tmp_path, monkeypatch)
+    monkeypatch.setattr(InstanceRegistry, "get_one", lambda self, name: None)
+    panel.set_auto_select_tree(True)
+    select_rows(panel, [f"{root}/a"])
+    wait_auto_select(qtbot, panel)
+    assert tree_selections == []
+
+
+def test_turning_auto_select_on_sends_the_current_selection_and_saves_it(qtbot, tmp_path, monkeypatch, tree_selections):
+    panel, root, _host = auto_select_panel(qtbot, tmp_path, monkeypatch)
+    select_rows(panel, [f"{root}/c"])
+    panel.set_auto_select_tree(True)
+    qtbot.waitUntil(lambda: tree_selections == [("file.select_path", {"sources": [f"{root}/c"]})], timeout=2000)
+    assert load_auto_select() is True
+    assert panel.auto_select_button.isChecked()
+
+    panel.auto_select_button.click()
+    assert panel.auto_select_tree is False and load_auto_select() is False
+    tree_selections.tree.selected = []
+    panel.auto_select_button.click()
+    qtbot.waitUntil(lambda: len(tree_selections) == 2, timeout=2000)
+
+
+def test_auto_select_follows_another_window_without_saving_or_sending(qtbot, tmp_path, monkeypatch, tree_selections):
+    panel, root, _host = auto_select_panel(qtbot, tmp_path, monkeypatch)
+    select_rows(panel, [f"{root}/b"])
+    saved = []
+    monkeypatch.setattr(widget_module, "save_auto_select", saved.append)
+    write_from_another_process(AUTO_SELECT_KEY, True)
+    panel.on_setting_changed(AUTO_SELECT_KEY)
+    assert panel.auto_select_tree is True and panel.auto_select_button.isChecked()
+    wait_auto_select(qtbot, panel)
+    assert tree_selections == []
+    write_from_another_process(AUTO_SELECT_KEY, False)
+    panel.reload_shared_settings()
+    assert panel.auto_select_tree is False and not panel.auto_select_button.isChecked()
+    assert saved == []
+
+
+def test_a_new_panel_starts_with_the_saved_auto_select(qtbot):
+    widget_module.save_auto_select(True)
+    panel = make_panel(qtbot)
+    assert panel.auto_select_tree is True and panel.auto_select_button.isChecked()
+
+
+def test_the_auto_select_button_is_only_in_the_viewer(qtbot, monkeypatch):
+    assert not make_panel(qtbot).auto_select_button.isHidden()
+    without_viewer(monkeypatch)
+    assert make_panel(qtbot).auto_select_button.isHidden()
 
 
 def test_select_matches_only_looks_under_the_selected_folders(qtbot, tmp_path, monkeypatch, query_calls):

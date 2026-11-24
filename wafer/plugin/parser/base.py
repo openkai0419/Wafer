@@ -8,6 +8,7 @@ from collections.abc import Callable, Sequence
 from typing import Any, TypeVar
 
 from ..registry import BasePlugin
+from ..retry import RetryLater
 
 _READER_INIT_LOCK = threading.Lock()
 T = TypeVar("T")
@@ -44,13 +45,19 @@ def required_collectors(trigger_keys: tuple[str, ...]) -> dict[str, list[str]]:
     return result
 
 
-class BaseParser(BasePlugin):
+class ReaderClosed(RuntimeError):
+    pass
+
+
+class BaseParser(RetryLater, BasePlugin):
     SCOPE: str = "tray"
     TRIGGER_KEYS: tuple[str, ...] = ()
+    RESULT_TYPE = ParserResult
 
     db_name: str = ""
     _reader: sqlite3.Connection | None = None
     _reader_lock: threading.Lock | None = None
+    _reader_closed: bool = False
 
     @classmethod
     def trigger_keys(cls, db_name: str) -> tuple[str, ...]:
@@ -59,16 +66,20 @@ class BaseParser(BasePlugin):
     @abstractmethod
     def process(self, path: str, file_info: tuple, metadata: dict) -> ParserResult: ...
 
-    def query_db(self, sql: str, params: Sequence[Any] = ()) -> list[tuple]:
-        return self.read_db(lambda conn: _fetch_all(conn, sql, params), [])
+    def process_batch(self, paths: list[str], file_info: dict[str, tuple], metadata: dict[str, dict]) -> list[ParserResult]:
+        results = (self.process(path, file_info[path], metadata[path]) for path in paths)
+        return [r for r in results if r is not None]
 
-    def read_db(self, read: Callable[[sqlite3.Connection], T], default: T | None = None) -> T | None:
+    def query_db(self, sql: str, params: Sequence[Any] = ()) -> list[tuple]:
+        return self.read_db(lambda conn: _fetch_all(conn, sql, params))
+
+    def read_db(self, read: Callable[[sqlite3.Connection], T]) -> T:
         reader, lock = self._reader, self._reader_lock
         if reader is None or lock is None:
             reader, lock = self._open_reader()
         with lock:
             if self._reader is None:
-                return default
+                raise ReaderClosed(f"{self.NAME}: the database reader was closed by shutdown")
             return read(reader)
 
     def _open_reader(self) -> tuple[sqlite3.Connection, threading.Lock]:
@@ -78,12 +89,16 @@ class BaseParser(BasePlugin):
         if not self.db_name:
             raise RuntimeError(f"{self.NAME}: query_db() needs a per-indexer parser (BaseParserPlugin)")
         with _READER_INIT_LOCK:
+            if self._reader_closed:
+                raise ReaderClosed(f"{self.NAME}: the database reader was closed by shutdown")
             if self._reader is None or self._reader_lock is None:
                 self._reader_lock = threading.Lock()
                 self._reader = open_readonly(data_db_path(self.db_name))
             return self._reader, self._reader_lock
 
     def shutdown(self):
+        with _READER_INIT_LOCK:
+            self._reader_closed = True
         reader, lock = self._reader, self._reader_lock
         if reader is None:
             return

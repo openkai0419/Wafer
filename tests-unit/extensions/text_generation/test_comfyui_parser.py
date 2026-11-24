@@ -83,16 +83,17 @@ class TestComfyUiParser:
         assert result.meta_info["Node#0/opts/a"] == "1"
         assert result.meta_info["Node#0/opts/b"] == "2"
 
-    def test_non_comfy_trigger_is_done_without_data(self):
+    def test_non_comfy_trigger_fails_without_data(self):
         metadata = {"exiftool.IFD0:Make": "Canon", "exiftool.IFD0:Model": "EOS R5"}
         result = self.parser.process("photo.jpg", (100, 1.0), metadata)
-        assert result.status is True
+        assert result.status is False
         assert result.meta_info is None
         assert result.delete_meta_keys is None
 
     def test_missing_keys(self):
         result = self.parser.process("a.png", (100, 1.0), {})
-        assert result is None
+        assert result.status is False
+        assert result.meta_info is None
 
     def test_invalid_json(self):
         metadata = {"exiftool.PNG:Prompt": "not json"}

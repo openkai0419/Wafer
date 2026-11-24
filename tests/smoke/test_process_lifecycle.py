@@ -10,6 +10,7 @@ import pytest
 from wafer.core.platform.process import AppProcess
 from wafer.core.platform.process_checker import ParentProcessChecker
 from wafer.core.platform.process_lock import SafeProcessLock
+from wafer.plugin.retry import RetryLater
 
 
 def _base_cmd():
@@ -198,7 +199,9 @@ class TestParserWorkerLifecycle:
             broker.stop()
 
 
-class _RecordingPlugin:
+class _RecordingPlugin(RetryLater):
+    NAME = "_test_recording"
+
     def __init__(self):
         self.paths = []
 
@@ -239,6 +242,27 @@ class TestBatchDelivery:
                 worker.stop()
         finally:
             indexer.stop()
+            broker.stop()
+
+    def test_rescan_from_the_tray_resumes_paused_paths(self):
+        from wafer.app.collector.worker import CollectorWorker
+        from wafer.core.ipc.broker import Broker
+        from wafer.core.ipc.message import Message
+
+        worker = CollectorWorker("testdb", "exiftool")
+        worker._plugin = _RecordingPlugin()
+        worker._plugin.retries.count_failure("/fake/a.jpg", pause_after=1)
+        broker = Broker()
+        broker.start()
+        try:
+            worker.start()
+            try:
+                assert worker._node.wait_registered(timeout=5.0)
+                broker.dispatch(Message.build("rescan"))
+                assert _poll_until(lambda: not worker._plugin.retries.is_paused("/fake/a.jpg"), timeout=5.0)
+            finally:
+                worker.stop()
+        finally:
             broker.stop()
 
     def test_collector_receives_a_batch_sent_before_it_started(self):

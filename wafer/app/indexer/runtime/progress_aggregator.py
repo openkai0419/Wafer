@@ -35,7 +35,7 @@ class ProgressAggregator:
                 changed = True
             if not changed:
                 return
-            if self.current >= self.maximum > 0:
+            if self.current >= self.maximum:
                 self._reset_unlocked()
             else:
                 self._send_progress()

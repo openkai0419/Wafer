@@ -14,7 +14,6 @@ from wafer.builtins.commands.foldertree import (
     copy_direct_files,
     run_on_disk_files,
     run_on_folder_files,
-    show_in_tree,
     FolderFilesCommands,
     FolderTreeCommands,
     _ctx_normalized_path,
@@ -290,8 +289,9 @@ def test_files_in_folder_commands_are_registered(qtbot):
     FolderTreeCommands.register()
     FolderFilesCommands.register()
     registry = CommandRegistry.instance()
-    for command_id in ("ft.files.cut_direct", "ft.files.copy_direct", "ft.files.cut_all", "ft.files.copy_all", "ft.show_in_tree"):
+    for command_id in ("ft.files.cut_direct", "ft.files.copy_direct", "ft.files.cut_all", "ft.files.copy_all"):
         assert registry.has_command(command_id)
+    assert not registry.has_command("ft.show_in_tree")
 
 
 def command_paths(group):
@@ -304,7 +304,7 @@ def test_files_in_folder_commands_are_available_everywhere():
     files = ["ft.files.cut_direct", "ft.files.copy_direct", "ft.files.cut_all", "ft.files.copy_all"]
     assert [path for path in command_paths(FolderFilesCommands) if path in files] == files
     assert not set(files) & set(command_paths(FolderTreeCommands))
-    assert "ft.show_in_tree" in command_paths(FolderTreeCommands)
+    assert "ft.show_in_tree" not in command_paths(FolderTreeCommands)
     assert command_paths(FolderFilesCommands)[0] == ":All files on disk"
     assert FolderTreeCommands.SCOPE != "*"
 
@@ -446,13 +446,6 @@ def test_folder_menu_sections_offer_only_copy_path_for_a_missing_folder(tmp_path
 
 def test_menu_sections_put_a_titled_separator_before_each_nonempty_section():
     assert menu_sections([("A", ["a"]), ("Empty", []), ("B", ["b", "-", "c"])]) == [":A", "a", "-", ":B", "b", "-", "c"]
-
-
-def test_show_in_tree_selects_path(tmp_path):
-    selected = []
-    tree = type("T", (), {"expand_and_select_path": lambda self, p: selected.append(p)})()
-    show_in_tree(_FilesCtx([str(tmp_path)], instances={"FolderTree": tree}))
-    assert selected == [normalize_path(str(tmp_path))]
 
 
 def capture_folder_menu(qtbot, monkeypatch, path, roots):

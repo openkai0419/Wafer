@@ -70,8 +70,10 @@ class TestWebUiImageParser:
         assert result.meta_info is None
 
     def test_missing_key(self):
-        assert self.parser.process("img.png", (100, 1.0), {}) is None
-        assert self.parser.process("img.png", (100, 1.0), {"exiftool.PNG:Parameters": None}) is None
+        for metadata in ({}, {"exiftool.PNG:Parameters": None}):
+            result = self.parser.process("img.png", (100, 1.0), metadata)
+            assert result.status is False
+            assert result.meta_info is None
 
     def test_usercomment_fallback(self):
         result = self.parser.process("img.jpg", (100, 1.0), {"exiftool.ExifIFD:UserComment": SAMPLE})

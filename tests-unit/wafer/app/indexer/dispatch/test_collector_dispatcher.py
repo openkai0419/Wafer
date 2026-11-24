@@ -1,4 +1,5 @@
 import sqlite3
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -139,7 +140,7 @@ def test_stale_rows_are_reset_before_the_first_dispatch(tmp_path, monkeypatch):
     monkeypatch.setattr(plugin_dispatcher, "_DISPATCH_INTERVAL", 0.01)
     calls = []
     writer = MagicMock()
-    writer.reset_stale.side_effect = lambda names: calls.append(("reset", names))
+    writer.reset_stale.side_effect = lambda names, keep: calls.append(("reset", names)) or {}
     dispatcher = CollectorDispatcher("testdb", tmp_path / "test.db", MagicMock(), writer, MagicMock(), plugins=["exif"])
     dispatched = threading.Event()
 
@@ -310,3 +311,125 @@ def test_start_keeps_the_process_of_each_per_indexer_worker(tmp_path):
 
     assert dispatcher._worker_procs == {per_indexer: procs[per_indexer]}
     assert new_main.call_args_list[1].args == ("--collector", "testdb", "--plugin", singleton, "--parent-pid", "4242")
+
+
+@pytest.fixture
+def one_by_one(real_db_dispatcher):
+    dispatcher, writer, lane = real_db_dispatcher
+    with patch.object(collector_resolver, "batch_size", return_value=1):
+        yield dispatcher, writer, lane
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    from wafer.app.indexer.dispatch import plugin_dispatcher
+
+    now = [1000.0]
+    monkeypatch.setattr(plugin_dispatcher, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    return now
+
+
+def _send_all_without_results(dispatcher, paused=()):
+    for _ in range(3):
+        dispatcher._dispatch_pending()
+        sent = _sent_paths(dispatcher)[-1]
+        dispatcher.batch_done("exif", [p for p in sent if p in paused])
+
+
+def test_paused_rows_are_not_sent_again(one_by_one):
+    dispatcher, writer, _lane = one_by_one
+    _send_all_without_results(dispatcher, paused={"src1"})
+
+    dispatcher.retry_stale()
+
+    assert _statuses(writer) == {"src0": "pending", "src1": "dispatched", "src2": "pending"}
+
+
+def test_paused_row_set_pending_again_is_sent_and_retried_like_the_others(one_by_one):
+    dispatcher, writer, _lane = one_by_one
+    _send_all_without_results(dispatcher, paused={"src1"})
+    writer.insert_pending(["src1"], ["exif"])
+
+    dispatcher._dispatch_pending()
+    assert _sent_paths(dispatcher)[-1] == ["src1"]
+    dispatcher.batch_done("exif", [])
+    dispatcher.retry_stale()
+
+    assert _statuses(writer)["src1"] == "pending"
+
+
+def test_rescan_lets_paused_rows_be_sent_again(one_by_one):
+    dispatcher, writer, _lane = one_by_one
+    _send_all_without_results(dispatcher, paused={"src1"})
+
+    dispatcher.resume_paused()
+    dispatcher.retry_stale()
+
+    assert set(_statuses(writer).values()) == {"pending"}
+
+
+def test_sending_retried_rows_again_is_not_activity(one_by_one):
+    dispatcher, _writer, lane = one_by_one
+    _send_all_without_results(dispatcher)
+    lane.note_activity.reset_mock()
+    dispatcher._progress.increment.reset_mock()
+
+    dispatcher.retry_stale()
+    _send_all_without_results(dispatcher)
+
+    assert len(_sent_paths(dispatcher)) == 6
+    lane.note_activity.assert_not_called()
+    dispatcher._progress.increment.assert_not_called()
+
+
+def test_a_new_row_among_retried_ones_is_activity(one_by_one):
+    dispatcher, writer, lane = one_by_one
+    _send_all_without_results(dispatcher)
+    dispatcher.retry_stale()
+    writer.db.upsert_basic_sources([("src3", "hash-src3", 1, 1.0)], [])
+    writer.insert_pending(["src3"], ["exif"])
+    lane.note_activity.reset_mock()
+
+    with patch.object(collector_resolver, "batch_size", return_value=4):
+        dispatcher._dispatch_pending()
+
+    assert sorted(_sent_paths(dispatcher)[-1]) == ["src0", "src1", "src2", "src3"]
+    lane.note_activity.assert_called_once_with()
+    dispatcher._progress.increment.assert_called_with(0, 4)
+
+
+def test_rows_reset_at_startup_are_activity(one_by_one):
+    dispatcher, _writer, lane = one_by_one
+    _send_all_without_results(dispatcher)
+    lane.note_activity.reset_mock()
+
+    dispatcher.reset_stale()
+    _send_all_without_results(dispatcher)
+
+    assert lane.note_activity.call_count == 3
+
+
+@pytest.mark.parametrize("in_flight", [1, 2])
+def test_retry_waits_for_batches_that_may_still_be_running(one_by_one, clock, in_flight):
+    dispatcher, writer, _lane = one_by_one
+    for _ in range(in_flight):
+        dispatcher._dispatch_pending()
+    wait = in_flight * collector_resolver.batch_timeout("exif") + 60.0
+
+    clock[0] += wait - 1
+    dispatcher.retry_stale()
+    assert list(_statuses(writer).values()).count("dispatched") == in_flight
+
+    clock[0] += 1
+    dispatcher.retry_stale()
+    assert set(_statuses(writer).values()) == {"pending"}
+
+
+def test_retry_does_not_wait_once_every_batch_came_back(one_by_one, clock):
+    dispatcher, writer, _lane = one_by_one
+    dispatcher._dispatch_pending()
+    dispatcher.batch_done("exif", [])
+
+    dispatcher.retry_stale()
+
+    assert set(_statuses(writer).values()) == {"pending"}

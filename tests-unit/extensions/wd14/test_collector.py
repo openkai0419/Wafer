@@ -206,14 +206,14 @@ class TestTwoLevelCache:
             result = self.collector.process("/test/file.jpg", (1000.0, 500, "some_hash"))
         assert result.status is False
 
-    def test_inference_error_returns_failure(self):
+    def test_inference_error_is_collected_again(self):
         engine = mock_engine()
         engine.predict.side_effect = RuntimeError("ONNX error")
         self.collector._engines[DEFAULT_MODEL] = engine
         with patch("wafer.plugin.collector.inference.image_loader_resolver") as mock_resolver:
             mock_resolver.load_pil.return_value = Image.new("RGB", (10, 10), (128, 128, 128))
             result = self.collector.process("/test/file.jpg", (1000.0, 500, "err_hash"))
-        assert result.status is False
+        assert result is None
 
 
 class TestPostInstall:

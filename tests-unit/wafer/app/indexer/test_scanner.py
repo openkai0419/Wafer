@@ -55,6 +55,20 @@ def test_scan_directory_skips_files_matching_ignore_pattern(tmp_path):
     assert normalize_path(str(scan_dir / "thumbs.cache")) not in results
 
 
+def test_unfinished_copies_are_never_registered(tmp_path):
+    scanner, *_ = _make_scanner(tmp_path)
+    scan_dir = tmp_path / "data"
+    scan_dir.mkdir()
+    (scan_dir / "a.png").write_bytes(b"x")
+    (scan_dir / "a.png.wafer-partial").write_bytes(b"y")
+    (scan_dir / "b.png (2).WAFER-PARTIAL").write_bytes(b"z")
+
+    results = dict(scanner._scan_directory(str(scan_dir)))
+
+    assert list(results) == [normalize_path(str(scan_dir / "a.png"))]
+    assert scanner._is_excluded(normalize_path(str(scan_dir / "a.png.wafer-partial")))
+
+
 def test_scan_directory_skips_subdirectories_matching_ignore_pattern(tmp_path):
     scanner, *_ = _make_scanner(tmp_path)
     scan_dir = tmp_path / "data"

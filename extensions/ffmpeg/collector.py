@@ -1,7 +1,10 @@
+import subprocess
+
 from wafer.plugin import BaseCollectorPlugin, CollectorResult
 from wafer.core.logs import AppLogger
 
 POST_INSTALL_VERSION = "1"
+IN_USE_PAUSE_AFTER = 5
 
 
 class FfmpegCollectorPlugin(BaseCollectorPlugin):
@@ -57,13 +60,21 @@ class FfmpegCollectorPlugin(BaseCollectorPlugin):
     def process(self, path: str, file_info: tuple) -> CollectorResult | None:
         ffprobe = self._resolve_ffprobe()
         if ffprobe is None:
-            return CollectorResult(source=path, status=False)
+            return None
 
         from .parser import probe, flatten
 
-        data = probe(path, ffprobe)
+        try:
+            data = probe(path, ffprobe)
+        except subprocess.TimeoutExpired as e:
+            AppLogger.warning(f"[ffmpeg] ffprobe timed out; collected again later: {path}", exc=e)
+            return self.retry_later(path, fail_after=5)
+        except OSError as e:
+            AppLogger.warning(f"[ffmpeg] ffprobe could not run; collected again later: {path}", exc=e)
+            self._ffprobe_path = None
+            return None
         if data is None:
-            return CollectorResult(source=path, status=False)
+            return self.fail_unless_in_use(path, pause_after=IN_USE_PAUSE_AFTER)
 
         try:
             meta, aspect = flatten(data)

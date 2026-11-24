@@ -837,6 +837,28 @@ class TestSegTableSelectionSync:
         assert seg_rows == {0}
         dlg.close()
 
+    @patch.object(BatchRenameWidget, "_start_async_init")
+    def test_selected_rows_are_filled_with_accent_in_every_table(self, mock_init, qtbot, tmp_files):
+        dlg = BatchRenameWidget()
+        qtbot.addWidget(dlg)
+        dlg.resize(800, 500)
+        dlg.show()
+        dlg.set_files(tmp_files)
+        dlg._rebuild()
+        qtbot.waitUntil(lambda: len(dlg._results) == 3, timeout=5000)
+        dlg._orig_view.selectionModel().select(dlg._preview_model.index(1, 0), QtCore.QItemSelectionModel.ClearAndSelect)
+        accent = QtGui.QColor(dlg._p.accent)
+
+        def color_at_cell_edge(view, row, column):
+            rect = view.visualRect(view.model().index(row, column))
+            image = view.viewport().grab().toImage()
+            return image.pixelColor(image.width() * (rect.right() - 2) // view.viewport().width(), image.height() * rect.center().y() // view.viewport().height())
+
+        for view, column in ((dlg._orig_view, 0), (dlg._result_view, 1), (dlg._seg_table, 0)):
+            assert color_at_cell_edge(view, 1, column).rgb() == accent.rgb()
+            assert color_at_cell_edge(view, 0, column).rgb() != accent.rgb()
+        dlg.close()
+
 
 class TestStatusClickNavigation:
     @patch.object(BatchRenameWidget, "_start_async_init")

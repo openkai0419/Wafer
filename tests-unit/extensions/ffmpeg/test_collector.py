@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 from extensions.ffmpeg.collector import FfmpegCollectorPlugin
+from test_support.file_lock import held_exclusively
 
 SAMPLE_PROBE_RESULT = {
     "format": {
@@ -46,12 +47,46 @@ class TestFfmpegCollectorPlugin:
         assert abs(result.aspect - (640 / 480)) < 0.001
 
     @patch("extensions.ffmpeg.collector.FfmpegCollectorPlugin._resolve_ffprobe")
-    def test_process_no_ffprobe(self, mock_resolve):
+    def test_process_without_ffprobe_is_collected_again(self, mock_resolve):
         mock_resolve.return_value = None
 
         plugin = FfmpegCollectorPlugin()
-        result = plugin.process("/test/video.mp4", (1.0, 1000))
-        assert result.status is False
+        assert plugin.process("/test/video.mp4", (1.0, 1000)) is None
+
+    @patch("extensions.ffmpeg.collector.FfmpegCollectorPlugin._resolve_ffprobe")
+    def test_process_timeout_is_collected_again(self, mock_resolve):
+        import subprocess
+
+        mock_resolve.return_value = "/fake/ffprobe.exe"
+        with patch("extensions.ffmpeg.parser.run_external", side_effect=subprocess.TimeoutExpired("ffprobe", 30)):
+            assert FfmpegCollectorPlugin().process("/test/video.mp4", (1.0, 1000)) is None
+
+    @patch("extensions.ffmpeg.collector.FfmpegCollectorPlugin._resolve_ffprobe")
+    def test_process_fails_on_the_fifth_timeout(self, mock_resolve):
+        import subprocess
+
+        mock_resolve.return_value = "/fake/ffprobe.exe"
+        plugin = FfmpegCollectorPlugin()
+        with patch("extensions.ffmpeg.parser.run_external", side_effect=subprocess.TimeoutExpired("ffprobe", 30)):
+            results = [plugin.process("/test/video.mp4", (1.0, 1000)) for _ in range(5)]
+        assert results[:4] == [None] * 4
+        assert (results[4].source, results[4].status) == ("/test/video.mp4", False)
+
+    @patch("extensions.ffmpeg.collector.FfmpegCollectorPlugin._resolve_ffprobe")
+    def test_process_file_in_use_is_collected_again(self, mock_resolve, tmp_path):
+        mock_resolve.return_value = "/fake/ffprobe.exe"
+        path = tmp_path / "held.mp4"
+        path.write_bytes(b"video")
+        with patch("extensions.ffmpeg.parser.probe", return_value=None), held_exclusively(path):
+            assert FfmpegCollectorPlugin().process(str(path), (1.0, 1000)) is None
+
+    @patch("extensions.ffmpeg.collector.FfmpegCollectorPlugin._resolve_ffprobe")
+    def test_process_ffprobe_that_cannot_start_is_collected_again(self, mock_resolve):
+        mock_resolve.return_value = "/fake/ffprobe.exe"
+        with patch("extensions.ffmpeg.parser.run_external", side_effect=FileNotFoundError(2, "The system cannot find the file specified")):
+            plugin = FfmpegCollectorPlugin()
+            assert plugin.process("/test/video.mp4", (1.0, 1000)) is None
+        assert plugin._ffprobe_path is None
 
     @patch("extensions.ffmpeg.collector.FfmpegCollectorPlugin._resolve_ffprobe")
     def test_process_probe_failure(self, mock_resolve):

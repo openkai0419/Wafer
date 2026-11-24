@@ -1,5 +1,6 @@
 from wafer.builtins.folder_manager import commands as commands_module
-from wafer.builtins.folder_manager.commands import FolderManagerCommands, collapse_all, select_matches, toggle_matches_only
+from wafer.builtins.folder_manager.commands import FolderManagerCommands, FolderManagerViewerCommands, collapse_all, select_matches, toggle_auto_select, toggle_matches_only
+from wafer.builtins.folder_manager.shared_settings import save_auto_select
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
 from wafer.qt.commands.bridge import Command
 from wafer.qt.commands.command.core import CommandRegistry
@@ -19,6 +20,7 @@ class FakePanel:
     def __init__(self, visible=True):
         self.calls = []
         self.matches_only = False
+        self.auto_select_tree = False
         self.visible = visible
 
     def isVisible(self):
@@ -32,6 +34,9 @@ class FakePanel:
 
     def collapse_all(self):
         self.calls.append("collapse")
+
+    def set_auto_select_tree(self, on):
+        self.auto_select_tree = on
 
 
 def test_commands_are_registered(qtbot):
@@ -106,3 +111,30 @@ def test_collapse_all_command_runs_on_the_open_panel():
     collapse_all(FakeCtx(panel))
 
     assert panel.calls == ["collapse"]
+
+
+def test_auto_select_command_is_only_in_the_viewer():
+    paths = lambda group: [getattr(item, "path", item) for item in group.commands()]
+    assert "folder_manager.auto_select_foldertree" not in paths(FolderManagerCommands)
+    assert "folder_manager.auto_select_foldertree" in paths(FolderManagerViewerCommands)
+    assert FolderManagerViewerCommands.SCOPE == "viewer"
+    assert FolderManagerViewerCommands.NAME == FolderManagerCommands.NAME
+
+
+def test_auto_select_command_toggles_and_reports_checked(qtbot, monkeypatch):
+    FolderManagerViewerCommands.register()
+    panel = FakePanel()
+    monkeypatch.setattr(InstanceRegistry, "get_one", lambda self, name: None)
+    assert CommandRegistry.instance().get_command("folder_manager.auto_select_foldertree").meta.checkable
+    save_auto_select(False)
+    assert Command.get_checked("folder_manager.auto_select_foldertree") is False
+    save_auto_select(True)
+    assert Command.get_checked("folder_manager.auto_select_foldertree") is True
+    save_auto_select(False)
+
+    monkeypatch.setattr(InstanceRegistry, "get_one", lambda self, name: panel if name == "FolderManager" else None)
+    toggle_auto_select(FakeCtx(panel))
+    assert panel.auto_select_tree is True
+    assert Command.get_checked("folder_manager.auto_select_foldertree") is True
+    toggle_auto_select(FakeCtx(panel))
+    assert panel.auto_select_tree is False

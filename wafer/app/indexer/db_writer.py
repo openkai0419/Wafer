@@ -166,8 +166,8 @@ class DatabaseWriter:
         self._db.mark_collected(sources, collector)
 
     @profiler.profile
-    def reset_stale(self, collectors=None):
-        self._db.reset_stale_dispatched(collectors)
+    def reset_stale(self, collectors, keep=None) -> dict[str, list[str]]:
+        return self._db.reset_stale_dispatched(collectors, keep)
 
     @profiler.profile
     def delete_orphans(self):

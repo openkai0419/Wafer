@@ -17,7 +17,7 @@ from wafer.core.lang.manager import t
 from wafer.core.store.settings import app_settings
 from wafer.plugin.panel.base import BasePanelPlugin
 from wafer.qt.commands.binding.instance_registry import InstanceRegistry
-from wafer.qt.commands.bridge import UI, ActionKit, Menu
+from wafer.qt.commands.bridge import UI, ActionKit, Command, Menu
 from wafer.qt.common.dispatcher import CancelSlot, Dispatcher
 from wafer.qt.common.dpi import dpix
 from wafer.qt.common.notifier import Notifier
@@ -29,7 +29,20 @@ from wafer.qt.widgets.flow_layout import FlowLayout
 from .database import FolderSettings, initial_database, read_folder_settings
 from .rule_editor import METRIC_LABELS, RuleList, tool_button
 from .rules import METRICS, HighlightRule, new_rule
-from .shared_settings import COLUMNS_KEY, DEFAULT_COLUMNS, RULES_KEY, load_columns, load_last_database, load_rules, save_columns, save_last_database, save_rules
+from .shared_settings import (
+    AUTO_SELECT_KEY,
+    COLUMNS_KEY,
+    DEFAULT_COLUMNS,
+    RULES_KEY,
+    load_auto_select,
+    load_columns,
+    load_last_database,
+    load_rules,
+    save_auto_select,
+    save_columns,
+    save_last_database,
+    save_rules,
+)
 from .stats import DiskTree, count_sources_by_folder, list_folder, walk_disk
 from .view import FolderManagerTreeView, RowFilterChange, folders_to_open, row_filter_change, rule_badges
 
@@ -43,6 +56,7 @@ MATCH_CANCEL_CHECK = 4096
 NOTICE_MS = 4000
 MATCHES_REFRESH_MS = 1000
 MATCHES_ONLY_CHANNEL = "matches_only"
+AUTO_SELECT_DELAY_MS = 200
 DISPOSE_BATCH = 20000
 
 
@@ -174,9 +188,11 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.collapses = 0
         self.notice = ""
         self.pending_select = False
+        self.auto_select_tree = False
         self.build_ui()
         self.apply_rules(load_rules())
         self.apply_columns(load_columns())
+        self.apply_auto_select(load_auto_select())
         app_settings.key_changed.connect(self.on_setting_changed)
         QtCore.QCoreApplication.instance().aboutToQuit.connect(self.save_pending)
         UI.register_instance(INSTANCE_NAME, self)
@@ -200,10 +216,11 @@ class FolderManagerWidget(QtWidgets.QWidget):
         layout.addWidget(self.rules_area)
         self.view = FolderManagerTreeView()
         self.view.set_rules_source(lambda: self.rules)
-        self.view.show_in_tree_available = self.host_shows_database
+        self.view.window_shows_database = self.host_shows_database
         self.view.notify = self.notify
         self.model.paths_changed.connect(self.on_paths_changed)
         self.view.folders_set.connect(self.on_folders_set)
+        self.view.selectionModel().selectionChanged.connect(self.on_selection_changed)
         layout.addWidget(self.view, 1)
         self.stats_timer = QtCore.QTimer(self)
         self.stats_timer.setSingleShot(True)
@@ -218,6 +235,10 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.notice_timer = QtCore.QTimer(self)
         self.notice_timer.setSingleShot(True)
         self.notice_timer.timeout.connect(self.clear_notice)
+        self.auto_select_timer = QtCore.QTimer(self)
+        self.auto_select_timer.setSingleShot(True)
+        self.auto_select_timer.setInterval(AUTO_SELECT_DELAY_MS)
+        self.auto_select_timer.timeout.connect(self.auto_select_foldertree)
         self.rules_saver = self.save_timer(self.save_rules_now)
         self.columns_saver = self.save_timer(self.save_columns_now)
 
@@ -241,6 +262,10 @@ class FolderManagerWidget(QtWidgets.QWidget):
         self.matches_button = tool_button("filter", t("Show only folders a rule marks"))
         self.matches_button.setCheckable(True)
         self.matches_button.toggled.connect(self.set_matches_only)
+        self.auto_select_button = tool_button("cursor", t("Auto Select FolderTree"))
+        self.auto_select_button.setCheckable(True)
+        self.auto_select_button.toggled.connect(self.set_auto_select_tree)
+        self.auto_select_button.setVisible(self.follows_viewer)
         self.collapse_button = tool_button("collapse_all", t("Collapse all"))
         self.collapse_button.clicked.connect(self.collapse_all)
         self.columns_button = tool_button("gear", t("Columns"))
@@ -255,6 +280,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
             self.select_button,
             self.matches_button,
             self.collapse_button,
+            self.auto_select_button,
             self.columns_button,
             self.refresh_button,
             self.add_rule_button,
@@ -302,6 +328,8 @@ class FolderManagerWidget(QtWidgets.QWidget):
         elif key == COLUMNS_KEY:
             self.columns_saver.stop()
             self.apply_columns(load_columns())
+        elif key == AUTO_SELECT_KEY:
+            self.apply_auto_select(load_auto_select())
 
     def reload_shared_settings(self) -> None:
         self.save_pending()
@@ -311,6 +339,7 @@ class FolderManagerWidget(QtWidgets.QWidget):
         columns = load_columns()
         if columns != self.columns:
             self.apply_columns(columns)
+        self.apply_auto_select(load_auto_select())
 
     def save_rules_later(self) -> None:
         self.rules_saver.start()
@@ -853,6 +882,35 @@ class FolderManagerWidget(QtWidgets.QWidget):
             self.show_matches(self.found_matches)
         if self.found_version != self.matches_version:
             self.refilter()
+
+    def set_auto_select_tree(self, on: bool) -> None:
+        if on == self.auto_select_tree:
+            return
+        save_auto_select(on)
+        self.apply_auto_select(on)
+        if on:
+            self.auto_select_timer.start()
+
+    def apply_auto_select(self, on: bool) -> None:
+        if on == self.auto_select_tree:
+            return
+        self.auto_select_tree = on
+        self.auto_select_button.setChecked(on)
+        if not on:
+            self.auto_select_timer.stop()
+
+    def on_selection_changed(self, *_) -> None:
+        if self.auto_select_tree:
+            self.auto_select_timer.start()
+
+    def auto_select_foldertree(self) -> None:
+        paths = self.view.get_selected_paths()
+        if not paths or not self.host_shows_database():
+            return
+        tree = InstanceRegistry.instance().get_one("FolderTree")
+        if tree is None or {normalize_path(p) for p in tree.get_selected_paths()} == {normalize_path(p) for p in paths}:
+            return
+        Command.invoke("file.select_path", extras={"sources": paths})
 
     def on_matches_changed(self) -> None:
         self.matches_version += 1

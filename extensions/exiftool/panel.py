@@ -212,7 +212,7 @@ class ExifSettingsWidget(QtWidgets.QWidget):
                     data = proc.query(path)
                 finally:
                     proc.stop()
-                if data is None:
+                if not data:
                     self._dispatcher.invoke(lambda: Notifier.warning("ExifTool returned no data"))
                     return
                 meta, _ = flatten(data)

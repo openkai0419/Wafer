@@ -204,7 +204,7 @@ def test_context_menu_separates_disk_files_from_each_rule_with_a_query(qtbot, tm
     monkeypatch.setattr(view_module, "query_folder_sources", lambda *args: queried_calls.append(args) or ["hit.png"])
     view, root = make_view(qtbot, tmp_path)
     view.database_name = "main"
-    view.show_in_tree_available = lambda: True
+    view.window_shows_database = lambda: True
     view.resize(480, 240)
     view.show()
     bar = {"filter": "text", "params": {"q": "cat"}, "op": "and", "enabled": True}
@@ -225,8 +225,9 @@ def test_context_menu_separates_disk_files_from_each_rule_with_a_query(qtbot, tm
     assert items[: len(MENU_HEAD) + 1] == [":Folder Manager", *MENU_HEAD]
     headers = [i for i in items if isinstance(i, str) and i.startswith(":")]
     assert headers == [":Folder Manager", ":File", ":Selection", ":FolderTree"]
-    assert items[items.index(":FolderTree") + 1] == "ft.show_in_tree"
-    assert "file.select_path" not in items
+    assert items[items.index(":Selection") + 1] == "file.select_path"
+    assert "ft.show_in_tree" not in items
+    assert items[items.index(":FolderTree") + 1] == "Files in Folder/:All files on disk"
     disk = items.index("Files in Folder/:All files on disk")
     assert items[disk + 1 : disk + 5] == DISK_ROWS
     assert not any("ignore" in str(i) or "remove_from_view" in str(i) for i in items)
@@ -263,7 +264,7 @@ def test_rule_names_never_reach_translation(qtbot, tmp_path, monkeypatch, text_f
     bar = {"filter": "text", "params": {"q": "cat"}, "op": "and", "enabled": True}
     view.set_rules_source(lambda: [rule("Secret Rule Name", "#111111", ("files", ">=", 1), bars=[bar])])
 
-    menu = Menu.session(view).menu(["ft.show_in_tree", *view.rule_file_actions()]).build()
+    menu = Menu.session(view).menu(["file.select_path", *view.rule_file_actions()]).build()
 
     assert menu is not None
     submenu = next(action.menu() for action in menu.actions() if action.menu() is not None)
@@ -295,7 +296,7 @@ def test_rule_actions_keep_empty_and_duplicate_names_distinct(qtbot, tmp_path, t
 def test_context_menu_for_a_vanished_folder_offers_only_safe_items(qtbot, tmp_path, monkeypatch, text_filter):
     seen = capture_menu(monkeypatch)
     view, root = make_view(qtbot, tmp_path)
-    view.show_in_tree_available = lambda: True
+    view.window_shows_database = lambda: True
     view.resize(480, 240)
     view.show()
     bar = {"filter": "text", "params": {"keys": ["Comment"], "keywords": "cat"}, "op": None, "enabled": True}
@@ -310,7 +311,7 @@ def test_context_menu_for_a_vanished_folder_offers_only_safe_items(qtbot, tmp_pa
     view.close()
 
 
-def test_context_menu_outside_the_viewer_keeps_files_in_folder_without_show_in_tree(qtbot, tmp_path, monkeypatch, text_filter):
+def test_context_menu_outside_the_viewer_keeps_files_in_folder_without_select_foldertree(qtbot, tmp_path, monkeypatch, text_filter):
     seen = capture_menu(monkeypatch)
     view, _root = make_view(qtbot, tmp_path)
     view.resize(480, 240)
@@ -334,20 +335,19 @@ def open_menu_on_first_row(view):
     view.show_context_menu(view.visualRect(index).center())
 
 
-def test_context_menu_shows_show_in_tree_only_for_the_window_database(qtbot, tmp_path, monkeypatch):
+def test_context_menu_offers_select_foldertree_only_for_the_window_database(qtbot, tmp_path, monkeypatch):
     seen = capture_menu(monkeypatch)
     view, _root = make_view(qtbot, tmp_path)
-    assert view.show_in_tree_available() is False
+    assert view.window_shows_database() is False
 
     open_menu_on_first_row(view)
-    assert "ft.show_in_tree" not in seen["items"]
     assert "file.select_path" not in seen["items"]
 
-    view.show_in_tree_available = lambda: True
+    view.window_shows_database = lambda: True
     open_menu_on_first_row(view)
     items = seen["items"]
-    assert items[items.index(":FolderTree") + 1] == "ft.show_in_tree"
-    assert "file.select_path" not in items
+    assert items[items.index(":Selection") + 1] == "file.select_path"
+    assert "ft.show_in_tree" not in items
     view.close()
 
 

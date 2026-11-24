@@ -58,8 +58,8 @@ def test_handle_result_empty_results():
 def test_each_result_message_ends_one_batch_of_its_collector():
     done = MagicMock()
     receiver = CollectorReceiver(MagicMock(), MagicMock(), MagicMock(), on_batch_done=done)
-    receiver.handle_result(_StubMsg({"collector": "exif", "results": []}))
-    done.assert_called_once_with("exif")
+    receiver.handle_result(_StubMsg({"collector": "exif", "results": [], "paused": ["/a.png"]}))
+    done.assert_called_once_with("exif", ["/a.png"])
 
 
 def test_handle_result_sets_collector_on_results(no_flush_delay):

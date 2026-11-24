@@ -31,32 +31,32 @@ def _is_quarter_turn(stream: dict) -> bool:
 
 
 def probe(path: str, ffprobe_path: str) -> dict | None:
+    result = run_external(
+        [
+            ffprobe_path,
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
+            path,
+        ],
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+    )
+    if result.returncode != 0:
+        AppLogger.debug(f"[ffmpeg] ffprobe returned {result.returncode} for {path}: {result.stderr}")
+        return None
+    if not result.stdout:
+        AppLogger.debug(f"[ffmpeg] ffprobe returned empty stdout for {path}")
+        return None
     try:
-        result = run_external(
-            [
-                ffprobe_path,
-                "-v",
-                "quiet",
-                "-print_format",
-                "json",
-                "-show_format",
-                "-show_streams",
-                path,
-            ],
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=30,
-        )
-        if result.returncode != 0:
-            AppLogger.debug(f"[ffmpeg] ffprobe returned {result.returncode} for {path}: {result.stderr}")
-            return None
-        if not result.stdout:
-            AppLogger.debug(f"[ffmpeg] ffprobe returned empty stdout for {path}")
-            return None
         return json.loads(result.stdout)
-    except Exception as e:
-        AppLogger.debug(f"[ffmpeg] ffprobe failed for {path}: {e}")
+    except json.JSONDecodeError as e:
+        AppLogger.debug(f"[ffmpeg] ffprobe output is not JSON for {path}: {e}")
         return None
 
 

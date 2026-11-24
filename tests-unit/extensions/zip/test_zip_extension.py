@@ -474,6 +474,28 @@ def test_zip_collector_returns_failure_on_unicode_decode_error(monkeypatch):
     assert results[0].status is False
 
 
+def test_zip_collector_retries_an_archive_in_use(monkeypatch):
+    def in_use(_path):
+        raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+
+    monkeypatch.setattr("extensions.zip.collector.list_entries", in_use)
+
+    assert ZipCollectorPlugin().process("busy.zip", (0.0, 0)) is None
+
+
+def test_zip_collector_pauses_an_archive_in_use_after_ten_failures(monkeypatch):
+    def in_use(_path):
+        raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+
+    monkeypatch.setattr("extensions.zip.collector.list_entries", in_use)
+    collector = ZipCollectorPlugin()
+
+    assert [collector.process("busy.zip", (0.0, 0)) for _ in range(9)] == [None] * 9
+    assert not collector.retries.is_paused("busy.zip")
+    assert collector.process("busy.zip", (0.0, 0)) is None
+    assert collector.retries.is_paused("busy.zip")
+
+
 def test_zip_collector_skips_encrypted_entries(tmp_path, monkeypatch):
     zip_path = tmp_path / "locked.zip"
     _create_raw_zip(zip_path, [_raw_entry("open.png", b"open"), _raw_entry("locked.png", b"locked", flags=0x1)])

@@ -54,20 +54,14 @@ class PluginWorkerLifecycle:
 
 
 def cancel_not_started(futures: dict, not_done) -> set:
-    return {futures[f] for f in not_done if f.cancel()}
-
-
-def failed_results(paths, results, not_started=()) -> list[dict]:
-    """Paths left out stay 'dispatched' and go back to pending through reset_stale_dispatched."""
-    reported = {r.get("source") for r in results}
-    reported.update(not_started)
-    return [{"source": p, "status": False} for p in paths if p not in reported]
+    return {path for f in not_done if f.cancel() for path in futures[f]}
 
 
 class PluginWorker:
     KIND = ""
     BATCH_TOPIC = ""
     RESULT_TOPIC = ""
+    PLUGIN_BASE: type = object
     resolver = None
 
     def __init__(self, db_name: str, plugin_name: str):
@@ -79,11 +73,13 @@ class PluginWorker:
         if not self._plugin:
             raise ValueError(f"Unknown {self.KIND} plugin: {plugin_name}")
         self._singleton = plugin_name in self.resolver.singleton_names()
+        self._batched = type(self._plugin).process_batch is not self.PLUGIN_BASE.process_batch
         node_db = "" if self._singleton else db_name
         self._node = Node(f"{self.KIND}-{plugin_name}", db=node_db, consumer=True, outbox_poll=None, broker_lost_timeout=BROKER_LOST_TIMEOUT)
         self._node.subscribe(self.BATCH_TOPIC, self._handle_batch)
         self._node.subscribe("plugin.notify", self._on_notify)
         self._node.subscribe("worker.shutdown", self._on_shutdown)
+        self._node.subscribe("rescan", self._on_rescan)
         self._max_workers = self.resolver.max_workers(plugin_name)
         self._batch_timeout = self.resolver.batch_timeout(plugin_name)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=self._max_workers)
@@ -94,6 +90,18 @@ class PluginWorker:
 
     def process_path(self, path: str, file_info: tuple, metadata: dict) -> list[dict]:
         raise NotImplementedError
+
+    def process_paths(self, paths: list[str], file_info: dict[str, tuple], metadata: dict[str, dict]) -> list[dict]:
+        raise NotImplementedError
+
+    def error_results(self, paths: list[str], error: Exception) -> list[dict]:
+        results = []
+        for path in paths:
+            try:
+                results.append(self._plugin.on_error(path, error))
+            except Exception as e:
+                AppLogger.error(f"[{self.label}] on_error failed; collected again later: {path}", exc=e)
+        return self.result_dicts(results)
 
     def start(self):
         self._node.start()
@@ -116,6 +124,10 @@ class PluginWorker:
     def _on_notify(self, msg) -> bool:
         self._plugin.on_notify(msg.payload if isinstance(msg.payload, dict) else None)
         AppLogger.info(f"[{self.label}] Notified: {self.plugin_name}")
+        return True
+
+    def _on_rescan(self, msg) -> bool:
+        self._plugin.retries.reset()
         return True
 
     def _on_shutdown(self, msg) -> bool:
@@ -159,36 +171,55 @@ class PluginWorker:
             done |= finished
         return done, not_done
 
-    def _process_batch(self, paths, file_info_raw, metadata, db):
+    def _process_batch(self, batch_paths, file_info_raw, metadata, db):
         try:
-            file_info = {p: tuple(v) for p, v in file_info_raw.items()}
+            retries = self._plugin.retries
+            paths = [p for p in batch_paths if not retries.is_paused(p)]
+            file_info = {p: tuple(file_info_raw.get(p, (0.0, 0))) for p in paths}
+            metadata = {p: metadata.get(p, {}) for p in paths}
+
+            returned = threading.Event()
 
             def process_one(p):
                 try:
-                    return self.process_path(p, file_info.get(p, (0.0, 0)), metadata.get(p, {}))
+                    return self.process_path(p, file_info[p], metadata[p])
                 except Exception as e:
                     AppLogger.warning(f"[{self.label}] process failed: {p}: {e}", exc=e)
-                    return []
+                    return [] if self._stop.is_set() or returned.is_set() else self.error_results([p], e)
 
-            futures = {self._executor.submit(process_one, p): p for p in paths}
+            def process_all():
+                try:
+                    return self.process_paths(paths, file_info, metadata)
+                except Exception as e:
+                    AppLogger.warning(f"[{self.label}] process_batch failed for {len(paths)} paths: {e}", exc=e)
+                    return [] if self._stop.is_set() or returned.is_set() else self.error_results(paths, e)
+
+            if not paths:
+                futures = {}
+            elif self._batched:
+                futures = {self._executor.submit(process_all): paths}
+            else:
+                futures = {self._executor.submit(process_one, p): [p] for p in paths}
             done, not_done = self._wait_unless_stopped(futures)
+            returned.set()
             results = []
             for fut in done:
                 try:
                     results.extend(fut.result())
                 except Exception as e:
-                    AppLogger.warning(f"[{self.label}] future failed: {futures[fut]}: {e}", exc=e)
+                    AppLogger.warning(f"[{self.label}] future failed: {len(futures[fut])} paths from {futures[fut][0]}: {e}", exc=e)
             not_started = cancel_not_started(futures, not_done)
             if not_done:
-                AppLogger.warning(f"[{self.label}] batch timeout: {len(not_done) - len(not_started)}/{len(paths)} unfinished, {len(not_started)} not started (retried later)")
-            failures = failed_results(paths, results, not_started)
-            if failures and self._stop.is_set():
-                AppLogger.info(f"[{self.label}] Stopping: {len(failures)} paths without a result are retried later")
-            else:
-                results.extend(failures)
+                unfinished = sum(len(futures[f]) for f in not_done) - len(not_started)
+                if self._stop.is_set():
+                    AppLogger.info(f"[{self.label}] Stopping: {unfinished + len(not_started)}/{len(paths)} paths are retried later")
+                else:
+                    AppLogger.warning(f"[{self.label}] batch timeout: {unfinished}/{len(paths)} unfinished, {len(not_started)} not started (retried later)")
+            retries.forget(r["source"] for r in results)
+            paused = [p for p in batch_paths if retries.is_paused(p)]
             self._node.send_reliable(
                 self.RESULT_TOPIC,
-                {self.KIND: self.status_name, "results": results},
+                {self.KIND: self.status_name, "results": results, "paused": paused},
                 dst="indexer",
                 db=db,
             )

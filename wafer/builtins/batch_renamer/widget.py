@@ -277,6 +277,10 @@ class BatchRenameWidget(QtWidgets.QWidget):
         p = self._p
         return f"QFrame {{ background: {p.bg_primary}; border: 1px solid {p.border_default}; border-radius: {dpix(4)}px; }}"
 
+    def _selected_item_stylesheet(self):
+        p = self._p
+        return f"QTableView::item:selected {{ background: {p.accent}; color: {p.accent_text}; }}"
+
     def _header_stylesheet(self, bg, fg, *, bold=False, border_right=False):
         p = self._p
         borders = f"border-bottom: 1px solid {p.border_default}; "
@@ -351,7 +355,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
         header.setSectionsClickable(True)
         header.setHighlightSections(False)
         header.setStyleSheet(self._header_stylesheet(header_bg, p.text_muted))
-        view.setStyleSheet(f"QTableView {{ background: {p.bg_primary}; border: none; color: {p.text_primary}; }}QTableView::item {{ padding: 0 {dpix(4)}px; border: none; }}")
+        view.setStyleSheet(f"QTableView {{ background: {p.bg_primary}; border: none; color: {p.text_primary}; }}QTableView::item {{ padding: 0 {dpix(4)}px; border: none; }}" + self._selected_item_stylesheet())
         view.setItemDelegate(PreviewDelegate(p.border_subtle, view))
         return view
 
@@ -400,8 +404,7 @@ class BatchRenameWidget(QtWidgets.QWidget):
             f"QTableView {{ background: {p.bg_primary}; "
             f"gridline-color: {p.border_subtle}; border: none; "
             f"color: {p.text_primary}; }}"
-            f"QTableView::item {{ padding: 0 {dpix(2)}px; }}"
-            f"QTableView::item:selected {{ background: {p.bg_hover}; }}"
+            f"QTableView::item {{ padding: 0 {dpix(2)}px; }}" + self._selected_item_stylesheet()
         )
         self._seg_frame = seg_frame
         sf_lay.addWidget(self._seg_table)

@@ -160,7 +160,7 @@ def test_probe_runs_ffprobe_tied_to_this_process(monkeypatch):
     assert calls["timeout"] == 30
 
 
-def test_probe_returns_none_when_ffprobe_times_out(monkeypatch):
+def test_probe_raises_when_ffprobe_times_out(monkeypatch):
     import subprocess
     from extensions.ffmpeg import parser as parser_module
 
@@ -169,4 +169,5 @@ def test_probe_returns_none_when_ffprobe_times_out(monkeypatch):
 
     monkeypatch.setattr(parser_module, "run_external", fake_run_external)
 
-    assert parser_module.probe("movie.mp4", "ffprobe.exe") is None
+    with pytest.raises(subprocess.TimeoutExpired):
+        parser_module.probe("movie.mp4", "ffprobe.exe")

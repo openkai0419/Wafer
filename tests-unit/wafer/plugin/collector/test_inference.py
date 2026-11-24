@@ -4,7 +4,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
 
-from wafer.plugin import BaseInferenceCollector
+from wafer.plugin import BaseInferenceCollector, EngineUnavailable
+from wafer.plugin.collector.inference import INFERENCE_PAUSE_AFTER
 from wafer.plugin.config import PluginConfig
 
 
@@ -88,12 +89,87 @@ def test_process_caches_by_file_hash_and_pixels(collector, resolver):
     assert resolver.load_pil.call_args.kwargs["size"] == Engine.input_size
 
 
-def test_process_reports_failures(collector, resolver):
+def test_unreadable_image_fails(collector, resolver):
     resolver.load_pil.side_effect = lambda path, size: None
     assert collector.process("/a.png", (0.0, 1)).status is False
-    resolver.load_pil.side_effect = lambda path, size: Image.new("RGB", (4, 4))
-    collector.engine("a").predict = MagicMock(side_effect=RuntimeError("boom"))
-    assert collector.process("/a.png", (0.0, 1)).status is False
+
+
+def test_inference_failure_is_collected_again(collector, resolver):
+    collector.engine("a").predict = MagicMock(side_effect=RuntimeError("out of memory"))
+    assert collector.process("/a.png", (0.0, 1)) is None
+
+
+def test_inference_failure_pauses_after_five_failures(collector, resolver):
+    collector.engine("a").predict = MagicMock(side_effect=RuntimeError("out of memory"))
+    assert [collector.process("/a.png", (0.0, 1)) for _ in range(INFERENCE_PAUSE_AFTER)] == [None] * INFERENCE_PAUSE_AFTER
+    assert collector.retries.is_paused("/a.png")
+
+
+def test_unavailable_engine_and_stopping_are_not_counted(collector, resolver, monkeypatch):
+    monkeypatch.setattr(collector, "load_engine", MagicMock(side_effect=RuntimeError("missing model")))
+    for _ in range(INFERENCE_PAUSE_AFTER):
+        collector.process("/a.png", (0.0, 1))
+    collector.engine_failed_at.clear()
+    monkeypatch.setattr(collector, "load_engine", Engine)
+    collector.engine("a").predict = MagicMock(side_effect=RuntimeError("interrupted"))
+    collector.stopping.set()
+    for _ in range(INFERENCE_PAUSE_AFTER):
+        collector.process("/a.png", (0.0, 1))
+    assert not collector.retries.is_paused("/a.png")
+
+
+def test_engine_load_failure_is_collected_again_and_retried_after_the_interval(collector, resolver, monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr("wafer.plugin.collector.inference.time.monotonic", lambda: now[0])
+    attempts = []
+
+    def load(model):
+        attempts.append(model)
+        if len(attempts) == 1:
+            raise RuntimeError("network down")
+        return Engine(model)
+
+    monkeypatch.setattr(collector, "load_engine", load)
+    assert collector.process("/a.png", (0.0, 1)) is None
+    now[0] += collector.ENGINE_RETRY_INTERVAL - 1
+    assert collector.process("/b.png", (0.0, 1)) is None
+    assert len(attempts) == 1
+    now[0] += 2
+    assert collector.process("/c.png", (0.0, 1)).status is True
+    assert len(attempts) == 2
+    assert collector.engine_failed_at == {}
+
+
+def test_a_model_that_fails_to_load_does_not_block_other_models(collector, monkeypatch):
+    def load(model):
+        if model == "broken":
+            raise RuntimeError("corrupt model file")
+        return Engine(model)
+
+    monkeypatch.setattr(collector, "load_engine", load)
+    with pytest.raises(EngineUnavailable):
+        collector.engine("broken")
+    assert collector.engine("b").model == "b"
+    with pytest.raises(EngineUnavailable, match="recently"):
+        collector.engine("broken")
+
+
+def test_settings_change_retries_a_failed_engine_at_once(collector, resolver, monkeypatch):
+    monkeypatch.setattr(collector, "load_engine", MagicMock(side_effect=RuntimeError("missing model")))
+    assert collector.process("/a.png", (0.0, 1)) is None
+    monkeypatch.setattr(collector, "load_engine", Engine)
+    collector.on_notify()
+    assert collector.process("/b.png", (0.0, 1)).status is True
+
+
+def test_engine_is_not_loaded_while_stopping(collector, resolver, monkeypatch):
+    load = MagicMock(side_effect=AssertionError("must not load"))
+    collector.shutdown()
+    monkeypatch.setattr(collector, "load_engine", load)
+    with pytest.raises(EngineUnavailable, match="stopping"):
+        collector.engine("a")
+    assert collector.process("/a.png", (0.0, 1)) is None
+    load.assert_not_called()
 
 
 def test_preview_uses_the_requested_model_and_settings(collector, resolver):
@@ -155,6 +231,16 @@ def test_idle_check_waits_only_for_the_remaining_time(collector):
     collector.unload_idle_engines()
     assert "a" in collector._engines
     assert collector._idle_timer.interval == pytest.approx(3.0, abs=0.5)
+
+
+def test_engine_in_use_is_not_unloaded_by_the_idle_timer(collector):
+    with collector.engine_in_use("a") as engine:
+        collector._last_used["a"] -= collector.ENGINE_IDLE_TIMEOUT + 1
+        collector.unload_idle_engines()
+        assert collector._engines == {"a": engine}
+        assert collector._idle_timer.interval == pytest.approx(collector.ENGINE_IDLE_TIMEOUT, abs=0.5)
+    collector.unload_idle_engines()
+    assert collector._engines == {"a": engine}
 
 
 def test_idle_engines_unload_and_reload(collector):

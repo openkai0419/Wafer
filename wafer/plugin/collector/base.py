@@ -11,7 +11,7 @@ from ..retry import RetryLater
 @dataclass
 class CollectorResult:
     source: str
-    status: bool
+    status: bool | None
     path: str | None = None
     name: str | None = None
     aspect: float | None = None
@@ -19,7 +19,7 @@ class CollectorResult:
     tags: dict | None = None
 
     def to_dict(self) -> dict:
-        return {k: v for k, v in asdict(self).items() if v is not None}
+        return {k: v for k, v in asdict(self).items() if v is not None or k == "status"}
 
 
 class BaseCollector(RetryLater, BasePlugin):

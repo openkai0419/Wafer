@@ -215,7 +215,7 @@ class PluginWorker:
                     AppLogger.info(f"[{self.label}] Stopping: {unfinished + len(not_started)}/{len(paths)} paths are retried later")
                 else:
                     AppLogger.warning(f"[{self.label}] batch timeout: {unfinished}/{len(paths)} unfinished, {len(not_started)} not started (retried later)")
-            retries.forget(r["source"] for r in results)
+            retries.forget(r["source"] for r in results if r.get("status") is not None)
             paused = [p for p in batch_paths if retries.is_paused(p)]
             self._node.send_reliable(
                 self.RESULT_TOPIC,

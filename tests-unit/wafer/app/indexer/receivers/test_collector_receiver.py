@@ -11,6 +11,7 @@ from wafer.app.indexer.receivers.collector_receiver import (
 )
 from wafer.app.indexer.receivers._batch_utils import BATCH_SIZE
 from wafer.core.common.virtual_paths import build_virtual_path
+from wafer.plugin.collector.base import CollectorResult
 
 
 class _StubMsg:
@@ -296,3 +297,78 @@ def test_flush_waits_outside_the_scheduler_lane(monkeypatch):
     scheduler.submit.call_args[0][0].run()
     assert time.monotonic() - started < 0.2
     assert writer.upsert_results.called
+
+
+def _write(collection_db, *results: CollectorResult):
+    _write_batched(collection_db.writer, _parse_batch([{**r.to_dict(), "collector": "_test_coll"} for r in results]))
+
+
+def test_result_to_dict_keeps_status_none():
+    assert CollectorResult(source="/a.png", status=None).to_dict() == {"source": "/a.png", "status": None}
+
+
+@pytest.mark.parametrize(
+    ("status", "collection_status", "written"),
+    [(True, "ok", True), (False, "fail", False), (None, "dispatched", True)],
+)
+def test_status_decides_collection_status_and_whether_data_is_written(collection_db, status, collection_status, written):
+    collection_db.add_source("/a.png", "h1")
+    collection_db.dispatch("/a.png", "_test_coll")
+
+    _write(collection_db, CollectorResult(source="/a.png", status=status, meta_info={"m": "1"}, tags={"t": "2"}))
+
+    assert collection_db.status("/a.png", "_test_coll") == collection_status
+    assert collection_db.meta("/a.png") == ({"_test_coll.m": "1"} if written else {})
+    assert collection_db.tags("h1") == ({"_test_coll.t": "2"} if written else {})
+
+
+def test_status_none_writes_another_source_without_touching_its_status(collection_db):
+    collection_db.add_source("/a.png", "h1")
+    collection_db.add_source("/b.png", "h1")
+    collection_db.add_source("/c.png", "h2")
+    collection_db.dispatch("/a.png", "_test_coll")
+    collection_db.writer.upsert_results([], [], [], [("/b.png", "_test_coll", "fail", 1.0)])
+
+    _write(
+        collection_db,
+        CollectorResult(source="/a.png", status=True, meta_info={"m": "a"}),
+        CollectorResult(source="/b.png", status=None, meta_info={"m": "b"}),
+        CollectorResult(source="/c.png", status=None, meta_info={"m": "c"}),
+    )
+
+    assert collection_db.status("/a.png", "_test_coll") == "ok"
+    assert collection_db.status("/b.png", "_test_coll") == "fail"
+    assert collection_db.status("/c.png", "_test_coll") is None
+    assert collection_db.meta("/b.png") == {"_test_coll.m": "b"}
+    assert collection_db.meta("/c.png") == {"_test_coll.m": "c"}
+
+
+def test_status_none_on_the_requested_path_is_collected_again(collection_db):
+    collection_db.add_source("/a.png", "h1")
+    collection_db.dispatch("/a.png", "_test_coll")
+
+    _write(collection_db, CollectorResult(source="/a.png", status=None, meta_info={"m": "1"}))
+    collection_db.writer.reset_stale(["_test_coll"])
+
+    assert collection_db.status("/a.png", "_test_coll") == "pending"
+
+
+def test_status_none_adds_children_without_removing_the_others(collection_db):
+    old_child = build_virtual_path("/a.zip", "old.png")
+    new_child = build_virtual_path("/a.zip", "new.png")
+    collection_db.add_source("/a.zip", "h1")
+    _write(collection_db, CollectorResult(source="/a.zip", path=old_child, name="old.png", status=True))
+
+    _write(collection_db, CollectorResult(source="/a.zip", path=new_child, name="new.png", status=None))
+
+    paths = {row[0] for row in collection_db._query("SELECT path FROM files WHERE source = ?", "/a.zip")}
+    assert {old_child, new_child} <= paths
+
+
+@pytest.mark.parametrize("settled", [True, False])
+def test_settled_result_decides_status_over_status_none_in_another_batch(settled):
+    first = _parse_batch([{"source": "/a.png", "status": None, "collector": "c"}])
+    second = _parse_batch([{"source": "/a.png", "status": settled, "collector": "c"}])
+
+    for batches in ([first, second], [second, first]):
+        assert [cs[2] for cs in _merge_parsed(batches)["collector_status"]] == ["ok" if settled else "fail"]

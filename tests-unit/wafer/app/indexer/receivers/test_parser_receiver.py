@@ -206,3 +206,77 @@ def test_each_result_message_ends_one_batch_of_its_parser():
     receiver = ParserReceiver(MagicMock(), MagicMock(), MagicMock(), on_batch_done=done)
     receiver.handle_result(SimpleNamespace(payload={"parser": "novelai", "results": [], "paused": ["/a.png"]}))
     done.assert_called_once_with("novelai", ["/a.png"])
+
+
+def _write(collection_db, *results: ParserResult):
+    from wafer.app.indexer.receivers.parser_receiver import _write_batched
+
+    _write_batched(collection_db.writer, _parse_batch([{**r.to_dict(), "parser": "_test_det_a"} for r in results]))
+
+
+def test_result_to_dict_keeps_status_none():
+    assert ParserResult(source="/a.png", status=None).to_dict() == {"source": "/a.png", "status": None}
+
+
+@pytest.mark.parametrize(
+    ("status", "collection_status", "written"),
+    [(True, "ok", True), (False, "fail", False), (None, "dispatched", True)],
+)
+def test_status_decides_collection_status_and_whether_data_is_written(collection_db, status, collection_status, written):
+    collection_db.add_source("/a.png", "h1")
+    collection_db.dispatch("/a.png", "_test_det_a")
+
+    _write(collection_db, ParserResult(source="/a.png", status=status, meta_info={"m": "1"}, tags={"t": "2"}))
+
+    assert collection_db.status("/a.png", "_test_det_a") == collection_status
+    assert collection_db.meta("/a.png") == ({"_test_det_a.m": "1"} if written else {})
+    assert collection_db.tags("h1") == ({"_test_det_a.t": "2"} if written else {})
+
+
+def test_status_none_writes_another_source_without_touching_its_status(collection_db):
+    collection_db.add_source("/a.png", "h1")
+    collection_db.add_source("/b.png", "h1")
+    collection_db.add_source("/c.png", "h2")
+    collection_db.dispatch("/a.png", "_test_det_a")
+    collection_db.writer.upsert_parser_results([], [], [("/b.png", "_test_det_a", "ok", 1.0)])
+
+    _write(
+        collection_db,
+        ParserResult(source="/a.png", status=True, meta_info={"m": "a"}),
+        ParserResult(source="/b.png", status=None, meta_info={"m": "b"}),
+        ParserResult(source="/c.png", status=None, meta_info={"m": "c"}),
+    )
+
+    assert collection_db.status("/a.png", "_test_det_a") == "ok"
+    assert collection_db.status("/b.png", "_test_det_a") == "ok"
+    assert collection_db.status("/c.png", "_test_det_a") is None
+    assert collection_db.meta("/b.png") == {"_test_det_a.m": "b"}
+    assert collection_db.meta("/c.png") == {"_test_det_a.m": "c"}
+
+
+def test_status_none_on_the_requested_path_is_collected_again(collection_db):
+    collection_db.add_source("/a.png", "h1")
+    collection_db.dispatch("/a.png", "_test_det_a")
+
+    _write(collection_db, ParserResult(source="/a.png", status=None, meta_info={"m": "1"}))
+    collection_db.writer.reset_stale(["_test_det_a"])
+
+    assert collection_db.status("/a.png", "_test_det_a") == "pending"
+
+
+def test_status_none_writes_deletes_and_hash_updates():
+    parsed = _parse_batch([{"source": "/a.png", "status": None, "parser": "p", "update_hash": "h2", "delete_tag_keys": ["p.x"]}])
+    assert parsed["hash_updates"] == [("/a.png", "h2")]
+    assert parsed["delete_entries"] == [("/a.png", "/a.png", [], ["p.x"])]
+    assert parsed["collector_status"] == []
+
+
+@pytest.mark.parametrize("settled", [True, False])
+def test_settled_result_decides_status_over_status_none_in_another_batch(settled):
+    from wafer.app.indexer.receivers.parser_receiver import _merge_parsed
+
+    first = _parse_batch([{"source": "/a.png", "status": None, "parser": "p"}])
+    second = _parse_batch([{"source": "/a.png", "status": settled, "parser": "p"}])
+
+    for batches in ([first, second], [second, first]):
+        assert [cs[2] for cs in _merge_parsed(batches)["collector_status"]] == ["ok" if settled else "fail"]

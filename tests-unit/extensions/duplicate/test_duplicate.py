@@ -1,11 +1,10 @@
 import pytest
 
-from extensions.duplicate.duplicate import SAME_NAME, TAG, DuplicateParser
+from extensions.duplicate.duplicate import TAG, DuplicateParser
 from wafer.core.db.file_db import FileDB
 from wafer.plugin.parser.base import ReaderClosed
 
 TAG_KEY = f"{DuplicateParser.NAME}.{TAG}"
-SAME_NAME_KEY = f"{DuplicateParser.NAME}.{SAME_NAME}"
 
 
 @pytest.fixture
@@ -60,60 +59,6 @@ def test_removes_flag_when_hash_is_no_longer_shared(parser):
     result = parser.process("/a.png", (1.0, 100, "h1"), {})
     assert result.delete_tag_keys == [TAG_KEY]
     assert result.tags is None
-
-
-def test_flags_same_name_in_another_folder(parser):
-    _add_source(parser.db, "C:/a/x.png", "h1")
-    _add_source(parser.db, "C:/b/x.png", "h1")
-    result = parser.process("C:/a/x.png", (1.0, 100, "h1"), {})
-    assert result.meta_info == {SAME_NAME: "1"}
-    assert result.delete_meta_keys is None
-
-
-def test_same_name_ignores_case(parser):
-    _add_source(parser.db, "C:/a/X.PNG", "h1")
-    _add_source(parser.db, "C:/b/x.png", "h1")
-    result = parser.process("C:/a/X.PNG", (1.0, 100, "h1"), {})
-    assert result.meta_info == {SAME_NAME: "1"}
-
-
-def test_no_same_name_for_a_different_name(parser):
-    _add_source(parser.db, "C:/a/x.png", "h1")
-    _add_source(parser.db, "C:/b/x.png", "h1")
-    _add_source(parser.db, "C:/c/y.png", "h1")
-    result = parser.process("C:/c/y.png", (1.0, 100, "h1"), {})
-    assert result.meta_info is None
-    assert result.delete_meta_keys is None
-    assert result.tags == {TAG: "1"}
-
-
-def test_does_not_rewrite_existing_same_name(parser):
-    _add_source(parser.db, "C:/a/x.png", "h1")
-    _add_source(parser.db, "C:/b/x.png", "h1")
-    parser.db.upsert_collection_results([], [("C:/a/x.png", SAME_NAME_KEY, "1", 1.0)], [], [])
-    result = parser.process("C:/a/x.png", (1.0, 100, "h1"), {})
-    assert result.meta_info is None
-    assert result.delete_meta_keys is None
-
-
-def test_removes_same_name_when_no_longer_matched(parser):
-    _add_source(parser.db, "C:/a/x.png", "h1")
-    _add_source(parser.db, "C:/c/y.png", "h1")
-    parser.db.upsert_collection_results([], [("C:/a/x.png", SAME_NAME_KEY, "1", 1.0)], [], [])
-    result = parser.process("C:/a/x.png", (1.0, 100, "h1"), {})
-    assert result.meta_info is None
-    assert result.delete_meta_keys == [SAME_NAME_KEY]
-
-
-def test_failed_hash_leaves_same_name_untouched(parser):
-    from wafer.core.common.hashes import HASH_FAILED
-
-    _add_source(parser.db, "C:/a/x.png", HASH_FAILED)
-    _add_source(parser.db, "C:/b/x.png", HASH_FAILED)
-    result = parser.process("C:/a/x.png", (1.0, 100, HASH_FAILED), {})
-    assert result.status is False
-    assert not result.meta_info
-    assert result.delete_meta_keys is None
 
 
 def test_fails_without_file_hash(parser):

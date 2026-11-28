@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.8.5]
+### Added
+- Folder Manager: Auto Select FolderTree (toolbar button and Viewer command) selects the panel's selected folders in the window's FolderTree; the setting is shared by all windows.
+- Plugins can override `process_batch` to handle a whole batch in one call.
+- Plugins can call `retry_later` to collect a path again and pause or fail it after N failures; unexpected errors go to `on_error`, which pauses a path after three. ReScan All and Restart All resume paused paths.
+
+### Changed
+- Folder Manager's folder menu offers Select FolderTree when the window shows the same database, replacing Show in FolderTree.
+- Florence captions four images per generate call, duplicate checks a whole batch with two queries, and Mapping places a whole batch at once on one BLAS thread.
+
+### Fixed
+- Files in use by another program are collected again later instead of failing (ExifTool, ffmpeg, full hash, zip), and an ffprobe timeout is retried up to five times.
+- A missing engine or tool, a timeout, a database error or a stop no longer marks files as failed; they are collected again.
+- Inference collectors keep an engine loaded while it is in use, and a model that failed to load is retried after five minutes or a settings change instead of failing every file until a restart.
+- Text generation parsers fail files without a prompt instead of retrying them forever.
+- Mapping leaves files unplaced, not failed, when stopping interrupts training.
+- Paste and move write to a `.wafer-partial` copy the indexer ignores, and wait for a file another program holds before replacing or removing it.
+- Files whose plugin batch is still running are no longer reset and sent again by the idle retry task.
+- Batch Renamer fills selected rows with the accent colour.
+
 ## [v0.8.4]
 ### Added
 - Folder Manager panel (Setting → Folder Manager, also from the Tray): a folder tree with Files / All files / Folders / All folders counts from disk, its own database picker, and live updates.

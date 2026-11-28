@@ -2,6 +2,20 @@
 
 User-facing highlights for each Wafer release. These notes are shown in the Update panel and used as the GitHub Release body.
 
+## [v0.8.5]
+
+### Highlights
+- Folder Manager: Auto Select FolderTree selects the same folders in the window's FolderTree as you select them.
+
+### Improvements
+- Florence captions, duplicate checks and Mapping process files in batches and finish sooner.
+
+### Fixes
+- Files another program is using are collected again later instead of failing; a file that keeps failing waits until ReScan All or Restart All.
+- A model that fails to load is retried after a few minutes instead of failing every file until a restart.
+- Paste and move no longer let the indexer pick up unfinished copies, and wait for a file another program holds.
+- Batch Renamer highlights selected rows in the accent colour.
+
 ## [v0.8.4]
 
 ### Highlights

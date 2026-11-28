@@ -355,7 +355,9 @@ class BatchRenameWidget(QtWidgets.QWidget):
         header.setSectionsClickable(True)
         header.setHighlightSections(False)
         header.setStyleSheet(self._header_stylesheet(header_bg, p.text_muted))
-        view.setStyleSheet(f"QTableView {{ background: {p.bg_primary}; border: none; color: {p.text_primary}; }}QTableView::item {{ padding: 0 {dpix(4)}px; border: none; }}" + self._selected_item_stylesheet())
+        view.setStyleSheet(
+            f"QTableView {{ background: {p.bg_primary}; border: none; color: {p.text_primary}; }}QTableView::item {{ padding: 0 {dpix(4)}px; border: none; }}" + self._selected_item_stylesheet()
+        )
         view.setItemDelegate(PreviewDelegate(p.border_subtle, view))
         return view
 

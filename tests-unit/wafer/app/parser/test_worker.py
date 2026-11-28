@@ -243,6 +243,26 @@ def test_result_resets_the_failure_count(make_worker):
     assert statuses == [[], [True], [], [False]]
 
 
+def test_status_none_keeps_the_failure_count(make_worker):
+    from wafer.plugin.parser.base import ParserResult
+
+    worker = make_worker()
+    outcomes = iter(["retry", "data", "retry"])
+    statuses = []
+
+    def process(path, file_info, metadata):
+        if next(outcomes) == "data":
+            return ParserResult(source=path, status=None, meta_info={"m": "1"})
+        return worker._plugin.retry_later(path, fail_after=2)
+
+    worker._plugin.process = process
+    for _ in range(3):
+        worker._process_batch(["/flaky.png"], {}, {}, "test_db")
+        statuses.append([r["status"] for r in worker._node.send_reliable.call_args[0][1]["results"]])
+
+    assert statuses == [[], [None], [False]]
+
+
 def test_timed_out_batch_leaves_started_and_queued_paths_dispatched(make_worker, monkeypatch):
     import threading
 

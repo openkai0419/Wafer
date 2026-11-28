@@ -167,17 +167,16 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
         tags = r.get("tags", {})
         delete_meta_keys = r.get("delete_meta_keys")
         delete_tag_keys = r.get("delete_tag_keys")
-        status = r.get("status")
+        status = r.get("status", False)
         parser = r.get("parser", "")
 
-        ok = bool(status)
-        s_status = "ok" if ok else "fail"
-        cs_key = (source, parser)
-        prev_cs = collector_status_map.get(cs_key)
-        if prev_cs is None or s_status == "ok":
-            collector_status_map[cs_key] = (source, parser, s_status, now)
+        if status is not None:
+            s_status = "ok" if status else "fail"
+            cs_key = (source, parser)
+            if cs_key not in collector_status_map or s_status == "ok":
+                collector_status_map[cs_key] = (source, parser, s_status, now)
 
-        if ok:
+        if status is None or status:
             if update_hash and source:
                 hash_updates.append((source, update_hash))
             prefix = f"{parser}." if parser else ""

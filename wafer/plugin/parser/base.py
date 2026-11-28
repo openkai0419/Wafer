@@ -25,7 +25,7 @@ def _fetch_all(conn: sqlite3.Connection, sql: str, params: Sequence[Any]) -> lis
 @dataclass
 class ParserResult:
     source: str
-    status: bool
+    status: bool | None
     meta_info: dict | None = None
     tags: dict | None = None
     delete_meta_keys: list[str] | None = None
@@ -33,7 +33,7 @@ class ParserResult:
     update_hash: str | None = None
 
     def to_dict(self) -> dict:
-        return {k: v for k, v in asdict(self).items() if v is not None}
+        return {k: v for k, v in asdict(self).items() if v is not None or k == "status"}
 
 
 def required_collectors(trigger_keys: tuple[str, ...]) -> dict[str, list[str]]:

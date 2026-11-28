@@ -138,17 +138,16 @@ def _parse_batch(results: list[dict[str, Any]]) -> dict[str, Any]:
         aspect = r.get("aspect")
         meta_info = r.get("meta_info", {})
         tags = r.get("tags", {})
-        status = r.get("status")
+        status = r.get("status", False)
         collector = r.get("collector", "")
 
-        ok = bool(status)
-        s_status = "ok" if ok else "fail"
-        cs_key = (source, collector)
-        prev_cs = collector_status_map.get(cs_key)
-        if prev_cs is None or s_status == "ok":
-            collector_status_map[cs_key] = (source, collector, s_status, now)
+        if status is not None:
+            s_status = "ok" if status else "fail"
+            cs_key = (source, collector)
+            if cs_key not in collector_status_map or s_status == "ok":
+                collector_status_map[cs_key] = (source, collector, s_status, now)
 
-        if ok:
+        if status is None or status:
             prefix = f"{collector}." if collector else ""
             keep = predicate_cache.get(collector, _UNSET)
             if keep is _UNSET:
